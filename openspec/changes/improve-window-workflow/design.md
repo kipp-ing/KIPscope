@@ -169,6 +169,12 @@ Every zoom, pan, zoom-out, double-click reset and history step passes `clampRang
 
 **Wheel zoom (lead decision, round 5), in `TimeseriesWindow.tsx`:** one wheel tick scales the span by `WHEEL_TICK_FACTOR = 2 ** (1 / 5)` (≈ ×1.149), so five ticks halve or double the span, centred on the pointer. A tick is 100 px of `deltaY` (pixel mode) or 3 lines (line mode); one wheel event counts at most `WHEEL_MAX_TICKS = 5` ticks (≤ ×2), so a fast flick or a trackpad burst cannot jump many orders of magnitude. Off by 2: 2^(2/5) per tick halves in 2.5 ticks and feels jumpy on a mouse wheel; 2^(1/10) needs 10 ticks per halving and feels sluggish; neither breaks anything, the feel is Jan's to judge.
 
+The tick-to-factor rule is a pure function in `zoom.ts`, tested by `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event". Page mode (`deltaMode` 2) counts one page as five ticks, i.e. the cap. A horizontal wheel delta, or a vertical one with Shift, pans instead of zooming: d px of delta moves the range by d plot pixels' worth of time, span unchanged.
+
+Minimum span `MIN_SPAN_NS = 100` (`TimeseriesWindow.tsx`): a zoom below 100 ns is ignored. Off by 2: 50 ns or 200 ns both stay below the 1 µs ticks the axis can label distinctly; nothing breaks.
+
+Calendar ticks (`calendarTicks` in `time/axis.ts`): when weekly date labels no longer fit, the x axis labels local month starts every n ∈ {1, 2, 3, 6, 12, 24, 60, 120, 240, 600, 1200} months at `CALENDAR_LABEL_PX = 80` per label, `YYYY-MM` or `YYYY` for n ≥ 12. Needed once zoom-out reaches the 1900 … 2262 bounds (round 1: smeared axis). Off by 2: 40 px lets labels overlap, 160 px halves the label count; both readable, neither breaks.
+
 History limit 50: 25 would still cover a session's back-steps; 100 costs nothing either; the number is not critical.
 
 ### D5 Drag and drop (`apps/web/src/chart/drag.ts`) — pinned
@@ -215,18 +221,24 @@ interface Props {
   dropState?: "source" | "target" | "refused";
   /** Plot left/right inset in CSS px (max natural axis width per side over all windows), so windows line up. */
   insets?: { left: number; right: number };
+  /** Reports this window's natural axis widths per side (sum of its drawn axes) whenever they change. */
+  onInsets?: (windowId: string, natural: { left: number; right: number }) => void;
 }
 ```
 
 `TimeseriesWindow` owns: header (title with inline rename, badges, range, Mode, Min/max, Back, Zoom out, Remove), axis title row, plot with height handle, legend rows (swatch, name, unit, axis side, status, SNA share, remove). `App` owns: top bar toggle "Link time axes", drag state and ghost, drop zone, the `ZoomHistory` map, Backspace, double-click reset, the hovered-window tracking. The two can be built in parallel against these props.
 
-Zoom history wiring: `onZoomed` pushes into `historyKey(linked, windowId)`; Back (button or Backspace) pops and sends `window.setRange` without pushing. Backspace is ignored while focus is in an input, select or textarea; its target is the window under the pointer, else `workspace.lastZoomed`. Double-click overrides uPlot's default dblclick (which would reset to the loaded data only).
+Zoom history wiring: `onZoomed` pushes into `historyKey(linked, windowId)`; Back (button or Backspace) pops and sends `window.setRange` without pushing. Backspace is ignored while focus is in an input, select, textarea or contenteditable element (pure helper, tested in `apps/web/test/keys.test.ts`); its target is the window under the pointer, else `workspace.lastZoomed`. Double-click overrides uPlot's default dblclick (which would reset to the loaded data only).
 
 Linked windows: the zooming window previews locally as today; the others update when the accepted range arrives with the next revision (300 ms debounce + round trip). Live following during the gesture is a goal, not part of this change.
 
-Aligned plot insets (lead decision, round 5): each `TimeseriesWindow` reports its natural left and right axis widths (sum of its drawn axes per side); `App` passes `insets = { left: max over windows, right: max over windows }` as an optional prop (`insets?: { left: number; right: number }`), and each window pads its narrower side up to that inset. All plots then share the same x pixel range, so one timestamp sits at the same x in every window of equal width. Unequal axis counts (one window with `L2`, one without) are the case it exists for.
+Aligned plot insets (lead decision, round 5): each `TimeseriesWindow` reports its natural left and right axis widths (sum of its drawn axes per side) through `onInsets`; `App` drops entries of removed windows, takes the per-side maximum with a pure helper (tested in `apps/web/test/insets.test.ts`) and passes `insets = { left: max over windows, right: max over windows }` as an optional prop (`insets?: { left: number; right: number }`), and each window pads its narrower side up to that inset. All plots then share the same x pixel range, so one timestamp sits at the same x in every window of equal width. Unequal axis counts (one window with `L2`, one without) are the case it exists for.
 
-Crosshair (lead decision, round 5): the cursor crosshair is hidden when the pointer leaves the plot (uPlot's own mouseleave) and right after a zoom commit by wheel, drag-select or double-click reset (`setCursor` off-plot), until the next pointer move. A crosshair frozen at the pre-zoom pixel would point at a wrong time.
+Crosshair (lead decision, round 5; mechanism from the close-out): the crosshair is hidden when the pointer leaves the plot (uPlot's own mouseleave) and right after every range change made in the window (wheel zoom, wheel pan, drag-select, "Zoom out", double-click reset) by adding the CSS class `cursor-hidden` to the uPlot root; the next `mousemove` over the plot removes it. CSS rather than `setCursor` off-plot, because moving uPlot's cursor off-plot left a stale drag start, so a drag flicked out of the plot zoomed to a wrong range (round 5 reviewer finding). A crosshair frozen at the pre-zoom pixel would point at a wrong time.
+
+Zoom history is held in `App` per browser tab (a `Map` of `ZoomHistory`), not in the workspace: it is view navigation, a step back is sent as an ordinary `window.setRange`, and a reload starts empty. Putting it into the workspace would make every zoom two pieces of state and was not asked for.
+
+Header range: `formatRange` (`time/axis.ts`) shows local time cut to milliseconds, trailing zero groups dropped; committed ranges carry nanoseconds (history, extents), which made the header unreadable (round 1).
 
 Height: a 6 px handle under the plot (`cursor: ns-resize`) resizes locally while dragged and sends `window.setHeight` (clamped to 120–1200) on release. 120 px still shows a curve with two tick labels; 60 would not; 1200 exceeds a laptop screen, which is harmless.
 

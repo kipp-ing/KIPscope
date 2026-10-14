@@ -13,7 +13,7 @@ Grouped by write area (docs/team.md). Groups 1–2 (shared + server), 3 (web, Ap
 
 ## 2. apps/server/src
 
-- [x] 2.1 Pass `createdWindow` through `WorkspaceStore.execute` (D2) and give the store's context `unitOf: (id) => catalog.get(id)?.unit` in `main.ts` (D1); verify a `window.addSignal` of `smart451/MS_312h.DNMOT` posted to a window with four units answers `"code":"too_many_units"`; verify `apps/server/test/workspace.http.test.ts` › "returns the created window and assignment of a move" and "applies the window-workflow commands over HTTP" pass, and after a server restart `curl -s localhost:7310/api/workspace | jq .workspace.linkTime` prints `true`
+- [x] 2.1 Pass `createdWindow` through `WorkspaceStore.execute` (D2) and give the store's context `unitOf: (id) => catalog.get(id)?.unit` in `main.ts` (D1); verify a `window.addSignal` of `smart451/MS_312h.DNMOT` posted to a window with four units answers `"code":"too_many_units"`; verify `apps/server/test/workspace.http.test.ts` › "returns the created window and assignment of a move" and "applies the window-workflow commands over HTTP" pass, and after a server restart `curl -s localhost:7310/api/workspace | jq .workspace.linkTime` prints `true` (ran 2026-10-14: the curl answered HTTP 422 `{"ok":false,"code":"too_many_units","message":"a window shows at most 4 units (has: V, km/h, rpm/10ms, °C)"}`; the restart check is Jan's hand check)
 
 ## 3. apps/web/src — App side
 
@@ -30,6 +30,8 @@ Grouped by write area (docs/team.md). Groups 1–2 (shared + server), 3 (web, Ap
 - [x] 4.3 `TimeseriesWindow.tsx` header and layout per D6: one-line header with ellipsis title and tooltip, click-to-rename (`window.rename`), Back button (`canGoBack`/`onBack`), `onZoomed` once per committed gesture, `clampRange` in wheel/pan/zoom-out, dblclick → `onReset` (uPlot default overridden), height handle → `window.setHeight`, plot height from `window.height ?? DEFAULT_PLOT_HEIGHT`, grip → `onDragStart`, `dropState` classes and hint, empty text "Drop a signal here"; styles in `chart/window.css`; verify by UI check of "Rename", "Long title", "Taller window", "Zoom out forty times"
 - [x] 4.4 Lead decisions of round 5 (built in rounds 4–5, design D4/D6): untitled windows from the explorer (`SignalExplorer.tsx`/`App.tsx`), aligned plot insets (`App.tsx` max per side → `insets` prop → `TimeseriesWindow.tsx` padding), crosshair hidden on leave and after wheel/drag/double-click zoom, wheel step 2^(1/5) per tick capped at 5 ticks per event; verify by UI check of "New window from the explorer is untitled", "Different axis counts line up", "Leave and zoom", "Five ticks out"
 
+- [x] 4.5 D-020: extract pure helpers with unit tests, no behaviour change: wheel tick → factor (incl. page mode) into `chart/zoom.ts`, per-side inset maximum (App), text-field check for Backspace (App); verify `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event", `apps/web/test/insets.test.ts` › "takes the largest axis width per side across windows", `apps/web/test/keys.test.ts` › "treats input, textarea, select and contenteditable as text fields" pass
+
 ## 5. Tests (packages/shared/test, apps/*/test)
 
 - [x] 5.1 `packages/shared/test/apply.test.ts`: the 15 tests named in `specs/workspace-state/spec.md` and `specs/timeseries-window/spec.md`; change "sets range and display of one window only" to switch linking off first; `workspace.test.ts`: "rejects times outside 1900 … 2262", "titles untitled windows by ID"; verify each named test exists and passes in a targeted run (`pnpm --filter @letsview/shared test`); fail-before-group-1 cannot be recorded after the fact and is not required
@@ -41,7 +43,11 @@ Grouped by write area (docs/team.md). Groups 1–2 (shared + server), 3 (web, Ap
 - [x] 6.1 UI user walks every UI check in `specs/timeseries-window/spec.md` on `smart451` (V_ANZ, DVL, PTC_HV_Volt, EAC_HV_Volt, T_MOT, T_SOLL, DNMOT as named there), one screenshot per scenario
 - [x] 6.2 Run the `curl` commands named in `specs/series-query/spec.md` and `specs/workspace-state/spec.md` against the dev server; verify `400` and `true`
 
+- [ ] 6.3 D-020 spec alignment: UI user walks the scenarios added afterwards in `specs/timeseries-window/spec.md` ("Pan and Zoom out", "Shift+wheel pans", "Zoom in past 100 ns", "History after reload") and `specs/workspace-state/spec.md` ("Browser reload" with titles, heights, link toggle and colours); the calendar-tick and header-range scenarios are covered by their existing tests
+
 ## Workflow follow-up
+
+- Jan's hand checks (not automatable): Esc during a drag cancels ("Highlight and cancel"); after a server restart "Link time axes" is checked and `jq .workspace.linkTime` prints `true` ("Default on", "Default is linked"); Alt-copy by drag on macOS; wheel feel.
 
 - Lead shows Jan the result; open questions from the spec report go to Jan.
 - Archive after Jan's approval; copy project-wide decisions (D2 linked-range semantics, D1 time bounds, D3 stacked-axis layout and the `too_many_units` limit) into docs/decisions.md.

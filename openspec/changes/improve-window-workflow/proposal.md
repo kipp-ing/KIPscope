@@ -17,6 +17,8 @@ Three bugs from the same report make windows unreliable: a window range of "1036
 - Stable signal colours: each signal keeps one colour across all windows and moves, held in the workspace.
 - Window rename (command `window.rename`); every place that names a window uses its title; the window header no longer wraps with long titles.
 - Window layout and keys: resizable plot height (command `window.setHeight`), double-click resets the zoom to the window's data, zoom history "Back" (button and Backspace).
+- Lead decisions of round 5: windows created from the UI are untitled ("Window <n>"), all windows share the same plot insets so linked time axes line up, the crosshair hides on leave and after every range change in the window (CSS class), one wheel tick scales by 2^(1/5) with at most five ticks per event.
+- Navigation details found in rounds 1–3: Shift/horizontal wheel pans, page-mode wheel counts as five ticks, a minimum span of 100 ns, calendar ticks (`YYYY-MM`/`YYYY`) for wide spans, the header range cut to milliseconds; the zoom history lives in the browser tab only (D-020: spec brought in line with the code).
 - Bugs: time values are bounded to 1900-01-01 … 2262-04-11 in commands and series requests, and zoom-out stops there (fixes the "1036 … 3937" range); axis titles are rendered as text above the axes so "°C" reads correctly; `T_SOLL` at −40 °C and `DNMOT` at −127 are stated as correct (valid raw 0 per DBC, D-012/D-015/D-019).
 
 ## Out of scope
@@ -35,12 +37,12 @@ None.
 
 ### Modified Capabilities
 
-- `workspace-state`: new commands (move/copy signal, rename, set height, link time axes), linked-range semantics, stable signal colours, at most four units per window, time bounds for command times.
-- `timeseries-window`: shared zoom replaces independent zoom by default; drag-and-drop between windows; one axis per unit, stacked up to four; window title, header, height, double-click reset, zoom history; zoom-out bounds; statements on T_SOLL/DNMOT.
+- `workspace-state`: workspace contents (titles, heights, link flag, colours); new commands (move/copy signal, rename, set height, link time axes), linked-range semantics, stable signal colours, at most four units per window, time bounds for command times.
+- `timeseries-window`: shared zoom replaces independent zoom by default; drag-and-drop between windows; one axis per unit, stacked up to four; window title, header, height, double-click reset, zoom history; zoom-out bounds; aligned insets, crosshair, wheel zoom and pan, minimum span, calendar ticks, header range; statement on T_SOLL.
 - `series-query`: series requests reject times outside the bounds.
 
 ## Impact
 
 - `packages/shared`: `Workspace` (`linkTime`, `lastZoomed`, `colors`), `TimeseriesWindow.height`, new commands, `CommandResult.createdWindow`, `TIME_MIN`/`TIME_MAX` in `TimeInput`, `SIGNAL_COLORS`, `applyCommand`.
 - `apps/server`: pass `createdWindow` through `WorkspaceStore.execute`; give the apply context `unitOf` from the catalog (bounds come from the shared `TimeInput`).
-- `apps/web`: `App.tsx` (top-bar toggle, drag state, drop zone, histories, Backspace), `chart/TimeseriesWindow.tsx`, `chart/build.ts` (axis layout), new pure modules `chart/axes.ts`, `chart/zoom.ts`, `chart/drag.ts`, `SignalExplorer.tsx` (titles in "Add to" only), `styles.css`.
+- `apps/web`: `App.tsx` (top-bar toggle, drag state, drop zone, histories, Backspace), `chart/TimeseriesWindow.tsx`, `chart/build.ts` (axis layout), new pure modules `chart/axes.ts`, `chart/zoom.ts`, `chart/drag.ts`, `time/axis.ts` (`calendarTicks`, `formatRange`), `chart/window.css` (window-level styles), `SignalExplorer.tsx` (titles in "Add to" only), `styles.css`.

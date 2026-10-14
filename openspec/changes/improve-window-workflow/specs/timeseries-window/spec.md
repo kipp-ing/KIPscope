@@ -25,7 +25,7 @@ The top bar SHALL show a "Link time axes" toggle that reflects and sets the work
 #### Scenario: Default on
 - **WHEN** the app is opened after a server restart
 - **THEN** "Link time axes" is checked
-- **Evidence:** UI check (screenshot of the top bar)
+- **Evidence:** Jan's hand check after a server restart (screenshot of the top bar); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked" (asserts `linkTime` is `true` on a fresh workspace)
 
 #### Scenario: Re-link
 - **WHEN** both windows show different ranges, window 2 was zoomed last, and the user switches "Link time axes" on
@@ -51,7 +51,7 @@ While dragging, each window that can take the signal SHALL be highlighted with t
 #### Scenario: Highlight and cancel
 - **WHEN** the user starts dragging the PTC_HV_Volt row, holds it over window A, then presses Esc and releases
 - **THEN** while dragging window A is highlighted with the hint and "+ New window" is visible; after Esc nothing is highlighted, no signal moved and the revision is unchanged
-- **Evidence:** UI check (screenshot while dragging, revision before and after)
+- **Evidence:** UI check (screenshot while dragging, revision before and after) for the highlight and for a release outside any target; the Esc step is Jan's hand check (the browser automation cannot press a key during a pointer drag)
 
 #### Scenario: No drop on a window that shows the signal
 - **WHEN** V_ANZ is shown in windows A and B and the user drags it from A over B
@@ -129,23 +129,70 @@ All windows SHALL use the same plot left and right insets (per side, the widest 
 #### Scenario: Different axis counts line up
 - **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ` only (one axis, `L`) and window 2 shows `CPC_448h.PTC_HV_Volt`, `COMBI_412h.V_ANZ` and `MS_608h.T_MOT` (axes `L`, `R`, `L2`)
 - **THEN** the left and right edges of both plot areas are at the same x (within 1 px), and the crosshair over a timestamp in window 1 and the same timestamp's tick in window 2 are vertically aligned
-- **Evidence:** UI check (one screenshot of both windows with a vertical guide or measured plot edges)
+- **Evidence:** UI check (one screenshot of both windows with a vertical guide or measured plot edges); `apps/web/test/insets.test.ts` › "takes the largest axis width per side across windows"
 
 ### Requirement: Crosshair follows the pointer only
-The plot crosshair SHALL be hidden when the pointer leaves the plot and right after a committed zoom by wheel, drag-select or double-click reset, until the pointer moves again. Origin: lead decision (rounds.md round 5): a crosshair left at the old pixel after a zoom points at a wrong time.
+The plot crosshair SHALL be hidden when the pointer leaves the plot and right after every range change made in the window itself (wheel zoom, wheel pan, drag-select, "Zoom out", double-click reset), until the pointer moves over the plot again. Origin: lead decision (rounds.md round 5): a crosshair left at the old pixel after a zoom points at a wrong time.
 
 #### Scenario: Leave and zoom
 - **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), then leaves the plot; then the user returns, wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
 - **THEN** the crosshair is gone after leaving, and after each of the wheel zoom, the drag-select and the double-click reset until the pointer moves
 - **Evidence:** UI check (screenshots after leaving and after each zoom commit)
 
+#### Scenario: Pan and Zoom out
+- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), the user Shift+wheels once without moving, then moves, then clicks "Zoom out"
+- **THEN** the crosshair is gone after the pan until the pointer moves, and gone after "Zoom out"
+- **Evidence:** UI check (screenshots after the pan and after "Zoom out")
+
 ### Requirement: Wheel zoom step
-One wheel tick SHALL scale the time span by 2^(1/5), centred on the pointer, so five ticks double or halve the span; one wheel event SHALL zoom by at most five ticks (at most ×2). Origin: lead decision (rounds.md round 5); the exact feel is Jan's to judge (design D4 says what a factor of two either way does).
+One wheel tick SHALL scale the time span by 2^(1/5), centred on the pointer, so five ticks double or halve the span; one wheel event SHALL zoom by at most five ticks (at most ×2). A tick is 100 px of vertical delta in pixel mode, 3 lines in line mode, and one page in page mode counts as five ticks. Origin: lead decision (rounds.md round 5); the exact feel is Jan's to judge (design D4 says what a factor of two either way does).
 
 #### Scenario: Five ticks out
 - **WHEN** a window shows 2026-10-13T09:56:00Z–09:58:00Z (2 min) and the user turns the mouse wheel five ticks outward with the pointer at the centre of the plot
 - **THEN** the header range spans about 4 min (±10 %), centred on about 09:57
-- **Evidence:** UI check (screenshots of the header before and after); no unit test covers the factor (`apps/web/test/zoom.test.ts` tests clamping, extent and history only)
+- **Evidence:** UI check (screenshots of the header before and after); `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event"
+
+#### Scenario: Page-mode wheel
+- **WHEN** a wheel event arrives in page mode with a vertical delta of one page
+- **THEN** the span changes by ×2 (five ticks, the cap)
+- **Evidence:** `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event" (includes a page-mode case); no UI check (no test device sends page mode)
+
+### Requirement: Wheel pan
+A horizontal wheel movement, or a vertical one with Shift held, SHALL pan the time range: a wheel delta of d pixels moves the range by d plot pixels' worth of time, keeping the span. Origin: necessary consequence of D-018 (window layout with keys): trackpads and Shift+wheel are the usual way to move along a time axis; the vertical wheel is taken by zoom.
+
+#### Scenario: Shift+wheel pans
+- **WHEN** a window shows 2026-10-13T09:56:00Z–09:58:00Z and the user turns the wheel with Shift held
+- **THEN** the header range moves earlier or later and still spans 2 min
+- **Evidence:** UI check (screenshots of the header before and after)
+
+### Requirement: Minimum zoom span
+A zoom that would make the window's span shorter than 100 ns SHALL be ignored; the range stays as it was. Origin: necessary consequence of nanosecond timestamps (series-query "Timestamp precision"): below 100 ns ticks and the header cannot tell times apart.
+
+#### Scenario: Zoom in past 100 ns
+- **WHEN** a window shows a 1 µs range and the user keeps wheel-zooming in at one point
+- **THEN** the span stops at 100 ns or more and no command with a shorter span is sent
+- **Evidence:** UI check (header and revision after the last tick)
+
+### Requirement: Calendar ticks for wide spans
+When a span is too wide for daily or weekly date labels, the time axis SHALL label local month starts every n months, n the smallest of 1, 2, 3, 6, 12, 24, 60, 120, 240, 600, 1200 whose labels fit the plot width at 80 px per label; labels SHALL read `YYYY-MM`, or `YYYY` for steps of a year or more. Origin: necessary consequence of the zoom bounds (1900 … 2262): zoomed far out, clock-based ticks overlapped (round 1 finding "smeared axis at clamped range").
+
+#### Scenario: Full bounds
+- **WHEN** a window 800 px wide shows 1900-01-01 … 2262-04-11
+- **THEN** the axis reads 1950, 2000, …, 2250
+- **Evidence:** `apps/web/test/calendar.test.ts` › "labels the full 1900 … 2262 range with years 1950 … 2250 at 800 px"
+
+#### Scenario: Three months
+- **WHEN** a window 800 px wide shows 2026-07-15 … 2026-10-15
+- **THEN** the axis reads 2026-08, 2026-09, 2026-10 at local month starts; a 24 h span keeps the clock-based ticks
+- **Evidence:** `apps/web/test/calendar.test.ts` › "labels about three months with YYYY-MM at local month starts", "leaves short spans to the clock-based steps"
+
+### Requirement: Header range in milliseconds
+The window header SHALL show its range in local time with at most millisecond precision, cut (never rounded up), trailing zero groups dropped. Origin: round 1 finding "nanosecond header range": ranges from zoom, history and extents carry nanoseconds, which made the header unreadable.
+
+#### Scenario: Nanosecond range
+- **WHEN** a range starts at 2026-10-13T09:12:00.999999999Z
+- **THEN** the header shows `… 11:12:00.999` (Europe/Berlin), not `.000` of the next second
+- **Evidence:** `apps/web/test/axis.test.ts` › "shows at most milliseconds and drops trailing zeros", "truncates instead of rounding up"
 
 ### Requirement: One-line window header
 The window header SHALL stay on one line: a long title is cut with an ellipsis and shown in full as tooltip, and the buttons stay on the header line. Origin: bug "window header wraps with long titles" (feedback 2026-10-14).
@@ -182,7 +229,15 @@ Each committed zoom, pan, zoom-out or double-click reset SHALL be recorded; "Bac
 #### Scenario: Backspace in a text field
 - **WHEN** the search field of the explorer has focus and the user presses Backspace
 - **THEN** only the search text changes; no window range changes
-- **Evidence:** UI check (revision unchanged in the top bar)
+- **Evidence:** UI check (revision unchanged in the top bar); `apps/web/test/keys.test.ts` › "treats input, textarea, select and contenteditable as text fields"
+
+### Requirement: Zoom history per browser tab
+The zoom history SHALL live in the browser tab only, not in the workspace; a reload starts with an empty history. Origin: necessary consequence of design D6: history steps are view navigation, and a step back is sent as an ordinary `window.setRange`.
+
+#### Scenario: History after reload
+- **WHEN** a window was zoomed twice (Back enabled) and the browser reloads
+- **THEN** the window shows the last range and Back is disabled
+- **Evidence:** UI check (screenshot of the header after reload)
 
 ### Requirement: Zoom stays within time bounds
 Zoom-out, wheel zoom, pan, reset and back SHALL keep the window range within 1900-01-01T00:00:00Z … 2262-04-11T00:00:00Z. Origin: necessary consequence of the bug "window range 1036-01-11 … 3937-05-09" (design "Bug analysis").
@@ -193,14 +248,9 @@ Zoom-out, wheel zoom, pan, reset and back SHALL keep the window range within 190
 - **Evidence:** UI check (screenshot of the header and the message area); `apps/web/test/zoom.test.ts` › "clamps ranges into the time bounds"
 
 ### Requirement: Valid constants at raw 0 are drawn
-A stored value that is not an SNA code of its signal SHALL be drawn as a value even when it is constant and equals the physical value of raw 0. Origin: D-019 ("T_SOLL's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions."); D-012 for DNMOT; data facts in design "Bug analysis".
+A stored value that is not an SNA code of its signal SHALL be drawn as a value even when it is constant and equals the physical value of raw 0. Origin: D-019 ("T_SOLL's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions."); data facts in design "Bug analysis". `MS_312h.DNMOT` (−127, D-012) is covered by the existing scenario "Valid constant, no SNA" under "SNA share in the signal list".
 
 #### Scenario: T_SOLL
 - **WHEN** a window shows the full extent of `AC_A1.T_SOLL`
 - **THEN** the curve is a flat line at −40 °C and the legend shows no SNA share
-- **Evidence:** UI check (screenshot)
-
-#### Scenario: DNMOT
-- **WHEN** a window shows the full extent of `MS_312h.DNMOT`
-- **THEN** the curve is a flat line at −127 (the padded axis may show a tick at −120) and the legend shows no SNA share
 - **Evidence:** UI check (screenshot)

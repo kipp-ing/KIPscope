@@ -1,5 +1,13 @@
 ## MODIFIED Requirements
 
+### Requirement: Server-held workspace
+The server SHALL hold one open workspace consisting of windows, the signals assigned to each window, each window's time range, display options, title and plot height, the time-axis link flag and each signal's colour. Windows and signal assignments SHALL have stable IDs. Origin: D-011 (D8); D-017 (link flag), D-018 (title, height, colours).
+
+#### Scenario: Browser reload
+- **WHEN** the browser reloads the page
+- **THEN** it shows the same windows, signals and time ranges as before, and the same titles, heights, link toggle and signal colours
+- **Evidence:** UI check (screenshot before and after reload; "Rename" and "Taller window" in the timeseries-window delta cover title and height)
+
 ### Requirement: Changes only through commands
 The workspace SHALL change only by applying commands. It SHALL support at least: create window, remove window, rename window, set window height, add signal to window, remove signal from window, move or copy a signal between windows, set window time range, set window display options, and link or unlink the windows' time axes. Origin: D-011 (D8); concept §7 (CLI controls window, signal and zoom actions); D-017, D-018 for the new commands.
 
@@ -51,11 +59,11 @@ The workspace SHALL hold a flag linking the time axes of all windows, on by defa
 #### Scenario: Default is linked
 - **WHEN** the server starts and a caller reads the workspace
 - **THEN** `linkTime` is `true`
-- **Evidence:** `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"; `curl -s localhost:7310/api/workspace | jq .workspace.linkTime` prints `true` after a server restart
+- **Evidence:** `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked" (asserts `linkTime` is `true` on a fresh workspace); Jan's hand check: `curl -s localhost:7310/api/workspace | jq .workspace.linkTime` prints `true` after a server restart
 
 #### Scenario: Range change while linked
 - **WHEN** three windows exist, the flag is on, and `window.setRange` is applied to the second
-- **THEN** all three windows have that range and the revision increases by one
+- **THEN** all three windows have that range, applied as one command (one revision, per "Revisions")
 - **Evidence:** `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
 
 #### Scenario: Range change while unlinked
@@ -108,7 +116,7 @@ A window SHALL show signals of at most four units; a signal without unit counts 
 #### Scenario: Fifth unit added
 - **WHEN** a window shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h), `MS_608h.T_MOT` (°C), `BS_200h.DVL` (1/min) and `window.addSignal` adds `MS_312h.DNMOT` (rpm/10ms)
 - **THEN** the command is rejected with `too_many_units`, the message lists `V, km/h, °C, 1/min`, and the revision does not change; adding `CPC_448h.PTC_HV_Volt` (V) is accepted
-- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a fifth unit in a window"; `curl -s -X POST localhost:7310/api/commands -H 'content-type: application/json' -d '{"type":"window.addSignal","windowId":"<w>","signalId":"smart451/MS_312h.DNMOT"}'` on such a window prints `"code":"too_many_units"`
+- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a fifth unit in a window"; `apps/server/test/workspace.http.test.ts` › "answers too_many_units over HTTP"; `curl -s -X POST localhost:7310/api/commands -H 'content-type: application/json' -d '{"type":"window.addSignal","windowId":"<w>","signalId":"smart451/MS_312h.DNMOT"}'` on such a window prints `"code":"too_many_units"`
 
 #### Scenario: Unit-less signals
 - **WHEN** a window holds four signals without unit and a fifth one without unit is added or moved in
