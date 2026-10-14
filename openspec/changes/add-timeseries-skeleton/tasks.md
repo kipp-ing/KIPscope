@@ -21,7 +21,7 @@
 
 - [x] 4.1 Define the `DataSource` interface and the config-driven table/column mapping (design D5); verify config loading with unit tests
 - [x] 4.2 Implement the DBC parser (`BO_`, `SG_` unit, `CM_ SG_`, ISO-8859-1, CRLF, first file wins; design D6); verify unit tests with the test DBC and a parse of the real `h-can.dbc` finding `MS_312h`
-- [ ] 4.3 Build the in-memory catalog from `DISTINCT vehicle, signal` merged with DBC metadata, with search, paging and refresh; verify integration tests against the test DB for each spec scenario (DBC-only signal not listed, signal without DBC entry, match by description, paging)
+- [x] 4.3 Build the in-memory catalog from `DISTINCT vehicle, signal` merged with DBC metadata, with search, paging and refresh; verify integration tests against the test DB for each spec scenario (DBC-only signal not listed, signal without DBC entry, match by description, paging)
 - [ ] 4.4 Expose `GET /api/signals` with Zod-validated parameters; verify with HTTP-level tests
 
 ## 5. Series query (spec: series-query)
