@@ -1,6 +1,14 @@
 import type { TimeseriesWindow } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
-import { canDrop, DRAG_THRESHOLD_PX, type DragSource, dropCommand } from "../src/chart/drag.ts";
+import {
+  canAdd,
+  canDrop,
+  DRAG_THRESHOLD_PX,
+  type DragSource,
+  dropCommand,
+  dropStateFor,
+  isLegendSource,
+} from "../src/chart/drag.ts";
 
 const UNITS: Record<string, string | undefined> = {
   "c/V_ANZ": "km/h",
@@ -102,5 +110,48 @@ describe("drag and drop", () => {
     // Even the only signal of the source window can go to a new window.
     const solo = [win("wA", ["c/V_ANZ"])];
     expect(canDrop(source, { kind: "new" }, solo, unitOf)).toBe(true);
+  });
+});
+
+describe("explorer drag", () => {
+  // wA shows V_ANZ and DVL, wB shows PTC, wC is full: V (EAC), km/h, °C, 1/min.
+  const wA = win("wA", ["c/V_ANZ", "c/DVL"]);
+  const wB = win("wB", ["c/PTC"]);
+  const wC = win("wC", ["c/EAC", "c/V_ANZ", "c/T_MOT", "c/DVL"]);
+  const windows = [wA, wB, wC];
+  const explorer = { signalId: "c/V_ANZ" };
+
+  it("adds an explorer signal to windows not showing it and to a new window", () => {
+    expect(canAdd("c/V_ANZ", { kind: "window", windowId: "wA" }, windows, unitOf)).toBe(false);
+    expect(canAdd("c/V_ANZ", { kind: "window", windowId: "wB" }, windows, unitOf)).toBe(true);
+    expect(canAdd("c/V_ANZ", { kind: "new" }, windows, unitOf)).toBe(true);
+    expect(dropStateFor(explorer, "wA", windows, unitOf)).toBe(undefined);
+    expect(dropStateFor(explorer, "wB", windows, unitOf)).toBe("target");
+    for (const w of windows)
+      expect(dropStateFor(explorer, w.id, windows, unitOf)).not.toBe("source");
+    expect(isLegendSource(explorer)).toBe(false);
+  });
+
+  it("refuses an explorer drop that would make a fifth unit", () => {
+    expect(canAdd("c/DNMOT", { kind: "window", windowId: "wC" }, windows, unitOf)).toBe(false);
+    expect(dropStateFor({ signalId: "c/DNMOT" }, "wC", windows, unitOf)).toBe("refused");
+    // PTC is a V signal and V is already there.
+    expect(canAdd("c/PTC", { kind: "window", windowId: "wC" }, windows, unitOf)).toBe(true);
+    expect(dropStateFor({ signalId: "c/PTC" }, "wC", windows, unitOf)).toBe("target");
+  });
+
+  it("keeps the legend-drag states", () => {
+    const legend: DragSource = { windowId: "wA", assignmentId: "awA0", signalId: "c/V_ANZ" };
+    expect(isLegendSource(legend)).toBe(true);
+    expect(dropStateFor(legend, "wA", windows, unitOf)).toBe("source");
+    expect(dropStateFor(legend, "wB", windows, unitOf)).toBe("target");
+    // wC already shows V_ANZ: neither target nor refused.
+    expect(dropStateFor(legend, "wC", windows, unitOf)).toBe(undefined);
+    // DNMOT from wB onto the full window wC: refused.
+    const dn: DragSource = { windowId: "wB", assignmentId: "awB0", signalId: "c/DNMOT" };
+    const withDn = [wA, win("wB", ["c/DNMOT"]), wC];
+    expect(dropStateFor(dn, "wB", withDn, unitOf)).toBe("source");
+    expect(dropStateFor(dn, "wC", withDn, unitOf)).toBe("refused");
+    expect(dropStateFor(dn, "wA", withDn, unitOf)).toBe("target");
   });
 });

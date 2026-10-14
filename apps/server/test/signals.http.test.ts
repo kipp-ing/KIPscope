@@ -28,6 +28,15 @@ describe("GET /api/signals", () => {
           name: "Fast_100h.SIG_A",
           unit: "rpm",
           description: "Motordrehzahl hinten",
+          dbc: {
+            file: "test-a.dbc",
+            message: "Fast_100h",
+            messageId: 256,
+            factor: 0.1,
+            offset: 0,
+            min: 0,
+            max: 6553.5,
+          },
         },
         {
           id: "testcar/Fast_100h.SIG_A",
@@ -35,6 +44,15 @@ describe("GET /api/signals", () => {
           name: "Fast_100h.SIG_A",
           unit: "rpm",
           description: "Motordrehzahl hinten",
+          dbc: {
+            file: "test-a.dbc",
+            message: "Fast_100h",
+            messageId: 256,
+            factor: 0.1,
+            offset: 0,
+            min: 0,
+            max: 6553.5,
+          },
         },
       ],
       total: 2,
@@ -67,6 +85,19 @@ describe("GET /api/signals", () => {
     }
   });
 
+  it("returns the full catalog without a page limit", async () => {
+    const res = await app.inject({ url: "/api/catalog" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const total = (await app.inject({ url: "/api/signals?q=" })).json().total;
+    expect(total).toBe(1013);
+    expect(body.items).toHaveLength(total);
+    expect(body.items.map((s: { id: string }) => s.id)).toContain("testcar/Many_700h.S0999");
+    expect(Number.isNaN(Date.parse(body.loadedAt))).toBe(false);
+    const first = (await app.inject({ url: "/api/signals?q=&limit=1" })).json().items[0];
+    expect(body.items[0]).toEqual(first);
+  });
+
   it("refreshes the catalog", async () => {
     const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(res.statusCode).toBe(200);
@@ -94,6 +125,9 @@ describe("GET /api/signals without a reachable source", () => {
       code: "catalog_unavailable",
       message: "connect ECONNREFUSED",
     });
+    const full = await app.inject({ url: "/api/catalog" });
+    expect(full.statusCode).toBe(503);
+    expect(full.json().error.code).toBe("catalog_unavailable");
     const refresh = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(refresh.statusCode).toBe(502);
   });

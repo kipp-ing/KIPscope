@@ -11,6 +11,30 @@ export interface SnaValue {
   sources: SnaSource[];
 }
 
+/** One `VAL_` entry. */
+export interface DbcValueLabel {
+  raw: number;
+  label: string;
+}
+
+/** DBC metadata of a signal (design E4). Fields absent when the DBC line could not be parsed. */
+export interface DbcInfo {
+  /** Basename of the DBC file the entry came from (first file wins), e.g. `h-can.dbc`. */
+  file?: string;
+  /** `BO_` message name, e.g. `COMBI_412h`. */
+  message: string;
+  /** `BO_` ID as written (decimal; extended IDs keep bit 31), e.g. 1042. */
+  messageId: number;
+  /** physical = raw × factor + offset. */
+  factor?: number;
+  offset?: number;
+  /** `SG_` `[min|max]` as written, physical; `[0|0]` passed through. */
+  min?: number;
+  max?: number;
+  /** `VAL_` table sorted by raw ascending; absent (never empty) when none. */
+  values?: DbcValueLabel[];
+}
+
 /** A signal in the catalog. Optional fields are absent (not empty) when the metadata is unknown. */
 export interface SignalInfo {
   /** Stable ID: `<dataRef>/<name>`, e.g. `smart451/MS_312h.DNMOT`. */
@@ -24,6 +48,16 @@ export interface SignalInfo {
   unit?: string;
   /** SNA codes sorted by raw ascending; absent (never empty) when none is defined. */
   sna?: SnaValue[];
+  /** Absent when the signal has no DBC entry. */
+  dbc?: DbcInfo;
+}
+
+/** `GET /api/catalog` (design E3). */
+export interface CatalogSnapshot {
+  /** Every signal, catalog order (name, then dataRef). */
+  items: SignalInfo[];
+  /** ISO time of the catalog load. */
+  loadedAt: string;
 }
 
 export interface SignalPage {

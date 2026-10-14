@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import type { SnaSource, SnaValue } from "@letsview/shared";
 
 /** SNA codes of a signal (D-010, D-012, D-014, D-015) with the matching tolerance. */
@@ -10,6 +11,16 @@ export interface DbcSna {
 
 /** Metadata for one `<message>.<signal>` key (design D6). Absent fields stay absent. */
 export interface DbcSignal {
+  /** Basename of the DBC file, when `parseDbc` was given one. */
+  file?: string;
+  /** `BO_` message name and ID (as written, decimal). */
+  message: string;
+  messageId: number;
+  /** Scaling and `[min|max]` from the `SG_` line; absent when the line does not parse. */
+  factor?: number;
+  offset?: number;
+  min?: number;
+  max?: number;
   unit?: string;
   description?: string;
   /** Value table (`VAL_`): raw value → label. Parsed now, used once state signals exist. */
@@ -18,7 +29,7 @@ export interface DbcSignal {
   sna?: DbcSna;
 }
 
-/** Bit layout and scaling of an `SG_` line, needed only to derive SNA. */
+/** Bit layout and scaling of an `SG_` line, needed to derive SNA. */
 interface Layout {
   length: number;
   signed: boolean;
@@ -30,7 +41,8 @@ const MESSAGE = /^BO_\s+(\d+)\s+(\w+)\s*:/;
 const SIGNAL = /^\s*SG_\s+(\w+)\s*(?:[mM]\w*\s*)?:[^"]*"([^"]*)"/;
 const NUMBER = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`;
 const LAYOUT = new RegExp(
-  String.raw`:\s*\d+\s*\|\s*(\d+)\s*@\s*[01]\s*([+-])\s*\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)`,
+  String.raw`:\s*\d+\s*\|\s*(\d+)\s*@\s*[01]\s*([+-])\s*\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)` +
+    String.raw`(?:\s*\[\s*(${NUMBER})\s*\|\s*(${NUMBER})\s*\])?`,
 );
 const GEN_SIG_SNA = /BA_\s+"GenSigSNA"\s+SG_\s+(\d+)\s+(\w+)\s+"([^"]*)"\s*;/g;
 const COMMENT = /CM_\s+SG_\s+(\d+)\s+(\w+)\s+"((?:[^"\\]|\\.)*)"\s*;/g;
@@ -96,37 +108,48 @@ function deriveSna(
   };
 }
 
-/** Parses DBC text (already decoded) into metadata keyed by `<message>.<signal>`. */
-export function parseDbc(text: string): Map<string, DbcSignal> {
+/**
+ * Parses DBC text (already decoded) into metadata keyed by `<message>.<signal>`; `file` (a
+ * basename) is set on every entry when given.
+ */
+export function parseDbc(text: string, file?: string): Map<string, DbcSignal> {
   const result = new Map<string, DbcSignal>();
   const messages = new Map<string, string>();
   const layouts = new Map<string, Layout>();
-  let message: string | undefined;
+  let message: { name: string; id: number } | undefined;
 
   for (const line of text.split(/\r?\n/)) {
     const bo = MESSAGE.exec(line);
     if (bo) {
       const [, id = "", name = ""] = bo;
       messages.set(id, name);
-      message = name;
+      message = { name, id: Number(id) };
       continue;
     }
     const sg = SIGNAL.exec(line);
     if (sg && message) {
       const [, name = "", unit = ""] = sg;
-      const entry: DbcSignal = {};
-      if (unit.trim()) entry.unit = unit.trim();
-      result.set(`${message}.${name}`, entry);
+      const key = `${message.name}.${name}`;
+      const entry: DbcSignal = { message: message.name, messageId: message.id };
+      if (file !== undefined) entry.file = file;
       const layout = LAYOUT.exec(line);
       if (layout) {
-        const [, length = "", sign = "", factor = "", offset = ""] = layout;
-        layouts.set(`${message}.${name}`, {
+        const [, length = "", sign = "", factor = "", offset = "", min, max] = layout;
+        entry.factor = Number(factor);
+        entry.offset = Number(offset);
+        if (min !== undefined && max !== undefined) {
+          entry.min = Number(min);
+          entry.max = Number(max);
+        }
+        layouts.set(key, {
           length: Number(length),
           signed: sign === "-",
-          factor: Number(factor),
-          offset: Number(offset),
+          factor: entry.factor,
+          offset: entry.offset,
         });
       }
+      if (unit.trim()) entry.unit = unit.trim();
+      result.set(key, entry);
       continue;
     }
     if (line.trim() === "") message = undefined;
@@ -186,7 +209,7 @@ export async function loadDbcFiles(
   for (const path of paths) {
     let parsed: Map<string, DbcSignal>;
     try {
-      parsed = parseDbc(decoder.decode(await readFile(path)));
+      parsed = parseDbc(decoder.decode(await readFile(path)), basename(path));
     } catch (error) {
       onError(path, error);
       continue;

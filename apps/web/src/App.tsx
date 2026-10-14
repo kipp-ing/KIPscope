@@ -2,20 +2,22 @@ import {
   type CommandInput,
   type CommandResult,
   EMPTY_WORKSPACE,
-  MAX_UNITS,
   type RenderError,
   type SignalInfo,
   signalColor,
-  windowUnits,
 } from "@letsview/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
 import {
+  type AnyDragSource,
+  canAdd,
   canDrop,
   DRAG_THRESHOLD_PX,
-  type DragSource,
+  type DropState,
   type DropTarget,
   dropCommand,
+  dropStateFor,
+  isLegendSource,
 } from "./chart/drag.ts";
 import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
@@ -24,9 +26,9 @@ import { isTextField } from "./keys.ts";
 import { useLive } from "./live.ts";
 import { NEW_WINDOW, SignalExplorer } from "./SignalExplorer.tsx";
 
-/** A running legend-row drag (design D5); `active` once the pointer moved past the threshold. */
+/** A running legend-row (design D5) or explorer-row drag; `active` once the pointer moved past the threshold. */
 interface Drag {
-  source: DragSource;
+  source: AnyDragSource;
   label: string;
   startX: number;
   startY: number;
@@ -50,8 +52,7 @@ function targetAt(x: number, y: number): DropTarget | undefined {
 }
 
 /** Optional `dropState` prop; absent rather than undefined (exactOptionalPropertyTypes). */
-const dropProp = (state: "source" | "target" | "refused" | undefined) =>
-  state ? { dropState: state } : {};
+const dropProp = (state: DropState | undefined) => (state ? { dropState: state } : {});
 
 const toRange = (r: { from: string; to: string }): Range => ({
   from: BigInt(r.from),
@@ -124,6 +125,9 @@ export function App() {
     }
     await command({ type: "window.addSignal", windowId, signalId: signal.id });
   };
+  // The drag listeners outlive a render; they add through the current function.
+  const addSignalRef = useRef(addSignal);
+  addSignalRef.current = addSignal;
 
   // Zoom history (design D6): one shared stack while linked, else one per window.
   const histories = useRef(new Map<string, ZoomHistory>());
@@ -253,7 +257,7 @@ export function App() {
     };
   }, [onBack]);
 
-  // Drag and drop of legend rows (design D5), with pointer events on the document.
+  // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
   const [drag, setDrag] = useState<Drag | undefined>();
   const dragRef = useRef<Drag | undefined>(undefined);
   const mainRef = useRef<HTMLElement>(null);
@@ -262,7 +266,7 @@ export function App() {
     setDrag(d);
   }, []);
   const onDragStart = useCallback(
-    (source: DragSource, event: React.PointerEvent) => {
+    (source: AnyDragSource, event: React.PointerEvent) => {
       if (event.button !== 0 || dragRef.current) return;
       const label = infos.current.get(source.signalId)?.name ?? source.signalId;
       const d: Drag = {
@@ -276,6 +280,8 @@ export function App() {
         copy: false,
       };
       dragRef.current = d;
+      // Only a legend drag can copy; Alt/Ctrl change nothing for an explorer drag.
+      const legend = isLegendSource(source);
       let frame = 0;
 
       // Pointer near the top or bottom edge of the window list scrolls it, faster the closer.
@@ -330,7 +336,7 @@ export function App() {
           active: true,
           x: e.clientX,
           y: e.clientY,
-          copy: e.altKey || e.ctrlKey,
+          copy: legend && (e.altKey || e.ctrlKey),
           target: targetAt(e.clientX, e.clientY),
         });
         if (!frame) frame = requestAnimationFrame(autoScroll);
@@ -342,6 +348,12 @@ export function App() {
         const target = targetAt(e.clientX, e.clientY);
         const ws = liveRef.current.workspace;
         if (!target || !ws) return;
+        if (!isLegendSource(cur.source)) {
+          const signal = infos.current.get(cur.source.signalId);
+          if (!signal || !canAdd(signal.id, target, ws.windows, unitOf)) return;
+          void addSignalRef.current(signal, target.kind === "new" ? NEW_WINDOW : target.windowId);
+          return;
+        }
         const cmd = dropCommand(cur.source, target, ws.windows, unitOf, {
           altKey: e.altKey,
           ctrlKey: e.ctrlKey,
@@ -353,13 +365,13 @@ export function App() {
           e.preventDefault();
           e.stopPropagation();
           finish();
-        } else if ((e.key === "Alt" || e.key === "Control") && dragRef.current?.active) {
+        } else if (legend && (e.key === "Alt" || e.key === "Control") && dragRef.current?.active) {
           update({ ...dragRef.current, copy: true });
         }
       };
       const onKeyUp = (e: KeyboardEvent) => {
         const cur = dragRef.current;
-        if ((e.key === "Alt" || e.key === "Control") && cur?.active) {
+        if (legend && (e.key === "Alt" || e.key === "Control") && cur?.active) {
           update({ ...cur, copy: e.altKey || e.ctrlKey });
         }
       };
@@ -379,26 +391,20 @@ export function App() {
   );
 
   const activeDrag = drag?.active ? drag : undefined;
-  const dropStateOf = (windowId: string): "source" | "target" | "refused" | undefined => {
-    if (!activeDrag) return undefined;
-    const { source } = activeDrag;
-    if (windowId === source.windowId) return "source";
-    if (canDrop(source, { kind: "window", windowId }, windows, unitOf)) return "target";
-    const w = windows.find((x) => x.id === windowId);
-    const refusedByUnits =
-      w &&
-      !w.signals.some((s) => s.signalId === source.signalId) &&
-      windowUnits(w, unitOf, source.signalId).length > MAX_UNITS;
-    return refusedByUnits ? "refused" : undefined;
-  };
+  const legendDrag = activeDrag !== undefined && isLegendSource(activeDrag.source);
+  const dropStateOf = (windowId: string): DropState | undefined =>
+    activeDrag && dropStateFor(activeDrag.source, windowId, windows, unitOf);
+  const dropActionProp = activeDrag && !legendDrag ? { dropAction: "add" as const } : {};
   const overValid =
     activeDrag?.target !== undefined &&
-    canDrop(activeDrag.source, activeDrag.target, windows, unitOf);
+    (isLegendSource(activeDrag.source)
+      ? canDrop(activeDrag.source, activeDrag.target, windows, unitOf)
+      : canAdd(activeDrag.source.signalId, activeDrag.target, windows, unitOf));
   // Over another window that already shows the dragged signal: say why the drop is refused.
   const over = activeDrag?.target?.kind === "window" ? activeDrag.target.windowId : undefined;
   const overShown =
     activeDrag !== undefined &&
-    over !== activeDrag.source.windowId &&
+    !(isLegendSource(activeDrag.source) && over === activeDrag.source.windowId) &&
     windows.some(
       (w) => w.id === over && w.signals.some((s) => s.signalId === activeDrag.source.signalId),
     );
@@ -435,7 +441,13 @@ export function App() {
 
   return (
     <div className={appClass}>
-      <SignalExplorer windows={windows} onAdd={addSignal} onSeen={remember} />
+      <SignalExplorer
+        windows={windows}
+        onAdd={addSignal}
+        onSeen={remember}
+        onDragStart={onDragStart}
+        dragging={activeDrag !== undefined}
+      />
       <main ref={mainRef}>
         <header className="topbar">
           <h1>letsview</h1>
@@ -477,6 +489,7 @@ export function App() {
             insets={insets}
             onInsets={onInsets}
             {...dropProp(dropStateOf(w.id))}
+            {...dropActionProp}
           />
         ))}
         {activeDrag && (
@@ -496,7 +509,7 @@ export function App() {
           <span className="swatch" style={{ background: colorOf(activeDrag.source.signalId) }} />
           {activeDrag.label}
           <span className="drag-mode">
-            {overValid ? (activeDrag.copy ? " · copy" : " · move") : ""}
+            {overValid ? (!legendDrag ? " · add" : activeDrag.copy ? " · copy" : " · move") : ""}
           </span>
           {overShown && <span className="drag-note">· Already shown</span>}
         </div>

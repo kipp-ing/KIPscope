@@ -10,26 +10,28 @@ const REAL_HCAN = resolve(REPO_ROOT, "../CarController/vehicles/smart451/dbc/h-c
 describe("parseDbc / loadDbcFiles", () => {
   it("reads units and comments keyed by message.signal, decoding ISO-8859-1", async () => {
     const meta = await loadDbcFiles([fixture("test-a.dbc")]);
-    expect(meta.get("Fast_100h.SIG_A")).toEqual({
+    expect(meta.get("Fast_100h.SIG_A")).toMatchObject({
       unit: "rpm",
       description: "Motordrehzahl hinten",
     });
-    expect(meta.get("Fast_100h.SIG_B")).toEqual({
+    expect(meta.get("Fast_100h.SIG_B")).toMatchObject({
       unit: "°C",
       description: "Öltemperatur Getriebe",
     });
-    expect(meta.get("Fast_100h.SIG_D")).toEqual({ unit: "bar" });
+    expect(meta.get("Fast_100h.SIG_D")?.unit).toBe("bar");
+    expect(meta.get("Fast_100h.SIG_D")).not.toHaveProperty("description");
   });
 
   it("leaves an empty unit absent", async () => {
     const meta = await loadDbcFiles([fixture("test-a.dbc")]);
-    expect(meta.get("Fast_100h.SIG_C")).toEqual({});
+    expect(meta.get("Fast_100h.SIG_C")).toBeDefined();
+    expect(meta.get("Fast_100h.SIG_C")).not.toHaveProperty("unit");
   });
 
   it("handles multi-line comments, escaped quotes and multiplexed signals", async () => {
     const meta = await loadDbcFiles([fixture("test-a.dbc")]);
     expect(meta.get("Irr_200h.JITTER")?.description).toBe("Torque with a comment over two lines");
-    expect(meta.get("Sparse_300h.SLOW")).toEqual({
+    expect(meta.get("Sparse_300h.SLOW")).toMatchObject({
       unit: "min",
       description: 'Minute counter; contains "quotes"',
     });
@@ -43,16 +45,71 @@ describe("parseDbc / loadDbcFiles", () => {
 
   it("ignores message comments", () => {
     const meta = parseDbc('BO_ 1 M: 8 X\n SG_ S : 0|8@1+ (1,0) [0|0] ""  X\n\nCM_ BO_ 1 "msg";\n');
-    expect(meta.get("M.S")).toEqual({});
+    expect(meta.get("M.S")).toBeDefined();
+    expect(meta.get("M.S")).not.toHaveProperty("description");
   });
 
   it("lets the first file win for keys defined twice", async () => {
     const meta = await loadDbcFiles([fixture("test-a.dbc"), fixture("test-b.dbc")]);
     expect(meta.get("Fast_100h.SIG_A")?.unit).toBe("rpm");
-    expect(meta.get("Many_700h.S0001")).toEqual({
+    expect(meta.get("Many_700h.S0001")).toMatchObject({
       unit: "kPa",
       description: "Reifendruck vorn links",
     });
+  });
+
+  it("reads message, scaling, range, value table and file", async () => {
+    const meta = await loadDbcFiles([fixture("test-a.dbc"), fixture("test-b.dbc")]);
+    expect(meta.get("Fast_100h.SIG_C")).toMatchObject({
+      message: "Fast_100h",
+      messageId: 256,
+      factor: 1,
+      offset: 0,
+      min: -100,
+      max: 100,
+      file: "test-a.dbc",
+    });
+    expect(meta.get("Sparse_300h.MODE")?.values).toEqual(
+      new Map([
+        [0, "off"],
+        [1, "on"],
+      ]),
+    );
+    // [0|0] is passed through as written.
+    expect(meta.get("Irr_200h.JITTER")).toMatchObject({ min: 0, max: 0 });
+    expect(meta.get("Many_700h.S0001")?.file).toBe("test-b.dbc");
+    // Without a file argument, parseDbc sets no file.
+    expect(parseDbc('BO_ 1 M: 8 X\n SG_ S : 0|8@1+ (2,3) [1|9] ""  X\n').get("M.S")).toMatchObject({
+      message: "M",
+      messageId: 1,
+      factor: 2,
+      offset: 3,
+      min: 1,
+      max: 9,
+    });
+  });
+
+  it.runIf(existsSync(REAL_HCAN))("derives DBC details from the real h-can.dbc", async () => {
+    const meta = await loadDbcFiles([REAL_HCAN]);
+    const vAnz = meta.get("COMBI_412h.V_ANZ");
+    expect(vAnz).toMatchObject({
+      file: "h-can.dbc",
+      message: "COMBI_412h",
+      messageId: 1042,
+      factor: 1,
+      offset: 0,
+      min: 0,
+      max: 510,
+    });
+    expect(vAnz?.values).toEqual(new Map([[511, "SNV"]]));
+    expect(meta.get("MS_608h.T_MOT")).toMatchObject({
+      messageId: 1544,
+      factor: 1,
+      offset: -40,
+      min: -40,
+      max: 214,
+    });
+    expect(meta.get("BS_200h.DVL")).toMatchObject({ messageId: 512, factor: 0.5, max: 8191 });
   });
 
   it("skips unreadable files and reports them", async () => {

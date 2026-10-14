@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  CatalogSnapshot,
   CommandInput,
   CommandResult,
   Extent,
@@ -19,14 +20,20 @@ async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
   return body as T;
 }
 
-export function searchSignals(q: string, abort?: AbortSignal): Promise<SignalPage> {
+/** One page of the server-side search; the explorer searches the full catalog locally instead. */
+export function fetchSignalPage(q: string, abort?: AbortSignal): Promise<SignalPage> {
   return getJson(`/api/signals?${new URLSearchParams({ q, limit: "100" })}`, abort);
+}
+
+/** The whole catalog in catalog order (design E3); 503 `catalog_unavailable` before its first load. */
+export function fetchCatalog(abort?: AbortSignal): Promise<CatalogSnapshot> {
+  return getJson("/api/catalog", abort);
 }
 
 /** Looks up metadata of one signal by exact ID. */
 export async function signalInfo(id: string): Promise<SignalInfo | undefined> {
   const name = id.slice(id.indexOf("/") + 1);
-  const page = await searchSignals(name);
+  const page = await fetchSignalPage(name);
   return page.items.find((s) => s.id === id);
 }
 

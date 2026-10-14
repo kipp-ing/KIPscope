@@ -25,6 +25,15 @@ describe("Catalog (test DB)", () => {
       name: "Fast_100h.SIG_A",
       unit: "rpm",
       description: "Motordrehzahl hinten",
+      dbc: {
+        file: "test-a.dbc",
+        message: "Fast_100h",
+        messageId: 256,
+        factor: 0.1,
+        offset: 0,
+        min: 0,
+        max: 6553.5,
+      },
     });
   });
 
@@ -58,6 +67,12 @@ describe("Catalog (test DB)", () => {
     expect(last.items).toHaveLength(50);
     expect(last.more).toBe(false);
     expect(catalog.search("", 0, 10_000).items).toHaveLength(200);
+  });
+
+  it("ranks search results like the explorer", () => {
+    const ids = catalog.search("rpm").items.map((s) => s.id);
+    expect(ids[0]).toBe("testcar/Sna_800h.RPM");
+    expect(ids.slice(1, 3)).toEqual(["othercar/Fast_100h.SIG_A", "testcar/Fast_100h.SIG_A"]);
   });
 
   it("keeps the same IDs after a refresh", async () => {

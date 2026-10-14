@@ -1,0 +1,67 @@
+import { type SignalInfo, type TimeseriesWindow, windowTitle } from "@letsview/shared";
+
+/** Rest time on a row (pointer or keyboard) before its card opens (design E7). */
+export const HOVER_DELAY_MS = 350;
+/** Time the card stays after the pointer left both row and card (design E7). */
+export const HIDE_GRACE_MS = 150;
+/** Rows rendered per chunk; "Show N more" renders the next one (design E6). */
+export const CHUNK = 500;
+/** "Add to" target value for a new window (design E10). */
+export const NEW_WINDOW = "new";
+
+/** Rows to render: all matches, at most `shown` (a multiple of CHUNK). */
+export function visibleCount(total: number, shown: number): number {
+  return Math.min(total, shown);
+}
+
+/** `shown` after "Show N more": one chunk more, at most all matches. */
+export function nextShown(total: number, shown: number): number {
+  return Math.min(total, shown + CHUNK);
+}
+
+/** `× 1 + 0`, `× 0.5 + 0`, `× 1 - 40`. */
+export function formatScaling(factor: number, offset: number): string {
+  return `× ${String(factor)} ${offset < 0 ? "-" : "+"} ${String(Math.abs(offset))}`;
+}
+
+/** Physical value of one raw step: `0.5 1/min`, `2` (no unit). */
+export function formatRawStep(factor: number, unit: string | undefined): string {
+  return withUnit(String(Math.abs(factor)), unit);
+}
+
+/** `0 … 510 km/h`; `[0|0]` (no range given in the DBC) → `not set`. */
+export function formatDbcRange(min: number, max: number, unit: string | undefined): string {
+  if (min === 0 && max === 0) return "not set";
+  return withUnit(`${String(min)} … ${String(max)}`, unit);
+}
+
+/** CAN ID in hex: `0x412`; an extended ID (bit 31 set) without bit 31 plus `(ext)`. */
+export function formatMessageId(id: number): string {
+  if (id >= 0x80000000) return `${hex(id - 0x80000000)} (ext)`;
+  return hex(id);
+}
+
+/** `<dataRef> · <file>`, `<dataRef> · DBC` without file, `<dataRef> · no DBC entry` without DBC. */
+export function formatSource(signal: SignalInfo): string {
+  if (!signal.dbc) return `${signal.dataRef} · no DBC entry`;
+  return `${signal.dataRef} · ${signal.dbc.file ?? "DBC"}`;
+}
+
+/** Titles of the windows showing the signal, in window order. */
+export function windowsShowing(windows: TimeseriesWindow[], signalId: string): string[] {
+  return windows.filter((w) => w.signals.some((s) => s.signalId === signalId)).map(windowTitle);
+}
+
+/** The "Add to" target after a window change: kept while its window exists, else NEW_WINDOW. */
+export function resolveTarget(target: string, windows: TimeseriesWindow[]): string {
+  if (target === NEW_WINDOW || windows.some((w) => w.id === target)) return target;
+  return NEW_WINDOW;
+}
+
+function hex(n: number): string {
+  return `0x${n.toString(16).toUpperCase()}`;
+}
+
+function withUnit(text: string, unit: string | undefined): string {
+  return unit ? `${text} ${unit}` : text;
+}

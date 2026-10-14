@@ -1,4 +1,4 @@
-import type { SignalPage } from "@letsview/shared";
+import type { CatalogSnapshot, SignalPage } from "@letsview/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
@@ -28,6 +28,23 @@ export const signalRoutes =
       }
       const page: SignalPage = catalog.search(query.q, query.offset, query.limit);
       return page;
+    });
+
+    /** Full catalog, unpaged, for clients that search locally (design E3). */
+    app.get("/api/catalog", async (_request, reply) => {
+      if (!catalog.loadedAt) {
+        return apiError(
+          reply,
+          503,
+          "catalog_unavailable",
+          catalog.lastError ?? "catalog not loaded",
+        );
+      }
+      const snapshot: CatalogSnapshot = {
+        items: [...catalog.all()],
+        loadedAt: catalog.loadedAt.toISOString(),
+      };
+      return snapshot;
     });
 
     /** Reloads signals from the source and metadata from the DBC files. */

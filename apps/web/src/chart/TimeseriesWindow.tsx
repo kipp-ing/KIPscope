@@ -30,7 +30,7 @@ import {
   snaShare,
   yRange,
 } from "./build.ts";
-import type { DragSource } from "./drag.ts";
+import type { DragSource, DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
 import { clampRange, type Range, wheelZoomFactor } from "./zoom.ts";
@@ -55,6 +55,7 @@ const RIGHT = 1;
 /** Inset of a side without y axis (uPlot's own default), room for the edge x tick label. */
 const NO_AXIS_INSET = 25;
 const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
+const HINT_ADD = "Drop to add";
 const HINT_REFUSED = `At most ${MAX_UNITS} units per window`;
 
 interface Props {
@@ -73,8 +74,10 @@ interface Props {
   onReset: (windowId: string) => void;
   /** Pointer down on a legend row's grip. */
   onDragStart: (source: DragSource, event: React.PointerEvent) => void;
-  /** Highlight while a drag runs: "source", "target" (canDrop), "refused" (unit limit), or undefined. */
-  dropState?: "source" | "target" | "refused";
+  /** Highlight while a drag runs: "source", "target" (canDrop/canAdd), "refused" (unit limit), or undefined. */
+  dropState?: DropState;
+  /** What a drop does; only read while dropState is "target". Absent → "move". */
+  dropAction?: "move" | "add";
   /** Plot left/right inset in CSS px to use (max over all windows), so linked windows line up. */
   insets?: Insets;
   /** Reports this window's own total y axis width per side, when it changes. */
@@ -333,6 +336,7 @@ export function TimeseriesWindow({
   onReset,
   onDragStart,
   dropState,
+  dropAction,
   insets,
   onInsets,
 }: Props) {
@@ -735,7 +739,13 @@ export function TimeseriesWindow({
   const range = formatRange(shown.from, shown.to);
   const resolution = resolutionLabel(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
-    dropState === "target" ? HINT_TARGET : dropState === "refused" ? HINT_REFUSED : undefined;
+    dropState === "target"
+      ? dropAction === "add"
+        ? HINT_ADD
+        : HINT_TARGET
+      : dropState === "refused"
+        ? HINT_REFUSED
+        : undefined;
 
   return (
     <section className={`window${dropState ? ` drop-${dropState}` : ""}`} data-window-id={w.id}>
