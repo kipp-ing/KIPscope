@@ -57,7 +57,7 @@ export interface SeriesSpec {
   scale: string;
   color: string;
   path: PathKind;
-  /** Envelope edge: invisible line, only used as band bound. */
+  /** Envelope edge: thin translucent line bounding the min/max band. */
   envelopeEdge?: boolean;
 }
 

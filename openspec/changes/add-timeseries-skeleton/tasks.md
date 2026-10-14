@@ -52,5 +52,5 @@
 
 ## 8. Integration check
 
-- [ ] 8.1 Walk through the skeleton flow on the real carserver data: add three signals to two windows, zoom one from the dense drive on 2026-10-13 09:00–11:00 UTC down to single raw points, check render status via `GET /api/render-status`, and note carserver memory/query load during the walk-through; record the result in the change's commit notes
-- [ ] 8.2 Repeat the 10-hour overview on the test DB's 5 ms signals (concept load case) and verify the window stays responsive and shows the spike in the envelope
+- [x] 8.1 Walk through the skeleton flow on the real carserver data: add three signals to two windows, zoom one from the dense drive on 2026-10-13 09:00–11:00 UTC down to single raw points, check render status via `GET /api/render-status`, and note carserver memory/query load during the walk-through; record the result in the change's commit notes
+- [x] 8.2 Repeat the 10-hour overview on the test DB's 5 ms signals (concept load case) and verify the window stays responsive and shows the spike in the envelope

@@ -62,8 +62,9 @@ function seriesOptions(spec: SeriesSpec): uPlot.Series {
   return {
     label: spec.label,
     scale: spec.scale,
-    stroke: spec.envelopeEdge ? "transparent" : spec.color,
-    width: spec.envelopeEdge ? 0 : 1.5,
+    // Envelope edges stay visible as thin lines so a single-bucket spike still shows.
+    stroke: spec.envelopeEdge ? `${spec.color}88` : spec.color,
+    width: spec.envelopeEdge ? 1 : 1.5,
     spanGaps: true,
     ...(paths ? { paths } : {}),
     points: { show: spec.path === "markers", size: 5, fill: spec.color, stroke: spec.color },
@@ -125,8 +126,12 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
   // --- uPlot instance -------------------------------------------------------------------------
 
   const viewRange = () => preview.current ?? serverRange;
-  const setView = (u: uPlot, r: Range) =>
-    u.setScale("x", { min: Number(r.from - origin.current), max: Number(r.to - origin.current) });
+  // The x range we last set; y ranges read it because u.scales.x is stale while new data is set.
+  const xView = useRef<[number, number]>([0, 1]);
+  const setView = (u: uPlot, r: Range) => {
+    xView.current = [Number(r.from - origin.current), Number(r.to - origin.current)];
+    u.setScale("x", { min: xView.current[0], max: xView.current[1] });
+  };
 
   const commit = (r: Range) => {
     clearTimeout(commitTimer.current);
@@ -189,8 +194,8 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
       // only from edge neighbors would get no scale and disappear.
       scales[key] = {
         auto: true,
-        range: (u, dataMin, dataMax) =>
-          yRange(modelRef.current, key, u.scales.x?.min ?? 0, u.scales.x?.max ?? 0) ?? [
+        range: (_u, dataMin, dataMax) =>
+          yRange(modelRef.current, key, xView.current[0], xView.current[1]) ?? [
             dataMin ?? 0,
             dataMax ?? 1,
           ],
@@ -274,8 +279,10 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
             model.tables.map((t) => t.map(() => 0)),
           )
         : ([[]] as uPlot.AlignedData);
+    const r = viewRange();
+    xView.current = [Number(r.from - origin.current), Number(r.to - origin.current)];
     u.setData(data, true);
-    setView(u, viewRange());
+    setView(u, r);
   });
 
   useEffect(() => () => clearTimeout(commitTimer.current), []);
