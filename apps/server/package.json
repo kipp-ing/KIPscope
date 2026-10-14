@@ -5,8 +5,8 @@
   "scripts": {
     "build": "tsc -p .",
     "test": "vitest run --passWithNoTests",
-    "start": "node src/main.ts",
-    "dev": "node --watch src/main.ts",
+    "start": "node --env-file-if-exists=../../.env src/main.ts",
+    "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
     "seed:test": "node --env-file-if-exists=../../.env scripts/seed-test-db.ts"
   },
   "dependencies": {
