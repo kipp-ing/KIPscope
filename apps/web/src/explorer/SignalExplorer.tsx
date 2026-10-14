@@ -7,7 +7,7 @@ import {
 } from "@letsview/shared";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchCatalog } from "../api.ts";
-import { formatSnaValue } from "../chart/build.ts";
+import { formatSnaValue, SNA_ALPHA } from "../chart/build.ts";
 import type { ExplorerDragSource } from "../chart/drag.ts";
 import { isTextField } from "../keys.ts";
 import {
@@ -35,6 +35,8 @@ interface Props {
   onDragStart?: (source: ExplorerDragSource, event: React.PointerEvent) => void;
   /** True while an App-level signal drag runs; the explorer closes and suppresses its hover card. */
   dragging?: boolean;
+  /** Chart colour of a signal shown in a window; the SNA dot takes it like the chart's SNA lanes (E5). Absent or undefined → --sna. */
+  colorOf?: (signalId: string) => string | undefined;
 }
 
 /** The open hover card: row index into the matches, the row's rect, and how it was opened. */
@@ -48,7 +50,7 @@ interface Card {
  * Searches the full catalog in the browser on every keystroke (spec signal-catalog, design E1–E10):
  * one line per match, hover card, keys, chunks, drag source and a stable "Add to" target.
  */
-export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging }: Props) {
+export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging, colorOf }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [query, setQuery] = useState("");
@@ -128,6 +130,8 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging }
   }, [dragging, closeCard]);
 
   const rowElement = (i: number) => listRef.current?.children[i] as HTMLElement | undefined;
+  /** jsdom has no scrollIntoView. */
+  const scrollToRow = (el: HTMLElement) => el.scrollIntoView?.({ block: "nearest" });
 
   const showCard = (i: number, byKey: boolean) => {
     const el = rowElement(i);
@@ -164,9 +168,16 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging }
     const el = rowElement(active);
     if (!el) return;
     keyScrollAt.current = performance.now();
-    el.scrollIntoView({ block: "nearest" });
+    scrollToRow(el);
     requestCard(active, true);
   }, [active, shown]);
+
+  // After a query change the first match is active; bring it into view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the query changed
+  useEffect(() => {
+    const el = rowElement(0);
+    if (el) scrollToRow(el);
+  }, [query]);
 
   // `/` outside a text field focuses the search (design E8).
   useEffect(() => {
@@ -279,7 +290,13 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging }
                 onPointerLeave={releaseCard}
               >
                 {sna ? (
-                  <span className="sna-dot" role="img" title={sna} aria-label={sna} />
+                  <span
+                    className="sna-dot"
+                    role="img"
+                    title={sna}
+                    aria-label={sna}
+                    style={{ background: colorOf?.(s.id) ?? "var(--sna)", opacity: SNA_ALPHA }}
+                  />
                 ) : (
                   <span className="sna-dot none" />
                 )}
@@ -301,6 +318,8 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging }
                   className="add"
                   title={addLabel}
                   aria-label={addLabel}
+                  // Not a tab stop: Enter in the search adds the active row.
+                  tabIndex={-1}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onAdd(s, target)}
                 >

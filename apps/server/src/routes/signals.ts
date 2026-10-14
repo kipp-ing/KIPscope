@@ -1,8 +1,8 @@
 import type { CatalogSnapshot, SignalPage } from "@letsview/shared";
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../catalog.ts";
+import { type Catalog, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../catalog.ts";
 import { apiError, parseInput } from "../http.ts";
 
 const SearchQuery = z.object({
@@ -10,6 +10,13 @@ const SearchQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
 });
+
+/** 503 before the first load; `reason` says still loading vs. source unreachable. */
+function catalogUnavailable(reply: FastifyReply, catalog: Catalog) {
+  return apiError(reply, 503, "catalog_unavailable", catalog.lastError ?? "catalog not loaded", {
+    reason: catalog.unavailableReason,
+  });
+}
 
 export const signalRoutes =
   ({ catalog }: AppDeps): FastifyPluginAsync =>
@@ -19,12 +26,7 @@ export const signalRoutes =
       const query = parseInput(SearchQuery, request.query, reply);
       if (!query) return reply;
       if (!catalog.loadedAt) {
-        return apiError(
-          reply,
-          503,
-          "catalog_unavailable",
-          catalog.lastError ?? "catalog not loaded",
-        );
+        return catalogUnavailable(reply, catalog);
       }
       const page: SignalPage = catalog.search(query.q, query.offset, query.limit);
       return page;
@@ -33,12 +35,7 @@ export const signalRoutes =
     /** Full catalog, unpaged, for clients that search locally (design E3). */
     app.get("/api/catalog", async (_request, reply) => {
       if (!catalog.loadedAt) {
-        return apiError(
-          reply,
-          503,
-          "catalog_unavailable",
-          catalog.lastError ?? "catalog not loaded",
-        );
+        return catalogUnavailable(reply, catalog);
       }
       const snapshot: CatalogSnapshot = {
         items: [...catalog.all()],

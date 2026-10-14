@@ -27,6 +27,7 @@ import {
   resolutionLabel,
   type SeriesSpec,
   type SignalInput,
+  SNA_ALPHA,
   snaShare,
   yRange,
 } from "./build.ts";
@@ -103,10 +104,9 @@ function axisWidths(drawn: AxisSpec[], sizes: number[]) {
 
 /** null mode NULL_EXPAND of uPlot.join: alignment artifacts next to an SNA null become null. */
 const NULL_EXPAND = 2;
-/** SNA lanes: strip height and minimum period width in CSS px, fill opacity. */
+/** SNA lanes: strip height and minimum period width in CSS px; fill opacity is SNA_ALPHA. */
 const SNA_LANE_HEIGHT = 6;
 const SNA_MIN_WIDTH = 2;
-const SNA_ALPHA = 0.6;
 /** A signal whose data is narrower than this many CSS px is drawn as a column this wide. */
 const MIN_SIGNAL_WIDTH = 2;
 

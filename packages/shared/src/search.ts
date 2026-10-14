@@ -14,9 +14,12 @@ export interface SignalMatch {
   description: MatchRange[];
 }
 
-/** Opaque precomputed lower-case fields; build once per catalog. */
+declare const indexBrand: unique symbol;
+
+/** Opaque precomputed lower-case fields; only `buildSearchIndex` makes one, build once per catalog. */
 export interface SearchIndex {
   readonly signals: readonly SignalInfo[];
+  readonly [indexBrand]: true;
 }
 
 /** Lower-cased fields of one signal; `short` is the name after the first `.` (whole name if none). */
@@ -28,7 +31,9 @@ interface Fields {
   unit: string;
 }
 
-interface Index extends SearchIndex {
+/** What a `SearchIndex` really is; the brand only keeps callers from building one by hand. */
+interface Index {
+  readonly signals: readonly SignalInfo[];
   readonly fields: readonly Fields[];
 }
 
@@ -45,7 +50,7 @@ export function buildSearchIndex(signals: readonly SignalInfo[]): SearchIndex {
     };
   });
   const index: Index = { signals, fields };
-  return index;
+  return index as unknown as SearchIndex;
 }
 
 /** Tier of one term for one signal, or undefined when it matches no field. */
@@ -79,8 +84,7 @@ function ranges(text: string, terms: readonly string[]): MatchRange[] {
 
 /** Ranked matches, best first; empty query → all signals in input order, tier 3, no ranges. */
 export function searchSignals(index: SearchIndex, query: string): SignalMatch[] {
-  const { signals, fields } =
-    "fields" in index ? (index as Index) : (buildSearchIndex(index.signals) as Index);
+  const { signals, fields } = index as unknown as Index;
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
     return signals.map((signal) => ({ signal, tier: 3, name: [], unit: [], description: [] }));

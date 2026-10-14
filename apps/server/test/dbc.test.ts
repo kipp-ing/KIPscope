@@ -79,7 +79,9 @@ describe("parseDbc / loadDbcFiles", () => {
     expect(meta.get("Irr_200h.JITTER")).toMatchObject({ min: 0, max: 0 });
     expect(meta.get("Many_700h.S0001")?.file).toBe("test-b.dbc");
     // Without a file argument, parseDbc sets no file.
-    expect(parseDbc('BO_ 1 M: 8 X\n SG_ S : 0|8@1+ (2,3) [1|9] ""  X\n').get("M.S")).toMatchObject({
+    const noFile = parseDbc('BO_ 1 M: 8 X\n SG_ S : 0|8@1+ (2,3) [1|9] ""  X\n').get("M.S");
+    expect(noFile).not.toHaveProperty("file");
+    expect(noFile).toMatchObject({
       message: "M",
       messageId: 1,
       factor: 2,

@@ -168,6 +168,9 @@ export interface SeriesSpec {
   envelopeEdge?: boolean;
 }
 
+/** Fill opacity of SNA lanes; the explorer's SNA dot uses it too (improve-signal-explorer E5). */
+export const SNA_ALPHA = 0.6;
+
 /** SNA periods of one signal, drawn as a strip in its color. */
 export interface SnaLane {
   color: string;

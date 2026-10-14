@@ -26,6 +26,8 @@ export class Catalog {
   loadedAt: Date | undefined;
   /** Message of the last failed refresh, cleared on success. */
   lastError: string | undefined;
+  /** Error of the last failed refresh, cleared on success; source of `unavailableReason`. */
+  private lastFailure: unknown;
 
   private readonly source: DataSource;
   private readonly loadMetadata: () => Promise<Map<string, DbcSignal>>;
@@ -42,7 +44,8 @@ export class Catalog {
     try {
       [refs, metadata] = await Promise.all([this.source.listSignals(), this.loadMetadata()]);
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : String(error);
+      this.lastFailure = error;
+      this.lastError = errorMessage(error);
       throw error;
     }
     const ranges = new Map<string, SnaRange[]>();
@@ -69,6 +72,20 @@ export class Catalog {
     this.index = buildSearchIndex(entries);
     this.loadedAt = new Date();
     this.lastError = undefined;
+    this.lastFailure = undefined;
+  }
+
+  /**
+   * Why the catalog has not loaded yet, for the 503 `catalog_unavailable` body: still loading
+   * while no refresh has failed, else source unreachable (network error codes, also inside an
+   * AggregateError) or the failure message.
+   */
+  get unavailableReason(): string {
+    if (this.lastFailure === undefined)
+      return "still loading: the first catalog refresh has not finished";
+    const codes = networkCodes(this.lastFailure);
+    if (codes.length > 0) return `source unreachable: ${errorMessage(this.lastFailure)}`;
+    return `catalog load failed: ${errorMessage(this.lastFailure)}`;
   }
 
   get size(): number {
@@ -100,6 +117,32 @@ export class Catalog {
     const items = matches.slice(offset, offset + size);
     return { items, total: matches.length, more: offset + items.length < matches.length };
   }
+}
+
+const NETWORK_CODES =
+  /\b(ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH)\b/;
+
+/** Network error codes of an error, its `cause` chain and AggregateError members. */
+function networkCodes(error: unknown, depth = 0): string[] {
+  if (!(error instanceof Error) || depth > 3) return [];
+  const own = (error as { code?: unknown }).code;
+  const match =
+    typeof own === "string" ? NETWORK_CODES.exec(own) : NETWORK_CODES.exec(error.message);
+  const nested = [
+    ...(error instanceof AggregateError ? error.errors : []),
+    ...(error.cause !== undefined ? [error.cause] : []),
+  ].flatMap((e) => networkCodes(e, depth + 1));
+  return match ? [match[1] as string, ...nested] : nested;
+}
+
+/** Non-empty message; an AggregateError (e.g. refused on ::1 and 127.0.0.1) lists its members. */
+function errorMessage(error: unknown): string {
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    const parts = [...new Set(error.errors.map(errorMessage))];
+    return error.message ? `${error.message}: ${parts.join("; ")}` : parts.join("; ");
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return message || (error instanceof Error ? error.name : "unknown error");
 }
 
 /** DBC details of a catalog entry (design E4): `values` sorted by raw, absent fields stay absent. */

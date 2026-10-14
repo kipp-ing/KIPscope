@@ -124,11 +124,33 @@ describe("GET /api/signals without a reachable source", () => {
     expect(res.json().error).toEqual({
       code: "catalog_unavailable",
       message: "connect ECONNREFUSED",
+      reason: "source unreachable: connect ECONNREFUSED",
     });
     const full = await app.inject({ url: "/api/catalog" });
     expect(full.statusCode).toBe(503);
     expect(full.json().error.code).toBe("catalog_unavailable");
+    expect(full.json().error.reason).toMatch(/^source unreachable/);
     const refresh = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(refresh.statusCode).toBe(502);
+  });
+});
+
+describe("503 reason while the catalog is still loading", () => {
+  const source = testSource();
+  const catalog = new Catalog(source, async () => new Map());
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  afterAll(() => app.close());
+
+  it("carries a non-empty reason when no refresh has completed yet", async () => {
+    for (const url of ["/api/signals", "/api/catalog"]) {
+      const res = await app.inject({ url });
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error.code).toBe("catalog_unavailable");
+      expect(res.json().error.reason).toMatch(/^still loading/);
+    }
   });
 });

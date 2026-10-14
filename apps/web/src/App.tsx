@@ -22,9 +22,9 @@ import {
 import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
+import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { isTextField } from "./keys.ts";
 import { useLive } from "./live.ts";
-import { NEW_WINDOW, SignalExplorer } from "./SignalExplorer.tsx";
 
 /** A running legend-row (design D5) or explorer-row drag; `active` once the pointer moved past the threshold. */
 interface Drag {
@@ -96,6 +96,13 @@ export function App() {
     (id: string) => signalColor(workspace ?? EMPTY_WORKSPACE, id),
     // A new workspace object per revision redraws windows when colours change.
     [workspace],
+  );
+  // The explorer's SNA dot takes the chart colour only for signals shown in a window (E5);
+  // other signals have no chart colour yet, so the dot falls back to --sna.
+  const shownKey = signalIds.join(",");
+  const explorerColorOf = useCallback(
+    (id: string) => (shownKey.split(",").includes(id) ? colorOf(id) : undefined),
+    [shownKey, colorOf],
   );
 
   const command = useCallback(async (input: CommandInput): Promise<CommandResult> => {
@@ -447,6 +454,7 @@ export function App() {
         onSeen={remember}
         onDragStart={onDragStart}
         dragging={activeDrag !== undefined}
+        colorOf={explorerColorOf}
       />
       <main ref={mainRef}>
         <header className="topbar">

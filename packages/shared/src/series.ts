@@ -57,5 +57,7 @@ export interface ApiError {
     signalId?: string;
     from?: string;
     to?: string;
+    /** 503 `catalog_unavailable`: still loading vs. source unreachable. */
+    reason?: string;
   };
 }
