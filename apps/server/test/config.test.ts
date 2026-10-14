@@ -19,7 +19,7 @@ describe("loadConfig", () => {
       "/repo/CarController/vehicles/smart451/dbc/hybrid-can.dbc",
     ]);
     expect(config.queryConcurrency).toBe(4);
-    expect(config.port).toBe(8080);
+    expect(config.port).toBe(7310);
   });
 
   it("applies overrides", () => {

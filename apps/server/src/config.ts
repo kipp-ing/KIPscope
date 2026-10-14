@@ -54,7 +54,7 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
   const dbc = env.LETSVIEW_DBC_FILES ? env.LETSVIEW_DBC_FILES.split(",") : DEFAULT_DBC_FILES;
   return {
     host: env.LETSVIEW_HOST || "127.0.0.1",
-    port: positiveInt(env, "LETSVIEW_PORT", 8080),
+    port: positiveInt(env, "LETSVIEW_PORT", 7310),
     clickhouse: {
       url,
       username: env.CLICKHOUSE_USER || "default",
