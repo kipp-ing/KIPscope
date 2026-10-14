@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-013: Agent team like PCB-dev (2026-10-14)
+
+- **Decision:** The main session stays lead dev and writes no product code. Spec owner, engineers, tester, UI user, reviewer and pacer work as subagents in rounds, following the PCB-dev placer team. Roles and flow: [team.md](team.md).
+- **Why:** Requested by Jan for more speed; parallel builds with independent test, UI and review checks.
+- **Consequences:** No test manager (the suite runs in seconds); the pacer also holds the watchdog's stop rules. Only the lead commits.
+
 ## D-012: Correction to D-010's evidence; SNA is compared physically (2026-10-14)
 
 - **Decision:** D-010 stands. Its example was wrong: `MS_312h.DNMOT` is not SNA. It is scaled `(1, −127)`, so SNA raw `FFh` is physical 128; the constant −127 is raw 0, a valid value. Correct examples: `COMBI_412h.V_ANZ` (raw `1FFh` → 511 km/h) and `BS_200h.DVL` (raw `3FFFh` × 0.5 → 8191.5 1/min, present in the data). SNA raw values from the DBC are converted with factor and offset (two's complement for signed signals) before comparing with stored values, since the decoder stores physical values (`scaling=True`).
