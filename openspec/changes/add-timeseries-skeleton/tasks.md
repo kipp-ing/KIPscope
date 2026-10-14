@@ -2,7 +2,7 @@
 
 ## 1. Project setup
 
-- [ ] 1.1 Create pnpm workspace with `packages/shared`, `apps/server`, `apps/web` (TypeScript strict, Vitest, lint/format) and verify `pnpm -r build` and `pnpm -r test` succeed on empty packages
+- [x] 1.1 Create pnpm workspace with `packages/shared`, `apps/server`, `apps/web` (TypeScript strict, Vitest, lint/format) and verify `pnpm -r build` and `pnpm -r test` succeed on empty packages
 - [ ] 1.2 Add `docker-compose.yml` for the test ClickHouse and `.env.example` with connection settings (`.env` git-ignored); verify `docker compose up -d` starts a reachable ClickHouse
 - [ ] 1.3 Create the read-only ClickHouse user `letsview` on carserver as a `users.d` file in serverzoo/carserver (design D10), deploy it, and verify through the SSH tunnel that `SELECT` on `sdlog.signals` works and an `INSERT` is rejected
 - [ ] 1.4 Add a README section on running the setup (tunnel, test DB, seed, server, web) and verify the commands run as written on a clean checkout

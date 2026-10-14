@@ -1,0 +1,14 @@
+{
+  "name": "@letsview/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest run --passWithNoTests",
+    "start": "node src/main.ts",
+    "dev": "node --watch src/main.ts"
+  },
+  "dependencies": {
+    "@letsview/shared": "workspace:*"
+  }
+}
