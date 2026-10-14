@@ -37,6 +37,13 @@ export interface BucketSeries {
 
 export type SeriesResult = RawSeries | BucketSeries;
 
+/** First and last timestamp (decimal ns) of a signal's data. */
+export interface Extent {
+  signalId: string;
+  first: string;
+  last: string;
+}
+
 export interface ApiError {
   error: {
     code: string;

@@ -77,6 +77,7 @@ export class QueryQueue {
 export function queuedSource(source: DataSource, queue: QueryQueue): DataSource {
   return {
     listSignals: (abort) => queue.run((a) => source.listSignals(a), abort),
+    extent: (ref, abort) => queue.run((a) => source.extent(ref, a), abort),
     count: (ref, from, to, abort) => queue.run((a) => source.count(ref, from, to, a), abort),
     raw: (ref, from, to, abort) => queue.run((a) => source.raw(ref, from, to, a), abort),
     before: (ref, t, abort) => queue.run((a) => source.before(ref, t, a), abort),

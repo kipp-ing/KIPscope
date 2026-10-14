@@ -78,6 +78,19 @@ export class ClickHouseSource implements DataSource {
     return rows.map(([ref, name]) => ({ dataRef: ref, name }));
   }
 
+  async extent(ref: SignalRef, abort?: AbortSignal) {
+    const { time } = this.c;
+    const [row] = await this.rows<[string, string, string]>(
+      `SELECT count(), toString(toUnixTimestamp64Nano(min(${time}))),
+              toString(toUnixTimestamp64Nano(max(${time})))
+       FROM ${this.table} WHERE ${this.signalFilter}`,
+      { ref: ref.dataRef, sig: ref.name },
+      abort,
+    );
+    if (!row || Number(row[0]) === 0) return undefined;
+    return { first: BigInt(row[1]), last: BigInt(row[2]) };
+  }
+
   async count(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal) {
     const { time } = this.c;
     const [row] = await this.rows<[string]>(

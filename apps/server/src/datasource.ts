@@ -25,6 +25,11 @@ export interface Bucket {
  */
 export interface DataSource {
   listSignals(abort?: AbortSignal): Promise<SignalRef[]>;
+  /** First and last timestamp of the signal's data, or undefined if it has none. */
+  extent(
+    ref: SignalRef,
+    abort?: AbortSignal,
+  ): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
   count(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<number>;
   raw(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<RawPoint[]>;
   /** Last point strictly before `t`. */

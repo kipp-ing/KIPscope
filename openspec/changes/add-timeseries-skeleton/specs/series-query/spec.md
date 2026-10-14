@@ -67,6 +67,13 @@ Source rows without a timestamp SHALL NOT be returned, counted or aggregated, si
 - **WHEN** a signal has rows whose timestamp is null
 - **THEN** those rows appear in no raw result and in no bucket's count, mean, minimum or maximum
 
+### Requirement: Signal extent
+The server SHALL return the first and last timestamp of a signal's data, so a view can open on the range where data exists. A signal without timestamped data SHALL return no extent.
+
+#### Scenario: Open a new window on a signal
+- **WHEN** a caller requests the extent of a signal with data
+- **THEN** it receives the timestamps of the signal's first and last point
+
 ### Requirement: Bounded database load
 The server SHALL limit the number of concurrent queries it sends to a data source to a configured maximum and queue further queries.
 

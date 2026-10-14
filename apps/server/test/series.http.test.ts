@@ -82,6 +82,34 @@ describe("GET /api/series", () => {
   });
 });
 
+describe("GET /api/extent", () => {
+  const { app, catalog } = appFor();
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("returns first and last timestamp of a signal", async () => {
+    const res = await app.inject({
+      url: "/api/extent",
+      query: { signal: "testcar/Fast_100h.SIG_C" },
+    });
+    expect(res.json()).toEqual({
+      signalId: "testcar/Fast_100h.SIG_C",
+      first: fromIso("2026-10-01T00:00:00Z").toString(),
+      last: fromIso("2026-10-01T09:59:59.995Z").toString(),
+    });
+  });
+
+  it("ignores rows without timestamp and rejects unknown signals", async () => {
+    const res = await app.inject({
+      url: "/api/extent",
+      query: { signal: "testcar/Fast_100h.SIG_A" },
+    });
+    expect(res.json().first).toBe(fromIso("2026-10-01T00:00:00Z").toString());
+    const unknown = await app.inject({ url: "/api/extent", query: { signal: "testcar/X.Y" } });
+    expect(unknown.statusCode).toBe(404);
+  });
+});
+
 describe("GET /api/series with the database unavailable", () => {
   const source = new ClickHouseSource(
     createClickHouseClient({ url: "http://127.0.0.1:1", username: "x", password: "" }),
