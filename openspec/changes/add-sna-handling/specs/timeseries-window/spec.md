@@ -49,7 +49,7 @@ The automatic y range of a scale SHALL be computed from valid values only; SNA p
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "ignores SNA in the y range"
 
 ### Requirement: SNA periods marked
-The window SHALL mark each signal's SNA periods in the plot in the signal's color, so the user sees which signal is unavailable when. Raw: from an SNA point to the next point. Aggregated: each bucket that contains SNA points. A period too short to see SHALL still be visible. Origin: D-010.
+The window SHALL mark each signal's SNA periods as a thin strip per signal at the bottom of the plot, in the signal's color, so the user sees which signal is unavailable when. Raw: from an SNA point to the next point. Aggregated: each bucket that contains at least one SNA point. A period too short to see SHALL still be visible. Origin: D-010, D-014.
 
 #### Scenario: Two signals with SNA at engine start
 - **WHEN** a window shows `COMBI_412h.V_ANZ` and `BS_200h.DVL` from 2026-10-13T09:56:59Z to 09:57:01Z

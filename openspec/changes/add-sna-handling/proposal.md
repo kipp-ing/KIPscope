@@ -7,7 +7,7 @@ Values the DBC marks as "signal not available" (SNA) are currently drawn, aggreg
 ## What Changes
 
 - Derive each signal's SNA values from the DBC (D-010, D-012):
-  - union of `GenSigSNA` (raw hex, e.g. `"1FFh"`) and `VAL_` labels `SNA`/`SNV`; on conflict both count as SNA;
+  - union of `GenSigSNA` (raw hex, e.g. `"1FFh"`) and `VAL_` labels `SNA`/`SNV`; a `VAL_` label with a valid meaning beats `GenSigSNA`, and `GenSigSNA` does not apply to 1-bit and checksum/CRC signals (D-014);
   - `GenSigSNA "0h"` means "no SNA defined" unless a `VAL_` label marks 0 as SNA/SNV (260 h-can signals use `"0h"` on counters/states where 0 is valid);
   - raw → physical with factor/offset (two's complement for signed signals) because the DB stores physical values; match with a tolerance of half a raw step.
 - Catalog reports the SNA values per signal.

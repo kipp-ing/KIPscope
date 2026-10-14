@@ -6,6 +6,7 @@ See proposal.md for the why. Jan's rules, quoted:
 
 - **D-010:** "A value the DBC marks as "signal not available" (SNA) must never be displayed, aggregated or evaluated as a valid measurement. SNA comes from the union of the `GenSigSNA` attribute (raw hex) and `VAL_` labels `SNA`/`SNV`; on conflict both count as SNA. `GenSigSNA "0h"` means "no SNA defined" unless a `VAL_` label marks 0 as SNA/SNV. Display: the curve breaks at SNA (never interpolated through), SNA periods are marked; aggregates exclude SNA and show its share."
 - **D-012:** "SNA raw values from the DBC are converted with factor and offset (two's complement for signed signals) before comparing with stored values, since the decoder stores physical values (`scaling=True`)."
+- **D-014:** "A `VAL_` label with a valid meaning (anything other than `SNA`/`SNV`) beats `GenSigSNA` for that raw value: the value is valid. This supersedes D-010's "on conflict both count as SNA". `GenSigSNA` does not apply to 1-bit signals and to checksum/CRC signals. SNA periods are marked as a thin strip per signal at the bottom of the plot, not as full-height shading. In aggregated views a bucket is marked as SNA from a single SNA point; mean/min/max contain valid points only."
 
 Current code: `dbc.ts` reads only unit, comment and `VAL_`; `SignalInfo` has no SNA; `clickhouse.ts` returns every stored value; `RawSeries.v` and bucket `mean/min/max` are `number[]`; the chart joins tables with uPlot null mode 0 and `spanGaps: true`, so any null would be bridged today.
 
@@ -20,8 +21,8 @@ DBCs from `config.ts` defaults: `../CarController/vehicles/smart451/dbc/h-can.db
 | of which `"0h"` | 260 (237 without `VAL_`) | 0 |
 | `VAL_` labels `SNV` / `SNA` | 120 / 33 (exact upper case) | 0 |
 | `"0h"` signal with `VAL_` SNA/SNV on 0 | 0 | 0 |
-| attribute ≠ label (union gives 2 codes) | 3: `YRG_156h.CLU_TYPE` {1, 15}, `SRS_1E1h.OC_P_Fast_SRS` {0, 3}, `BS_328h.ESP_DSPL` {30, 31} | 0 |
-| signals with ≥ 1 SNA code after the rules | 187 | 475 |
+| attribute ≠ label (union gives 2 codes) | 3 under D-010; 1 under D-014: `BS_328h.ESP_DSPL` {30, 31} (`CLU_TYPE` → {15}, `OC_P_Fast_SRS` → {0}) | 0 |
+| signals with ≥ 1 SNA code: D-010 only / with D-014 | 187 / 161 | 475 / 475 |
 | signed signals with SNA, `SIG_VALTYPE_`, multiplexed, negative `VAL_`, exponent in factor | none | none |
 
 Examples: `COMBI_412h.V_ANZ` 9 bit (1,0), `"1FFh"` + `511 "SNV"` → 511 km/h. `BS_200h.DVL` 14 bit (0.5,0), `"3FFFh"` + `16383 "SNV"` → 8191.5 1/min. `MS_312h.DNMOT` 8 bit (1,−127), `"FFh"` → 128; data is constant −127 (raw 0, valid).
@@ -46,7 +47,7 @@ carserver `sdlog.signals`, vehicle `smart451`: 428 signals, 176 of them have SNA
 `parseDbc` additionally reads from each `SG_` line: bit length, sign (`+`/`-`), factor, offset (`SG_ <name> [mux] : <start>|<len>@<order><sign> (<factor>,<offset>)`), and every `BA_ "GenSigSNA" SG_ <id> <name> "<hex>h";`.
 
 Per signal, the set of raw codes is the union of:
-- `GenSigSNA` parsed as hex, **unless** it is 0 (`"0h"`, D-010) or empty (the `BA_DEF_DEF_` default `""`), or not matching `^[0-9A-Fa-f]+h$`, or ≥ 2^len (ignored);
+- `GenSigSNA` parsed as hex, **unless** it is 0 (`"0h"`, D-010) or empty (the `BA_DEF_DEF_` default `""`), or not matching `^[0-9A-Fa-f]+h$`, or ≥ 2^len (ignored), **or** (D-014) the signal has bit length 1, or its `SG_` name matches `/^CRC_|(^|_)CHKSUM(_|$)/i` (checksum/CRC), or its `VAL_` table labels that code with anything other than `SNA`/`SNV`;
 - every `VAL_` value whose label, trimmed, equals `SNA` or `SNV` (case-insensitive). A negative `VAL_` value is normalised to its unsigned bit pattern (`value mod 2^len`).
 
 Raw → physical: `(signed && raw ≥ 2^(len−1) ? raw − 2^len : raw) × factor + offset`, using `BigInt` for the bit arithmetic, then `Number`. Codes are sorted by raw ascending; `sources` lists `"GenSigSNA"` before `"VAL_"`. A signal without codes gets no `sna` field. First-file-wins applies to the whole entry, SNA included (42 message names exist in both files; h-can wins).
@@ -233,8 +234,13 @@ Rules:
 | `COUNTER` | `31\|4@1+ (1,0)` | `"0h"` | — | none |
 | `STATE` | `35\|2@1+ (1,0)` | `"0h"` | `0 "SNA" 1 "ON" 2 "OFF"` | 0 |
 | `MODE` | `37\|3@1+ (1,0)` | `"7h"` | `6 "SNV" 1 "ON"` | 6 and 7 |
+| `FLAG` | `40\|1@1+ (1,0)` | `"1h"` | — | none (1-bit, D-014) |
+| `LEVEL` | `41\|3@1+ (1,0)` | `"1h"` | `1 "OK" 7 "SNV"` | 7 (label beats attribute, D-014) |
+| `CRC_800h` | `48\|8@1+ (1,0)` | `"FFh"` | — | none (checksum, D-014) |
 
 plus `BA_DEF_ SG_ "GenSigSNA" STRING ;` and `BA_DEF_DEF_ "GenSigSNA" "";`.
+
+`FLAG`, `LEVEL` and `CRC_800h` exist only in the DBC (parser tests); they get no seeded series, so the seed counts below stay.
 
 `apps/server/scripts/seed-test-db.ts`, vehicle `testcar`, start 2026-10-01T02:00:00Z, index `n`:
 
@@ -251,23 +257,24 @@ Seed spot checks change: total rows 21,613,857 (+1,146), distinct timestamped si
 
 ## Risks / Trade-offs
 
-- [D-010 hides values that look valid in the DBC's own labels, e.g. `BS_208h.SZS` (`"1h"` = `OK`, 100 % of 232,641 points)] → implemented as decided; listed under Open questions.
+- [D-014's "anything other than `SNA`/`SNV`" also counts `--` and `NO_TEMP_SENSOR` as valid: `TPM_A1.TirePress_*` (5), `COMBI_408h.T_AUSSEN(_RAW)`, `AC_A1.T_SOLL`, `AC_A1.T_INNEN` lose `"FFh"` as SNA, and `MS_608h.FCOD_MOT` loses 63 (`RES`)] → implemented as decided; these labels read like "not available", so this is a finding for Jan, not a change.
 - [`null` also results from NaN in JSON (`JSON.stringify(NaN)`)] → would be shown as SNA. None found in the checked signals; detecting NaN is out of scope.
 - [Catalog not loaded → series 503] → previously series worked without catalog. In practice the explorer and `window.addSignal` already need the catalog; `POST /api/catalog/refresh` recovers.
 - [Step hold inserts a drawing point at the SNA timestamp] → it repeats a measured value at the end of its own hold, which step mode draws anyway; covered by a unit test.
 - [`count` changes meaning] → server and web ship together from one repo; the tester updates assertions that read `count` as all points.
-- [Bucket marks are coarse: one SNA point marks the whole bucket] → honest about where SNA occurs; threshold is an open question.
+- [Bucket marks are coarse: one SNA point marks the whole bucket] → decided by D-014; honest about where SNA occurs.
 
 ## Migration Plan
 
 None for data. Server and web change the payload together (one repo, one deploy). Rollback: revert the change.
 
-## Open questions
+## Resolved by D-014
 
-For Jan; the build follows D-010 as written meanwhile, and any answer changes only the derivation in `dbc.ts` (S1) or cosmetics (S7), not interfaces or tasks.
+Jan answered the former open questions (2026-10-14); only the derivation in S1 changed, no interface or task boundary.
 
-1. **`GenSigSNA` on a code the `VAL_` table names as a valid state.** 17 such signals in h-can. With D-010's union they are hidden: `BS_208h.SZS` 1 `OK` (100 % of its data), `SRS_1E1h.SRS_IL` 1 `ON`, `EPS_2F1h.EPS_KL` 1 `EPS_NOK` (41 %), `MS_308h.CREEPING_OFF` 1 `DISABLE` (100 %), `YRG_156h.CLU_TYPE` 1 `MM37`, `SRS_1E1h.SBR_BUZZER_VOLUME` 3 `STOP` (15.7 %), `SAS_0C2h.LWS_Status` 3 `PER_ERR`, `SRS_1E1h.OC_P_Fast_SRS` 3 `PSG_ABSENT` (the others are `--` / `NO_TEMP_SENSOR`, which fit SNA). Should a non-SNA `VAL_` label win over `GenSigSNA`?
-2. **1-bit signals with `GenSigSNA "1h"`** (7 in h-can): e.g. `BS_328h.BS` "Brake switch" (95.8 % hidden), parity bits `BS_300h.MPAR_ESP` (50 %), `GS_218h.MPAR_EGS`, `SRS_1E1h.PARITY_SRS`. Such a signal can only ever show 0. Keep, or ignore SNA on 1-bit signals?
-3. **Checksums with SNA codes:** `SAS_0C2h.LWS_CHKSUM "1h"` (1.5 % of checksums hidden), `BS_119h.CRC_0`, `YRG_151h.CRC_2`, `YRG_149h.CRC_1`, `EWM_230h.CRC_230h` `"FFh"` (0.2–0.5 %). Keep, or exempt checksum signals?
-4. **Look of SNA marks:** per-signal strips at the bottom of the plot (S7) or full-height shading?
-5. **Bucket marks:** mark every bucket with at least one SNA point (S7), or only above a share?
+1. **Valid `VAL_` label vs. `GenSigSNA`:** the label wins. In h-can 16 signals lose their `GenSigSNA` code this way, 14 of them all SNA codes (e.g. `BS_208h.SZS` 1 `OK`, `SRS_1E1h.SRS_IL` 1 `ON`, `SAS_0C2h.LWS_Status` 3 `PER_ERR`); `YRG_156h.CLU_TYPE` keeps {15}, `SRS_1E1h.OC_P_Fast_SRS` keeps {0}. Not counted here: 1-bit signals with a label (`EPS_2F1h.EPS_KL`, `MS_308h.CREEPING_OFF`), exempt by rule 2 anyway.
+2. **1-bit signals:** no `GenSigSNA` (7 in h-can: `BS_328h.BS`, `BS_300h.MPAR_ESP`, `GS_218h.MPAR_EGS`, `SRS_1E1h.PARITY_SRS`, `MS_608h.FCOD_MOT6`, `EPS_2F1h.EPS_KL`, `MS_308h.CREEPING_OFF`). **Checksum/CRC signals:** no `GenSigSNA`; detected by the `SG_` name pattern `/^CRC_|(^|_)CHKSUM(_|$)/i`. Checked with one grep over both DBCs (2026-10-14). Matches in h-can.dbc: `SAS_0C2h.LWS_CHKSUM` `"1h"`, `BS_119h.CRC_0`, `YRG_149h.CRC_1`, `YRG_151h.CRC_2`, `EWM_230h.CRC_230h` (all `"FFh"`), plus `YRG_156h.CRC_7` (`"0h"`) and `MS_212h.CRC_MS_212h` (no attribute), which have no SNA anyway. Matches in hybrid-can.dbc: 14 `CRC_*` signals (`CRC_EIS_A1`, `CRC_ENG_RQ_SBC`, `CRC_EM2_RS1`–`RS3`, `CRC_ENG_RQ2_TCM`, `CRC_HVAC_RS1`, `CRC_ENG_RS3_PT`, `CRC_EM2_RQ2_ENG`, `CRC_EM1_RQ_ENG`, `CRC_EM2_RQ_ENG`, `CRC_CVI`, `CRC_AVI2`, `CRC_EMM_STAT`), none with `GenSigSNA`. Not matched, by intent: `SSA_Enbl_Rq_CRCM`, `*_ErrChk_Stat*`, `V_MAX_SUM`, parity bits (1-bit rule covers them).
+3. **Look of SNA marks:** thin strip per signal at the bottom of the plot (S7), as designed.
+4. **Bucket marks:** a bucket is marked from a single SNA point (S7), as designed.
+
+Effect on h-can: 187 → 161 signals with SNA codes (−5 checksum, −7 1-bit, −14 label); hybrid-can unchanged at 475. The carserver counts above (176 signals with SNA codes, 95 with hits) were measured under D-010 only.
