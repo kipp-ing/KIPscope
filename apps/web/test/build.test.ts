@@ -1,6 +1,12 @@
 import { type BucketSeries, encodeTimes, type RawSeries } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
-import { buildModel, formatDuration, resolutionLabel, toPoints } from "../src/chart/build.ts";
+import {
+  buildModel,
+  formatDuration,
+  resolutionLabel,
+  toPoints,
+  yRange,
+} from "../src/chart/build.ts";
 
 const origin = 1_000_000_000_000n;
 
@@ -117,5 +123,46 @@ describe("labels", () => {
     expect(resolutionLabel([buckets, raw([], [])])).toBe("partly aggregated · 1 µs per point");
     expect(formatDuration(4_803_200_000n)).toBe("4.8 s");
     expect(formatDuration(12n)).toBe("12 ns");
+  });
+});
+
+describe("yRange", () => {
+  const model = buildModel(
+    [
+      {
+        key: "a",
+        label: "a",
+        color: "#000",
+        unit: "km/h",
+        result: raw([origin - 100n, origin + 100n], [10, 30]),
+      },
+    ],
+    origin,
+    { mode: "line", envelope: false },
+  );
+
+  it("uses the neighbors outside a view that contains no point", () => {
+    expect(yRange(model, "u:km/h", -10, 10)).toEqual([9, 31]);
+  });
+
+  it("is undefined for a view far from all points and for unknown scales", () => {
+    expect(yRange(model, "u:other", -10, 10)).toBeUndefined();
+  });
+
+  it("pads a flat line", () => {
+    const flat = buildModel(
+      [{ key: "b", label: "b", color: "#000", result: raw([origin - 1n, origin + 1n], [0, 0]) }],
+      origin,
+      { mode: "line", envelope: false },
+    );
+    expect(yRange(flat, "s:b", 0, 0.5)).toEqual([-1, 1]);
+  });
+
+  it("includes envelope edges", () => {
+    const m = buildModel([{ key: "c", label: "c", color: "#000", result: buckets }], origin, {
+      mode: "line",
+      envelope: true,
+    });
+    expect(yRange(m, "s:c", 0, 4000)).toEqual([-0.45, 9.45]);
   });
 });

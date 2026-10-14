@@ -6,6 +6,7 @@ import {
   fractionDigits,
   tickLabels,
   tickStep,
+  tickStepForWidth,
   ticks,
 } from "../src/time/axis.ts";
 
@@ -61,5 +62,15 @@ describe("labels", () => {
   it("formats full timestamps with trimmed precision", () => {
     expect(formatFull(fromIso("2026-10-13T09:12:00.253Z"))).toBe("2026-10-13 11:12:00.253");
     expect(formatFull(fromIso("2026-10-13T09:12:00Z"))).toBe("2026-10-13 11:12:00");
+  });
+});
+
+describe("tickStepForWidth", () => {
+  it("chooses fewer ticks when labels get longer", () => {
+    const from = fromIso("2026-10-13T09:30:00Z");
+    // 100 µs on 220 px: 14-character labels need ~100 px each, so two ticks (100 µs step).
+    expect(tickStepForWidth(from, from + 100_000n, 220)).toBe(100_000n);
+    expect(tickStepForWidth(from, from + 100_000n, 1200)).toBe(10_000n);
+    expect(tickStepForWidth(from, from + 2n * 3600n * NS_PER_S, 500)).toBe(15n * 60n * NS_PER_S);
   });
 });

@@ -64,6 +64,8 @@ export interface SeriesSpec {
 export interface ChartModel {
   /** Columns before joining: one table [xs, ...ys] per signal. */
   tables: number[][][];
+  /** y scale of each table. */
+  tableScales: string[];
   series: SeriesSpec[];
   /** Band bounds as uPlot series indices (1-based; 0 is x). */
   bands: [number, number][];
@@ -78,7 +80,13 @@ export function scaleKey(input: SignalInput): string {
 
 /** Assembles series, tables and envelope bands for all loaded signals of a window. */
 export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Display): ChartModel {
-  const model: ChartModel = { tables: [], series: [], bands: [], scales: new Map() };
+  const model: ChartModel = {
+    tables: [],
+    tableScales: [],
+    series: [],
+    bands: [],
+    scales: new Map(),
+  };
   for (const input of inputs) {
     if (!input.result) continue;
     const pts = toPoints(input.result, origin);
@@ -110,8 +118,51 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
       table.push(pts.max, pts.min);
     }
     model.tables.push(table);
+    model.tableScales.push(scale);
   }
   return model;
+}
+
+/** Index of the first x >= value in ascending xs. */
+function lowerBound(xs: number[], value: number): number {
+  let lo = 0;
+  let hi = xs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((xs[mid] as number) < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * y range of a scale for the visible x range: all points inside plus the nearest point outside
+ * each edge, i.e. exactly the points that define the drawn segments. Undefined if none.
+ */
+export function yRange(
+  model: ChartModel,
+  scale: string,
+  xMin: number,
+  xMax: number,
+): [number, number] | undefined {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  model.tables.forEach((table, i) => {
+    if (model.tableScales[i] !== scale) return;
+    const xs = table[0] as number[];
+    const start = Math.max(0, lowerBound(xs, xMin) - 1);
+    const end = Math.min(xs.length, lowerBound(xs, xMax) + 1);
+    for (const column of table.slice(1)) {
+      for (let j = start; j < end; j++) {
+        const v = column[j] as number;
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+  });
+  if (min > max) return undefined;
+  const pad = min === max ? Math.max(Math.abs(min) * 0.1, 1) : (max - min) * 0.05;
+  return [min - pad, max + pad];
 }
 
 /** Aggregation summary for the window header: undefined when nothing is loaded. */

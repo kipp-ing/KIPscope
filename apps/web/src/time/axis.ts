@@ -42,6 +42,23 @@ export function tickStep(from: Timestamp, to: Timestamp, maxTicks: number): bigi
   return TICK_STEPS.find((s) => span / s <= limit) ?? (TICK_STEPS.at(-1) as bigint);
 }
 
+/** Approximate label width in px: "HH:MM:SS" plus fraction digits, at ~6.5 px per character. */
+export function labelWidth(step: bigint): number {
+  const digits = fractionDigits(step);
+  const chars = step >= MIN && step % MIN === 0n ? 5 : 8 + (digits > 0 ? digits + 1 : 0);
+  return chars * 6.5 + 16;
+}
+
+/** Smallest step whose labels fit side by side into `widthPx`. */
+export function tickStepForWidth(from: Timestamp, to: Timestamp, widthPx: number): bigint {
+  const span = to - from;
+  for (const step of TICK_STEPS) {
+    const count = Number(span / step) + 1;
+    if (count * labelWidth(step) <= widthPx) return step;
+  }
+  return TICK_STEPS.at(-1) as bigint;
+}
+
 /** Ticks on multiples of `step` in local time (days and hours align to local midnight). */
 export function ticks(from: Timestamp, to: Timestamp, step: bigint): Timestamp[] {
   const offset = step >= HOUR ? localOffset(from) : 0n;

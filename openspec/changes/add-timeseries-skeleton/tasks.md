@@ -42,13 +42,13 @@
 
 ## 7. Web UI (specs: timeseries-window, signal-catalog)
 
-- [ ] 7.1 Set up the React app with a WebSocket connection to `/api/live` and a minimal layout (window list, add/remove window); verify in the browser that a reload shows the same workspace
-- [ ] 7.2 Build the signal explorer (search, metadata display, add to window); verify in the browser against the real catalog that `MS_312h.DNMOT` shows its DBC unit and is found by a description term
-- [ ] 7.3 Build the time-series window with uPlot: per-window origin, bigint-based tick labels in local time down to sub-microsecond steps; verify unit tests for tick formatting and the 100 µs scenario in the browser
-- [ ] 7.4 Draw aggregated means with optional min/max envelope (off by default) and a visible aggregated indicator; verify in the browser with the spike signal
-- [ ] 7.5 Draw raw points as lines, steps or markers using edge neighbors, never before the first or after the last point; verify unit tests for segment construction and in the browser for each mode
-- [ ] 7.6 Implement zoom/pan with local preview and debounced set-time-range command at gesture end; verify that zooming one window leaves the other unchanged
-- [ ] 7.7 Implement data loading per window and signal with abort + sequence numbers, per-signal loading/error state, and render acknowledgement; verify unit tests for out-of-order responses and in the browser that a failing signal is marked while others stay visible
+- [x] 7.1 Set up the React app with a WebSocket connection to `/api/live` and a minimal layout (window list, add/remove window); verify in the browser that a reload shows the same workspace
+- [x] 7.2 Build the signal explorer (search, metadata display, add to window); verify in the browser against the real catalog that `MS_312h.DNMOT` shows its DBC unit and is found by a description term
+- [x] 7.3 Build the time-series window with uPlot: per-window origin, bigint-based tick labels in local time down to sub-microsecond steps; verify unit tests for tick formatting and the 100 µs scenario in the browser
+- [x] 7.4 Draw aggregated means with optional min/max envelope (off by default) and a visible aggregated indicator; verify in the browser with the spike signal
+- [x] 7.5 Draw raw points as lines, steps or markers using edge neighbors, never before the first or after the last point; verify unit tests for segment construction and in the browser for each mode
+- [x] 7.6 Implement zoom/pan with local preview and debounced set-time-range command at gesture end; verify that zooming one window leaves the other unchanged
+- [x] 7.7 Implement data loading per window and signal with abort + sequence numbers, per-signal loading/error state, and render acknowledgement; verify unit tests for out-of-order responses and in the browser that a failing signal is marked while others stay visible
 
 ## 8. Integration check
 
