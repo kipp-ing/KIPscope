@@ -13,6 +13,10 @@ export class Catalog {
   private entries: SignalInfo[] = [];
   private byId = new Map<string, SignalInfo>();
   private haystacks: string[] = [];
+  /** Set after the first successful refresh. */
+  loadedAt: Date | undefined;
+  /** Message of the last failed refresh, cleared on success. */
+  lastError: string | undefined;
 
   private readonly source: DataSource;
   private readonly loadMetadata: () => Promise<Map<string, DbcSignal>>;
@@ -24,7 +28,14 @@ export class Catalog {
 
   /** Reloads signals and metadata. On failure the previous catalog stays in place. */
   async refresh(): Promise<void> {
-    const [refs, metadata] = await Promise.all([this.source.listSignals(), this.loadMetadata()]);
+    let refs: Awaited<ReturnType<DataSource["listSignals"]>>;
+    let metadata: Map<string, DbcSignal>;
+    try {
+      [refs, metadata] = await Promise.all([this.source.listSignals(), this.loadMetadata()]);
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
     const entries = refs.map(({ dataRef, name }) => {
       const info: SignalInfo = { id: signalId(dataRef, name), dataRef, name };
       const meta = metadata.get(name);
@@ -38,6 +49,8 @@ export class Catalog {
     this.haystacks = entries.map((e) =>
       [e.name, e.description, e.alias, e.unit].filter(Boolean).join("\n").toLowerCase(),
     );
+    this.loadedAt = new Date();
+    this.lastError = undefined;
   }
 
   get size(): number {
