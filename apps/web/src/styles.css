@@ -222,7 +222,8 @@ body {
 }
 
 .signal-card-values ul {
-  min-height: 4.5em;
+  /* natural height when short; floor of ~3 rows only when content is taller */
+  min-height: min(4.5em, calc-size(min-content, size));
   margin: 2px 0 0;
   padding: 0;
   list-style: none;
