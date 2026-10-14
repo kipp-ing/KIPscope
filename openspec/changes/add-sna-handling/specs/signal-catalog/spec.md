@@ -29,7 +29,7 @@ SNA values SHALL be the union of the `GenSigSNA` attribute (raw hex, e.g. `"1FFh
 - **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc"
 
 ### Requirement: A valid VAL_ label beats GenSigSNA
-When the `VAL_` table labels the `GenSigSNA` code with anything other than `SNA` or `SNV`, that code SHALL NOT be an SNA value; the raw value is valid. `VAL_` codes labelled `SNA`/`SNV` stay SNA. Origin: D-014 (supersedes D-010's "on conflict both count as SNA").
+When the `VAL_` table labels the `GenSigSNA` code with anything other than `SNA` or `SNV`, that code SHALL NOT be an SNA value; the raw value is valid. `VAL_` codes labelled `SNA`/`SNV` stay SNA. Exception: the labels `--`, `NO_TEMP_SENSOR` and `RES` mean "no value" and do NOT beat `GenSigSNA`; the code stays SNA. The list is fixed and grows only by decision. Origin: D-014 (supersedes D-010's "on conflict both count as SNA"), D-015.
 
 #### Scenario: State labelled OK
 - **WHEN** a signal has `GenSigSNA "1h"` and `VAL_ ... 1 "OK"` (real: `BS_208h.SZS`, 100 % of its data is raw 1)
@@ -40,6 +40,11 @@ When the `VAL_` table labels the `GenSigSNA` code with anything other than `SNA`
 - **WHEN** a signal has `GenSigSNA "1h"`, `VAL_ ... 1 "MM37"` and `15 "SNV"` (real: `YRG_156h.CLU_TYPE`; test DBC: `Sna_800h.LEVEL` with `"1h"` and `1 "OK" 7 "SNV"`)
 - **THEN** only the labelled code is SNA (CLU_TYPE raws {15}; LEVEL raws {7})
 - **Evidence:** `apps/server/test/dbc.test.ts` › "lets a valid VAL_ label beat GenSigSNA"; "derives SNA values from the real h-can.dbc"
+
+#### Scenario: No-value label does not beat GenSigSNA
+- **WHEN** a signal has `GenSigSNA "FFh"` and a `VAL_` label `--` or `NO_TEMP_SENSOR` on 255 (real: `TPM_A1.TirePress_*`, `COMBI_408h.T_AUSSEN`; `MS_608h.FCOD_MOT` with `RES` on 63)
+- **THEN** that code stays SNA (raw `FFh` / 63 is not shown as a measurement)
+- **Evidence:** `apps/server/test/dbc.test.ts` › "keeps GenSigSNA when the VAL_ label means no value"; "derives SNA values from the real h-can.dbc"
 
 ### Requirement: GenSigSNA ignored on 1-bit and checksum signals
 `GenSigSNA` SHALL NOT define an SNA value for a signal of bit length 1, nor for a checksum/CRC signal. A signal is a checksum/CRC signal exactly when its `SG_` name (without message name) matches `/^CRC_|(^|_)CHKSUM(_|$)/i`. `VAL_` labels `SNA`/`SNV` still apply to such signals. Origin: D-014.

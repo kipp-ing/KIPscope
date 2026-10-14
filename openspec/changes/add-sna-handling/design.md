@@ -22,7 +22,7 @@ DBCs from `config.ts` defaults: `../CarController/vehicles/smart451/dbc/h-can.db
 | `VAL_` labels `SNV` / `SNA` | 120 / 33 (exact upper case) | 0 |
 | `"0h"` signal with `VAL_` SNA/SNV on 0 | 0 | 0 |
 | attribute ≠ label (union gives 2 codes) | 3 under D-010; 1 under D-014: `BS_328h.ESP_DSPL` {30, 31} (`CLU_TYPE` → {15}, `OC_P_Fast_SRS` → {0}) | 0 |
-| signals with ≥ 1 SNA code: D-010 only / with D-014 | 187 / 161 | 475 / 475 |
+| signals with ≥ 1 SNA code: D-010 only / with D-014 | 187 / 171 | 475 / 475 |
 | signed signals with SNA, `SIG_VALTYPE_`, multiplexed, negative `VAL_`, exponent in factor | none | none |
 
 Examples: `COMBI_412h.V_ANZ` 9 bit (1,0), `"1FFh"` + `511 "SNV"` → 511 km/h. `BS_200h.DVL` 14 bit (0.5,0), `"3FFFh"` + `16383 "SNV"` → 8191.5 1/min. `MS_312h.DNMOT` 8 bit (1,−127), `"FFh"` → 128; data is constant −127 (raw 0, valid).
@@ -47,7 +47,7 @@ carserver `sdlog.signals`, vehicle `smart451`: 428 signals, 176 of them have SNA
 `parseDbc` additionally reads from each `SG_` line: bit length, sign (`+`/`-`), factor, offset (`SG_ <name> [mux] : <start>|<len>@<order><sign> (<factor>,<offset>)`), and every `BA_ "GenSigSNA" SG_ <id> <name> "<hex>h";`.
 
 Per signal, the set of raw codes is the union of:
-- `GenSigSNA` parsed as hex, **unless** it is 0 (`"0h"`, D-010) or empty (the `BA_DEF_DEF_` default `""`), or not matching `^[0-9A-Fa-f]+h$`, or ≥ 2^len (ignored), **or** (D-014) the signal has bit length 1, or its `SG_` name matches `/^CRC_|(^|_)CHKSUM(_|$)/i` (checksum/CRC), or its `VAL_` table labels that code with anything other than `SNA`/`SNV`;
+- `GenSigSNA` parsed as hex, **unless** it is 0 (`"0h"`, D-010) or empty (the `BA_DEF_DEF_` default `""`), or not matching `^[0-9A-Fa-f]+h$`, or ≥ 2^len (ignored), **or** (D-014) the signal has bit length 1, or its `SG_` name matches `/^CRC_|(^|_)CHKSUM(_|$)/i` (checksum/CRC), or its `VAL_` table labels that code with anything other than `SNA`/`SNV` **and** other than the fixed no-value list `--`, `NO_TEMP_SENSOR`, `RES` (D-015; trimmed, exact match; those labels keep the code SNA);
 - every `VAL_` value whose label, trimmed, equals `SNA` or `SNV` (case-insensitive). A negative `VAL_` value is normalised to its unsigned bit pattern (`value mod 2^len`).
 
 Raw → physical: `(signed && raw ≥ 2^(len−1) ? raw − 2^len : raw) × factor + offset`, using `BigInt` for the bit arithmetic, then `Number`. Codes are sorted by raw ascending; `sources` lists `"GenSigSNA"` before `"VAL_"`. A signal without codes gets no `sna` field. First-file-wins applies to the whole entry, SNA included (42 message names exist in both files; h-can wins).
@@ -257,7 +257,7 @@ Seed spot checks change: total rows 21,613,857 (+1,146), distinct timestamped si
 
 ## Risks / Trade-offs
 
-- [D-014's "anything other than `SNA`/`SNV`" also counts `--` and `NO_TEMP_SENSOR` as valid: `TPM_A1.TirePress_*` (5), `COMBI_408h.T_AUSSEN(_RAW)`, `AC_A1.T_SOLL`, `AC_A1.T_INNEN` lose `"FFh"` as SNA, and `MS_608h.FCOD_MOT` loses 63 (`RES`)] → implemented as decided; these labels read like "not available", so this is a finding for Jan, not a change.
+- [D-014's "anything other than `SNA`/`SNV`" would count `--`, `NO_TEMP_SENSOR` and `RES` as valid (`TPM_A1.TirePress_*`, `COMBI_408h.T_AUSSEN(_RAW)`, `AC_A1.T_SOLL`, `AC_A1.T_INNEN`, `MS_608h.FCOD_MOT` 63)] → resolved by D-015: these labels do not beat `GenSigSNA`; the list is fixed and grows only by decision.
 - [`null` also results from NaN in JSON (`JSON.stringify(NaN)`)] → would be shown as SNA. None found in the checked signals; detecting NaN is out of scope.
 - [Catalog not loaded → series 503] → previously series worked without catalog. In practice the explorer and `window.addSignal` already need the catalog; `POST /api/catalog/refresh` recovers.
 - [Step hold inserts a drawing point at the SNA timestamp] → it repeats a measured value at the end of its own hold, which step mode draws anyway; covered by a unit test.
@@ -277,4 +277,4 @@ Jan answered the former open questions (2026-10-14); only the derivation in S1 c
 3. **Look of SNA marks:** thin strip per signal at the bottom of the plot (S7), as designed.
 4. **Bucket marks:** a bucket is marked from a single SNA point (S7), as designed.
 
-Effect on h-can: 187 → 161 signals with SNA codes (−5 checksum, −7 1-bit, −14 label); hybrid-can unchanged at 475. The carserver counts above (176 signals with SNA codes, 95 with hits) were measured under D-010 only.
+Effect on h-can: 187 → 171 signals with SNA codes (D-014 alone gave 161; D-015 keeps 10 of them, recounted with the real h-can.dbc); hybrid-can unchanged at 475. The carserver counts above (176 signals with SNA codes, 95 with hits) were measured under D-010 only.
