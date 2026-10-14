@@ -1,6 +1,6 @@
 # AGENTS.md
 
-letsview: a data viewer.
+letsview: a workspace for exploring historical time series. Concept (German, source of requirements): [docs/concept.md](docs/concept.md).
 
 ## Rules
 
@@ -8,4 +8,4 @@ letsview: a data viewer.
 - Work spec-driven with OpenSpec: specs in [openspec/specs/](openspec/specs/), changes in [openspec/changes/](openspec/changes/), config in [openspec/config.yaml](openspec/config.yaml).
 - Record decisions OpenSpec doesn't cover in [docs/decisions.md](docs/decisions.md).
 - All artifacts, code and comments in English.
-- When the user ends the session: commit and push without asking.
+- Commit often without asking (every coherent step, rather too often than too rarely). When the user ends the session: push without asking.
