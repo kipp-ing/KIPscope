@@ -8,7 +8,7 @@ import {
   signalColor,
   windowUnits,
 } from "@letsview/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
 import {
   canDrop,
@@ -62,6 +62,12 @@ function isTextField(el: Element | null): boolean {
 /** Optional `dropState` prop; absent rather than undefined (exactOptionalPropertyTypes). */
 const dropProp = (state: "source" | "target" | "refused" | undefined) =>
   state ? { dropState: state } : {};
+
+/** Space left and right of a window's plot, in CSS px (axes, padding). */
+interface Insets {
+  left: number;
+  right: number;
+}
 
 const toRange = (r: { from: string; to: string }): Range => ({
   from: BigInt(r.from),
@@ -120,9 +126,9 @@ export function App() {
         // While linked, a new window takes the shared range (design D6); otherwise the extent.
         const range =
           linked && windows.length > 0 ? undefined : extentRange([await fetchExtent(signal.id)]);
+        // Untitled: the header shows "Window <n>", which cannot go stale when signals move.
         const created = await command({
           type: "window.create",
-          title: signal.name,
           ...(range ? { from: range.from.toString(), to: range.to.toString() } : {}),
         });
         if (!created.ok || !created.created) return;
@@ -184,8 +190,15 @@ export function App() {
       if (!w || w.signals.length === 0) return;
       try {
         const ids = [...new Set(w.signals.map((s) => s.signalId))];
-        const extent = extentRange(await Promise.all(ids.map((id) => fetchExtent(id))));
-        if (!extent) return;
+        // A signal without data (or unknown after a restart) has no extent; the others still count.
+        const results = await Promise.allSettled(ids.map((id) => fetchExtent(id)));
+        const extents = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+        const extent = extentRange(extents);
+        if (!extent) {
+          const failed = results.find((r) => r.status === "rejected");
+          if (failed) throw failed.reason;
+          return;
+        }
         const target = clampRange(extent);
         const current = toRange(w.range);
         if (target.from === current.from && target.to === current.to) return;
@@ -198,6 +211,36 @@ export function App() {
     },
     [historyOf, setRange],
   );
+
+  // Plot insets (natural, per window): every window gets the widest left and right inset, so the
+  // same timestamp sits at the same x in all windows.
+  const [natural, setNatural] = useState<ReadonlyMap<string, Insets>>(new Map());
+  const onInsets = useCallback((windowId: string, next: Insets) => {
+    setNatural((prev) => {
+      const old = prev.get(windowId);
+      if (old && old.left === next.left && old.right === next.right) return prev;
+      return new Map(prev).set(windowId, next);
+    });
+  }, []);
+  const windowKey = windows.map((w) => w.id).join(",");
+  useEffect(() => {
+    const ids = new Set(windowKey.split(","));
+    setNatural((prev) =>
+      [...prev.keys()].every((id) => ids.has(id))
+        ? prev
+        : new Map([...prev].filter(([id]) => ids.has(id))),
+    );
+  }, [windowKey]);
+  let maxLeft = 0;
+  let maxRight = 0;
+  for (const w of windows) {
+    const n = natural.get(w.id);
+    if (n) {
+      maxLeft = Math.max(maxLeft, n.left);
+      maxRight = Math.max(maxRight, n.right);
+    }
+  }
+  const insets = useMemo(() => ({ left: maxLeft, right: maxRight }), [maxLeft, maxRight]);
 
   // Backspace steps back in the window under the pointer, else in the window zoomed last.
   const hovered = useRef<string | undefined>(undefined);
@@ -452,6 +495,8 @@ export function App() {
             onBack={onBack}
             onReset={onReset}
             onDragStart={onDragStart}
+            insets={insets}
+            onInsets={onInsets}
             {...dropProp(dropStateOf(w.id))}
           />
         ))}

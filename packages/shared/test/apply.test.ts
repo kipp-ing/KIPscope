@@ -480,3 +480,16 @@ describe("at most four units per window", () => {
     expect(r).toMatchObject({ ok: false, code: "too_many_units" });
   });
 });
+
+describe("untitled windows (lead decision a)", () => {
+  it("titles a window created without a title as Window <n>", () => {
+    let s = ok(EMPTY_WORKSPACE, create).workspace;
+    s = ok(s, create).workspace;
+    expect(s.windows[0]?.title).toBeUndefined();
+    expect(windowTitle(s.windows[0] as never)).toBe("Window 1");
+    expect(windowTitle(s.windows[1] as never)).toBe("Window 2");
+    // A signal added later does not give the window a title.
+    s = ok(s, { type: "window.addSignal", windowId: "w1", signalId: "car/V1" }).workspace;
+    expect(windowTitle(s.windows[0] as never)).toBe("Window 1");
+  });
+});

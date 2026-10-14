@@ -51,6 +51,17 @@ const AXIS_TICK = 4;
 /** uPlot side codes. */
 const LEFT = 3;
 const RIGHT = 1;
+/** Inset of a side without y axis (uPlot's own default), room for the edge x tick label. */
+const NO_AXIS_INSET = 25;
+/**
+ * Wheel zoom: 2^(1/5) per wheel tick, so five ticks halve or double the span. A tick is 100 px
+ * (deltaMode 0) or 3 lines (deltaMode 1); trackpads send fractions of a tick and zoom smoothly.
+ */
+const WHEEL_TICK_FACTOR = 2 ** (1 / 5);
+const WHEEL_TICK_PX = 100;
+const WHEEL_TICK_LINES = 3;
+/** One wheel event zooms at most this many ticks (fast flicks would otherwise jump). */
+const WHEEL_MAX_TICKS = 5;
 
 const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
 const HINT_REFUSED = `At most ${MAX_UNITS} units per window`;
@@ -73,6 +84,32 @@ interface Props {
   onDragStart: (source: DragSource, event: React.PointerEvent) => void;
   /** Highlight while a drag runs: "source", "target" (canDrop), "refused" (unit limit), or undefined. */
   dropState?: "source" | "target" | "refused";
+  /** Plot left/right inset in CSS px to use (max over all windows), so linked windows line up. */
+  insets?: Insets;
+  /** Reports this window's own total y axis width per side, when it changes. */
+  onInsets?: (windowId: string, natural: Insets) => void;
+}
+
+interface Insets {
+  left: number;
+  right: number;
+}
+
+const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
+
+/** Total y axis width per side; a side without axis counts as NO_AXIS_INSET. */
+function axisWidths(drawn: AxisSpec[], sizes: number[]) {
+  let left = 0;
+  let right = 0;
+  drawn.forEach((axis, j) => {
+    if (isLeft(axis.side)) left += sizes[j] ?? 0;
+    else right += sizes[j] ?? 0;
+  });
+  return {
+    left,
+    right,
+    natural: { left: left || NO_AXIS_INSET, right: right || NO_AXIS_INSET },
+  };
 }
 
 /** null mode NULL_EXPAND of uPlot.join: alignment artifacts next to an SNA null become null. */
@@ -97,6 +134,9 @@ const clampHeight = (h: number) =>
   Math.min(MAX_PLOT_HEIGHT, Math.max(MIN_PLOT_HEIGHT, Math.round(h)));
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
+
+/** Hides the crosshair until the next pointer move. */
+const hideCursor = (u: uPlot) => u.setCursor({ left: -10, top: -10 });
 
 function seriesOptions(spec: SeriesSpec): uPlot.Series {
   const paths =
@@ -221,7 +261,7 @@ function placeTitles(u: uPlot, row: HTMLElement | null, drawn: AxisSpec[], sizes
   drawn.forEach((axis, j) => {
     const size = sizes[j] ?? 0;
     let x: number;
-    if (axis.side === "L" || axis.side === "L2") {
+    if (isLeft(axis.side)) {
       left -= size;
       x = left;
     } else {
@@ -303,6 +343,8 @@ export function TimeseriesWindow({
   onReset,
   onDragStart,
   dropState,
+  insets,
+  onInsets,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const titleRow = useRef<HTMLDivElement>(null);
@@ -337,6 +379,11 @@ export function TimeseriesWindow({
   const gestureStart = useRef<Range | undefined>(undefined);
   const onResetRef = useRef(onReset);
   onResetRef.current = onReset;
+  const insetsRef = useRef(insets);
+  insetsRef.current = insets;
+  const onInsetsRef = useRef(onInsets);
+  onInsetsRef.current = onInsets;
+  const reportedInsets = useRef<Insets | undefined>(undefined);
 
   const target = Math.min(4000, Math.max(100, Math.round(width)));
   const requests: LoadRequest[] = useMemo(
@@ -414,6 +461,7 @@ export function TimeseriesWindow({
     gestureStart.current ??= shown;
     preview.current = r;
     setView(u, r);
+    hideCursor(u);
     commit(r);
   };
   const applyRangeRef = useRef(applyRange);
@@ -509,6 +557,20 @@ export function TimeseriesWindow({
           fill: `${model.series[a - 1]?.color ?? "#000"}33`,
         })),
         legend: { show: false },
+        // Pads the side whose axes are narrower than the widest window's (insets), so the same
+        // timestamp sits at the same x in every window. Padding lies outside the outer axes.
+        padding: [
+          null,
+          () => {
+            const { right, natural } = axisWidths(drawnAxes, sizes);
+            return Math.max(natural.right, insetsRef.current?.right ?? 0) - right;
+          },
+          null,
+          () => {
+            const { left, natural } = axisWidths(drawnAxes, sizes);
+            return Math.max(natural.left, insetsRef.current?.left ?? 0) - left;
+          },
+        ],
         cursor: {
           drag: { x: true, y: false, setScale: false },
           bind: {
@@ -529,6 +591,12 @@ export function TimeseriesWindow({
               drawSnaLanes(self, modelRef.current.sna);
               drawNarrowSignals(self, modelRef.current);
               placeTitles(self, titleRow.current, drawnAxes, sizes);
+              const { natural } = axisWidths(drawnAxes, sizes);
+              const last = reportedInsets.current;
+              if (!last || last.left !== natural.left || last.right !== natural.right) {
+                reportedInsets.current = natural;
+                onInsetsRef.current?.(w.id, natural);
+              }
             },
           ],
           setSelect: [
@@ -562,10 +630,18 @@ export function TimeseriesWindow({
         applyRangeRef.current(u, min + delta, max + delta);
       } else {
         const at = u.posToVal(e.offsetX, "x");
-        const factor = e.deltaY > 0 ? 1.25 : 0.8;
+        const perTick =
+          e.deltaMode === WheelEvent.DOM_DELTA_LINE
+            ? WHEEL_TICK_LINES
+            : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+              ? 1 / WHEEL_MAX_TICKS
+              : WHEEL_TICK_PX;
+        const tickCount = Math.max(-WHEEL_MAX_TICKS, Math.min(WHEEL_MAX_TICKS, e.deltaY / perTick));
+        const factor = WHEEL_TICK_FACTOR ** tickCount;
         applyRangeRef.current(u, at - (at - min) * factor, at + (max - at) * factor);
       }
     };
+    // Leaving the plot hides the crosshair through uPlot's own mouseleave handler.
     u.over.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       u.over.removeEventListener("wheel", onWheel);
@@ -574,9 +650,11 @@ export function TimeseriesWindow({
     };
   }, [structure, width === 0]);
 
+  // setSize also re-runs uPlot's size convergence, which reads the new insets.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: insets are read via insetsRef
   useEffect(() => {
     uplot.current?.setSize({ width, height: plotHeight });
-  }, [width, plotHeight]);
+  }, [width, plotHeight, insets?.left, insets?.right]);
 
   // Data and view: runs after every render; cheap compared to drawing.
   useLayoutEffect(() => {

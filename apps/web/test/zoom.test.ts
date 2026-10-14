@@ -103,3 +103,21 @@ describe("ZoomHistory", () => {
     expect(get(false, "w1").back()).toEqual(r(2));
   });
 });
+
+describe("full extent (lead decision e)", () => {
+  it("never returns the 1900-2262 bounds for finite data extents", () => {
+    const first = fromIso("2026-10-11T12:34:24.824Z");
+    const last = fromIso("2026-10-13T13:17:33.221Z");
+    const r = extentRange([{ first: first.toString(), last: last.toString() }]);
+    expect(r).toBeDefined();
+    if (!r) return;
+    expect(r.from).toBe(first);
+    expect(r.to).toBe(last + NS_PER_MS);
+    expect(r).not.toEqual({ from: MIN, to: MAX });
+    // Clamping an extent range inside the bounds leaves it untouched.
+    expect(clampRange(r)).toEqual(r);
+    // A single-point extent stays a one-millisecond range, not the bounds.
+    const one = extentRange([{ first: "5000000000", last: "5000000000" }]);
+    expect(one && clampRange(one)).toEqual({ from: 5_000_000_000n, to: 5_001_000_000n });
+  });
+});
