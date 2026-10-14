@@ -1,4 +1,9 @@
-import type { SignalInfo, SignalPage, TimeseriesWindow } from "@letsview/shared";
+import {
+  type SignalInfo,
+  type SignalPage,
+  type TimeseriesWindow,
+  windowTitle,
+} from "@letsview/shared";
 import { useEffect, useState } from "react";
 import { searchSignals } from "./api.ts";
 import { formatSnaValue } from "./chart/build.ts";
@@ -58,7 +63,7 @@ export function SignalExplorer({ windows, onAdd, onSeen }: Props) {
           <option value={NEW_WINDOW}>New window</option>
           {windows.map((w) => (
             <option key={w.id} value={w.id}>
-              {w.title ?? w.id}
+              {windowTitle(w)}
             </option>
           ))}
         </select>

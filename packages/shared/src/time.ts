@@ -8,6 +8,10 @@ export const NS_PER_US = 1_000n;
 export const NS_PER_MS = 1_000_000n;
 export const NS_PER_S = 1_000_000_000n;
 
+/** Inclusive bounds for every timestamp in commands and series requests (int64 ns and ClickHouse DateTime64 safe). */
+export const TIME_MIN: Timestamp = -2_208_988_800_000_000_000n; // 1900-01-01T00:00:00Z
+export const TIME_MAX: Timestamp = 9_223_286_400_000_000_000n; // 2262-04-11T00:00:00Z
+
 const DECIMAL = /^-?\d+$/;
 const ISO =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;

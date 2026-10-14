@@ -1,16 +1,24 @@
-import type {
-  CommandInput,
-  CommandResult,
-  DisplayMode,
-  RenderError,
-  SignalInfo,
-  TimeseriesWindow as WindowState,
+import {
+  type CommandInput,
+  type CommandResult,
+  DEFAULT_PLOT_HEIGHT,
+  type DisplayMode,
+  MAX_PLOT_HEIGHT,
+  MAX_UNITS,
+  MIN_PLOT_HEIGHT,
+  type RenderError,
+  type SignalInfo,
+  type TimeseriesWindow as WindowState,
+  windowTitle,
 } from "@letsview/shared";
+import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import "./window.css";
 import { fetchSeries } from "../api.ts";
-import { formatFull, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
+import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
+import type { AxisSpec } from "./axes.ts";
 import {
   buildModel,
   type ChartModel,
@@ -22,38 +30,50 @@ import {
   snaShare,
   yRange,
 } from "./build.ts";
+import type { DragSource } from "./drag.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
+import { clampRange, type Range } from "./zoom.ts";
 
-const COLORS = [
-  "#2563eb",
-  "#dc2626",
-  "#16a34a",
-  "#9333ea",
-  "#ea580c",
-  "#0891b2",
-  "#be185d",
-  "#4d7c0f",
-];
-const PLOT_HEIGHT = 280;
 const COMMIT_DELAY_MS = 300;
-const MIN_SPAN_NS = 100;
+const MIN_SPAN_NS = 100n;
 /** Re-anchor the origin before offsets lose float precision (2^53 ns ≈ 104 days). */
 const MAX_ORIGIN_DISTANCE = 2n ** 50n;
+
+/** Axis tick font; measured to size each y axis to its widest tick label. */
+const AXIS_FONT = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
+/** y axis size beyond the widest tick label: tick (4) + gap (5) + spare (3). */
+const AXIS_PAD = 12;
+/** An axis is at least as wide as its title (+ 4 px), up to this many CSS px. */
+const MAX_TITLE_WIDTH = 96;
+/** Stand-in tick label sizing an axis whose data is still loading (about five characters). */
+const LOADING_TICK_TEXT = "00000";
+const AXIS_TICK = 4;
+/** uPlot side codes. */
+const LEFT = 3;
+const RIGHT = 1;
+
+const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
+const HINT_REFUSED = `At most ${MAX_UNITS} units per window`;
 
 interface Props {
   window: WindowState;
   revision: number;
   info: (signalId: string) => SignalInfo | undefined;
+  /** From signalColor(workspace, id). */
+  colorOf: (signalId: string) => string;
   onCommand: (command: CommandInput) => Promise<CommandResult>;
   onReady: (windowId: string, revision: number, errors: RenderError[]) => void;
+  /** Called once per committed zoom/pan/zoom-out gesture with the range shown before it. */
+  onZoomed: (windowId: string, previous: Range) => void;
+  canGoBack: boolean;
+  onBack: (windowId: string) => void;
+  /** Double-click on the plot: App fetches the extents, pushes history, sends window.setRange. */
+  onReset: (windowId: string) => void;
+  /** Pointer down on a legend row's grip. */
+  onDragStart: (source: DragSource, event: React.PointerEvent) => void;
+  /** Highlight while a drag runs: "source", "target" (canDrop), "refused" (unit limit), or undefined. */
+  dropState?: "source" | "target" | "refused";
 }
-
-interface Range {
-  from: bigint;
-  to: bigint;
-}
-
-const colorOf = (index: number) => COLORS[index % COLORS.length] as string;
 
 /** null mode NULL_EXPAND of uPlot.join: alignment artifacts next to an SNA null become null. */
 const NULL_EXPAND = 2;
@@ -61,6 +81,22 @@ const NULL_EXPAND = 2;
 const SNA_LANE_HEIGHT = 6;
 const SNA_MIN_WIDTH = 2;
 const SNA_ALPHA = 0.6;
+/** A signal whose data is narrower than this many CSS px is drawn as a column this wide. */
+const MIN_SIGNAL_WIDTH = 2;
+
+let measureContext: CanvasRenderingContext2D | null | undefined;
+/** Width of a tick label in CSS px. */
+function textWidth(text: string): number {
+  measureContext ??= document.createElement("canvas").getContext("2d");
+  if (!measureContext) return text.length * 7;
+  measureContext.font = AXIS_FONT;
+  return measureContext.measureText(text).width;
+}
+
+const clampHeight = (h: number) =>
+  Math.min(MAX_PLOT_HEIGHT, Math.max(MIN_PLOT_HEIGHT, Math.round(h)));
+
+const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
 
 function seriesOptions(spec: SeriesSpec): uPlot.Series {
   const paths =
@@ -124,13 +160,164 @@ function drawSnaLanes(u: uPlot, lanes: ChartModel["sna"]) {
   ctx.restore();
 }
 
-export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady }: Props) {
+/**
+ * Draws every signal whose data spans less than MIN_SIGNAL_WIDTH px as a column of that width
+ * from its lowest to its highest value (envelope included). At wide ranges, such as the clamped
+ * 1900 … 2262, all buckets fall into one pixel and the line alone would vanish.
+ */
+function drawNarrowSignals(u: uPlot, model: ChartModel) {
+  const { ctx } = u;
+  const { left, top, width, height } = u.bbox;
+  const dpr = devicePixelRatio;
+  const minWidth = MIN_SIGNAL_WIDTH * dpr;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  model.tables.forEach((table, i) => {
+    const xs = table[0] as number[];
+    const first = xs[0];
+    const last = xs.at(-1);
+    if (first === undefined || last === undefined) return;
+    const x0 = u.valToPos(first, "x", true);
+    const x1 = u.valToPos(last, "x", true);
+    if (x1 - x0 >= minWidth) return;
+    let lo = Number.POSITIVE_INFINITY;
+    let hi = Number.NEGATIVE_INFINITY;
+    for (const column of table.slice(1)) {
+      for (const v of column) {
+        if (v === null || v === undefined) continue;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    const scale = model.tableScales[i];
+    // sna[i] belongs to the same signal as tables[i]: both hold one entry per loaded signal.
+    const color = model.sna[i]?.color;
+    if (lo > hi || !scale || !color) return;
+    const yTop = u.valToPos(hi, scale, true);
+    const yBottom = u.valToPos(lo, scale, true);
+    const center = (x0 + x1) / 2;
+    ctx.fillStyle = color;
+    ctx.fillRect(
+      center - minWidth / 2,
+      yTop - dpr,
+      minWidth,
+      Math.max(0, yBottom - yTop) + 2 * dpr,
+    );
+  });
+  ctx.restore();
+}
+
+/**
+ * Centres each axis title over its axis column. uPlot stacks axes of one side from the plot
+ * outward in array order (L before L2, R before R2); sizes[j] is the size of axes[j] in CSS px.
+ */
+function placeTitles(u: uPlot, row: HTMLElement | null, drawn: AxisSpec[], sizes: number[]) {
+  if (!row) return;
+  const dpr = devicePixelRatio;
+  let left = u.bbox.left / dpr;
+  let right = (u.bbox.left + u.bbox.width) / dpr;
+  drawn.forEach((axis, j) => {
+    const size = sizes[j] ?? 0;
+    let x: number;
+    if (axis.side === "L" || axis.side === "L2") {
+      left -= size;
+      x = left;
+    } else {
+      x = right;
+      right += size;
+    }
+    const el = row.children[j] as HTMLElement | undefined;
+    if (el) {
+      el.style.left = `${x}px`;
+      el.style.width = `${size}px`;
+    }
+  });
+}
+
+/** Window title; a click turns it into a text field (Enter or blur saves, Esc cancels). */
+function WindowTitle({
+  window: w,
+  onCommand,
+}: {
+  window: WindowState;
+  onCommand: Props["onCommand"];
+}) {
+  const [editing, setEditing] = useState(false);
+  const cancelled = useRef(false);
+  const title = windowTitle(w);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="window-title"
+        title={title}
+        onClick={() => {
+          cancelled.current = false;
+          setEditing(true);
+        }}
+      >
+        {title}
+      </button>
+    );
+  }
+  const save = (value: string) => {
+    setEditing(false);
+    if (cancelled.current) return;
+    const next = value.trim();
+    if (next !== (w.title ?? "")) onCommand({ type: "window.rename", windowId: w.id, title: next });
+  };
+  return (
+    <input
+      className="window-title-input"
+      // biome-ignore lint/a11y/noAutofocus: the field appears on an explicit click on the title
+      autoFocus
+      defaultValue={w.title ?? ""}
+      placeholder={title}
+      maxLength={200}
+      aria-label="Window title"
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={(e) => save(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+export function TimeseriesWindow({
+  window: w,
+  revision,
+  info,
+  colorOf,
+  onCommand,
+  onReady,
+  onZoomed,
+  canGoBack,
+  onBack,
+  onReset,
+  onDragStart,
+  dropState,
+}: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
+  const titleRow = useRef<HTMLDivElement>(null);
   const uplot = useRef<uPlot | undefined>(undefined);
   const [width, setWidth] = useState(0);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const loader = useMemo(() => new SeriesLoader(fetchSeries, rerender), []);
   useEffect(() => () => loader.dispose(), [loader]);
+
+  // Height being dragged; shown until the window's stored height changes from `base`.
+  const [heightDrag, setHeightDrag] = useState<{ base?: number; height: number } | undefined>();
+  // The stored height changed (our setHeight arrived, or another client's): the drag is over.
+  if (heightDrag && heightDrag.base !== w.height) setHeightDrag(undefined);
+  const storedHeight = w.height ?? DEFAULT_PLOT_HEIGHT;
+  const plotHeight = heightDrag && heightDrag.base === w.height ? heightDrag.height : storedHeight;
 
   const serverRange: Range = useMemo(
     () => ({ from: BigInt(w.range.from), to: BigInt(w.range.to) }),
@@ -146,6 +333,10 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
   const preview = useRef<Range | undefined>(undefined);
   const commitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const inFlight = useRef(false);
+  // Range shown before the gesture that is being previewed (for the zoom history).
+  const gestureStart = useRef<Range | undefined>(undefined);
+  const onResetRef = useRef(onReset);
+  onResetRef.current = onReset;
 
   const target = Math.min(4000, Math.max(100, Math.round(width)));
   const requests: LoadRequest[] = useMemo(
@@ -163,9 +354,13 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
   );
   useEffect(() => loader.update(requests), [loader, requests]);
 
-  const inputs = w.signals.map((s, i) => {
+  const inputs = w.signals.map((s) => {
     const meta = info(s.signalId);
-    const input: SignalInput = { key: s.id, label: meta?.name ?? s.signalId, color: colorOf(i) };
+    const input: SignalInput = {
+      key: s.id,
+      label: meta?.name ?? s.signalId,
+      color: colorOf(s.signalId),
+    };
     const result = loader.get(s.id)?.result;
     if (meta?.unit) input.unit = meta.unit;
     if (result) input.result = result;
@@ -174,7 +369,9 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
   const model: ChartModel = buildModel(inputs, origin.current, w.display);
   const modelRef = useRef(model);
   modelRef.current = model;
-  const structure = JSON.stringify([model.series, model.bands, [...model.scales]]);
+  // Drawn axes: every axis of the layout, loaded or not, so sides do not jump while loading.
+  const drawnAxes = model.layout.axes;
+  const structure = JSON.stringify([model.series, model.bands, [...model.scales], drawnAxes]);
 
   // --- uPlot instance -------------------------------------------------------------------------
 
@@ -190,14 +387,17 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
     clearTimeout(commitTimer.current);
     commitTimer.current = setTimeout(async () => {
       commitTimer.current = undefined;
+      const previous = gestureStart.current;
+      gestureStart.current = undefined;
       inFlight.current = true;
-      await onCommand({
+      const result = await onCommand({
         type: "window.setRange",
         windowId: w.id,
         from: r.from.toString(),
         to: r.to.toString(),
       });
       inFlight.current = false;
+      if (result.ok && previous) onZoomed(w.id, previous);
       // The accepted range arrives with the next revision; drop the preview if nothing newer.
       if (preview.current === r) preview.current = undefined;
       rerender();
@@ -205,11 +405,13 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
   };
 
   const applyRange = (u: uPlot, min: number, max: number) => {
-    if (max - min < MIN_SPAN_NS) return;
-    const r = {
+    const r = clampRange({
       from: origin.current + BigInt(Math.round(min)),
       to: origin.current + BigInt(Math.round(max)),
-    };
+    });
+    const shown = viewRange();
+    if (r.to - r.from < MIN_SPAN_NS || sameRange(r, shown)) return;
+    gestureStart.current ??= shown;
     preview.current = r;
     setView(u, r);
     commit(r);
@@ -222,6 +424,8 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
     const el = plotRef.current;
     if (!el || width === 0) return;
     let step = 1n;
+    // Month or year labels of the last splits when the span is too wide for clock steps.
+    let calendarLabels: string[] | undefined;
     const scales: uPlot.Scales = { x: { time: false } };
     const axes: uPlot.Axis[] = [
       {
@@ -232,17 +436,24 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
           const max = u.scales.x?.max ?? 1;
           const from = origin.current + BigInt(Math.floor(min));
           const to = origin.current + BigInt(Math.ceil(max));
-          step = tickStepForWidth(from, to, u.bbox.width / devicePixelRatio);
+          const widthPx = u.bbox.width / devicePixelRatio;
+          const calendar = calendarTicks(from, to, widthPx);
+          calendarLabels = calendar?.labels;
+          if (calendar) return calendar.ticks.map((t) => Number(t - origin.current));
+          step = tickStepForWidth(from, to, widthPx);
           return ticks(from, to, step).map((t) => Number(t - origin.current));
         },
         values: (_u, splits) =>
+          calendarLabels ??
           tickLabels(
             splits.map((s) => origin.current + BigInt(Math.round(s))),
             step,
           ),
       },
     ];
-    [...model.scales.entries()].forEach(([key, label], i) => {
+    // Every drawn axis needs its scale, also before its data has loaded (range then [0, 1]).
+    const scaleKeys = new Set([...model.scales.keys(), ...drawnAxes.map((a) => a.scale)]);
+    for (const key of scaleKeys) {
       // Own y range: uPlot's auto range ignores points outside the view, so a segment drawn
       // only from edge neighbors would get no scale and disappear.
       scales[key] = {
@@ -253,13 +464,43 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
             dataMax ?? 1,
           ],
       };
-      axes.push({ scale: key, label, side: i % 2 ? 1 : 3, show: i < 4, size: 60 });
+    }
+    // y axis sizes in CSS px, index j = drawnAxes[j] (uPlot axis j + 1).
+    const sizes: number[] = [];
+    // One grid is enough; more would draw unrelated lines over each other. It follows the first
+    // axis with data, so no grid is drawn for a placeholder range.
+    const gridAxis = drawnAxes.findIndex((a) => model.scales.has(a.scale));
+    drawnAxes.forEach((axis, j) => {
+      const loaded = model.scales.has(axis.scale);
+      axes.push({
+        scale: axis.scale,
+        side: axis.side === "L" || axis.side === "L2" ? LEFT : RIGHT,
+        font: AXIS_FONT,
+        // An axis still loading keeps its place and title but shows no ticks or values.
+        ticks: { show: loaded, size: AXIS_TICK },
+        ...(loaded ? {} : { values: (_u: uPlot, splits: number[]) => splits.map(() => "") }),
+        ...(axis.color ? { stroke: axis.color } : {}),
+        grid: { show: j === gridAxis },
+        size: (_u, values, _i, cycle) => {
+          const last = sizes[j];
+          if (cycle > 1 && last !== undefined) return last;
+          // A loading axis has no values yet; reserve typical tick width so the plot does not
+          // shift sideways when the data arrives.
+          const widest = loaded
+            ? Math.max(0, ...(values ?? []).map(textWidth))
+            : textWidth(LOADING_TICK_TEXT);
+          // Wide enough for the title too, so a unit like "rpm/10ms" is not cut.
+          const title = Math.min(MAX_TITLE_WIDTH, textWidth(axis.title) + 4);
+          sizes[j] = Math.ceil(Math.max(widest + AXIS_PAD, title));
+          return sizes[j];
+        },
+      });
     });
 
     const u = new uPlot(
       {
         width,
-        height: PLOT_HEIGHT,
+        height: plotHeight,
         scales,
         axes,
         series: [{}, ...model.series.map(seriesOptions)],
@@ -268,9 +509,28 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
           fill: `${model.series[a - 1]?.color ?? "#000"}33`,
         })),
         legend: { show: false },
-        cursor: { drag: { x: true, y: false, setScale: false } },
+        cursor: {
+          drag: { x: true, y: false, setScale: false },
+          bind: {
+            // Replaces uPlot's reset to the loaded data: App resets to the signals' extents.
+            dblclick: () => () => {
+              clearTimeout(commitTimer.current);
+              commitTimer.current = undefined;
+              gestureStart.current = undefined;
+              preview.current = undefined;
+              onResetRef.current(w.id);
+              return null;
+            },
+          },
+        },
         hooks: {
-          draw: [(self) => drawSnaLanes(self, modelRef.current.sna)],
+          draw: [
+            (self) => {
+              drawSnaLanes(self, modelRef.current.sna);
+              drawNarrowSignals(self, modelRef.current);
+              placeTitles(self, titleRow.current, drawnAxes, sizes);
+            },
+          ],
           setSelect: [
             (self) => {
               const { left, width: selected } = self.select;
@@ -315,8 +575,8 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
   }, [structure, width === 0]);
 
   useEffect(() => {
-    uplot.current?.setSize({ width, height: PLOT_HEIGHT });
-  }, [width]);
+    uplot.current?.setSize({ width, height: plotHeight });
+  }, [width, plotHeight]);
 
   // Data and view: runs after every render; cheap compared to drawing.
   useLayoutEffect(() => {
@@ -376,18 +636,51 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
     const half = max - min;
     applyRange(u, min - half / 2, max + half / 2);
   };
+
+  /** Height handle: resizes locally while dragged, sends window.setHeight on release. */
+  const startHeightDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startHeight = plotHeight;
+    const base = w.height;
+    let height = startHeight;
+    const move = (ev: PointerEvent) => {
+      height = clampHeight(startHeight + ev.clientY - startY);
+      setHeightDrag({ ...(base !== undefined ? { base } : {}), height });
+    };
+    const end = async () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      if (height === storedHeight) {
+        setHeightDrag(undefined);
+        return;
+      }
+      const result = await onCommand({ type: "window.setHeight", windowId: w.id, height });
+      if (!result.ok) setHeightDrag(undefined);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  };
+
   const shown = viewRange();
+  const range = formatRange(shown.from, shown.to);
   const resolution = resolutionLabel(w.signals.map((s) => loader.get(s.id)?.result));
+  const hint =
+    dropState === "target" ? HINT_TARGET : dropState === "refused" ? HINT_REFUSED : undefined;
 
   return (
-    <section className="window">
+    <section className={`window${dropState ? ` drop-${dropState}` : ""}`} data-window-id={w.id}>
       <header className="window-header">
-        <strong>{w.title ?? w.id}</strong>
+        <WindowTitle key={w.title ?? ""} window={w} onCommand={onCommand} />
         {resolution && (
           <span className={`badge ${resolution === "raw" ? "raw" : "agg"}`}>{resolution}</span>
         )}
-        <span className="range">
-          {formatFull(shown.from)} – {formatFull(shown.to)}
+        <span className="range" title={range}>
+          {range}
         </span>
         <span className="spacer" />
         <label>
@@ -417,6 +710,14 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
           />{" "}
           Min/max
         </label>
+        <button
+          type="button"
+          disabled={!canGoBack}
+          title="Previous range (Backspace)"
+          onClick={() => onBack(w.id)}
+        >
+          Back
+        </button>
         <button type="button" onClick={zoomOut}>
           Zoom out
         </button>
@@ -424,17 +725,42 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
           Remove
         </button>
       </header>
-      <div className="plot" ref={plotRef} />
+      <div className="axis-titles" ref={titleRow}>
+        {drawnAxes.map((a) => (
+          <span
+            key={a.scale}
+            data-side={a.side}
+            title={a.title}
+            style={a.color ? { color: a.color } : undefined}
+          >
+            {a.title}
+          </span>
+        ))}
+      </div>
+      <div className="plot" ref={plotRef} style={{ height: plotHeight }} />
+      <div className="height-handle" title="Drag to resize" onPointerDown={startHeightDrag} />
       <ul className="signals">
-        {w.signals.map((s, i) => {
+        {w.signals.map((s) => {
           const meta = info(s.signalId);
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
+          const name = meta?.name ?? s.signalId;
           return (
             <li key={s.id} title={meta?.description}>
-              <span className="swatch" style={{ background: colorOf(i) }} />
-              <span className="sig">{meta?.name ?? s.signalId}</span>
+              <span
+                className="grip"
+                title="Drag onto another window"
+                onPointerDown={(e) =>
+                  onDragStart({ windowId: w.id, assignmentId: s.id, signalId: s.signalId }, e)
+                }
+              >
+                <span className="swatch" style={{ background: colorOf(s.signalId) }} />
+                <span className="sig">{name}</span>
+              </span>
               {meta?.unit && <span className="unit">[{meta.unit}]</span>}
+              <span className="side" title="y axis">
+                {model.layout.sideOf.get(s.id) ?? "–"}
+              </span>
               <span className={`status ${state?.status ?? "loading"}`}>
                 {state?.status === "error"
                   ? `failed: ${state.error}`
@@ -453,8 +779,13 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
             </li>
           );
         })}
-        {w.signals.length === 0 && <li className="empty">Add signals from the explorer.</li>}
+        {w.signals.length === 0 && <li className="empty">Drop a signal here</li>}
       </ul>
+      {hint && (
+        <div className="drop-hint">
+          <span>{hint}</span>
+        </div>
+      )}
     </section>
   );
 }

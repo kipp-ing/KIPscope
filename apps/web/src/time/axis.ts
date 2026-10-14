@@ -42,10 +42,22 @@ export function tickStep(from: Timestamp, to: Timestamp, maxTicks: number): bigi
   return TICK_STEPS.find((s) => span / s <= limit) ?? (TICK_STEPS.at(-1) as bigint);
 }
 
-/** Approximate label width in px: "HH:MM:SS" plus fraction digits, at ~6.5 px per character. */
+/** Characters of a "YYYY-MM-DD" date label. */
+const DATE_CHARS = 10;
+
+/**
+ * Approximate label width in px at ~6.5 px per character: "YYYY-MM-DD" for day steps (every
+ * label is a date), else "HH:MM" or "HH:MM:SS" plus fraction digits. Below day steps two date
+ * lines are never neighbours (see `tickLabels`), so the time line sets the width.
+ */
 export function labelWidth(step: bigint): number {
   const digits = fractionDigits(step);
-  const chars = step >= MIN && step % MIN === 0n ? 5 : 8 + (digits > 0 ? digits + 1 : 0);
+  const chars =
+    step >= DAY
+      ? DATE_CHARS
+      : step >= MIN && step % MIN === 0n
+        ? 5
+        : 8 + (digits > 0 ? digits + 1 : 0);
   return chars * 6.5 + 16;
 }
 
@@ -69,6 +81,53 @@ export function ticks(from: Timestamp, to: Timestamp, step: bigint): Timestamp[]
 }
 
 const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+
+/** Width reserved per calendar tick label ("YYYY-MM" or "YYYY") in CSS px. */
+export const CALENDAR_LABEL_PX = 80;
+const WEEK = 7n * DAY;
+/** Mean Gregorian month (30.436875 days), only to estimate tick counts. */
+const MONTH = 2_629_746_000_000_000n;
+/** Calendar tick steps in months. */
+const MONTH_STEPS = [1, 2, 3, 6, 12, 24, 60, 120, 240, 600, 1200];
+
+export interface CalendarTicks {
+  ticks: Timestamp[];
+  labels: string[];
+}
+
+/**
+ * x ticks for spans too wide for weekly date labels (up to the full 1900 … 2262 range): local
+ * month starts every n months, n the smallest step whose labels fit into `widthPx`. Labels are
+ * "YYYY-MM", or "YYYY" for steps of a year or more. Undefined when weekly date labels still fit,
+ * i.e. the clock-based steps of `tickStepForWidth` apply.
+ */
+export function calendarTicks(
+  from: Timestamp,
+  to: Timestamp,
+  widthPx: number,
+): CalendarTicks | undefined {
+  const span = to - from;
+  if (Number(span / WEEK + 1n) * labelWidth(WEEK) <= widthPx) return undefined;
+  const months = Number(span / MONTH) + 1;
+  const step =
+    MONTH_STEPS.find((n) => (months / n + 1) * CALENDAR_LABEL_PX <= widthPx) ??
+    (MONTH_STEPS.at(-1) as number);
+  const start = new Date(Number(from / NS_PER_MS));
+  let index = Math.ceil((start.getFullYear() * 12 + start.getMonth()) / step) * step;
+  const result: CalendarTicks = { ticks: [], labels: [] };
+  for (;;) {
+    const year = Math.floor(index / 12);
+    const month = index % 12;
+    const t = BigInt(new Date(year, month, 1).getTime()) * NS_PER_MS;
+    if (t > to) break;
+    if (t >= from) {
+      result.ticks.push(t);
+      result.labels.push(step >= 12 ? String(year) : `${year}-${pad(month + 1)}`);
+    }
+    index += step;
+  }
+  return result;
+}
 
 function localDate(t: Timestamp): Date {
   return new Date(Number(floorDiv(t, NS_PER_MS)));
@@ -108,19 +167,29 @@ export function formatFull(t: Timestamp): string {
 }
 
 /**
+ * Header range of a window in local time: at most millisecond precision, truncated (never
+ * rounded up), trailing zero groups trimmed.
+ */
+export function formatRange(from: Timestamp, to: Timestamp): string {
+  const ms = (t: Timestamp) => formatFull(floorDiv(t, NS_PER_MS) * NS_PER_MS);
+  return `${ms(from)} – ${ms(to)}`;
+}
+
+/**
  * Tick labels: clock time at the step's precision; the date is added on the first tick and
- * wherever the day changes. Steps of a day or more show only the date.
+ * wherever the day changes. The first tick leaves its date out when the second tick already
+ * starts a new day, so two date lines never stand side by side. Steps of a day or more show only
+ * the date.
  */
 export function tickLabels(values: Timestamp[], step: bigint): string[] {
   const digits = fractionDigits(step);
   const withSeconds = step < MIN || step % MIN !== 0n;
-  let previousDate = "";
-  return values.map((t) => {
-    const date = formatDate(t);
-    if (step >= DAY) return date;
+  const dates = values.map(formatDate);
+  if (step >= DAY) return dates;
+  return values.map((t, i) => {
+    const date = dates[i];
     const time = formatTime(t, digits, withSeconds);
-    const label = date !== previousDate ? `${time}\n${date}` : time;
-    previousDate = date;
-    return label;
+    const dated = i === 0 ? dates[1] === undefined || dates[1] === date : date !== dates[i - 1];
+    return dated ? `${time}\n${date}` : time;
   });
 }

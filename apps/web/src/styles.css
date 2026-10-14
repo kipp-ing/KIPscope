@@ -213,3 +213,64 @@ button.link {
   cursor: pointer;
   padding: 0;
 }
+
+.link-time {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Legend-row drag (design D5); window highlights live in chart/window.css. */
+.app.dragging,
+.app.dragging * {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.app.dragging.drag-invalid,
+.app.dragging.drag-invalid * {
+  cursor: no-drop;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.drag-ghost .drag-mode {
+  color: var(--muted);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.drag-ghost .drag-note {
+  color: var(--error);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.drop-new {
+  margin-bottom: 12px;
+  padding: 18px;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  text-align: center;
+  background: rgb(37 99 235 / 0.04);
+}
+
+.drop-new.over {
+  background: rgb(37 99 235 / 0.12);
+}

@@ -50,9 +50,10 @@ export class WorkspaceStore {
     this.state = result.workspace;
     this.rev++;
     for (const listener of this.listeners) listener(this.rev, this.state);
-    return result.created === undefined
-      ? { ok: true, revision: this.rev }
-      : { ok: true, revision: this.rev, created: result.created };
+    const answer: CommandResult = { ok: true, revision: this.rev };
+    if (result.created !== undefined) answer.created = result.created;
+    if (result.createdWindow !== undefined) answer.createdWindow = result.createdWindow;
+    return answer;
   }
 
   subscribe(listener: Listener): () => void {

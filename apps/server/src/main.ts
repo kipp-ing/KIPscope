@@ -20,7 +20,10 @@ const dbcWarnings: string[] = [];
 const catalog = new Catalog(source, () =>
   loadDbcFiles(config.dbcFiles, (path, error) => dbcWarnings.push(`${path}: ${error}`)),
 );
-const workspace = new WorkspaceStore({ signalExists: (id) => catalog.get(id) !== undefined });
+const workspace = new WorkspaceStore({
+  signalExists: (id) => catalog.get(id) !== undefined,
+  unitOf: (id) => catalog.get(id)?.unit,
+});
 const app = buildApp({ catalog, source, workspace }, { logger: true });
 
 async function loadCatalog() {

@@ -1,5 +1,6 @@
 import type { Display, SeriesResult, Timestamp } from "@letsview/shared";
 import { decodeTimes } from "@letsview/shared";
+import { type AxisLayout, layoutAxes } from "./axes.ts";
 
 /** x/y arrays of one signal; x is the ns offset from the window origin. */
 export interface SignalPoints {
@@ -181,19 +182,22 @@ export interface ChartModel {
   series: SeriesSpec[];
   /** Band bounds as uPlot series indices (1-based; 0 is x). */
   bands: [number, number][];
-  /** Scale key → axis label (unit or signal name). */
+  /** Scale key → axis title (unit or signal name), for every loaded signal's scale. */
   scales: Map<string, string>;
   /** One lane per loaded signal, in input order. */
   sna: SnaLane[];
+  /** Scales, drawn axes and sides of all signals, loaded or not. */
+  layout: AxisLayout;
 }
 
-/** y scale per unit, so signals with different units don't squash each other. */
-export function scaleKey(input: SignalInput): string {
-  return input.unit ? `u:${input.unit}` : `s:${input.key}`;
-}
-
-/** Assembles series, tables and envelope bands for all loaded signals of a window. */
+/**
+ * Assembles series, tables and envelope bands for all loaded signals of a window. The y scale
+ * per unit comes from the axis layout of all signals, so signals with different units don't
+ * squash each other and sides don't jump when data arrives.
+ */
 export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Display): ChartModel {
+  const layout = layoutAxes(inputs);
+  const titles = new Map(layout.axes.map((a) => [a.scale, a.title]));
   const model: ChartModel = {
     tables: [],
     tableScales: [],
@@ -201,6 +205,7 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     bands: [],
     scales: new Map(),
     sna: [],
+    layout,
   };
   for (const input of inputs) {
     if (!input.result) continue;
@@ -208,8 +213,10 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     const path: PathKind = raw ? display.mode : "line";
     const points = toPoints(input.result, origin);
     const pts = path === "step" ? holdBeforeSna(points) : points;
-    const scale = scaleKey(input);
-    if (!model.scales.has(scale)) model.scales.set(scale, input.unit ?? input.label);
+    const scale = layout.scaleOf.get(input.key) as string;
+    if (!model.scales.has(scale)) {
+      model.scales.set(scale, titles.get(scale) ?? (input.unit?.trim() || input.label));
+    }
     model.series.push({ label: input.label, scale, color: input.color, path });
     model.sna.push({ color: input.color, periods: snaPeriods(input.result, origin) });
     const table: (number | null)[][] = [pts.xs, pts.ys];

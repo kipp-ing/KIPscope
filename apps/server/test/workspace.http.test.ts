@@ -14,6 +14,124 @@ function setup() {
   return { app, workspace };
 }
 
+describe("window-workflow commands over HTTP", () => {
+  const units: Record<string, string> = {
+    "car/A": "V",
+    "car/B": "km/h",
+    "car/C": "V",
+    "car/D": "°C",
+    "car/E": "1/min",
+    "car/F": "rpm/10ms",
+  };
+  const workspace = new WorkspaceStore({
+    signalExists: (id) => id.startsWith("car/"),
+    unitOf: (id) => units[id],
+  });
+  const app = buildApp({ catalog: new Catalog(source, async () => new Map()), source, workspace });
+  afterAll(() => app.close());
+
+  const command = async (body: Record<string, unknown>) => {
+    const res = await app.inject({ method: "POST", url: "/api/commands", body });
+    return { status: res.statusCode, body: res.json() };
+  };
+  const state = async () => (await app.inject({ url: "/api/workspace" })).json();
+
+  it("applies the window-workflow commands over HTTP", async () => {
+    expect((await state()).workspace.linkTime).toBe(true);
+    expect((await command({ type: "window.create", from: "0", to: "1000" })).body.created).toBe(
+      "w1",
+    );
+    expect((await command({ type: "window.create" })).body).toMatchObject({
+      ok: true,
+      created: "w2",
+    });
+    const added = await command({ type: "window.addSignal", windowId: "w1", signalId: "car/A" });
+    expect(added.body).toEqual({ ok: true, revision: 3, created: "a3" });
+
+    expect(
+      (await command({ type: "window.rename", windowId: "w2", title: " HV voltages " })).body,
+    ).toEqual({ ok: true, revision: 4 });
+    expect(
+      (await command({ type: "window.setHeight", windowId: "w2", height: 400 })).body.revision,
+    ).toBe(5);
+    expect((await command({ type: "window.setHeight", windowId: "w2", height: 100 })).status).toBe(
+      400,
+    );
+    const moved = await command({
+      type: "window.moveSignal",
+      windowId: "w1",
+      assignmentId: "a3",
+      targetWindowId: "w2",
+    });
+    expect(moved.body).toEqual({ ok: true, revision: 6 });
+    // Moving into a window that has the signal answers 422 already_in_window.
+    await command({ type: "window.addSignal", windowId: "w1", signalId: "car/A" });
+    const dup = await command({
+      type: "window.moveSignal",
+      windowId: "w1",
+      assignmentId: "a4",
+      targetWindowId: "w2",
+    });
+    expect(dup.status).toBe(422);
+    expect(dup.body).toMatchObject({ ok: false, code: "already_in_window" });
+    // Unlink, set a range on one window only, link again.
+    expect((await command({ type: "workspace.setLinkTime", linked: false })).body.ok).toBe(true);
+    await command({ type: "window.setRange", windowId: "w1", from: "10", to: "20" });
+    let ws = (await state()).workspace;
+    expect(ws.windows[0].range).toEqual({ from: "10", to: "20" });
+    expect(ws.windows[1].range).toEqual({ from: "0", to: "1000" });
+    await command({ type: "workspace.setLinkTime", linked: true });
+
+    ws = (await state()).workspace;
+    expect(ws.linkTime).toBe(true);
+    expect(ws.windows.map((w: { range: unknown }) => w.range)).toEqual([
+      { from: "10", to: "20" },
+      { from: "10", to: "20" },
+    ]);
+    expect(ws.windows[1]).toMatchObject({ title: "HV voltages", height: 400 });
+    expect(ws.windows[1].signals).toEqual([{ id: "a3", signalId: "car/A" }]);
+    expect(ws.windows[0].signals).toEqual([{ id: "a4", signalId: "car/A" }]);
+    expect(ws.colors["car/A"]).toBe(0);
+  });
+
+  it("returns the created window and assignment of a move", async () => {
+    const before = (await state()).revision;
+    const copy = await command({
+      type: "window.moveSignal",
+      windowId: "w2",
+      assignmentId: "a3",
+      copy: true,
+    });
+    expect(copy.status).toBe(200);
+    expect(copy.body).toMatchObject({ ok: true, revision: before + 1 });
+    expect(copy.body.createdWindow).toMatch(/^w\d+$/);
+    expect(copy.body.created).toMatch(/^a\d+$/);
+    const ws = (await state()).workspace;
+    const fresh = ws.windows.find((w: { id: string }) => w.id === copy.body.createdWindow);
+    expect(fresh).toMatchObject({ range: { from: "10", to: "20" }, height: 400 });
+    expect(fresh).not.toHaveProperty("title");
+    expect(fresh.signals).toEqual([{ id: copy.body.created, signalId: "car/A" }]);
+  });
+
+  it("answers too_many_units over HTTP", async () => {
+    const w = (await command({ type: "window.create" })).body.created;
+    for (const id of ["car/A", "car/B", "car/D", "car/E"]) {
+      const r = await command({ type: "window.addSignal", windowId: w, signalId: id });
+      expect(r.body.ok).toBe(true);
+    }
+    const before = (await state()).revision;
+    const res = await command({ type: "window.addSignal", windowId: w, signalId: "car/F" });
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ ok: false, code: "too_many_units" });
+    expect(res.body.message).toContain("V, km/h, °C, 1/min");
+    expect((await state()).revision).toBe(before);
+    // A second signal of an existing unit is accepted.
+    expect(
+      (await command({ type: "window.addSignal", windowId: w, signalId: "car/C" })).body.ok,
+    ).toBe(true);
+  });
+});
+
 describe("POST /api/commands, GET /api/workspace", () => {
   const { app } = setup();
   afterAll(() => app.close());

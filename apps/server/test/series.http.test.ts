@@ -55,6 +55,29 @@ describe("GET /api/series", () => {
     expect(Math.max(...body.max)).toBe(1000);
   });
 
+  it("rejects times outside the bounds with 400", async () => {
+    const signal = "testcar/Nodbc_500h.RAW";
+    const outside = [
+      // The live bug: both values beyond int64 nanoseconds.
+      { from: "-29473328485867940608", to: "62083631947910636800" },
+      { from: "-2208988800000000001", to: "0" },
+      { from: "0", to: "9223286400000000001" },
+      { from: "1899-12-31T23:59:59Z", to: "2026-10-01T00:00:00Z" },
+    ];
+    for (const range of outside) {
+      const res = await app.inject({ url: "/api/series", query: { signal, ...range } });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe("invalid_request");
+      expect(res.json().error.message).toContain("1900-01-01T00:00:00Z");
+    }
+    // The bounds themselves are accepted.
+    const edge = await app.inject({
+      url: "/api/series",
+      query: { signal, from: "-2208988800000000000", to: "9223286400000000000", target: "100" },
+    });
+    expect(edge.statusCode).toBe(200);
+  });
+
   it("rejects bad parameters with 400 and unknown signals with 404", async () => {
     const bad = [
       { signal: "testcar/Nodbc_500h.RAW", from: "x", to: "2026-10-01T00:00:00Z" },

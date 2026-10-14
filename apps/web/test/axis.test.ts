@@ -2,6 +2,7 @@ import { fromIso, NS_PER_MS, NS_PER_S } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
 import {
   formatFull,
+  formatRange,
   formatTime,
   fractionDigits,
   tickLabels,
@@ -72,5 +73,20 @@ describe("tickStepForWidth", () => {
     expect(tickStepForWidth(from, from + 100_000n, 220)).toBe(100_000n);
     expect(tickStepForWidth(from, from + 100_000n, 1200)).toBe(10_000n);
     expect(tickStepForWidth(from, from + 2n * 3600n * NS_PER_S, 500)).toBe(15n * 60n * NS_PER_S);
+  });
+});
+
+// Header range of a window: committed ranges can carry nanoseconds (zoom history, extent), the
+// header shows at most millisecond precision (round 1 finding "nanosecond header range").
+describe("formatRange", () => {
+  it("shows at most milliseconds and drops trailing zeros", () => {
+    const from = fromIso("2026-10-13T09:12:00.253123456Z");
+    const to = fromIso("2026-10-13T09:12:05Z");
+    expect(formatRange(from, to)).toBe("2026-10-13 11:12:00.253 – 2026-10-13 11:12:05");
+  });
+
+  it("truncates instead of rounding up", () => {
+    const t = fromIso("2026-10-13T09:12:00.999999999Z");
+    expect(formatRange(t, t)).toBe("2026-10-13 11:12:00.999 – 2026-10-13 11:12:00.999");
   });
 });

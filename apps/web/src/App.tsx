@@ -1,9 +1,72 @@
-import type { CommandInput, CommandResult, RenderError, SignalInfo } from "@letsview/shared";
+import {
+  type CommandInput,
+  type CommandResult,
+  EMPTY_WORKSPACE,
+  MAX_UNITS,
+  type RenderError,
+  type SignalInfo,
+  signalColor,
+  windowUnits,
+} from "@letsview/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
+import {
+  canDrop,
+  DRAG_THRESHOLD_PX,
+  type DragSource,
+  type DropTarget,
+  dropCommand,
+} from "./chart/drag.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
+import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
 import { useLive } from "./live.ts";
 import { NEW_WINDOW, SignalExplorer } from "./SignalExplorer.tsx";
+
+/** A running legend-row drag (design D5); `active` once the pointer moved past the threshold. */
+interface Drag {
+  source: DragSource;
+  label: string;
+  startX: number;
+  startY: number;
+  active: boolean;
+  x: number;
+  y: number;
+  copy: boolean;
+  target?: DropTarget | undefined;
+}
+
+/** Auto-scroll zone at the top and bottom edge of the window list, and its top speed per frame. */
+const EDGE_PX = 48;
+const EDGE_SCROLL_PX = 24;
+
+/** Drop target under a viewport point: a window section or the "+ New window" zone. */
+function targetAt(x: number, y: number): DropTarget | undefined {
+  const el = document.elementFromPoint(x, y)?.closest("[data-window-id],[data-drop]");
+  const windowId = el?.getAttribute("data-window-id");
+  if (windowId) return { kind: "window", windowId };
+  return el?.getAttribute("data-drop") === "new" ? { kind: "new" } : undefined;
+}
+
+/** Backspace stays a text-editing key while a text field has focus. */
+function isTextField(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLInputElement)
+    return !["checkbox", "radio", "button", "range"].includes(el.type);
+  return (
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement ||
+    (el as HTMLElement).isContentEditable
+  );
+}
+
+/** Optional `dropState` prop; absent rather than undefined (exactOptionalPropertyTypes). */
+const dropProp = (state: "source" | "target" | "refused" | undefined) =>
+  state ? { dropState: state } : {};
+
+const toRange = (r: { from: string; to: string }): Range => ({
+  from: BigInt(r.from),
+  to: BigInt(r.to),
+});
 
 export function App() {
   const [live, send] = useLive();
@@ -23,8 +86,11 @@ export function App() {
     if (added) setInfoVersion((v) => v + 1);
   }, []);
   const info = useCallback((id: string) => infos.current.get(id), []);
+  const unitOf = useCallback((id: string) => infos.current.get(id)?.unit, []);
 
-  const windows = live.workspace?.windows ?? [];
+  const workspace = live.workspace;
+  const windows = workspace?.windows ?? [];
+  const linked = workspace?.linkTime ?? true;
   const signalIds = [...new Set(windows.flatMap((w) => w.signals.map((s) => s.signalId)))];
   const missingKey = signalIds.filter((id) => !infos.current.has(id)).join(",");
   useEffect(() => {
@@ -32,6 +98,14 @@ export function App() {
       signalInfo(id).then((s) => s && remember([s]));
     }
   }, [missingKey, remember]);
+
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const colorOf = useCallback(
+    (id: string) => signalColor(workspace ?? EMPTY_WORKSPACE, id),
+    // A new workspace object per revision redraws windows when colours change.
+    [workspace],
+  );
 
   const command = useCallback(async (input: CommandInput): Promise<CommandResult> => {
     const result = await sendCommand(input);
@@ -43,13 +117,13 @@ export function App() {
     let windowId = target;
     if (target === NEW_WINDOW) {
       try {
-        const extent = await fetchExtent(signal.id);
+        // While linked, a new window takes the shared range (design D6); otherwise the extent.
+        const range =
+          linked && windows.length > 0 ? undefined : extentRange([await fetchExtent(signal.id)]);
         const created = await command({
           type: "window.create",
           title: signal.name,
-          from: extent.first,
-          // Half-open range: end just after the last point, rounded up to the next millisecond.
-          to: ((BigInt(extent.last) / 1_000_000n + 1n) * 1_000_000n).toString(),
+          ...(range ? { from: range.from.toString(), to: range.to.toString() } : {}),
         });
         if (!created.ok || !created.created) return;
         windowId = created.created;
@@ -61,11 +135,255 @@ export function App() {
     await command({ type: "window.addSignal", windowId, signalId: signal.id });
   };
 
+  // Zoom history (design D6): one shared stack while linked, else one per window.
+  const histories = useRef(new Map<string, ZoomHistory>());
+  const [, setHistoryVersion] = useState(0);
+  const historyOf = useCallback((key: string) => {
+    let h = histories.current.get(key);
+    if (!h) {
+      h = new ZoomHistory();
+      histories.current.set(key, h);
+    }
+    return h;
+  }, []);
+  const setRange = useCallback(
+    (windowId: string, r: Range) => {
+      const c = clampRange(r);
+      return command({
+        type: "window.setRange",
+        windowId,
+        from: c.from.toString(),
+        to: c.to.toString(),
+      });
+    },
+    [command],
+  );
+  const onZoomed = useCallback(
+    (windowId: string, previous: Range) => {
+      historyOf(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId)).push(
+        clampRange(previous),
+      );
+      setHistoryVersion((v) => v + 1);
+    },
+    [historyOf],
+  );
+  const onBack = useCallback(
+    (windowId: string) => {
+      const r = histories.current
+        .get(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId))
+        ?.back();
+      if (!r) return;
+      setHistoryVersion((v) => v + 1);
+      void setRange(windowId, r);
+    },
+    [setRange],
+  );
+  const onReset = useCallback(
+    async (windowId: string) => {
+      const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
+      if (!w || w.signals.length === 0) return;
+      try {
+        const ids = [...new Set(w.signals.map((s) => s.signalId))];
+        const extent = extentRange(await Promise.all(ids.map((id) => fetchExtent(id))));
+        if (!extent) return;
+        const target = clampRange(extent);
+        const current = toRange(w.range);
+        if (target.from === current.from && target.to === current.to) return;
+        historyOf(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId)).push(current);
+        setHistoryVersion((v) => v + 1);
+        await setRange(windowId, target);
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [historyOf, setRange],
+  );
+
+  // Backspace steps back in the window under the pointer, else in the window zoomed last.
+  const hovered = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const el = e.target instanceof Element ? e.target.closest("[data-window-id]") : null;
+      hovered.current = el?.getAttribute("data-window-id") ?? undefined;
+    };
+    // Pointer left the page: no window is under it any more.
+    const onOut = (e: PointerEvent) => {
+      if (!e.relatedTarget) hovered.current = undefined;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Backspace" || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (isTextField(document.activeElement)) return;
+      const ws = liveRef.current.workspace;
+      const id = [hovered.current, ws?.lastZoomed].find(
+        (x) => x && ws?.windows.some((w) => w.id === x),
+      );
+      if (!id) return;
+      e.preventDefault();
+      onBack(id);
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerout", onOut);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerout", onOut);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onBack]);
+
+  // Drag and drop of legend rows (design D5), with pointer events on the document.
+  const [drag, setDrag] = useState<Drag | undefined>();
+  const dragRef = useRef<Drag | undefined>(undefined);
+  const mainRef = useRef<HTMLElement>(null);
+  const update = useCallback((d: Drag | undefined) => {
+    dragRef.current = d;
+    setDrag(d);
+  }, []);
+  const onDragStart = useCallback(
+    (source: DragSource, event: React.PointerEvent) => {
+      if (event.button !== 0 || dragRef.current) return;
+      const label = infos.current.get(source.signalId)?.name ?? source.signalId;
+      const d: Drag = {
+        source,
+        label,
+        startX: event.clientX,
+        startY: event.clientY,
+        active: false,
+        x: event.clientX,
+        y: event.clientY,
+        copy: false,
+      };
+      dragRef.current = d;
+      let frame = 0;
+
+      // Pointer near the top or bottom edge of the window list scrolls it, faster the closer.
+      const autoScroll = () => {
+        frame = 0;
+        const cur = dragRef.current;
+        const main = mainRef.current;
+        if (!cur?.active || !main) return;
+        const box = main.getBoundingClientRect();
+        const top = Math.max(box.top, 0) + EDGE_PX;
+        const bottom = Math.min(box.bottom, window.innerHeight) - EDGE_PX;
+        const depth = cur.y < top ? cur.y - top : cur.y > bottom ? cur.y - bottom : 0;
+        if (depth === 0) return;
+        const before = main.scrollTop;
+        main.scrollTop +=
+          Math.sign(depth) * Math.ceil(Math.min(Math.abs(depth) / EDGE_PX, 1) * EDGE_SCROLL_PX);
+        if (main.scrollTop !== before) frame = requestAnimationFrame(autoScroll);
+      };
+      // Scrolling moves windows under a resting pointer; the target follows.
+      const onScroll = () => {
+        const cur = dragRef.current;
+        if (cur?.active) update({ ...cur, target: targetAt(cur.x, cur.y) });
+      };
+      // The wheel scrolls the page while dragging instead of zooming the window under the
+      // pointer: stopped before it reaches the plot's own wheel handler, default kept.
+      const onWheel = (e: WheelEvent) => {
+        if (dragRef.current?.active) e.stopPropagation();
+      };
+
+      const finish = () => {
+        cancelAnimationFrame(frame);
+        mainRef.current?.removeEventListener("scroll", onScroll);
+        window.removeEventListener("wheel", onWheel, true);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", finish);
+        document.removeEventListener("keydown", onKey, true);
+        document.removeEventListener("keyup", onKeyUp, true);
+        document.removeEventListener("contextmenu", onMenu, true);
+        window.removeEventListener("blur", finish);
+        update(undefined);
+      };
+      const onMove = (e: PointerEvent) => {
+        const cur = dragRef.current;
+        if (!cur) return;
+        const moved =
+          Math.hypot(e.clientX - cur.startX, e.clientY - cur.startY) >= DRAG_THRESHOLD_PX;
+        if (!cur.active && !moved) return;
+        if (!cur.active) window.getSelection()?.removeAllRanges();
+        update({
+          ...cur,
+          active: true,
+          x: e.clientX,
+          y: e.clientY,
+          copy: e.altKey || e.ctrlKey,
+          target: targetAt(e.clientX, e.clientY),
+        });
+        if (!frame) frame = requestAnimationFrame(autoScroll);
+      };
+      const onUp = (e: PointerEvent) => {
+        const cur = dragRef.current;
+        finish();
+        if (!cur?.active) return;
+        const target = targetAt(e.clientX, e.clientY);
+        const ws = liveRef.current.workspace;
+        if (!target || !ws) return;
+        const cmd = dropCommand(cur.source, target, ws.windows, unitOf, {
+          altKey: e.altKey,
+          ctrlKey: e.ctrlKey,
+        });
+        if (cmd) void command(cmd);
+      };
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          finish();
+        } else if ((e.key === "Alt" || e.key === "Control") && dragRef.current?.active) {
+          update({ ...dragRef.current, copy: true });
+        }
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        const cur = dragRef.current;
+        if ((e.key === "Alt" || e.key === "Control") && cur?.active) {
+          update({ ...cur, copy: e.altKey || e.ctrlKey });
+        }
+      };
+      // Ctrl+drag on macOS would open the context menu.
+      const onMenu = (e: Event) => e.preventDefault();
+      mainRef.current?.addEventListener("scroll", onScroll);
+      window.addEventListener("wheel", onWheel, { capture: true, passive: true });
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", finish);
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("keyup", onKeyUp, true);
+      document.addEventListener("contextmenu", onMenu, true);
+      window.addEventListener("blur", finish);
+    },
+    [command, unitOf, update],
+  );
+
+  const activeDrag = drag?.active ? drag : undefined;
+  const dropStateOf = (windowId: string): "source" | "target" | "refused" | undefined => {
+    if (!activeDrag) return undefined;
+    const { source } = activeDrag;
+    if (windowId === source.windowId) return "source";
+    if (canDrop(source, { kind: "window", windowId }, windows, unitOf)) return "target";
+    const w = windows.find((x) => x.id === windowId);
+    const refusedByUnits =
+      w &&
+      !w.signals.some((s) => s.signalId === source.signalId) &&
+      windowUnits(w, unitOf, source.signalId).length > MAX_UNITS;
+    return refusedByUnits ? "refused" : undefined;
+  };
+  const overValid =
+    activeDrag?.target !== undefined &&
+    canDrop(activeDrag.source, activeDrag.target, windows, unitOf);
+  // Over another window that already shows the dragged signal: say why the drop is refused.
+  const over = activeDrag?.target?.kind === "window" ? activeDrag.target.windowId : undefined;
+  const overShown =
+    activeDrag !== undefined &&
+    over !== activeDrag.source.windowId &&
+    windows.some(
+      (w) => w.id === over && w.signals.some((s) => s.signalId === activeDrag.source.signalId),
+    );
+
   // Render acknowledgement: a revision counts as rendered once every window reported it.
   const ready = useRef(new Map<string, { revision: number; errors: RenderError[] }>());
   const lastSent = useRef(-1);
-  const liveRef = useRef(live);
-  liveRef.current = live;
   const acknowledge = useCallback(() => {
     const { revision, workspace } = liveRef.current;
     if (!workspace || revision === lastSent.current) return;
@@ -89,15 +407,31 @@ export function App() {
     if (!live.connected) lastSent.current = -1;
   }, [live.connected]);
 
+  const appClass = ["app", activeDrag && "dragging", activeDrag && !overValid && "drag-invalid"]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="app">
+    <div className={appClass}>
       <SignalExplorer windows={windows} onAdd={addSignal} onSeen={remember} />
-      <main>
+      <main ref={mainRef}>
         <header className="topbar">
           <h1>letsview</h1>
           <span className={`conn ${live.connected ? "ok" : "down"}`}>
             {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
           </span>
+          {workspace && (
+            <label className="link-time" title="While on, zooming one window zooms all windows">
+              <input
+                type="checkbox"
+                checked={linked}
+                onChange={(e) =>
+                  void command({ type: "workspace.setLinkTime", linked: e.target.checked })
+                }
+              />
+              Link time axes
+            </label>
+          )}
           {message && (
             <button type="button" className="message" onClick={() => setMessage(undefined)}>
               {message} ✕
@@ -110,14 +444,39 @@ export function App() {
             window={w}
             revision={live.revision}
             info={info}
+            colorOf={colorOf}
             onCommand={command}
             onReady={onReady}
+            onZoomed={onZoomed}
+            canGoBack={(histories.current.get(historyKey(linked, w.id))?.size ?? 0) > 0}
+            onBack={onBack}
+            onReset={onReset}
+            onDragStart={onDragStart}
+            {...dropProp(dropStateOf(w.id))}
           />
         ))}
-        {live.workspace && windows.length === 0 && (
+        {activeDrag && (
+          <div
+            className={`drop-new${activeDrag.target?.kind === "new" ? " over" : ""}`}
+            data-drop="new"
+          >
+            + New window
+          </div>
+        )}
+        {workspace && windows.length === 0 && (
           <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
         )}
       </main>
+      {activeDrag && (
+        <div className="drag-ghost" style={{ left: activeDrag.x + 12, top: activeDrag.y + 12 }}>
+          <span className="swatch" style={{ background: colorOf(activeDrag.source.signalId) }} />
+          {activeDrag.label}
+          <span className="drag-mode">
+            {overValid ? (activeDrag.copy ? " · copy" : " · move") : ""}
+          </span>
+          {overShown && <span className="drag-note">· Already shown</span>}
+        </div>
+      )}
     </div>
   );
 }

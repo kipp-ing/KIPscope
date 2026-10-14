@@ -1,0 +1,153 @@
+/* Window-level styles. Selectors start with .window so they win over styles.css, which is
+   loaded after this file. */
+
+.window {
+  position: relative;
+  transition: opacity 0.1s;
+}
+
+.window .window-header {
+  flex-wrap: nowrap;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.window .window-header > * {
+  flex-shrink: 0;
+}
+
+.window .window-header .window-title {
+  flex-shrink: 1;
+  min-width: 3em;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: text;
+  text-align: left;
+}
+
+.window .window-header .window-title:hover {
+  text-decoration: underline dotted;
+}
+
+.window .window-header .window-title-input {
+  flex-shrink: 1;
+  min-width: 8em;
+  width: 24em;
+  font: inherit;
+  font-weight: 600;
+  padding: 1px 4px;
+}
+
+/* The range gives way first: its shrink weight dwarfs the title's, so the title keeps its
+   width until the range is gone (the full range stays in the tooltip). */
+.window .window-header .range {
+  flex-shrink: 10000;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.window .window-header .spacer {
+  flex-shrink: 1;
+}
+
+.window .axis-titles {
+  position: relative;
+  height: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text);
+}
+
+.window .axis-titles > span {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.window .plot {
+  min-height: 0;
+}
+
+.window .height-handle {
+  height: 6px;
+  margin: 0 -12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.window .height-handle:hover,
+.window .height-handle:active {
+  background: var(--border);
+}
+
+.window .signals .grip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.window .signals .side {
+  color: var(--muted);
+  font-size: 11px;
+  min-width: 1.5em;
+}
+
+/* Drag and drop (design D5). */
+
+.window.drop-source {
+  opacity: 0.5;
+}
+
+.window.drop-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.window.drop-refused {
+  border-color: var(--error);
+  cursor: not-allowed;
+}
+
+.window .drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.window .drop-hint > span {
+  padding: 6px 12px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
+}
+
+.window.drop-target .drop-hint {
+  color: var(--accent);
+  background: rgb(37 99 235 / 0.08);
+}
+
+.window.drop-refused .drop-hint {
+  color: var(--error);
+  background: rgb(220 38 38 / 0.08);
+}
