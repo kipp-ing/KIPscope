@@ -12,7 +12,8 @@ Browser: load the Chrome tools in one ToolSearch call (`select:mcp__claude-in-ch
 
 What to do:
 - Walk through every UI scenario of the change on real data, using the signals and time ranges the spec names. Zoom in and out; check both raw and aggregated resolution.
-- Take a screenshot as evidence for each scenario. Read the console for errors.
+- Read the page as text first (`find`, `read_page`); screenshots are expensive. Take exactly one screenshot per scenario as evidence, not per step. Read the console for errors with a `pattern` filter.
+- Read only `docs/concept.md` sections that matter for the scenarios and the change's specs; no code.
 - Also note what irritates you as a user even if no scenario covers it, marked as `note`.
 
 Output per scenario: `fulfilled` / `missed` / `not_run`, what you did, what you saw. Findings with severity `blocker` / `should` / `could`.

@@ -14,6 +14,7 @@ Writing tests (build phase):
 
 Running (check phase):
 - `pnpm build && pnpm test && pnpm lint`, the whole suite (it takes seconds).
-- Report per scenario: `fulfilled` / `missed` / `not_run`, with the command and the shortened original output. No verdict without a command that ran.
+- Report per scenario: `fulfilled` / `missed` / `not_run`, with the command and the shortened original output (at most 2 lines; for failures the assertion message, not the stack). No verdict without a command that ran.
+- Keep your context small: read the specs, `design.md` and the code your tests exercise, nothing else. Pipe long outputs through `tail` or a reporter like `--reporter=dot`.
 
 Git: no `stash`, `reset`, `checkout`, `restore`, `clean`, `commit` or `push`. Only the lead commits.

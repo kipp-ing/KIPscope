@@ -12,8 +12,19 @@ const MAX = (args && args.maxRounds) || 3
 const HINT = args && args.hint ? `\nHint from the lead: ${args.hint}` : ''
 const ROLE = r =>
   `Work in the role defined in .claude/agents/lv-${r}.md (read it first) and follow docs/team.md. Change: openspec/changes/${CHANGE}/. Date ${DATE}.${HINT}`
+// Token budget (docs/team.md): opus only for short complex work, sonnet for the rest.
 const SONNET = { model: 'sonnet', agentType: 'general-purpose' }
-const OPUS = { agentType: 'general-purpose' }
+const OPUS = { model: 'opus', agentType: 'general-purpose' }
+const cut = (s, n) => (s && s.length > n ? `${s.slice(0, n)} …[cut]` : s || '(no report)')
+// Summaries passed between agents: open scenarios and findings only.
+const open = c =>
+  c
+    ? JSON.stringify({
+        open: c.scenarios.filter(s => s.state !== 'fulfilled'),
+        fulfilled: c.scenarios.filter(s => s.state === 'fulfilled').map(s => s.name),
+        findings: c.findings,
+      })
+    : '(no answer)'
 
 const TASKS = {
   type: 'array',
@@ -39,7 +50,7 @@ const CHECK = {
         properties: {
           name: { type: 'string' },
           state: { type: 'string', enum: ['fulfilled', 'missed', 'not_run'] },
-          evidence: { type: 'string' },
+          evidence: { type: 'string', description: 'at most 2 lines: command or action and shortened result' },
         },
         required: ['name', 'state', 'evidence'],
       },
@@ -94,7 +105,7 @@ ${t.brief}`,
       ),
     ),
   )
-  const buildText = reports.map((r, i) => `## ${tasks[i].role} ${tasks[i].area}\n${r || '(no report)'}`).join('\n\n')
+  const buildText = reports.map((r, i) => `## ${tasks[i].role} ${tasks[i].area}\n${cut(r, 1500)}`).join('\n\n')
 
   const [test, ui] = await parallel([
     () =>
@@ -114,7 +125,7 @@ Round ${round}: check every UI scenario of the change in the running app on real
 
   const [review, spec] = await parallel([
     () =>
-      agent(`${ROLE('reviewer')}\nReview round ${round}. Do not rerun the suite.\n${evidence}`, {
+      agent(`${ROLE('reviewer')}\nReview round ${round}. Do not rerun the suite.\nBuild reports:\n${buildText}\n\nTester (open only):\n${open(test)}`, {
         label: `review:r${round}`,
         phase: 'Judge',
         schema: CHECK,
@@ -123,7 +134,7 @@ Round ${round}: check every UI scenario of the change in the running app on real
     () =>
       agent(
         `${ROLE('spec-owner')}\nAfter round ${round}: judge every scenario against the evidence and tick fulfilled tasks in tasks.md. Do not rerun the suite.\n${evidence}`,
-        { label: `spec:r${round}`, phase: 'Judge', schema: CHECK, ...OPUS },
+        { label: `spec:r${round}`, phase: 'Judge', schema: CHECK, ...SONNET },
       ),
   ])
   lastCheck = { test, ui, review, spec }
@@ -131,7 +142,7 @@ Round ${round}: check every UI scenario of the change in the running app on real
   const pace = await agent(
     `${ROLE('pacer')}
 Round ${round} of at most ${MAX}. Decide done/continue/needs_jan, append the round line to rounds.md and, for continue, give the next tasks (engineer and/or tester) from open findings only.
-Checks:\n${JSON.stringify(lastCheck)}`,
+Spec owner:\n${open(spec)}\n\nReviewer:\n${open(review)}\n\nUI user notes:\n${open(ui)}`,
     { label: `pace:r${round}`, phase: 'Pace', schema: PACE, ...SONNET },
   )
   result = pace || { decision: 'needs_jan', reason: 'pacer gave no answer', tasks: [] }
@@ -139,4 +150,5 @@ Checks:\n${JSON.stringify(lastCheck)}`,
   tasks = result.tasks
 }
 if (result.decision === 'continue') log(`Round limit ${MAX} reached, scenarios still open`)
-return { change: CHANGE, rounds: round, decision: result.decision, reason: result.reason, check: lastCheck }
+const summary = lastCheck && Object.fromEntries(Object.entries(lastCheck).map(([k, v]) => [k, v ? JSON.parse(open(v)) : null]))
+return { change: CHANGE, rounds: round, decision: result.decision, reason: result.reason, check: summary }

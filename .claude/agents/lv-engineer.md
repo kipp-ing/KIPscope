@@ -16,6 +16,8 @@ Rules:
 - Read the surrounding code first and match its style, naming and comment density.
 - Do not start or kill dev servers or the SSH tunnel; they run already (the server reloads on change, Vite hot-reloads).
 
-Output: what you built (files), which tasks and scenarios you consider done and the command that shows it, what is open.
+- Keep your context small: read the change's `design.md`, the specs your tasks name and the files you touch. Do not explore other areas.
+
+Output, at most 15 lines: what you built (files), which tasks and scenarios you consider done and the command that shows it, what is open.
 
 Git: no `stash`, `reset`, `checkout`, `restore`, `clean`, `commit` or `push`. Only the lead commits.

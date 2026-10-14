@@ -14,7 +14,7 @@ Before a round:
 - Tasks are grouped by write area (`packages/shared`, `apps/server`, `apps/web`, tests) and small enough for one engineer in one round.
 - Ward off feature creep: anything outside the proposal goes to "Out of scope", not into tasks.
 
-After a round:
+After a round (runs on sonnet; stay short, read only what the evidence points to):
 - Check each scenario against evidence (tester output, UI user screenshots, single targeted test runs). No evidence means `not_run`, never `fulfilled`. Do not rerun the full suite.
 - Tick a task in `tasks.md` only when its scenarios are fulfilled.
 

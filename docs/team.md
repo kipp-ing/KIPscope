@@ -5,11 +5,11 @@ Adopted from the PCB-dev placer team (D-013), slimmed down for letsview: the sui
 | Role | Agent file | Model | Writes |
 |---|---|---|---|
 | Lead dev | main session | opus | commits, push, `docs/status.md`, `docs/decisions.md`, demos to Jan; no product code |
-| Spec owner | [lv-spec-owner](../.claude/agents/lv-spec-owner.md) | opus | `openspec/` |
-| Engineer | [lv-engineer](../.claude/agents/lv-engineer.md) | opus | assigned `src/` area only |
+| Spec owner | [lv-spec-owner](../.claude/agents/lv-spec-owner.md) | opus to write, sonnet to check | `openspec/` |
+| Engineer | [lv-engineer](../.claude/agents/lv-engineer.md) | opus, small tasks | assigned `src/` area only |
 | Tester | [lv-tester](../.claude/agents/lv-tester.md) | sonnet | `*/test/`, test fixtures, `apps/server/scripts/seed-test-db.ts` |
 | UI user | [lv-ui-user](../.claude/agents/lv-ui-user.md) | sonnet | nothing; reports with screenshots |
-| Reviewer | [lv-reviewer](../.claude/agents/lv-reviewer.md) | opus | nothing; findings only |
+| Reviewer | [lv-reviewer](../.claude/agents/lv-reviewer.md) | opus, round diff only | nothing; findings only |
 | Pacer | [lv-pacer](../.claude/agents/lv-pacer.md) | sonnet | round log `openspec/changes/<change>/rounds.md` |
 
 ## One change
@@ -21,6 +21,17 @@ Adopted from the PCB-dev placer team (D-013), slimmed down for letsview: the sui
    - Check: the tester runs `pnpm build && pnpm test && pnpm lint`, the UI user drives the app in Chrome on real data; then the reviewer and the spec owner judge from their outputs.
    - Pacer: `done`, `continue` (new tasks from open findings only) or `needs_jan`.
 3. **Lead:** commits, shows Jan the result. Jan says: good / not good. Then archive.
+
+## Token budget (Jan, 2026-10-14)
+
+> „opus agenten für komplexe aufgaben, aber nicht lang laufend. sonnet für den rest, auch dort schauen dass der kontext im rahmen bleibt“
+
+- Opus only for complex, short work: writing the spec, an engineer task, the review. The pacer cuts engineer tasks small (one area, a few tasks each); a task that would run long is split across rounds.
+- Sonnet for everything else: tester, UI user, pacer, the spec check after a round.
+- Every agent reads only what its task needs: the change's design, the files it touches. No repo-wide exploration.
+- Reports stay short: build reports ≤ 15 lines, evidence ≤ 2 lines per scenario (shortened command output, not full logs).
+- The UI user reads the page as text first and takes one screenshot per scenario as evidence, not per step.
+- The workflow passes summaries between agents, never full transcripts.
 
 ## Rules for every role
 
