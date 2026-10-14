@@ -26,10 +26,12 @@ Grouped by write area (docs/team.md): engineers own groups 1 and 2, the tester o
 
 ## 4. Integration check (real carserver data)
 
-- [ ] 4.1 UI user walks through every UI check in `specs/timeseries-window/spec.md` and `specs/signal-catalog/spec.md` on `smart451` (engine-start window 2026-10-13T09:56:59Z–09:57:01Z in line, step and markers mode; V_ANZ full-extent overview with envelope; DVL full extent; DNMOT); verify by one screenshot per scenario
+- [x] 4.1 UI user walks through every UI check in `specs/timeseries-window/spec.md` and `specs/signal-catalog/spec.md` on `smart451` (engine-start window 2026-10-13T09:56:59Z–09:57:01Z in line, step and markers mode; V_ANZ full-extent overview with envelope; DVL full extent; DNMOT); verify by one screenshot per scenario
 - [x] 4.2 Run the `curl` commands named in `specs/series-query/spec.md` and `specs/signal-catalog/spec.md` against the dev server; verify outputs `71` / `4411`, the 8-3-9 null pattern and the V_ANZ `sna` entry
 
 ## Workflow follow-up
 
 - Lead shows Jan the result (open questions resolved by D-014).
 - Archive the change after Jan's approval; copy project-wide decisions (S2 tolerance, S4 null-means-SNA) into docs/decisions.md.
+
+Note on 4.1 (2026-10-14): all real-data UI checks passed in the UI user's walk; the `Sna_800h` edge cases (isolated points, SNA at end of data, raw-hex tooltip) exist only in the test DB and are covered by unit tests. Jan accepted that as sufficient.
