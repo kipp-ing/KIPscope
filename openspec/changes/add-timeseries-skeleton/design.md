@@ -84,7 +84,7 @@ The server runs data-source queries through a queue with a configured concurrenc
 - `WS /api/live` — server pushes `{revision, state}` after each accepted command; browsers send `{rendered: revision, status: "complete" | "error", errors?}`.
 - `GET /api/render-status` — latest rendered revision per connected browser.
 
-Commands are a discriminated union in `packages/shared`; the server applies them in a pure function `apply(state, command) → state | error`, which makes undo (later change) a matter of storing inverse commands or previous states. State lives in memory; persistence is a later change.
+Commands are a discriminated union in `packages/shared`, applied by a pure function `applyCommand(state, command) → state | error` that also lives there (the server runs it; a later CLI can reuse it for dry runs). Stable IDs come from a counter in the state (`w1`, `a2`, …), which keeps the function pure, which makes undo (later change) a matter of storing inverse commands or previous states. State lives in memory; persistence is a later change.
 
 The UI sends a set-time-range command at the end of a zoom/pan gesture (debounced for wheel zoom), not per animation frame; during the gesture the window shows a local preview. This keeps the revision stream meaningful for render acknowledgement and later for undo.
 

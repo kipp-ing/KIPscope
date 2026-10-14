@@ -36,7 +36,7 @@
 ## 6. Workspace state (spec: workspace-state)
 
 - [x] 6.1 Define workspace state and command union with Zod schemas in `packages/shared`; verify schema tests reject malformed commands
-- [ ] 6.2 Implement pure `apply(state, command)` for all skeleton commands, including the 50-distinct-signal limit and unknown-ID rejection; verify unit tests per spec scenario
+- [x] 6.2 Implement pure `apply(state, command)` for all skeleton commands, including the 50-distinct-signal limit and unknown-ID rejection; verify unit tests per spec scenario
 - [ ] 6.3 Expose `POST /api/commands` and `GET /api/workspace` with revision counting; verify HTTP tests that accepted commands increment the revision and rejected ones don't
 - [ ] 6.4 Implement `WS /api/live` state push and render acknowledgement, plus `GET /api/render-status`; verify with a test client that receives the state and whose acknowledgements (complete and error) appear in render status
 
