@@ -4,6 +4,18 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-017: Power-user window workflow (2026-10-14)
+
+- **Decision:** Jan's feedback after testing (overall "already usable"):
+  - Signals can be moved between windows, back and forth.
+  - Signals with the same value range share one y-axis.
+  - Time zoom is shared across windows by default and can be switched off. This supersedes concept §4 "Der Zeitzoom ist je Fenster unabhängig" as the default.
+  - The signal explorer is a list with details on hover.
+  - The explorer search filters on parts of the input (substring match), not only on whole names.
+  - Cursors A/B with differences (concept §6) follow as the next change.
+  - Further rounds with power users ("UI nerds") who drive the app and feed findings into the changes.
+- **Why:** Jan's words: „Signale zwischen zwei anzeigen hin und her. gleiche signalbereich gleiche achse. gemeinsamer zoom standard aktiv abschaltbar. signalexplorer als liste mit hover infos. bei eingabe in suchliste filtern auch auf teile. diff cursor auch als nächster schritt.“
+
 ## D-016: SNA conventions across the API (2026-10-14)
 
 - **Decision:** From `add-sna-handling` design S2–S5: in series payloads `null` means SNA and nothing else (raw `v`, edge neighbors, bucket `mean/min/max`, which are null exactly when a bucket has no valid point; `count` counts valid points, `sna` counts SNA points). SNA is matched in ClickHouse within half a raw step of each SNA code's physical value, so aggregates exclude it at the source. Series requests answer 503 `catalog_unavailable` until the catalog has loaded once, since SNA cannot be recognised without it.
