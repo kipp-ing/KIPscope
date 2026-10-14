@@ -11,6 +11,13 @@
   },
   "dependencies": {
     "@clickhouse/client": "1.24.1",
-    "@letsview/shared": "workspace:*"
+    "@fastify/websocket": "11.3.4",
+    "@letsview/shared": "workspace:*",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0"
   }
 }

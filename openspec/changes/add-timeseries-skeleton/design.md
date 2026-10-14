@@ -60,9 +60,9 @@ The adapter reads one long-format table. Server config names the table and its c
 
 Signal ID: `<vehicle>/<signal>`, e.g. `smart451/MS_312h.DNMOT`.
 
-The catalog is built at server start from `SELECT DISTINCT vehicle, signal` (428 rows), merged with DBC metadata (D6) and held in server memory; search runs there, case-insensitive across name, description, alias and unit, paged with a more-results flag. A refresh endpoint/command reloads it when new signals appear. This is metadata, not a data cache, so it doesn't conflict with concept §2.
+The catalog is built at server start from `SELECT DISTINCT vehicle, signal` (428 rows, 0.35 s on carserver; filtering out null `utc` there costs 8 s, so a signal with only null-timestamp rows would be listed but show no data), merged with DBC metadata (D6) and held in server memory; search runs there, case-insensitive across name, description, alias and unit, paged with a more-results flag. A refresh endpoint/command reloads it when new signals appear. This is metadata, not a data cache, so it doesn't conflict with concept §2.
 
-The adapter implements a `DataSource` interface (`listSignals`, `querySeries`) that the ADX adapter will implement too.
+The adapter implements a `DataSource` interface of source primitives (`listSignals`, `count`, `raw`, `before`, `after`, `buckets`) that the ADX adapter will implement too; the raw-vs-aggregate logic (D4) sits above it and is shared.
 
 Alternative: catalog search with `ILIKE` in ClickHouse — rejected because metadata comes from DBC files, not the database, and a `DISTINCT` over 88 M rows per keystroke would load the small server.
 
