@@ -43,7 +43,7 @@ Grouped by write area (docs/team.md). Groups 1–2 (shared + server), 3 (web, Ap
 - [x] 6.1 UI user walks every UI check in `specs/timeseries-window/spec.md` on `smart451` (V_ANZ, DVL, PTC_HV_Volt, EAC_HV_Volt, T_MOT, T_SOLL, DNMOT as named there), one screenshot per scenario
 - [x] 6.2 Run the `curl` commands named in `specs/series-query/spec.md` and `specs/workspace-state/spec.md` against the dev server; verify `400` and `true`
 
-- [ ] 6.3 D-020 spec alignment: UI user walks the scenarios added afterwards in `specs/timeseries-window/spec.md` ("Pan and Zoom out", "Shift+wheel pans", "Zoom in past 100 ns", "History after reload") and `specs/workspace-state/spec.md` ("Browser reload" with titles, heights, link toggle and colours); the calendar-tick and header-range scenarios are covered by their existing tests
+- [x] 6.3 D-020 spec alignment: UI user walks the scenarios added afterwards in `specs/timeseries-window/spec.md` ("Pan and Zoom out", "Shift+wheel pans", "Zoom in past 100 ns", "History after reload") and `specs/workspace-state/spec.md` ("Browser reload" with titles, heights, link toggle and colours); the calendar-tick and header-range scenarios are covered by their existing tests
 
 ## Workflow follow-up
 
