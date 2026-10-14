@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-012: Correction to D-010's evidence; SNA is compared physically (2026-10-14)
+
+- **Decision:** D-010 stands. Its example was wrong: `MS_312h.DNMOT` is not SNA. It is scaled `(1, −127)`, so SNA raw `FFh` is physical 128; the constant −127 is raw 0, a valid value. Correct examples: `COMBI_412h.V_ANZ` (raw `1FFh` → 511 km/h) and `BS_200h.DVL` (raw `3FFFh` × 0.5 → 8191.5 1/min, present in the data). SNA raw values from the DBC are converted with factor and offset (two's complement for signed signals) before comparing with stored values, since the decoder stores physical values (`scaling=True`).
+- **Why:** The stored values are physical; comparing raw SNA codes would miss real SNA and hide valid values.
+
 ## D-011: Architecture of the skeleton (2026-10-14)
 
 From the archived change [add-timeseries-skeleton](../openspec/changes/archive/2026-10-14-add-timeseries-skeleton/design.md); details and alternatives there.
