@@ -35,8 +35,8 @@ The UI SHALL offer a signal explorer that searches the catalog and lists each re
 
 #### Scenario: One line per signal
 - **WHEN** the user searches for `temp` on real data
-- **THEN** every result row is a single line (height ≤ 24 px, measured with `getBoundingClientRect`), no description, SNA text or data reference appears in the list itself, and at a 900 px tall browser window at least 25 rows are visible without scrolling (today about 10)
-- **Evidence:** UI check (screenshot plus the measured row height)
+- **THEN** every result row is a single line and no description, SNA text or data reference appears in the list itself; goals, measured and reported but not pass/fail: row height ≤ 24 px (`getBoundingClientRect`) and at least 25 rows visible without scrolling at a 900 px tall browser window (today about 10)
+- **Evidence:** UI check (screenshot plus the measured row height and visible row count)
 
 ## ADDED Requirements
 
@@ -60,7 +60,7 @@ Results SHALL be ordered by tier, best first: (0) a term equals the name or its 
 
 #### Scenario: API ranks like the explorer
 - **WHEN** the test catalog is searched for `rpm`
-- **THEN** `testcar/Sna_800h.RPM` (exact) comes before the `Fast_100h.SIG_A` entries (unit `rpm`); on real data `curl -s 'localhost:7310/api/signals?q=V_ANZ' | jq -r '.items[0].id'` prints `smart451/COMBI_412h.V_ANZ`
+- **THEN** `testcar/Sna_800h.RPM` (exact) comes before the `Fast_100h.SIG_A` entries (unit `rpm`); on real data `curl -s 'localhost:7310/api/signals?q=volt' | jq -r '.items[0].id'` prints `smart451/CPC_168h.EAC_HV_Volt` (first name match; before ranking it was the description match `smart451/AC_443h.PNHV_Evap_CoolVlv_Rq_HVAC`)
 - **Evidence:** `apps/server/test/catalog.test.ts` › "ranks search results like the explorer"; the curl command
 
 ### Requirement: Full catalog listing
@@ -118,7 +118,7 @@ The explorer SHALL make every match reachable: it shows the total match count an
 #### Scenario: Show more beyond one chunk
 - **WHEN** a search matches more signals than one render chunk (test catalog, empty query, 1,013 signals)
 - **THEN** a "Show N more" control appears, and using it until it disappears renders all matches
-- **Evidence:** `apps/web/test/explorer.test.ts` › "renders matches in chunks until all are visible" (pure chunking helper)
+- **Evidence:** `apps/web/test/explorer.test.ts` › "renders matches in chunks until all are visible" (pure chunking helper). On real data (428 signals < 500) the control never appears, so the helper test is the only evidence; the UI user does not check it.
 
 ### Requirement: Filtering without visible lag
 The explorer SHALL update its list on every keystroke without a request to the server. Goal: ranking 10,000 signals takes under 50 ms. Origin: power-user report point 5 ("results lag typing", expectation "no visible lag"); the number is a goal.
@@ -134,11 +134,11 @@ The explorer SHALL update its list on every keystroke without a request to the s
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks 10,000 signals in under 50 ms"
 
 ### Requirement: Signal hover card
-Resting the pointer on a row for 350 ms, or making a row active by keyboard and waiting 350 ms, SHALL open a card with: full name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference and DBC file) and the windows currently showing the signal. Absent fields SHALL be omitted, never shown as empty or invented. Origin: D-017 („mit hover infos"); fields from the power-user report point 4; the 350 ms delay is a goal.
+Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal.
 
 #### Scenario: Card for V_ANZ
 - **WHEN** the user hovers `COMBI_412h.V_ANZ` on real data and the signal is shown in one window
-- **THEN** after about a third of a second a card shows `COMBI_412h.V_ANZ`, `Indicated speed`, `COMBI_412h · 0x412`, unit `km/h`, scaling `× 1 + 0`, raw step `1 km/h`, range `0 … 510 km/h`, SNA `511 km/h (raw 1FFh)`, values `511 SNV`, source `smart451 · h-can.dbc`, and that window's title under "Shown in"
+- **THEN** after about a third of a second a card shows `COMBI_412h.V_ANZ`, `Indicated speed`, `COMBI_412h · 0x412`, unit `km/h`, scaling `× 1 + 0`, raw step `1 km/h`, range `0 … 510 km/h`, SNA `511 km/h (raw 1FFh)`, values `511 SNV`, source `smart451 · h-can.dbc`, and under "Shown in" that window's name as its header shows it (its title, or `Window <n>` when untitled)
 - **Evidence:** UI check (screenshot of the card)
 
 #### Scenario: Card with offset
@@ -162,7 +162,7 @@ Resting the pointer on a row for 350 ms, or making a row active by keyboard and 
 - **Evidence:** UI check (description of the observed behaviour)
 
 ### Requirement: Explorer keys
-The explorer SHALL support: `/` focuses the search field when focus is not in a text field (the `/` is not typed); Esc in the search field clears the query and closes the card; ArrowDown/ArrowUp move the active row (first hit by default, clamped at the ends) and keep it in view; Enter adds the active row exactly as its add button does. Origin: power-user report ("no keyboard shortcuts: focus search, Esc"); key set from the lead's scope; necessary for the keyboard-focus card of D-017.
+The explorer SHALL support: `/` focuses the search field when focus is not in a text field (the `/` is not typed); Esc in the search field clears the query and closes the card; ArrowDown/ArrowUp move the active row (first hit by default, clamped at the ends) and keep it in view; Enter adds the active row exactly as its add button does. Origin: D-020 ("The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears.").
 
 #### Scenario: Search, Enter adds the top hit
 - **WHEN** focus is on the page body, the user presses `/`, types `V_ANZ` and presses Enter
@@ -180,17 +180,27 @@ The explorer SHALL support: `/` focuses the search field when focus is not in a 
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Explorer rows are a drag source
-Pressing on an explorer row's name and moving the pointer SHALL start the app's signal drag (the pointer drag of `improve-window-workflow`) with that row's signal, through the interface pinned in design.md S3. Dropping it adds the signal (never moves), using that change's drop targets. The add button SHALL NOT start a drag. Origin: power-user report point 1 ("explorer rows draggable onto windows too"), D-017 (moving signals between windows).
+Pressing on an explorer row's name and moving the pointer SHALL start the app's pointer drag (design S3) with that signal. Windows that do not show it and stay within four units SHALL be highlighted with "Drop to add"; one that would reach a fifth unit SHALL be marked not droppable ("At most 4 units per window") and ignore a drop. A drop adds, never moves; Alt/Ctrl change nothing. The add button SHALL NOT start a drag. Origin: D-020 (explorer drag; fifth unit refused as for legend drags).
 
 #### Scenario: Drag a row onto a window
-- **WHEN** both changes are built, a window exists that does not show `COMBI_412h.V_ANZ`, and the user drags the V_ANZ row onto it with the mouse
-- **THEN** windows not showing V_ANZ are highlighted as targets while dragging, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
-- **Evidence:** UI check (screenshot during the drag and after the drop)
+- **WHEN** a window exists that does not show `COMBI_412h.V_ANZ`, and the user drags the V_ANZ row onto it with the mouse
+- **THEN** windows not showing V_ANZ are highlighted with "Drop to add" while dragging, a window showing it is not highlighted, the ghost reads `COMBI_412h.V_ANZ · add` over a valid target, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
+- **Evidence:** UI check (screenshot during the drag and after the drop); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
+
+#### Scenario: Fifth unit refused for an explorer drag
+- **WHEN** window A shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h), `MS_608h.T_MOT` (°C) and `BS_200h.DVL` (1/min), and the user drags the `MS_312h.DNMOT` (`rpm/10ms`) row over A and releases
+- **THEN** A is marked not droppable with the hint "At most 4 units per window" while dragging, and the release changes nothing (revision unchanged); dragging `CPC_448h.PTC_HV_Volt` (V) over A highlights it with "Drop to add"
+- **Evidence:** `apps/web/test/drag.test.ts` › "refuses an explorer drop that would make a fifth unit"; UI check (screenshot while dragging, revision before and after)
+
+#### Scenario: Legend drags unchanged
+- **WHEN** a legend row is dragged after this change
+- **THEN** source, target and refused states, the hint "Drop to move · Alt/Ctrl+drop to copy" and move/copy behave as before
+- **Evidence:** `apps/web/test/drag.test.ts` › "keeps the legend-drag states" and the existing drag tests
 
 #### Scenario: Drag a row onto "+ New window"
 - **WHEN** the user drags the `BS_200h.DVL` row onto the "+ New window" zone
-- **THEN** a new window with DVL is created, exactly as with the add button and "New window" selected
-- **Evidence:** UI check (screenshot)
+- **THEN** a new window `Window <n>` with DVL is created, exactly as with the add button and "New window" selected
+- **Evidence:** UI check (screenshot); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
 
 #### Scenario: Click is not a drag
 - **WHEN** the user clicks a row's name or its add button without moving the pointer
@@ -198,7 +208,7 @@ Pressing on an explorer row's name and moving the pointer SHALL start the app's 
 - **Evidence:** UI check
 
 ### Requirement: Stable "Add to" target
-The explorer's "Add to" target SHALL be held by window ID and change only by the user's own choice, or fall back to "New window" when its window is removed. Creating, renaming or reordering windows, new state revisions and query changes SHALL NOT change it. The add button and Enter SHALL name the target they add to. Origin: power-user report ("sticky global 'Add to' led to adding to the wrong window"); lead decision 2026-10-14 (D-019).
+The explorer's "Add to" target SHALL be held by window ID and change only by the user's own choice, or fall back to "New window" when its window is removed. Creating, renaming or reordering windows, new state revisions and query changes SHALL NOT change it. The add button SHALL name the target it adds to; Enter adds to the same target. Origin: D-020 („The "Add to" target stays where the user put it; creating, renaming or reordering windows does not move it.“).
 
 #### Scenario: Target survives window changes
 - **WHEN** windows `w1` and `w2` exist, the user selects `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed

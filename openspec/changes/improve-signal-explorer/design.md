@@ -6,6 +6,7 @@ See proposal.md for the why. Jan's words, quoted:
 
 - **D-017:** „signalexplorer als liste mit hover infos. bei eingabe in suchliste filtern auch auf teile." Ledger: "The signal explorer is a list with details on hover." / "The explorer search filters on parts of the input (substring match), not only on whole names."
 - **D-018:** "The window-workflow change also takes: explorer ranking and match highlighting without a hard cap, stable signal colours across windows, window rename, and window layout with keys (…)." The lead split the explorer part into this change; `improve-window-workflow` keeps the rest. Nothing of D-018 is changed by the split (lead, D-019).
+- **D-020:** "Explorer rows can be dragged onto windows; a window that would reach a fifth unit is shown as refused, the same rule as for legend drags (D-019)." / "The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears." / „The "Add to" target stays where the user put it; creating, renaming or reordering windows does not move it.“
 - **Concept §4:** „Ein Signalexplorer bietet Suche über Name, Beschreibung, Alias und Einheit. Vorhandene Metadaten werden angezeigt."
 
 Current code: `Catalog.search` (server) already does case-insensitive substring per whitespace term, AND across name/description/alias/unit, in catalog order (name, dataRef), paged (default 50, max 200). The web calls `/api/signals?limit=100` 200 ms after the last keystroke; rows render description, SNA text and data reference inline. `parseDbc` reads `BO_` ID and name, `SG_` length/sign/factor/offset (for SNA only), unit, `CM_`, `VAL_` (kept in `DbcSignal.values`, never sent), `GenSigSNA`. `[min|max]` and the file a key came from are not kept.
@@ -18,9 +19,9 @@ Current code: `Catalog.search` (server) already does case-insensitive substring 
 
 ## Goals / Non-Goals
 
-**Goals:** one-line rows, hover card with all DBC metadata, ranked substring search with highlights, every match reachable, list updates per keystroke, keys, explorer rows as a source for the window change's pointer drag.
+**Goals:** one-line rows, hover card with all DBC metadata, ranked substring search with highlights, every match reachable, list updates per keystroke, keys, explorer rows as a drag source including their drop branch (add, unit-limit refusal) on the window change's pointer drag.
 
-**Non-Goals:** drop handling for legend rows, window titles in "Add to" (`improve-window-workflow`: `window.rename`, "Window n"), windows/axes/zoom/cursors (`improve-window-workflow` and the cursor change), live catalog reload in the browser, fuzzy matching, alias data.
+**Non-Goals:** any change to legend-row drags (move/copy, their hint and states stay as `improve-window-workflow` D5 pins them), window titles in "Add to" (`improve-window-workflow`: `window.rename`, "Window n"), windows/axes/zoom/cursors (`improve-window-workflow` and the cursor change), live catalog reload in the browser, fuzzy matching, alias data, a unit-limit warning on the `+` button or Enter (the server's `too_many_units` message shows as today).
 
 ## Decisions
 
@@ -44,10 +45,10 @@ The web loads the full catalog once (`GET /api/catalog`, E3) and ranks it synchr
 `parseDbc(text, file?)` additionally keeps per entry: message name and `BO_` ID, factor/offset (already parsed), `[min|max]` from the same `SG_` line (extend `LAYOUT` with `\[\s*(NUMBER)\s*\|\s*(NUMBER)\s*\]`), the `VAL_` table, and `file` when given. `loadDbcFiles` passes `basename(path)`. `Catalog.refresh` copies these into `SignalInfo.dbc` (shape in S1); `values` sorted by raw ascending; `[0|0]` is passed through as written (the web shows `not set`). Raw step is not a field: it is `|factor|`, computed in the web.
 
 ### E5: One-line rows
-Row = `[dot] name … unit [+]`, height ≤ 24 px, name ellipsized (full name in the card), unit right-aligned and muted. Dot only when `sna` is present, coloured like the chart's SNA lanes, `title`/`aria-label` `SNA <values> <unit>` (existing `formatSnaValue`). The `+` button (`aria-label="Add <name>"`) calls `onAdd(signal, target)` as the old "Add" button. Goal ≥ 25 visible rows at 900 px window height; ×2 smaller (12) is today's density, ×2 larger (50) would need ~12 px rows, unreadable.
+Row = `[dot] name … unit [+]`, height ≤ 24 px, name ellipsized (full name in the card), unit right-aligned and muted. Dot only when `sna` is present, coloured like the chart's SNA lanes, `title`/`aria-label` `SNA <values> <unit>` (existing `formatSnaValue`). The `+` button (`aria-label` per E10) calls `onAdd(signal, target)` as the old "Add" button. Must: one line per row, no description, SNA text or data reference in the list. Goals (measured and reported, not pass/fail): row height ≤ 24 px, ≥ 25 visible rows at 900 px window height; ×2 smaller (12) is today's density, ×2 larger (50) would need ~12 px rows, unreadable.
 
 ### E6: Render chunks instead of a cap
-Render the first `CHUNK = 500` matches; below them a button "Show N more" (N = min(500, remaining)) renders the next chunk; the count line reads `N matches` plus `, showing M` while M < N. The rendered count resets to 500 on every query change. ArrowDown on the last rendered row renders the next chunk. 500 covers the real catalog (428) without the button; ×2 (1,000 rows) still renders in tens of ms, ÷2 (250) only adds a click on empty queries. Pure helper `visibleCount(total, shown)` in `apps/web/src/explorer/format.ts` for the test. No virtual scrolling (rows ≤ 500 at a time make it unnecessary).
+Render the first `CHUNK = 500` matches; below them a button "Show N more" (N = min(500, remaining)) renders the next chunk; the count line reads `N matches` plus `, showing M` while M < N. The rendered count resets to 500 on every query change. ArrowDown on the last rendered row renders the next chunk. 500 covers the real catalog (428) without the button; ×2 (1,000 rows) still renders in tens of ms, ÷2 (250) only adds a click on empty queries. Pure helper `visibleCount(total, shown)` in `apps/web/src/explorer/format.ts` for the test. No virtual scrolling (rows ≤ 500 at a time make it unnecessary). On real data (428 signals) the button never appears, so its evidence there is the helper test only.
 
 ### E7: Hover card
 - Opens after `HOVER_DELAY_MS = 350` on `pointerenter` of a row, or 350 ms after a row becomes active by keyboard. While a card is open, entering another row (or moving the active row) switches the card immediately. Closes `HIDE_GRACE_MS = 150` after the pointer left both row and card, on Esc, on list scroll, and on query change. ×2 delay (700 ms) feels sluggish; ÷2 (175 ms) opens cards while sweeping. ×2 grace is harmless; ÷2 makes reaching the card with the pointer harder.
@@ -62,19 +63,20 @@ Render the first `CHUNK = 500` matches; below them a button "Show N more" (N = m
   - `Values`: one line per `VAL_` entry `<raw> <label>`
   - `Source`: `formatSource(signal)`: `<dataRef> · <file>`, `<dataRef> · DBC` when `file` is absent, or `<dataRef> · no DBC entry` when `dbc` is absent
   - `Shown in`: `windowsShowing(windows, id)` joined by `, `, or `no window`
-- Pinned formatter outputs (`apps/web/src/explorer/format.ts`, tested): `formatScaling(1, 0)` → `× 1 + 0`, `(0.5, 0)` → `× 0.5 + 0`, `(1, -40)` → `× 1 - 40`; `formatRawStep(0.5, "1/min")` → `0.5 1/min`, `(-2, undefined)` → `2`; `formatDbcRange(0, 510, "km/h")` → `0 … 510 km/h`, `(0, 0, …)` → `not set`, `(-40, 214, "°C")` → `-40 … 214 °C`; `formatMessageId(1042)` → `0x412`, `(0x98FF1234)` → `0x18FF1234 (ext)`; `windowsShowing` returns `title ?? id` of each window whose `signals` contain the ID, in window order. Numbers print via `String(n)`.
+- Pinned formatter outputs (`apps/web/src/explorer/format.ts`, tested): `formatScaling(1, 0)` → `× 1 + 0`, `(0.5, 0)` → `× 0.5 + 0`, `(1, -40)` → `× 1 - 40`; `formatRawStep(0.5, "1/min")` → `0.5 1/min`, `(-2, undefined)` → `2`; `formatDbcRange(0, 510, "km/h")` → `0 … 510 km/h`, `(0, 0, …)` → `not set`, `(-40, 214, "°C")` → `-40 … 214 °C`; `formatMessageId(1042)` → `0x412`, `(0x98FF1234)` → `0x18FF1234 (ext)`; `windowsShowing` returns `windowTitle(w)` (`packages/shared`, "Window <n>" when untitled) of each window whose `signals` contain the ID, in window order. Numbers print via `String(n)`.
 
 ### E8: Keys
 The search input is a combobox (`role="combobox"`, `aria-controls` the list, `aria-activedescendant` the active row); the list is `role="listbox"`, rows `role="option"` with `aria-selected`. Focus stays in the input while arrows move the active row.
-- `/` (global `keydown` on `window`): if the target is not an `input`, `textarea`, `select` or contenteditable, `preventDefault()`, focus and select the search field.
+Keys origin: D-020.
+- `/` (global `keydown` on `window`): if `isTextField(document.activeElement)` (`apps/web/src/keys.ts`, the same check as Backspace) is false, `preventDefault()`, focus and select the search field.
 - In the search field: Esc → clear query, close card, active row 0. ArrowDown/ArrowUp → active ± 1, clamped, `scrollIntoView({block: "nearest"})`, `preventDefault()`. Enter → `onAdd(activeSignal, target)` if there is a result. Any query change → active row 0.
 
 ### E9: Drag source on the window change's pointer drag
-`improve-window-workflow` (its design D5) builds drag and drop with pointer events, not HTML5 drag-and-drop: `App` owns the drag state, ghost, highlighted targets, "+ New window" zone and Esc; legend rows call `onDragStart(source, event)` on pointer down and `App` starts the drag after `DRAG_THRESHOLD_PX` (4 px). A MIME payload would not reach that machinery, so the explorer joins it instead: on `pointerdown` (primary button) on a row's name it calls `onDragStart({ signalId }, event)` (S3); the `+` button stops propagation. While `dragging` is true the explorer closes its card and starts no new one. This change runs after `improve-window-workflow`, so D5 exists; task 3.4 adds the explorer branch to its drop side.
+`improve-window-workflow` (its design D5) builds drag and drop with pointer events, not HTML5 drag-and-drop: `App` owns the drag state, ghost, highlighted targets, "+ New window" zone and Esc; legend rows call `onDragStart(source, event)` on pointer down and `App` starts the drag after `DRAG_THRESHOLD_PX` (4 px). A MIME payload would not reach that machinery, so the explorer joins it instead: on `pointerdown` (primary button) on a row's name it calls `onDragStart({ signalId }, event)` (S3); the `+` button stops propagation. While `dragging` is true the explorer closes its card and starts no new one. This change runs after `improve-window-workflow`, so D5 exists; task 3.4 adds the explorer branch to its drop side per S3 (origin D-020: drop adds; a window that would reach a fifth unit is refused, the same rule as legend drags).
 - Alternative rejected: HTML5 drag-and-drop with a MIME type (`application/x-letsview-signal+json`). It would need a second drop path in every window, and the UI user's browser automation cannot drive native drag-and-drop reliably (window change D5).
 
 ### E10: Stable "Add to" target
-State `target: string` holds a window ID or `NEW_WINDOW`, never an option index. It changes only in the select's `onChange`. On every `windows` change it passes through `resolveTarget(target, windows)` (`apps/web/src/explorer/format.ts`): unchanged when a window with that ID exists or it is `NEW_WINDOW`, else `NEW_WINDOW`. An add via "New window" does not switch the target to the created window. The `+` button's `title` and `aria-label` read `Add to <title>` (`Add to new window`), titles via `improve-window-workflow`'s `windowTitle`; Enter adds to the same target. Options keep window order and use the window ID as `key` and `value`.
+Origin D-020 ("Add to" jumping under the click is a reproduced bug). State `target: string` holds a window ID or `NEW_WINDOW`, never an option index. It changes only in the select's `onChange`. On every `windows` change it passes through `resolveTarget(target, windows)` (`apps/web/src/explorer/format.ts`): unchanged when a window with that ID exists or it is `NEW_WINDOW`, else `NEW_WINDOW`. An add via "New window" does not switch the target to the created window. The `+` button's `title` and `aria-label` read `Add to <title>` (`Add to new window`), titles via `improve-window-workflow`'s `windowTitle`; Enter adds to the same target. Options keep window order and use the window ID as `key` and `value`.
 
 ## Shared interfaces (pinned)
 
@@ -164,23 +166,65 @@ onDragStart?: (source: ExplorerDragSource, event: React.PointerEvent) => void;
 dragging?: boolean;
 ```
 
-Type, defined next to `DragSource` in `apps/web/src/chart/drag.ts` (window change D5):
+Added to `apps/web/src/chart/drag.ts` next to D5's `DragSource`, `DropTarget`, `DRAG_THRESHOLD_PX`, `canDrop(source, target, windows, unitOf)` and `dropCommand(source, target, windows, unitOf, mods)`, which stay as they are (legend sources only, `window.moveSignal`):
 
 ```ts
-/** A signal dragged out of the explorer: no source window, a drop always adds. */
+/** A signal dragged out of the explorer (D-020): no source window, a drop always adds. */
 export interface ExplorerDragSource { signalId: string }
+/** Anything App drags: a legend row (D5) or an explorer row. */
+export type AnyDragSource = DragSource | ExplorerDragSource;
+/** True for a legend row (it has a source window). */
+export function isLegendSource(source: AnyDragSource): source is DragSource;
+
+/** An explorer drop is accepted by a window that does not show the signal yet and keeps ≤ MAX_UNITS
+ * units (windowUnits with the signal as extra); "new" always accepts. */
+export function canAdd(
+  signalId: string,
+  target: DropTarget,
+  windows: TimeseriesWindow[],
+  unitOf: (signalId: string) => string | undefined,
+): boolean;
+
+/** Highlight of one window during a drag. */
+export type DropState = "source" | "target" | "refused";
+/** "source": the legend source window (never for an explorer source); "target": canDrop (legend) or
+ * canAdd (explorer); "refused": the window does not show the signal but would exceed MAX_UNITS with it;
+ * else undefined. For legend sources this equals App's current `dropStateOf` (moved here to be testable). */
+export function dropStateFor(
+  source: AnyDragSource,
+  windowId: string,
+  windows: TimeseriesWindow[],
+  unitOf: (signalId: string) => string | undefined,
+): DropState | undefined;
 ```
 
-Contract the window change's drop side meets for an `ExplorerDragSource` (distinguished from `DragSource` by the absence of `windowId`):
-- Targets: every window that does not show the signal yet, plus "+ New window"; no window is dimmed as source; hint "Drop to add".
-- Drop on a window → `App.addSignal(info(signalId), windowId)`; on "+ New window" → `App.addSignal(info(signalId), NEW_WINDOW)` (the explorer's existing add path). Alt/Ctrl change nothing. Esc or release elsewhere cancels.
-- Wiring: `App` passes `onDragStart` and `dragging` to `SignalExplorer`.
+`TimeseriesWindow.tsx` props (D6), added:
 
-Built by this change (task 3.4, lead decision 2026-10-14) on top of D5's `DragSource`, `DropTarget`, `DRAG_THRESHOLD_PX`, `canDrop` and the App drag state; legend-source behaviour stays as D5 pins it.
+```ts
+/** What a drop does; only read while dropState is "target". Absent → "move". */
+dropAction?: "move" | "add";
+```
+
+Hint while `dropState === "target"`: `"Drop to add"` when `dropAction === "add"`, else D5's `"Drop to move · Alt/Ctrl+drop to copy"`. `"refused"` shows `"At most 4 units per window"` (`HINT_REFUSED`) for both sources. Classes (`drop-target`, `drop-refused`, `drop-source`) are unchanged, so `window.css` needs no change.
+
+`App.tsx`, for an explorer source (legend sources unchanged):
+- `Drag.source: AnyDragSource`; `onDragStart(source: AnyDragSource, event)` is passed to every `TimeseriesWindow` (which calls it with a `DragSource`) and to `SignalExplorer`; `dragging={activeDrag !== undefined}`.
+- Each window gets `dropState` from `dropStateFor` and, during an explorer drag, `dropAction="add"`. No window is dimmed as source. "+ New window" appears as for legend drags.
+- Valid target (`overValid`): `canAdd(source.signalId, target, …)`. Ghost: the signal name, then ` · add` while over a valid target, else nothing; ` · Already shown` while over a window that shows the signal. Alt/Ctrl change nothing (no ` · copy`, no copy flag).
+- Release over a target with `canAdd` → `addSignal(info(signalId), target.kind === "new" ? NEW_WINDOW : target.windowId)` (the explorer's add path, reached through a ref so the drag listeners see the current function); `info` is filled by `onSeen(snapshot.items)` (E3), and if it is absent the drop does nothing. Release over a refused window, elsewhere, or Esc → no command.
+
+Evidence: `apps/web/test/drag.test.ts` (fixtures as in the existing tests: `wA` = V_ANZ km/h + DVL 1/min, `wB` = PTC V, plus `wC` = EAC V + V_ANZ km/h + T_MOT °C + DVL 1/min):
+- "adds an explorer signal to windows not showing it and to a new window": `canAdd("c/V_ANZ", wA)` false, `(…, wB)` true, `(…, new)` true; `dropStateFor({signalId: "c/V_ANZ"}, "wA")` undefined, `"wB"` `"target"`, never `"source"`.
+- "refuses an explorer drop that would make a fifth unit": `canAdd("c/DNMOT", wC)` false and `dropStateFor` `"refused"`; `canAdd("c/PTC", wC)` true (V already there).
+- "keeps the legend-drag states": `dropStateFor` for a legend source from `wA` gives `"source"` on `wA` and the states the existing three tests expect elsewhere.
+
+Built by this change (task 3.4, D-020) on top of D5; legend-source behaviour stays as D5 pins it.
 
 ### S4: Web-internal (pinned for parallel web tasks and tests)
 
-`apps/web/src/explorer/format.ts`: `HOVER_DELAY_MS`, `HIDE_GRACE_MS`, `CHUNK`, `visibleCount(total, shown): number` (`min(total, shown)` with `shown` a multiple of `CHUNK`), `nextShown(total, shown): number` (`min(total, shown + CHUNK)`), `formatScaling`, `formatRawStep`, `formatDbcRange`, `formatMessageId`, `formatSource`, `windowsShowing` (E7), `resolveTarget` (E10).
+`apps/web/src/explorer/format.ts`: `HOVER_DELAY_MS`, `HIDE_GRACE_MS`, `CHUNK`, `visibleCount(total, shown): number` (`min(total, shown)` with `shown` a multiple of `CHUNK`), `nextShown(total, shown): number` (`min(total, shown + CHUNK)`), `formatScaling`, `formatRawStep`, `formatDbcRange`, `formatMessageId`, `formatSource`, `windowsShowing` (E7), `resolveTarget(target: string, windows: TimeseriesWindow[]): string` (E10). `NEW_WINDOW` stays exported from `SignalExplorer.tsx` with the value `"new"`; `format.ts` defines the same value as its own `NEW_WINDOW` constant, and `SignalExplorer.tsx` re-exports it from there.
+
+`apps/web/src/api.ts`: the HTTP helper `searchSignals(q, abort)` is renamed `fetchSignalPage(q, abort)` (no clash with the shared `searchSignals`); `signalInfo` keeps using it. New: `fetchCatalog(abort?): Promise<CatalogSnapshot>` (`GET /api/catalog`).
 
 `apps/web/src/explorer/SignalCard.tsx`:
 
@@ -201,12 +245,12 @@ interface SignalCardProps {
 
 - [Full catalog in the browser grows with the source] → fine up to ~10k signals (E1); beyond, return to server search.
 - [Existing tests assert `toEqual` on DBC signals] → they gain `dbc`; the tester updates them (tasks 4.2).
-- [Explorer drag depends on the window change's D5] → this change runs after it; task 3.4 extends D5 without changing its legend behaviour.
+- [Explorer drag depends on the window change's D5] → this change runs after it; task 3.4 extends D5 without changing its legend behaviour (test "keeps the legend-drag states").
 - [Both changes edit `SignalExplorer.tsx`] → the window change only touches the "Add to" titles; it runs before this change.
 - [`/` as a global key could clash with later shortcuts] → only outside text fields; the window change's keys must avoid `/`.
+- [Archive order] → `specs/timeseries-window/spec.md` here MODIFIES "Drag feedback and cancel", which `improve-window-workflow` ADDS. `improve-window-workflow` is archived first (before this change is built, D-020); archiving this change before it would fail. `apps/web/src/keys.ts` (`isTextField`) also comes from that change.
 
-## Resolved by the lead (2026-10-14, D-019)
+## Resolved
 
-- The D-018 split into this change is fine; no question for Jan.
-- Task 3.4 (explorer branch of the drop) belongs here; this change runs after `improve-window-workflow`.
-- The sticky "Add to" fix belongs here (E10); window titles come from `improve-window-workflow`.
+- Lead (2026-10-14, recorded in D-019): the D-018 split into this change is fine.
+- Jan (D-020): explorer drag with the unit-limit refusal, the keys `/`, arrows, Enter, Esc, and the stable "Add to" target are in scope; task 3.4 (explorer branch of the drop) belongs here. Window titles come from `improve-window-workflow`.
