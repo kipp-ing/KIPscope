@@ -80,6 +80,11 @@
   min-height: 0;
 }
 
+/* Hides the crosshair without touching uPlot's mouse state, until the next move in the plot. */
+.window .plot .cursor-hidden :is(.u-cursor-x, .u-cursor-y, .u-cursor-pt) {
+  display: none;
+}
+
 .window .height-handle {
   height: 6px;
   margin: 0 -12px;

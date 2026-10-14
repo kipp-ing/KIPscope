@@ -118,6 +118,35 @@ A window SHALL be named by its title or, untitled, "Window <n>" everywhere it is
 - **THEN** the header and the explorer's "Add to" list show `HV voltages`, also after a browser reload
 - **Evidence:** UI check (screenshot of header and open "Add to" list)
 
+#### Scenario: New window from the explorer is untitled
+- **WHEN** the user adds `COMBI_412h.V_ANZ` to "New window" in the explorer and the new window gets the ID `w<n>`
+- **THEN** the new window's header reads `Window <n>` (not `V_ANZ`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
+- **Evidence:** UI check (screenshot of header and "Add to" list); the `curl` command. Origin: lead decision (rounds.md round 5): a signal-name title goes stale once that signal is moved out.
+
+### Requirement: Aligned time axes
+All windows SHALL use the same plot left and right insets (per side, the widest natural axis width of any window), so that one timestamp sits at the same x position in every window of equal width. Origin: lead decision (rounds.md round 5), a necessary consequence of D-017 (linked zoom is only comparable when the time axes line up).
+
+#### Scenario: Different axis counts line up
+- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ` only (one axis, `L`) and window 2 shows `CPC_448h.PTC_HV_Volt`, `COMBI_412h.V_ANZ` and `MS_608h.T_MOT` (axes `L`, `R`, `L2`)
+- **THEN** the left and right edges of both plot areas are at the same x (within 1 px), and the crosshair over a timestamp in window 1 and the same timestamp's tick in window 2 are vertically aligned
+- **Evidence:** UI check (one screenshot of both windows with a vertical guide or measured plot edges)
+
+### Requirement: Crosshair follows the pointer only
+The plot crosshair SHALL be hidden when the pointer leaves the plot and right after a committed zoom by wheel, drag-select or double-click reset, until the pointer moves again. Origin: lead decision (rounds.md round 5): a crosshair left at the old pixel after a zoom points at a wrong time.
+
+#### Scenario: Leave and zoom
+- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), then leaves the plot; then the user returns, wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
+- **THEN** the crosshair is gone after leaving, and after each of the wheel zoom, the drag-select and the double-click reset until the pointer moves
+- **Evidence:** UI check (screenshots after leaving and after each zoom commit)
+
+### Requirement: Wheel zoom step
+One wheel tick SHALL scale the time span by 2^(1/5), centred on the pointer, so five ticks double or halve the span; one wheel event SHALL zoom by at most five ticks (at most ×2). Origin: lead decision (rounds.md round 5); the exact feel is Jan's to judge (design D4 says what a factor of two either way does).
+
+#### Scenario: Five ticks out
+- **WHEN** a window shows 2026-10-13T09:56:00Z–09:58:00Z (2 min) and the user turns the mouse wheel five ticks outward with the pointer at the centre of the plot
+- **THEN** the header range spans about 4 min (±10 %), centred on about 09:57
+- **Evidence:** UI check (screenshots of the header before and after); no unit test covers the factor (`apps/web/test/zoom.test.ts` tests clamping, extent and history only)
+
 ### Requirement: One-line window header
 The window header SHALL stay on one line: a long title is cut with an ellipsis and shown in full as tooltip, and the buttons stay on the header line. Origin: bug "window header wraps with long titles" (feedback 2026-10-14).
 

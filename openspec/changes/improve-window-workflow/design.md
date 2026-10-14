@@ -11,7 +11,7 @@ See proposal.md for the why. Current state that shapes the approach:
 
 ### Bug analysis (evidence from the running dev server and carserver, 2026-10-14)
 
-- **"1036-01-11 … 3937-05-09" (`CPC_448h.PTC_HV_Volt`):** the signal's extent is fine (`/api/extent` → `1791722064884000000` … `1791897453175000000`, 57,280 rows, no timestamp before 2020 or after 2027). The live workspace holds window `w23` with `range.from = "-29473328485867940608"` and `range.to = "62083631947910636800"` — both outside int64 and exactly the displayed years. Cause: zoom-out (button ×2 span, wheel ×1.25) has no bound, and neither `TimeInput` nor `applyCommand` bounds a timestamp. Fix: D7.
+- **"1036-01-11 … 3937-05-09" (`CPC_448h.PTC_HV_Volt`):** the signal's extent is fine (`/api/extent` → `1791722064884000000` … `1791897453175000000`, 57,280 rows, no timestamp before 2020 or after 2027). The live workspace holds window `w23` with `range.from = "-29473328485867940608"` and `range.to = "62083631947910636800"` — both outside int64 and exactly the displayed years. Cause: zoom-out (button ×2 span, wheel zoom) has no bound, and neither `TimeInput` nor `applyCommand` bounds a timestamp. Fix: D7.
 - **`AC_A1.T_SOLL` at −40 °C:** h-can.dbc `SG_ T_SOLL : 40|8@1+ (0.5,-40) [-40|63] "°C"`, `VAL_ 1106 T_SOLL 255 "NO_TEMP_SENSOR" 254 "SENSOR_DEF" 253 "KURZSCHLUSS"`, `GenSigSNA` raw 255 → physical 87.5. All 57,282 stored values are −40 = raw 0. Raw 0 has no SNA code and no label, so by D-010/D-014/D-015 it is a valid value. Correct behaviour; stated in the timeseries-window delta.
 - **`MS_312h.DNMOT` near −120:** all 572,798 values are −127 = raw 0, valid by D-012 (SNA is raw 255 → 128). The y axis of a flat line is padded by 10 % (−139.7 … −114.3), so a tick reads −120. Correct behaviour; already in the main spec ("Valid constant, no SNA").
 - **Garbled "°C":** the API delivers the unit correctly (`/api/signals?q=T_SOLL` → code points `0xB0 0x43`, `charset=utf-8`; the DBC is decoded as latin1). The fault is in drawing the rotated canvas label into a fixed 60 px axis. Fix: D3 draws axis titles as HTML text, never rotated.
@@ -165,7 +165,11 @@ export class ZoomHistory {
 export function historyKey(linked: boolean, windowId: string): string;
 ```
 
-Every zoom, pan, zoom-out, double-click reset and history step passes `clampRange` before it is previewed or sent. History limit 50: 25 would still cover a session's back-steps; 100 costs nothing either; the number is not critical.
+Every zoom, pan, zoom-out, double-click reset and history step passes `clampRange` before it is previewed or sent.
+
+**Wheel zoom (lead decision, round 5), in `TimeseriesWindow.tsx`:** one wheel tick scales the span by `WHEEL_TICK_FACTOR = 2 ** (1 / 5)` (≈ ×1.149), so five ticks halve or double the span, centred on the pointer. A tick is 100 px of `deltaY` (pixel mode) or 3 lines (line mode); one wheel event counts at most `WHEEL_MAX_TICKS = 5` ticks (≤ ×2), so a fast flick or a trackpad burst cannot jump many orders of magnitude. Off by 2: 2^(2/5) per tick halves in 2.5 ticks and feels jumpy on a mouse wheel; 2^(1/10) needs 10 ticks per halving and feels sluggish; neither breaks anything, the feel is Jan's to judge.
+
+History limit 50: 25 would still cover a session's back-steps; 100 costs nothing either; the number is not critical.
 
 ### D5 Drag and drop (`apps/web/src/chart/drag.ts`) — pinned
 
@@ -209,6 +213,8 @@ interface Props {
   onDragStart: (source: DragSource, event: React.PointerEvent) => void;
   /** Highlight while a drag runs: "source", "target" (canDrop), "refused" (unit limit), or undefined. */
   dropState?: "source" | "target" | "refused";
+  /** Plot left/right inset in CSS px (max natural axis width per side over all windows), so windows line up. */
+  insets?: { left: number; right: number };
 }
 ```
 
@@ -218,11 +224,15 @@ Zoom history wiring: `onZoomed` pushes into `historyKey(linked, windowId)`; Back
 
 Linked windows: the zooming window previews locally as today; the others update when the accepted range arrives with the next revision (300 ms debounce + round trip). Live following during the gesture is a goal, not part of this change.
 
+Aligned plot insets (lead decision, round 5): each `TimeseriesWindow` reports its natural left and right axis widths (sum of its drawn axes per side); `App` passes `insets = { left: max over windows, right: max over windows }` as an optional prop (`insets?: { left: number; right: number }`), and each window pads its narrower side up to that inset. All plots then share the same x pixel range, so one timestamp sits at the same x in every window of equal width. Unequal axis counts (one window with `L2`, one without) are the case it exists for.
+
+Crosshair (lead decision, round 5): the cursor crosshair is hidden when the pointer leaves the plot (uPlot's own mouseleave) and right after a zoom commit by wheel, drag-select or double-click reset (`setCursor` off-plot), until the next pointer move. A crosshair frozen at the pre-zoom pixel would point at a wrong time.
+
 Height: a 6 px handle under the plot (`cursor: ns-resize`) resizes locally while dragged and sends `window.setHeight` (clamped to 120–1200) on release. 120 px still shows a curve with two tick labels; 60 would not; 1200 exceeds a laptop screen, which is harmless.
 
 Rename: clicking the title turns it into a text input; Enter or blur sends `window.rename`, Esc cancels. The header is one line (`flex-wrap: nowrap`); the title truncates with an ellipsis and shows the full title as tooltip; the range text may truncate too; the buttons never move to a second line.
 
-Untitled windows from moves are shown as "Window <n>" by `windowTitle`; the explorer's "New window" path keeps sending the signal name as title. While linked and at least one window exists, the explorer creates the new window without a range (it takes the shared range); otherwise it sends the extent as today.
+Windows created from the UI are untitled (lead decision, round 5): moves into "+ New window" and the explorer's "New window" path send no `title`, and `windowTitle` shows "Window <n>" by the stable ID. A signal-name title would go stale as soon as that signal is moved out. While linked and at least one window exists, the explorer creates the new window without a range (it takes the shared range); otherwise it sends the extent as today.
 
 ### D7 Time bounds (bug fix)
 

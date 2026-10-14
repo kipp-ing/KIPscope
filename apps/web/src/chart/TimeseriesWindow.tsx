@@ -135,8 +135,12 @@ const clampHeight = (h: number) =>
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
 
-/** Hides the crosshair until the next pointer move. */
-const hideCursor = (u: uPlot) => u.setCursor({ left: -10, top: -10 });
+/**
+ * Hides the crosshair until the next pointer move in the plot. A CSS class, not setCursor:
+ * setCursor would leave uPlot's drag start position stale for a drag that leaves the plot.
+ */
+const hideCursor = (u: uPlot) => u.root.classList.add("cursor-hidden");
+const showCursor = (u: uPlot) => u.root.classList.remove("cursor-hidden");
 
 function seriesOptions(spec: SeriesSpec): uPlot.Series {
   const paths =
@@ -575,11 +579,12 @@ export function TimeseriesWindow({
           drag: { x: true, y: false, setScale: false },
           bind: {
             // Replaces uPlot's reset to the loaded data: App resets to the signals' extents.
-            dblclick: () => () => {
+            dblclick: (self) => () => {
               clearTimeout(commitTimer.current);
               commitTimer.current = undefined;
               gestureStart.current = undefined;
               preview.current = undefined;
+              hideCursor(self);
               onResetRef.current(w.id);
               return null;
             },
@@ -642,9 +647,12 @@ export function TimeseriesWindow({
       }
     };
     // Leaving the plot hides the crosshair through uPlot's own mouseleave handler.
+    const onMove = () => showCursor(u);
     u.over.addEventListener("wheel", onWheel, { passive: false });
+    u.over.addEventListener("mousemove", onMove);
     return () => {
       u.over.removeEventListener("wheel", onWheel);
+      u.over.removeEventListener("mousemove", onMove);
       u.destroy();
       uplot.current = undefined;
     };
