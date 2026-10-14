@@ -3,12 +3,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
+import { WorkspaceStore } from "../src/workspace.ts";
 import { testMapping, testSource } from "./testdb.ts";
 
 function appFor(table = "signals") {
   const source = testSource(table);
   const catalog = new Catalog(source, async () => new Map());
-  return { app: buildApp({ catalog, source }), catalog };
+  return {
+    app: buildApp({ catalog, source, workspace: new WorkspaceStore({ signalExists: () => true }) }),
+    catalog,
+  };
 }
 
 describe("GET /api/series", () => {
@@ -84,7 +88,11 @@ describe("GET /api/series with the database unavailable", () => {
     testMapping,
     5,
   );
-  const app = buildApp({ catalog: new Catalog(source, async () => new Map()), source });
+  const app = buildApp({
+    catalog: new Catalog(source, async () => new Map()),
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
   afterAll(() => app.close());
 
   it("returns an error naming signal and range, and no data", async () => {

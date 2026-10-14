@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
+import { WorkspaceStore } from "../src/workspace.ts";
 
 /** Source whose count takes `delayMs` and records whether it was aborted. */
 function slowSource(delayMs: number) {
@@ -30,6 +31,7 @@ describe("GET /api/series over a real connection", () => {
   const app = buildApp({
     catalog: new Catalog(slow.source, async () => new Map()),
     source: slow.source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
   });
   let base = "";
   beforeAll(async () => {

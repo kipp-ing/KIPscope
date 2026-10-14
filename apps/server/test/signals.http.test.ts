@@ -3,12 +3,17 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
+import { WorkspaceStore } from "../src/workspace.ts";
 import { testDbcFiles, testSource } from "./testdb.ts";
 
 describe("GET /api/signals", () => {
   const source = testSource();
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles));
-  const app = buildApp({ catalog, source });
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
 
@@ -74,7 +79,11 @@ describe("GET /api/signals without a reachable source", () => {
     listSignals: () => Promise.reject(new Error("connect ECONNREFUSED")),
   } as unknown as DataSource;
   const catalog = new Catalog(failing, async () => new Map());
-  const app = buildApp({ catalog, source: failing });
+  const app = buildApp({
+    catalog,
+    source: failing,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
   afterAll(() => app.close());
 
   it("answers 503 before the catalog was ever loaded, and 502 on refresh", async () => {

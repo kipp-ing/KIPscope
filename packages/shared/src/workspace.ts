@@ -97,25 +97,18 @@ export type LiveServerMessage =
   | { type: "hello"; clientId: string }
   | { type: "state"; revision: number; workspace: Workspace };
 
-export interface RenderError {
-  windowId?: string;
-  signalId?: string;
-  message: string;
-}
+export const RenderError = z.object({
+  windowId: z.string().optional(),
+  signalId: z.string().optional(),
+  message: z.string(),
+});
+export type RenderError = z.infer<typeof RenderError>;
 
 export const RenderedMessage = z.object({
   type: z.literal("rendered"),
   revision: z.number().int().min(0),
   status: z.enum(["complete", "error"]),
-  errors: z
-    .array(
-      z.object({
-        windowId: z.string().optional(),
-        signalId: z.string().optional(),
-        message: z.string(),
-      }),
-    )
-    .optional(),
+  errors: z.array(RenderError).optional(),
 });
 export type RenderedMessage = z.infer<typeof RenderedMessage>;
 
