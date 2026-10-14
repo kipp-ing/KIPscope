@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc -p . && vite build",
     "preview": "vite preview",
-    "test": "vitest run --passWithNoTests"
+    "test": "TZ=Europe/Berlin vitest run --passWithNoTests"
   },
   "dependencies": {
     "@letsview/shared": "workspace:*",

@@ -1,0 +1,65 @@
+import { fromIso, NS_PER_MS, NS_PER_S } from "@letsview/shared";
+import { describe, expect, it } from "vitest";
+import {
+  formatFull,
+  formatTime,
+  fractionDigits,
+  tickLabels,
+  tickStep,
+  ticks,
+} from "../src/time/axis.ts";
+
+// Tests run with TZ=Europe/Berlin (see package.json); October 2026 is CEST, UTC+2.
+
+describe("tick steps", () => {
+  it("picks clock-friendly steps", () => {
+    const from = fromIso("2026-10-13T09:00:00Z");
+    expect(tickStep(from, from + 10n * 3600n * NS_PER_S, 10)).toBe(3600n * NS_PER_S);
+    expect(tickStep(from, from + 2n * 3600n * NS_PER_S, 10)).toBe(15n * 60n * NS_PER_S);
+    expect(tickStep(from, from + NS_PER_S, 10)).toBe(100n * NS_PER_MS);
+    expect(tickStep(from, from + 100_000n, 10)).toBe(10_000n);
+  });
+
+  it("places ticks on multiples of the step", () => {
+    const from = fromIso("2026-10-13T09:00:00.000003Z");
+    const values = ticks(from, from + 100_000n, 10_000n);
+    expect(values[0]).toBe(fromIso("2026-10-13T09:00:00.00001Z"));
+    expect(values.every((t) => t % 10_000n === 0n)).toBe(true);
+  });
+
+  it("aligns hour steps to local time", () => {
+    const from = fromIso("2026-10-13T09:20:00Z"); // 11:20 local
+    const values = ticks(from, from + 12n * 3600n * NS_PER_S, 6n * 3600n * NS_PER_S);
+    expect(values.map((t) => formatTime(t, 0, false))).toEqual(["12:00", "18:00"]);
+  });
+});
+
+describe("labels", () => {
+  it("distinguishes microseconds in a 100 µs window (spec scenario)", () => {
+    const from = fromIso("2026-10-13T09:30:00Z");
+    const step = tickStep(from, from + 100_000n, 10);
+    const labels = tickLabels(ticks(from, from + 100_000n, step), step);
+    expect(labels).toHaveLength(11);
+    expect(new Set(labels.map((l) => l.split("\n")[0])).size).toBe(11);
+    expect(labels[1]).toBe("11:30:00.00001");
+    expect(labels[0]).toBe("11:30:00.00000\n2026-10-13");
+  });
+
+  it("shows nanoseconds when needed", () => {
+    expect(fractionDigits(1n)).toBe(9);
+    expect(fractionDigits(100n * NS_PER_MS)).toBe(1);
+    expect(formatTime(fromIso("2026-10-14T08:00:00.123456789Z"), 9)).toBe("10:00:00.123456789");
+  });
+
+  it("adds the date on the first tick and at day changes", () => {
+    const from = fromIso("2026-10-13T20:00:00Z"); // 22:00 local
+    const step = 3600n * NS_PER_S;
+    const labels = tickLabels(ticks(from, from + 4n * step, step), step);
+    expect(labels).toEqual(["22:00\n2026-10-13", "23:00", "00:00\n2026-10-14", "01:00", "02:00"]);
+  });
+
+  it("formats full timestamps with trimmed precision", () => {
+    expect(formatFull(fromIso("2026-10-13T09:12:00.253Z"))).toBe("2026-10-13 11:12:00.253");
+    expect(formatFull(fromIso("2026-10-13T09:12:00Z"))).toBe("2026-10-13 11:12:00");
+  });
+});
