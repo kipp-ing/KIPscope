@@ -29,6 +29,32 @@ export function extentRange(extents: { first: string; last: string }[]): Range |
   return { from: first, to: (last / NS_PER_MS + 1n) * NS_PER_MS };
 }
 
+/**
+ * Wheel zoom: 2^(1/5) per wheel tick, so five ticks halve or double the span. A tick is 100 px
+ * (deltaMode 0) or 3 lines (deltaMode 1); a page (deltaMode 2) is five ticks. Trackpads send
+ * fractions of a tick and zoom smoothly.
+ */
+const WHEEL_TICK_FACTOR = 2 ** (1 / 5);
+const WHEEL_TICK_PX = 100;
+const WHEEL_TICK_LINES = 3;
+/** One wheel event zooms at most this many ticks (fast flicks would otherwise jump). */
+const WHEEL_MAX_TICKS = 5;
+/** WheelEvent.DOM_DELTA_LINE and DOM_DELTA_PAGE; WheelEvent is absent outside a browser. */
+const DELTA_LINE = 1;
+const DELTA_PAGE = 2;
+
+/** Span factor for one vertical wheel event: > 1 zooms out (deltaY > 0), < 1 zooms in. */
+export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
+  const perTick =
+    deltaMode === DELTA_LINE
+      ? WHEEL_TICK_LINES
+      : deltaMode === DELTA_PAGE
+        ? 1 / WHEEL_MAX_TICKS
+        : WHEEL_TICK_PX;
+  const ticks = Math.max(-WHEEL_MAX_TICKS, Math.min(WHEEL_MAX_TICKS, deltaY / perTick));
+  return WHEEL_TICK_FACTOR ** ticks;
+}
+
 export const ZOOM_HISTORY_LIMIT = 50;
 
 /** Ranges shown before committed zoom gestures, most recent last. */

@@ -4,6 +4,7 @@ import {
   clampRange,
   extentRange,
   historyKey,
+  wheelZoomFactor,
   ZOOM_HISTORY_LIMIT,
   ZoomHistory,
 } from "../src/chart/zoom.ts";
@@ -119,5 +120,28 @@ describe("full extent (lead decision e)", () => {
     // A single-point extent stays a one-millisecond range, not the bounds.
     const one = extentRange([{ first: "5000000000", last: "5000000000" }]);
     expect(one && clampRange(one)).toEqual({ from: 5_000_000_000n, to: 5_001_000_000n });
+  });
+});
+
+describe("wheelZoomFactor", () => {
+  it("wheel factor is 2 per 5 ticks, capped at 5 ticks per event", () => {
+    // Pixel mode: a tick is 100 px; five ticks double (out) or halve (in) the span.
+    expect(wheelZoomFactor(500, 0)).toBeCloseTo(2, 12);
+    expect(wheelZoomFactor(-500, 0)).toBeCloseTo(0.5, 12);
+    expect(wheelZoomFactor(100, 0)).toBeCloseTo(2 ** (1 / 5), 12);
+    expect(wheelZoomFactor(0, 0)).toBe(1);
+    // Trackpad fractions of a tick zoom smoothly.
+    expect(wheelZoomFactor(10, 0)).toBeCloseTo(2 ** (1 / 50), 12);
+    // Line mode: a tick is 3 lines.
+    expect(wheelZoomFactor(3, 1)).toBeCloseTo(2 ** (1 / 5), 12);
+    expect(wheelZoomFactor(15, 1)).toBeCloseTo(2, 12);
+    // Page mode: one page is five ticks.
+    expect(wheelZoomFactor(1, 2)).toBeCloseTo(2, 12);
+    expect(wheelZoomFactor(-1, 2)).toBeCloseTo(0.5, 12);
+    // At most five ticks per event, in both directions and all modes.
+    expect(wheelZoomFactor(5000, 0)).toBeCloseTo(2, 12);
+    expect(wheelZoomFactor(-5000, 0)).toBeCloseTo(0.5, 12);
+    expect(wheelZoomFactor(300, 1)).toBeCloseTo(2, 12);
+    expect(wheelZoomFactor(3, 2)).toBeCloseTo(2, 12);
   });
 });

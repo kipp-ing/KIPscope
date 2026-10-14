@@ -17,8 +17,10 @@ import {
   type DropTarget,
   dropCommand,
 } from "./chart/drag.ts";
+import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
+import { isTextField } from "./keys.ts";
 import { useLive } from "./live.ts";
 import { NEW_WINDOW, SignalExplorer } from "./SignalExplorer.tsx";
 
@@ -47,27 +49,9 @@ function targetAt(x: number, y: number): DropTarget | undefined {
   return el?.getAttribute("data-drop") === "new" ? { kind: "new" } : undefined;
 }
 
-/** Backspace stays a text-editing key while a text field has focus. */
-function isTextField(el: Element | null): boolean {
-  if (!el) return false;
-  if (el instanceof HTMLInputElement)
-    return !["checkbox", "radio", "button", "range"].includes(el.type);
-  return (
-    el instanceof HTMLTextAreaElement ||
-    el instanceof HTMLSelectElement ||
-    (el as HTMLElement).isContentEditable
-  );
-}
-
 /** Optional `dropState` prop; absent rather than undefined (exactOptionalPropertyTypes). */
 const dropProp = (state: "source" | "target" | "refused" | undefined) =>
   state ? { dropState: state } : {};
-
-/** Space left and right of a window's plot, in CSS px (axes, padding). */
-interface Insets {
-  left: number;
-  right: number;
-}
 
 const toRange = (r: { from: string; to: string }): Range => ({
   from: BigInt(r.from),
@@ -231,15 +215,10 @@ export function App() {
         : new Map([...prev].filter(([id]) => ids.has(id))),
     );
   }, [windowKey]);
-  let maxLeft = 0;
-  let maxRight = 0;
-  for (const w of windows) {
-    const n = natural.get(w.id);
-    if (n) {
-      maxLeft = Math.max(maxLeft, n.left);
-      maxRight = Math.max(maxRight, n.right);
-    }
-  }
+  const { left: maxLeft, right: maxRight } = mergeInsets(
+    windows.map((w) => w.id),
+    natural,
+  );
   const insets = useMemo(() => ({ left: maxLeft, right: maxRight }), [maxLeft, maxRight]);
 
   // Backspace steps back in the window under the pointer, else in the window zoomed last.

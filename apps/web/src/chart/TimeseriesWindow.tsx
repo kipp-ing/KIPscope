@@ -31,8 +31,9 @@ import {
   yRange,
 } from "./build.ts";
 import type { DragSource } from "./drag.ts";
+import type { Insets } from "./insets.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
-import { clampRange, type Range } from "./zoom.ts";
+import { clampRange, type Range, wheelZoomFactor } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
 const MIN_SPAN_NS = 100n;
@@ -53,16 +54,6 @@ const LEFT = 3;
 const RIGHT = 1;
 /** Inset of a side without y axis (uPlot's own default), room for the edge x tick label. */
 const NO_AXIS_INSET = 25;
-/**
- * Wheel zoom: 2^(1/5) per wheel tick, so five ticks halve or double the span. A tick is 100 px
- * (deltaMode 0) or 3 lines (deltaMode 1); trackpads send fractions of a tick and zoom smoothly.
- */
-const WHEEL_TICK_FACTOR = 2 ** (1 / 5);
-const WHEEL_TICK_PX = 100;
-const WHEEL_TICK_LINES = 3;
-/** One wheel event zooms at most this many ticks (fast flicks would otherwise jump). */
-const WHEEL_MAX_TICKS = 5;
-
 const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
 const HINT_REFUSED = `At most ${MAX_UNITS} units per window`;
 
@@ -88,11 +79,6 @@ interface Props {
   insets?: Insets;
   /** Reports this window's own total y axis width per side, when it changes. */
   onInsets?: (windowId: string, natural: Insets) => void;
-}
-
-interface Insets {
-  left: number;
-  right: number;
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -635,14 +621,7 @@ export function TimeseriesWindow({
         applyRangeRef.current(u, min + delta, max + delta);
       } else {
         const at = u.posToVal(e.offsetX, "x");
-        const perTick =
-          e.deltaMode === WheelEvent.DOM_DELTA_LINE
-            ? WHEEL_TICK_LINES
-            : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-              ? 1 / WHEEL_MAX_TICKS
-              : WHEEL_TICK_PX;
-        const tickCount = Math.max(-WHEEL_MAX_TICKS, Math.min(WHEEL_MAX_TICKS, e.deltaY / perTick));
-        const factor = WHEEL_TICK_FACTOR ** tickCount;
+        const factor = wheelZoomFactor(e.deltaY, e.deltaMode);
         applyRangeRef.current(u, at - (at - min) * factor, at + (max - at) * factor);
       }
     };
