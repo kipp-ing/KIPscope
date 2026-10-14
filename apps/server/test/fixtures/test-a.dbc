@@ -1,0 +1,30 @@
+VERSION ""
+
+NS_ :
+	CM_
+	VAL_
+
+BS_:
+
+BU_: TEST ESP
+
+BO_ 256 Fast_100h: 8 TEST
+ SG_ SIG_A : 0|16@1+ (0.1,0) [0|6553.5] "rpm"  ESP
+ SG_ SIG_B : 16|16@1+ (0.1,0) [0|6553.5] "°C"  ESP
+ SG_ SIG_C : 32|16@1- (1,0) [-100|100] ""  ESP
+ SG_ SIG_D : 48|8@1+ (1,0) [0|255] "bar"  ESP
+
+BO_ 512 Irr_200h: 8 TEST
+ SG_ JITTER : 0|16@1+ (1,0) [0|0] "Nm"  ESP
+
+BO_ 768 Sparse_300h: 8 TEST
+ SG_ MODE M : 0|8@1+ (1,0) [0|0] ""  ESP
+ SG_ SLOW m0 : 8|16@1+ (1,0) [0|0] "min"  ESP
+
+CM_ BO_ 256 "Message comment, not a signal description";
+CM_ SG_ 256 SIG_A "Motordrehzahl hinten";
+CM_ SG_ 256 SIG_B "Öltemperatur Getriebe";
+CM_ SG_ 512 JITTER "Torque with
+a comment over two lines";
+CM_ SG_ 768 SLOW "Minute counter; contains \"quotes\"";
+VAL_ 768 MODE 0 "off" 1 "on" ;

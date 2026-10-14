@@ -14,8 +14,8 @@
 
 ## 3. Test data
 
-- [ ] 3.1 Write the seed script creating the `sdlog.signals` schema as on carserver plus a `DateTime64(9)` variant (design D10); verify the tables exist after running it
-- [ ] 3.2 Generate synthetic data (design D10): several 5 ms signals over 10 h, irregular and sparse signals, rows with null `utc`, a known spike, nanosecond rows in the variant table; add a small test DBC file; verify by row-count and spot-check queries documented in the script
+- [x] 3.1 Write the seed script creating the `sdlog.signals` schema as on carserver plus a `DateTime64(9)` variant (design D10); verify the tables exist after running it
+- [x] 3.2 Generate synthetic data (design D10): several 5 ms signals over 10 h, irregular and sparse signals, rows with null `utc`, a known spike, nanosecond rows in the variant table; add a small test DBC file; verify by row-count and spot-check queries documented in the script
 
 ## 4. Signal catalog (spec: signal-catalog)
 

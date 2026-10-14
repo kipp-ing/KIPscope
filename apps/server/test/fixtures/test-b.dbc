@@ -1,0 +1,10 @@
+VERSION ""
+
+BO_ 256 Fast_100h: 8 TEST
+ SG_ SIG_A : 0|16@1+ (1,0) [0|0] "U/min"  ESP
+
+BO_ 1792 Many_700h: 8 TEST
+ SG_ S0001 : 0|16@1+ (1,0) [0|0] "kPa"  ESP
+
+CM_ SG_ 256 SIG_A "Loses against test-a.dbc";
+CM_ SG_ 1792 S0001 "Reifendruck vorn links";
