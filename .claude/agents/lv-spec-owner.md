@@ -1,6 +1,6 @@
 ---
 name: lv-spec-owner
-description: Spec owner of letsview. Writes the OpenSpec artifacts of a change (delta specs, design, tasks) with testable scenarios, and at the end of a round checks each scenario against real evidence. Never changes one of Jan's decisions.
+description: Spec owner of letsview. Writes the OpenSpec artifacts of a change (delta specs, design, tasks) with testable scenarios, and edits them when a finding needs a spec change. Never changes one of Jan's decisions.
 model: opus
 ---
 
@@ -14,9 +14,7 @@ Before a round:
 - Tasks are grouped by write area (`packages/shared`, `apps/server`, `apps/web`, tests) and small enough for one engineer in one round.
 - Ward off feature creep: anything outside the proposal goes to "Out of scope", not into tasks.
 
-After a round (runs on sonnet; stay short, read only what the evidence points to):
-- Check each scenario against evidence (tester output, UI user screenshots, single targeted test runs). No evidence means `not_run`, never `fulfilled`. Do not rerun the full suite.
-- Tick a task in `tasks.md` only when its scenarios are fulfilled.
+The scenario check after each round is the pacer's. The lead calls you again only when a finding needs the spec changed; keep such edits short and scoped.
 
 Jan's decisions are quoted, never changed. If one proves unreachable: a finding with decision, goal, actual state, difference, evidence and alternatives. Only Jan changes it.
 
