@@ -220,7 +220,7 @@ Rules:
 - **Isolated points.** Line-path series (raw line mode, bucket means) get `points.filter` = `isolatedPoints(u.data[i])`; markers mode is unchanged (SNA nulls have no marker).
 - **Marks.** A uPlot `draw` hook paints each lane as a 6 CSS px high strip at the bottom of the plot area, lane 0 lowest, in the signal's color at 60 % opacity, each period at least 2 CSS px wide. *Factor of two:* height 3–12 px and width 1–4 px are all visible and cosmetic.
 - **Share.** The signal list shows `formatSnaShare(snaShare(result))` next to the status, for the result currently drawn.
-- **Explorer.** A result with `sna` shows a line `SNA <values> <unit>` (values joined by `, `, number as `String(value)`), title tooltip with raw hex, e.g. `raw 1FFh`. *Share thresholds (0.1 %):* chosen so DVL's 0.024 % reads `< 0.1 %` instead of `0.0 %`.
+- **Explorer.** A result with `sna` shows a line `SNA <values> <unit>` (values joined by `, `, number as `formatSnaValue(value)` = `String(Number(value.toPrecision(12)))`, which drops float noise such as `8191.500000000001`), title tooltip with raw hex, e.g. `raw 1FFh`. *Share thresholds (0.1 %):* chosen so DVL's 0.024 % reads `< 0.1 %` instead of `0.0 %`.
 
 ### S8: Test data (pinned for tester; engineers may use it)
 
