@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-018: Scope of the window-workflow change (2026-10-14)
+
+- **Decision:** Answered by Jan after the power-user exploration ([feedback/2026-10-14-power-users.md](feedback/2026-10-14-power-users.md)):
+  - "Same value range" means **same unit**: one y-axis per unit, nothing more.
+  - The hover value readout belongs to the cursor change, built there first, since it shares the cursor evaluation of concept §6.
+  - The window-workflow change also takes: explorer ranking and match highlighting without a hard cap, stable signal colours across windows, window rename, and window layout with keys (resizable window heights, double-click resets zoom, zoom history back).
+- **Why:** Jan's choice; keeps the axis rule simple and stable while zooming.
+
 ## D-017: Power-user window workflow (2026-10-14)
 
 - **Decision:** Jan's feedback after testing (overall "already usable"):
