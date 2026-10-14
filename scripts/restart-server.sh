@@ -9,9 +9,16 @@ LOG="${TMPDIR:-/tmp}/letsview-server.log"
 for pid in $(lsof -nP -tiTCP:$PORT -sTCP:LISTEN || true); do
   cmd=$(ps -o command= -p "$pid")
   case "$cmd" in
-    *node*src/main.ts*) kill "$pid" ;;
+    *node*src/main.ts*) ;;
     *) echo "port $PORT is held by something else, not touching it: $cmd" >&2; exit 1 ;;
   esac
+done
+
+# Every node src/main.ts of this repo, including `--watch` supervisors that would respawn the server.
+SERVER_DIR="$(pwd)/apps/server"
+for pid in $(pgrep -f "node.*src/main.ts" || true); do
+  cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  [ "$cwd" = "$SERVER_DIR" ] && kill "$pid" 2>/dev/null || true
 done
 
 i=0
