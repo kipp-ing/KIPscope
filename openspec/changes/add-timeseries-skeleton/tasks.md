@@ -10,7 +10,7 @@
 ## 2. Shared time type
 
 - [x] 2.1 Implement `Timestamp` (int64 ns as `bigint`) with parse/format to decimal string and ISO-8601 with nanoseconds; verify with unit tests including the spec value 2026-10-14T08:00:00.123456789Z round-tripping exactly
-- [ ] 2.2 Implement series payload encoding (`t0` + `dt[]` offsets) and decoding; verify unit tests show exact round-trip for nanosecond timestamps over a 10-hour range
+- [x] 2.2 Implement series payload encoding (`t0` + `dt[]` offsets) and decoding; verify unit tests show exact round-trip for nanosecond timestamps over a 10-hour range
 
 ## 3. Test data
 
