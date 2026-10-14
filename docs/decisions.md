@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-014: SNA exceptions and SNA display (2026-10-14)
+
+- **Decision:**
+  - A `VAL_` label with a valid meaning (anything other than `SNA`/`SNV`) beats `GenSigSNA` for that raw value: the value is valid. This supersedes D-010's "on conflict both count as SNA".
+  - `GenSigSNA` does not apply to 1-bit signals and to checksum/CRC signals.
+  - SNA periods are marked as a thin strip per signal at the bottom of the plot, not as full-height shading.
+  - In aggregated views a bucket is marked as SNA from a single SNA point; mean/min/max contain valid points only.
+- **Why:** Answered by Jan on the spec owner's open questions for `add-sna-handling`. Taking `GenSigSNA` literally hid valid data: `BS_208h.SZS` "1h" = `OK` (100 %), `BS_328h.BS` brake switch (95.8 %), CRC values (0.2–1.5 %). D-010's core rule stays: SNA is never shown as a valid value.
+
 ## D-013: Agent team like PCB-dev (2026-10-14)
 
 - **Decision:** The main session stays lead dev and writes no product code. Spec owner, engineers, tester, UI user, reviewer and pacer work as subagents in rounds, following the PCB-dev placer team. Roles and flow: [team.md](team.md).
