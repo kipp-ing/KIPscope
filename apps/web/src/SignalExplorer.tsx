@@ -1,6 +1,7 @@
 import type { SignalInfo, SignalPage, TimeseriesWindow } from "@letsview/shared";
 import { useEffect, useState } from "react";
 import { searchSignals } from "./api.ts";
+import { formatSnaValue } from "./chart/build.ts";
 
 export const NEW_WINDOW = "new";
 
@@ -80,6 +81,15 @@ export function SignalExplorer({ windows, onAdd, onSeen }: Props) {
               </button>
             </div>
             {s.description && <div className="description">{s.description}</div>}
+            {s.sna && (
+              <div
+                className="sna"
+                title={`raw ${s.sna.map((c) => `${c.raw.toString(16).toUpperCase()}h`).join(", ")}`}
+              >
+                SNA {s.sna.map((c) => formatSnaValue(c.value)).join(", ")}
+                {s.unit ? ` ${s.unit}` : ""}
+              </div>
+            )}
             <div className="ref">{s.dataRef}</div>
           </li>
         ))}

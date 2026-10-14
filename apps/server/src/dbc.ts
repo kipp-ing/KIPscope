@@ -1,4 +1,12 @@
 import { readFile } from "node:fs/promises";
+import type { SnaSource, SnaValue } from "@letsview/shared";
+
+/** SNA codes of a signal (D-010, D-012, D-014, D-015) with the matching tolerance. */
+export interface DbcSna {
+  values: SnaValue[];
+  /** |factor| / 2: half a raw step (design S2). */
+  tolerance: number;
+}
 
 /** Metadata for one `<message>.<signal>` key (design D6). Absent fields stay absent. */
 export interface DbcSignal {
@@ -6,10 +14,25 @@ export interface DbcSignal {
   description?: string;
   /** Value table (`VAL_`): raw value → label. Parsed now, used once state signals exist. */
   values?: Map<number, string>;
+  /** Absent when the signal has no SNA code. */
+  sna?: DbcSna;
+}
+
+/** Bit layout and scaling of an `SG_` line, needed only to derive SNA. */
+interface Layout {
+  length: number;
+  signed: boolean;
+  factor: number;
+  offset: number;
 }
 
 const MESSAGE = /^BO_\s+(\d+)\s+(\w+)\s*:/;
 const SIGNAL = /^\s*SG_\s+(\w+)\s*(?:[mM]\w*\s*)?:[^"]*"([^"]*)"/;
+const NUMBER = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`;
+const LAYOUT = new RegExp(
+  String.raw`:\s*\d+\s*\|\s*(\d+)\s*@\s*[01]\s*([+-])\s*\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)`,
+);
+const GEN_SIG_SNA = /BA_\s+"GenSigSNA"\s+SG_\s+(\d+)\s+(\w+)\s+"([^"]*)"\s*;/g;
 const COMMENT = /CM_\s+SG_\s+(\d+)\s+(\w+)\s+"((?:[^"\\]|\\.)*)"\s*;/g;
 const VALUES = /VAL_\s+(\d+)\s+(\w+)((?:\s+-?\d+\s+"(?:[^"\\]|\\.)*")*)\s*;/g;
 const VALUE_PAIR = /(-?\d+)\s+"((?:[^"\\]|\\.)*)"/g;
@@ -17,10 +40,67 @@ const VALUE_PAIR = /(-?\d+)\s+"((?:[^"\\]|\\.)*)"/g;
 const unquote = (s: string) => s.replace(/\\(.)/g, "$1");
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
+const HEX_CODE = /^([0-9A-Fa-f]+)h$/;
+/** Checksum/CRC signals: `GenSigSNA` does not apply (D-014). */
+const CHECKSUM = /^CRC_|(^|_)CHKSUM(_|$)/i;
+/** `VAL_` labels that mean SNA (D-010). */
+const SNA_LABEL = /^(SNA|SNV)$/i;
+/** `VAL_` labels meaning "no value": they do not beat `GenSigSNA` (D-015). Exact match. */
+const NO_VALUE_LABELS = new Set(["--", "NO_TEMP_SENSOR", "RES"]);
+
+/**
+ * SNA codes per design S1: the union of `GenSigSNA` (with the D-010/D-014/D-015 exemptions)
+ * and `VAL_` labels `SNA`/`SNV`, converted to physical values (D-012).
+ */
+function deriveSna(
+  name: string,
+  layout: Layout,
+  attribute: string | undefined,
+  values: Map<number, string> | undefined,
+): DbcSna | undefined {
+  const span = 1n << BigInt(layout.length);
+  const unsigned = (value: number) => ((BigInt(value) % span) + span) % span;
+  const labels = new Map<bigint, string>();
+  for (const [value, label] of values ?? []) labels.set(unsigned(value), label.trim());
+
+  const codes = new Map<bigint, SnaSource[]>();
+  const add = (raw: bigint, source: SnaSource) => {
+    const sources = codes.get(raw) ?? [];
+    if (!sources.includes(source)) sources.push(source);
+    codes.set(raw, sources);
+  };
+
+  const hex = attribute === undefined ? undefined : HEX_CODE.exec(attribute)?.[1];
+  if (hex !== undefined && layout.length > 1 && !CHECKSUM.test(name)) {
+    const raw = BigInt(`0x${hex}`);
+    const label = labels.get(raw);
+    const labelValid = label !== undefined && !SNA_LABEL.test(label) && !NO_VALUE_LABELS.has(label);
+    if (raw !== 0n && raw < span && !labelValid) add(raw, "GenSigSNA");
+  }
+  for (const [raw, label] of labels) {
+    if (SNA_LABEL.test(label)) add(raw, "VAL_");
+  }
+  if (codes.size === 0) return undefined;
+
+  const half = span >> 1n;
+  const physical = (raw: bigint) =>
+    Number(layout.signed && raw >= half ? raw - span : raw) * layout.factor + layout.offset;
+  const sorted = [...codes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    values: sorted.map(([raw, sources]) => ({
+      raw: Number(raw),
+      value: physical(raw),
+      sources: sources.sort((a, b) => (a === b ? 0 : a === "GenSigSNA" ? -1 : 1)),
+    })),
+    tolerance: Math.abs(layout.factor) / 2,
+  };
+}
+
 /** Parses DBC text (already decoded) into metadata keyed by `<message>.<signal>`. */
 export function parseDbc(text: string): Map<string, DbcSignal> {
   const result = new Map<string, DbcSignal>();
   const messages = new Map<string, string>();
+  const layouts = new Map<string, Layout>();
   let message: string | undefined;
 
   for (const line of text.split(/\r?\n/)) {
@@ -37,14 +117,28 @@ export function parseDbc(text: string): Map<string, DbcSignal> {
       const entry: DbcSignal = {};
       if (unit.trim()) entry.unit = unit.trim();
       result.set(`${message}.${name}`, entry);
+      const layout = LAYOUT.exec(line);
+      if (layout) {
+        const [, length = "", sign = "", factor = "", offset = ""] = layout;
+        layouts.set(`${message}.${name}`, {
+          length: Number(length),
+          signed: sign === "-",
+          factor: Number(factor),
+          offset: Number(offset),
+        });
+      }
       continue;
     }
     if (line.trim() === "") message = undefined;
   }
 
-  const entryFor = (id: string, name: string) => {
+  const keyFor = (id: string, name: string) => {
     const msg = messages.get(id);
-    return msg === undefined ? undefined : result.get(`${msg}.${name}`);
+    return msg === undefined ? undefined : `${msg}.${name}`;
+  };
+  const entryFor = (id: string, name: string) => {
+    const key = keyFor(id, name);
+    return key === undefined ? undefined : result.get(key);
   };
 
   for (const [, id = "", name = "", raw = ""] of text.matchAll(COMMENT)) {
@@ -61,6 +155,19 @@ export function parseDbc(text: string): Map<string, DbcSignal> {
       values.set(Number(value), unquote(label));
     }
     entry.values = values;
+  }
+
+  const attributes = new Map<string, string>();
+  for (const [, id = "", name = "", value = ""] of text.matchAll(GEN_SIG_SNA)) {
+    const key = keyFor(id, name);
+    if (key !== undefined) attributes.set(key, value);
+  }
+  for (const [key, entry] of result) {
+    const layout = layouts.get(key);
+    if (!layout || layout.length < 1) continue;
+    const name = key.slice(key.indexOf(".") + 1);
+    const sna = deriveSna(name, layout, attributes.get(key), entry.values);
+    if (sna) entry.sna = sna;
   }
   return result;
 }

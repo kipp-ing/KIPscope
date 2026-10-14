@@ -8,18 +8,29 @@ import {
   type SeriesResult,
   toIso,
 } from "@letsview/shared";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { Catalog } from "../src/catalog.ts";
+import { loadDbcFiles } from "../src/dbc.ts";
 import { bucketWidth, querySeries } from "../src/series.ts";
-import { testSource } from "./testdb.ts";
+import { testDbcFiles, testSource } from "./testdb.ts";
 
 const source = testSource();
-const ref = (name: string, dataRef = "testcar") => ({ dataRef, name });
+// SNA ranges come from the catalog over the test DBCs, as in the server.
+const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles));
+beforeAll(() => catalog.refresh());
+const ref = (name: string, dataRef = "testcar") => ({
+  dataRef,
+  name,
+  sna: catalog.snaRanges(`${dataRef}/${name}`),
+});
 const iso = (s: string) => fromIso(s);
 const BASE = iso("2026-10-01T00:00:00Z");
 const TEN_HOURS = 10n * 3600n * NS_PER_S;
 
 const query = (name: string, from: bigint, to: bigint, target: number) =>
   querySeries(source, ref(name), `testcar/${name}`, from, to, target);
+
+const valid = (xs: (number | null)[]) => xs.filter((x): x is number => x !== null);
 
 function asRaw(r: SeriesResult): RawSeries {
   if (r.kind !== "raw") throw new Error(`expected raw, got ${r.kind}`);
@@ -71,7 +82,7 @@ describe("aggregated buckets", () => {
     const r = asBuckets(await query("Fast_100h.SIG_A", BASE, BASE + TEN_HOURS, 2000));
     expect(r.count.length).toBeLessThanOrEqual(2000);
     expect(r.count.reduce((a, b) => a + b, 0)).toBe(7_200_000);
-    expect(Math.max(...r.max)).toBe(1000);
+    expect(Math.max(...valid(r.max))).toBe(1000);
     const starts = decodeTimes(r.t);
     const i = r.max.indexOf(1000);
     const spike = iso("2026-10-01T05:00:00.615Z");
@@ -81,7 +92,7 @@ describe("aggregated buckets", () => {
 
   it("excludes null-timestamp rows from count, mean, min and max", async () => {
     const r = asBuckets(await query("Fast_100h.SIG_A", BASE, BASE + TEN_HOURS, 10));
-    expect(Math.max(...r.max)).toBe(1000);
+    expect(Math.max(...valid(r.max))).toBe(1000);
     expect(r.count.reduce((a, b) => a + b, 0)).toBe(7_200_000);
   });
 
@@ -137,5 +148,96 @@ describe("raw vs. aggregate selection", () => {
     const r = await query("Nodbc_500h.RAW", from, to, 100);
     expect(toIso(BigInt(r.from))).toBe("2026-10-01T00:00:00Z");
     expect(r.signalId).toBe("testcar/Nodbc_500h.RAW");
+  });
+});
+
+describe("SNA handling (test series Sna_800h, from 2026-10-01T02:00:00Z)", () => {
+  const S = iso("2026-10-01T02:00:00Z");
+  const ms = (n: number) => BigInt(n) * NS_PER_MS;
+
+  it("flags SNA raw points without value", async () => {
+    // SPEED n = 298..301 at 100 ms: 98, 99 valid; 511 (SNA) at n = 300, 301.
+    const r = asRaw(await query("Sna_800h.SPEED", S + ms(29_800), S + ms(30_200), 2000));
+    expect(r.v).toEqual([98, 99, null, null]);
+    expect(decodeTimes(r.t)).toEqual([0, 100, 200, 300].map((d) => S + ms(29_800 + d)));
+    // Whole series: 203 SNA points and no 511 anywhere; one valid point (42) between two SNA points.
+    const all = asRaw(await query("Sna_800h.SPEED", S, S + 100n * NS_PER_S, 2000));
+    expect(all.v).toHaveLength(1000);
+    expect(all.v.filter((v) => v === null)).toHaveLength(203);
+    expect(all.v).not.toContain(511);
+    expect(all.v.slice(599, 604)).toEqual([99, null, 42, null, 3]);
+    // The last point (n = 999) is SNA and has no successor.
+    expect(all.v.slice(998)).toEqual([98, null]);
+  });
+
+  it("flags signed SNA points", async () => {
+    // TEMP n = 0..9: -128 (SNA) at n = 0 and 5, else n * 10 - 40.
+    const r = asRaw(await query("Sna_800h.TEMP", S, S + 10n * NS_PER_S, 2000));
+    expect(r.v).toEqual([null, -30, -20, -10, 0, null, 20, 30, 40, 50]);
+  });
+
+  it("returns SNA edge neighbors as SNA", async () => {
+    // 1 ms between n = 400 (02:00:40.000) and n = 401 (02:00:40.100), both inside the SNA run.
+    const from = S + ms(40_050);
+    const r = asRaw(await query("Sna_800h.SPEED", from, from + NS_PER_MS, 2000));
+    expect(r.v).toEqual([]);
+    expect(r.before).toEqual({ t: (S + ms(40_000)).toString(), v: null });
+    expect(r.after).toEqual({ t: (S + ms(40_100)).toString(), v: null });
+  });
+
+  it("matches SNA within half a raw step", async () => {
+    // RPM (factor 0.5, SNA 8191.5): n = 50 stores 8191.0 (neighbouring raw code, valid),
+    // n = 51 stores 8191.500000001 (SNA), n % 10 = 9 stores 8191.5 (SNA), else n * 10.
+    const r = asRaw(await query("Sna_800h.RPM", S, S + 100n * NS_PER_S, 2000));
+    expect(r.v).toHaveLength(100);
+    expect(r.v[50]).toBe(8191);
+    expect(r.v[51]).toBeNull();
+    expect(r.v[9]).toBeNull();
+    expect(r.v[99]).toBeNull();
+    expect(r.v.filter((v) => v === null)).toHaveLength(11);
+    expect(r.v[10]).toBe(100);
+    expect(r.v[98]).toBe(980);
+  });
+
+  it("aggregates only valid points and counts SNA per bucket", async () => {
+    const r = asBuckets(await query("Sna_800h.SPEED", S, S + 100n * NS_PER_S, 10));
+    expect(r.count.length).toBeLessThanOrEqual(10);
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    expect(sum(r.count)).toBe(797);
+    expect(sum(r.sna)).toBe(203);
+    expect(r.count.every((c, i) => c + (r.sna[i] as number) >= 1)).toBe(true);
+    // Sum of all valid values: 10 * (0 + ... + 99) = 49,500, minus the 511 run's values
+    // 2 * 4,950, minus the SNA points 600, 602, 999 (0 + 2 + 99), plus 41 for the 42 at n = 601.
+    const total = r.mean.reduce<number>((a, m, i) => a + (m ?? 0) * (r.count[i] as number), 0);
+    expect(total).toBeCloseTo(39_540, 6);
+    const maxima = r.max.filter((m): m is number => m !== null);
+    expect(Math.max(...maxima)).toBe(99);
+    // A bucket holding both kinds has valid statistics below 511.
+    const mixed = r.count.findIndex((c, i) => c > 0 && (r.sna[i] as number) > 0);
+    expect(mixed).toBeGreaterThanOrEqual(0);
+    expect(r.max[mixed] as number).toBeLessThan(511);
+    expect(r.min[mixed] as number).toBeLessThanOrEqual(r.mean[mixed] as number);
+  });
+
+  it("returns all-SNA buckets without mean, min and max", async () => {
+    const r = asBuckets(await query("Sna_800h.SPEED", S, S + 100n * NS_PER_S, 10));
+    // Width ~11.1 s: at least one bucket lies fully inside the 20 s run 02:00:30 to 02:00:49.9.
+    const allSna = r.count.flatMap((c, i) => (c === 0 ? [i] : []));
+    expect(allSna.length).toBeGreaterThanOrEqual(1);
+    for (const i of allSna) {
+      expect(r.sna[i]).toBeGreaterThan(0);
+      expect([r.mean[i], r.min[i], r.max[i]]).toEqual([null, null, null]);
+    }
+    // Buckets with valid points always have all three statistics.
+    r.count.forEach((c, i) => {
+      if (c > 0)
+        expect([r.mean[i], r.min[i], r.max[i]].every((x) => typeof x === "number")).toBe(true);
+    });
+  });
+
+  it("returns 0 of a 0h counter as a valid value", async () => {
+    expect(catalog.snaRanges("testcar/Sna_800h.COUNTER")).toEqual([]);
+    const r = asRaw(await query("Sna_800h.COUNTER", S, S + 16n * NS_PER_S, 2000));
+    expect(r.v).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   });
 });

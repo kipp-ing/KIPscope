@@ -70,7 +70,7 @@ describe("GET /api/signals", () => {
   it("refreshes the catalog", async () => {
     const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().size).toBe(1007);
+    expect(res.json().size).toBe(1013);
   });
 });
 

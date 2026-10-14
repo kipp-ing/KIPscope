@@ -1,3 +1,16 @@
+/** Where an SNA code is defined (D-010). */
+export type SnaSource = "GenSigSNA" | "VAL_";
+
+/** One "signal not available" code of a signal (D-010, D-012). */
+export interface SnaValue {
+  /** Raw code as unsigned bit pattern, e.g. 511 for "1FFh". */
+  raw: number;
+  /** Physical value as stored: raw (two's complement if signed) × factor + offset. */
+  value: number;
+  /** Definitions naming this code; "GenSigSNA" before "VAL_". Never empty. */
+  sources: SnaSource[];
+}
+
 /** A signal in the catalog. Optional fields are absent (not empty) when the metadata is unknown. */
 export interface SignalInfo {
   /** Stable ID: `<dataRef>/<name>`, e.g. `smart451/MS_312h.DNMOT`. */
@@ -9,6 +22,8 @@ export interface SignalInfo {
   description?: string;
   alias?: string;
   unit?: string;
+  /** SNA codes sorted by raw ascending; absent (never empty) when none is defined. */
+  sna?: SnaValue[];
 }
 
 export interface SignalPage {

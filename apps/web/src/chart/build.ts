@@ -4,10 +4,11 @@ import { decodeTimes } from "@letsview/shared";
 /** x/y arrays of one signal; x is the ns offset from the window origin. */
 export interface SignalPoints {
   xs: number[];
-  ys: number[];
+  /** null: SNA point or all-SNA bucket, edge neighbors included. */
+  ys: (number | null)[];
   /** Envelope edges, aggregated data only. */
-  min?: number[];
-  max?: number[];
+  min?: (number | null)[];
+  max?: (number | null)[];
 }
 
 const offset = (t: Timestamp, origin: Timestamp) => Number(t - origin);
@@ -15,7 +16,7 @@ const offset = (t: Timestamp, origin: Timestamp) => Number(t - origin);
 /**
  * Turns a query result into drawable points. Raw: the edge neighbors outside the range are
  * included so lines and steps cross the window edges, but nothing is drawn beyond the first or
- * last measured point. Buckets: one point at each bucket's center.
+ * last measured point. Buckets: one point at each bucket's center. SNA stays null.
  */
 export function toPoints(result: SeriesResult, origin: Timestamp): SignalPoints {
   const times = decodeTimes(result.t);
@@ -41,6 +42,111 @@ export function toPoints(result: SeriesResult, origin: Timestamp): SignalPoints 
   };
 }
 
+/** Merges sorted periods that touch or overlap. */
+function mergePeriods(periods: [number, number][]): [number, number][] {
+  const merged: [number, number][] = [];
+  for (const [start, end] of periods) {
+    const last = merged.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else merged.push([start, end]);
+  }
+  return merged;
+}
+
+/**
+ * SNA periods as [start, end] x offsets, sorted and merged; end may equal start. Raw: from each
+ * SNA point (edge neighbors included) to the next point. Buckets: every bucket with SNA points.
+ */
+export function snaPeriods(result: SeriesResult, origin: Timestamp): [number, number][] {
+  const periods: [number, number][] = [];
+  if (result.kind === "raw") {
+    const { xs, ys } = toPoints(result, origin);
+    ys.forEach((y, i) => {
+      const x = xs[i] as number;
+      if (y === null) periods.push([x, xs[i + 1] ?? x]);
+    });
+  } else {
+    const width = BigInt(result.width);
+    decodeTimes(result.t).forEach((t, i) => {
+      if ((result.sna[i] ?? 0) > 0) periods.push([offset(t, origin), offset(t + width, origin)]);
+    });
+  }
+  return mergePeriods(periods);
+}
+
+/** SNA points / all points inside [from, to) (edge neighbors excluded); undefined if no points. */
+export function snaShare(result: SeriesResult): number | undefined {
+  let sna = 0;
+  let total = 0;
+  if (result.kind === "raw") {
+    for (const v of result.v) if (v === null) sna++;
+    total = result.v.length;
+  } else {
+    result.sna.forEach((n, i) => {
+      sna += n;
+      total += n + (result.count[i] ?? 0);
+    });
+  }
+  return total === 0 ? undefined : sna / total;
+}
+
+/** SNA share for display; a non-zero share never reads 0 %, a partial one never 100 %. */
+export function formatSnaShare(share: number | undefined): string | undefined {
+  if (share === undefined || share === 0) return undefined;
+  if (share < 0.001) return "SNA < 0.1 %";
+  if (share === 1) return "SNA 100 %";
+  if (share > 0.999) return "SNA > 99.9 %";
+  return `SNA ${(share * 100).toFixed(1)} %`;
+}
+
+/** A scaled SNA value for display: at most 12 significant digits, no float noise or trailing zeros. */
+export function formatSnaValue(value: number): string {
+  return String(Number(value.toPrecision(12)));
+}
+
+/**
+ * Indices in a joined column whose value is a number while the nearest non-undefined entry on
+ * each side is null or missing, at least one of them null: points a broken line would hide.
+ */
+export function isolatedPoints(ys: readonly (number | null | undefined)[]): number[] {
+  const isolated: number[] = [];
+  // Nearest non-undefined entry before the current index; undefined means none.
+  let prev: number | null | undefined;
+  for (let i = 0; i < ys.length; i++) {
+    const y = ys[i];
+    if (y === undefined) continue;
+    if (y !== null && typeof prev !== "number") {
+      let next: number | null | undefined;
+      for (let j = i + 1; j < ys.length && next === undefined; j++) next = ys[j];
+      if (typeof next !== "number" && (prev === null || next === null)) isolated.push(i);
+    }
+    prev = y;
+  }
+  return isolated;
+}
+
+/**
+ * Step mode: holds each valid value up to the timestamp of a following SNA point by inserting a
+ * hold point there and moving the SNA null 1 ns later (skipped when that time is taken).
+ */
+function holdBeforeSna(pts: SignalPoints): SignalPoints {
+  const xs: number[] = [];
+  const ys: (number | null)[] = [];
+  pts.ys.forEach((y, i) => {
+    const x = pts.xs[i] as number;
+    const prev = ys.at(-1);
+    const next = pts.xs[i + 1];
+    if (y === null && typeof prev === "number" && next !== x + 1) {
+      xs.push(x, x + 1);
+      ys.push(prev, null);
+    } else {
+      xs.push(x);
+      ys.push(y);
+    }
+  });
+  return { xs, ys };
+}
+
 export type PathKind = "line" | "step" | "markers";
 
 export interface SignalInput {
@@ -61,9 +167,15 @@ export interface SeriesSpec {
   envelopeEdge?: boolean;
 }
 
+/** SNA periods of one signal, drawn as a strip in its color. */
+export interface SnaLane {
+  color: string;
+  periods: [number, number][];
+}
+
 export interface ChartModel {
-  /** Columns before joining: one table [xs, ...ys] per signal. */
-  tables: number[][][];
+  /** Columns before joining: one table [xs, ...ys] per signal; null is SNA. */
+  tables: (number | null)[][][];
   /** y scale of each table. */
   tableScales: string[];
   series: SeriesSpec[];
@@ -71,6 +183,8 @@ export interface ChartModel {
   bands: [number, number][];
   /** Scale key → axis label (unit or signal name). */
   scales: Map<string, string>;
+  /** One lane per loaded signal, in input order. */
+  sna: SnaLane[];
 }
 
 /** y scale per unit, so signals with different units don't squash each other. */
@@ -86,16 +200,19 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     series: [],
     bands: [],
     scales: new Map(),
+    sna: [],
   };
   for (const input of inputs) {
     if (!input.result) continue;
-    const pts = toPoints(input.result, origin);
-    const scale = scaleKey(input);
-    if (!model.scales.has(scale)) model.scales.set(scale, input.unit ?? input.label);
     const raw = input.result.kind === "raw";
     const path: PathKind = raw ? display.mode : "line";
+    const points = toPoints(input.result, origin);
+    const pts = path === "step" ? holdBeforeSna(points) : points;
+    const scale = scaleKey(input);
+    if (!model.scales.has(scale)) model.scales.set(scale, input.unit ?? input.label);
     model.series.push({ label: input.label, scale, color: input.color, path });
-    const table = [pts.xs, pts.ys];
+    model.sna.push({ color: input.color, periods: snaPeriods(input.result, origin) });
+    const table: (number | null)[][] = [pts.xs, pts.ys];
     if (!raw && display.envelope && pts.min && pts.max) {
       const maxIndex = model.series.length + 1;
       model.series.push(
@@ -137,7 +254,8 @@ function lowerBound(xs: number[], value: number): number {
 
 /**
  * y range of a scale for the visible x range: all points inside plus the nearest point outside
- * each edge, i.e. exactly the points that define the drawn segments. Undefined if none.
+ * each edge, i.e. exactly the points that define the drawn segments. SNA (null) never counts.
+ * Undefined if none.
  */
 export function yRange(
   model: ChartModel,
@@ -154,7 +272,8 @@ export function yRange(
     const end = Math.min(xs.length, lowerBound(xs, xMax) + 1);
     for (const column of table.slice(1)) {
       for (let j = start; j < end; j++) {
-        const v = column[j] as number;
+        const v = column[j];
+        if (v === null || v === undefined) continue;
         if (v < min) min = v;
         if (v > max) max = v;
       }

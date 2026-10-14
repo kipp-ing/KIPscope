@@ -6,7 +6,7 @@ import {
   type SeriesResult,
   type Timestamp,
 } from "@letsview/shared";
-import type { DataSource, RawPoint, SignalRef } from "./datasource.ts";
+import type { DataSource, RawPoint, SeriesRef } from "./datasource.ts";
 
 export const MIN_TARGET = 2;
 export const MAX_TARGET = 20_000;
@@ -27,10 +27,12 @@ const edge = (p: RawPoint | undefined): EdgePoint | undefined => p && { t: p.t.t
 /**
  * Fetches a signal for [from, to) at a resolution of about `target` values (design D4): raw points
  * with edge neighbors if the range holds at most `target` points, aggregated buckets otherwise.
+ * SNA points (design S4) count towards `target`; they come back as null values and as per-bucket
+ * `sna` counts, and never enter mean, min or max.
  */
 export async function querySeries(
   source: DataSource,
-  ref: SignalRef,
+  ref: SeriesRef,
   signalId: string,
   from: Timestamp,
   to: Timestamp,
@@ -68,6 +70,7 @@ export async function querySeries(
     width: width.toString(),
     t: encodeTimes(buckets.map((b) => b.start)),
     count: buckets.map((b) => b.count),
+    sna: buckets.map((b) => b.sna),
     mean: buckets.map((b) => b.mean),
     min: buckets.map((b) => b.min),
     max: buckets.map((b) => b.max),

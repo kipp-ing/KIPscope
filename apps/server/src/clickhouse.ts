@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type ClickHouseClient, ClickHouseLogLevel, createClient } from "@clickhouse/client";
 import type { Timestamp } from "@letsview/shared";
 import type { Config, TableMapping } from "./config.ts";
-import type { Bucket, DataSource, RawPoint, SignalRef } from "./datasource.ts";
+import type { Bucket, DataSource, RawPoint, SeriesRef, SignalRef } from "./datasource.ts";
 
 /** Client logging is off: aborted queries would log as errors; the server reports failures itself. */
 export function createClickHouseClient(config: Config["clickhouse"]): ClickHouseClient {
@@ -66,7 +66,30 @@ export class ClickHouseSource implements DataSource {
     return `fromUnixTimestamp64Nano({${param}:Int64}, 'UTC')`;
   }
 
-  private point = ([t, v]: [string, number]): RawPoint => ({ t: BigInt(t), v });
+  /**
+   * SNA predicate on the value column (design S3) with its parameters: true when the value lies in
+   * one of the ref's closed SNA ranges; the constant 0 with no parameters when it has none.
+   */
+  private isSna(ref: SeriesRef): { expr: string; params: Params } {
+    if (ref.sna.length === 0) return { expr: "0", params: {} };
+    return {
+      expr: `arrayExists((lo, hi) -> ${this.c.value} >= lo AND ${this.c.value} <= hi,
+                         {snaLo:Array(Float64)}, {snaHi:Array(Float64)})`,
+      params: { snaLo: ref.sna.map((r) => r.lo), snaHi: ref.sna.map((r) => r.hi) },
+    };
+  }
+
+  /** Time and value of a point, the value NULL where it is SNA. */
+  private pointColumns(ref: SeriesRef): { columns: string; params: Params } {
+    const { time, value } = this.c;
+    const sna = this.isSna(ref);
+    return {
+      columns: `toString(toUnixTimestamp64Nano(${time})), if(${sna.expr}, NULL, ${value})`,
+      params: sna.params,
+    };
+  }
+
+  private point = ([t, v]: [string, number | null]): RawPoint => ({ t: BigInt(t), v });
 
   async listSignals(abort?: AbortSignal): Promise<SignalRef[]> {
     const { dataRef, signal } = this.c;
@@ -102,62 +125,72 @@ export class ClickHouseSource implements DataSource {
     return Number(row?.[0] ?? 0);
   }
 
-  async raw(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal) {
-    const { time, value } = this.c;
-    const rows = await this.rows<[string, number]>(
-      `SELECT toString(toUnixTimestamp64Nano(${time})), ${value} FROM ${this.table}
+  async raw(ref: SeriesRef, from: Timestamp, to: Timestamp, abort?: AbortSignal) {
+    const { time } = this.c;
+    const { columns, params } = this.pointColumns(ref);
+    const rows = await this.rows<[string, number | null]>(
+      `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")}
        ORDER BY ${time}`,
-      { ref: ref.dataRef, sig: ref.name, from, to },
+      { ref: ref.dataRef, sig: ref.name, from, to, ...params },
       abort,
     );
     return rows.map(this.point);
   }
 
-  async before(ref: SignalRef, t: Timestamp, abort?: AbortSignal) {
-    const { time, value } = this.c;
-    const [row] = await this.rows<[string, number]>(
-      `SELECT toString(toUnixTimestamp64Nano(${time})), ${value} FROM ${this.table}
+  async before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
+    const { time } = this.c;
+    const { columns, params } = this.pointColumns(ref);
+    const [row] = await this.rows<[string, number | null]>(
+      `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} < ${this.ns("t")}
        ORDER BY ${time} DESC LIMIT 1`,
-      { ref: ref.dataRef, sig: ref.name, t },
+      { ref: ref.dataRef, sig: ref.name, t, ...params },
       abort,
     );
     return row && this.point(row);
   }
 
-  async after(ref: SignalRef, t: Timestamp, abort?: AbortSignal) {
-    const { time, value } = this.c;
-    const [row] = await this.rows<[string, number]>(
-      `SELECT toString(toUnixTimestamp64Nano(${time})), ${value} FROM ${this.table}
+  async after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
+    const { time } = this.c;
+    const { columns, params } = this.pointColumns(ref);
+    const [row] = await this.rows<[string, number | null]>(
+      `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} >= ${this.ns("t")}
        ORDER BY ${time} ASC LIMIT 1`,
-      { ref: ref.dataRef, sig: ref.name, t },
+      { ref: ref.dataRef, sig: ref.name, t, ...params },
       abort,
     );
     return row && this.point(row);
   }
 
   async buckets(
-    ref: SignalRef,
+    ref: SeriesRef,
     from: Timestamp,
     to: Timestamp,
     width: bigint,
     abort?: AbortSignal,
   ): Promise<Bucket[]> {
     const { time, value } = this.c;
-    const rows = await this.rows<[string, string, number, number, number]>(
-      `SELECT toString(intDiv(toUnixTimestamp64Nano(${time}), {w:Int64}) * {w:Int64}) AS b,
-              count(), avg(${value}), min(${value}), max(${value})
+    const sna = this.isSna(ref);
+    // An all-SNA bucket has no valid point, so the -IfOrNull aggregates return NULL for it.
+    const rows = await this.rows<
+      [string, string, string, number | null, number | null, number | null]
+    >(
+      `WITH ${sna.expr} AS s
+       SELECT toString(intDiv(toUnixTimestamp64Nano(${time}), {w:Int64}) * {w:Int64}) AS b,
+              countIf(NOT s), countIf(s),
+              avgIfOrNull(${value}, NOT s), minIfOrNull(${value}, NOT s), maxIfOrNull(${value}, NOT s)
        FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")}
        GROUP BY b ORDER BY toInt64(b)`,
-      { ref: ref.dataRef, sig: ref.name, from, to, w: width },
+      { ref: ref.dataRef, sig: ref.name, from, to, w: width, ...sna.params },
       abort,
     );
-    return rows.map(([b, count, mean, min, max]) => ({
+    return rows.map(([b, count, snaCount, mean, min, max]) => ({
       start: BigInt(b),
       count: Number(count),
+      sna: Number(snaCount),
       mean,
       min,
       max,

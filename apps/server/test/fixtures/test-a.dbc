@@ -28,3 +28,30 @@ CM_ SG_ 512 JITTER "Torque with
 a comment over two lines";
 CM_ SG_ 768 SLOW "Minute counter; contains \"quotes\"";
 VAL_ 768 MODE 0 "off" 1 "on" ;
+
+BO_ 2048 Sna_800h: 8 TEST
+ SG_ SPEED : 0|9@1+ (1,0) [0|511] "km/h"  ESP
+ SG_ RPM : 9|14@1+ (0.5,0) [0|8191.5] "1/min"  ESP
+ SG_ TEMP : 23|8@1- (1,0) [-128|127] "degC"  ESP
+ SG_ COUNTER : 31|4@1+ (1,0) [0|15] ""  ESP
+ SG_ STATE : 35|2@1+ (1,0) [0|3] ""  ESP
+ SG_ MODE : 37|3@1+ (1,0) [0|7] ""  ESP
+ SG_ FLAG : 40|1@1+ (1,0) [0|1] ""  ESP
+ SG_ LEVEL : 41|3@1+ (1,0) [0|7] ""  ESP
+ SG_ CRC_800h : 48|8@1+ (1,0) [0|255] ""  ESP
+
+BA_DEF_ SG_  "GenSigSNA" STRING ;
+BA_DEF_DEF_  "GenSigSNA" "";
+BA_ "GenSigSNA" SG_ 2048 SPEED "1FFh";
+BA_ "GenSigSNA" SG_ 2048 RPM "3FFFh";
+BA_ "GenSigSNA" SG_ 2048 TEMP "80h";
+BA_ "GenSigSNA" SG_ 2048 COUNTER "0h";
+BA_ "GenSigSNA" SG_ 2048 STATE "0h";
+BA_ "GenSigSNA" SG_ 2048 MODE "7h";
+BA_ "GenSigSNA" SG_ 2048 FLAG "1h";
+BA_ "GenSigSNA" SG_ 2048 LEVEL "1h";
+BA_ "GenSigSNA" SG_ 2048 CRC_800h "FFh";
+VAL_ 2048 SPEED 511 "SNV" ;
+VAL_ 2048 STATE 0 "SNA" 1 "ON" 2 "OFF" ;
+VAL_ 2048 MODE 6 "SNV" 1 "ON" ;
+VAL_ 2048 LEVEL 1 "OK" 7 "SNV" ;

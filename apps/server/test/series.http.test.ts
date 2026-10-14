@@ -110,17 +110,47 @@ describe("GET /api/extent", () => {
   });
 });
 
+describe("GET /api/series before the catalog was ever loaded", () => {
+  const source = testSource();
+  const app = buildApp({
+    catalog: new Catalog(source, async () => new Map()),
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  afterAll(() => app.close());
+
+  it("answers 503 for series before the catalog was ever loaded", async () => {
+    const res = await app.inject({
+      url: "/api/series",
+      query: { signal: "testcar/Nodbc_500h.RAW", from: "1000", to: "2000" },
+    });
+    expect(res.statusCode).toBe(503);
+    const body = res.json();
+    expect(Object.keys(body)).toEqual(["error"]);
+    expect(body.error).toMatchObject({
+      code: "catalog_unavailable",
+      signalId: "testcar/Nodbc_500h.RAW",
+      from: "1000",
+      to: "2000",
+    });
+    expect(body.error.message).toBeTruthy();
+  });
+});
+
 describe("GET /api/series with the database unavailable", () => {
+  // The catalog is loaded from the test DB; only the series source is unreachable.
+  const catalog = new Catalog(testSource(), async () => new Map());
   const source = new ClickHouseSource(
     createClickHouseClient({ url: "http://127.0.0.1:1", username: "x", password: "" }),
     testMapping,
     5,
   );
   const app = buildApp({
-    catalog: new Catalog(source, async () => new Map()),
+    catalog,
     source,
     workspace: new WorkspaceStore({ signalExists: () => true }),
   });
+  beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
 
   it("returns an error naming signal and range, and no data", async () => {

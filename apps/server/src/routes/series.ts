@@ -54,8 +54,23 @@ export const seriesRoutes =
     app.get("/api/series", async (request, reply) => {
       const query = parseInput(SeriesQuery, request.query, reply);
       if (!query) return reply;
+      const range = {
+        signalId: query.signal,
+        from: query.from.toString(),
+        to: query.to.toString(),
+      };
+      // Without a catalog the server cannot tell SNA from valid values (spec series-query).
+      if (!catalog.loadedAt) {
+        return apiError(
+          reply,
+          503,
+          "catalog_unavailable",
+          "signal catalog not loaded yet; SNA values cannot be identified",
+          range,
+        );
+      }
       const ref = parseSignalId(query.signal);
-      if (!ref || (catalog.loadedAt && !catalog.get(query.signal))) {
+      if (!ref || !catalog.get(query.signal)) {
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -70,7 +85,7 @@ export const seriesRoutes =
       try {
         return await querySeries(
           source,
-          ref,
+          { ...ref, sna: catalog.snaRanges(query.signal) },
           query.signal,
           query.from,
           query.to,
@@ -80,11 +95,7 @@ export const seriesRoutes =
       } catch (error) {
         if (controller.signal.aborted) return reply;
         const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message, {
-          signalId: query.signal,
-          from: query.from.toString(),
-          to: query.to.toString(),
-        });
+        return apiError(reply, 502, "source_error", message, range);
       }
     });
   };

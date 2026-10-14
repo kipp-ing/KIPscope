@@ -9,6 +9,10 @@
  * - Sparse_300h.SLOW      one point per minute over 10 h = 601 points, value = minute index
  * - Nodbc_500h.RAW        100 points, 1 s apart; not in the test DBC
  * - Many_700h.S0000-0999  one point each; for catalog size and paging
+ * - Sna_800h.SPEED/RPM/TEMP/COUNTER/STATE/MODE  SNA test series from 02:00 (design S8 of add-sna-handling):
+ *                         SPEED 1000 x 100 ms, 511 = SNA for n in [300, 499] and 600, 602, 999 (203 SNA), 42 at 601
+ *                         RPM 100 x 1 s (11 SNA, incl. 8191.500000001; 8191.0 stays valid), TEMP 10 (2 SNA),
+ *                         COUNTER 16 (0 SNA), STATE 10 (4 SNA), MODE 10 (2 SNA)
  * - othercar / Fast_100h.SIG_A  10 points; same signal name, other vehicle
  * - sdlog.signals_ns: Ns_600h.FINE  1,000 points from 2026-10-14T08:00:00.123456789Z, 1,001 ns apart
  *
@@ -47,6 +51,9 @@ const insert = (table: string, select: string) =>
 
 const ms = (offsetExpr: string) =>
   `fromUnixTimestamp64Milli(toInt64(${BASE_MS} + ${offsetExpr}), 'UTC')`;
+
+/** SNA series start at 2026-10-01T02:00:00Z. */
+const sna = (offsetExpr: string) => ms(`7200000 + ${offsetExpr}`);
 
 const statements = [
   "CREATE DATABASE IF NOT EXISTS sdlog",
@@ -92,6 +99,41 @@ const statements = [
      FROM numbers(10)`,
   ),
   insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c8', 'Sna_800h.SPEED', ${sna("number * 100")},
+       multiIf((number >= 300 AND number <= 499) OR number IN (600, 602, 999), 511,
+               number = 601, 42, number % 100)
+     FROM numbers(1000)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c8', 'Sna_800h.RPM', ${sna("number * 1000")},
+       multiIf(number = 50, 8191.0, number = 51, 8191.500000001, number % 10 = 9, 8191.5,
+               number * 10)
+     FROM numbers(100)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c8', 'Sna_800h.TEMP', ${sna("number * 1000")},
+       if(number % 5 = 0, -128, number * 10 - 40)
+     FROM numbers(10)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c8', 'Sna_800h.COUNTER', ${sna("number * 1000")}, number
+     FROM numbers(16)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c8', 'Sna_800h.STATE', ${sna("number * 1000")}, number % 3
+     FROM numbers(10)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c8', 'Sna_800h.MODE', ${sna("number * 1000")}, number % 8
+     FROM numbers(10)`,
+  ),
+  insert(
     "signals_ns",
     `SELECT 'testcar', 'test-dev', 'c7', 'Ns_600h.FINE',
        fromUnixTimestamp64Nano(toInt64(${NS_BASE}) + toInt64(number * 1001), 'UTC'), number
@@ -101,10 +143,10 @@ const statements = [
 
 /** Spot checks: query → expected single value. */
 const checks: [string, string][] = [
-  ["SELECT count() FROM sdlog.signals", "21612711"],
+  ["SELECT count() FROM sdlog.signals", "21613857"],
   [
     "SELECT count() FROM (SELECT DISTINCT vehicle, signal FROM sdlog.signals WHERE utc IS NOT NULL)",
-    "1007",
+    "1013",
   ],
   [
     "SELECT max(value) FROM sdlog.signals WHERE signal = 'Fast_100h.SIG_A' AND vehicle = 'testcar' AND utc IS NOT NULL",
@@ -122,6 +164,10 @@ const checks: [string, string][] = [
   [
     "SELECT toString(max(utc)) FROM sdlog.signals WHERE signal = 'Fast_100h.SIG_C'",
     "2026-10-01 09:59:59.995",
+  ],
+  [
+    "SELECT countIf(value = 511) FROM sdlog.signals WHERE signal = 'Sna_800h.SPEED' AND vehicle = 'testcar'",
+    "203",
   ],
   ["SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.signals_ns", NS_BASE.toString()],
 ];

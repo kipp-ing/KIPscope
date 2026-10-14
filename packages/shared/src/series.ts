@@ -3,7 +3,8 @@ import type { EncodedTimes } from "./encoding.ts";
 /** A raw point just outside the requested range, as decimal-ns timestamp and value. */
 export interface EdgePoint {
   t: string;
-  v: number;
+  /** null: the neighbor is an SNA point. */
+  v: number | null;
 }
 
 /** Unmodified raw points inside [from, to) plus the nearest points outside each edge. */
@@ -13,7 +14,8 @@ export interface RawSeries {
   from: string;
   to: string;
   t: EncodedTimes;
-  v: number[];
+  /** One entry per timestamp in `t`; null where the point is SNA. */
+  v: (number | null)[];
   before?: EdgePoint;
   after?: EdgePoint;
 }
@@ -29,10 +31,14 @@ export interface BucketSeries {
   to: string;
   width: string;
   t: EncodedTimes;
+  /** Valid (non-SNA) points per bucket. */
   count: number[];
-  mean: number[];
-  min: number[];
-  max: number[];
+  /** SNA points per bucket. count[i] + sna[i] ≥ 1 (buckets without points are omitted). */
+  sna: number[];
+  /** Over valid points only; null exactly when count[i] === 0. */
+  mean: (number | null)[];
+  min: (number | null)[];
+  max: (number | null)[];
 }
 
 export type SeriesResult = RawSeries | BucketSeries;

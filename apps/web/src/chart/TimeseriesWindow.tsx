@@ -14,9 +14,12 @@ import { formatFull, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts
 import {
   buildModel,
   type ChartModel,
+  formatSnaShare,
+  isolatedPoints,
   resolutionLabel,
   type SeriesSpec,
   type SignalInput,
+  snaShare,
   yRange,
 } from "./build.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
@@ -52,6 +55,13 @@ interface Range {
 
 const colorOf = (index: number) => COLORS[index % COLORS.length] as string;
 
+/** null mode NULL_EXPAND of uPlot.join: alignment artifacts next to an SNA null become null. */
+const NULL_EXPAND = 2;
+/** SNA lanes: strip height and minimum period width in CSS px, fill opacity. */
+const SNA_LANE_HEIGHT = 6;
+const SNA_MIN_WIDTH = 2;
+const SNA_ALPHA = 0.6;
+
 function seriesOptions(spec: SeriesSpec): uPlot.Series {
   const paths =
     spec.path === "step"
@@ -59,16 +69,59 @@ function seriesOptions(spec: SeriesSpec): uPlot.Series {
       : spec.path === "markers"
         ? () => null
         : uPlot.paths.linear?.();
+  const points: uPlot.Series.Points = {
+    show: spec.path === "markers",
+    size: 5,
+    fill: spec.color,
+    stroke: spec.color,
+  };
+  // A line broken at SNA would hide a valid point with no valid neighbor; draw it as a marker.
+  if (spec.path === "line" && !spec.envelopeEdge) {
+    points.filter = (u, i) => {
+      const idxs = isolatedPoints((u.data[i] ?? []) as (number | null | undefined)[]);
+      return idxs.length > 0 ? idxs : null;
+    };
+  }
   return {
     label: spec.label,
     scale: spec.scale,
     // Envelope edges stay visible as thin lines so a single-bucket spike still shows.
     stroke: spec.envelopeEdge ? `${spec.color}88` : spec.color,
     width: spec.envelopeEdge ? 1 : 1.5,
-    spanGaps: true,
+    // Gaps are SNA only: alignment artifacts (undefined) are still bridged.
+    spanGaps: false,
     ...(paths ? { paths } : {}),
-    points: { show: spec.path === "markers", size: 5, fill: spec.color, stroke: spec.color },
+    points,
   };
+}
+
+/** Paints each signal's SNA periods as a strip at the bottom of the plot area, lane 0 lowest. */
+function drawSnaLanes(u: uPlot, lanes: ChartModel["sna"]) {
+  const { ctx } = u;
+  const { left, top, width, height } = u.bbox;
+  const dpr = devicePixelRatio;
+  const laneHeight = SNA_LANE_HEIGHT * dpr;
+  const minWidth = SNA_MIN_WIDTH * dpr;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  ctx.globalAlpha = SNA_ALPHA;
+  lanes.forEach((lane, i) => {
+    ctx.fillStyle = lane.color;
+    const y = top + height - (i + 1) * laneHeight;
+    for (const [start, end] of lane.periods) {
+      let x0 = u.valToPos(start, "x", true);
+      let x1 = u.valToPos(end, "x", true);
+      if (x1 - x0 < minWidth) {
+        const center = (x0 + x1) / 2;
+        x0 = center - minWidth / 2;
+        x1 = center + minWidth / 2;
+      }
+      ctx.fillRect(x0, y, x1 - x0, laneHeight);
+    }
+  });
+  ctx.restore();
 }
 
 export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady }: Props) {
@@ -217,6 +270,7 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
         legend: { show: false },
         cursor: { drag: { x: true, y: false, setScale: false } },
         hooks: {
+          draw: [(self) => drawSnaLanes(self, modelRef.current.sna)],
           setSelect: [
             (self) => {
               const { left, width: selected } = self.select;
@@ -276,7 +330,7 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
       model.tables.length > 0
         ? uPlot.join(
             model.tables as uPlot.AlignedData[],
-            model.tables.map((t) => t.map(() => 0)),
+            model.tables.map((t) => t.map(() => NULL_EXPAND)),
           )
         : ([[]] as uPlot.AlignedData);
     const r = viewRange();
@@ -375,6 +429,7 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
         {w.signals.map((s, i) => {
           const meta = info(s.signalId);
           const state = loader.get(s.id);
+          const sna = state?.result && formatSnaShare(snaShare(state.result));
           return (
             <li key={s.id} title={meta?.description}>
               <span className="swatch" style={{ background: colorOf(i) }} />
@@ -385,6 +440,7 @@ export function TimeseriesWindow({ window: w, revision, info, onCommand, onReady
                   ? `failed: ${state.error}`
                   : (state?.status ?? "loading")}
               </span>
+              {sna && <span className="sna">{sna}</span>}
               <button
                 type="button"
                 className="link"

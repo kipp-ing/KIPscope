@@ -6,22 +6,39 @@ export interface SignalRef {
   name: string;
 }
 
+/** Closed interval of stored values that mean SNA. */
+export interface SnaRange {
+  lo: number;
+  hi: number;
+}
+
+/** A signal plus its SNA ranges, for value-returning queries. Empty `sna`: no SNA. */
+export interface SeriesRef extends SignalRef {
+  sna: readonly SnaRange[];
+}
+
 export interface RawPoint {
   t: Timestamp;
-  v: number;
+  /** null: the point is SNA. */
+  v: number | null;
 }
 
 export interface Bucket {
   start: Timestamp;
+  /** Valid (non-SNA) points. */
   count: number;
-  mean: number;
-  min: number;
-  max: number;
+  /** SNA points. */
+  sna: number;
+  /** Over valid points only; null iff count === 0. */
+  mean: number | null;
+  min: number | null;
+  max: number | null;
 }
 
 /**
  * Read-only access to one time-series source (ClickHouse now, ADX later). Ranges are half-open
- * [from, to). Points without a timestamp never appear in any result.
+ * [from, to). Points without a timestamp never appear in any result. Value-returning queries take a
+ * `SeriesRef` and report values within its SNA ranges as SNA (design S3, S6).
  */
 export interface DataSource {
   listSignals(abort?: AbortSignal): Promise<SignalRef[]>;
@@ -31,14 +48,14 @@ export interface DataSource {
     abort?: AbortSignal,
   ): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
   count(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<number>;
-  raw(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<RawPoint[]>;
+  raw(ref: SeriesRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<RawPoint[]>;
   /** Last point strictly before `t`. */
-  before(ref: SignalRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
+  before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
   /** First point at or after `t`. */
-  after(ref: SignalRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
+  after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
   /** Non-empty buckets on the absolute grid `k * width`, ordered by start. */
   buckets(
-    ref: SignalRef,
+    ref: SeriesRef,
     from: Timestamp,
     to: Timestamp,
     width: bigint,

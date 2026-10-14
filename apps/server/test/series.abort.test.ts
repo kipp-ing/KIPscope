@@ -19,6 +19,7 @@ function slowSource(delayMs: number) {
           reject(abort.reason);
         });
       }),
+    listSignals: async () => [{ dataRef: "car", name: "S" }],
     raw: async () => [],
     before: async () => undefined,
     after: async () => undefined,
@@ -28,13 +29,16 @@ function slowSource(delayMs: number) {
 
 describe("GET /api/series over a real connection", () => {
   const slow = slowSource(300);
+  const catalog = new Catalog(slow.source, async () => new Map());
   const app = buildApp({
-    catalog: new Catalog(slow.source, async () => new Map()),
+    catalog,
     source: slow.source,
     workspace: new WorkspaceStore({ signalExists: () => true }),
   });
   let base = "";
   beforeAll(async () => {
+    // Series need a loaded catalog (SNA ranges), see series.http.test.ts.
+    await catalog.refresh();
     base = await app.listen({ port: 0, host: "127.0.0.1" });
   });
   afterAll(() => app.close());

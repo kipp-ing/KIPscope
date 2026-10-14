@@ -79,6 +79,7 @@ body {
 }
 
 .explorer .description,
+.explorer .sna,
 .explorer .ref,
 .count {
   color: var(--muted);
@@ -195,6 +196,7 @@ main {
 
 .unit,
 .status,
+.signals .sna,
 .empty,
 .hint {
   color: var(--muted);

@@ -1,5 +1,5 @@
 import { type SignalInfo, type SignalPage, signalId } from "@letsview/shared";
-import type { DataSource } from "./datasource.ts";
+import type { DataSource, SnaRange } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
 
 export const DEFAULT_PAGE_SIZE = 50;
@@ -12,6 +12,7 @@ export const MAX_PAGE_SIZE = 200;
 export class Catalog {
   private entries: SignalInfo[] = [];
   private byId = new Map<string, SignalInfo>();
+  private ranges = new Map<string, SnaRange[]>();
   private haystacks: string[] = [];
   /** Set after the first successful refresh. */
   loadedAt: Date | undefined;
@@ -36,16 +37,26 @@ export class Catalog {
       this.lastError = error instanceof Error ? error.message : String(error);
       throw error;
     }
+    const ranges = new Map<string, SnaRange[]>();
     const entries = refs.map(({ dataRef, name }) => {
       const info: SignalInfo = { id: signalId(dataRef, name), dataRef, name };
       const meta = metadata.get(name);
       if (meta?.description) info.description = meta.description;
       if (meta?.unit) info.unit = meta.unit;
+      if (meta?.sna) {
+        const { values, tolerance } = meta.sna;
+        info.sna = values;
+        ranges.set(
+          info.id,
+          values.map(({ value }) => ({ lo: value - tolerance, hi: value + tolerance })),
+        );
+      }
       return info;
     });
     entries.sort((a, b) => a.name.localeCompare(b.name) || a.dataRef.localeCompare(b.dataRef));
     this.entries = entries;
     this.byId = new Map(entries.map((e) => [e.id, e]));
+    this.ranges = ranges;
     this.haystacks = entries.map((e) =>
       [e.name, e.description, e.alias, e.unit].filter(Boolean).join("\n").toLowerCase(),
     );
@@ -59,6 +70,11 @@ export class Catalog {
 
   get(id: string): SignalInfo | undefined {
     return this.byId.get(id);
+  }
+
+  /** Closed intervals of stored values that mean SNA (design S2); `[]` if unknown or none. */
+  snaRanges(id: string): SnaRange[] {
+    return this.ranges.get(id) ?? [];
   }
 
   /**

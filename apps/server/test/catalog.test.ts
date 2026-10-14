@@ -8,7 +8,7 @@ describe("Catalog (test DB)", () => {
   beforeAll(() => catalog.refresh());
 
   it("lists exactly the signals with data, per data reference", () => {
-    expect(catalog.size).toBe(1007);
+    expect(catalog.size).toBe(1013);
     expect(catalog.get("testcar/Fast_100h.SIG_A")).toBeDefined();
     expect(catalog.get("othercar/Fast_100h.SIG_A")).toBeDefined();
   });
@@ -64,5 +64,18 @@ describe("Catalog (test DB)", () => {
     const before = catalog.search("", 0, 200).items.map((s) => s.id);
     await catalog.refresh();
     expect(catalog.search("", 0, 200).items.map((s) => s.id)).toEqual(before);
+  });
+
+  it("reports SNA values and ranges of a signal, none for signals without SNA", () => {
+    expect(catalog.get("testcar/Sna_800h.SPEED")?.sna).toEqual([
+      { raw: 511, value: 511, sources: ["GenSigSNA", "VAL_"] },
+    ]);
+    expect(catalog.get("testcar/Sna_800h.COUNTER")?.sna).toBeUndefined();
+    expect(catalog.get("testcar/Nodbc_500h.RAW")).not.toHaveProperty("sna");
+    expect(catalog.snaRanges("testcar/Sna_800h.SPEED")).toEqual([{ lo: 510.5, hi: 511.5 }]);
+    expect(catalog.snaRanges("testcar/Sna_800h.RPM")).toEqual([{ lo: 8191.25, hi: 8191.75 }]);
+    expect(catalog.snaRanges("testcar/Sna_800h.TEMP")).toEqual([{ lo: -128.5, hi: -127.5 }]);
+    expect(catalog.snaRanges("testcar/Nodbc_500h.RAW")).toEqual([]);
+    expect(catalog.snaRanges("testcar/Nope.NOPE")).toEqual([]);
   });
 });
