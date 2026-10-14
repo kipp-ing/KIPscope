@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-015: "No value" labels do not beat GenSigSNA (2026-10-14)
+
+- **Decision:** Refines D-014's label rule: `VAL_` labels that themselves mean "no value" — `--`, `NO_TEMP_SENSOR` and `RES` (reserved) — do not make a `GenSigSNA` value valid; it stays SNA. The list is fixed in the spec and grows only by decision.
+- **Why:** Answered by Jan. Taken literally, D-014 would show raw `FFh` of `TirePress_*`, `T_AUSSEN(_RAW)`, `T_SOLL`, `T_INNEN` and 63 of `FCOD_MOT` as real measurements.
+
 ## D-014: SNA exceptions and SNA display (2026-10-14)
 
 - **Decision:**
