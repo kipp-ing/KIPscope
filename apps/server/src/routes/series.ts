@@ -1,19 +1,11 @@
-import { fromIso, parseSignalId, parseTimestamp } from "@letsview/shared";
+import { parseSignalId, TimeInput } from "@letsview/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import { apiError, parseInput } from "../http.ts";
 import { MAX_TARGET, MIN_TARGET, querySeries } from "../series.ts";
 
-/** Accepts decimal nanoseconds since the epoch or ISO-8601. */
-const Time = z.string().transform((value, ctx) => {
-  try {
-    return /^-?\d+$/.test(value) ? parseTimestamp(value) : fromIso(value);
-  } catch (error) {
-    ctx.addIssue({ code: "custom", message: (error as Error).message });
-    return z.NEVER;
-  }
-});
+const Time = TimeInput.transform(BigInt);
 
 const SeriesQuery = z
   .object({
