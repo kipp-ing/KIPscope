@@ -30,8 +30,8 @@
 - [x] 5.2 Implement raw-point query with edge neighbors, excluding null `utc` (design D4, D5); verify integration tests for the millisecond-window-between-points, start-of-recording and null-timestamp scenarios
 - [x] 5.3 Implement aggregated query with absolute-grid buckets and count/avg/min/max, omitting empty buckets; verify the 10-hour overview returns ≤ target buckets and a known spike appears as bucket max
 - [x] 5.4 Implement raw-vs-aggregate selection via count; verify tests for both branches and the boundary count = target
-- [ ] 5.5 Expose `GET /api/series` with error responses that name signal and range; verify HTTP tests including DB-unavailable returning an error and no data
-- [ ] 5.6 Verify precision end to end: HTTP tests fetch a seeded ms timestamp from the `DateTime64(3)` table and a ns timestamp from the `DateTime64(9)` table and compare both exactly
+- [x] 5.5 Expose `GET /api/series` with error responses that name signal and range; verify HTTP tests including DB-unavailable returning an error and no data
+- [x] 5.6 Verify precision end to end: HTTP tests fetch a seeded ms timestamp from the `DateTime64(3)` table and a ns timestamp from the `DateTime64(9)` table and compare both exactly
 
 ## 6. Workspace state (spec: workspace-state)
 
