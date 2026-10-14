@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-020: Explorer drag, keys and stable "Add to" target (2026-10-14)
+
+- **Decision:** Answered by Jan on the spec audit of `improve-signal-explorer`:
+  - Explorer rows can be dragged onto windows; a window that would reach a fifth unit is shown as refused, the same rule as for legend drags (D-019).
+  - The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears.
+  - The "Add to" target stays where the user put it; creating, renaming or reordering windows does not move it.
+  - `improve-window-workflow` gets its spec brought in line with the code and cheap unit tests for wheel factor, inset alignment and Backspace in text fields before it is archived.
+- **Why:** The first three come from the power-user report ([feedback/2026-10-14-power-users.md](feedback/2026-10-14-power-users.md)); "Add to" jumping under the click is a reproduced bug. Jan chose to keep them in scope and record them here.
+
 ## D-019: Stacked axes; T_SOLL follows the DBC (2026-10-14)
 
 - **Decision:** Answered by Jan on the spec owners' open questions:
