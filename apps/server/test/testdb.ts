@@ -1,11 +1,10 @@
 import { resolve } from "node:path";
-import { createClient } from "@clickhouse/client";
-import { ClickHouseSource } from "../src/clickhouse.ts";
+import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
 import type { TableMapping } from "../src/config.ts";
 
 /** Client for the seeded test DB (`docker compose up -d` + `seed:test`); never the real one. */
 export function testClient() {
-  return createClient({
+  return createClickHouseClient({
     url: process.env.TEST_CLICKHOUSE_URL || "http://localhost:8124",
     username: process.env.TEST_CLICKHOUSE_USER || "letsview",
     password: process.env.TEST_CLICKHOUSE_PASSWORD ?? "letsview",

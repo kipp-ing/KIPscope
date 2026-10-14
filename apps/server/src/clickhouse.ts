@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { type ClickHouseClient, createClient } from "@clickhouse/client";
+import { type ClickHouseClient, ClickHouseLogLevel, createClient } from "@clickhouse/client";
 import type { Timestamp } from "@letsview/shared";
 import type { Config, TableMapping } from "./config.ts";
 import type { Bucket, DataSource, RawPoint, SignalRef } from "./datasource.ts";
 
+/** Client logging is off: aborted queries would log as errors; the server reports failures itself. */
 export function createClickHouseClient(config: Config["clickhouse"]): ClickHouseClient {
-  return createClient({ url: config.url, username: config.username, password: config.password });
+  return createClient({
+    url: config.url,
+    username: config.username,
+    password: config.password,
+    log: { level: ClickHouseLogLevel.OFF },
+  });
 }
 
 type Params = Record<string, unknown>;
@@ -40,7 +46,11 @@ export class ClickHouseSource implements DataSource {
       ...(abort ? { abort_signal: abort } : {}),
       clickhouse_settings: {
         max_execution_time: this.timeoutSeconds,
+        // An aborted request closes the connection. ClickHouse only notices that while writing,
+        // so progress headers every 100 ms make it cancel the query promptly (design D7).
         cancel_http_readonly_queries_on_client_close: 1,
+        send_progress_in_http_headers: 1,
+        http_headers_progress_interval_ms: "100",
       },
     });
     return result.json<T>();
