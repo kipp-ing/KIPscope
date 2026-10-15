@@ -52,4 +52,4 @@ The tasks assume the recommended answers to design Q1–Q4: backoff per key, no 
 
 ## 3. Lead
 
-- [ ] 3.1 Manual tunnel-drop check, design R8 (series-cache "Settled while failed, not while a retry loads", timeseries-window "Tunnel drop on real data"): screenshots of steps 1 and 3, CLI output of step 2, and the `GET /api/render-status` output of step 3.
+- [x] 3.1 Manual tunnel-drop check, design R8 (series-cache "Settled while failed, not while a retry loads", timeseries-window "Tunnel drop on real data"): screenshots of steps 1 and 3, CLI output of step 2, and the `GET /api/render-status` output of step 3.

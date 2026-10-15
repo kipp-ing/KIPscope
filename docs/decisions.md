@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-044: Load recovery conventions (2026-10-15)
+
+From the archived change `improve-load-recovery` (R1–R7, Q1–Q4 as recommended); details there.
+
+- **Retry:** per signal and window, no jitter: 1, 2, 4, 8, 16, then every 30 s; reset on success. Network errors and 5xx retry by themselves, 4xx only when the same request comes again. A success of any series request in the tab or a live-channel reconnect retries at once, never sooner than 1 s after the last failure. Prefetch failures are dropped; a failed overview restarts after the signal's next complete view.
+- **On error:** the window keeps the previous data or placeholder; the legend shows `failed: …`, also while a retry loads. An error or a scheduled retry counts as settled for the render acknowledgement, a loading retry does not; the UI re-acknowledges when its error list changes.
+- **Not retried:** `/api/value` (readouts and the values window stay failed until cursor or range change).
+- **Tunnel:** `scripts/tunnel.sh start` keeps the carserver tunnel up (D-042).
+
 ## D-043: Zoom speed conventions (2026-10-15)
 
 From the archived change `improve-zoom-speed` (Z1, Z2, Z4, Z6, Z7, Z9; Q1–Q2 as recommended, Q3 per D-041); details there.

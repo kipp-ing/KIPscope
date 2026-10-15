@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-15, session 5. No change in flight; all twelve changes are archived and the main specs describe the running app.
+As of 2026-10-15, end of session 5. No change in flight; all fourteen changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -20,7 +20,7 @@ As of 2026-10-15, session 5. No change in flight; all twelve changes are archive
 | Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache). Decisions D-001 … D-039: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery). Decisions D-001 … D-044: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -35,7 +35,8 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Built and archived `add-display-names` (D-035, D-036) in three rounds; Jan: „nice. working".
 - Checked `CPC_508h.PNHV_SupBat_Curr` on Jan's question: decoding matches the DBC and raw frames; negative is discharge (−188 A at hard acceleration, +22 A recuperation), so no fix needed.
 - Built and archived `improve-window-handling` (corner grip, drop below the windows) and `add-series-cache` (D-037 … D-039); Jan: „looks good". By hand still: the grip with a real mouse drag.
-- Next up: zoom-out speed (Jan: a zoom out takes about 0.5 s to redraw; wants near instant even in slow browsers).
+- Built and archived `improve-zoom-speed` (D-040, D-041, D-043): load during the gesture, overview placeholder, idle prefetch, linked windows follow live. Measured: cached zoom 8–13 ms (was 359 ms), uncached sharp ~65 ms after the gesture (was 400–455 ms). Jan: „Butter smooth".
+- carserver reboots daily at 23:00 local and killed the tunnel (470 × 502); built and archived `improve-load-recovery` (D-042, D-044): retry with backoff and on recovery, curve kept on error; `scripts/tunnel.sh` reconnects within ~5 s. Lead's tunnel-drop check: recovered ~3 s after the tunnel came back.
 
 ## Next
 
@@ -52,8 +53,10 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Tick labels may thin out to one label on very narrow plots. A header range below 1 s shows equal start and end (ms precision).
 - Seen once, not reproduced: header range stale after a rectangle zoom. Rename has no visible affordance (click the title).
 - Hidden browser tabs stay connected but never acknowledge renders; `--wait` takes the first UI that does, and times out when only hidden tabs are open.
+- Tabs opened before a web change may need a reload: hot reload swaps modules but keeps old state (seen once: a tab kept reporting render errors until reloaded).
+- `/api/value` is not retried after an outage: readouts and the values window stay failed until cursor or range change.
 - Not checked by hand: L hidden while a cursor line is dragged (unit test only; the browser tool cannot hold a drag); CLI `--wait` with no tab open (exit 6, covered by tests); mouse wheel steps on mice other than Jan's.
 
 ## Run
 
-See [README.md](../README.md). Development needs the SSH tunnel to carserver. Restart the dev server with `scripts/restart-server.sh` (only touches node `src/main.ts` on 7310). Team rounds: workflow `change-round` with `{change, date}` after the spec owner wrote spec, design and tasks; tests need `docker compose up -d` and `seed:test`.
+See [README.md](../README.md). Development needs the SSH tunnel to carserver: `scripts/tunnel.sh start`. Restart the dev server with `scripts/restart-server.sh` (only touches node `src/main.ts` on 7310). Team rounds: workflow `change-round` with `{change, date}` after the spec owner wrote spec, design and tasks; tests need `docker compose up -d` and `seed:test`.

@@ -1,1 +1,0 @@
-- Round 1 (2026-10-15): needs_jan - tasks 1.1, 1.2, 2.1 fulfilled (build, lint, tests, UI regression check pass); only the lead's task 3.1 (manual tunnel-drop check, scenarios "Tunnel drop on real data" and manual part of "Settled while failed, not while a retry loads") is not_run. Reviewer could-notes (class/status truthiness mismatch, recovery trigger breadth) are not blockers.
