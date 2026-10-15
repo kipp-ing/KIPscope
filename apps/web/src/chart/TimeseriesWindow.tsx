@@ -10,6 +10,7 @@ import {
   MAX_UNITS,
   MIN_PLOT_HEIGHT,
   type RenderError,
+  type SeriesResult,
   type SignalInfo,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
@@ -62,10 +63,23 @@ import {
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
+import {
+  FADE_ALPHA,
+  HIGHLIGHT_WIDTH,
+  labelPosition,
+  liveCell,
+  liveCursor,
+  liveLabelText,
+  liveTime,
+  nearestSignal,
+  useLiveCursor,
+  useLiveNear,
+} from "./live.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
 import {
   chartValueAt,
   type ReadoutSource,
+  type ReadoutValue,
   readoutSource,
   sourceCell,
   sourceDelta,
@@ -194,8 +208,12 @@ const sameInputs = (a: SignalInput[], b: SignalInput[]) =>
 /**
  * Hides the crosshair until the next pointer move in the plot. A CSS class, not setCursor:
  * setCursor would leave uPlot's drag start position stale for a drag that leaves the plot.
+ * Clears L if this window owns it (design L8): at its old pixel it would name a wrong time.
  */
-const hideCursor = (u: uPlot) => u.root.classList.add("cursor-hidden");
+const hideCursor = (u: uPlot, windowId: string) => {
+  u.root.classList.add("cursor-hidden");
+  liveCursor.clear(windowId);
+};
 const showCursor = (u: uPlot) => u.root.classList.remove("cursor-hidden");
 
 function seriesOptions(spec: SeriesSpec): uPlot.Series {
@@ -428,19 +446,67 @@ function placeCursorLines(
   return shown;
 }
 
+/** The number of a readout value; undefined for SNA and no value (design L3: no candidate). */
+const numberOf = (v: ReadoutValue | undefined) => (v && "value" in v ? v.value : undefined);
+
+/** Live overlays inside u.over (design L3, L6): the L line of other windows and the owner's label. */
+type LiveOverlays = { line: HTMLElement; label: HTMLElement };
+
+function createLiveOverlays(over: HTMLElement): LiveOverlays {
+  const line = document.createElement("div");
+  line.className = "live-line";
+  line.style.display = "none";
+  const label = document.createElement("span");
+  label.className = "live-label";
+  label.style.display = "none";
+  over.append(line, label);
+  return { line, label };
+}
+
+/** Puts the L line at t with the A/B rule (inside the half-open shown range), else hides it. */
+function placeLiveLine(u: uPlot, line: HTMLElement, t: bigint | undefined, origin: bigint) {
+  const { from, to } = shownRangeOf(u, origin);
+  if (t === undefined || t < from || t >= to) {
+    line.style.display = "none";
+    return;
+  }
+  line.style.display = "";
+  line.style.left = `${u.valToPos(Number(t - origin), "x")}px`;
+}
+
 const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r.mode, abort);
 
 /** One readout value in a legend row: number with unit, tag, SNA style, reason as tooltip. */
-function ReadoutCell({ cell }: { cell: Cell }) {
+function ReadoutCell({ cell, className }: { cell: Cell; className?: string }) {
   return (
     <span
-      className={`value${cell.sna ? " sna-value" : ""}${cell.loading ? " loading" : ""}`}
+      className={`value${className ? ` ${className}` : ""}${cell.sna ? " sna-value" : ""}${cell.loading ? " loading" : ""}`}
       title={cell.title}
     >
       {cell.text}
       {cell.tag && <span className="tag">{cell.tag}</span>}
     </span>
   );
+}
+
+/**
+ * The L cell of one legend row (design L4): the drawn value at L in this window. Only these cells
+ * re-render per published frame.
+ */
+function LiveCell({
+  result,
+  mode,
+  unit,
+  digits,
+}: {
+  result: SeriesResult | undefined;
+  mode: DisplayMode;
+  unit: string | undefined;
+  digits: Digits;
+}) {
+  const live = useLiveCursor();
+  const v = live && chartValueAt(result, live.t, mode);
+  return <ReadoutCell cell={liveCell(v, live !== undefined, unit, digits)} className="live" />;
 }
 
 export function TimeseriesWindow({
@@ -519,6 +585,18 @@ export function TimeseriesWindow({
   onCursorPreviewRef.current = onCursorPreview;
   const onCursorCommitRef = useRef(onCursorCommit);
   onCursorCommitRef.current = onCursorCommit;
+  // Live cursor (design L3): read by the pointer and store handlers of the uPlot instance.
+  const signalsRef = useRef(w.signals);
+  signalsRef.current = w.signals;
+  const modeRef = useRef(w.display.mode);
+  modeRef.current = w.display.mode;
+  const infoRef = useRef(info);
+  infoRef.current = info;
+  const colorOfRef = useRef(colorOf);
+  colorOfRef.current = colorOf;
+  // A window removed while it owns L gets no mouseleave.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a window keeps its id
+  useEffect(() => () => liveCursor.clear(w.id), []);
   // The overlays of the current uPlot instance, and x of the shown lines in CSS px as last placed.
   const cursorLines = useRef<CursorLines | undefined>(undefined);
   const cursorX = useRef<CursorX>({});
@@ -670,7 +748,7 @@ export function TimeseriesWindow({
     gestureStart.current ??= shown;
     preview.range = r;
     setView(u, r);
-    hideCursor(u);
+    hideCursor(u, w.id);
     commit(r);
     // The header shows the preview at once.
     rerender();
@@ -767,6 +845,8 @@ export function TimeseriesWindow({
 
     // Cursor overlays; created right after uPlot, read by the draw hook.
     let lines: CursorLines | undefined;
+    // Places the L line and label (design L3, L6); set right after uPlot, called by the draw hook.
+    let placeLive: (() => void) | undefined;
     const u = new uPlot(
       {
         width,
@@ -808,7 +888,7 @@ export function TimeseriesWindow({
               gestureStart.current = undefined;
               // App may send no range (already at the extents): show the server range meanwhile.
               if (preview.drop()) reapplyView();
-              hideCursor(self);
+              hideCursor(self, w.id);
               onResetRef.current(w.id);
               return null;
             },
@@ -828,6 +908,7 @@ export function TimeseriesWindow({
                   diffRef.current,
                 );
               }
+              placeLive?.();
               placeTitles(self, titleRow.current, drawnAxes, sizes);
               setAxisTitles((prev) =>
                 prev?.structure === structure && prev.titles.join("\n") === titles.join("\n")
@@ -890,6 +971,8 @@ export function TimeseriesWindow({
         hitCursor(plotX(e.clientX), cursorX.current) ?? (strip.dataset.cursor as CursorName);
       strip.setPointerCapture(e.pointerId);
       const releaseSelect = holdNoSelect();
+      // The dragged cell follows the line already; no L beside it (design L8).
+      const releaseLive = liveCursor.suspend();
       let t: bigint | undefined;
       const move = (ev: PointerEvent) => {
         t = timeAt(plotX(ev.clientX));
@@ -898,6 +981,7 @@ export function TimeseriesWindow({
       const end = (commit: boolean) => {
         cancelLineDrag = undefined;
         releaseSelect();
+        releaseLive();
         strip.removeEventListener("pointermove", move);
         strip.removeEventListener("pointerup", release);
         strip.removeEventListener("pointercancel", cancel);
@@ -936,6 +1020,8 @@ export function TimeseriesWindow({
     const onDown = (e: MouseEvent) => {
       down = e.button === 0 ? { x: e.clientX, y: e.clientY } : undefined;
       passThrough(down !== undefined);
+      // No L while a button is held on the plot (design L8); the next move after release sets it.
+      liveCursor.clear(w.id);
     };
     const onUp = (e: MouseEvent) => {
       const start = down;
@@ -976,14 +1062,109 @@ export function TimeseriesWindow({
       wheelFrame.add(action, e.clientX - u.over.getBoundingClientRect().left);
       wheelRaf ??= requestAnimationFrame(flushWheel);
     };
+    // Scale of each signal's mean line by assignment id; envelope edges are no candidates (Q3).
+    const scaleOf = new Map(
+      model.series.filter((s) => !s.envelopeEdge).map((s) => [s.key, s.scale] as const),
+    );
+    /** L at the pointer (design L3): the snapped time and the nearest curve on its own scale. */
+    const publishLive = (e: MouseEvent) => {
+      const rect = u.over.getBoundingClientRect();
+      const t = liveTime(
+        u.posToVal(plotX(e.clientX), "x"),
+        origin.current,
+        shownRangeOf(u, origin.current),
+      );
+      const pointerY = e.clientY - rect.top;
+      const candidates: { key: string; y: number }[] = [];
+      for (const s of signalsRef.current) {
+        const scale = scaleOf.get(s.id);
+        if (scale === undefined) continue;
+        const value = numberOf(chartValueAt(loader.get(s.id)?.result, t, modeRef.current));
+        if (value === undefined) continue;
+        const y = u.valToPos(value, scale);
+        if (y >= 0 && y <= rect.height) candidates.push({ key: s.id, y });
+      }
+      const near = nearestSignal(candidates, pointerY);
+      liveCursor.set({ windowId: w.id, t, ...(near === undefined ? {} : { near }) });
+    };
+
     // Leaving the plot hides the crosshair through uPlot's own mouseleave handler.
-    const onMove = () => showCursor(u);
+    const onMove = (e: MouseEvent) => {
+      showCursor(u);
+      // A held button (click, rectangle zoom) sets no L until it is released (design L8).
+      if (down === undefined && e.buttons === 0) publishLive(e);
+    };
+    const onLeave = () => liveCursor.clear(w.id);
+
+    // Live overlays and the near-signal highlight (design L3, L5, L6).
+    const live = createLiveOverlays(u.over);
+    const baseStyle = u.series.map((s) => ({ width: s.width ?? 1, alpha: s.alpha ?? 1 }));
+    let highlighted: string | undefined;
+    /** Thicker near line, every series of other signals faded; one redraw, only on a change. */
+    const setHighlight = (near: string | undefined) => {
+      if (near === highlighted) return;
+      highlighted = near;
+      model.series.forEach((spec, i) => {
+        const s = u.series[i + 1];
+        const base = baseStyle[i + 1];
+        if (!s || !base) return;
+        s.width =
+          near !== undefined && spec.key === near && !spec.envelopeEdge
+            ? HIGHLIGHT_WIDTH
+            : base.width;
+        s.alpha = near !== undefined && spec.key !== near ? FADE_ALPHA : base.alpha;
+      });
+      u.redraw(false);
+    };
+    placeLive = () => {
+      const current = liveCursor.get();
+      const own = current?.windowId === w.id;
+      // The owner shows its crosshair instead of an L line.
+      placeLiveLine(u, live.line, own ? undefined : current?.t, origin.current);
+      const label = live.label;
+      const near = own ? current.near : undefined;
+      const assignment = signalsRef.current.find((s) => s.id === near);
+      const scale = near === undefined ? undefined : scaleOf.get(near);
+      if (!current || !assignment || scale === undefined) {
+        label.style.display = "none";
+        return;
+      }
+      const v = chartValueAt(loader.get(assignment.id)?.result, current.t, modeRef.current);
+      const value = numberOf(v);
+      const unit = infoRef.current(assignment.signalId)?.unit;
+      const text = liveLabelText(v, unit, digitsRef.current);
+      if (value === undefined || text === undefined) {
+        label.style.display = "none";
+        return;
+      }
+      label.textContent = text;
+      label.style.color = colorOfRef.current(assignment.signalId);
+      label.style.display = "";
+      const { left, top } = labelPosition(
+        { x: u.valToPos(Number(current.t - origin.current), "x"), y: u.valToPos(value, scale) },
+        { width: label.offsetWidth, height: label.offsetHeight },
+        { width: u.over.clientWidth, height: u.over.clientHeight },
+      );
+      label.style.left = `${left}px`;
+      label.style.top = `${top}px`;
+    };
+    const onLive = () => {
+      const current = liveCursor.get();
+      setHighlight(current?.windowId === w.id ? current.near : undefined);
+      placeLive?.();
+    };
+    const unsubscribeLive = liveCursor.subscribe(onLive);
+    onLive();
+
     u.over.addEventListener("wheel", onWheel, { passive: false });
     u.over.addEventListener("mousemove", onMove);
+    u.over.addEventListener("mouseleave", onLeave);
     return () => {
       if (wheelRaf !== undefined) cancelAnimationFrame(wheelRaf);
+      unsubscribeLive();
       u.over.removeEventListener("wheel", onWheel);
       u.over.removeEventListener("mousemove", onMove);
+      u.over.removeEventListener("mouseleave", onLeave);
       u.over.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);
       cancelLineDrag?.();
@@ -1032,7 +1213,7 @@ export function TimeseriesWindow({
     const changed = !sameRange(shownRange.current, view);
     shownRange.current = view;
     if (!u) return;
-    if (changed) hideCursor(u);
+    if (changed) hideCursor(u, w.id);
     const x = [Number(view.from - origin.current), Number(view.to - origin.current)];
     if (x[0] !== xView.current[0] || x[1] !== xView.current[1]) setView(u, view);
   }, [view.from, view.to]);
@@ -1092,6 +1273,7 @@ export function TimeseriesWindow({
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
     const releaseSelect = holdNoSelect();
+    const releaseLive = liveCursor.suspend();
     const startY = e.clientY;
     const startHeight = plotHeight;
     const base = w.height;
@@ -1102,6 +1284,7 @@ export function TimeseriesWindow({
     };
     const end = async () => {
       releaseSelect();
+      releaseLive();
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
@@ -1124,7 +1307,9 @@ export function TimeseriesWindow({
   const readout = a !== undefined || b !== undefined;
   // B's column while B is on; Diff adds Δ and Δt (D-031).
   const showB = b !== undefined || diff;
-  const columns = 6 + (showB ? 1 : 0) + (diff ? 1 : 0);
+  // L (D-032) is always a column, so filling and emptying it moves nothing.
+  const columns = 7 + (showB ? 1 : 0) + (diff ? 1 : 0);
+  const liveNear = useLiveNear(w.id);
   const badge = resolutionBadge(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
     dropState === "target"
@@ -1251,7 +1436,11 @@ export function TimeseriesWindow({
               ? { text: NO_VALUE, title: "cursor off" }
               : sourceCell(source, meta?.unit, digits);
           return (
-            <li key={s.id} title={meta?.description}>
+            <li
+              key={s.id}
+              title={meta?.description}
+              className={liveNear === s.id ? "live-near" : undefined}
+            >
               <span
                 className="grip"
                 title="Drag onto another window"
@@ -1278,6 +1467,12 @@ export function TimeseriesWindow({
                   }
                 />
               )}
+              <LiveCell
+                result={state?.result}
+                mode={w.display.mode}
+                unit={meta?.unit}
+                digits={digits}
+              />
               {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
               <span className={`status ${state?.status ?? "loading"}`}>
                 {state?.status === "error"

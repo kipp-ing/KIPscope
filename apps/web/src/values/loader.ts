@@ -147,6 +147,63 @@ export function valueRequests(
   );
 }
 
+/**
+ * L requests of one values window (design L7): one per row at the rested L time, keyed apart from
+ * A and B; none while L is unset.
+ */
+export function liveRequests(
+  rows: { id: string; signalId: string }[],
+  t: string | undefined,
+  mode: ValuesMode,
+): ValueRequest[] {
+  if (t === undefined) return [];
+  return rows.map((row) => ({ key: `${row.id}|l`, signalId: row.signalId, t, mode }));
+}
+
+type Timer = ReturnType<typeof setTimeout>;
+
+/**
+ * Passes a value on once it has rested (design L7): `onRest(v)` runs when no push came for `ms`;
+ * `push(undefined)` runs at once, so clearing is never delayed.
+ */
+export class Rest<T> {
+  private readonly ms: number;
+  private readonly onRest: (v: T | undefined) => void;
+  private readonly schedule: (fn: () => void, ms: number) => Timer;
+  private readonly cancel: (timer: Timer) => void;
+  private timer: Timer | undefined;
+
+  constructor(
+    ms: number,
+    onRest: (v: T | undefined) => void,
+    schedule: (fn: () => void, ms: number) => Timer = (fn, ms) => setTimeout(fn, ms),
+    cancel: (timer: Timer) => void = (timer) => clearTimeout(timer),
+  ) {
+    this.ms = ms;
+    this.onRest = onRest;
+    this.schedule = schedule;
+    this.cancel = cancel;
+  }
+
+  push(v: T | undefined): void {
+    this.dispose();
+    if (v === undefined) {
+      this.onRest(undefined);
+      return;
+    }
+    this.timer = this.schedule(() => {
+      this.timer = undefined;
+      this.onRest(v);
+    }, this.ms);
+  }
+
+  /** Drops a pending call. */
+  dispose(): void {
+    if (this.timer !== undefined) this.cancel(this.timer);
+    this.timer = undefined;
+  }
+}
+
 /** Render errors of a values window: one per row whose A or B request failed, naming its signal. */
 export function valueErrors(
   windowId: string,

@@ -155,6 +155,8 @@ export interface SignalInput {
 
 /** One uPlot series, without uPlot runtime objects (paths are resolved by the component). */
 export interface SeriesSpec {
+  /** Assignment id of the signal; its line and envelope edges share it. */
+  key: string;
   label: string;
   scale: string;
   color: string;
@@ -215,13 +217,15 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     if (!model.scales.has(scale)) {
       model.scales.set(scale, titles.get(scale) ?? (input.unit?.trim() || input.label));
     }
-    model.series.push({ label: input.label, scale, color: input.color, path });
+    const key = input.key;
+    model.series.push({ key, label: input.label, scale, color: input.color, path });
     model.sna.push({ color: input.color, periods: snaPeriods(input.result, origin) });
     const table: (number | null)[][] = [pts.xs, pts.ys];
     if (!raw && display.envelope && pts.min && pts.max) {
       const maxIndex = model.series.length + 1;
       model.series.push(
         {
+          key,
           label: `${input.label} max`,
           scale,
           color: input.color,
@@ -229,6 +233,7 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
           envelopeEdge: true,
         },
         {
+          key,
           label: `${input.label} min`,
           scale,
           color: input.color,

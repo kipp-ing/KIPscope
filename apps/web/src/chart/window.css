@@ -250,6 +250,31 @@
   pointer-events: none;
 }
 
+/* Live cursor (D-032, design L3): the thin dotted L line of the windows not hovered, no flag, no
+   hit strip; the label at the near signal's curve point in the hovered window. Neither takes the
+   pointer, so the crosshair, clicks and wheel see the plot. */
+.window .plot .live-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dotted var(--cursor-color);
+  pointer-events: none;
+}
+
+.window .plot .live-label {
+  position: absolute;
+  z-index: 2;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: var(--panel);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .window .height-handle {
   height: 6px;
   margin: 0 -8px;
@@ -284,8 +309,8 @@
 
 .window .signals.readout {
   display: grid;
-  /* Columns set inline (TimeseriesWindow): name, unit, A, status, SNA share, remove; B while B
-     is on or in diff mode; Δ in diff mode. */
+  /* Columns set inline (TimeseriesWindow): name, unit, A, B (while B is on or in diff mode),
+     Δ (diff mode), L (always), status, SNA share, remove. */
   justify-content: start;
   align-items: center;
   gap: 2px 10px;
@@ -321,6 +346,24 @@
 
 .window .signals .value.loading {
   opacity: 0.45;
+}
+
+/* L cell (design L4): always there and at least as wide as "-1.234 k", so a filling or emptying
+   column never resizes the legend. */
+.window .signals .value.live {
+  min-width: 8ch;
+}
+
+/* The near signal's row (design L5). Underline and ring take no room, so no column moves. */
+.window .signals li.live-near .sig {
+  text-decoration: underline 2px;
+  text-underline-offset: 3px;
+}
+
+.window .signals li.live-near .swatch {
+  box-shadow:
+    0 0 0 2px var(--panel),
+    0 0 0 3px currentColor;
 }
 
 /* Remove (×): shown while the pointer is on the row or on the × itself, or it has keyboard focus.

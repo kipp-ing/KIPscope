@@ -14,12 +14,15 @@ import "../chart/window.css";
 import "./values.css";
 import { fetchCursorValue } from "../api.ts";
 import type { DragSource, DropState } from "../chart/drag.ts";
+import { LIVE_REST_MS, useLiveCursor } from "../chart/live.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
-import { type Cell, deltaCell, formatCell, headerTimes, loadingCell } from "./format.ts";
+import { type Cell, deltaCell, formatCell, headerTimes, loadingCell, NO_VALUE } from "./format.ts";
 import {
   cellState,
   type FetchValue,
+  liveRequests,
+  Rest,
   ValueLoader,
   type ValueState,
   valueErrors,
@@ -107,6 +110,32 @@ function ValueCell({
   return <CellView cell={state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
+/**
+ * One L cell (design L7): empty while L is unset, the last value dimmed while L moves (`moving`)
+ * or its lookup loads, `—` with the message when the lookup failed.
+ */
+function LiveValueCell({
+  state,
+  set,
+  moving,
+  unit,
+  digits,
+}: {
+  state: ValueState | undefined;
+  set: boolean;
+  moving: boolean;
+  unit: string | undefined;
+  digits: Digits;
+}) {
+  if (!set) return <td className="value" />;
+  const r = state?.result;
+  const cell: Cell =
+    state?.status === "error"
+      ? { text: NO_VALUE, title: `failed: ${state.error}` }
+      : formatCell(r?.value, r?.at, r?.next, unit, digits);
+  return <CellView cell={moving || state?.status === "loading" ? loadingCell(cell) : cell} />;
+}
+
 function CellView({ cell }: { cell: Cell }) {
   return (
     <td
@@ -172,6 +201,23 @@ export function ValuesWindow({
   useEffect(() => {
     if (settled) onReady(w.id, revision, errors);
   }, [settled, revision, errorKey, w.id, onReady]);
+
+  // --- live cursor (design L7): exact values at L once it rests, outside the acknowledgement -----
+
+  const live = useLiveCursor();
+  const liveT = live === undefined ? undefined : String(live.t);
+  const [rested, setRested] = useState<string | undefined>(undefined);
+  const rest = useMemo(() => new Rest<string>(LIVE_REST_MS, setRested), []);
+  useEffect(() => () => rest.dispose(), [rest]);
+  useEffect(() => rest.push(liveT), [rest, liveT]);
+  const liveLoader = useMemo(() => new ValueLoader(fetchValue, rerender), []);
+  useEffect(() => () => liveLoader.dispose(), [liveLoader]);
+  const lRequests = useMemo(
+    () => liveRequests(w.signals, rested, w.mode),
+    [w.signals, rested, w.mode],
+  );
+  useEffect(() => liveLoader.update(lRequests), [liveLoader, lRequests]);
+  const liveRequestOf = new Map(lRequests.map((r) => [r.key, r]));
 
   // --- view -----------------------------------------------------------------------------------
 
@@ -254,6 +300,7 @@ export function ValuesWindow({
               <th className="value">A</th>
               {showB && <th className="value">B</th>}
               {diff && <th className="value">Δ</th>}
+              <th className="value">L</th>
               <th />
             </tr>
           </thead>
@@ -263,6 +310,7 @@ export function ValuesWindow({
               const name = meta?.name ?? s.signalId;
               const keyA = `${s.id}|a`;
               const keyB = `${s.id}|b`;
+              const keyL = `${s.id}|l`;
               const stateA = cellState(loader.get(keyA), requestOf.get(keyA));
               const stateB = cellState(loader.get(keyB), requestOf.get(keyB));
               const unit = meta?.unit;
@@ -292,6 +340,13 @@ export function ValuesWindow({
                       }
                     />
                   )}
+                  <LiveValueCell
+                    state={cellState(liveLoader.get(keyL), liveRequestOf.get(keyL))}
+                    set={liveT !== undefined}
+                    moving={liveT !== rested}
+                    unit={unit}
+                    digits={digits}
+                  />
                   <td>
                     <button
                       type="button"

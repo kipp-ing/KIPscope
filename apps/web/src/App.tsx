@@ -31,6 +31,7 @@ import {
   isLegendSource,
 } from "./chart/drag.ts";
 import { type Insets, mergeInsets } from "./chart/insets.ts";
+import { liveCursor } from "./chart/live.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
 import { resolveTarget } from "./explorer/format.ts";
@@ -615,6 +616,8 @@ export function App() {
       let frame = 0;
       // From the press on: a pointer moving off the grip would otherwise select text.
       const releaseSelect = holdNoSelect();
+      // No live cursor while a row is dragged (live-cursor "When L is hidden").
+      const releaseLive = liveCursor.suspend();
 
       // Pointer near the visible top (below the top row) or bottom (above the status strip)
       // of the window list scrolls it, faster the closer. On the strip itself it rests (C7).
@@ -651,6 +654,7 @@ export function App() {
       const finish = () => {
         cancelAnimationFrame(frame);
         releaseSelect();
+        releaseLive();
         mainRef.current?.removeEventListener("scroll", onScroll);
         window.removeEventListener("wheel", onWheel, true);
         document.removeEventListener("pointermove", onMove);

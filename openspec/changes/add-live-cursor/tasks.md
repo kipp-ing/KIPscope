@@ -10,7 +10,7 @@ The tasks assume the recommended answers to design "Open Questions" (Q1 exact lo
 
 ## 1. apps/web/src
 
-- [ ] 1.1 Live store and pure rules (`chart/live.ts` new, `App.tsx`), per design L1, L2, L4, L5, L6:
+- [x] 1.1 Live store and pure rules (`chart/live.ts` new, `App.tsx`), per design L1, L2, L4, L5, L6:
   - Constants, `LiveCursor`, `LiveStore` (`get`, `subscribe`, `set` coalesced per animation frame, `clear(windowId?)`, counted `suspend()`), singleton `liveCursor`, `useLiveCursor`, `useLiveNear`.
   - `liveTime`, `liveCell`, `nearestSignal`, `liveLabelText`, `labelPosition`.
   - `App.tsx`: `liveCursor.suspend()` beside the row drag's `holdNoSelect()`, released with it.
@@ -29,7 +29,7 @@ The tasks assume the recommended answers to design "Open Questions" (Q1 exact lo
 ## 2. Tests (tester)
 
 - [ ] 2.1 `apps/web/test/live.test.ts` (new) with the pinned values of the live-cursor spec: "snaps the live time like a click, inside the shown range"; "evaluates L from the drawn data: raw zoomed in, bucket mean zoomed out" (V_ANZ `23.0`, DVL `180` with "linear between points (lin)", PTC_HV_Volt `363`; aggregated `avg` tooltip; empty cell without L); "reads SNA and gaps without a number and never highlights them" (`SNA`, `—` "outside this window's range", not a candidate); "picks the nearest curve within 8 px, on a tie the later one" (9/3/5 → 2nd; 3/3 → later; 8 → hit; 8.5 → none); "places the label beside the curve point, inside the plot" (right/above, flipped at the right and top edges, text `23.0 km/h`, with 4 digits `362.8 V`); "publishes at most one live time per animation frame" (fake rAF; also `clear(windowId)` drops a queued set of that owner only, `suspend()` ignores sets until released). Verify each fails before 1.1 and passes after.
-- [ ] 2.2 `apps/web/test/values.test.ts`: "requests L values only after the pointer rests, apart from A and B" (`Rest` with fake timers: pushes every 50 ms for 1 s → no call; 150 ms after the last → one call; `push(undefined)` at once; `liveRequests` keys `|l`, none without L) and "keeps L requests out of the render acknowledgement" (a failing L request leaves `settled`/`valueErrors` over the A/B requests complete and empty). Verify both pass after 1.3 and `pnpm build && pnpm test && pnpm lint` is green after group 1.
+- [x] 2.2 `apps/web/test/values.test.ts`: "requests L values only after the pointer rests, apart from A and B" (`Rest` with fake timers: pushes every 50 ms for 1 s → no call; 150 ms after the last → one call; `push(undefined)` at once; `liveRequests` keys `|l`, none without L) and "keeps L requests out of the render acknowledgement" (a failing L request leaves `settled`/`valueErrors` over the A/B requests complete and empty). Verify both pass after 1.3 and `pnpm build && pnpm test && pnpm lint` is green after group 1.
 
 ## Workflow follow-up
 

@@ -1,6 +1,6 @@
 import type { CursorValue, CursorValueResult } from "@letsview/shared";
 import { fromIso } from "@letsview/shared";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchCursorValue } from "../src/api.ts";
 import {
   deltaCell,
@@ -12,7 +12,14 @@ import {
   loadingCell,
   NO_VALUE,
 } from "../src/values/format.ts";
-import { cellState, ValueLoader, valueRequests } from "../src/values/loader.ts";
+import {
+  cellState,
+  liveRequests,
+  Rest,
+  ValueLoader,
+  valueErrors,
+  valueRequests,
+} from "../src/values/loader.ts";
 
 process.env.TZ = "Europe/Berlin"; // also set by the package's test script
 
@@ -378,5 +385,112 @@ describe("fetchCursorValue", () => {
     await expect(fetchCursorValue("c/V_ANZ", "1", "step", abort)).rejects.toThrow(
       "database unreachable",
     );
+  });
+});
+
+describe("L lookups", () => {
+  const rows = [
+    { id: "r1", signalId: "c/V_ANZ" },
+    { id: "r2", signalId: "c/DVL" },
+    { id: "r3", signalId: "c/PTC_HV_Volt" },
+  ];
+
+  describe("rest", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("requests L values only after the pointer rests, apart from A and B", async () => {
+      // Rest: push every 50 ms for 1 s -> no call; 150 ms after the last push -> one call.
+      const rested = vi.fn();
+      const rest = new Rest<string | undefined>(150, rested);
+      for (let i = 1; i <= 20; i++) {
+        rest.push(String(i * 1_000_000));
+        vi.advanceTimersByTime(50);
+      }
+      expect(rested).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(99);
+      expect(rested).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(rested).toHaveBeenCalledTimes(1);
+      expect(rested).toHaveBeenCalledWith("20000000");
+      // Nothing more without a new push.
+      vi.advanceTimersByTime(1000);
+      expect(rested).toHaveBeenCalledTimes(1);
+      // push(undefined) is not delayed and cancels the pending rest.
+      rest.push("21000000");
+      rest.push(undefined);
+      expect(rested).toHaveBeenCalledTimes(2);
+      expect(rested).toHaveBeenLastCalledWith(undefined);
+      vi.advanceTimersByTime(1000);
+      expect(rested).toHaveBeenCalledTimes(2);
+      // dispose drops a pending rest.
+      rest.push("22000000");
+      rest.dispose();
+      vi.advanceTimersByTime(1000);
+      expect(rested).toHaveBeenCalledTimes(2);
+
+      // Requests: keys `|l`, one per row, none without L, apart from A and B.
+      expect(liveRequests(rows, "100", "line").map((r) => r.key)).toEqual(["r1|l", "r2|l", "r3|l"]);
+      expect(liveRequests(rows, "100", "line")[1]).toEqual({
+        key: "r2|l",
+        signalId: "c/DVL",
+        t: "100",
+        mode: "line",
+      });
+      expect(liveRequests(rows, undefined, "line")).toEqual([]);
+      const ab = valueRequests(rows, { a: "100", b: "200" }, "line").map((r) => r.key);
+      expect(ab.some((k) => k.endsWith("|l"))).toBe(false);
+
+      // A values window wiring: L moves every 50 ms for 1 s, then rests.
+      const { fetch, pending } = controllableFetch();
+      const loader = new ValueLoader(fetch, () => {});
+      const feed = new Rest<string | undefined>(150, (t) =>
+        loader.update(liveRequests(rows, t, "line")),
+      );
+      for (let i = 1; i <= 20; i++) {
+        feed.push(String(i * 1_000_000));
+        vi.advanceTimersByTime(50);
+      }
+      expect(pending).toHaveLength(0);
+      vi.advanceTimersByTime(150);
+      expect(pending).toHaveLength(3);
+      expect(loader.get("r1|l")).toMatchObject({ status: "loading" });
+    });
+  });
+
+  it("keeps L requests out of the render acknowledgement", async () => {
+    // A and B requests complete; the separate L loader fails every lookup (server answers 502).
+    const abFetch = controllableFetch();
+    const abLoader = new ValueLoader(abFetch.fetch, () => {});
+    const abRequests = valueRequests(rows, { a: "100", b: "200" }, "line");
+    abLoader.update(abRequests);
+    expect(abFetch.pending).toHaveLength(6);
+    expect(abLoader.settled(abRequests)).toBe(false);
+    for (const [i, p] of abFetch.pending.entries()) {
+      p.resolve(result(i % 2 === 0 ? "100" : "200", raw(i), rows[Math.floor(i / 2)]?.signalId));
+    }
+    await flush();
+
+    const lFetch = controllableFetch();
+    const lLoader = new ValueLoader(lFetch.fetch, () => {});
+    const lRequests = liveRequests(rows, "150", "line");
+    lLoader.update(lRequests);
+    expect(lLoader.settled(lRequests)).toBe(false);
+    // The A/B acknowledgement does not wait for the L lookups ...
+    expect(abLoader.settled(abRequests)).toBe(true);
+    lFetch.pending[0]?.reject(new Error("source_error: 502 bad gateway"));
+    await flush();
+
+    // ... and the failed L lookup shows in its own cell only.
+    expect(lLoader.get("r1|l")).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("502"),
+    });
+    expect(valueErrors("w1", abRequests, abLoader)).toEqual([]);
+    expect(abLoader.get("r1|l")).toBeUndefined();
+    expect(abLoader.get("r1|a")).toMatchObject({ status: "complete" });
+    expect(abLoader.settled(abRequests)).toBe(true);
+    // The A/B loader never saw an L key, so the L state cannot leak into its errors.
+    expect(valueErrors("w1", abRequests, lLoader)).toEqual([]);
   });
 });

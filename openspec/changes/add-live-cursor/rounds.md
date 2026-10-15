@@ -1,0 +1,1 @@
+- Round 1 (2026-10-15): needs_jan. Build, tests and lint green and most UI scenarios fulfilled, but the "click without moving, A and L equal" checks need a spec rewording or an L8 change, the cursors-off legend (wrapping list, no L column) needs a decision, and the L column is cut off in a normal values window.
