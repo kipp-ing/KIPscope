@@ -98,4 +98,21 @@ describe("SeriesLoader", () => {
     expect(loader.settled([req("1")])).toBe(true);
     expect(loader.settled([req("2")])).toBe(false);
   });
+
+  it("restarts every request after dispose", async () => {
+    const { fetch, pending } = controllableFetch();
+    const loader = new SeriesLoader(fetch, () => {});
+    loader.update([req("1")]);
+    loader.dispose(); // StrictMode: dispose, then remount with the same requests
+    expect(pending[0]?.abort.aborted).toBe(true);
+    loader.update([req("1")]);
+    expect(pending).toHaveLength(2);
+    pending[0]?.resolve(result("stale")); // late answer of the disposed request
+    await flush();
+    expect(loader.get("a1")?.status).toBe("loading");
+    pending[1]?.resolve(result("1"));
+    await flush();
+    expect(loader.get("a1")).toMatchObject({ status: "complete", result: { from: "1" } });
+    expect(loader.settled([req("1")])).toBe(true);
+  });
 });

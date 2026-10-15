@@ -72,9 +72,15 @@ export class SeriesLoader {
     if (changed) this.onChange();
   }
 
+  /**
+   * Aborts every request and forgets every state, so a later update starts all of them again
+   * (React's StrictMode disposes and remounts once; a kept "loading" state would never fill).
+   */
   dispose(): void {
     for (const controller of this.controllers.values()) controller.abort();
     this.controllers.clear();
+    this.states.clear();
+    this.latest.clear();
   }
 
   private start(request: LoadRequest): void {
