@@ -4,6 +4,20 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-043: Zoom speed conventions (2026-10-15)
+
+From the archived change `improve-zoom-speed` (Z1, Z2, Z4, Z6, Z7, Z9; Q1–Q2 as recommended, Q3 per D-041); details there.
+
+- **Load on preview:** the first step of a gesture loads at once, then at most every 100 ms; the command still goes after 300 ms; only committed ranges count for the render acknowledgement.
+- **Overview and placeholder:** one coarse level (1,024–2,048 buckets) per signal's extent, kept by the window; missing tiles are drawn from the finest coarser level available (one level for the whole curve), no extra marker.
+- **Prefetch:** 300 ms after rest, the next coarser level over three view widths and the own level one view width each side, at most two prefetch runs in flight per tab and 256 tiles per window; a new gesture cancels it.
+- **Linked windows:** follow the gesture through the browser-local `chart/linkedPreview.ts`; the gesture's window alone commits.
+
+## D-042: Load recovery after source errors (2026-10-15)
+
+- **Decision:** Jan, after carserver's scheduled 23:00 (local) reboot killed the SSH tunnel and left windows empty: (1) a failed series load retries by itself with backoff 1, 2, 4 … 30 s, and at once when a request succeeds again or the live channel reconnects; setting the same range again also retries; (2) on a failed load the window keeps the last drawn data (or the overview placeholder) with the failure marker instead of an empty plot; (3) `scripts/tunnel.sh` keeps the carserver tunnel up and reconnects after drops. `improve-zoom-speed` is accepted („Butter smooth").
+- **Why:** server log: 470 × 502 from 23:05 to 23:10 local; after the tunnel restart a tab whose range had not changed kept its errors (same request never retried). Jan: „Nice. Yes fix commit test push done."
+
 ## D-041: Linked windows follow the zoom live (2026-10-15)
 
 - **Decision:** Jan, on `improve-zoom-speed` Q3: with "Link time axes" on, every linked window shows the preview range and loads during the gesture like the zoomed one (a browser-local shared preview range, like the live cursor); the command is still sent once after the commit delay. Supersedes the design's recommendation that linked windows follow only the committed range.
