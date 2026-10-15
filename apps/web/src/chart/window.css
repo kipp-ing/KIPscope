@@ -287,6 +287,33 @@
   background: var(--border);
 }
 
+/* Corner grip (design G2): always visible, height only, hence ns-resize. */
+.window .corner-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: ns-resize;
+  touch-action: none;
+  color: var(--muted);
+}
+
+.window .corner-grip svg {
+  display: block;
+}
+
+.window .corner-grip:hover,
+.window .corner-grip:active,
+.window .corner-grip.active {
+  color: var(--accent);
+}
+
+/* Legend clearance (design G3): with the 8 px window padding, content ends 4 px left of the grip. */
+.timeseries-window .signals {
+  margin-right: 12px;
+}
+
 .window .signals .grip {
   display: inline-flex;
   gap: 6px;

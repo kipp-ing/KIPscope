@@ -25,10 +25,10 @@ Web only. Groups 1 and 2 run in parallel on disjoint files; group 3 (tester) wri
 
 ## 3. Tests (tester)
 
-- [ ] 3.1 New `apps/web/test/height.test.ts` against S1: "clamps a dragged height to 120–1200 px" (50 → 120, 5000 → 1200, 280 + 200.4 → 480, rounding), "sends one setHeight only when the height changed" (undefined for the stored height and for `DEFAULT_PLOT_HEIGHT` when `height` is absent; `{ type: "window.setHeight", windowId, height }` otherwise).
-- [ ] 3.2 `apps/web/test/drag.test.ts` against S2: "maps drop elements to targets" (fake elements with `getAttribute`: window ID, `new` → strip, `new-below` → below, unknown `data-drop`, no attributes, `null`/`undefined` → undefined) and "treats a drop below the windows like + New window" (`dropCommand` for `{kind:"new",place:"below"}` deep-equals the strip's for plain, Alt and Ctrl, including the last-signal move; `canAdd` and `canDrop` true). Keep all existing drag tests green.
+- [x] 3.1 New `apps/web/test/height.test.ts` against S1: "clamps a dragged height to 120–1200 px" (50 → 120, 5000 → 1200, 280 + 200.4 → 480, rounding), "sends one setHeight only when the height changed" (undefined for the stored height and for `DEFAULT_PLOT_HEIGHT` when `height` is absent; `{ type: "window.setHeight", windowId, height }` otherwise).
+- [x] 3.2 `apps/web/test/drag.test.ts` against S2: "maps drop elements to targets" (fake elements with `getAttribute`: window ID, `new` → strip, `new-below` → below, unknown `data-drop`, no attributes, `null`/`undefined` → undefined) and "treats a drop below the windows like + New window" (`dropCommand` for `{kind:"new",place:"below"}` deep-equals the strip's for plain, Alt and Ctrl, including the last-signal move; `canAdd` and `canDrop` true). Keep all existing drag tests green.
 
 ## 4. Checks
 
-- [ ] 4.1 `pnpm build && pnpm test && pnpm lint` green.
+- [x] 4.1 `pnpm build && pnpm test && pnpm lint` green.
 - [ ] 4.2 UI check on smart451 at 1440×900 of every UI scenario in `specs/timeseries-window/spec.md` and `specs/workspace-layout/spec.md` of this change; the Alt/Ctrl copy scenario may be `not_run` with the test as evidence.

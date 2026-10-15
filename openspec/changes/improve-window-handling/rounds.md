@@ -1,0 +1,1 @@
+Round 1: needs_jan - Unit and UI scenarios are mostly fulfilled, but the spec says an explorer drop on a new window raises the revision by exactly one while it is two commands (window.add + signal.add, +2), which needs a spec change; also not_run: One command per drag (UI), Grip in the right column, Empty window list, Values window below the fold, Two columns at 1440x900.

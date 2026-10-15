@@ -13,7 +13,30 @@ export interface DragSource {
   signalId: string;
 }
 
-export type DropTarget = { kind: "window"; windowId: string } | { kind: "new" };
+/** Which "+ New window" target a drop hit: the status strip or the free area below the windows. */
+export type NewWindowPlace = "strip" | "below";
+
+export type DropTarget =
+  | { kind: "window"; windowId: string }
+  | { kind: "new"; place?: NewWindowPlace }; // absent counts as "strip"
+
+/** data-drop values. */
+export const DROP_NEW = "new";
+export const DROP_NEW_BELOW = "new-below";
+
+/** Target named by an element (the closest [data-window-id],[data-drop] under the pointer):
+ * data-window-id → window; data-drop "new" → { kind: "new", place: "strip" };
+ * "new-below" → { kind: "new", place: "below" }; anything else or no element → undefined. */
+export function dropTargetOf(
+  el: { getAttribute(name: string): string | null } | null | undefined,
+): DropTarget | undefined {
+  const windowId = el?.getAttribute("data-window-id");
+  if (windowId) return { kind: "window", windowId };
+  const drop = el?.getAttribute("data-drop");
+  if (drop === DROP_NEW) return { kind: "new", place: "strip" };
+  if (drop === DROP_NEW_BELOW) return { kind: "new", place: "below" };
+  return undefined;
+}
 
 /** Pointer movement before a press on a legend grip becomes a drag. */
 export const DRAG_THRESHOLD_PX = 4;

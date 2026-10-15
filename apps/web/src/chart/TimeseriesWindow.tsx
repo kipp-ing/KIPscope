@@ -6,9 +6,7 @@ import {
   type Digits,
   type DisplayMode,
   formatAxisTicks,
-  MAX_PLOT_HEIGHT,
   MAX_UNITS,
-  MIN_PLOT_HEIGHT,
   type RenderError,
   type SeriesResult,
   type SignalInfo,
@@ -62,6 +60,7 @@ import {
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
+import { draggedHeight, heightCommand } from "./height.ts";
 import type { Insets } from "./insets.ts";
 import {
   FADE_ALPHA,
@@ -185,9 +184,6 @@ function textWidth(text: string): number {
   measureContext.font = AXIS_FONT;
   return measureContext.measureText(text).width;
 }
-
-const clampHeight = (h: number) =>
-  Math.min(MAX_PLOT_HEIGHT, Math.max(MIN_PLOT_HEIGHT, Math.round(h)));
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
 
@@ -1262,11 +1258,13 @@ export function TimeseriesWindow({
 
   // --- view -----------------------------------------------------------------------------------
 
-  /** Height handle: resizes locally while dragged, sends window.setHeight on release. */
-  const startHeightDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+  /** Height strip and corner grip (design G1): resize locally while dragged, send
+   * window.setHeight on release. */
+  const startHeightDrag = (e: React.PointerEvent<HTMLElement>) => {
     e.preventDefault();
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
+    handle.classList.add("active");
     const releaseSelect = holdNoSelect();
     const releaseLive = liveCursor.suspend();
     const startY = e.clientY;
@@ -1274,20 +1272,22 @@ export function TimeseriesWindow({
     const base = w.height;
     let height = startHeight;
     const move = (ev: PointerEvent) => {
-      height = clampHeight(startHeight + ev.clientY - startY);
+      height = draggedHeight(startHeight, ev.clientY - startY);
       setHeightDrag({ ...(base !== undefined ? { base } : {}), height });
     };
     const end = async () => {
       releaseSelect();
       releaseLive();
+      handle.classList.remove("active");
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
-      if (height === storedHeight) {
+      const command = heightCommand(w, height);
+      if (!command) {
         setHeightDrag(undefined);
         return;
       }
-      const result = await onCommand({ type: "window.setHeight", windowId: w.id, height });
+      const result = await onCommand(command);
       if (!result.ok) setHeightDrag(undefined);
     };
     handle.addEventListener("pointermove", move);
@@ -1318,7 +1318,7 @@ export function TimeseriesWindow({
 
   return (
     <section
-      className={`window${marked ? " marked" : ""}${dropState ? ` drop-${dropState}` : ""}`}
+      className={`window timeseries-window${marked ? " marked" : ""}${dropState ? ` drop-${dropState}` : ""}`}
       data-window-id={w.id}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path to mark is the explorer's "Add to" select (L5) */}
@@ -1499,6 +1499,29 @@ export function TimeseriesWindow({
           <span>{hint}</span>
         </div>
       )}
+      {/* Corner grip (design G2): same drag as the strip; the press reaches no ancestor. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: a resize handle holding an SVG, not a rule */}
+      <div
+        className="corner-grip"
+        role="separator"
+        aria-orientation="horizontal"
+        title="Drag to resize height"
+        aria-label="Resize height"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          startHeightDrag(e);
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M 13 3 A 10 10 0 0 1 3 13"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
     </section>
   );
 }

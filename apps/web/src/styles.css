@@ -262,18 +262,23 @@ body {
   min-height: 0;
 }
 
-/* The grid's container query measures the list width, not the viewport (design L2). */
+/* The grid's container query measures the list width, not the viewport (design L2). A flex column
+   so the free area below the windows fills what the list leaves (design B2); its 8 px top margin
+   replaces the former bottom padding. */
 main {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 16px 8px;
+  padding: 0 16px;
   container-type: inline-size;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Windows row by row in workspace order; two columns from a 920 px list, a lone last window spans
    (design L2). A row is as tall as its tallest window; shorter ones keep their own height. */
 .window-grid {
+  flex: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
@@ -320,7 +325,6 @@ main {
 
 .plot {
   width: 100%;
-  min-height: 280px;
 }
 
 /* Chart legend (D-033): always a grid, so each column (L too) lines up across rows; each row's
@@ -365,6 +369,10 @@ main {
   color: var(--muted);
 }
 
+main > .hint {
+  flex: none;
+}
+
 .status.complete {
   color: var(--ok);
 }
@@ -388,6 +396,7 @@ button.link {
    scrolls. Opaque, so windows pass under it; above uPlot's overlays. A size container, so the bar
    collapses lower-priority labels by the row's width (bar.css). */
 .option-bar-slot {
+  flex: none;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -494,5 +503,38 @@ button.link {
 }
 
 .status-strip.drop.over {
+  background: linear-gradient(rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.12)), var(--bg);
+}
+
+/* Free area below the windows (design B1, B2): a second "+ New window" zone during a drag. It gets
+   what the list leaves, 0 px on a full list, so it is then neither hit nor drawn; the 8 px top
+   margin is the dead band below the last row. The outline is a pseudo-element so 0 px shows nothing. */
+.drop-below {
+  flex: 1 0 0;
+  min-height: 0;
+  margin-top: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.drop-below.drop {
+  color: var(--accent);
+  background: linear-gradient(rgb(37 99 235 / 0.04), rgb(37 99 235 / 0.04)), var(--bg);
+}
+
+.drop-below.drop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+}
+
+.drop-below.drop.over {
   background: linear-gradient(rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.12)), var(--bg);
 }

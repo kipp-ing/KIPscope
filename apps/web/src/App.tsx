@@ -23,11 +23,14 @@ import {
   canAdd,
   canDrop,
   DRAG_THRESHOLD_PX,
+  DROP_NEW,
+  DROP_NEW_BELOW,
   type DragSource,
   type DropState,
   type DropTarget,
   dropCommand,
   dropStateFor,
+  dropTargetOf,
   isCopy,
   isLegendSource,
 } from "./chart/drag.ts";
@@ -66,12 +69,10 @@ interface Drag {
 const EDGE_PX = 48;
 const EDGE_SCROLL_PX = 24;
 
-/** Drop target under a viewport point: a window section or the "+ New window" strip. */
+/** Drop target under a viewport point: a window section, the "+ New window" strip or the free area
+ * below the windows (design B1). */
 function targetAt(x: number, y: number): DropTarget | undefined {
-  const el = document.elementFromPoint(x, y)?.closest("[data-window-id],[data-drop]");
-  const windowId = el?.getAttribute("data-window-id");
-  if (windowId) return { kind: "window", windowId };
-  return el?.getAttribute("data-drop") === "new" ? { kind: "new" } : undefined;
+  return dropTargetOf(document.elementFromPoint(x, y)?.closest("[data-window-id],[data-drop]"));
 }
 
 /** A cursor line placed or dragged but not yet in the workspace (design C2). */
@@ -759,6 +760,9 @@ export function App() {
     (isLegendSource(activeDrag.source)
       ? canDrop(activeDrag.source, activeDrag.target, windows, unitOf)
       : canAdd(activeDrag.source.signalId, activeDrag.target, windows, unitOf));
+  const newTarget = activeDrag?.target?.kind === "new" ? activeDrag.target : undefined;
+  const belowOver = newTarget?.place === "below";
+  const stripOver = newTarget !== undefined && !belowOver;
   // Over another window that already shows the dragged signal: say why the drop is refused.
   const over = activeDrag?.target?.kind === "window" ? activeDrag.target.windowId : undefined;
   const overShown =
@@ -898,9 +902,17 @@ export function App() {
               ),
             )}
           </div>
-          {workspace && windows.length === 0 && (
+          {workspace && windows.length === 0 && !activeDrag && (
             <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
           )}
+          {/* The free area below the windows (design B1, B2): always rendered so nothing moves at
+              drag start; during a drag a second "+ New window" zone filling what the list leaves. */}
+          <div
+            className={`drop-below${activeDrag ? " drop" : ""}${belowOver ? " over" : ""}`}
+            {...(activeDrag ? { "data-drop": DROP_NEW_BELOW } : {})}
+          >
+            {activeDrag && "+ New window"}
+          </div>
         </main>
         {/* Below the window list, not over it, so it stays at the viewport bottom wherever the list
             is scrolled and never covers a window (C7). Outside a drag it shows connection, revision
@@ -908,8 +920,8 @@ export function App() {
             nothing moves under the pointer when a drag starts (L3). */}
         <div
           ref={dropRef}
-          className={`status-strip${activeDrag ? " drop" : ""}${activeDrag?.target?.kind === "new" ? " over" : ""}`}
-          {...(activeDrag ? { "data-drop": "new" } : {})}
+          className={`status-strip${activeDrag ? " drop" : ""}${stripOver ? " over" : ""}`}
+          {...(activeDrag ? { "data-drop": DROP_NEW } : {})}
         >
           {activeDrag ? (
             "+ New window"

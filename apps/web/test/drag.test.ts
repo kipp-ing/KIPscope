@@ -4,9 +4,13 @@ import {
   canAdd,
   canDrop,
   DRAG_THRESHOLD_PX,
+  DROP_NEW,
+  DROP_NEW_BELOW,
   type DragSource,
+  type DropTarget,
   dropCommand,
   dropStateFor,
+  dropTargetOf,
   isCopy,
   isLegendSource,
 } from "../src/chart/drag.ts";
@@ -292,5 +296,74 @@ describe("values windows as drop targets and sources", () => {
     expect(canDrop(dvl, toV, after, unitOf)).toBe(false);
     expect(dropCommand(dvl, toV, after, unitOf, none)).toBe(undefined);
     expect(dropStateFor(dvl, "wV", after, unitOf)).toBe(undefined);
+  });
+});
+
+function el(attrs: Record<string, string>) {
+  return { getAttribute: (name: string) => attrs[name] ?? null };
+}
+
+describe("drop below the windows", () => {
+  it("maps drop elements to targets", () => {
+    expect(DROP_NEW).toBe("new");
+    expect(DROP_NEW_BELOW).toBe("new-below");
+    expect(dropTargetOf(el({ "data-window-id": "wA" }))).toEqual({
+      kind: "window",
+      windowId: "wA",
+    });
+    expect(dropTargetOf(el({ "data-drop": "new" }))).toEqual({ kind: "new", place: "strip" });
+    expect(dropTargetOf(el({ "data-drop": "new-below" }))).toEqual({
+      kind: "new",
+      place: "below",
+    });
+    expect(dropTargetOf(el({ "data-drop": "bogus" }))).toBe(undefined);
+    expect(dropTargetOf(el({}))).toBe(undefined);
+    expect(dropTargetOf(null)).toBe(undefined);
+    expect(dropTargetOf(undefined)).toBe(undefined);
+  });
+
+  it("treats a drop below the windows like + New window", () => {
+    const strip: DropTarget = { kind: "new", place: "strip" };
+    const below: DropTarget = { kind: "new", place: "below" };
+    const windows = [win("wA", ["c/V_ANZ", "c/DVL"]), win("wB", ["c/PTC"])];
+    const source: DragSource = { windowId: "wA", assignmentId: "awA0", signalId: "c/V_ANZ" };
+    const mods = [
+      none,
+      { altKey: true, ctrlKey: false },
+      { altKey: false, ctrlKey: true },
+      { altKey: true, ctrlKey: true },
+    ];
+    for (const m of mods) {
+      expect(dropCommand(source, below, windows, unitOf, m)).toEqual(
+        dropCommand(source, strip, windows, unitOf, m),
+      );
+    }
+    expect(dropCommand(source, below, windows, unitOf, none)).toEqual({
+      type: "window.moveSignal",
+      windowId: "wA",
+      assignmentId: "awA0",
+    });
+    expect(dropCommand(source, below, windows, unitOf, { altKey: true, ctrlKey: false })).toEqual({
+      type: "window.moveSignal",
+      windowId: "wA",
+      assignmentId: "awA0",
+      copy: true,
+    });
+    // The only signal of the only window: same as the strip.
+    const solo = [win("wA", ["c/V_ANZ"])];
+    for (const m of mods) {
+      expect(dropCommand(source, below, solo, unitOf, m)).toEqual(
+        dropCommand(source, strip, solo, unitOf, m),
+      );
+    }
+    expect(dropCommand(source, below, solo, unitOf, none)).toEqual({
+      type: "window.moveSignal",
+      windowId: "wA",
+      assignmentId: "awA0",
+    });
+    expect(canDrop(source, below, solo, unitOf)).toBe(true);
+    expect(canDrop(source, below, windows, unitOf)).toBe(true);
+    expect(canAdd("c/V_ANZ", below, windows, unitOf)).toBe(true);
+    expect(canAdd("c/V_ANZ", below, [], unitOf)).toBe(true);
   });
 });
