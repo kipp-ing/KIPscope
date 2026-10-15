@@ -21,12 +21,12 @@ L SHALL send no command, change no revision, take no part in the render acknowle
 - **Evidence:** the `curl` command before and after; UI check (L cells change while the pointer moves)
 
 ### Requirement: L column in every chart legend
-Every timeseries window's legend rows SHALL have a column L after A | B | Δ, present whether or not a cursor is on. While L is not set, its cells SHALL be empty. Showing or clearing L SHALL NOT move any legend row or column. Origin: D-032 („Every chart legend gets a 4th column L"; „without a hover L is empty"); no layout shift: necessary consequence of a column that fills and empties at frame rate.
+Every timeseries window's legend rows SHALL have a column L after A | B | Δ, always present and aligned in one column (cursors "Readout cells in the legend"). Without L its cells SHALL be empty; showing or clearing L SHALL NOT move any legend row or column. Origin: D-032 („Every chart legend gets a 4th column L"; „without a hover L is empty"); one column: D-033 („L lines up under itself also with A and B off"); no shift: necessary consequence of a column that fills at frame rate.
 
 #### Scenario: Cursors off, no hover
-- **WHEN** A and B are off and the pointer is outside every plot; then the pointer enters the plot
-- **THEN** each legend row shows an empty L column; then the L cells fill, and no row, name or SNA share moves
-- **Evidence:** UI check (two screenshots, rows at the same pixel positions)
+- **WHEN** A and B are off, the window shows `COMBI_412h.V_ANZ`, `BS_200h.DVL` and `CPC_448h.PTC_HV_Volt` (names of different length) and the pointer is outside every plot; then the pointer enters the plot
+- **THEN** the legend is one row per signal with an empty L column; then the L cells fill at the same x in every row (within 1 px), and no row, name or SNA share moves
+- **Evidence:** UI check (two screenshots, rows at the same pixel positions, L cells in one column)
 
 ### Requirement: L values from the drawn data
 While L is set, each L cell SHALL show its signal's value at L from that window's loaded data: the raw value evaluated in the window's mode (markers as line) zoomed in, the bucket mean zoomed out, printed like the A cell (number-format without unit, SI prefix kept), the kind (`lin`, `hold`, `avg`) as tooltip. Origin: D-032 („The L value comes from the drawn data (raw points zoomed in, bucket value zoomed out, kind as tooltip), like a dragged line under D-031").
@@ -62,6 +62,11 @@ In the hovered window, the near signal SHALL be the one whose curve at the point
 - **THEN** the second is near; then the later of the two; then that one; then none
 - **Evidence:** `apps/web/test/live.test.ts` › "picks the nearest curve within 8 px, on a tie the later one"
 
+#### Scenario: Only numbers inside the plot are candidates
+- **WHEN** the signals of a 200 px high plot are, in legend order: `SNA`; `—` (gap); `—` (outside this window's range); loading; an envelope edge (no scale) with a number; a number at y −2; a number at y 40; a number at y 40
+- **THEN** the candidates are exactly the last two, in that order, so the pointer at y 40 picks the last one
+- **Evidence:** `apps/web/test/live.test.ts` › "builds near candidates only from numbers inside the plot"
+
 ### Requirement: Near-signal highlight
 The near signal SHALL be drawn with a thicker line, every other signal of the hovered window faded, and its legend row marked; without a near signal all are drawn as normal. Other windows SHALL highlight nothing. Origin: D-032 („is highlighted: thicker line, others faded, its legend row marked"); only the hovered window: the pointer's height exists only there.
 
@@ -93,6 +98,14 @@ L SHALL be cleared, with its lines, highlight and label, when the pointer leaves
 - **WHEN** the pointer hovers a V_ANZ plot (L cells filled), then leaves it; returns and drags A's line; returns and drag-selects a range
 - **THEN** the L cells are empty after leaving, during the line drag (the dragged A cell still follows the line) and while the button is held for the rectangle
 - **Evidence:** UI check (screenshots after leaving, during the drag, during the rectangle)
+
+### Requirement: L after a click
+On mouse up without movement (a click) on a plot, L SHALL be set again at the same pointer position, without a further move. Origin: D-033 („on mouse up without movement L comes back at the same spot, so A and L read the same right after a click").
+
+#### Scenario: Click without moving
+- **WHEN** the pointer hovers the window of "Live value zoomed in" at 13:08:00.093Z, the button is pressed and released without moving
+- **THEN** the L cells are empty while the button is held; after the release they read the same as the A cells (`23.0`, `180`, `363`) without a further move
+- **Evidence:** UI check (screenshot after the release, A and L cells equal)
 
 ### Requirement: L after a range change
 After any change of the hovered window's shown range, L SHALL stay cleared until the pointer moves, like the crosshair (timeseries-window "Crosshair follows the pointer only"). Origin: necessary consequence: an L kept at its pixel would name a wrong time.

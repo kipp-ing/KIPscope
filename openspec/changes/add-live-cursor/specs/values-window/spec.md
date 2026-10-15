@@ -8,6 +8,11 @@ The values table SHALL have a column `L` after A | B | Δ. Once L has stayed at 
 - **THEN** within 1 s the `L` column reads `23.0 km/h`, `180 1/min lin` and `363 V lin`, the same as the A cells after a click there without moving
 - **Evidence:** UI check (screenshot after the click)
 
+#### Scenario: L visible in a normal-width window
+- **WHEN** the values window of "Live values in the values window" is 485 px wide (its width in round 1, where the 621 px table cut L off) and L is set
+- **THEN** the `L` header and all three L cells are fully visible without scrolling the table sideways
+- **Evidence:** UI check (screenshot at 485 px)
+
 #### Scenario: Requests only at rest
 - **WHEN** L changes every 50 ms for 1 s for a values window with three rows, then stays
 - **THEN** no value request is sent while it changes, the cells keep their previous values dimmed, and 150 ms after the last change exactly three requests are sent, keyed apart from the A and B requests

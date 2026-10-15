@@ -95,11 +95,23 @@ React parts: an `LiveCell` per legend row calls `useLiveCursor()` and renders `l
 
 `v = chartValueAt(loader.get(s.id)?.result, live.t, w.display.mode)` in every window (owner and others). Zoomed in this is the raw evaluation, zoomed out the bucket mean (D-032 „raw points zoomed in, bucket value zoomed out, kind as tooltip"). In band mode (min/max envelope) the value is the bucket mean, as for a dragged line; min and max are not shown.
 
-The L cell has `min-width: 8ch`, right-aligned: the widest 4-digit text with prefix and sign is `-1.234 k` (8 chars), so a filling or emptying column never resizes the grid (spec "Cursors off, no hover"). Column order: name, `[unit]`, A, B, Δ (each only as today), L (always), status, SNA share, `×`.
+The L cell has `min-width: 8ch`, right-aligned: the widest 4-digit text with prefix and sign is `-1.234 k` (8 chars), so a filling or emptying column never resizes the grid (spec "Cursors off, no hover"). Column order: name, `[unit]`, A, B, Δ (each only as today), L (always), status, SNA share, `×`. The legend is always this grid, also with A and B off, so L lines up under itself in every row (D-033: "The chart legend is always a grid ... replaces the wrapping list with cursors off"); `.signals` in `styles.css` loses its `flex-wrap` list form.
 
 ### L5: Nearness and highlight
 
 `nearestSignal(candidates: { key: string; y: number }[], pointerY: number, maxPx = NEAR_PX): string | undefined` — the candidate with the smallest `|y − pointerY|` ≤ maxPx; on equal distance the later candidate (legend order). Each `y` comes from `valToPos` on that signal's own scale, so several y axes compare in the same screen pixels; a signal on the right axis 5 px away beats one on the left axis 7 px away.
+
+Round 2 (reviewer finding, pure and testable): the candidates come from
+
+```ts
+liveCandidates(
+  signals: readonly { key: string; scale: string | undefined; value: ReadoutValue | undefined }[],
+  toY: (value: number, scale: string) => number, // u.valToPos
+  plotHeight: number,
+): { key: string; y: number }[]
+```
+
+in `chart/live.ts`: a signal is skipped without a scale (envelope edges, Q3), without a number (`SNA`, `—` of any reason, loading) or with `y` outside `[0, plotHeight]`; order kept (legend order, for the tie rule). `TimeseriesWindow` builds `signals` from `model.layout.scaleOf` (no own `scaleOf` map) and `chartValueAt`, then calls `nearestSignal(liveCandidates(...), pointerY)`. `timeAt` calls `liveTime`, so a click and L snap through one function.
 
 The distance is measured to the L value's y, which is the drawn curve: line → linear interpolation, step → held value, markers → interpolated line between the markers, buckets → the mean of the bucket under the pointer (the drawn line joins bucket centres; with about one bucket per plot pixel the two differ by at most the rise over half a bucket, see Risks).
 
@@ -123,7 +135,9 @@ Why exact and not drawn: the values window has no drawn data and lists signals n
 | Situation | Effect |
 |---|---|
 | Pointer leaves the plot (`mouseleave` of `u.over`) | `liveCursor.clear(w.id)` |
-| Button down on the plot (click, rectangle zoom) | `clear(w.id)`; no `set` until `mouseup` and the next move |
+| Button down on the plot (click, rectangle zoom) | `clear(w.id)`; no `set` while the button is held or the pointer drags |
+| `mouseup` without movement (a click) | `publishLive(e)` at the same pointer position, so A and L read the same right after the click (D-033: "on mouse up without movement L comes back at the same spot"; amends round 1, which cleared L until the next move) |
+| `mouseup` after a drag (rectangle zoom) | nothing; the range change clears L (next row), the next move sets it |
 | Cursor line drag, height drag (`TimeseriesWindow`), legend/explorer row drag (`App.tsx`) | `liveCursor.suspend()` next to each `holdNoSelect()`, released with it |
 | Range change of the owner window (every place that calls `hideCursor(u)`) | `clear(w.id)`; the next move sets L again |
 | Range change of another window | its L line is re-placed in its `draw` hook |
@@ -141,6 +155,7 @@ During a line drag the dragged A/B cell already follows the drawn curve live (D-
 | `LIVE_REST_MS` | 150 ms | 300 ms: the values window lags visibly | 75 ms: short pauses in a slow move trigger lookups; more requests (stale ones aborted), values still right |
 | L cell `min-width` | 8ch | wastes width; narrow tiles wrap the legend sooner | `-5.00 k` overflows; the grid shifts on hover |
 | Publish rate | 1 per animation frame | — | — |
+| Values window width that shows L (round 2) | 485 px | fits trivially | 242 px: L may be cut; the table scrolls sideways, accepted (goal is the normal width only) |
 
 ## Risks / Trade-offs
 
