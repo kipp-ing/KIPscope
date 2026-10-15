@@ -22,6 +22,7 @@ import { fetchSeries } from "../api.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import {
   type Cell,
+  formatClock,
   formatCursorTime,
   formatDeltaT,
   loadingCell,
@@ -1172,12 +1173,12 @@ export function TimeseriesWindow({
       <div className="height-handle" title="Drag to resize" onPointerDown={startHeightDrag} />
       {readout && (
         <div className="readout-row">
-          <span className="cursor-time">
-            {a === undefined ? "A off" : `A ${formatCursorTime(a)}`}
+          <span className="cursor-time" title={a === undefined ? undefined : formatCursorTime(a)}>
+            {a === undefined ? "A off" : `A ${formatClock(a)}`}
           </span>
           {diff && (
-            <span className="cursor-time">
-              {b === undefined ? "B off" : `B ${formatCursorTime(b)}`}
+            <span className="cursor-time" title={b === undefined ? undefined : formatCursorTime(b)}>
+              {b === undefined ? "B off" : `B ${formatClock(b)}`}
             </span>
           )}
           {diff && a !== undefined && b !== undefined && (
@@ -1210,11 +1211,10 @@ export function TimeseriesWindow({
                 <span className="sig">{name}</span>
               </span>
               {(meta?.unit || readout) && (
-                <span className="unit">{meta?.unit && `[${meta.unit}]`}</span>
+                <span className="unit" title={`y axis ${model.layout.sideOf.get(s.id) ?? "–"}`}>
+                  {meta?.unit && `[${meta.unit}]`}
+                </span>
               )}
-              <span className="side" title="y axis">
-                {model.layout.sideOf.get(s.id) ?? "–"}
-              </span>
               {readout && <ReadoutCell cell={cellAt(a, valueA)} />}
               {readout && diff && <ReadoutCell cell={cellAt(b, valueB)} />}
               {readout && diff && (
@@ -1226,20 +1226,25 @@ export function TimeseriesWindow({
                   )}
                 />
               )}
+              {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
               <span className={`status ${state?.status ?? "loading"}`}>
                 {state?.status === "error"
                   ? `failed: ${state.error}`
-                  : (state?.status ?? "loading")}
+                  : state?.status === "complete"
+                    ? ""
+                    : "loading"}
               </span>
               {(sna || readout) && <span className="sna">{sna}</span>}
               <button
                 type="button"
-                className="link"
+                className="remove"
+                title="Remove from this window"
+                aria-label={`Remove ${name}`}
                 onClick={() =>
                   onCommand({ type: "window.removeSignal", windowId: w.id, assignmentId: s.id })
                 }
               >
-                remove
+                ×
               </button>
             </li>
           );

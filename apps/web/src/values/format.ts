@@ -173,6 +173,9 @@ export interface HeaderTime {
 /** "HH:MM:SS…" of a formatted cursor time. */
 const clock = (time: string) => time.slice(time.indexOf(" ") + 1);
 
+/** Local "HH:MM:SS[.fff…]" of a cursor time, without the date (the chart's readout row). */
+export const formatClock = (t: bigint): string => clock(formatCursorTime(t));
+
 /**
  * The values window's header times (design L4): A, and with Diff B and Δt. B leaves out its date
  * when it lies on A's local day. If the times do not `fit`, A and B drop their dates (the

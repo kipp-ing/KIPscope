@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-030: Compact chart legend (2026-10-15)
+
+- **Decision:** Jan, on the chart legend with diff mode on after his hand check: the legend row keeps name, `[unit]`, A | B | Δ and the SNA share. Values lose their unit (the SI prefix stays: `14.0 k` under `[1/min]`) and their tag (`lin`/`hold`/`avg` become the cell's tooltip); the axis side column goes (tooltip of `[unit]`); `complete` goes (loading and failed stay); the readout row shows clock times, the date in the tooltip; `remove` becomes a `×` shown only while hovering the row. The values window is unchanged.
+- **Why:** Jan: „it falls apart. as it shows mostly useless information: the hint (avg) can go. the unit on each value can go, the hint wich axes can go, the timeframe only time minute seconds not full utc, the "complete" can go. the remove can go"; × on row hover his pick over double-click and drag-out.
+
 ## D-029: Cursor and CLI conventions (2026-10-15)
 
 From the archived changes `add-cursors` (design C1, C4, C5) and `add-cli`; details there.

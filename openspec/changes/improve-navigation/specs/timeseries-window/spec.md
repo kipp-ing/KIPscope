@@ -141,6 +141,39 @@ Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal
 - **THEN** a crosshair follows the pointer, and no signal value appears or changes anywhere on the page apart from axis ticks, values-window cells and readout cells, which stay as they were before the pointer moved
 - **Evidence:** UI check (two screenshots at different pointer positions)
 
+### Requirement: One y-axis per unit
+Signals with the same unit SHALL share one y scale and axis; each unit SHALL have its own. A signal without unit SHALL have its own scale, titled with its name. The axis title SHALL be the unit, in the signal's colour when it is the only signal on that axis. Origin: D-018 ("'Same value range' means **same unit**: one y-axis per unit, nothing more."); D-017 („gleiche signalbereich gleiche achse“); coloured title from power-user expectations (feedback 2026-10-14, point 2).
+
+#### Scenario: Two signals, same unit
+- **WHEN** a window shows `CPC_168h.EAC_HV_Volt` and `CPC_448h.PTC_HV_Volt` (both `V`)
+- **THEN** one axis is drawn on the left titled `V` in neutral colour, and the `[V]` of both legend rows has the tooltip "y axis L"
+- **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "puts signals with the same unit on one axis"
+
+### Requirement: Stacked axes
+Every unit SHALL get a drawn y axis, stacked up to two per side in signal order: first unit inner left (`L`), second inner right (`R`), third outer left (`L2`), fourth outer right (`R2`); the plot narrows. Each legend row's `[unit]` SHALL name its axis side as tooltip (D-030: the side column is gone). Origin: D-019 ("stacked axes, up to two per side (at most four units), the plot area gets narrower. Every value stays readable."); legend sides from feedback 2026-10-14, point 2.
+
+#### Scenario: Second unit
+- **WHEN** `COMBI_412h.V_ANZ` (`km/h`) is added to that window
+- **THEN** a right axis titled `km/h` appears in V_ANZ's colour, V_ANZ's `[km/h]` has the tooltip "y axis R", and the `V` axis stays left
+- **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order", "colours an axis like its only signal"
+
+#### Scenario: Third and fourth unit
+- **WHEN** `MS_608h.T_MOT` (`°C`) and then `BS_200h.DVL` (`1/min`) are added as well
+- **THEN** a `°C` axis appears outer left and a `1/min` axis outer right, each in its signal's colour with readable tick labels, the plot is narrower, and their `[unit]` tooltips name `L2` and `R2`
+- **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order"
+
+#### Scenario: Unit-less signal and stable sides
+- **WHEN** a window lists a signal without unit before a `V` signal, and only the `V` signal's data has loaded
+- **THEN** the unit-less signal has its own scale titled with its name on the left and `V` is on the right, before and after the other data arrives
+- **Evidence:** `apps/web/test/axes.test.ts` › "gives unit-less signals their own axis titled by name", "keeps sides stable before data loads"
+
+### Requirement: Loading and error state
+A window SHALL show per signal while its data is loading and when it failed, including the error message on failure; a complete load shows nothing (D-030 „the "complete" can go").
+
+#### Scenario: Query fails
+- **WHEN** the query for one signal fails
+- **THEN** the window marks that signal as failed and keeps showing the other signals
+
 ## REMOVED Requirements
 
 ### Requirement: Wheel pan

@@ -97,17 +97,17 @@ describe("chartValueAt", () => {
     expect(chartValueAt(undefined, at(93), "line")).toBeUndefined();
   });
 
-  it("takes the bucket mean in aggregated views, tagged avg", () => {
+  it("takes the bucket mean in aggregated views, marked avg", () => {
     const b = buckets([0, 1000, 2000], [10, 7, 5], [0, 0, 0], [20, 25.5, 30]);
     expect(chartValueAt(b, at(500), "line")).toEqual({ kind: "aggregated", value: 20 });
     // [start, start + width): the start belongs to the bucket, the last ns to the previous one.
     expect(chartValueAt(b, at(1000), "line")).toEqual({ kind: "aggregated", value: 25.5 });
     expect(chartValueAt(b, at(1000) - 1n, "line")).toEqual({ kind: "aggregated", value: 20 });
     expect(chartValueAt(b, at(2999), "step")).toEqual({ kind: "aggregated", value: 30 });
-    // The tag is `avg` in the cell.
+    // The kind `avg` is the cell's tooltip.
     expect(readoutCell(chartValueAt(b, at(1500), "line"), "km/h", 3)).toEqual({
-      text: "25.5 km/h",
-      tag: "avg",
+      text: "25.5",
+      title: "bucket mean (avg)",
     });
   });
 
@@ -146,43 +146,48 @@ describe("chartValueAt", () => {
 });
 
 describe("readout cells", () => {
-  it("formats cells with unit, digits and tag", () => {
-    expect(readoutCell({ kind: "raw", value: 23 }, "km/h", 3)).toEqual({ text: "23.0 km/h" });
+  it("formats cells without unit, with SI prefix and digits, the kind as tooltip", () => {
+    expect(readoutCell({ kind: "raw", value: 23 }, "km/h", 3)).toEqual({ text: "23.0" });
     expect(readoutCell({ kind: "interpolated", value: 362.40000000000003 }, "V", 3)).toEqual({
-      text: "362 V",
-      tag: "lin",
+      text: "362",
+      title: "linear between points (lin)",
     });
     expect(readoutCell({ kind: "interpolated", value: 362.40000000000003 }, "V", 4)).toEqual({
-      text: "362.4 V",
-      tag: "lin",
+      text: "362.4",
+      title: "linear between points (lin)",
     });
     expect(readoutCell({ kind: "held", value: 23 }, "km/h", 3)).toEqual({
-      text: "23.0 km/h",
-      tag: "hold",
+      text: "23.0",
+      title: "held from the last point (hold)",
     });
+    // The prefix stays: the legend row's [1/min] names the unit.
+    expect(readoutCell({ kind: "raw", value: 13970 }, "1/min", 3)).toEqual({ text: "14.0 k" });
   });
 
-  it("computes Δ only from numbers and tags it avg > lin > hold", () => {
+  it("computes Δ only from numbers and marks it avg > lin > hold", () => {
     const raw = (value: number) => ({ kind: "raw" as const, value });
     const lin = (value: number) => ({ kind: "interpolated" as const, value });
     const hold = (value: number) => ({ kind: "held" as const, value });
     const avg = (value: number) => ({ kind: "aggregated" as const, value });
 
-    expect(readoutDelta(raw(23), raw(18), "km/h", 3)).toEqual({ text: "-5.00 km/h" });
+    const LIN = "linear between points (lin)";
+    const HOLD = "held from the last point (hold)";
+    const AVG = "bucket mean (avg)";
+    expect(readoutDelta(raw(23), raw(18), "km/h", 3)).toEqual({ text: "-5.00" });
     expect(readoutDelta(lin(362.40000000000003), lin(362.9), "V", 3)).toEqual({
-      text: "500 mV",
-      tag: "lin",
+      text: "500 m",
+      title: LIN,
     });
-    expect(readoutDelta(raw(1), hold(3), "km/h", 3)).toEqual({ text: "2.00 km/h", tag: "hold" });
-    expect(readoutDelta(hold(1), lin(3), "km/h", 3).tag).toBe("lin");
-    expect(readoutDelta(lin(1), raw(3), "km/h", 3).tag).toBe("lin");
+    expect(readoutDelta(raw(1), hold(3), "km/h", 3)).toEqual({ text: "2.00", title: HOLD });
+    expect(readoutDelta(hold(1), lin(3), "km/h", 3).title).toBe(LIN);
+    expect(readoutDelta(lin(1), raw(3), "km/h", 3).title).toBe(LIN);
     // avg beats lin and hold, on either side.
-    expect(readoutDelta(avg(10), raw(15), "km/h", 3)).toEqual({ text: "5.00 km/h", tag: "avg" });
-    expect(readoutDelta(lin(10), avg(15), "km/h", 3).tag).toBe("avg");
-    expect(readoutDelta(hold(10), avg(15), "km/h", 3).tag).toBe("avg");
-    expect(readoutDelta(raw(10), raw(10), "km/h", 3)).toEqual({ text: "0 km/h" });
+    expect(readoutDelta(avg(10), raw(15), "km/h", 3)).toEqual({ text: "5.00", title: AVG });
+    expect(readoutDelta(lin(10), avg(15), "km/h", 3).title).toBe(AVG);
+    expect(readoutDelta(hold(10), avg(15), "km/h", 3).title).toBe(AVG);
+    expect(readoutDelta(raw(10), raw(10), "km/h", 3)).toEqual({ text: "0" });
 
-    // Any non-number: "—" without tag.
+    // Any non-number: "—" without kind.
     const none = { kind: "none" as const, reason: "outside_range" as const };
     for (const [a, b] of [
       [{ kind: "sna" as const }, raw(1)],
@@ -193,6 +198,7 @@ describe("readout cells", () => {
       const cell = readoutDelta(a, b, "km/h", 3);
       expect(cell.text).toBe("—");
       expect(cell.tag).toBeUndefined();
+      expect(cell.title).toBeUndefined();
     }
   });
 

@@ -284,14 +284,15 @@
 
 .window .signals.readout {
   display: grid;
-  grid-template-columns: repeat(7, auto);
+  /* name, unit, A, status, SNA share, remove; diff adds B and Δ. */
+  grid-template-columns: repeat(6, auto);
   justify-content: start;
   align-items: center;
   gap: 2px 10px;
 }
 
 .window .signals.readout.diff {
-  grid-template-columns: repeat(9, auto);
+  grid-template-columns: repeat(8, auto);
 }
 
 .window .signals.readout li {
@@ -326,10 +327,25 @@
   opacity: 0.45;
 }
 
-.window .signals .side {
+/* Remove (×): shown only while the pointer is on the row or the button has keyboard focus. */
+.window .signals .remove {
+  visibility: hidden;
+  border: none;
+  background: none;
+  padding: 0 2px;
   color: var(--muted);
-  font-size: 11px;
-  min-width: 1.5em;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.window .signals li:hover .remove,
+.window .signals .remove:focus-visible {
+  visibility: visible;
+}
+
+.window .signals .remove:hover {
+  color: var(--error);
 }
 
 /* Drag and drop (design D5). */

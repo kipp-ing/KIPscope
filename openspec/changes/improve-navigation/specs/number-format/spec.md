@@ -32,7 +32,7 @@ The values window (A, B, Δ), the chart readout (A, B, Δ), the y-axis ticks and
 
 #### Scenario: Same value, same text
 - **WHEN** a values window lists `CPC_448h.PTC_HV_Volt`, a timeseries window shows it zoomed to 2026-10-13T13:08:00Z–13:08:03Z in line mode, and A is set to 2026-10-13T13:08:00.093Z
-- **THEN** the values window cell and the chart readout cell both read `363 V lin`
+- **THEN** the values window cell reads `363 V lin` and the chart readout cell `363` under the row's `[V]`, with the tooltip "linear between points (lin)" (the chart names the unit once, D-030)
 - **Evidence:** UI check (one screenshot of both windows)
 
 ### Requirement: Exact texts kept

@@ -5,7 +5,7 @@ import {
   decodeTimes,
   type EdgePoint,
   evaluateAt,
-  formatQuantity,
+  formatQuantityBare,
   parseTimestamp,
   type SeriesResult,
 } from "@letsview/shared";
@@ -85,7 +85,20 @@ const isNumber = (v: ReadoutValue | undefined): v is NumberValue =>
 
 const LOADING_CELL = loadingCell({ text: NO_VALUE });
 
-/** A readout cell: the values window's texts and tags plus `avg`; undefined is the loading state. */
+/** Tooltip of a readout number by its tag; the legend row names the unit once. */
+const KIND_TITLES: Record<NonNullable<Cell["tag"]>, string> = {
+  lin: "linear between points (lin)",
+  hold: "held from the last point (hold)",
+  avg: "bucket mean (avg)",
+};
+
+/** A legend cell (design N3): the number with its SI prefix only, the kind as tooltip. */
+function bare(tag: Cell["tag"], value: number, unit: string | undefined, digits: Digits): Cell {
+  const text = formatQuantityBare(value, unit, digits);
+  return tag ? { text, title: KIND_TITLES[tag] } : { text };
+}
+
+/** A readout cell: SNA, "—" with the reason, or the bare number; undefined is the loading state. */
 export function readoutCell(
   v: ReadoutValue | undefined,
   unit: string | undefined,
@@ -98,17 +111,17 @@ export function readoutCell(
     case "sna":
       return { text: "SNA", sna: true };
     case "raw":
-      return { text: formatQuantity(v.value, unit, digits) };
+      return bare(undefined, v.value, unit, digits);
     case "interpolated":
-      return { text: formatQuantity(v.value, unit, digits), tag: "lin" };
+      return bare("lin", v.value, unit, digits);
     case "held":
-      return { text: formatQuantity(v.value, unit, digits), tag: "hold" };
+      return bare("hold", v.value, unit, digits);
     case "aggregated":
-      return { text: formatQuantity(v.value, unit, digits), tag: "avg" };
+      return bare("avg", v.value, unit, digits);
   }
 }
 
-/** Δ = B − A, only from two numbers (else "—"), tagged avg > lin > hold; loading as readoutCell while a value is not loaded. */
+/** Δ = B − A, only from two numbers (else "—"), kind avg > lin > hold; loading as readoutCell while a value is not loaded. */
 export function readoutDelta(
   a: ReadoutValue | undefined,
   b: ReadoutValue | undefined,
@@ -117,5 +130,5 @@ export function readoutDelta(
 ): Cell {
   if (!a || !b) return LOADING_CELL;
   if (!isNumber(a) || !isNumber(b)) return { text: NO_VALUE };
-  return numberDelta(a, b, unit, digits);
+  return bare(numberDelta(a, b, unit, digits).tag, b.value - a.value, unit, digits);
 }

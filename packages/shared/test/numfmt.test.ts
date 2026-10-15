@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAxisTicks, formatQuantity, takesPrefix } from "../src/numfmt.ts";
+import { formatAxisTicks, formatQuantity, formatQuantityBare, takesPrefix } from "../src/numfmt.ts";
 
 describe("numfmt (improve-navigation, D-026)", () => {
   it("formats the pinned values with 3 digits", () => {
@@ -28,6 +28,16 @@ describe("numfmt (improve-navigation, D-026)", () => {
     // Rounded on the unscaled value first: 8191.5 → 8192, not 8.191 (design N7).
     expect(formatQuantity(8191.5, "1/min", 4)).toBe("8.192 k1/min");
     expect(formatQuantity(8191.5, "1/min", 3)).toBe("8.19 k1/min");
+  });
+
+  it("drops the unit but keeps the SI prefix in the bare form", () => {
+    expect(formatQuantityBare(13970, "1/min", 3)).toBe("14.0 k");
+    expect(formatQuantityBare(0.0005, "V", 3)).toBe("500 µ");
+    expect(formatQuantityBare(358, "V", 3)).toBe("358");
+    expect(formatQuantityBare(45, "km/h", 3)).toBe("45.0");
+    expect(formatQuantityBare(10000000, "%", 3)).toBe("1.00e+7");
+    expect(formatQuantityBare(0, "V", 3)).toBe("0");
+    expect(formatQuantityBare(-6, undefined, 3)).toBe("-6.00");
   });
 
   it("does not prefix prefixed or prefix-free units", () => {

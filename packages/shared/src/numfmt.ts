@@ -51,21 +51,44 @@ function shifted(r: number, digits: Digits, e3: number): string {
 
 const withUnit = (number: string, unit: string): string => (unit ? `${number} ${unit}` : number);
 
-/** "14.0 k1/min", "45.0 km/h", "1.23 mV", "-5.00 km/h", "0 km/h", "14.0 k" (N7). */
-export function formatQuantity(value: number, unit: string | undefined, digits: Digits): string {
-  const u = unit?.trim() ?? "";
-  if (value === 0) return withUnit("0", u);
-  if (!Number.isFinite(value)) return withUnit(String(value), u);
+/** The number and the SI prefix it takes for `unit` (N7). */
+function quantityParts(
+  value: number,
+  unit: string,
+  digits: Digits,
+): { number: string; prefix: string } {
+  if (value === 0) return { number: "0", prefix: "" };
+  if (!Number.isFinite(value)) return { number: String(value), prefix: "" };
   // Round on the unscaled value first: 8191.5 / 1000 is 8.1914999… and would print 8.191.
   const r = Number(value.toPrecision(digits));
-  if (takesPrefix(u)) {
+  if (takesPrefix(unit)) {
     const e3 = prefixExponent(r);
-    return withUnit(shifted(r, digits, e3), `${PREFIXES[(e3 - MIN_E3) / 3]}${u}`);
+    return { number: shifted(r, digits, e3), prefix: PREFIXES[(e3 - MIN_E3) / 3] ?? "" };
   }
   const magnitude = Math.abs(r);
   const number =
     magnitude < 0.001 || magnitude >= 1e6 ? r.toExponential(digits - 1) : shifted(r, digits, 0);
-  return withUnit(number, u);
+  return { number, prefix: "" };
+}
+
+/** "14.0 k1/min", "45.0 km/h", "1.23 mV", "-5.00 km/h", "0 km/h", "14.0 k" (N7). */
+export function formatQuantity(value: number, unit: string | undefined, digits: Digits): string {
+  const u = unit?.trim() ?? "";
+  const { number, prefix } = quantityParts(value, u, digits);
+  return withUnit(number, `${prefix}${u}`);
+}
+
+/**
+ * formatQuantity without the unit, for places that name the unit once (the chart legend):
+ * "14.0 k" for 14.0 k1/min, "45.0" for 45.0 km/h, "1.23 m" for 1.23 mV.
+ */
+export function formatQuantityBare(
+  value: number,
+  unit: string | undefined,
+  digits: Digits,
+): string {
+  const { number, prefix } = quantityParts(value, unit?.trim() ?? "", digits);
+  return withUnit(number, prefix);
 }
 
 export interface AxisLabels {
