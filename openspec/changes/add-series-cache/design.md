@@ -26,7 +26,7 @@ See proposal.md (Why, D-037 (3) quoted). Current state that shapes the approach:
 
 ### C1: The grid (pinned, `apps/web/src/chart/tiles.ts`, new)
 
-- **Level `k`** (integer 0…62): bucket width `w = 2^k` ns. A view `[from, to)` with target `n` uses the smallest `k` with `2^k ≥ ceil((to − from) / (n − 1))`, at least 0.
+- **Level `k`** (integer 0…62): bucket width `w = 2^k` ns. A view `[from, to)` with target `n` uses the largest `k` with `2^k ≤ ceil((to − from) / (n − 1))`, at least 0 (D-038: snap down). The view then holds between `n − 1` and 2 × (`n` − 1) buckets: never coarser than before the cache, up to 2× the buckets. Each run request still stays at or below its own target (series-query "Resolution-aware request").
 - **Tile `(signalId, k, j)`**: covers `[j × S, (j + 1) × S)` with span `S = 256 × 2^k` ns (`TILE_BUCKETS = 256`). `j` is a bigint, floor division (times before 1970 are negative).
 - **Touched tiles** of a view: `j` from `floor(from / S)` to `floor((to − 1) / S)`.
 - **Run**: adjacent tiles `first…last` of one signal and level, fetched as one request `{signalId, from: first × S, to: (last + 1) × S, target: (last − first + 1) × 256 + 1}`; at most `MAX_RUN_TILES = 64` tiles (target ≤ 16,385 < `MAX_TARGET`), longer runs are split. The server then answers with width exactly `2^k` or with raw points.
@@ -133,13 +133,13 @@ export function tabSeriesCache(): SeriesCache;
 
 A raw tile `(s, K, J)` contains every finer tile `(s, k, j)` with `k < K` and `j >> (K − k) = J` (arithmetic shift = floor). `find` checks the own key first, then the coarser levels that hold a stored raw tile of that signal (keep a per-signal set of such levels, so a lookup does not probe 62 levels). `deriveRaw` cuts the points inside the finer tile (binary search on the decoded times); its `before` is the parent's last point before the finer tile's start, else the parent's `before`; its `after` the parent's first point at or after its end, else the parent's `after`. Derived tiles are not stored (no double weight); the parent counts as used.
 
-Bucket tiles serve only their own level. A view whose touched tiles are all raw draws raw (C4), else buckets. Today the raw/bucket switch is `count(view) ≤ target`; now it is per run (`count(run) ≤ run target`, about one point per bucket of the run), which is the same density threshold on a slightly larger span. With the width rounded up (C1, up to 2× today's), a raw view may hold up to about 2× `target` points, at most 64 × 256 + 1 per run.
+Bucket tiles serve only their own level. A view whose touched tiles are all raw draws raw (C4), else buckets. Today the raw/bucket switch is `count(view) ≤ target`; now it is per run (`count(run) ≤ run target`, about one point per bucket of the run), which is the same density threshold on a slightly larger span. With the width snapped down (C1, D-038) the density threshold is up to 2× stricter than today (at most one point per finer bucket), while a view spans up to 2× `target` buckets, so a raw view may still hold up to about 2× `target` points, at most 64 × 256 + 1 per run.
 
 ### C4: Stitching (the loader's result)
 
 `stitch(tiles, from, to)` with the touched tiles of one level in index order:
 - **All raw:** points with `from ≤ t < to` in time order; `before` = last point `< from` among the tiles, else the first tile's `before`; `after` = first point `≥ to` among the tiles, else the last tile's `after`. Result `from`/`to` = the view's.
-- **Else:** raw tiles go through `aggregateRaw`; buckets with `start + w > from` and `start < to` in order. Result `from` = `floor(from / w) × w`, `to` = `ceil(to / w) × w`, `width` = `w`, so the `BucketSeries` invariant („aggregates only points inside [from, to)") holds for the snapped range. The edge buckets are complete (today they are partial); the SNA share of a bucket view therefore counts up to two buckets beyond the view's edges, two of at least 500 buckets.
+- **Else:** raw tiles go through `aggregateRaw`; buckets with `start + w > from` and `start < to` in order. Result `from` = `floor(from / w) × w`, `to` = `ceil(to / w) × w`, `width` = `w`, so the `BucketSeries` invariant („aggregates only points inside [from, to)") holds for the snapped range. The edge buckets are complete (today they are partial); the SNA share of a bucket view therefore counts up to two buckets beyond the view's edges, two of at least `target − 1` buckets.
 - Times are re-encoded with `encodeTimes` (span ≤ 2^53 ns by C1's fallback). The loader stitches once per completed view and keeps the object, so `x.result === y.result` memo checks in `TimeseriesWindow.tsx` keep working.
 
 ### C5: Size limit and weight
@@ -187,17 +187,17 @@ export class SeriesLoader {
 
 | Number | Value | Origin | ×2 / ÷2 |
 |---|---|---|---|
-| Width ladder base | 2 (widths `2^k` ns) | necessary consequence (a common grid; base 2 keeps parent/child tiles nested) | Base 4 would make views up to 4× coarser than today; base 2 is the finest nested ladder. Rounding up makes a view up to 2× coarser than today (≥ 1 bucket per 2 px; envelope keeps extremes), Q2. |
-| `TILE_BUCKETS` | 256 | design | Overfetch of a fresh view ≈ one tile beyond the view: at 1000 px (≥ 500 buckets) ≈ +50 % DB scan on average. 512: ≈ +100 %, coarser pan reuse. 128: ≈ +25 %, twice the tiles (map entries, stitch work); requests stay one per run either way. |
-| `MAX_RUN_TILES` | 64 | necessary consequence of `MAX_TARGET` 20,000 | Views touch ≤ 17 tiles at target 4000, so it never splits today; 128 tiles would exceed `MAX_TARGET`. |
-| `CACHE_LIMIT` | 4,000,000 units | D-037 „with a size limit"; the value: design | One 1000-px view of 10 signals in buckets ≈ 10 × 1,280 × 6 ≈ 77k units, so ≈ 50 views. A unit costs ~8–20 bytes in V8 arrays (numbers vs. boxed values next to nulls): 32–80 MB. ×2: 64–160 MB, noticeable in a tab. ÷2: ≈ 25 views, still covers zooming back and forth in a session. |
+| Width ladder base | 2 (widths `2^k` ns) | necessary consequence (a common grid; base 2 keeps parent/child tiles nested) | Base 4 would give views up to 4× the buckets of today; base 2 is the finest nested ladder. Snapping down (D-038) gives a view up to 2× today's buckets (≤ 2 buckets per px), never fewer. |
+| `TILE_BUCKETS` | 256 | design | Overfetch of a fresh view ≈ one tile beyond the view: at 1000 px (999 … 1,997 buckets) ≈ +20 % DB scan on average, at most +51 %. 512: ≈ +35 % on average, coarser pan reuse. 128: ≈ +10 %, twice the tiles (up to 65 per view at 4000 px; map entries, stitch work). Requests stay one per run either way. With up to 2× buckets per view, 256 stays the balance; tiles per view: ≤ 9 at 1000 px, ≤ 33 at 4000 px. |
+| `MAX_RUN_TILES` | 64 | necessary consequence of `MAX_TARGET` 20,000 | Views touch ≤ 33 tiles at target 4000 (≤ 7,997 buckets), run target ≤ 8,449, so it never splits today; 128 tiles would exceed `MAX_TARGET`. |
+| `CACHE_LIMIT` | 4,000,000 units | D-037 „with a size limit"; the value: design | With D-038's up to 2× buckets: one 1000-px view of 10 signals in buckets ≈ 10 × 1,650 × 6 ≈ 100k units on average (≤ 10 × 2,304 × 6 ≈ 138k), so ≈ 30–40 views. The largest single view (50 signals at 4000 px, ≤ 33 tiles) ≈ 2.5 M units still fits. A unit costs ~8–20 bytes in V8 arrays (numbers vs. boxed values next to nulls): 32–80 MB. ×2: 64–160 MB, noticeable in a tab. ÷2: ≈ 15–20 views, and the largest view would no longer fit (its older tiles evicted while it loads, refetched on return). The limit bounds memory, so 2× data per view halves the views kept, not the bytes. |
 | `FRESH_MARGIN_NS` | 1 h | Q1 | 30 min: an ingest delay over 30 min leaves stale tiles until reload. 2 h: only data younger than 2 h is refetched each time, which is today's behaviour anyway. The real data (2026-10-11 … 13) is never inside it. |
 | Weights | raw 2, bucket 6, tile 16 | design (stored numbers) | Only the ratio matters against the limit; a wrong ratio shifts the limit by < 2× for one kind. |
 
 ## Risks / Trade-offs
 
-- **Views up to 2× coarser than today** (C1 rounding up). Mitigation: envelope unchanged, Q2 offers the finer variant (2× transfer).
-- **First load scans more data** (≈ one extra tile per signal). Mitigation: 256-bucket tiles; requests stay one per signal per view.
+- **Up to 2× the buckets per view** (D-038, C1 snapping down): up to 2× transfer, result size and drawing work per view, and half as many views fit in the cache. Accepted by Jan („up to 2× data per view is accepted"); the DB scans the same time range as before, so its scan cost does not double.
+- **First load scans more time** (≈ one extra tile per signal, ≈ +20 % at 1000 px). Mitigation: 256-bucket tiles; requests stay one per signal per view.
 - **Data imported into an already cached past range** is invisible until reload (C6). Mitigation: reload is cheap; Q1.
 - **More code on the web side** (tiles, cache). Mitigation: pure functions in `tiles.ts`, cache testable with a fake fetch and clock.
 
@@ -207,7 +207,7 @@ None: memory only, no stored format. Rollback = revert the web change.
 
 ## Open Questions
 
-Built as recommended until Jan decides otherwise.
+Q1 is built as recommended until Jan decides otherwise; Q2 is decided.
 
 - **Q1 Recent data:** (a) cache every tile until the tab closes: simplest, but data written after loading never shows until reload; (b) a TTL on every tile (e.g. 10 min): long sessions lose the cache; (c) **recommended:** do not store tiles that end within the last hour (C6); older data imported later shows after a reload.
-- **Q2 Width rounding:** (a) **recommended:** round the bucket width up to the next power of two: at most `target` buckets as today, up to 2× coarser; (b) round down: at least today's resolution, up to 2× the transferred buckets and DB result size.
+- **Q2 Width rounding: decided by Jan, D-038** („the power-of-two bucket width snaps down (finer), so a view gets between `target` and 2 × `target` buckets, never coarser than before the cache"; why: „min/max band and spikes stay as sharp as today; up to 2× data per view is accepted"). Built in C1, C3, C9.

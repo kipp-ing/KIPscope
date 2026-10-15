@@ -14,16 +14,16 @@ Loaded series data SHALL stay in the tab's memory until the tab closes or reload
 - **Evidence:** `apps/web/test/loader.test.ts` › "serves a re-added signal from the cache"; UI check: remove `COMBI_412h.V_ANZ` from a window and drop it back in; the network log shows no `/api/series` request for it
 
 ### Requirement: Fixed bucket widths and tiles
-A view SHALL load its data as tiles on a fixed grid: its bucket width is the smallest power of two nanoseconds at or above `ceil((to − from) / (target − 1))`, and a tile covers 256 buckets of that width, starting at a multiple of its span. A view SHALL use every tile that touches its range. Origin: necessary consequence of D-037 (3): an exact-range request is never reused by another view, so views must ask for pieces that other views ask for too.
+A view SHALL load its data as tiles of 256 buckets, each starting at a multiple of its span; the bucket width is the largest power of two ns at or below `ceil((to − from) / (target − 1))` (at least 1 ns), giving `target − 1` to 2 × (`target` − 1) buckets. A view SHALL use every tile that touches its range. Origin: necessary consequence of D-037 (3) (exact ranges are never reused); snapping down: D-038 („never coarser than before the cache").
 
 #### Scenario: Power-of-two width
 - **WHEN** a view of 1,000 × 2^20 ns starting at 0 is computed for target 1001
 - **THEN** its bucket width is 2^20 ns, its tile span 2^28 ns, and it touches tiles 0 to 3
 - **Evidence:** `apps/web/test/tiles.test.ts` › "picks the power-of-two width and the touched tiles"
 
-#### Scenario: Width never finer than today
+#### Scenario: Width never coarser than today
 - **WHEN** a view of ten hours is computed for target 2000
-- **THEN** its bucket width is 2^35 ns (≈ 34.4 s), at least today's 18,009,004,503 ns, so about 1,048 buckets cover the view: never more than today's 1,999, never fewer than half
+- **THEN** its bucket width is 2^34 ns (≈ 17.2 s), at most today's 18,009,004,503 ns, so about 2,096 buckets cover the view: at least today's 1,999, fewer than twice as many
 - **Evidence:** `apps/web/test/tiles.test.ts` › "picks the power-of-two width and the touched tiles"
 
 ### Requirement: Only missing tiles are requested

@@ -14,7 +14,7 @@ An exact-range request can never be reused by a different view. So views must as
 
 ## What Changes
 
-- **Tiles on a fixed grid:** each view picks its bucket width from a ladder of powers of two nanoseconds (the smallest at or above today's width), and loads fixed tiles of 256 buckets of that width. Tiles are requested with the existing `/api/series` API, tile-aligned, several adjacent missing tiles in one request; the server already returns exactly the right buckets for such requests (no server code change; a server test pins that property).
+- **Tiles on a fixed grid:** each view picks its bucket width from a ladder of powers of two nanoseconds (the largest at or below today's width, D-038: never coarser than today, up to 2× the buckets), and loads fixed tiles of 256 buckets of that width. Tiles are requested with the existing `/api/series` API, tile-aligned, several adjacent missing tiles in one request; the server already returns exactly the right buckets for such requests (no server code change; a server test pins that property).
 - **Browser tile cache:** one cache per browser tab, shared by all timeseries windows, in memory only. A view uses the cached tiles it covers and requests only the missing ones; a view whose tiles are all cached is drawn at once with no request and no loading state. Raw tiles also serve every finer zoom inside them.
 - **Size limit:** about 4 million stored values (a raw point counts 2, a bucket 6); the least recently used tiles are dropped first.
 - **Shared requests:** a tile wanted by two windows is fetched once; a request is aborted only when no window wants any of its tiles any more. A late response only fills the cache and never replaces a newer view.
