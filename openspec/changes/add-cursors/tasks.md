@@ -70,12 +70,12 @@ Test names are those the specs cite as evidence. The tasks assume the recommende
 
 From docs/feedback/2026-10-15-cursors-power-users.md, items 1–5 (items 7–13 are Jan's questions and not in this change).
 
-- [ ] 6.1 Drop at the pointer (`App.tsx`, `styles.css`): the release resolves the target under the pointer at that moment; reserve the drop zone's height below the last window during a drag. Verify the UI check "Values window at the bottom" (timeseries-window "Drop lands under the pointer").
-- [ ] 6.2 Header range (`chart/TimeseriesWindow.tsx`, `chart/zoom.ts` if a helper is extracted): the header shows the previewed range. Verify the UI check "Three quick wheel zooms" and, if pure, `apps/web/test/zoom.test.ts` › "shows the preview range in the header".
-- [ ] 6.3 Values loading and B (`values/*`): a loading state distinct from `—` with tooltip "loading"; B is requested whenever diff and B are on. Verify `apps/web/test/values.test.ts` › "shows a loading state distinct from no value", "requests B whenever diff mode and B are on", and the UI checks of values-window "Loading state in value cells".
-- [ ] 6.4 Duplicate add (`packages/shared/src/apply.ts`): `window.addSignal` rejects with `already_in_window` for every window kind. Verify `packages/shared/test/apply.test.ts` › "rejects adding a signal the window already shows".
-- [ ] 6.5 Scroll into view (`App.tsx`): windows created by "+ Values window" or a drop on "+ New window" scroll into view. Verify the UI check "Values window below the fold" (timeseries-window "New windows scroll into view").
-- [ ] 6.6 Tester writes the four tests named in 6.2–6.4 (the zoom test only if 6.2 extracts a pure helper) and runs `pnpm build && pnpm test && pnpm lint`; the UI user walks the UI checks of 6.1–6.3 and 6.5 on smart451.
+- [x] 6.1 Drop at the pointer (`App.tsx`, `styles.css`): the release resolves the target under the pointer at that moment; reserve the drop zone's height below the last window during a drag. Verify the UI check "Values window at the bottom" (timeseries-window "Drop lands under the pointer").
+- [x] 6.2 Header range (`chart/TimeseriesWindow.tsx`, `chart/zoom.ts` if a helper is extracted): the header shows the previewed range. Verify the UI check "Three quick wheel zooms" and, if pure, `apps/web/test/zoom.test.ts` › "shows the preview range in the header".
+- [x] 6.3 Values loading and B (`values/*`): a loading state distinct from `—` with tooltip "loading"; B is requested whenever diff and B are on. Verify `apps/web/test/values.test.ts` › "shows a loading state distinct from no value", "requests B whenever diff mode and B are on", and the UI checks of values-window "Loading state in value cells".
+- [x] 6.4 Duplicate add (`packages/shared/src/apply.ts`): `window.addSignal` rejects with `already_in_window` for every window kind. Verify `packages/shared/test/apply.test.ts` › "rejects adding a signal the window already shows".
+- [x] 6.5 Scroll into view (`App.tsx`): windows created by "+ Values window" or a drop on "+ New window" scroll into view. Verify the UI check "Values window below the fold" (timeseries-window "New windows scroll into view").
+- [x] 6.6 Tester writes the four tests named in 6.2–6.4 (the zoom test only if 6.2 extracts a pure helper) and runs `pnpm build && pnpm test && pnpm lint`; the UI user walks the UI checks of 6.1–6.3 and 6.5 on smart451.
 
 ## Workflow follow-up
 
