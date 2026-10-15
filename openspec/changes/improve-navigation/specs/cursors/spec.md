@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Readout cells in the legend
-While A is on, each signal's legend row in a timeseries window SHALL show its value at A, and in diff mode also at B and Δ = B−A, in columns aligned across rows. Cells use number-format without the unit but with its SI prefix (the row names `[unit]` once) and no tag; the kind (`lin`, `hold`, `avg`) is the tooltip. SNA reads `SNA`, a missing value `—` with the reason as tooltip, a loading value the values window's loading state. Origin: D-027; concept §6; design N3; D-030.
+While A is on, each signal's legend row in a timeseries window SHALL show its value at A, while B is on also at B, and in diff mode Δ = B−A, in columns aligned across rows. Cells use number-format without the unit but with its SI prefix (the row names `[unit]` once) and no tag; the kind (`lin`, `hold`, `avg`) is the tooltip. SNA reads `SNA`, a missing value `—` with the reason, a loading value the values window's loading state. Origin: D-027; concept §6; design N3; D-030; D-031.
 
 #### Scenario: Speed difference on the chart
 - **WHEN** a window shows `COMBI_412h.V_ANZ`, `BS_200h.DVL` and `CPC_448h.PTC_HV_Volt` from 2026-10-13T13:08:00Z to 13:08:03Z in line mode, diff mode is on, A is at 13:08:00.093Z and B at 13:08:00.995Z
@@ -9,8 +9,8 @@ While A is on, each signal's legend row in a timeseries window SHALL show its va
 - **Evidence:** UI check (screenshot of the window); `apps/web/test/readout.test.ts` › "evaluates raw results like evaluateAt, with edge neighbours", "computes Δ only from numbers and marks it avg > lin > hold"
 
 #### Scenario: A only
-- **WHEN** diff mode is off and A is on in the window above
-- **THEN** each row shows only the A column
+- **WHEN** diff mode is off, A is on and B is off in the window above; then B is set to 13:08:00.995Z
+- **THEN** each row shows only the A column; then the A and B columns without Δ, and the readout row `A …` and `B …` without `Δt`
 - **Evidence:** UI check (screenshot)
 
 #### Scenario: Cursors off
@@ -19,11 +19,11 @@ While A is on, each signal's legend row in a timeseries window SHALL show its va
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Readout row
-While a cursor is on, a readout row directly above a timeseries window's legend rows SHALL show `A` with A's local clock time (values-window format without the date, which the tooltip keeps) and, in diff mode, `B` with B's clock time (or `B off`) and `Δt` with sign. The readout SHALL cover no part of the plot except the Δt label ("Δt between the cursor flags"). Origin: D-027 (the values window stays for many signals); concept §6 (Δt); clock only: D-030.
+While a cursor is on, a readout row directly above a timeseries window's legend rows SHALL show `A` with A's local clock time (values-window format without the date, which the tooltip keeps), `B` with B's clock time while B is on (`B off` in diff mode) and, in diff mode, `Δt` with sign. The readout SHALL cover no part of the plot except the Δt label ("Δt between the cursor flags"). Origin: D-027 (the values window stays for many signals); concept §6 (Δt); clock only: D-030.
 
 #### Scenario: Times and Δt
-- **WHEN** the window of "Speed difference on the chart" is shown, then diff mode is switched off, then A is switched off
-- **THEN** the row reads `A 15:08:00.093` (tooltip `2026-10-13 15:08:00.093`), `B 15:08:00.995`, `Δt +902 ms`; then only `A 15:08:00.093`; then the row is gone
+- **WHEN** the window of "Speed difference on the chart" is shown, then diff mode is switched off, then B is switched off, then A
+- **THEN** the row reads `A 15:08:00.093` (tooltip `2026-10-13 15:08:00.093`), `B 15:08:00.995`, `Δt +902 ms`; then `A 15:08:00.093`, `B 15:08:00.995`; then only `A 15:08:00.093`; then the row is gone
 - **Evidence:** UI check (three screenshots)
 
 #### Scenario: Nothing over the curves
@@ -49,12 +49,20 @@ Readout values SHALL come from the window's loaded data at its current range and
 - **THEN** the chart's A cell changes while dragging, and a values window showing V_ANZ keeps its committed value, dimmed, until release
 - **Evidence:** UI check (two screenshots during the drag)
 
+### Requirement: Readout outside the zoom
+A cursor outside a window's loaded range SHALL read the values window's value from the server for the window's mode (markers as line), so its cells keep a value when the cursor leaves the zoom. The window acknowledges a render only once these values are in. Origin: D-031 (Jan: „if couser go aout of zoom value vanish. should stay").
+
+#### Scenario: Zoom past A
+- **WHEN** a window shows `COMBI_412h.V_ANZ` with A at 2026-10-13T13:08:00.093Z in line mode, and the window is zoomed to 13:08:01Z–13:08:03Z
+- **THEN** the A cell still reads `23.0` (the values window's value at A), not `—`
+- **Evidence:** UI check (screenshot before and after the zoom)
+
 ### Requirement: Readout without a value
-A bucket with SNA points only SHALL read `SNA`; a cursor time where no bucket lies `—` "no points in this bucket"; a cursor outside the window's range `—` "outside this window's range". Δ SHALL be computed only from two numbers and marked `avg` if either value is aggregated, else `lin` if either is interpolated, else `hold` if either is held. Origin: D-010 (SNA never a number); concept §5 (no invented values) and §6 (value kinds stay recognisable).
+A bucket with SNA points only SHALL read `SNA`; a cursor time where no bucket lies `—` "no points in this bucket"; a cursor outside the window's range the server's value ("Readout values from the drawn data"). Δ SHALL be computed only from two numbers and marked `avg` if either value is aggregated, else `lin` if either is interpolated, else `hold` if either is held. Origin: D-010 (SNA never a number); concept §5 (no invented values) and §6 (value kinds stay recognisable).
 
 #### Scenario: SNA and outside the range
 - **WHEN** a window shows V_ANZ from 2026-10-13T09:56:59Z to 09:57:01Z and A is set to 09:57:00Z; then a second, unlinked window shows 13:09:00Z–13:09:10Z
-- **THEN** the first window's V_ANZ cell reads `SNA`, and the second window's cells read `—` with the tooltip "outside this window's range"
+- **THEN** the first window's V_ANZ cell reads `SNA`, and the second window's V_ANZ cell reads `SNA` too, the server's value at 09:57:00Z, not `—`
 - **Evidence:** UI check (screenshots); `apps/web/test/readout.test.ts` › "reads SNA, empty buckets and cursors outside the range without a number"
 
 ### Requirement: Δt between the cursor flags

@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-031: Cursor values outside the zoom, B without Diff (2026-10-15)
+
+- **Decision:** Jan, after the D-030 build: a cursor outside a chart's zoom keeps its readout value (the chart asks the server for it, as the values window does). B's value shows whenever B is on, in the chart legend and in the values window; "Diff" adds only Δ and Δt.
+- **Why:** Jan: „if couser go aout of zoom value vanish. should stay. if "diff" is of B has no value."
+
 ## D-030: Compact chart legend (2026-10-15)
 
 - **Decision:** Jan, on the chart legend with diff mode on after his hand check: the legend row keeps name, `[unit]`, A | B | Δ and the SNA share. Values lose their unit (the SI prefix stays: `14.0 k` under `[1/min]`) and their tag (`lin`/`hold`/`avg` become the cell's tooltip); the axis side column goes (tooltip of `[unit]`); `complete` goes (loading and failed stay); the readout row shows clock times, the date in the tooltip; `remove` becomes a `×` shown only while hovering the row. The values window is unchanged. A mouse wheel event (Chrome's `wheelDelta` in notches of 120) pans 2 % of the plot or zooms a quarter tick, whatever its accelerated delta; trackpads keep 1:1.

@@ -65,7 +65,7 @@ A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, neve
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "formats SNA and missing values without a number"
 
 ### Requirement: Diff columns
-While diff mode is on, each row SHALL show the value at A, the value at B and Δ = B−A. The header SHALL show both cursor times and Δt = B−A, with sign. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (values at A and B, Δt and ΔWert, B−A); texts in number-format (D-026).
+While B is on or diff mode is on, each row SHALL show the value at B next to A's, and the header B's time; diff mode adds Δ = B−A to each row and Δt = B−A, with sign, to the header. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (values at A and B, Δt and ΔWert, B−A); texts in number-format (D-026); B without Diff: D-031.
 
 #### Scenario: Speed difference
 - **WHEN** diff mode is on, A is at 2026-10-13T13:08:00.093Z and B at 13:08:00.995Z
@@ -82,6 +82,11 @@ While diff mode is on, each row SHALL show the value at A, the value at B and Δ
 - **THEN** the B and Δ columns show `—` and the header shows `B off`
 - **Evidence:** UI check (screenshot)
 
+#### Scenario: B without Diff
+- **WHEN** diff mode is off, A is at 2026-10-13T13:08:00.093Z and B at 13:08:04.5Z
+- **THEN** each row shows A and B but no Δ, and the header shows A's and B's times but no Δt
+- **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "shows B without Diff but no Δt, and the off states", "requests B whenever B is on, with or without Diff"
+
 ### Requirement: Value and time formats
 Values and Δ SHALL be printed by number-format with the workspace's digits option, each followed by its unit with SI prefix. The tooltip naming the neighbour points SHALL keep the exact stored values (at most 9 significant digits, trailing zeros dropped). Cursor times SHALL be shown in local time as `YYYY-MM-DD HH:MM:SS`, with the fraction down to nanoseconds and trailing zero groups of three dropped. Δt SHALL be exact, with sign, in ns, µs, ms or s below one minute, else as `h:mm:ss` with fraction. Origin: D-026 (3 significant digits, SI prefix, option 4); exact tooltips and times: design N9 (Jan's call Q7); data fact for the 9-digit tooltip: `CPC_448h.PTC_HV_Volt` stores `362.40000000000003`.
 
@@ -94,3 +99,16 @@ Values and Δ SHALL be printed by number-format with the workspace's digits opti
 - **WHEN** a cursor is at 1791896880093000000 in Europe/Berlin, and Δt values are 902000000, −1500, 3723500000000 and 0 ns
 - **THEN** the time reads `2026-10-13 15:08:00.093`, and the Δt values read `+902 ms`, `-1.5 µs`, `+1:02:03.5` and `0 ns`
 - **Evidence:** `apps/web/test/values.test.ts` › "formats cursor times in local time down to nanoseconds", "formats Δt exactly with sign"
+
+### Requirement: Loading state in value cells
+While the value for a cell's current cursor time and mode is loading, the cell SHALL show a state distinct from `—` (the form is free), with the tooltip "loading"; `—` SHALL mean only "no value". Whenever B is on, the B cells SHALL be requested and filled like the A cells (D-031). Origin: power-user bug (feedback 2026-10-15, item 3: `—` for 1–3 s read as "no data"; B once stayed `—` with data).
+
+#### Scenario: Cursor moved from the CLI
+- **WHEN** the values window lists V_ANZ and a caller posts `cursor.move {cursor: "a", by: "100000000"}`
+- **THEN** until the new value arrives the cell shows the loading state with tooltip "loading", never `—`, and then the value
+- **Evidence:** `apps/web/test/values.test.ts` › "shows a loading state distinct from no value"; UI check (screenshot right after the command)
+
+#### Scenario: B always fills
+- **WHEN** diff mode is on and B is set five times with `cursor.set` to times where V_ANZ has data (2026-10-13T13:08:00.1Z … 13:08:00.5Z)
+- **THEN** after each command the B cell shows a number, never `—`
+- **Evidence:** `apps/web/test/values.test.ts` › "requests B whenever B is on, with or without Diff"; UI check (screenshot after the last command)
