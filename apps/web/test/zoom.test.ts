@@ -4,6 +4,7 @@ import {
   clampRange,
   extentRange,
   historyKey,
+  isMouseWheel,
   type Range,
   RangePreview,
   WheelFrame,
@@ -200,6 +201,52 @@ describe("wheelAction", () => {
     expect(wheelAction(ev(40, 20))).toEqual({ kind: "none" });
     // Meta is no zoom modifier.
     expect(wheelAction({ ...ev(0, 100), metaKey: true } as never)).toEqual({ kind: "none" });
+  });
+});
+
+describe("mouse wheel steps", () => {
+  // Recorded on Jan's mouse in Chrome on macOS (2026-10-15): [deltaX, wheelDeltaX] of one slow
+  // notch, and an event whose delta happens to be about a third of its wheelDelta.
+  const notch: [number, number][] = [
+    [-4.000244140625, 120],
+    [-31.98486328125, 120],
+    [-96.1627197265625, 240],
+    [-129.541015625, 360],
+  ];
+  const mouse = (deltaX: number, wheelDeltaX: number, mods: { shiftKey?: boolean } = {}) => ({
+    deltaX,
+    deltaY: 0,
+    deltaMode: 0,
+    wheelDeltaX,
+    wheelDeltaY: 0,
+    ctrlKey: false,
+    shiftKey: mods.shiftKey ?? false,
+  });
+
+  it("tells a mouse wheel from a trackpad", () => {
+    for (const [dx, wx] of notch) expect(isMouseWheel(mouse(dx, wx))).toBe(true);
+    expect(isMouseWheel(mouse(-320.029296875, 960))).toBe(true);
+    // Chrome's trackpad: wheelDelta is -3 × delta, also when that is a multiple of 120.
+    expect(isMouseWheel(mouse(-12.5, 37))).toBe(false);
+    expect(isMouseWheel(mouse(40, -120))).toBe(false);
+    // No wheelDelta counts as trackpad; line mode (Firefox, one event per notch) keeps its ticks.
+    expect(isMouseWheel({ deltaX: 30, deltaY: 0, deltaMode: 0 })).toBe(false);
+    expect(isMouseWheel({ deltaX: 3, deltaY: 0, deltaMode: 1, wheelDeltaX: -120 })).toBe(false);
+    // Vertical: wheelDeltaY decides.
+    expect(isMouseWheel({ deltaX: 0, deltaY: -75.2, deltaMode: 0, wheelDeltaY: 120 })).toBe(true);
+  });
+
+  it("pans 2 % of the plot per mouse event and zooms a quarter tick, whatever the delta", () => {
+    const f = new WheelFrame();
+    for (const [dx, wx] of notch) f.add(wheelAction(mouse(dx, wx)), 0);
+    // One slow notch: 4 events, 8 % of the plot to the left (raw deltas would be 262 px).
+    expect(f.take().share).toBeCloseTo(-0.08, 12);
+    expect(wheelAction(mouse(240.69, -720))).toEqual({ kind: "panStep", share: 0.02 });
+    const zoom = wheelAction(mouse(240.69, -720, { shiftKey: true }));
+    if (zoom.kind === "zoom") expect(zoom.factor).toBeCloseTo(2 ** (1 / 20), 12);
+    else expect.fail("expected zoom");
+    // A trackpad swipe still pans by its pixels.
+    expect(wheelAction(mouse(40, -120))).toEqual({ kind: "pan", px: 40 });
   });
 });
 

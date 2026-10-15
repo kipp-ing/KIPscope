@@ -30,12 +30,20 @@ Y-axis ticks SHALL use one SI prefix per axis, chosen from the largest absolute 
 - **Evidence:** UI check (zoomed screenshot of the axis)
 
 ### Requirement: Horizontal swipe pans
-A wheel event over a plot without Ctrl or Shift whose horizontal delta is more than twice its vertical delta SHALL pan the time range: a delta of d pixels moves the range by d plot pixels' worth of time, keeping the span. Origin: replaces "Wheel pan", whose Shift+wheel pan D-025 turns into a zoom; a horizontal swipe takes nothing from the page, which does not scroll sideways; the factor 2 keeps diagonal scrolls from panning (design N5, Jan's call Q5).
+A wheel event over a plot without Ctrl or Shift whose horizontal delta is more than twice its vertical delta SHALL pan the time range: a delta of d pixels moves the range by d plot pixels' worth of time, keeping the span; a mouse wheel event pans by "Mouse wheel steps". Origin: replaces "Wheel pan" (D-025 turns Shift+wheel into a zoom); the page does not scroll sideways; the factor 2 keeps diagonal scrolls from panning (design N5, Jan's call Q5).
 
 #### Scenario: Horizontal swipe pans
 - **WHEN** wheel events arrive without modifier with (Δx 50, Δy 10), (Δx 30, Δy 20) and (Δx 0, Δy 50) over a plot 500 px wide showing 2 min
 - **THEN** the first pans by 12 s, the second and third change no range and are left to the page
 - **Evidence:** `apps/web/test/zoom.test.ts` › "classifies wheel events: plain scrolls, Ctrl or Shift zooms, horizontal swipe pans"; UI check on a trackpad only, else `not_run`
+
+### Requirement: Mouse wheel steps
+A mouse wheel event in pixel mode SHALL move by a fixed step whatever its delta: a pan by 2 % of the plot width, a zoom by a quarter tick (2^(1/20)). It is a mouse event when Chrome's `wheelDelta` is a non-zero multiple of 120 and not exactly 3 × the pixel delta (a trackpad's); other events keep their deltas. Origin: D-030 (Jan: „on my mouse … wheel oversensitive"; one slow notch arrives as 4–7 accelerated events, over 1000 px in all).
+
+#### Scenario: One slow notch
+- **WHEN** the events (Δx −4.0, wheelDelta 120), (−32.0, 120), (−96.2, 240), (−129.5, 360) arrive over a plot showing 10 min, then a trackpad event (Δx 40, wheelDelta −120)
+- **THEN** the notch pans the range 8 % (48 s) to the left, and the trackpad event pans by 40 plot pixels
+- **Evidence:** `apps/web/test/zoom.test.ts` › "tells a mouse wheel from a trackpad", "pans 2 % of the plot per mouse event and zooms a quarter tick, whatever the delta"; UI check with Jan's mouse and trackpad only, else `not_run`
 
 ## MODIFIED Requirements
 
@@ -66,10 +74,10 @@ The plot crosshair SHALL be hidden when the pointer leaves the plot and right af
 - **Evidence:** UI check (screenshots after each key)
 
 ### Requirement: Wheel zoom step
-With Ctrl or Shift held, a wheel event over a plot SHALL zoom the time span centred on the pointer: one tick scales it by 2^(1/5), so five ticks double or halve the span, and one event zooms by at most five ticks (at most ×2). A tick is 100 px of delta in pixel mode, 3 lines in line mode, and one page in page mode counts as five ticks. The delta is the vertical one, or the horizontal one when that is larger (macOS turns Shift+wheel into a horizontal delta). A trackpad pinch (a wheel event with Ctrl set by the browser) SHALL zoom the same way, and the browser's own page zoom SHALL NOT happen over a plot. Origin: D-025 („Ctrl+wheel or Shift+wheel zooms the chart under the pointer"); step size: lead decision (rounds.md round 5 of `improve-window-workflow`), the exact feel is Jan's to judge.
+With Ctrl or Shift held, a wheel event over a plot SHALL zoom the time span centred on the pointer (a mouse wheel event by "Mouse wheel steps"): one tick scales it by 2^(1/5), so five ticks double or halve the span, and one event zooms by at most five ticks (at most ×2). A tick is 100 px of delta in pixel mode, 3 lines in line mode, and one page in page mode counts as five ticks. The delta is the vertical one, or the horizontal one when that is larger (macOS turns Shift+wheel into a horizontal delta). A trackpad pinch (a wheel event with Ctrl set by the browser) SHALL zoom the same way, and the browser's own page zoom SHALL NOT happen over a plot. Origin: D-025 („Ctrl+wheel or Shift+wheel zooms the chart under the pointer"); step size: lead decision (rounds.md round 5 of `improve-window-workflow`), the exact feel is Jan's to judge.
 
 #### Scenario: Five ticks out
-- **WHEN** a window shows 2026-10-13T09:56:00Z–09:58:00Z (2 min) and the user turns the mouse wheel five ticks outward with Ctrl held and the pointer at the centre of the plot
+- **WHEN** a window shows 2026-10-13T09:56:00Z–09:58:00Z (2 min) and five wheel ticks of 100 px each (not a mouse wheel by "Mouse wheel steps") arrive outward with Ctrl held and the pointer at the centre of the plot
 - **THEN** the header range spans about 4 min (±10 %), centred on about 09:57, and the page is not zoomed
 - **Evidence:** UI check (screenshots of the header before and after) if the browser automation can hold Ctrl during a wheel, else `not_run` with the test as evidence; `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event"
 

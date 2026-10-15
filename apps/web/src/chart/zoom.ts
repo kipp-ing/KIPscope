@@ -66,6 +66,8 @@ const WHEEL_MAX_FACTOR = WHEEL_TICK_FACTOR ** WHEEL_MAX_TICKS;
 export class WheelFrame {
   factor = 1;
   px = 0;
+  /** Pan in shares of the plot width (mouse wheel steps). */
+  share = 0;
   /** Pointer x in CSS px of the latest zoom event. */
   x = 0;
 
@@ -77,13 +79,15 @@ export class WheelFrame {
       );
       this.x = x;
     } else if (action.kind === "pan") this.px += action.px;
+    else if (action.kind === "panStep") this.share += action.share;
   }
 
   /** The joined step, and resets for the next frame. */
-  take(): { factor: number; px: number; x: number } {
-    const step = { factor: this.factor, px: this.px, x: this.x };
+  take(): { factor: number; px: number; share: number; x: number } {
+    const step = { factor: this.factor, px: this.px, share: this.share, x: this.x };
     this.factor = 1;
     this.px = 0;
+    this.share = 0;
     return step;
   }
 }
@@ -91,15 +95,46 @@ export class WheelFrame {
 export type WheelAction =
   | { kind: "zoom"; factor: number }
   | { kind: "pan"; px: number }
+  /** A mouse wheel step: pan by a share of the plot width. */
+  | { kind: "panStep"; share: number }
   | { kind: "none" };
 
 /** A swipe pans only when its horizontal delta is more than this times the vertical one (design N5). */
 const PAN_RATIO = 2;
 
 /**
+ * One mouse wheel event pans this share of the plot width and zooms this many wheel ticks,
+ * whatever its delta. macOS accelerates a mouse wheel: one slow notch arrives as 4–7 events of
+ * 4 … 300 px (Jan's mouse, 2026-10-15), more than a plot width in all; per event a notch pans
+ * about 8–14 % and zooms about 15–27 %.
+ */
+const MOUSE_PAN_SHARE = 0.02;
+const MOUSE_ZOOM_TICKS = 0.25;
+
+/**
+ * True for an accelerated mouse wheel in pixel mode rather than a trackpad: Chrome's legacy
+ * wheelDelta in whole notches of 120 that is not 3 × the pixel delta (a trackpad's). Line and
+ * page deltas (Firefox) send one event per notch and keep their tick count.
+ */
+export function isMouseWheel(e: {
+  deltaX: number;
+  deltaY: number;
+  deltaMode: number;
+  wheelDeltaX?: number;
+  wheelDeltaY?: number;
+}): boolean {
+  if (e.deltaMode !== 0) return false;
+  const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+  const wheel = Math.abs((horizontal ? e.wheelDeltaX : e.wheelDeltaY) ?? 0);
+  const delta = Math.abs(horizontal ? e.deltaX : e.deltaY);
+  return wheel > 0 && wheel % 120 === 0 && wheel !== 3 * delta;
+}
+
+/**
  * What a wheel event over a plot does (design N1): Ctrl or Shift (a pinch sets Ctrl) zooms at
  * the pointer, by the horizontal delta when it is the larger one (macOS turns Shift+wheel into
  * one); a mostly horizontal swipe pans; anything else is left to the page. Meta is no modifier.
+ * A mouse wheel event is one fixed step (isMouseWheel), a trackpad's follows its delta.
  */
 export function wheelAction(e: {
   deltaX: number;
@@ -107,12 +142,21 @@ export function wheelAction(e: {
   deltaMode: number;
   ctrlKey: boolean;
   shiftKey: boolean;
+  wheelDeltaX?: number;
+  wheelDeltaY?: number;
 }): WheelAction {
+  const mouse = isMouseWheel(e);
   if (e.ctrlKey || e.shiftKey) {
     const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-    return { kind: "zoom", factor: wheelZoomFactor(delta, e.deltaMode) };
+    return mouse
+      ? { kind: "zoom", factor: WHEEL_TICK_FACTOR ** (Math.sign(delta) * MOUSE_ZOOM_TICKS) }
+      : { kind: "zoom", factor: wheelZoomFactor(delta, e.deltaMode) };
   }
-  if (Math.abs(e.deltaX) > PAN_RATIO * Math.abs(e.deltaY)) return { kind: "pan", px: e.deltaX };
+  if (Math.abs(e.deltaX) > PAN_RATIO * Math.abs(e.deltaY)) {
+    return mouse
+      ? { kind: "panStep", share: Math.sign(e.deltaX) * MOUSE_PAN_SHARE }
+      : { kind: "pan", px: e.deltaX };
+  }
   return { kind: "none" };
 }
 

@@ -924,18 +924,18 @@ export function TimeseriesWindow({
     let wheelRaf: number | undefined;
     const flushWheel = () => {
       wheelRaf = undefined;
-      const { factor, px, x } = wheelFrame.take();
+      const { factor, px, share, x } = wheelFrame.take();
       let min = u.scales.x?.min ?? 0;
       let max = u.scales.x?.max ?? 1;
       if (factor !== 1) {
         const at = u.posToVal(x, "x");
         [min, max] = [at - (at - min) * factor, at + (max - at) * factor];
       }
-      if (px !== 0) {
-        const delta = (px / u.over.clientWidth) * (max - min);
+      if (px !== 0 || share !== 0) {
+        const delta = (px / u.over.clientWidth + share) * (max - min);
         [min, max] = [min + delta, max + delta];
       }
-      if (factor !== 1 || px !== 0) applyRangeRef.current(u, min, max);
+      if (factor !== 1 || px !== 0 || share !== 0) applyRangeRef.current(u, min, max);
     };
     const onWheel = (e: WheelEvent) => {
       const action = wheelAction(e);
