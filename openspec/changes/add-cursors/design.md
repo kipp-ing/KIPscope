@@ -107,7 +107,7 @@ Alternatives (Q4): act on every window (each one step back in its own history, w
 
 - A values row's grip is a `DragSource` (the same shape as a legend row), so move, Alt/Ctrl copy, ghost text and hint are those of legend drags. The spec follows D-023 literally: "like any window", so a plain drop of a legend row into a values window moves it (Q2).
 - `canDrop`, `canAdd` and `dropStateFor` skip the unit check when the target is a values window. "Already shows the signal" still refuses.
-- "+ New window" is rendered during every drag as a flex sibling below `<main>` inside `.workspace`; `<main>` shrinks by the zone's height, so the zone sits at the viewport bottom and never covers a window (close-out, feedback 2026-10-15 item 1).
+- "+ New window" is always rendered as a flex sibling below `<main>` inside `.workspace` and keeps its space (about 40 px); it is hidden while no drag runs and becomes a drop target (`data-drop="new"`) only during a drag. Nothing moves when a drag starts or ends, so the window under the pointer stays under it and the zone never covers a window (close-outs, feedback 2026-10-15: power users item 1, efficiency testers item 3; the earlier mount-on-drag shrank `<main>` and slid the zone under the pointer).
 - The auto-scroll bands become the 48 px below the sticky option bar and the 48 px above the drop zone, both measured from their bounding boxes. Pointing at the zone itself does not scroll, so resting on it to drop does not run the list away.
 
 Numbers, each checked at a factor of two:
@@ -344,7 +344,7 @@ export function defaultCursorTime(range: { from: bigint; to: bigint }, cursor: C
 
 ### S5: App wiring (`App.tsx`, `chart/drag.ts`)
 
-- App renders `OptionBar` sticky at the top of `<main>`, removes the top bar's link toggle, renders `ValuesWindow` for `kind === "values"` and `TimeseriesWindow` otherwise, and renders "+ New window" below `<main>` during every drag (C7).
+- App renders `OptionBar` sticky at the top of `<main>`, removes the top bar's link toggle, renders `ValuesWindow` for `kind === "values"` and `TimeseriesWindow` otherwise, and renders "+ New window" below `<main>`, visible during every drag (C7).
 - App owns `cursorPreview`. It passes `cursors` (effective) to timeseries windows, and `cursors` (committed) plus `dragging` to values windows. `onCursorCommit` sends `{type: "cursor.set", cursor, t: t.toString()}`.
 - `drag.ts`: `canDrop`, `canAdd` and `dropStateFor` take `WorkspaceWindow[]` and skip the unit check for values targets. A values row is a `DragSource`. A drop of a values row on "new" while no timeseries window exists sends `window.create` (with the extent) and then `window.moveSignal` (C6).
 - Kind guards: insets merge only timeseries IDs. `toRange` and `onReset` run only on timeseries windows. Backspace over a values window falls back to `lastZoomed`. A linked "New window" add needs a timeseries window to take the shared range from, else it uses the extent.

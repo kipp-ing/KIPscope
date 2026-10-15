@@ -651,17 +651,16 @@ export function App() {
             <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
           )}
         </main>
-        {activeDrag && (
-          // Below the window list, not over it: the list shrinks by the zone's height, so the zone
-          // stays at the viewport bottom wherever the list is scrolled and never covers a window (C7).
-          <div
-            ref={dropRef}
-            className={`drop-new${activeDrag.target?.kind === "new" ? " over" : ""}`}
-            data-drop="new"
-          >
-            + New window
-          </div>
-        )}
+        {/* Below the window list, not over it, so it stays at the viewport bottom wherever the list
+            is scrolled and never covers a window (C7). Its space is kept while no drag runs (hidden),
+            so the list does not shrink when a drag starts and nothing moves under the pointer. */}
+        <div
+          ref={dropRef}
+          className={`drop-new${activeDrag ? "" : " idle"}${activeDrag?.target?.kind === "new" ? " over" : ""}`}
+          {...(activeDrag ? { "data-drop": "new" } : { "aria-hidden": true })}
+        >
+          + New window
+        </div>
       </div>
       {activeDrag && (
         <div className="drag-ghost" style={{ left: activeDrag.x + 12, top: activeDrag.y + 12 }}>

@@ -231,7 +231,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Window list plus, during a drag, the "+ New window" zone below it (design C7). */
+/* Window list plus the "+ New window" zone below it, shown during a drag (design C7). */
 .workspace {
   display: flex;
   flex-direction: column;
@@ -420,17 +420,23 @@ button.link {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* Below <main> during every drag, at the viewport bottom; <main> shrinks by its height, so the zone
-   covers no window and a drop goes to what is under the pointer (design C7). */
+/* Below <main>, at the viewport bottom; shown during every drag, so the zone covers no window and a
+   drop goes to what is under the pointer (design C7). Its space stays reserved without a drag, so
+   <main> keeps its height when a drag starts or ends. */
 .drop-new {
   flex: none;
-  margin: 4px 16px 12px;
-  padding: 18px;
+  margin: 4px 16px 8px;
+  padding: 10px;
   border: 2px dashed var(--accent);
   border-radius: 6px;
   color: var(--accent);
   text-align: center;
   background: linear-gradient(rgb(37 99 235 / 0.04), rgb(37 99 235 / 0.04)), var(--bg);
+}
+
+/* Hidden boxes take no hits, so targetAt never finds the idle zone. */
+.drop-new.idle {
+  visibility: hidden;
 }
 
 .drop-new.over {

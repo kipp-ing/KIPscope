@@ -9,7 +9,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { fetchCatalog } from "../api.ts";
 import { formatSnaValue, SNA_ALPHA } from "../chart/build.ts";
 import type { ExplorerDragSource } from "../chart/drag.ts";
-import { isTextField } from "../keys.ts";
+import { isSearchKey } from "../keys.ts";
 import {
   CHUNK,
   HIDE_GRACE_MS,
@@ -183,8 +183,7 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging, 
   // `/` outside a text field focuses the search (design E8).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (isTextField(document.activeElement)) return;
+      if (!isSearchKey(e, document.activeElement)) return;
       e.preventDefault();
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -242,6 +241,8 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging, 
         value={query}
         onChange={(e) => changeQuery(e.target.value)}
         onKeyDown={onKeyDown}
+        // Typing after focusing replaces the last query.
+        onFocus={(e) => e.currentTarget.select()}
         onBlur={() => card?.byKey && closeCard()}
         aria-label="Search signals"
         role="combobox"
