@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-037: Corner grip, drop below the windows, browser cache (2026-10-15)
+
+- **Decision:** Jan's next three requests, in this order (lead's sorting, small first): (1) every timeseries window gets a visible macOS-style grip in its lower right corner that drags the height (width stays from the grid); (2) dropping a signal on the free area below the last window (or on an empty window list) creates a new timeseries window with it, like "+ New window"; gaps between windows stay no target; (3) series data loaded once stays in the browser's memory until the tab closes, with a size limit (oldest dropped first), so zooming and panning back is fast. Not persisted across reloads. (1) and (2) form one change, (3) its own.
+- **Why:** Jan: „signal caching. stuff that has been loaded once shall stay in the browser to be faster, if thats possible. then a drag of a signal to empty space create new time series. then window sizing is possible (look like i managed once) therer should be the apple like curved handle lower right to grab." Picks: height only, until the tab closes, free area below the windows.
+
 ## D-036: Display name conventions (2026-10-15)
 
 From the archived change `add-display-names` (design N1, N5, N6, N7, open questions Q1–Q4 built as recommended); details there.
