@@ -168,3 +168,16 @@ Range, zoom and plot settings SHALL NOT apply to a values window: linked ranges,
 - **WHEN** window 1 was zoomed twice and the pointer rests over the values window when the user presses Backspace
 - **THEN** window 1 goes back one step and the values window is unchanged
 - **Evidence:** UI check (header of window 1 before and after)
+
+### Requirement: Loading state in value cells
+While the value for a cell's current cursor time and mode is loading, the cell SHALL show a state distinct from `—` (the form is free), with the tooltip "loading"; `—` SHALL mean only "no value". Whenever diff mode is on and B is on, the B cells SHALL be requested and filled like the A cells. Origin: power-user bug (feedback 2026-10-15, item 3: `—` for 1–3 s read as "no data"; B once stayed `—` with data).
+
+#### Scenario: Cursor moved from the CLI
+- **WHEN** the values window lists V_ANZ and a caller posts `cursor.move {cursor: "a", by: "100000000"}`
+- **THEN** until the new value arrives the cell shows the loading state with tooltip "loading", never `—`, and then the value
+- **Evidence:** `apps/web/test/values.test.ts` › "shows a loading state distinct from no value"; UI check (screenshot right after the command)
+
+#### Scenario: B always fills
+- **WHEN** diff mode is on and B is set five times with `cursor.set` to times where V_ANZ has data (2026-10-13T13:08:00.1Z … 13:08:00.5Z)
+- **THEN** after each command the B cell shows a number, never `—`
+- **Evidence:** `apps/web/test/values.test.ts` › "requests B whenever diff mode and B are on"; UI check (screenshot after the last command)

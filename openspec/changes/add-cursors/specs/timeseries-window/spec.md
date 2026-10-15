@@ -105,3 +105,27 @@ The bar's "Back" SHALL step back the zoom history of its target window, and "Res
 - **WHEN** "Link time axes" is off, window 1 was zoomed once and then window 2 zoomed once, and the user clicks the bar's "Back"
 - **THEN** the tooltip read "Back · Window 2", window 2 shows its previous range, and window 1 is unchanged
 - **Evidence:** `apps/web/test/bar.test.ts` › "targets the window zoomed last, else the first timeseries window"; UI check (headers before and after)
+
+### Requirement: Drop lands under the pointer
+A drop SHALL go to the target under the pointer at release, never to a target the pointer left earlier. While dragging, space of the drop zone's height SHALL be reserved below the last window, so the sticky "+ New window" zone never covers a window. Origin: power-user bug (feedback 2026-10-15, item 1: three stray windows); necessary consequence of "New-window drop zone stays visible".
+
+#### Scenario: Values window at the bottom
+- **WHEN** a values window is the last window, the list is scrolled to the end, and the user drags the `COMBI_412h.V_ANZ` explorer row onto the lower part of the values window and releases
+- **THEN** the values window lists V_ANZ, no new window appears, and while dragging the "+ New window" zone sits below the values window without covering it
+- **Evidence:** UI check (screenshot while dragging, screenshot and revision after the drop)
+
+### Requirement: Header shows the plotted range
+The window header's range SHALL always equal the range the plot shows, also during a zoom or pan preview before the server accepted it. Origin: power-user bug (feedback 2026-10-15, item 2: the header lagged one zoom step behind the axis).
+
+#### Scenario: Three quick wheel zooms
+- **WHEN** a window shows 2026-10-13T13:08:00Z–13:08:03Z and the user wheel-zooms three times in quick succession
+- **THEN** after each step, and during the preview, the header's start and end match the first and last time of the axis; no screenshot shows the range of the step before
+- **Evidence:** UI check (screenshots after each step); `apps/web/test/zoom.test.ts` › "shows the preview range in the header" if the header range comes from a pure helper, else the UI check alone
+
+### Requirement: New windows scroll into view
+A window created by "+ Values window" or by a drop on "+ New window" SHALL be scrolled into view. Origin: power-user bug (feedback 2026-10-15, item 4: the new window was appended out of sight).
+
+#### Scenario: Values window below the fold
+- **WHEN** six windows fill more than the viewport, the list is scrolled to the top, and the user clicks "+ Values window", later drops a legend row on "+ New window"
+- **THEN** each new window is fully visible right after it appears, without manual scrolling
+- **Evidence:** UI check (screenshot after each creation)

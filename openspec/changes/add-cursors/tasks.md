@@ -66,6 +66,17 @@ Test names are those the specs cite as evidence. The tasks assume the recommende
 - [x] 5.1 The UI user walks through every UI check in `specs/cursors/spec.md`, `specs/values-window/spec.md` and `specs/timeseries-window/spec.md` on `smart451`, 2026-10-13 around 13:08:00Z (V_ANZ, DVL, PTC_HV_Volt) and 09:56:59Z–09:57:01Z (V_ANZ SNA). The setup uses linked and unlinked windows, a values window, six windows for the sticky zone and auto-scroll, and `curl` for exact cursor times. One screenshot per scenario. The revision is read in the top bar where a scenario counts commands.
 - [x] 5.2 Run the `curl` commands named in the specs against the dev server: `/api/value` for V_ANZ at 13:08:00.093Z (`raw` 23), 13:08:00.1435Z (`interpolated` 22.5 and `held` 23 with `mode=step`), 09:57:00Z (`sna`) and 09:56:59.787Z (`next_sna`); the 400 for an out-of-bounds `t`; `GET /api/workspace` cursors after a restart (`{"diff":false}`); the values-window create; and `/api/render-status` after a CLI `cursor.set`.
 
+## 6. Close-out (power users)
+
+From docs/feedback/2026-10-15-cursors-power-users.md, items 1–5 (items 7–13 are Jan's questions and not in this change).
+
+- [ ] 6.1 Drop at the pointer (`App.tsx`, `styles.css`): the release resolves the target under the pointer at that moment; reserve the drop zone's height below the last window during a drag. Verify the UI check "Values window at the bottom" (timeseries-window "Drop lands under the pointer").
+- [ ] 6.2 Header range (`chart/TimeseriesWindow.tsx`, `chart/zoom.ts` if a helper is extracted): the header shows the previewed range. Verify the UI check "Three quick wheel zooms" and, if pure, `apps/web/test/zoom.test.ts` › "shows the preview range in the header".
+- [ ] 6.3 Values loading and B (`values/*`): a loading state distinct from `—` with tooltip "loading"; B is requested whenever diff and B are on. Verify `apps/web/test/values.test.ts` › "shows a loading state distinct from no value", "requests B whenever diff mode and B are on", and the UI checks of values-window "Loading state in value cells".
+- [ ] 6.4 Duplicate add (`packages/shared/src/apply.ts`): `window.addSignal` rejects with `already_in_window` for every window kind. Verify `packages/shared/test/apply.test.ts` › "rejects adding a signal the window already shows".
+- [ ] 6.5 Scroll into view (`App.tsx`): windows created by "+ Values window" or a drop on "+ New window" scroll into view. Verify the UI check "Values window below the fold" (timeseries-window "New windows scroll into view").
+- [ ] 6.6 Tester writes the four tests named in 6.2–6.4 (the zoom test only if 6.2 extracts a pure helper) and runs `pnpm build && pnpm test && pnpm lint`; the UI user walks the UI checks of 6.1–6.3 and 6.5 on smart451.
+
 ## Workflow follow-up
 
 - Before the build: the lead asks Jan design Q1–Q4 and updates this change if an answer differs from the recommendation.

@@ -124,3 +124,11 @@ A values window SHALL accept rename, remove, add, remove, move or copy of signal
 - **WHEN** `window.setRange`, `window.setHeight {height: 400}` and `window.setDisplay {envelope: true}` are applied to a values window
 - **THEN** each is rejected with `invalid_command` and the revision does not change; `window.setDisplay {mode: "step"}` is accepted and sets its "Between points" mode to hold
 - **Evidence:** `packages/shared/test/apply.test.ts` › "rejects range, height and envelope commands on a values window"
+
+### Requirement: No duplicate signal in a window
+`window.addSignal` SHALL reject a signal the target window already shows with `already_in_window`, for every window kind, and leave the workspace unchanged. Origin: power-user bug (feedback 2026-10-15, item 5: V_ANZ twice in one window); values-window "Signals into a values window" (a window already showing the signal refuses it); same code as workspace-state "Move and copy a signal between windows".
+
+#### Scenario: Add V_ANZ twice
+- **WHEN** a timeseries window and a values window each show `COMBI_412h.V_ANZ` and `window.addSignal` adds V_ANZ to each again
+- **THEN** both commands are rejected with `already_in_window` and the revision does not change
+- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects adding a signal the window already shows"
