@@ -13,17 +13,17 @@ Precondition: `add-cursors` and `add-cli` are archived first (proposal "Base and
 
 ## 1. packages/shared
 
-- [ ] 1.1 Add `src/numfmt.ts` with `takesPrefix`, `formatQuantity` and `formatAxisTicks` exactly as design S1, N7 (round unscaled first, then shift by the prefix) and N8; export from `index.ts`. Verify `packages/shared/test/numfmt.test.ts` from 4.1 passes (number-format "Pinned values", "Four digits", "Prefixed and prefix-free units"; timeseries-window "Pinned ticks").
+- [x] 1.1 Add `src/numfmt.ts` with `takesPrefix`, `formatQuantity` and `formatAxisTicks` exactly as design S1, N7 (round unscaled first, then shift by the prefix) and N8; export from `index.ts`. Verify `packages/shared/test/numfmt.test.ts` from 4.1 passes (number-format "Pinned values", "Four digits", "Prefixed and prefix-free units"; timeseries-window "Pinned ticks").
 - [ ] 1.2 Add `src/timenav.ts` with `MIN_SPAN_NS`, `navAnchor`, `resolveTimeNav`, `zoomAround`, `panBy`, `spanAround` per design S2 and N2 (forms, period of the last digit, latest occurrence in the view, `..` and ` – `, `a`/`b`, `d` = 24 h, errors via `parseTime`/`parseDuration` messages, clamping); export from `index.ts`. Verify `packages/shared/test/timenav.test.ts` from 4.1 passes (time-navigation "Range forms", "Header text pasted back", "Date of a time of day", "Bad inputs", "Zoom in around A", "Keys on a 4 s view").
-- [ ] 1.3 In `src/workspace.ts` and `src/apply.ts` add `Digits`, `WorkspaceOptions`, `Workspace.options` (`EMPTY_WORKSPACE.options = {digits: 3}`) and the command `workspace.setOptions` per design S3. Verify the `apply.test.ts` case "sets the digits option and rejects other values" from 4.1 passes, the existing ones stay green, and `pnpm build` type-checks (web compile errors from the new field are fixed in 3.4).
+- [x] 1.3 In `src/workspace.ts` and `src/apply.ts` add `Digits`, `WorkspaceOptions`, `Workspace.options` (`EMPTY_WORKSPACE.options = {digits: 3}`) and the command `workspace.setOptions` per design S3. Verify the `apply.test.ts` case "sets the digits option and rejects other values" from 4.1 passes, the existing ones stay green, and `pnpm build` type-checks (web compile errors from the new field are fixed in 3.4).
 
 ## 2. apps/cli
 
-- [ ] 2.1 In `src/args.ts` add the form `digits 3|4` → `{"type":"workspace.setOptions","digits":N}` (other values: usage error naming `3|4`) and the line in the `--help` usage. Verify `apps/cli/test/args.test.ts` › "maps every command form to its command" and `apps/cli/test/cli.test.ts` › "sets the digits option over HTTP" from 4.1 pass (cli "Digits option command").
+- [x] 2.1 In `src/args.ts` add the form `digits 3|4` → `{"type":"workspace.setOptions","digits":N}` (other values: usage error naming `3|4`) and the line in the `--help` usage. Verify `apps/cli/test/args.test.ts` › "maps every command form to its command" and `apps/cli/test/cli.test.ts` › "sets the digits option over HTTP" from 4.1 pass (cli "Digits option command").
 
 ## 3. apps/web/src
 
-- [ ] 3.1 Number display (`values/format.ts`, `values/ValuesWindow.tsx`, `values/values.css`, `chart/readout.ts`, `explorer/format.ts`, `explorer/SignalCard.tsx`), per design N4, N7, N9 and S4:
+- [x] 3.1 Number display (`values/format.ts`, `values/ValuesWindow.tsx`, `values/values.css`, `chart/readout.ts`, `explorer/format.ts`, `explorer/SignalCard.tsx`), per design N4, N7, N9 and S4:
   - `formatCell`/`deltaCell` take `unit` and `digits` and print via `formatQuantity`; tag `avg`; reasons `empty_bucket`, `outside_range`; neighbour tooltips stay `formatCursorNumber`.
   - Values window: prop `digits`; cells carry the unit; the unit column goes.
   - `chart/readout.ts`: `ReadoutValue`, `chartValueAt`, `readoutCell`, `readoutDelta`.

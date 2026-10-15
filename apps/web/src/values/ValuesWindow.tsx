@@ -2,6 +2,7 @@ import {
   type CommandInput,
   type CommandResult,
   type CursorState,
+  type Digits,
   type RenderError,
   type SignalInfo,
   type ValuesMode,
@@ -43,6 +44,8 @@ interface Props {
   cursors: CursorState;
   /** A cursor line is being dragged: dim the cells. */
   dragging: boolean;
+  /** Significant digits of the values (workspace option, number-format). */
+  digits: Digits;
   info: (signalId: string) => SignalInfo | undefined;
   colorOf: (signalId: string) => string;
   onCommand: (command: CommandInput) => Promise<CommandResult>;
@@ -110,7 +113,15 @@ function WindowTitle({
  * One value cell (state from cellState): "—" while its cursor is off, the request's error, the
  * loading state until the value for the current time arrives, then the value.
  */
-function ValueCell({ state }: { state: ValueState | undefined }) {
+function ValueCell({
+  state,
+  unit,
+  digits,
+}: {
+  state: ValueState | undefined;
+  unit: string | undefined;
+  digits: Digits;
+}) {
   if (state?.status === "error") {
     return (
       <td className="value error" title={state.error}>
@@ -119,7 +130,7 @@ function ValueCell({ state }: { state: ValueState | undefined }) {
     );
   }
   const r = state?.result;
-  const cell = formatCell(r?.value, r?.at, r?.next);
+  const cell = formatCell(r?.value, r?.at, r?.next, unit, digits);
   return <CellView cell={state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
@@ -141,6 +152,7 @@ export function ValuesWindow({
   revision,
   cursors,
   dragging,
+  digits,
   info,
   colorOf,
   onCommand,
@@ -225,7 +237,6 @@ export function ValuesWindow({
           <thead>
             <tr>
               <th>Signal</th>
-              <th>Unit</th>
               <th className="value">A</th>
               {diff && <th className="value">B</th>}
               {diff && <th className="value">Δ</th>}
@@ -240,7 +251,8 @@ export function ValuesWindow({
               const keyB = `${s.id}|b`;
               const stateA = cellState(loader.get(keyA), requestOf.get(keyA));
               const stateB = cellState(loader.get(keyB), requestOf.get(keyB));
-              const delta = deltaCell(stateA?.result?.value, stateB?.result?.value);
+              const unit = meta?.unit;
+              const delta = deltaCell(stateA?.result?.value, stateB?.result?.value, unit, digits);
               return (
                 <tr key={s.id} title={meta?.description}>
                   <td>
@@ -255,9 +267,8 @@ export function ValuesWindow({
                       <span className="sig">{name}</span>
                     </span>
                   </td>
-                  <td className="unit">{meta?.unit && `[${meta.unit}]`}</td>
-                  <ValueCell state={stateA} />
-                  {diff && <ValueCell state={stateB} />}
+                  <ValueCell state={stateA} unit={unit} digits={digits} />
+                  {diff && <ValueCell state={stateB} unit={unit} digits={digits} />}
                   {diff && (
                     <CellView
                       cell={

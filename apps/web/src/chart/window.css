@@ -129,6 +129,23 @@
   line-height: 14px;
 }
 
+/* Δt label at the top of the plot between the cursor flags (design N3). */
+.window .plot .cursor-delta {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--cursor-color);
+  border: 1px solid var(--cursor-color);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .window .height-handle {
   height: 6px;
   margin: 0 -12px;
@@ -148,6 +165,61 @@
   cursor: grab;
   user-select: none;
   touch-action: none;
+}
+
+/* Readout (design N3): cursor times above the legend rows; with a cursor on, the legend is a
+   grid so the A, B and Δ columns align across rows (each row's cells are grid items). */
+.window .readout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.window .signals.readout {
+  display: grid;
+  grid-template-columns: repeat(7, auto);
+  justify-content: start;
+  align-items: center;
+  gap: 2px 10px;
+}
+
+.window .signals.readout.diff {
+  grid-template-columns: repeat(9, auto);
+}
+
+.window .signals.readout li {
+  display: contents;
+}
+
+.window .signals.readout li.empty {
+  display: block;
+  grid-column: 1 / -1;
+}
+
+.window .signals .value {
+  text-align: right;
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.window .signals .value .tag {
+  margin-left: 4px;
+  color: var(--muted);
+  font-family: system-ui, sans-serif;
+  font-size: 10px;
+}
+
+.window .signals .value.sna-value {
+  color: var(--sna);
+  font-weight: 600;
+}
+
+.window .signals .value.loading {
+  opacity: 0.45;
 }
 
 .window .signals .side {

@@ -437,6 +437,26 @@ describe("window, link, signal and cursor commands", () => {
     });
   });
 
+  it("sets the digits option over HTTP", async () => {
+    await withServer(async (s) => {
+      const four = await cli(s, "digits", "4");
+      expect(four.code, four.stderr.join("")).toBe(0);
+      expect(four.out.revision).toBe(1);
+      expect(four.out.command).toEqual({ type: "workspace.setOptions", digits: 4 });
+      const state = await cli(s, "state");
+      expect(state.code).toBe(0);
+      expect((await s.workspace()).workspace.options).toEqual({ digits: 4 });
+      expect(JSON.stringify(state.out)).toContain('"digits":4');
+
+      // Usage error: exit 2, nothing sent.
+      const before = s.requests.length;
+      const bad = await cli(s, "digits", "5");
+      expect(bad.code).toBe(2);
+      expect(s.requests.length).toBe(before);
+      expect((await s.workspace()).workspace.options).toEqual({ digits: 4 });
+    });
+  });
+
   it("sends a raw command", async () => {
     await withServer(async (s) => {
       const ok = await cli(s, "command", '{"type":"workspace.setLinkTime","linked":false}');

@@ -6,6 +6,7 @@ import {
   historyKey,
   type Range,
   RangePreview,
+  wheelAction,
   wheelZoomFactor,
   ZOOM_HISTORY_LIMIT,
   ZoomHistory,
@@ -145,6 +146,59 @@ describe("wheelZoomFactor", () => {
     expect(wheelZoomFactor(-5000, 0)).toBeCloseTo(0.5, 12);
     expect(wheelZoomFactor(300, 1)).toBeCloseTo(2, 12);
     expect(wheelZoomFactor(3, 2)).toBeCloseTo(2, 12);
+  });
+});
+
+describe("wheelAction", () => {
+  const ev = (
+    deltaX: number,
+    deltaY: number,
+    mods: { ctrlKey?: boolean; shiftKey?: boolean; deltaMode?: number } = {},
+  ) => ({
+    deltaX,
+    deltaY,
+    deltaMode: mods.deltaMode ?? 0,
+    ctrlKey: mods.ctrlKey ?? false,
+    shiftKey: mods.shiftKey ?? false,
+  });
+
+  it("classifies wheel events: plain scrolls, Ctrl or Shift zooms, horizontal swipe pans", () => {
+    // Plain vertical wheel: the page scrolls.
+    expect(wheelAction(ev(0, 100))).toEqual({ kind: "none" });
+    expect(wheelAction(ev(0, -300))).toEqual({ kind: "none" });
+    // Diagonal drift (|dx| <= 2|dy|): still the page.
+    expect(wheelAction(ev(30, 20))).toEqual({ kind: "none" });
+    expect(wheelAction(ev(40, 20))).toEqual({ kind: "none" });
+
+    // Ctrl (pinch included) or Shift zooms by the wheel factor of deltaY.
+    for (const mods of [{ ctrlKey: true }, { shiftKey: true }, { ctrlKey: true, shiftKey: true }]) {
+      const out = wheelAction(ev(0, 100, mods));
+      expect(out.kind).toBe("zoom");
+      if (out.kind === "zoom") expect(out.factor).toBeCloseTo(2 ** (1 / 5), 12);
+      const inward = wheelAction(ev(0, -500, mods));
+      if (inward.kind === "zoom") expect(inward.factor).toBeCloseTo(0.5, 12);
+      else expect.fail("expected zoom");
+    }
+    // Line mode counts like wheelZoomFactor.
+    const lines = wheelAction(ev(0, 3, { ctrlKey: true, deltaMode: 1 }));
+    if (lines.kind === "zoom") expect(lines.factor).toBeCloseTo(2 ** (1 / 5), 12);
+    else expect.fail("expected zoom");
+    // macOS turns Shift+wheel into a horizontal delta: deltaX zooms then.
+    const mac = wheelAction(ev(100, 0, { shiftKey: true }));
+    if (mac.kind === "zoom") expect(mac.factor).toBeCloseTo(2 ** (1 / 5), 12);
+    else expect.fail("expected zoom");
+    const macIn = wheelAction(ev(-500, 0, { shiftKey: true }));
+    if (macIn.kind === "zoom") expect(macIn.factor).toBeCloseTo(0.5, 12);
+    else expect.fail("expected zoom");
+
+    // Horizontal swipe without modifier pans by deltaX pixels when |dx| > 2|dy|.
+    expect(wheelAction(ev(120, 0))).toEqual({ kind: "pan", px: 120 });
+    expect(wheelAction(ev(-80, 10))).toEqual({ kind: "pan", px: -80 });
+    expect(wheelAction(ev(41, 20))).toEqual({ kind: "pan", px: 41 });
+    // Exactly twice is not enough.
+    expect(wheelAction(ev(40, 20))).toEqual({ kind: "none" });
+    // Meta is no zoom modifier.
+    expect(wheelAction({ ...ev(0, 100), metaKey: true } as never)).toEqual({ kind: "none" });
   });
 });
 

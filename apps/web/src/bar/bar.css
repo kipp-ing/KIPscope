@@ -26,3 +26,13 @@
   align-self: stretch;
   background: var(--border);
 }
+
+.option-bar .go-to {
+  width: 16em;
+}
+
+.option-bar .go-to.invalid {
+  border-color: var(--error);
+  outline-color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}

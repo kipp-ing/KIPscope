@@ -744,3 +744,24 @@ describe("cursors and values windows (add-cursors)", () => {
     });
   });
 });
+
+describe("user options (improve-navigation)", () => {
+  it("sets the digits option and rejects other values", () => {
+    expect(EMPTY_WORKSPACE.options).toEqual({ digits: 3 });
+    const four = ok(EMPTY_WORKSPACE, { type: "workspace.setOptions", digits: 4 });
+    expect(four.workspace.options).toEqual({ digits: 4 });
+    const three = ok(four.workspace, { type: "workspace.setOptions", digits: 3 });
+    expect(three.workspace.options).toEqual({ digits: 3 });
+    // No fields: accepted, options unchanged.
+    expect(ok(four.workspace, { type: "workspace.setOptions" }).workspace.options).toEqual({
+      digits: 4,
+    });
+    // Other values fail the schema, as invalid_command does over HTTP.
+    for (const digits of [5, 2, 0, "4", null]) {
+      expect(
+        Command.safeParse({ type: "workspace.setOptions", digits }).success,
+        String(digits),
+      ).toBe(false);
+    }
+  });
+});

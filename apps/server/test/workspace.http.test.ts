@@ -189,6 +189,21 @@ describe("cursor commands over HTTP", () => {
     expect(range.status).toBe(400);
     expect(range.body).toMatchObject({ ok: false, code: "invalid_command" });
   });
+
+  it("applies the options command over HTTP", async () => {
+    const before = (await state()).revision;
+    expect((await state()).workspace.options).toEqual({ digits: 3 });
+    const set = await command({ type: "workspace.setOptions", digits: 4 });
+    expect(set.body).toEqual({ ok: true, revision: before + 1 });
+    expect((await state()).workspace.options).toEqual({ digits: 4 });
+    // Other values are rejected and change nothing.
+    const bad = await command({ type: "workspace.setOptions", digits: 5 });
+    expect(bad.status).toBe(400);
+    expect(bad.body).toMatchObject({ ok: false, code: "invalid_command" });
+    const after = await state();
+    expect(after.revision).toBe(before + 1);
+    expect(after.workspace.options).toEqual({ digits: 4 });
+  });
 });
 
 describe("POST /api/commands, GET /api/workspace", () => {

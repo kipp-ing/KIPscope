@@ -27,7 +27,7 @@ While a cursor is on, a readout row directly above a timeseries window's legend 
 - **Evidence:** UI check (three screenshots)
 
 #### Scenario: Nothing over the curves
-- **WHEN** a window shows eight signals with A and B on in diff mode
+- **WHEN** a window shows six signals in at most four units (the unit limit, D-019) with A and B on in diff mode
 - **THEN** the plot shows the curves, the cursor lines with their flags and the Δt label only; all values are in the legend rows
 - **Evidence:** UI check (screenshot)
 

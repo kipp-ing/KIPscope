@@ -90,6 +90,8 @@ const FORMS: [string[], Record<string, unknown>][] = [
   ],
   [["link", "on"], { type: "workspace.setLinkTime", linked: true }],
   [["link", "off"], { type: "workspace.setLinkTime", linked: false }],
+  [["digits", "3"], { type: "workspace.setOptions", digits: 3 }],
+  [["digits", "4"], { type: "workspace.setOptions", digits: 4 }],
   [["signal", "add", "w1", RPM], { type: "window.addSignal", windowId: "w1", signalId: RPM }],
   [
     ["signal", "remove", "w1", "a2"],
@@ -291,6 +293,10 @@ describe("argument grammar", () => {
       ["window", "range", "w1", "2026-10-13", "2026-10-14"],
       ["link"],
       ["link", "maybe"],
+      ["digits"],
+      ["digits", "5"],
+      ["digits", "3", "4"],
+      ["digits", "four"],
       ["diff", "sideways"],
       ["signal", "add", "w1"],
       ["signal", "move", "w1", "a2"],
@@ -325,6 +331,10 @@ describe("argument grammar", () => {
     }
   });
 
+  it("names 3|4 in the digits usage error", () => {
+    expect(usageError(["digits", "5"]).message).toContain("3|4");
+  });
+
   it("names every form in the usage text", () => {
     for (const form of [
       "window create",
@@ -334,6 +344,7 @@ describe("argument grammar", () => {
       "window range",
       "window display",
       "link",
+      "digits",
       "signal add",
       "signal remove",
       "signal move",

@@ -1,16 +1,18 @@
 import {
   type CursorValue,
+  type Digits,
   type EdgePoint,
   formatCursorNumber,
+  formatQuantity,
   type NoValueReason,
   parseTimestamp,
 } from "@letsview/shared";
 import { formatFull } from "../time/axis.ts";
 
-/** One value cell of the values window (design S4). */
+/** One value cell of the values window and the chart readout (design S4). */
 export interface Cell {
   text: string;
-  tag?: "lin" | "hold";
+  tag?: "lin" | "hold" | "avg";
   sna?: boolean;
   title?: string;
   /** The value for the current cursor time is loading: shown dimmed. */
@@ -30,12 +32,23 @@ export function loadingCell(previous: Cell): Cell {
   };
 }
 
-const REASONS: Record<NoValueReason, string> = {
+/** Why a cell has no value: the values window's reasons plus the chart readout's (design N4). */
+export type ValueReason = NoValueReason | "empty_bucket" | "outside_range";
+
+const REASONS: Record<ValueReason, string> = {
   no_data: "no data",
   before_first: "before the first point",
   after_last: "after the last point",
   next_sna: "next point is SNA",
+  empty_bucket: "no points in this bucket",
+  outside_range: "outside this window's range",
 };
+
+/** "—" with the reason as tooltip. */
+export const noValueCell = (reason: ValueReason): Cell => ({
+  text: NO_VALUE,
+  title: REASONS[reason],
+});
 
 const formatPoint = (p: EdgePoint) =>
   `${formatFull(parseTimestamp(p.t))} → ${p.v === null ? "SNA" : formatCursorNumber(p.v)}`;
@@ -51,34 +64,66 @@ function neighbours(at?: EdgePoint, next?: EdgePoint): string | undefined {
 const withTitle = (cell: Cell, title: string | undefined): Cell =>
   title === undefined ? cell : { ...cell, title };
 
-/** A value at a cursor: "—" for none or no value yet, "SNA" in the SNA style, else the number. */
-export function formatCell(v: CursorValue | undefined, at?: EdgePoint, next?: EdgePoint): Cell {
+/**
+ * A value at a cursor: "—" for none or no value yet, "SNA" in the SNA style, else the number with
+ * its unit (number-format). The tooltip names the neighbours exactly (design N9).
+ */
+export function formatCell(
+  v: CursorValue | undefined,
+  at: EdgePoint | undefined,
+  next: EdgePoint | undefined,
+  unit: string | undefined,
+  digits: Digits,
+): Cell {
   if (!v) return { text: NO_VALUE };
+  const title = neighbours(at, next);
   switch (v.kind) {
     case "none":
-      return { text: NO_VALUE, title: REASONS[v.reason] };
+      return noValueCell(v.reason);
     case "sna":
-      return withTitle({ text: "SNA", sna: true }, neighbours(at, next));
+      return withTitle({ text: "SNA", sna: true }, title);
     case "raw":
-      return withTitle({ text: formatCursorNumber(v.value) }, neighbours(at, next));
+      return withTitle({ text: formatQuantity(v.value, unit, digits) }, title);
     case "interpolated":
-      return withTitle({ text: formatCursorNumber(v.value), tag: "lin" }, neighbours(at, next));
+      return withTitle({ text: formatQuantity(v.value, unit, digits), tag: "lin" }, title);
     case "held":
-      return withTitle({ text: formatCursorNumber(v.value), tag: "hold" }, neighbours(at, next));
+      return withTitle({ text: formatQuantity(v.value, unit, digits), tag: "hold" }, title);
   }
+}
+
+/** A value that is a number, from the server (raw, interpolated, held) or a chart (aggregated). */
+export interface NumberValue {
+  kind: "raw" | "interpolated" | "held" | "aggregated";
+  value: number;
+}
+
+/** Δ = B − A of two numbers, tagged "avg" if either is aggregated, else "lin", else "hold". */
+export function numberDelta(
+  a: NumberValue,
+  b: NumberValue,
+  unit: string | undefined,
+  digits: Digits,
+): Cell {
+  const text = formatQuantity(b.value - a.value, unit, digits);
+  const kinds = [a.kind, b.kind];
+  if (kinds.includes("aggregated")) return { text, tag: "avg" };
+  if (kinds.includes("interpolated")) return { text, tag: "lin" };
+  if (kinds.includes("held")) return { text, tag: "hold" };
+  return { text };
 }
 
 const isNumber = (v: CursorValue | undefined): v is Extract<CursorValue, { value: number }> =>
   v?.kind === "raw" || v?.kind === "interpolated" || v?.kind === "held";
 
 /** Δ = B − A, only from two numbers; tagged "lin" if either is interpolated, else "hold" if either is held. */
-export function deltaCell(a: CursorValue | undefined, b: CursorValue | undefined): Cell {
+export function deltaCell(
+  a: CursorValue | undefined,
+  b: CursorValue | undefined,
+  unit: string | undefined,
+  digits: Digits,
+): Cell {
   if (!isNumber(a) || !isNumber(b)) return { text: NO_VALUE };
-  const text = formatCursorNumber(b.value - a.value);
-  const kinds = [a.kind, b.kind];
-  if (kinds.includes("interpolated")) return { text, tag: "lin" };
-  if (kinds.includes("held")) return { text, tag: "hold" };
-  return { text };
+  return numberDelta(a, b, unit, digits);
 }
 
 const NS_PER_US = 1_000n;

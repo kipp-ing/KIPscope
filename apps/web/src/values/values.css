@@ -22,7 +22,8 @@
   text-align: right;
   font-family: ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  min-width: 6em;
+  /* Cells carry the unit (number-format), e.g. "8.19 k1/min lin". */
+  min-width: 8em;
 }
 
 .values-window .value .tag {

@@ -21,38 +21,42 @@ const hold = (value: number): CursorValue => ({ kind: "held", value });
 
 describe("formatCell", () => {
   it("formats raw, interpolated and held values with their tags", () => {
-    const raw23 = formatCell(raw(23));
-    expect(raw23.text).toBe("23");
+    const raw23 = formatCell(raw(23), undefined, undefined, "km/h", 3);
+    expect(raw23.text).toBe("23.0 km/h");
     expect(raw23.tag).toBeUndefined();
     expect(raw23.sna).toBeFalsy();
 
     // DVL 179.5 at .083 s and 180 at .103 s (UTC 13:08, local 15:08), cursor at .093 s.
     const at = { t: "1791896880083000000", v: 179.5 };
     const next = { t: "1791896880103000000", v: 180 };
-    const dvl = formatCell(lin(179.75), at, next);
-    expect(dvl.text).toBe("179.75");
+    const dvl = formatCell(lin(179.75), at, next, "1/min", 3);
+    expect(dvl.text).toBe("180 1/min");
     expect(dvl.tag).toBe("lin");
     expect(dvl.title).toContain("15:08:00.083 → 179.5");
     expect(dvl.title).toContain("15:08:00.103 → 180");
 
-    const held = formatCell(hold(23));
-    expect(held.text).toBe("23");
+    const held = formatCell(hold(23), undefined, undefined, "km/h", 3);
+    expect(held.text).toBe("23.0 km/h");
     expect(held.tag).toBe("hold");
 
-    // Float noise is cut to nine significant digits.
-    expect(formatCell(lin(362.40000000000003)).text).toBe("362.4");
-    expect(formatCell(raw(-5)).text).toBe("-5");
+    // Float noise is cut to three significant digits, the tooltip keeps nine (N9).
+    expect(formatCell(lin(362.40000000000003), undefined, undefined, "V", 3).text).toBe("362 V");
+    expect(formatCell(raw(-5), undefined, undefined, "km/h", 3).text).toBe("-5.00 km/h");
+    expect(formatCell(lin(0.5), undefined, undefined, "V", 3)).toEqual({
+      text: "500 mV",
+      tag: "lin",
+    });
   });
 
   it("formats SNA and missing values without a number", () => {
-    const sna = formatCell({ kind: "sna" });
+    const sna = formatCell({ kind: "sna" }, undefined, undefined, "V", 3);
     expect(sna.text).toBe("SNA");
     expect(sna.sna).toBe(true);
     expect(sna.tag).toBeUndefined();
     expect(sna.text).not.toMatch(/\d/);
 
     const none = (reason: "no_data" | "before_first" | "after_last" | "next_sna") =>
-      formatCell({ kind: "none", reason });
+      formatCell({ kind: "none", reason }, undefined, undefined, "V", 3);
     for (const reason of ["no_data", "before_first", "after_last", "next_sna"] as const) {
       const cell = none(reason);
       expect(cell.text).toBe("—");
@@ -64,28 +68,48 @@ describe("formatCell", () => {
     expect(none("after_last").title).toContain("after the last point");
     expect(none("next_sna").title).toContain("next point is SNA");
     // Not yet loaded or cursor off.
-    expect(formatCell(undefined).text).toBe("—");
+    expect(formatCell(undefined, undefined, undefined, "V", 3).text).toBe("—");
+  });
+});
+
+describe("digits option and unit", () => {
+  it("formats values with the digits option and the unit", () => {
+    const dvlAt = { t: "1791896880083000000", v: 179.5 };
+    const dvlNext = { t: "1791896880103000000", v: 180 };
+    expect(formatCell(raw(23), undefined, undefined, "km/h", 4).text).toBe("23.00 km/h");
+    expect(formatCell(lin(179.75), dvlAt, dvlNext, "1/min", 4).text).toBe("179.8 1/min");
+    expect(formatCell(lin(362.40000000000003), undefined, undefined, "V", 4).text).toBe("362.4 V");
+    expect(formatCell(raw(13970), undefined, undefined, "1/min", 3).text).toBe("14.0 k1/min");
+    // No unit: number only, with the prefix.
+    expect(formatCell(raw(13970), undefined, undefined, undefined, 3).text).toBe("14.0 k");
+    expect(formatCell(raw(23), undefined, undefined, undefined, 3).text).toBe("23.0");
+    // Zero reads 0.
+    expect(formatCell(raw(0), undefined, undefined, "km/h", 3).text).toBe("0 km/h");
+    // Δ follows the option too: 362.4 → 362.9 V is 500 mV, with 4 digits 500.0 mV.
+    expect(deltaCell(lin(362.4), lin(362.9), "V", 4).text).toBe("500.0 mV");
+    // The tooltip keeps the exact neighbours whatever the option (N9).
+    expect(formatCell(lin(179.75), dvlAt, dvlNext, "1/min", 3).title).toContain("→ 179.5");
   });
 });
 
 describe("deltaCell", () => {
   it("computes Δ only from numeric values and tags it by the weaker kind", () => {
     // Raw and raw: V_ANZ 23 → 18.
-    const speed = deltaCell(raw(23), raw(18));
-    expect(speed.text).toBe("-5");
+    const speed = deltaCell(raw(23), raw(18), "km/h", 3);
+    expect(speed.text).toBe("-5.00 km/h");
     expect(speed.tag).toBeUndefined();
     // Interpolated values with float noise: PTC_HV_Volt 362.40000000000003 → 362.9.
-    const volt = deltaCell(lin(362.40000000000003), lin(362.9));
-    expect(volt.text).toBe("0.5");
+    const volt = deltaCell(lin(362.40000000000003), lin(362.9), "V", 3);
+    expect(volt.text).toBe("500 mV");
     expect(volt.tag).toBe("lin");
-    expect(deltaCell(raw(10), raw(10)).text).toBe("0");
+    expect(deltaCell(raw(10), raw(10), "km/h", 3).text).toBe("0 km/h");
     // Tag: lin beats hold beats none.
-    expect(deltaCell(raw(1), lin(3)).tag).toBe("lin");
-    expect(deltaCell(lin(1), raw(3)).tag).toBe("lin");
-    expect(deltaCell(hold(1), lin(3)).tag).toBe("lin");
-    expect(deltaCell(raw(1), hold(3)).tag).toBe("hold");
-    expect(deltaCell(hold(1), hold(3)).tag).toBe("hold");
-    expect(deltaCell(hold(1), hold(3)).text).toBe("2");
+    expect(deltaCell(raw(1), lin(3), "V", 3).tag).toBe("lin");
+    expect(deltaCell(lin(1), raw(3), "V", 3).tag).toBe("lin");
+    expect(deltaCell(hold(1), lin(3), "V", 3).tag).toBe("lin");
+    expect(deltaCell(raw(1), hold(3), "V", 3).tag).toBe("hold");
+    expect(deltaCell(hold(1), hold(3), "V", 3).tag).toBe("hold");
+    expect(deltaCell(hold(1), hold(3), "km/h", 3).text).toBe("2.00 km/h");
     // Any non-number gives "—" without tag: SNA at A, no value at B, not loaded.
     for (const [a, b] of [
       [{ kind: "sna" }, lin(0)],
@@ -95,7 +119,7 @@ describe("deltaCell", () => {
       [undefined, raw(1)],
       [raw(1), undefined],
     ] as [CursorValue | undefined, CursorValue | undefined][]) {
-      const cell = deltaCell(a, b);
+      const cell = deltaCell(a, b, "V", 3);
       expect(cell.text).toBe("—");
       expect(cell.tag).toBeUndefined();
     }
@@ -214,7 +238,7 @@ describe("ValueLoader", () => {
     const show = (request: ReturnType<typeof row> | undefined) => {
       const state = cellState(loader.get("a1:a"), request);
       const r = state?.result;
-      const cell = formatCell(r?.value, r?.at, r?.next);
+      const cell = formatCell(r?.value, r?.at, r?.next, "km/h", 3);
       return state?.status === "loading" ? loadingCell(cell) : cell;
     };
     // First value: nothing to show yet, so "…" with tooltip "loading", never "—".
@@ -224,12 +248,12 @@ describe("ValueLoader", () => {
     expect(show(first)).toEqual({ text: LOADING, loading: true, title: "loading" });
     pending[0]?.resolve(result("100", raw(23)));
     await flush();
-    expect(show(first)).toEqual({ text: "23" });
+    expect(show(first)).toEqual({ text: "23.0 km/h" });
     // Cursor moved: before and after the loader saw the new time, the old value shows dimmed.
     const moved = row("200");
-    expect(show(moved)).toEqual({ text: "23", loading: true, title: "loading" });
+    expect(show(moved)).toEqual({ text: "23.0 km/h", loading: true, title: "loading" });
     loader.update([moved]);
-    expect(show(moved)).toEqual({ text: "23", loading: true, title: "loading" });
+    expect(show(moved)).toEqual({ text: "23.0 km/h", loading: true, title: "loading" });
     pending[1]?.resolve(result("200", { kind: "none", reason: "after_last" }));
     await flush();
     // "—" only once the answer is "no value"; a later load does not show it as the old value.
@@ -238,7 +262,7 @@ describe("ValueLoader", () => {
     // Cursor off: "—", not loading.
     expect(show(undefined)).toEqual({ text: NO_VALUE });
     // Δ while either side loads: "…" instead of "—".
-    expect(loadingCell(deltaCell(raw(1), undefined))).toEqual({
+    expect(loadingCell(deltaCell(raw(1), undefined, "V", 3))).toEqual({
       text: LOADING,
       loading: true,
       title: "loading",

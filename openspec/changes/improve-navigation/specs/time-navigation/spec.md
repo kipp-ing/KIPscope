@@ -50,7 +50,7 @@ The option bar SHALL offer the spans 1 s, 10 s, 1 min, 10 min, 1 h and 1 day. Ch
 
 #### Scenario: One day around the view
 - **WHEN** the view is 2026-10-13 15:08:00 – 15:09:00 local, A is off, and the user picks "1 day"
-- **THEN** the header reads `2026-10-12 15:08:30 – 2026-10-13 15:08:30`
+- **THEN** the header reads `2026-10-13 03:08:30 – 2026-10-14 03:08:30` (one day centred on the view centre 15:08:30, design S2)
 - **Evidence:** UI check (screenshot of the header); `packages/shared/test/timenav.test.ts` › "resolves every input form" (the `1d` case)
 
 ### Requirement: Navigation anchor

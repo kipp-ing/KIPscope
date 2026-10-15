@@ -43,7 +43,7 @@ const WHEEL_MAX_TICKS = 5;
 const DELTA_LINE = 1;
 const DELTA_PAGE = 2;
 
-/** Span factor for one vertical wheel event: > 1 zooms out (deltaY > 0), < 1 zooms in. */
+/** Span factor for one wheel delta: > 1 zooms out (delta > 0), < 1 zooms in. */
 export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
   const perTick =
     deltaMode === DELTA_LINE
@@ -53,6 +53,34 @@ export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
         : WHEEL_TICK_PX;
   const ticks = Math.max(-WHEEL_MAX_TICKS, Math.min(WHEEL_MAX_TICKS, deltaY / perTick));
   return WHEEL_TICK_FACTOR ** ticks;
+}
+
+export type WheelAction =
+  | { kind: "zoom"; factor: number }
+  | { kind: "pan"; px: number }
+  | { kind: "none" };
+
+/** A swipe pans only when its horizontal delta is more than this times the vertical one (design N5). */
+const PAN_RATIO = 2;
+
+/**
+ * What a wheel event over a plot does (design N1): Ctrl or Shift (a pinch sets Ctrl) zooms at
+ * the pointer, by the horizontal delta when it is the larger one (macOS turns Shift+wheel into
+ * one); a mostly horizontal swipe pans; anything else is left to the page. Meta is no modifier.
+ */
+export function wheelAction(e: {
+  deltaX: number;
+  deltaY: number;
+  deltaMode: number;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+}): WheelAction {
+  if (e.ctrlKey || e.shiftKey) {
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    return { kind: "zoom", factor: wheelZoomFactor(delta, e.deltaMode) };
+  }
+  if (Math.abs(e.deltaX) > PAN_RATIO * Math.abs(e.deltaY)) return { kind: "pan", px: e.deltaX };
+  return { kind: "none" };
 }
 
 export const ZOOM_HISTORY_LIMIT = 50;

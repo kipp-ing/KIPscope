@@ -6,6 +6,7 @@ import {
   formatMessageId,
   formatRawStep,
   formatScaling,
+  formatSnaPhysical,
   formatSource,
   HIDE_GRACE_MS,
   HOVER_DELAY_MS,
@@ -42,9 +43,14 @@ describe("explorer formatting", () => {
     expect(formatRawStep(1, "km/h")).toBe("1 km/h");
     expect(formatRawStep(0.5, "1/min")).toBe("0.5 1/min");
     expect(formatRawStep(-2, undefined)).toBe("2");
-    expect(formatDbcRange(0, 510, "km/h")).toBe("0 … 510 km/h");
-    expect(formatDbcRange(-40, 214, "°C")).toBe("-40 … 214 °C");
-    expect(formatDbcRange(0, 0, "km/h")).toBe("not set");
+    expect(formatDbcRange(0, 510, "km/h", 3)).toBe("0 … 510 km/h");
+    expect(formatDbcRange(-40, 214, "°C", 3)).toBe("-40.0 … 214 °C");
+    expect(formatDbcRange(-40, 214, "°C", 4)).toBe("-40.00 … 214.0 °C");
+    expect(formatDbcRange(0, 0, "km/h", 3)).toBe("not set");
+    // SNA physical values: DVL raw 3FFFh = 8191.5 1/min (rounded before scaling, N7).
+    expect(formatSnaPhysical(8191.5, "1/min", 3)).toBe("8.19 k1/min");
+    expect(formatSnaPhysical(8191.5, "1/min", 4)).toBe("8.192 k1/min");
+    expect(formatSnaPhysical(511, "km/h", 3)).toBe("511 km/h");
   });
 
   it("formats message IDs as hex", () => {

@@ -3,7 +3,9 @@ import {
   type CommandResult,
   type CursorName,
   DEFAULT_PLOT_HEIGHT,
+  type Digits,
   type DisplayMode,
+  formatAxisTicks,
   MAX_PLOT_HEIGHT,
   MAX_UNITS,
   MIN_PLOT_HEIGHT,
@@ -19,6 +21,13 @@ import "uplot/dist/uPlot.min.css";
 import "./window.css";
 import { fetchSeries } from "../api.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
+import {
+  type Cell,
+  formatCursorTime,
+  formatDeltaT,
+  loadingCell,
+  NO_VALUE,
+} from "../values/format.ts";
 import type { AxisSpec } from "./axes.ts";
 import {
   buildModel,
@@ -32,11 +41,20 @@ import {
   snaShare,
   yRange,
 } from "./build.ts";
-import { ClickGate, DOUBLE_CLICK_MS, hitCursor, snapCursorTime, stackFlags } from "./cursors.ts";
+import {
+  ClickGate,
+  CURSOR_FLAG_PX,
+  DOUBLE_CLICK_MS,
+  deltaLabelX,
+  hitCursor,
+  snapCursorTime,
+  stackFlags,
+} from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
-import { type LoadRequest, SeriesLoader } from "./loader.ts";
-import { clampRange, type Range, RangePreview, wheelZoomFactor } from "./zoom.ts";
+import { type LoadRequest, type LoadState, SeriesLoader } from "./loader.ts";
+import { chartValueAt, type ReadoutValue, readoutCell, readoutDelta } from "./readout.ts";
+import { clampRange, type Range, RangePreview, wheelAction } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
 const MIN_SPAN_NS = 100n;
@@ -69,10 +87,8 @@ interface Props {
   colorOf: (signalId: string) => string;
   onCommand: (command: CommandInput) => Promise<CommandResult>;
   onReady: (windowId: string, revision: number, errors: RenderError[]) => void;
-  /** Called once per committed zoom/pan/zoom-out gesture with the range shown before it. */
+  /** Called once per committed zoom/pan gesture with the range shown before it. */
   onZoomed: (windowId: string, previous: Range) => void;
-  canGoBack: boolean;
-  onBack: (windowId: string) => void;
   /** Double-click on the plot: App fetches the extents, pushes history, sends window.setRange. */
   onReset: (windowId: string) => void;
   /** Pointer down on a legend row's grip. */
@@ -87,6 +103,10 @@ interface Props {
   onInsets?: (windowId: string, natural: Insets) => void;
   /** Effective cursor times: App's preview overrides the workspace. */
   cursors: { a?: bigint; b?: bigint };
+  /** Significant digits of readout values and y-axis ticks (workspace option). */
+  digits: Digits;
+  /** Diff mode: show B and Δ columns, the Δt label. `cursors` stays the effective times. */
+  diff: boolean;
   /** Local position while placing or dragging; t undefined ends the preview without a command. */
   onCursorPreview: (cursor: CursorName, t: bigint | undefined) => void;
   /** Gesture finished: App sends one cursor.set. */
@@ -292,14 +312,17 @@ function placeTitles(u: uPlot, row: HTMLElement | null, drawn: AxisSpec[], sizes
   });
 }
 
-type CursorLines = Record<CursorName, HTMLElement>;
+type CursorLines = Record<CursorName, HTMLElement> & { delta: HTMLElement };
 /** Row height of a cursor flag (its line-height in window.css); a stacked B flag sits one row down. */
 const CURSOR_FLAG_ROW_PX = 14;
+/** A flag's extent right of its line: it starts 1 px right of the line; plus 1 px gap. */
+const FLAG_EXTENT_PX = CURSOR_FLAG_PX + 2;
 type CursorX = { a?: number; b?: number };
 
 /**
  * Cursor overlays inside u.over (design C3): a transparent hit strip with a 1 px line in its
- * centre and a flag at the top. B is appended after A, so it is drawn above.
+ * centre and a flag at the top. B is appended after A, so it is drawn above. The Δt label sits at
+ * the top between the flags (design N3).
  */
 function createCursorLines(over: HTMLElement): CursorLines {
   const make = (name: CursorName) => {
@@ -314,18 +337,24 @@ function createCursorLines(over: HTMLElement): CursorLines {
     over.append(strip);
     return strip;
   };
-  return { a: make("a"), b: make("b") };
+  const delta = document.createElement("span");
+  delta.className = "cursor-delta";
+  delta.style.display = "none";
+  over.append(delta);
+  return { a: make("a"), b: make("b"), delta };
 }
 
 /**
  * Puts each line at its time on the current x scale (the zoom preview included) and hides lines
- * outside the plot. Returns the shown lines' x in CSS px for the hit test.
+ * outside the plot; in diff mode with both lines shown, places the Δt label. Returns the shown
+ * lines' x in CSS px for the hit test.
  */
 function placeCursorLines(
   u: uPlot,
   lines: CursorLines,
   cursors: { a?: bigint; b?: bigint },
   origin: bigint,
+  diff: boolean,
 ): CursorX {
   const shown: CursorX = {};
   const width = u.bbox.width / devicePixelRatio;
@@ -344,7 +373,49 @@ function placeCursorLines(
   }
   const flagB = lines.b.firstElementChild as HTMLElement | null;
   if (flagB) flagB.style.top = stackFlags(shown, width) ? `${CURSOR_FLAG_ROW_PX}px` : "";
+  const label = lines.delta;
+  const { a, b } = cursors;
+  if (
+    !diff ||
+    a === undefined ||
+    b === undefined ||
+    shown.a === undefined ||
+    shown.b === undefined
+  ) {
+    label.style.display = "none";
+    return shown;
+  }
+  label.textContent = `Δt ${formatDeltaT(b - a)}`;
+  label.style.display = "";
+  const labelWidth = label.offsetWidth;
+  let x = deltaLabelX(shown.a, shown.b, labelWidth, FLAG_EXTENT_PX);
+  // No room right of the right-hand flag: left of the left-hand line, where no flag is.
+  if (x + labelWidth > width) x = Math.min(shown.a, shown.b) - labelWidth - 1;
+  label.style.left = `${x}px`;
   return shown;
+}
+
+/**
+ * A readout cell's state: "—" while its cursor is off, "—" with the error when loading failed,
+ * the values window's loading state while data loads (previous value dimmed, else "…").
+ */
+function readoutState(state: LoadState | undefined, t: bigint | undefined, cell: Cell): Cell {
+  if (t === undefined) return { text: NO_VALUE, title: "cursor off" };
+  if (state?.status === "error") return { text: NO_VALUE, title: `failed: ${state.error}` };
+  return !state || state.status === "loading" ? loadingCell(cell) : cell;
+}
+
+/** One readout value in a legend row: number with unit, tag, SNA style, reason as tooltip. */
+function ReadoutCell({ cell }: { cell: Cell }) {
+  return (
+    <span
+      className={`value${cell.sna ? " sna-value" : ""}${cell.loading ? " loading" : ""}`}
+      title={cell.title}
+    >
+      {cell.text}
+      {cell.tag && <span className="tag">{cell.tag}</span>}
+    </span>
+  );
 }
 
 /** Window title; a click turns it into a text field (Enter or blur saves, Esc cancels). */
@@ -409,8 +480,6 @@ export function TimeseriesWindow({
   onCommand,
   onReady,
   onZoomed,
-  canGoBack,
-  onBack,
   onReset,
   onDragStart,
   dropState,
@@ -418,6 +487,8 @@ export function TimeseriesWindow({
   insets,
   onInsets,
   cursors,
+  digits,
+  diff,
   onCursorPreview,
   onCursorCommit,
 }: Props) {
@@ -465,6 +536,10 @@ export function TimeseriesWindow({
   // Cursors (design C2/C3): drawn from props in the draw hook, gestures report to App.
   const cursorsRef = useRef(cursors);
   cursorsRef.current = cursors;
+  const diffRef = useRef(diff);
+  diffRef.current = diff;
+  const digitsRef = useRef(digits);
+  digitsRef.current = digits;
   const onCursorPreviewRef = useRef(onCursorPreview);
   onCursorPreviewRef.current = onCursorPreview;
   const onCursorCommitRef = useRef(onCursorCommit);
@@ -554,6 +629,11 @@ export function TimeseriesWindow({
     () => JSON.stringify([model.series, model.bands, [...model.scales], model.layout.axes]),
     [model],
   );
+
+  // Axis titles as the tick formatter prefixed them, for the uPlot instance of `structure`.
+  const [axisTitles, setAxisTitles] = useState<{ structure: string; titles: string[] }>();
+  const axisTitle = (j: number, axis: AxisSpec) =>
+    (axisTitles?.structure === structure ? axisTitles.titles[j] : undefined) ?? axis.title;
 
   // --- uPlot instance -------------------------------------------------------------------------
 
@@ -651,18 +731,27 @@ export function TimeseriesWindow({
     }
     // y axis sizes in CSS px, index j = drawnAxes[j] (uPlot axis j + 1).
     const sizes: number[] = [];
+    // Axis titles with the ticks' SI prefix (design N8), set when the tick labels are made.
+    const titles: string[] = drawnAxes.map((a) => a.title);
     // One grid is enough; more would draw unrelated lines over each other. It follows the first
     // axis with data, so no grid is drawn for a placeholder range.
     const gridAxis = drawnAxes.findIndex((a) => model.scales.has(a.scale));
     drawnAxes.forEach((axis, j) => {
       const loaded = model.scales.has(axis.scale);
+      // Unit axes are titled by their unit; a unit-less signal's axis by its name, without prefix.
+      const unit = axis.scale.startsWith("u:") ? axis.title : undefined;
+      const tickValues = (_u: uPlot, splits: number[]) => {
+        const { title, labels } = formatAxisTicks(splits, unit, digitsRef.current);
+        titles[j] = unit === undefined ? axis.title : title;
+        return labels;
+      };
       axes.push({
         scale: axis.scale,
         side: axis.side === "L" || axis.side === "L2" ? LEFT : RIGHT,
         font: AXIS_FONT,
         // An axis still loading keeps its place and title but shows no ticks or values.
         ticks: { show: loaded, size: AXIS_TICK },
-        ...(loaded ? {} : { values: (_u: uPlot, splits: number[]) => splits.map(() => "") }),
+        values: loaded ? tickValues : (_u: uPlot, splits: number[]) => splits.map(() => ""),
         ...(axis.color ? { stroke: axis.color } : {}),
         grid: { show: j === gridAxis },
         size: (_u, values, _i, cycle) => {
@@ -674,7 +763,7 @@ export function TimeseriesWindow({
             ? Math.max(0, ...(values ?? []).map(textWidth))
             : textWidth(LOADING_TICK_TEXT);
           // Wide enough for the title too, so a unit like "rpm/10ms" is not cut.
-          const title = Math.min(MAX_TITLE_WIDTH, textWidth(axis.title) + 4);
+          const title = Math.min(MAX_TITLE_WIDTH, textWidth(titles[j] ?? axis.title) + 4);
           sizes[j] = Math.ceil(Math.max(widest + AXIS_PAD, title));
           return sizes[j];
         },
@@ -736,9 +825,20 @@ export function TimeseriesWindow({
               drawSnaLanes(self, modelRef.current.sna);
               drawNarrowSignals(self, modelRef.current);
               if (lines) {
-                cursorX.current = placeCursorLines(self, lines, cursorsRef.current, origin.current);
+                cursorX.current = placeCursorLines(
+                  self,
+                  lines,
+                  cursorsRef.current,
+                  origin.current,
+                  diffRef.current,
+                );
               }
               placeTitles(self, titleRow.current, drawnAxes, sizes);
+              setAxisTitles((prev) =>
+                prev?.structure === structure && prev.titles.join("\n") === titles.join("\n")
+                  ? prev
+                  : { structure, titles: [...titles] },
+              );
               const { natural } = axisWidths(drawnAxes, sizes);
               const last = reportedInsets.current;
               if (!last || last.left !== natural.left || last.right !== natural.right) {
@@ -768,7 +868,7 @@ export function TimeseriesWindow({
     uplot.current = u;
     lines = createCursorLines(u.over);
     cursorLines.current = lines;
-    const strips = Object.values(lines);
+    const strips = [lines.a, lines.b];
 
     /** Time at x CSS px in the plot, snapped to the shown span (design C3). */
     const timeAt = (x: number) => {
@@ -853,19 +953,20 @@ export function TimeseriesWindow({
     u.over.addEventListener("mousedown", onDown);
     window.addEventListener("mouseup", onUp);
 
+    // Plain vertical wheel scrolls the page (design N1): preventDefault only for zoom and pan.
     const onWheel = (e: WheelEvent) => {
+      const action = wheelAction(e);
+      if (action.kind === "none") return;
       e.preventDefault();
       const min = u.scales.x?.min ?? 0;
       const max = u.scales.x?.max ?? 1;
-      const span = max - min;
-      const horizontal = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
-      if (horizontal) {
-        const delta = ((e.shiftKey ? e.deltaY : e.deltaX) / u.over.clientWidth) * span;
+      if (action.kind === "pan") {
+        const delta = (action.px / u.over.clientWidth) * (max - min);
         applyRangeRef.current(u, min + delta, max + delta);
       } else {
         // Not offsetX: over a cursor line the event's target is the line's hit strip.
         const at = u.posToVal(e.clientX - u.over.getBoundingClientRect().left, "x");
-        const factor = wheelZoomFactor(e.deltaY, e.deltaMode);
+        const { factor } = action;
         applyRangeRef.current(u, at - (at - min) * factor, at + (max - at) * factor);
       }
     };
@@ -915,22 +1016,36 @@ export function TimeseriesWindow({
   }, [model, viewEpoch, structure, width === 0]);
 
   // View: a gesture already set the scale it previews, so only a range set elsewhere redraws.
+  // Every change of the shown range (keys, "Go to", Back, a linked window, the CLI, …) hides the
+  // crosshair until the pointer moves: at its old pixel it would point at a wrong time.
+  const shownRange = useRef(view);
   // biome-ignore lint/correctness/useExhaustiveDependencies: view is tracked via its bounds
   useLayoutEffect(() => {
     const u = uplot.current;
+    const changed = !sameRange(shownRange.current, view);
+    shownRange.current = view;
     if (!u) return;
+    if (changed) hideCursor(u);
     const x = [Number(view.from - origin.current), Number(view.to - origin.current)];
     if (x[0] !== xView.current[0] || x[1] !== xView.current[1]) setView(u, view);
   }, [view.from, view.to]);
 
   // Cursor lines only: moving a line needs no redraw (the draw hook places them after a redraw).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cursors are read via cursorsRef
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cursors are read via cursorsRef, diff via diffRef
   useLayoutEffect(() => {
     const u = uplot.current;
     const lines = cursorLines.current;
     if (u && lines)
-      cursorX.current = placeCursorLines(u, lines, cursorsRef.current, origin.current);
-  }, [cursors.a, cursors.b]);
+      cursorX.current = placeCursorLines(u, lines, cursorsRef.current, origin.current, diff);
+  }, [cursors.a, cursors.b, diff]);
+
+  // Tick labels and axis sizes follow the digits option (read via digitsRef).
+  const drawnDigits = useRef(digits);
+  useLayoutEffect(() => {
+    if (drawnDigits.current === digits) return;
+    drawnDigits.current = digits;
+    uplot.current?.redraw(false, true);
+  }, [digits]);
 
   useEffect(() => () => clearTimeout(commitTimer.current), []);
 
@@ -960,15 +1075,6 @@ export function TimeseriesWindow({
   }, [settled, revision, errorKey, w.id, onReady]);
 
   // --- view -----------------------------------------------------------------------------------
-
-  const zoomOut = () => {
-    const u = uplot.current;
-    if (!u) return;
-    const min = u.scales.x?.min ?? 0;
-    const max = u.scales.x?.max ?? 1;
-    const half = max - min;
-    applyRange(u, min - half / 2, max + half / 2);
-  };
 
   /** Height handle: resizes locally while dragged, sends window.setHeight on release. */
   const startHeightDrag = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1001,6 +1107,9 @@ export function TimeseriesWindow({
 
   const shown = view;
   const range = formatRange(shown.from, shown.to);
+  // Readout (design N3, N4): value columns while a cursor is on, from the drawn data.
+  const { a, b } = cursors;
+  const readout = a !== undefined || (diff && b !== undefined);
   const resolution = resolutionLabel(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
     dropState === "target"
@@ -1049,41 +1158,51 @@ export function TimeseriesWindow({
           />{" "}
           Min/max
         </label>
-        <button
-          type="button"
-          disabled={!canGoBack}
-          title="Previous range (Backspace)"
-          onClick={() => onBack(w.id)}
-        >
-          Back
-        </button>
-        <button type="button" onClick={zoomOut}>
-          Zoom out
-        </button>
         <button type="button" onClick={() => onCommand({ type: "window.remove", windowId: w.id })}>
           Remove
         </button>
       </header>
       <div className="axis-titles" ref={titleRow}>
-        {drawnAxes.map((a) => (
+        {drawnAxes.map((a, j) => (
           <span
             key={a.scale}
             data-side={a.side}
-            title={a.title}
+            title={axisTitle(j, a)}
             style={a.color ? { color: a.color } : undefined}
           >
-            {a.title}
+            {axisTitle(j, a)}
           </span>
         ))}
       </div>
       <div className="plot" ref={plotRef} style={{ height: plotHeight }} />
       <div className="height-handle" title="Drag to resize" onPointerDown={startHeightDrag} />
-      <ul className="signals">
+      {readout && (
+        <div className="readout-row">
+          <span className="cursor-time">
+            {a === undefined ? "A off" : `A ${formatCursorTime(a)}`}
+          </span>
+          {diff && (
+            <span className="cursor-time">
+              {b === undefined ? "B off" : `B ${formatCursorTime(b)}`}
+            </span>
+          )}
+          {diff && a !== undefined && b !== undefined && (
+            <span className="cursor-time">Δt {formatDeltaT(b - a)}</span>
+          )}
+        </div>
+      )}
+      <ul className={`signals${readout ? ` readout${diff ? " diff" : ""}` : ""}`}>
         {w.signals.map((s) => {
           const meta = info(s.signalId);
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
           const name = meta?.name ?? s.signalId;
+          const valueAt = (t: bigint | undefined): ReadoutValue | undefined =>
+            t === undefined ? undefined : chartValueAt(state?.result, t, w.display.mode);
+          const valueA = valueAt(a);
+          const valueB = valueAt(b);
+          const cellAt = (t: bigint | undefined, v: ReadoutValue | undefined) =>
+            readoutState(state, t, readoutCell(v, meta?.unit, digits));
           return (
             <li key={s.id} title={meta?.description}>
               <span
@@ -1096,16 +1215,29 @@ export function TimeseriesWindow({
                 <span className="swatch" style={{ background: colorOf(s.signalId) }} />
                 <span className="sig">{name}</span>
               </span>
-              {meta?.unit && <span className="unit">[{meta.unit}]</span>}
+              {(meta?.unit || readout) && (
+                <span className="unit">{meta?.unit && `[${meta.unit}]`}</span>
+              )}
               <span className="side" title="y axis">
                 {model.layout.sideOf.get(s.id) ?? "–"}
               </span>
+              {readout && <ReadoutCell cell={cellAt(a, valueA)} />}
+              {readout && diff && <ReadoutCell cell={cellAt(b, valueB)} />}
+              {readout && diff && (
+                <ReadoutCell
+                  cell={readoutState(
+                    state,
+                    a !== undefined && b !== undefined ? a : undefined,
+                    readoutDelta(valueA, valueB, meta?.unit, digits),
+                  )}
+                />
+              )}
               <span className={`status ${state?.status ?? "loading"}`}>
                 {state?.status === "error"
                   ? `failed: ${state.error}`
                   : (state?.status ?? "loading")}
               </span>
-              {sna && <span className="sna">{sna}</span>}
+              {(sna || readout) && <span className="sna">{sna}</span>}
               <button
                 type="button"
                 className="link"

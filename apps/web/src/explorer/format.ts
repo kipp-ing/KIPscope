@@ -1,4 +1,10 @@
-import { type SignalInfo, type WorkspaceWindow, windowTitle } from "@letsview/shared";
+import {
+  type Digits,
+  formatQuantity,
+  type SignalInfo,
+  type WorkspaceWindow,
+  windowTitle,
+} from "@letsview/shared";
 
 /** Rest time on a row (pointer or keyboard) before its card opens (design E7). */
 export const HOVER_DELAY_MS = 350;
@@ -29,10 +35,27 @@ export function formatRawStep(factor: number, unit: string | undefined): string 
   return withUnit(String(Math.abs(factor)), unit);
 }
 
-/** `0 … 510 km/h`; `[0|0]` (no range given in the DBC) → `not set`. */
-export function formatDbcRange(min: number, max: number, unit: string | undefined): string {
+/**
+ * `0 … 510 km/h`, `-40.0 … 214 °C` by number-format; the unit once when both ends share it (or
+ * the minimum is 0), else after each end. `[0|0]` (no range given in the DBC) → `not set`.
+ */
+export function formatDbcRange(
+  min: number,
+  max: number,
+  unit: string | undefined,
+  digits: Digits,
+): string {
   if (min === 0 && max === 0) return "not set";
-  return withUnit(`${String(min)} … ${String(max)}`, unit);
+  const low = formatQuantity(min, unit, digits);
+  const high = formatQuantity(max, unit, digits);
+  const [lowNumber, lowUnit] = splitQuantity(low);
+  const [, highUnit] = splitQuantity(high);
+  return min === 0 || lowUnit === highUnit ? `${lowNumber} … ${high}` : `${low} … ${high}`;
+}
+
+/** Physical value of an SNA code by number-format: `8.19 k1/min`, `511 km/h`. */
+export function formatSnaPhysical(value: number, unit: string | undefined, digits: Digits): string {
+  return formatQuantity(value, unit, digits);
 }
 
 /** CAN ID in hex: `0x412`; an extended ID (bit 31 set) without bit 31 plus `(ext)`. */
@@ -60,6 +83,12 @@ export function resolveTarget(target: string, windows: WorkspaceWindow[]): strin
 
 function hex(n: number): string {
   return `0x${n.toString(16).toUpperCase()}`;
+}
+
+/** `"14.0 k1/min"` → `["14.0", "k1/min"]`; without unit `["14.0", ""]`. */
+function splitQuantity(text: string): [string, string] {
+  const space = text.indexOf(" ");
+  return space < 0 ? [text, ""] : [text.slice(0, space), text.slice(space + 1)];
 }
 
 function withUnit(text: string, unit: string | undefined): string {

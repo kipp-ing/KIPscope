@@ -1,11 +1,11 @@
-import type { SignalMatch, WorkspaceWindow } from "@letsview/shared";
+import type { Digits, SignalMatch, WorkspaceWindow } from "@letsview/shared";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { formatSnaValue } from "../chart/build.ts";
 import {
   formatDbcRange,
   formatMessageId,
   formatRawStep,
   formatScaling,
+  formatSnaPhysical,
   formatSource,
   windowsShowing,
 } from "./format.ts";
@@ -14,6 +14,8 @@ import { Highlight } from "./Highlight.tsx";
 interface SignalCardProps {
   match: SignalMatch;
   windows: WorkspaceWindow[];
+  /** Significant digits of the DBC range and SNA values (workspace option, number-format). */
+  digits: Digits;
   /** The row's rect; the card sits right of it, top aligned, clamped into the viewport. */
   anchor: DOMRect;
   /** DOM id for the row's aria-describedby. */
@@ -29,6 +31,7 @@ const GAP = 8;
 export function SignalCard({
   match,
   windows,
+  digits,
   anchor,
   id,
   onPointerEnter,
@@ -56,14 +59,14 @@ export function SignalCard({
     fields.push(["Scaling", formatScaling(dbc.factor, dbc.offset)]);
   if (dbc?.factor !== undefined) fields.push(["Raw step", formatRawStep(dbc.factor, unit)]);
   if (dbc?.min !== undefined && dbc.max !== undefined)
-    fields.push(["Range", formatDbcRange(dbc.min, dbc.max, unit)]);
+    fields.push(["Range", formatDbcRange(dbc.min, dbc.max, unit, digits)]);
   if (signal.sna)
     fields.push([
       "SNA",
       signal.sna
         .map(
           (c) =>
-            `${formatSnaValue(c.value)}${unit ? ` ${unit}` : ""} (raw ${c.raw.toString(16).toUpperCase()}h)`,
+            `${formatSnaPhysical(c.value, unit, digits)} (raw ${c.raw.toString(16).toUpperCase()}h)`,
         )
         .join(", "),
     ]);

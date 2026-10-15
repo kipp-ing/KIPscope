@@ -51,6 +51,7 @@ Commands (each sends one command to the open workspace):
   cursor move a|b DURATION
   cursor remove a|b
   diff on|off
+  digits 3|4                       (significant digits of values in the UI)
   command JSON                     (one command of the shared command model, sent as is)
 
 Reads:
@@ -375,6 +376,12 @@ function invocation(pos: string[], opts: Map<string, string | true>): Invocation
     case "diff":
       take(1);
       return command({ type: "cursor.setDiff", diff: onOff(arg(0), "diff") });
+    case "digits": {
+      take(1);
+      const digits = arg(0);
+      if (digits !== "3" && digits !== "4") usage(`digits must be 3|4, got "${digits}"`);
+      return command({ type: "workspace.setOptions", digits: Number(digits) });
+    }
     case "command": {
       take(1);
       try {

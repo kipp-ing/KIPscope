@@ -97,6 +97,7 @@ export interface Workspace {
   }[];
   linkTime: boolean;
   cursors: { a?: string; b?: string; diff: boolean };
+  options: { digits: number };
 }
 
 /**

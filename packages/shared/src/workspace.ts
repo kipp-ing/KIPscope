@@ -107,6 +107,15 @@ export interface ValuesWindow {
 
 export type WorkspaceWindow = TimeseriesWindow | ValuesWindow;
 
+/** Significant digits of human-readable values (D-026; 4 is the option). */
+export const Digits = z.union([z.literal(3), z.literal(4)]);
+export type Digits = z.infer<typeof Digits>;
+
+/** User options (concept §8); for now only the digits. */
+export interface WorkspaceOptions {
+  digits: Digits;
+}
+
 export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
 
 export interface Workspace {
@@ -124,6 +133,7 @@ export interface Workspace {
   colors: Record<string, number>;
   /** Cursors A/B and diff mode (D-023). */
   cursors: CursorState;
+  options: WorkspaceOptions;
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -132,6 +142,7 @@ export const EMPTY_WORKSPACE: Workspace = {
   linkTime: true,
   colors: {},
   cursors: { diff: false },
+  options: { digits: 3 },
 };
 
 /**
@@ -223,6 +234,7 @@ export const Command = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("cursor.remove"), cursor: CursorName }),
   z.object({ type: z.literal("cursor.setDiff"), diff: z.boolean() }),
+  z.object({ type: z.literal("workspace.setOptions"), digits: Digits.optional() }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */

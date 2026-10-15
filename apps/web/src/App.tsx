@@ -4,9 +4,14 @@ import {
   type CursorName,
   EMPTY_WORKSPACE,
   isTimeseries,
+  navAnchor,
+  panBy,
   type RenderError,
+  resolveTimeNav,
   type SignalInfo,
   signalColor,
+  spanAround,
+  zoomAround,
 } from "@letsview/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
@@ -29,7 +34,7 @@ import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
-import { isTextField } from "./keys.ts";
+import { isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
 import { useLive } from "./live.ts";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 
@@ -71,6 +76,43 @@ const toRange = (r: { from: string; to: string }): Range => ({
   from: BigInt(r.from),
   to: BigInt(r.to),
 });
+
+const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
+
+/** History and pending-navigation key of a window in the current workspace (shared "*" while linked). */
+const navKeyOf = (ws: { linkTime: boolean } | undefined, windowId: string) =>
+  historyKey(ws?.linkTime ?? true, windowId);
+
+/**
+ * A navigation step sent but not yet shown (design N6), per history key: the next step starts from
+ * `range`. `chain` holds the server range it started from and every range sent since; a server
+ * range outside it is someone else's change and ends the entry.
+ */
+interface PendingNav {
+  windowId: string;
+  range: Range;
+  chain: Range[];
+}
+
+/** Zoom and pan steps of the navigation keys from a view (design N6); home and goTo are not steps. */
+function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undefined {
+  switch (key) {
+    case "in":
+      return zoomAround(view, 0.5, navAnchor(view, a));
+    case "out":
+      return zoomAround(view, 2, navAnchor(view, a));
+    case "left":
+      return panBy(view, -0.5);
+    case "right":
+      return panBy(view, 0.5);
+    case "pageLeft":
+      return panBy(view, -1);
+    case "pageRight":
+      return panBy(view, 1);
+    default:
+      return undefined;
+  }
+}
 
 export function App() {
   const [live, send] = useLive();
@@ -223,12 +265,63 @@ export function App() {
     },
     [historyOf],
   );
+  // Navigation steps on their way (design N6), keyed like the history.
+  const pendingNav = useRef(new Map<string, PendingNav>());
+  useEffect(() => {
+    for (const [key, p] of pendingNav.current) {
+      const w = workspace?.windows.find((x) => x.id === p.windowId);
+      const shown = w && isTimeseries(w) ? toRange(w.range) : undefined;
+      if (!shown || sameRange(shown, p.range) || !p.chain.some((r) => sameRange(r, shown)))
+        pendingNav.current.delete(key);
+    }
+  }, [workspace]);
+  /** The range a navigation step starts from: the pending one, else the server's. */
+  const navView = useCallback((windowId: string): Range | undefined => {
+    const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
+    if (!w || !isTimeseries(w)) return undefined;
+    return (
+      pendingNav.current.get(navKeyOf(liveRef.current.workspace, windowId))?.range ??
+      toRange(w.range)
+    );
+  }, []);
+  /** One navigation step (design S5): clamps, pushes the view it leaves when `push`, sends one setRange. */
+  const navigate = useCallback(
+    (windowId: string, r: Range, push: boolean) => {
+      const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
+      if (!w || !isTimeseries(w)) return;
+      const key = navKeyOf(liveRef.current.workspace, windowId);
+      const pending = pendingNav.current.get(key);
+      const view = pending?.range ?? toRange(w.range);
+      const next = clampRange(r);
+      if (sameRange(next, view)) return;
+      if (push) {
+        historyOf(key).push(view);
+        setHistoryVersion((v) => v + 1);
+      }
+      const entry = { windowId, range: next, chain: [...(pending?.chain ?? [view]), next] };
+      pendingNav.current.set(key, entry);
+      const drop = () => {
+        if (pendingNav.current.get(key) === entry) pendingNav.current.delete(key);
+      };
+      setRange(windowId, next).then(
+        (result) => {
+          if (!result.ok) drop();
+        },
+        (e: unknown) => {
+          drop();
+          setMessage(e instanceof Error ? e.message : String(e));
+        },
+      );
+    },
+    [historyOf, setRange],
+  );
   const onBack = useCallback(
     (windowId: string) => {
       const r = histories.current
         .get(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId))
         ?.back();
       if (!r) return;
+      pendingNav.current.delete(navKeyOf(liveRef.current.workspace, windowId));
       setHistoryVersion((v) => v + 1);
       void setRange(windowId, r);
     },
@@ -254,6 +347,7 @@ export function App() {
         const target = clampRange(extent);
         const current = toRange(w.range);
         if (target.from === current.from && target.to === current.to) return;
+        pendingNav.current.delete(navKeyOf(liveRef.current.workspace, windowId));
         historyOf(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId)).push(current);
         setHistoryVersion((v) => v + 1);
         await setRange(windowId, target);
@@ -303,6 +397,40 @@ export function App() {
     },
     [command],
   );
+  const cursorsRef = useRef(cursors);
+  cursorsRef.current = cursors;
+
+  // "Go to" and span presets act on the bar target (design S5, D-024).
+  const onGoTo = useCallback(
+    (text: string): string | undefined => {
+      const ws = liveRef.current.workspace;
+      const target = ws && barTarget(ws);
+      const view = target && navView(target.id);
+      if (!target || !view) {
+        setMessage("Go to needs a timeseries window");
+        return "Go to needs a timeseries window";
+      }
+      try {
+        navigate(target.id, resolveTimeNav(text, { view, cursors: cursorsRef.current }), true);
+        return undefined;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        setMessage(message);
+        return message;
+      }
+    },
+    [navView, navigate],
+  );
+  const onSpan = useCallback(
+    (span: bigint) => {
+      const ws = liveRef.current.workspace;
+      const target = ws && barTarget(ws);
+      const view = target && navView(target.id);
+      if (!target || !view) return;
+      navigate(target.id, spanAround(span, navAnchor(view, cursorsRef.current.a)), true);
+    },
+    [navView, navigate],
+  );
 
   // Plot insets (natural, per window): every window gets the widest left and right inset, so the
   // same timestamp sits at the same x in all windows.
@@ -329,8 +457,14 @@ export function App() {
   );
   const insets = useMemo(() => ({ left: maxLeft, right: maxRight }), [maxLeft, maxRight]);
 
+  // A running signal drag (below); navigation keys wait while it runs.
+  const [drag, setDrag] = useState<Drag | undefined>();
+  const dragRef = useRef<Drag | undefined>(undefined);
+
   // Backspace steps back in the timeseries window under the pointer, else in the window zoomed last.
+  // The navigation keys (design N6) act on the window under the pointer, else the bar target.
   const hovered = useRef<string | undefined>(undefined);
+  const navRepeat = useRef(new NavRepeat());
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const el = e.target instanceof Element ? e.target.closest("[data-window-id]") : null;
@@ -340,8 +474,39 @@ export function App() {
     const onOut = (e: PointerEvent) => {
       if (!e.relatedTarget) hovered.current = undefined;
     };
+    const onNavKey = (e: KeyboardEvent) => {
+      const key = navKey(e, document.activeElement);
+      if (!key || dragRef.current) return;
+      if (key === "goTo") {
+        const field = document.getElementById("go-to");
+        if (!(field instanceof HTMLInputElement)) return;
+        e.preventDefault();
+        field.focus();
+        field.select();
+        return;
+      }
+      const ws = liveRef.current.workspace;
+      if (!ws) return;
+      const hoveredId = ws.windows.some((w) => w.id === hovered.current && isTimeseries(w))
+        ? hovered.current
+        : undefined;
+      const id = hoveredId ?? barTarget(ws)?.id;
+      if (!id) return;
+      e.preventDefault();
+      if (key === "home") {
+        // Reset as the bar does (D-024): linked, the extents of all timeseries signals.
+        if (!e.repeat) void onReset(id, ws.linkTime ? resetSignals(ws) : undefined);
+        return;
+      }
+      const step = navRepeat.current.step(e.repeat, e.timeStamp);
+      const view = navView(id);
+      const next = view && navStep(key, view, cursorsRef.current.a);
+      if (step === "skip" || !next) return;
+      navigate(id, next, step === "push");
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Backspace" || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key !== "Backspace") return onNavKey(e);
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTextField(document.activeElement)) return;
       const ws = liveRef.current.workspace;
       const id = [hovered.current, ws?.lastZoomed].find(
@@ -359,11 +524,9 @@ export function App() {
       document.removeEventListener("pointerout", onOut);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onBack]);
+  }, [onBack, onReset, navView, navigate]);
 
   // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
-  const [drag, setDrag] = useState<Drag | undefined>();
-  const dragRef = useRef<Drag | undefined>(undefined);
   const mainRef = useRef<HTMLElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -518,6 +681,9 @@ export function App() {
 
   // Option bar (design C5): Back and Reset zoom act on the window zoomed last, else the first one.
   const barWindow = workspace ? barTarget(workspace) : undefined;
+  // A stale state without options still renders (design S3).
+  const digits = workspace?.options?.digits ?? 3;
+  const diff = workspace?.cursors?.diff ?? false;
   const canGoBack = (windowId: string | undefined) =>
     windowId !== undefined && (histories.current.get(historyKey(linked, windowId))?.size ?? 0) > 0;
 
@@ -579,6 +745,7 @@ export function App() {
         onDragStart={onDragStart}
         dragging={activeDrag !== undefined}
         colorOf={explorerColorOf}
+        digits={digits}
       />
       <div className="workspace">
         <main ref={mainRef}>
@@ -601,6 +768,8 @@ export function App() {
                 canGoBack={canGoBack(barWindow?.id)}
                 onCommand={barCommand}
                 onBack={onBack}
+                onGoTo={onGoTo}
+                onSpan={onSpan}
                 onReset={() => {
                   if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
                 }}
@@ -618,13 +787,13 @@ export function App() {
                 onCommand={command}
                 onReady={onReady}
                 onZoomed={onZoomed}
-                canGoBack={canGoBack(w.id)}
-                onBack={onBack}
                 onReset={onReset}
                 onDragStart={onDragStart}
                 insets={insets}
                 onInsets={onInsets}
                 cursors={cursors}
+                digits={digits}
+                diff={diff}
                 onCursorPreview={onCursorPreview}
                 onCursorCommit={onCursorCommit}
                 {...dropProp(dropStateOf(w.id))}
@@ -637,6 +806,7 @@ export function App() {
                 revision={live.revision}
                 cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
                 dragging={cursorPreview !== undefined}
+                digits={digits}
                 info={info}
                 colorOf={colorOf}
                 onCommand={command}

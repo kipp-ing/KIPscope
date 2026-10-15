@@ -374,5 +374,11 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
         ok: true,
         workspace: { ...state, cursors: { ...state.cursors, diff: command.diff } },
       };
+
+    case "workspace.setOptions": {
+      const options = { ...state.options };
+      if (command.digits !== undefined) options.digits = command.digits;
+      return { ok: true, workspace: { ...state, options } };
+    }
   }
 }

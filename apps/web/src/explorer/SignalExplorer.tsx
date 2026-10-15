@@ -1,5 +1,6 @@
 import {
   buildSearchIndex,
+  type Digits,
   type SignalInfo,
   searchSignals,
   type WorkspaceWindow,
@@ -38,6 +39,8 @@ interface Props {
   dragging?: boolean;
   /** Chart colour of a signal shown in a window; the SNA dot takes it like the chart's SNA lanes (E5). Absent or undefined → --sna. */
   colorOf?: (signalId: string) => string | undefined;
+  /** Significant digits of the hover card's values (workspace option, design N10). */
+  digits: Digits;
 }
 
 /** The open hover card: row index into the matches, the row's rect, and how it was opened. */
@@ -51,7 +54,15 @@ interface Card {
  * Searches the full catalog in the browser on every keystroke (spec signal-catalog, design E1–E10):
  * one line per match, hover card, keys, chunks, drag source and a stable "Add to" target.
  */
-export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging, colorOf }: Props) {
+export function SignalExplorer({
+  windows,
+  onAdd,
+  onSeen,
+  onDragStart,
+  dragging,
+  colorOf,
+  digits,
+}: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [query, setQuery] = useState("");
@@ -349,6 +360,7 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging, 
           windows={windows}
           anchor={card.anchor}
           id={cardId}
+          digits={digits}
           onPointerEnter={() => clearTimeout(hideTimer.current)}
           onPointerLeave={releaseCard}
         />

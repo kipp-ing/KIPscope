@@ -39,6 +39,18 @@ export function stackFlags(lines: { a?: number; b?: number }, width: number): bo
   return Math.abs(lines.a - lines.b) < Math.max(CURSOR_FLAG_PX, width / 100);
 }
 
+/**
+ * x of the Δt label's left edge: centred between the lines when it fits there without covering
+ * the left-hand line's flag (flags sit right of their line), else right of the right-hand flag.
+ */
+export function deltaLabelX(xa: number, xb: number, labelWidth: number, flagWidth: number): number {
+  const left = Math.min(xa, xb);
+  const right = Math.max(xa, xb);
+  const x = (left + right - labelWidth) / 2;
+  if (x >= left + flagWidth && x + labelWidth <= right) return x;
+  return right + flagWidth;
+}
+
 /** Commits the last click after delayMs unless doubleClick() came first. */
 export class ClickGate {
   private readonly delayMs: number;
