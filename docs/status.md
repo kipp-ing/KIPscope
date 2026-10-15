@@ -10,15 +10,15 @@ As of 2026-10-15, session 3.
 - Change `add-sna-handling` built by the agent team (D-013, [team.md](team.md)) in 3 rounds and archived: SNA rules from the DBC (D-010, D-014, D-015), SNA as `null` in series (D-016), line breaks, SNA strips and SNA shares in the UI.
 - Power-user exploration ([feedback/2026-10-14-power-users.md](feedback/2026-10-14-power-users.md)) after Jan's test (D-017).
 - Change `improve-window-workflow` built in 5 rounds plus close-out and a spec audit, archived 2026-10-15: move/copy signals by drag, one axis per unit stacked up to four, linked time zoom (default on), stable colours, rename, heights, zoom history, time bounds (D-017 … D-021).
-- Decisions D-001 … D-021 in [decisions.md](decisions.md).
+- Change `improve-signal-explorer` built in 2 rounds plus close-out, archived 2026-10-15: one-line explorer with hover card, ranked search with highlighting in the browser (`GET /api/catalog`), keys, explorer drag, stable "Add to" target (D-020, D-022).
+- Decisions D-001 … D-023 in [decisions.md](decisions.md).
 
 ## Next
 
-1. Change `improve-signal-explorer` (spec audited, D-020): compact list with hover card, ranked search with highlighting, keys, explorer drag, stable "Add to" target.
-2. Change `add-cursors`: hover value readout first, then cursors A/B with differences (concept §6, D-018).
-3. CLI remote control of the open view (concept §7).
-4. Persistence: save/load, snapshots, templates, undo (concept §8).
-5. Later: single-value windows, playback, ADX adapter, state signals from value tables, timezone selection.
+1. Change `add-cursors` (D-023): cursors A/B with diff mode, a cursor value window, an option bar, drag and drop from everywhere. Spec in progress.
+2. CLI remote control of the open view (concept §7).
+3. Persistence: save/load, snapshots, templates, undo (concept §8).
+4. Later: playback, ADX adapter, state signals from value tables, timezone selection.
 
 ## Known limitations
 
@@ -28,7 +28,9 @@ As of 2026-10-15, session 3.
 - Two signals at the same value on different axes overlap exactly (seen with V_ANZ and DVL at engine start).
 - Tick labels may thin out to one label on very narrow plots.
 - Header range below 1 s shows equal start and end times (ms precision).
-- Jan's hand checks of the window workflow pending: Esc during a drag, Alt-copy, wheel feel, height handle with a real mouse.
+- Jan's hand checks pending: real mouse drags from explorer and legend, Esc during a drag, Alt-copy, wheel feel, height handle.
+- Seen once, not reproduced: window header range stale after a rectangle zoom. Rename has no visible affordance.
+- `openspec validate --specs --strict` warns that `timeseries-window` requirement 16 (drag) is over 500 characters; `add-cursors` splits it.
 
 ## Run
 
