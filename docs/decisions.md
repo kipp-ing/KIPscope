@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-025: Wheel scrolls, one Back and one Reset, screen use (2026-10-15)
+
+- **Decision:** Jan, on the efficiency test ([feedback/2026-10-15-efficiency-testers.md](feedback/2026-10-15-efficiency-testers.md)):
+  - The mouse wheel scrolls the page; Ctrl+wheel or Shift+wheel zooms the chart under the pointer. Supersedes the plain-wheel zoom of `improve-window-workflow`.
+  - Zoom controls: one "Back" and one "Reset" (no duplicate controls in the bar and in each window, no separate "Zoom out").
+  - Screen use must be optimized: more of the screen shows data (details in the next change).
+- **Why:** Jan: „agreed: The mouse wheel should scroll the page, with Ctrl/Shift+wheel to zoom" / „screen usage: yess that needs to be optimized" / „zoom agreed: back and reset it is". Two testers and the earlier power users lost their view by scrolling over a chart; the one "spontaneous" range change traced to trackpad momentum.
+
 ## D-024: Cursor details (2026-10-15)
 
 - **Decision:** Jan, on the open questions of `add-cursors` (all four as recommended by the spec owner):
