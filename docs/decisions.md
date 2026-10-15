@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-035: Display names from a project YAML (2026-10-15)
+
+- **Decision:** Jan: the UI shows short signal names (`V_ANZ` instead of `COMBI_412h.V_ANZ`), defined per project in a YAML. The YAML holds pattern rules (regex with named groups and a `show` template; first match wins) plus an optional `rename` map for single signals (rename beats rules). When two signals get the same shown name, both show the short name plus a message suffix, e.g. `V_ANZ (COMBI)`. The full source name stays in the hover card and tooltips; search matches full name, short name and message alike; CLI and API keep the stable full IDs. Lead's defaults: the file is `letsview.yaml` in the repo root, path overridable by env; no file or no matching rule shows the full name as today.
+- **Why:** Jan: „the signal names. no one is interested in hex. so it will be just V_ANZ in this case. However: this is different in each project. so a yaml shall be able to define whats shown in the ui". Picks: rules + renames, short + message suffix on collisions, full name in hover card/tooltips, search on both, CLI keeps full IDs.
+
 ## D-034: Live cursor conventions (2026-10-15)
 
 From the archived change `add-live-cursor` (design L1, L7, L8, open questions Q1–Q4 built as recommended); details there.
