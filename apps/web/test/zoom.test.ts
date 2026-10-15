@@ -1,9 +1,10 @@
 import { fromIso, NS_PER_MS } from "@letsview/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   clampRange,
   extentRange,
   historyKey,
+  RangePreview,
   wheelZoomFactor,
   ZOOM_HISTORY_LIMIT,
   ZoomHistory,
@@ -143,5 +144,67 @@ describe("wheelZoomFactor", () => {
     expect(wheelZoomFactor(-5000, 0)).toBeCloseTo(0.5, 12);
     expect(wheelZoomFactor(300, 1)).toBeCloseTo(2, 12);
     expect(wheelZoomFactor(3, 2)).toBeCloseTo(2, 12);
+  });
+});
+
+describe("RangePreview", () => {
+  const server = { from: 0n, to: 1000n };
+  const zoomed = { from: 200n, to: 400n };
+
+  it("drops the preview and shows the server range when the server rejects the range", async () => {
+    const p = new RangePreview();
+    p.range = zoomed;
+    expect(p.view(server)).toBe(zoomed);
+    const done = p.commit(zoomed, async () => ({ ok: false }));
+    expect(p.inFlight).toBe(true);
+    expect(await done).toEqual({ ok: false, reapply: true });
+    expect(p.inFlight).toBe(false);
+    expect(p.range).toBeUndefined();
+    expect(p.view(server)).toBe(server);
+  });
+
+  it("drops the preview without a command on a double-click at the extents", () => {
+    const p = new RangePreview();
+    const send = vi.fn(async () => ({ ok: true }));
+    p.range = zoomed;
+    // App sends no range when the window already shows the extents; the window only drops.
+    expect(p.drop()).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    expect(p.view(server)).toBe(server);
+    // Nothing left to drop: no second view reset.
+    expect(p.drop()).toBe(false);
+  });
+
+  it("resets inFlight, drops the preview and shows the server range when the command throws", async () => {
+    const p = new RangePreview();
+    p.range = zoomed;
+    const result = await p.commit(zoomed, () => Promise.reject(new TypeError("Failed to fetch")));
+    expect(result).toEqual({ ok: false, reapply: true });
+    expect(p.inFlight).toBe(false);
+    expect(p.range).toBeUndefined();
+    expect(p.view(server)).toBe(server);
+  });
+
+  it("keeps a newer preview and needs no view reset when an older commit settles", async () => {
+    const p = new RangePreview();
+    p.range = zoomed;
+    const newer = { from: 300n, to: 500n };
+    const done = p.commit(zoomed, async () => {
+      p.range = newer;
+      return { ok: true };
+    });
+    expect(await done).toEqual({ ok: true, reapply: false });
+    expect(p.view(server)).toBe(newer);
+  });
+
+  it("drops the preview without a view reset when the server accepts the range", async () => {
+    const p = new RangePreview();
+    p.range = zoomed;
+    expect(await p.commit(zoomed, async () => ({ ok: true }))).toEqual({
+      ok: true,
+      reapply: false,
+    });
+    expect(p.range).toBeUndefined();
+    expect(p.inFlight).toBe(false);
   });
 });

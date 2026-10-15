@@ -36,7 +36,7 @@ import { ClickGate, DOUBLE_CLICK_MS, hitCursor, snapCursorTime, stackFlags } fro
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
-import { clampRange, type Range, wheelZoomFactor } from "./zoom.ts";
+import { clampRange, type Range, RangePreview, wheelZoomFactor } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
 const MIN_SPAN_NS = 100n;
@@ -447,12 +447,11 @@ export function TimeseriesWindow({
   }
 
   // Local preview during zoom/pan; the server range changes only after the command is accepted.
-  const preview = useRef<Range | undefined>(undefined);
+  const preview = useMemo(() => new RangePreview(), []);
   // Bumped when a preview is dropped without a new server range (rejected, or reset to the same
   // range): the plot drew the preview directly, so the view effect must set the server range again.
   const [viewEpoch, reapplyView] = useReducer((n: number) => n + 1, 0);
   const commitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const inFlight = useRef(false);
   // Range shown before the gesture that is being previewed (for the zoom history).
   const gestureStart = useRef<Range | undefined>(undefined);
   const onResetRef = useRef(onReset);
@@ -558,7 +557,7 @@ export function TimeseriesWindow({
 
   // --- uPlot instance -------------------------------------------------------------------------
 
-  const viewRange = () => preview.current ?? serverRange;
+  const viewRange = () => preview.view(serverRange);
   // The x range we last set; y ranges read it because u.scales.x is stale while new data is set.
   const xView = useRef<[number, number]>([0, 1]);
   const setView = (u: uPlot, r: Range) => {
@@ -572,21 +571,16 @@ export function TimeseriesWindow({
       commitTimer.current = undefined;
       const previous = gestureStart.current;
       gestureStart.current = undefined;
-      inFlight.current = true;
-      const result = await onCommand({
-        type: "window.setRange",
-        windowId: w.id,
-        from: r.from.toString(),
-        to: r.to.toString(),
-      });
-      inFlight.current = false;
-      if (result.ok && previous) onZoomed(w.id, previous);
-      // The accepted range arrives with the next revision; drop the preview if nothing newer.
-      if (preview.current === r) {
-        preview.current = undefined;
-        // Rejected: no new range comes, so the plot goes back to the server range.
-        if (!result.ok) reapplyView();
-      }
+      const { ok, reapply } = await preview.commit(r, () =>
+        onCommand({
+          type: "window.setRange",
+          windowId: w.id,
+          from: r.from.toString(),
+          to: r.to.toString(),
+        }),
+      );
+      if (ok && previous) onZoomed(w.id, previous);
+      if (reapply) reapplyView();
       rerender();
     }, COMMIT_DELAY_MS);
   };
@@ -599,7 +593,7 @@ export function TimeseriesWindow({
     const shown = viewRange();
     if (r.to - r.from < MIN_SPAN_NS || sameRange(r, shown)) return;
     gestureStart.current ??= shown;
-    preview.current = r;
+    preview.range = r;
     setView(u, r);
     hideCursor(u);
     commit(r);
@@ -727,10 +721,7 @@ export function TimeseriesWindow({
               commitTimer.current = undefined;
               gestureStart.current = undefined;
               // App may send no range (already at the extents): show the server range meanwhile.
-              if (preview.current) {
-                preview.current = undefined;
-                reapplyView();
-              }
+              if (preview.drop()) reapplyView();
               hideCursor(self);
               onResetRef.current(w.id);
               return null;
@@ -898,9 +889,9 @@ export function TimeseriesWindow({
     uplot.current?.setSize({ width, height: plotHeight });
   }, [width, plotHeight, insets?.left, insets?.right]);
 
-  if (!inFlight.current && !commitTimer.current && preview.current) {
+  if (!preview.inFlight && !commitTimer.current && preview.range) {
     // A different range arrived from the server (e.g. another client); it wins.
-    preview.current = undefined;
+    preview.range = undefined;
   }
   const view = viewRange();
 

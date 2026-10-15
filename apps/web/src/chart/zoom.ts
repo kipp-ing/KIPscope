@@ -84,6 +84,54 @@ export class ZoomHistory {
   }
 }
 
+/**
+ * Local zoom/pan preview of one window: the plot shows the preview while a gesture runs and its
+ * setRange command is on its way; the server range changes only after the command is accepted.
+ */
+export class RangePreview {
+  /** Previewed range; undefined shows the server range. */
+  range: Range | undefined;
+  /** A setRange command is on its way. */
+  inFlight = false;
+
+  /** The range the plot shows. */
+  view(server: Range): Range {
+    return this.range ?? server;
+  }
+
+  /**
+   * Sends the previewed range r. A command that throws (e.g. a network error) counts as rejected.
+   * reapply: the preview was dropped and no new server range comes, so the plot must show the
+   * server range again.
+   */
+  async commit(
+    r: Range,
+    send: () => Promise<{ ok: boolean }>,
+  ): Promise<{ ok: boolean; reapply: boolean }> {
+    this.inFlight = true;
+    let ok = false;
+    try {
+      ok = (await send()).ok;
+    } catch {
+      ok = false;
+    } finally {
+      this.inFlight = false;
+    }
+    // The accepted range arrives with the next revision; drop the preview if nothing newer.
+    if (this.range !== r) return { ok, reapply: false };
+    this.range = undefined;
+    // Rejected: no new range comes, so the plot goes back to the server range.
+    return { ok, reapply: !ok };
+  }
+
+  /** Drops the preview without a command; true if there was one (the plot must show the server range again). */
+  drop(): boolean {
+    if (!this.range) return false;
+    this.range = undefined;
+    return true;
+  }
+}
+
 /** History key: one shared history while linked ("*"), else per window ID. */
 export function historyKey(linked: boolean, windowId: string): string {
   return linked ? "*" : windowId;
