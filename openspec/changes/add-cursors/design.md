@@ -54,6 +54,7 @@ A click places a cursor the same way. The preview shows at once, and the `cursor
 
 Mechanics:
 - Each visible cursor is a DOM overlay inside `u.over`: a 12 px-wide transparent hit strip (±6 px), `cursor: ew-resize`, with a 1 px line in its centre and a flag "A"/"B" at the top. The strip stops propagation of `pointerdown` **and** `mousedown`, so uPlot never starts a selection. Wheel events bubble on to `u.over`, so zoom still works over a line. Positions come from `u.valToPos` in the `draw` hook, which also runs during zoom previews, so lines stay at their time.
+- When both lines are visible and closer than `max(CURSOR_FLAG_PX, plot width / 100)` (16 px, `chart/cursors.ts` `stackFlags`), B's flag moves down one row (`CURSOR_FLAG_ROW_PX` = 14 px) so the flags never cover each other. ×2 on the threshold stacks flags that would still fit; ÷2 lets 16 px-wide flags overlap.
 - Click detection uses `mousedown`/`mouseup` on `u.over` with less than `DRAG_THRESHOLD_PX` (4 px) of movement. A `ClickGate` commits the last click after `DOUBLE_CLICK_MS = 500`. uPlot's `dblclick` binding calls `gate.doubleClick()`, which drops the pending click and its preview.
 - Placed times are snapped: `snapCursorTime(t, span)` rounds to the largest power of ten in ns that is at most `span / 1000`. At 1000 px that is about one pixel, and the times read short (`…:01.512` instead of `…:01.512345678`).
 - Hit test: the nearer line within 6 px; on a tie B, which is drawn above A.
