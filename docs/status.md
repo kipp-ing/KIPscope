@@ -16,9 +16,9 @@ As of 2026-10-15, session 4.
 
 ## Next
 
-1. Change `improve-navigation` (D-025, D-026, D-028): wheel scrolls / Ctrl+Shift+wheel zooms, one Back and one Reset, time navigation ("Go to", keys, presets), A/B/Δ readout on the chart, 3 significant digits with SI prefixes. Building.
-2. Change `improve-layout` (D-026, D-027, D-028): collapsible sidebar, two-column tiles, compact headers, marked window as "Add to" target, emptied windows removed. Spec done; built after 1.
-3. Jan: hand check of cursors and CLI (archived before the check, D-028): real mouse drags of cursor lines and rows, Esc mid-drag, Alt-copy, CLI `--wait` with no tab open (exit 6).
+1. Change `improve-navigation` (D-025, D-026, D-028): wheel scrolls / Ctrl+Shift+wheel zooms, one Back and one Reset, time navigation ("Go to", keys, presets), A/B/Δ readout on the chart, 3 significant digits with SI prefixes. Built, all tasks ticked (not archived; Jan's look first).
+2. Change `improve-layout` (D-026, D-027, D-028): collapsible sidebar, two-column tiles, compact headers, marked window as "Add to" target, emptied windows removed. Built, all tasks ticked (not archived). Plot share at 1000×557: 42.6 % sidebar open, 59.8 % collapsed (testers measured ~25 % before).
+3. Jan: hand check (only possible by hand): real mouse drags of cursor lines and rows, Esc mid-drag, Alt-copy, held `+` key then one Back, trackpad swipe/pinch, a native pick in the Digits select, CLI `--wait` with no tab open (exit 6), 1440×900 / 1920×1080 layout. Then archive `improve-navigation`, then `improve-layout`.
 4. Persistence: save/load, snapshots, templates, undo (concept §8).
 5. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
 

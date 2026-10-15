@@ -18,13 +18,13 @@ Precondition: `add-cursors`, `add-cli` and `improve-navigation` are archived (or
 
 ## 3. apps/web/src
 
-- [ ] 3.1 Page shell (`App.tsx`, `styles.css`, `keys.ts`, `layout/sidebar.ts`, `explorer/SignalExplorer.tsx`), per design L1, L2, L3, L5, L6, S3, S4:
+- [x] 3.1 Page shell (`App.tsx`, `styles.css`, `keys.ts`, `layout/sidebar.ts`, `explorer/SignalExplorer.tsx`), per design L1, L2, L3, L5, L6, S3, S4:
   - `layout/sidebar.ts` with `loadSidebar`, `saveSidebar`, `isSidebarKey`, `SIDEBAR_WIDTH_PX`, `SIDEBAR_STORAGE_KEY`. App holds the sidebar state (loaded once, saved on change), sets `sidebar-collapsed` on `.app`, handles `s`, renders the "Signals" toggle at the left of the top row. The explorer takes `open`/`onOpen`: `/` while collapsed opens it, then focuses and selects the search.
   - Top bar removed; the option-bar slot is the top row. The reserved `.drop-new` box becomes `.status-strip` (~28 px, 2 px border in both states): connection, revision and dismissible error message outside a drag; "+ New window" with `data-drop="new"` during a drag.
   - `<div className="window-grid">` around the windows; grid, container query at 920 px, lone-last span, `align-items: start`, 8 px gap; tile box `.window` padding `4px 8px`, no margin; explorer width 240 px. Remove `.window-header`, `.badge*` and `.spacer` rules from `styles.css` (3.2 owns them in `window.css`).
   - Mark: App state `marked`, resolved with `resolveTarget` on window changes; passes `marked`/`onMark` to both window kinds; `SignalExplorer` gets `target`/`onTarget` instead of its own state; adds go to the mark or a new window, which stays unmarked.
   - Verify `apps/web/test/sidebar.test.ts` and `apps/web/test/explorer.test.ts` pass, plus the UI checks of `workspace-layout` "Collapsible sidebar", "Sidebar state remembered", "Tiled window grid", "Window heights in the grid", "Drops in the grid", "Top row and status strip", "Marked window", "Mark is view state" and `signal-catalog` "Stable "Add to" target".
-- [ ] 3.2 Window headers (`chart/TimeseriesWindow.tsx`, `chart/window.css`, `chart/build.ts`, `values/ValuesWindow.tsx`, `values/values.css`, `window/WindowTitle.tsx`, `window/WindowMenu.tsx`), per design L4, L5, S3, S4:
+- [x] 3.2 Window headers (`chart/TimeseriesWindow.tsx`, `chart/window.css`, `chart/build.ts`, `values/ValuesWindow.tsx`, `values/values.css`, `window/WindowTitle.tsx`, `window/WindowMenu.tsx`), per design L4, L5, S3, S4:
   - One-line grid header (title | badge or cursor times | range | `.window-controls`) at ≤ 24 px for both kinds; controls 22 px; Mode select without the "Mode" word (`aria-label`).
   - `resolutionBadge` in `build.ts`; neutral badge with the full text as tooltip.
   - `WindowTitle`: single click calls `onMark`, double-click or the menu's "Rename" edits (Enter/blur saves, Esc cancels), tooltip `<title> · Double-click to rename`. `WindowMenu` "⋯" with "Rename" and "Remove window"; no Remove button in the header.
@@ -40,7 +40,7 @@ Precondition: `add-cursors`, `add-cli` and `improve-navigation` are archived (or
 ## 5. Checks
 
 - [x] 5.1 Tester: `pnpm build && pnpm test && pnpm lint` green.
-- [ ] 5.2 UI user on smart451, six-window setup of design M1, at 1000×557 and (if the tool can resize) 1440×900 and 1920×1080: every UI scenario of `workspace-layout`, the changed scenarios of `timeseries-window` ("Last signal dragged out", "Drop into a new window", "Rename", "Rename from the menu", "Single click does not rename") and `signal-catalog` ("Removed target falls back", "Select and header mark the same window"); the M1 snippet per viewport and sidebar state, reported against the goals table. A viewport the tool cannot set is `not_run`.
+- [x] 5.2 UI user on smart451, six-window setup of design M1, at 1000×557 and (if the tool can resize) 1440×900 and 1920×1080: every UI scenario of `workspace-layout`, the changed scenarios of `timeseries-window` ("Last signal dragged out", "Drop into a new window", "Rename", "Rename from the menu", "Single click does not rename") and `signal-catalog` ("Removed target falls back", "Select and header mark the same window"); the M1 snippet per viewport and sidebar state, reported against the goals table. A viewport the tool cannot set is `not_run`.
 
 ## Workflow follow-up
 
