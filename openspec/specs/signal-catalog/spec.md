@@ -250,7 +250,7 @@ The explorer SHALL update its list on every keystroke without a request to the s
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks 10,000 signals in under 50 ms"
 
 ### Requirement: Signal hover card
-Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal.
+Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. The DBC range and the SNA physical values SHALL be printed by number-format with the workspace's digits option; scaling and raw step SHALL stay exact. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal; number format: D-026 („everywhere (… hover card …)"), exact scaling in design N9 (Jan's call Q7).
 
 #### Scenario: Card for V_ANZ
 - **WHEN** the user hovers `COMBI_412h.V_ANZ` on real data and the signal is shown in one window
@@ -259,8 +259,13 @@ Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL 
 
 #### Scenario: Card with offset
 - **WHEN** the user hovers `MS_608h.T_MOT` on real data
-- **THEN** the card shows scaling `× 1 - 40`, raw step `1 °C`, range `-40 … 214 °C`, and "Shown in" reads `no window` when no window shows it
+- **THEN** the card shows scaling `× 1 - 40`, raw step `1 °C`, range `-40.0 … 214 °C`, and "Shown in" reads `no window` when no window shows it
 - **Evidence:** UI check (screenshot of the card); `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range"
+
+#### Scenario: Prefixed SNA value
+- **WHEN** the user hovers `BS_200h.DVL` on real data with the digits option at 3, then at 4
+- **THEN** the SNA line reads `8.19 k1/min (raw 3FFFh)`, then `8.192 k1/min (raw 3FFFh)`, and the raw step reads `0.5 1/min` both times
+- **Evidence:** UI check (two screenshots of the card); `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range"
 
 #### Scenario: Card formatting rules
 - **WHEN** a signal has DBC range `[0|0]`, an extended CAN ID, or no DBC entry
@@ -324,19 +329,24 @@ Pressing on an explorer row's name and moving the pointer SHALL start the app's 
 - **Evidence:** UI check
 
 ### Requirement: Stable "Add to" target
-The explorer's "Add to" target SHALL be held by window ID and change only by the user's own choice, or fall back to "New window" when its window is removed. Creating, renaming or reordering windows, new state revisions and query changes SHALL NOT change it. The add button SHALL name the target it adds to; Enter adds to the same target. Origin: D-020 („The "Add to" target stays where the user put it; creating, renaming or reordering windows does not move it.“).
+The explorer's "Add to" target SHALL be the marked window (workspace-layout "Marked window"), held by window ID, or "New window" while none is marked. It SHALL change only by the user's own act (a click on a window header, or a choice in the "Add to" select, which shows and sets the same mark), or fall back to "New window" when its window is removed. Creating, renaming or reordering windows, drops, cursor clicks, new revisions and query changes SHALL NOT change it. The add button SHALL name its target; Enter adds to the same target. Origin: D-020 („The "Add to" target stays where the user put it"); D-022 ("a removed target falls back to "New window""); D-027 („the user marks a window, and adds go there. The user's own act of marking sets the target").
 
 #### Scenario: Target survives window changes
-- **WHEN** windows `w1` and `w2` exist, the user selects `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed
+- **WHEN** windows `w1` and `w2` exist, the user marks `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed
 - **THEN** the target is still `w2`, and the next add (button or Enter) lands in `w2`
-- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SOLL after creating another window; screenshot shows it in the selected window)
+- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SOLL after creating another window; screenshot shows it in the marked window)
 
 #### Scenario: Removed target falls back
-- **WHEN** the selected target window is removed
-- **THEN** the target becomes "New window" and the select shows it
-- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"
+- **WHEN** the marked window is removed, by its menu or because a move emptied it
+- **THEN** the target becomes "New window", the select shows it and no window is marked
+- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (screenshot after dragging the marked window's only signal into another window)
 
 #### Scenario: Add button names its target
 - **WHEN** the user points at a row's add button with target `w2` titled `Speeds`
 - **THEN** its tooltip and accessible name read `Add to Speeds` (`Add to new window` for "New window")
 - **Evidence:** UI check (screenshot of the tooltip)
+
+#### Scenario: Select and header mark the same window
+- **WHEN** the user marks `Window 1` by a click on its header, then chooses `Window 2` in the "Add to" select, then chooses "New window"
+- **THEN** after the click the select shows `Window 1` and Window 1 shows the mark; after the choice the mark is on Window 2 only; after "New window" no window shows the mark
+- **Evidence:** UI check on smart451 at 1440×900 (screenshot after each step)

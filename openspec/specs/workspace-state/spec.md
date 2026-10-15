@@ -6,18 +6,18 @@ Holds the state of the open workspace on the server and changes it only through 
 ## Requirements
 
 ### Requirement: Server-held workspace
-The server SHALL hold one open workspace: windows of kind `timeseries` or `values` with their signals and titles, each timeseries window's range, display options and plot height, each values window's "Between points" mode, the link flag, each signal's colour, and cursors A and B with the diff flag. Windows and signal assignments SHALL have stable IDs. Origin: D-011 (D8); D-017 (link flag), D-018 (title, height, colours); D-023 (values windows, cursors).
+The server SHALL hold one open workspace: windows of kind `timeseries` or `values` with their signals and titles, each timeseries window's range, display options and plot height, each values window's "Between points" mode, the link flag, each signal's colour, cursors A and B with the diff flag, and the user options. Windows and signal assignments SHALL have stable IDs. Origin: D-011 (D8); D-017 (link flag), D-018 (title, height, colours); D-023 (values windows, cursors); D-026 and concept §8 (user options).
 
 #### Scenario: Browser reload
 - **WHEN** the browser reloads the page
-- **THEN** it shows the same windows, signals and time ranges as before, and the same titles, heights, link toggle and signal colours, the same values windows and the same cursors and diff mode
-- **Evidence:** UI check (screenshot before and after reload; "Rename" and "Taller window" in the timeseries-window delta cover title and height)
+- **THEN** it shows the same windows, signals and time ranges as before, and the same titles, heights, link toggle and signal colours, the same values windows, the same cursors and diff mode, and the same digits option
+- **Evidence:** UI check (screenshot before and after reload; "Rename" and "Taller window" in the timeseries-window spec cover title and height)
 
 ### Requirement: Changes only through commands
-The workspace SHALL change only by applying commands. It SHALL support at least: create a timeseries or values window, remove, rename, set height, add, remove, move or copy a signal, set time range, set display options, link or unlink the time axes, set, move or remove a cursor, and switch diff mode. Origin: D-011 (D8); concept §7 (CLI controls windows, signals, zoom, cursors and diff mode); D-017, D-018, D-023 for the newer commands.
+The workspace SHALL change only by applying commands. It SHALL support at least: create a timeseries or values window, remove, rename, set height, add, remove, move or copy a signal, set time range, set display options, link or unlink the time axes, set, move or remove a cursor, switch diff mode, and set the user options. Origin: D-011 (D8); concept §7 (CLI controls windows, signals, zoom, cursors, diff mode and display options); D-017, D-018, D-023, D-026 for the newer commands.
 
 #### Scenario: UI zoom is a command
-- **WHEN** the user zooms a window in the UI
+- **WHEN** the user zooms a window in the UI, by wheel, keys or "Go to"
 - **THEN** the UI sends a set-time-range command and the window's range changes only after the server accepts it
 
 #### Scenario: Window workflow from the CLI
@@ -29,6 +29,11 @@ The workspace SHALL change only by applying commands. It SHALL support at least:
 - **WHEN** a caller posts `window.create {kind: "values"}`, `cursor.set`, `cursor.move`, `cursor.setDiff` and `cursor.remove` to `POST /api/commands`
 - **THEN** each is accepted with a new revision and `GET /api/workspace` shows the values window, the cursor times and the diff flag after each
 - **Evidence:** `apps/server/test/workspace.http.test.ts` › "applies cursor commands over HTTP"
+
+#### Scenario: Options over HTTP
+- **WHEN** a caller posts `workspace.setOptions {digits: 4}` to `POST /api/commands`
+- **THEN** it is accepted with a new revision and `GET /api/workspace` shows `options.digits` `4`
+- **Evidence:** `apps/server/test/workspace.http.test.ts` › "applies the options command over HTTP"
 
 ### Requirement: Command results
 Every command SHALL get a machine-readable result: accepted with the resulting revision, or rejected with an error code and message. A rejected command SHALL leave the workspace unchanged.
@@ -73,29 +78,6 @@ A workspace SHALL contain at most 50 distinct signals across all windows. A comm
 #### Scenario: 51st signal
 - **WHEN** 50 distinct signals are shown and a command adds another one
 - **THEN** the command is rejected with a limit error
-
-### Requirement: Move and copy a signal between windows
-A command SHALL move a signal assignment from one window to another, or copy it when asked. A move SHALL keep the assignment's ID; a copy SHALL create a new one. A target that already shows the signal (including the source itself) SHALL reject the command with `already_in_window`. A window emptied by a move SHALL stay. Origin: D-017 („Signale zwischen zwei anzeigen hin und her“); concept §4 and §7 (assign signals to windows, also by CLI).
-
-#### Scenario: Move keeps ID and colour
-- **WHEN** window `w1` shows assignment `a2` of signal S and `window.moveSignal {windowId: w1, assignmentId: a2, targetWindowId: w3}` is applied
-- **THEN** `w1` no longer shows `a2`, `w3` ends with `{id: a2, signalId: S}`, and S's colour index is unchanged
-- **Evidence:** `packages/shared/test/apply.test.ts` › "moves a signal keeping assignment ID and colour"
-
-#### Scenario: Copy
-- **WHEN** the same command is applied with `copy: true`
-- **THEN** `w1` still shows `a2`, `w3` gets a new assignment whose ID is returned as `created`, and the distinct-signal count does not change
-- **Evidence:** `packages/shared/test/apply.test.ts` › "copies a signal with a new assignment ID"
-
-#### Scenario: Emptied window stays
-- **WHEN** the only signal of a window is moved away
-- **THEN** the window remains in the workspace with no signals
-- **Evidence:** `packages/shared/test/apply.test.ts` › "keeps an emptied source window"
-
-#### Scenario: Target already shows the signal
-- **WHEN** the target window already shows signal S, or the target is the source window
-- **THEN** the command is rejected with `already_in_window` and the revision does not change
-- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a move into a window that already shows the signal"
 
 ### Requirement: Move into a new window
 A move or copy without a target window SHALL create a new untitled timeseries window at the end and put the signal into it. From a timeseries window it SHALL take the source's range, display options and height. From a values window it SHALL take the range of the window zoomed last, else of the first timeseries window, with default display and height, and be rejected with `invalid_range` if neither exists. Origin: D-017; feedback 2026-10-14, point 1; D-023 (values rows are drag sources).
@@ -223,3 +205,67 @@ A values window SHALL accept rename, remove, add, remove, move or copy of signal
 - **WHEN** a timeseries window and a values window each show `COMBI_412h.V_ANZ` and `window.addSignal` adds V_ANZ to each again
 - **THEN** both commands are rejected with `already_in_window` and the revision does not change
 - **Evidence:** `packages/shared/test/apply.test.ts` › "rejects adding a signal the window already shows"
+
+### Requirement: User options
+The workspace SHALL hold user options; for now only `digits`, the number of significant digits (3 or 4, default 3). The command `workspace.setOptions {digits}` SHALL set it with one revision; any other value SHALL be rejected with `invalid_command` and leave the workspace unchanged. Origin: D-026 („4 significant digits are an option"); concept §8 (user options belong to the stored state; „Benutzeroptionen"); concept §7 (display options are controllable by CLI).
+
+#### Scenario: Default and set
+- **WHEN** the server starts, a caller reads the workspace, posts `{"type":"workspace.setOptions","digits":4}` and then `{"type":"workspace.setOptions","digits":5}`
+- **THEN** `curl -s localhost:7310/api/workspace | jq -c .workspace.options` first prints `{"digits":3}`, then `{"digits":4}`; the second command is rejected with `invalid_command` and the revision does not change
+- **Evidence:** `packages/shared/test/apply.test.ts` › "sets the digits option and rejects other values"; the `curl` commands after a server restart
+
+### Requirement: Move and copy a signal
+A command SHALL move a signal assignment from one window to another, or copy it when asked. A move SHALL keep the assignment's ID; a copy SHALL create a new one. A target that already shows the signal (including the source itself) SHALL reject the command with `already_in_window`. A window emptied by a move SHALL be removed ("Window emptied by a move is removed"). Origin: D-017 („Signale zwischen zwei anzeigen hin und her“); concept §4, §7; D-027.
+
+#### Scenario: Move keeps ID and colour
+- **WHEN** window `w1` shows assignment `a2` of signal S and `window.moveSignal {windowId: w1, assignmentId: a2, targetWindowId: w3}` is applied
+- **THEN** `w1` no longer shows `a2`, `w3` ends with `{id: a2, signalId: S}`, and S's colour index is unchanged
+- **Evidence:** `packages/shared/test/apply.test.ts` › "moves a signal keeping assignment ID and colour"
+
+#### Scenario: Copy
+- **WHEN** the same command is applied with `copy: true`
+- **THEN** `w1` still shows `a2`, `w3` gets a new assignment whose ID is returned as `created`, and the distinct-signal count does not change
+- **Evidence:** `packages/shared/test/apply.test.ts` › "copies a signal with a new assignment ID"
+
+#### Scenario: Emptied window removed
+- **WHEN** the only signal of a window is moved away
+- **THEN** the window is no longer in the workspace and the result names it as `removedWindow`
+- **Evidence:** `packages/shared/test/apply.test.ts` › "removes a window emptied by a move"
+
+#### Scenario: Target already shows the signal
+- **WHEN** the target window already shows signal S, or the target is the source window
+- **THEN** the command is rejected with `already_in_window` and the revision does not change
+- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a move into a window that already shows the signal"
+
+### Requirement: Window emptied by a move is removed
+A `window.moveSignal` without `copy` that takes the last signal out of its source window SHALL remove that window, of any kind, in the same command and revision, exactly as `window.remove` would (including clearing `lastZoomed` when it named that window). The result SHALL carry `removedWindow` with its ID. A copy, `window.removeSignal` and a rejected move SHALL NOT remove a window. Origin: D-027 („A window emptied by a move is removed automatically").
+
+#### Scenario: Last signal into another window
+- **WHEN** timeseries window `w1` shows only `a2` and `w3` exists, and `window.moveSignal {windowId: w1, assignmentId: a2, targetWindowId: w3}` is applied
+- **THEN** the revision rises by exactly one, `w1` is gone, `w3` shows `a2`, and the result is `{ok: true, revision, removedWindow: "w1"}`
+- **Evidence:** `packages/shared/test/apply.test.ts` › "removes a window emptied by a move"
+
+#### Scenario: Values window emptied
+- **WHEN** a values window shows one signal and it is moved into a timeseries window
+- **THEN** the values window is gone and named as `removedWindow`
+- **Evidence:** `packages/shared/test/apply.test.ts` › "removes a window emptied by a move"
+
+#### Scenario: Only signal into a new window
+- **WHEN** timeseries window `w1` in step mode with height 400 shows only `a2`, and `window.moveSignal` without `targetWindowId` is applied
+- **THEN** one revision later a new window with `w1`'s range, step mode and height 400 shows `a2`, `w1` is gone, and the result carries both `createdWindow` (the new ID) and `removedWindow: "w1"`
+- **Evidence:** `packages/shared/test/apply.test.ts` › "moves the only signal into a new window and removes the source"
+
+#### Scenario: Copy, remove and refused moves keep the window
+- **WHEN** a window's only signal is copied elsewhere; another window's only signal is removed with `window.removeSignal`; and a third window's only signal is moved into a window that already shows it
+- **THEN** all three windows stay (the second with no signals), no result carries `removedWindow`, and the refused move leaves the revision unchanged
+- **Evidence:** `packages/shared/test/apply.test.ts` › "keeps a window emptied by removeSignal, a copy or a refused move"
+
+#### Scenario: Window zoomed last is emptied
+- **WHEN** "Link time axes" is off, `w1` and `w2` have different ranges, `w1` was zoomed last, and `w1`'s only signal is moved into `w2`
+- **THEN** `w1` is gone, `lastZoomed` is absent, and `w2` keeps its range
+- **Evidence:** `packages/shared/test/apply.test.ts` › "clears lastZoomed when a move removes that window"
+
+#### Scenario: Over HTTP
+- **WHEN** a caller posts such an emptying `window.moveSignal` to `POST /api/commands`
+- **THEN** the answer is `{ok: true, revision, removedWindow: "<id>"}` and `GET /api/workspace` no longer lists that window
+- **Evidence:** `apps/server/test/workspace.http.test.ts` › "returns the window a move removed"

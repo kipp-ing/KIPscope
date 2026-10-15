@@ -241,3 +241,29 @@ With `--wait`, an accepted command SHALL block until a connected UI has acknowle
 - **WHEN** `letsview value testcar/NOPE.X 0` runs
 - **THEN** it exits 1 with `error.code` `unknown_signal`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reads a value at a time and at a cursor"
+
+### Requirement: Digits option command
+The CLI SHALL offer `digits 3|4`, sending exactly one `workspace.setOptions {digits}` command; any other argument SHALL be a usage error (exit 2, nothing sent). `state` shows the option as part of the workspace. Origin: D-026 („4 significant digits are an option"); concept §7 (display options are controllable by CLI); workspace-state "User options".
+
+#### Scenario: Form maps to the command
+- **WHEN** the argument lists `digits 4` and `digits 5` are parsed
+- **THEN** the first gives `{"type":"workspace.setOptions","digits":4}`, the second is a usage error naming `3|4`
+- **Evidence:** `apps/cli/test/args.test.ts` › "maps every command form to its command"
+
+#### Scenario: Digits over HTTP
+- **WHEN** `letsview digits 4` and then `letsview state` run against the test server
+- **THEN** the first exits 0 with a new revision, and the state shows `options.digits` `4`
+- **Evidence:** `apps/cli/test/cli.test.ts` › "sets the digits option over HTTP"
+
+### Requirement: Removed window in the result
+When an accepted command removed a window as a side effect (workspace-state "Window emptied by a move is removed"), the CLI's JSON result SHALL carry `removedWindow` with that window's ID, placed right after `createdWindow` in the key order. Origin: concept §7 („maschinenlesbare Ergebnisse", a caller must see what its command changed); D-027 (emptied window removed).
+
+#### Scenario: Move empties a window
+- **WHEN** against the test server `w1` shows only `testcar/Sna_800h.RPM`, `w3` exists, and `letsview signal move w1 RPM w3` runs
+- **THEN** it exits 0, its output carries `"removedWindow":"w1"` after `revision`, and a following `letsview state` no longer lists `w1`
+- **Evidence:** `apps/cli/test/cli.test.ts` › "reports the window a move removed"
+
+#### Scenario: Copy reports no removal
+- **WHEN** `letsview signal move w3 RPM new --copy` runs
+- **THEN** the output carries `createdWindow` and `created` and no `removedWindow`
+- **Evidence:** `apps/cli/test/cli.test.ts` › "reports the window a move removed"
