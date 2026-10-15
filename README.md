@@ -34,8 +34,12 @@ cp .env.example .env   # then set CLICKHOUSE_PASSWORD (read-only user `letsview`
 **Real data (development):** ClickHouse `sdlog` on carserver, reachable only through an SSH tunnel:
 
 ```sh
-ssh -f -N -L 18123:localhost:8123 jan@192.168.42.207
+scripts/tunnel.sh start    # keeps the tunnel up and reconnects within ~5 s after a drop (e.g. carserver's 23:00 reboot)
+scripts/tunnel.sh status   # keeper running? ClickHouse answering on 18123?
+scripts/tunnel.sh stop
 ```
+
+The keeper runs `ssh -N -L 18123:localhost:8123 jan@192.168.42.207` in a loop (host: `LETSVIEW_TUNNEL_HOST`); log in `$TMPDIR/letsview-tunnel.log`.
 
 **Test database (automated tests):** local ClickHouse with synthetic data:
 
