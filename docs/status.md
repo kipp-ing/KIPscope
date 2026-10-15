@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-15, end of session 4. No change in flight; all eight changes are archived and the main specs describe the running app.
+As of 2026-10-15, session 5. No change in flight; all nine changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -12,12 +12,13 @@ As of 2026-10-15, end of session 4. No change in flight; all eight changes are a
 | Chart windows | [timeseries-window](../openspec/specs/timeseries-window/spec.md) | uPlot windows, one axis per unit (max 4), linked zoom, history, drag and drop, wheel and keys |
 | Time navigation | [time-navigation](../openspec/specs/time-navigation/spec.md) | "Go to" with times, ranges and durations; span presets; zoom and pan keys |
 | Cursors | [cursors](../openspec/specs/cursors/spec.md) | A and B in every window; exact values, Δ and Δt in the legend |
+| Live cursor | [live-cursor](../openspec/specs/live-cursor/spec.md) | L follows the mouse in every window: L column in legends and values window, nearest curve highlighted with a value label |
 | Values window | [values-window](../openspec/specs/values-window/spec.md) | Many signals at the cursors, no plot |
 | Number format | [number-format](../openspec/specs/number-format/spec.md) | 3 (or 4) significant digits with SI prefixes everywhere people read numbers |
 | Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout). Decisions D-001 … D-031: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor). Decisions D-001 … D-034: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -25,6 +26,10 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Jan's hand check: drags, Esc, Alt-copy, trackpad, Digits select and large screens fine. His follow-ups went into `improve-navigation` before its archive:
   - D-030: compact chart legend (bare values with SI prefix, kind as tooltip, no axis or `complete` column, clock-only times, `×` on hover); mouse wheel steps (an accelerated mouse notch no longer pans a whole plot width).
   - D-031: the chart readout always shows the exact value at the cursor, also outside the zoom; B shows without "Diff", which adds only Δ and Δt; no text selection while dragging.
+
+## Session 5 in brief
+
+- Built and archived `add-live-cursor` (D-032 … D-034) in three rounds; Jan: „I like".
 
 ## Next
 
@@ -41,7 +46,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Tick labels may thin out to one label on very narrow plots. A header range below 1 s shows equal start and end (ms precision).
 - Seen once, not reproduced: header range stale after a rectangle zoom. Rename has no visible affordance (click the title).
 - Hidden browser tabs stay connected but never acknowledge renders; `--wait` takes the first UI that does, and times out when only hidden tabs are open.
-- Not checked by hand: CLI `--wait` with no tab open (exit 6, covered by tests); mouse wheel steps on mice other than Jan's.
+- Not checked by hand: L hidden while a cursor line is dragged (unit test only; the browser tool cannot hold a drag); CLI `--wait` with no tab open (exit 6, covered by tests); mouse wheel steps on mice other than Jan's.
 
 ## Run
 

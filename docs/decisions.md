@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-034: Live cursor conventions (2026-10-15)
+
+From the archived change `add-live-cursor` (design L1, L7, L8, open questions Q1–Q4 built as recommended); details there.
+
+- **Store:** L is a browser-tab singleton (`apps/web/src/chart/live.ts`), never workspace state; at most one publish per animation frame; near = 8 px on each signal's own y axis, mean line only (not the min/max band).
+- **Values window:** its L cells are exact server values, looked up once the pointer rested 150 ms, outside the render acknowledgement; charts read L from the drawn data.
+- **Hidden:** L clears on leaving the plot, on button down and on a range change of its window, and is suspended during every line, height or row drag; a click without movement brings it back at the same spot (D-033).
+- **Shown:** no L time anywhere; the curve label is value and unit without a kind tag.
+
 ## D-033: Live cursor after a click, legend always a grid (2026-10-15)
 
 - **Decision:** Jan, on the `add-live-cursor` round 1 findings: on mouse up without movement L comes back at the same spot, so A and L read the same right after a click (amends design L8, which cleared L until the next move). The chart legend is always a grid: name, `[unit]`, then A | B | Δ while on, and L, so L lines up under itself also with A and B off (replaces the wrapping list with cursors off).

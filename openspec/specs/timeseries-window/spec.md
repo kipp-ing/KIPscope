@@ -459,14 +459,6 @@ While dragging, the window list SHALL scroll when the pointer is within 48 px of
 - **THEN** the list does not scroll
 - **Evidence:** UI check (two screenshots 2 s apart show the same first window)
 
-### Requirement: No value readout on hover
-Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal at the pointer. Values are read at the cursors, in the values window and in the chart readout (cursors "Exact readout values"), and neither changes while the pointer moves. Origin: D-023 („no value readout on hover"); D-027 (readout at the cursors on the chart).
-
-#### Scenario: Hover a speed plot
-- **WHEN** A is on, the pointer moves over a window showing `COMBI_412h.V_ANZ` and `BS_200h.DVL`
-- **THEN** a crosshair follows the pointer, and no signal value appears or changes anywhere on the page apart from axis ticks, values-window cells and readout cells, which stay as they were before the pointer moved
-- **Evidence:** UI check (two screenshots at different pointer positions)
-
 ### Requirement: Option bar
 Above the windows, an option bar SHALL stay visible while the window list scrolls. It SHALL hold, in this order: the cursor toggles "A", "B" and "Diff" (cursors spec), "Link time axes", the "Go to" field and the span presets (time-navigation), "Back", "Reset", the digits option (number-format) and "+ Values window". Origin: D-023 (cursor toggles, diff mode, "Link time axes", zoom back and reset in a bar); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option).
 
