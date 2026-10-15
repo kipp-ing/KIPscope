@@ -1,6 +1,6 @@
 import type { TimeseriesWindow } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
-import { draggedHeight, heightCommand } from "../src/chart/height.ts";
+import { draggedHeight, heightCommand, startsHeightDrag } from "../src/chart/height.ts";
 
 function win(height?: number): TimeseriesWindow {
   return {
@@ -44,5 +44,12 @@ describe("height drag", () => {
       windowId: "w1",
       height: 120,
     });
+  });
+
+  it("starts only on a primary press without Ctrl", () => {
+    expect(startsHeightDrag({ button: 0, ctrlKey: false })).toBe(true);
+    expect(startsHeightDrag({ button: 2, ctrlKey: false })).toBe(false); // right click
+    expect(startsHeightDrag({ button: 1, ctrlKey: false })).toBe(false); // middle click
+    expect(startsHeightDrag({ button: 0, ctrlKey: true })).toBe(false); // macOS Ctrl-click
   });
 });

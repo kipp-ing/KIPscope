@@ -12,6 +12,12 @@ export function draggedHeight(startHeight: number, dy: number): number {
   return Math.min(MAX_PLOT_HEIGHT, Math.max(MIN_PLOT_HEIGHT, Math.round(startHeight + dy)));
 }
 
+/** Whether a pointer press starts a height drag: primary button only, and no Ctrl (a macOS
+ * Ctrl-click opens the context menu). */
+export function startsHeightDrag(e: { button: number; ctrlKey: boolean }): boolean {
+  return e.button === 0 && !e.ctrlKey;
+}
+
 /** The command for a released height drag: window.setHeight with this height, or undefined when it
  * equals the stored height (w.height ?? DEFAULT_PLOT_HEIGHT). */
 export function heightCommand(w: TimeseriesWindow, height: number): CommandInput | undefined {

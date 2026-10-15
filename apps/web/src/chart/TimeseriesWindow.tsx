@@ -60,7 +60,7 @@ import {
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
-import { draggedHeight, heightCommand } from "./height.ts";
+import { draggedHeight, heightCommand, startsHeightDrag } from "./height.ts";
 import type { Insets } from "./insets.ts";
 import {
   FADE_ALPHA,
@@ -1261,6 +1261,7 @@ export function TimeseriesWindow({
   /** Height strip and corner grip (design G1): resize locally while dragged, send
    * window.setHeight on release. */
   const startHeightDrag = (e: React.PointerEvent<HTMLElement>) => {
+    if (!startsHeightDrag(e)) return;
     e.preventDefault();
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
