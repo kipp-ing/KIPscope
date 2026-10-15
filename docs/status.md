@@ -12,13 +12,13 @@ As of 2026-10-15, session 4.
 - Change `improve-window-workflow` built in 5 rounds plus close-out and a spec audit, archived 2026-10-15: move/copy signals by drag, one axis per unit stacked up to four, linked time zoom (default on), stable colours, rename, heights, zoom history, time bounds (D-017 … D-021).
 - Changes `add-cursors` (cursors A/B, values window, option bar, drag from everywhere) and `add-cli` (CLI remote control) built and archived 2026-10-15 (D-023, D-024, D-029); efficiency test with three testers ([feedback/2026-10-15-efficiency-testers.md](feedback/2026-10-15-efficiency-testers.md)).
 - Change `improve-signal-explorer` built in 2 rounds plus close-out, archived 2026-10-15: one-line explorer with hover card, ranked search with highlighting in the browser (`GET /api/catalog`), keys, explorer drag, stable "Add to" target (D-020, D-022).
-- Decisions D-001 … D-029 in [decisions.md](decisions.md).
+- Decisions D-001 … D-031 in [decisions.md](decisions.md).
 
 ## Next
 
 1. Change `improve-navigation` (D-025, D-026, D-028): wheel scrolls / Ctrl+Shift+wheel zooms, one Back and one Reset, time navigation ("Go to", keys, presets), A/B/Δ readout on the chart, 3 significant digits with SI prefixes. Built, all tasks ticked (not archived; Jan's look first).
 2. Change `improve-layout` (D-026, D-027, D-028): collapsible sidebar, two-column tiles, compact headers, marked window as "Add to" target, emptied windows removed. Built, all tasks ticked (not archived). Plot share at 1000×557: 42.6 % sidebar open, 59.8 % collapsed (testers measured ~25 % before).
-3. Jan: hand check (only possible by hand): real mouse drags of cursor lines and rows, Esc mid-drag, Alt-copy, held `+` key then one Back, trackpad swipe/pinch, a native pick in the Digits select, CLI `--wait` with no tab open (exit 6), 1440×900 / 1920×1080 layout. Then archive `improve-navigation`, then `improve-layout`.
+3. Jan's hand check 2026-10-15: drags, Esc, Alt-copy, trackpad, Digits select and large screens fine; CLI exit 6 not tested by him. Follow-ups built into `improve-navigation` (D-030, D-031): compact chart legend, mouse wheel steps, readout values outside the zoom, B without Diff. Open: Jan's look at those (mouse feel, trackpad still smooth, zoom past A, Diff off with B on). Then archive `improve-navigation`, then `improve-layout`.
 4. Persistence: save/load, snapshots, templates, undo (concept §8).
 5. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
 
