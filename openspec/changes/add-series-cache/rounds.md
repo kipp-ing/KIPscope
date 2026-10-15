@@ -1,0 +1,1 @@
+- Round 1: done - all scenarios fulfilled (tests green, UI user confirmed no /api/series on cached views, raw zoom, live cursor, reload, --wait); open could-findings: raw-or-buckets choice depends on earlier loads (C3) and LRU use() before raw check, for the lead/Jan to accept or schedule.

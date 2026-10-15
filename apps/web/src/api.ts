@@ -10,7 +10,7 @@ import type {
   SignalPage,
   ValuesMode,
 } from "@letsview/shared";
-import type { LoadRequest } from "./chart/loader.ts";
+import type { SeriesRequest } from "./chart/tiles.ts";
 
 async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
   const res = await fetch(url, abort ? { signal: abort } : {});
@@ -39,7 +39,7 @@ export async function signalInfo(id: string): Promise<SignalInfo | undefined> {
   return page.items.find((s) => s.id === id);
 }
 
-export function fetchSeries(r: LoadRequest, abort: AbortSignal): Promise<SeriesResult> {
+export function fetchSeries(r: SeriesRequest, abort: AbortSignal): Promise<SeriesResult> {
   const params = new URLSearchParams({
     signal: r.signalId,
     from: r.from,

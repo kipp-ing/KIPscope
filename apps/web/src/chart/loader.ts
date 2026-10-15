@@ -1,12 +1,17 @@
 import type { SeriesResult } from "@letsview/shared";
+import type { SeriesCache } from "./cache.ts";
+import {
+  levelFor,
+  type SeriesRequest,
+  stitch,
+  type Tile,
+  tileable,
+  touchedTiles,
+} from "./tiles.ts";
 
-export interface LoadRequest {
+export interface LoadRequest extends SeriesRequest {
   /** Assignment ID: one signal's place in a window. */
   key: string;
-  signalId: string;
-  from: string;
-  to: string;
-  target: number;
 }
 
 export interface LoadState {
@@ -18,25 +23,30 @@ export interface LoadState {
   error?: string;
 }
 
-export type FetchSeries = (request: LoadRequest, abort: AbortSignal) => Promise<SeriesResult>;
-
 const requestId = (r: LoadRequest) => `${r.signalId}|${r.from}|${r.to}|${r.target}`;
 
+let loaders = 0;
+
 /**
- * Loads series per signal of one window (design D9). A new range aborts the previous request,
- * and a response is applied only if it belongs to the latest request for its signal, so an
- * out-of-order answer can never replace newer data.
+ * Loads series per signal of one window from the tab's tile cache (design C7). A view whose tiles
+ * are all cached completes at once; otherwise its missing tiles are loaded and the previous result
+ * stays meanwhile. A response is applied only if it belongs to the latest request for its signal,
+ * so an out-of-order answer can never replace newer data.
  */
 export class SeriesLoader {
-  private readonly fetch: FetchSeries;
+  private readonly cache: SeriesCache;
   private readonly onChange: () => void;
+  private readonly id = ++loaders;
   private readonly states = new Map<string, LoadState>();
+  /** Per key: the cache owner of its current view's tiles. */
+  private readonly owners = new Map<string, string>();
+  /** Per key: the exact request of a view that cannot be tiled (C1 fallback). */
   private readonly controllers = new Map<string, AbortController>();
   private readonly latest = new Map<string, number>();
   private seq = 0;
 
-  constructor(fetch: FetchSeries, onChange: () => void) {
-    this.fetch = fetch;
+  constructor(cache: SeriesCache, onChange: () => void) {
+    this.cache = cache;
     this.onChange = onChange;
   }
 
@@ -57,8 +67,7 @@ export class SeriesLoader {
     let changed = false;
     for (const key of [...this.states.keys()]) {
       if (!wanted.has(key)) {
-        this.controllers.get(key)?.abort();
-        this.controllers.delete(key);
+        this.forget(key);
         this.states.delete(key);
         this.latest.delete(key);
         changed = true;
@@ -73,23 +82,93 @@ export class SeriesLoader {
   }
 
   /**
-   * Aborts every request and forgets every state, so a later update starts all of them again
-   * (React's StrictMode disposes and remounts once; a kept "loading" state would never fill).
+   * Releases every tile and aborts every request and forgets every state, so a later update starts
+   * all of them again (React's StrictMode disposes and remounts once; a kept "loading" state would
+   * never fill).
    */
   dispose(): void {
-    for (const controller of this.controllers.values()) controller.abort();
-    this.controllers.clear();
+    for (const key of [...this.owners.keys(), ...this.controllers.keys()]) this.forget(key);
     this.states.clear();
     this.latest.clear();
   }
 
-  private start(request: LoadRequest): void {
-    const { key } = request;
+  /** Lets go of the key's tiles and aborts its exact request. */
+  private forget(key: string): void {
+    const owner = this.owners.get(key);
+    if (owner !== undefined) this.cache.release(owner);
+    this.owners.delete(key);
     this.controllers.get(key)?.abort();
-    const controller = new AbortController();
-    this.controllers.set(key, controller);
+    this.controllers.delete(key);
+  }
+
+  private start(request: LoadRequest): void {
+    const { key, signalId } = request;
     const seq = ++this.seq;
     this.latest.set(key, seq);
+    const id = requestId(request);
+    const from = BigInt(request.from);
+    const to = BigInt(request.to);
+    const level = levelFor(from, to, request.target);
+    const { first, last } = touchedTiles(from, to, level);
+    if (!tileable(level, first, last)) {
+      this.forget(key);
+      this.fetchExact(request, seq);
+      return;
+    }
+    this.controllers.get(key)?.abort();
+    this.controllers.delete(key);
+
+    const tiles: (Tile | undefined)[] = [];
+    const missing: bigint[] = [];
+    for (let index = first; index <= last; index++) {
+      const tile = this.cache.find(signalId, level, index);
+      tiles.push(tile);
+      if (!tile) missing.push(index);
+    }
+    const previousOwner = this.owners.get(key);
+    if (missing.length === 0) {
+      this.owners.delete(key);
+      if (previousOwner !== undefined) this.cache.release(previousOwner);
+      const result = stitch(tiles as Tile[], from, to);
+      this.states.set(key, { status: "complete", request: id, result });
+      return;
+    }
+
+    const previous = this.states.get(key)?.result;
+    this.states.set(key, {
+      status: "loading",
+      request: id,
+      ...(previous ? { result: previous } : {}),
+    });
+    const owner = `${this.id}|${key}|${seq}`;
+    const loads = this.cache.load(owner, signalId, level, missing);
+    this.owners.set(key, owner);
+    // Only now, so tiles the old and the new view share keep their run alive.
+    if (previousOwner !== undefined) this.cache.release(previousOwner);
+
+    const isCurrent = () => this.latest.get(key) === seq;
+    Promise.all(loads).then(
+      (loaded) => {
+        if (!isCurrent()) return;
+        let next = 0;
+        const all = tiles.map((tile) => tile ?? (loaded[next++] as Tile));
+        this.states.set(key, { status: "complete", request: id, result: stitch(all, from, to) });
+        this.onChange();
+      },
+      (error: unknown) => {
+        if (!isCurrent()) return;
+        const message = error instanceof Error ? error.message : String(error);
+        this.states.set(key, { status: "error", request: id, error: message });
+        this.onChange();
+      },
+    );
+  }
+
+  /** A view outside the tile grid: fetched exactly as requested and not cached. */
+  private fetchExact(request: LoadRequest, seq: number): void {
+    const { key, signalId, from, to, target } = request;
+    const controller = new AbortController();
+    this.controllers.set(key, controller);
     const previous = this.states.get(key)?.result;
     const id = requestId(request);
     this.states.set(key, {
@@ -99,7 +178,7 @@ export class SeriesLoader {
     });
 
     const isCurrent = () => this.latest.get(key) === seq;
-    this.fetch(request, controller.signal).then(
+    this.cache.fetch({ signalId, from, to, target }, controller.signal).then(
       (result) => {
         if (!isCurrent()) return;
         this.states.set(key, { status: "complete", request: id, result });

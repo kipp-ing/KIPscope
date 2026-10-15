@@ -19,7 +19,7 @@ import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } fro
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import "./window.css";
-import { fetchCursorValue, fetchSeries } from "../api.ts";
+import { fetchCursorValue } from "../api.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import {
@@ -51,6 +51,7 @@ import {
   snaShare,
   yRange,
 } from "./build.ts";
+import { tabSeriesCache } from "./cache.ts";
 import {
   ClickGate,
   CURSOR_FLAG_PX,
@@ -532,7 +533,7 @@ export function TimeseriesWindow({
   const uplot = useRef<uPlot | undefined>(undefined);
   const [width, setWidth] = useState(0);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
-  const loader = useMemo(() => new SeriesLoader(fetchSeries, rerender), []);
+  const loader = useMemo(() => new SeriesLoader(tabSeriesCache(), rerender), []);
   useEffect(() => () => loader.dispose(), [loader]);
 
   // Height being dragged; shown until the window's stored height changes from `base`.

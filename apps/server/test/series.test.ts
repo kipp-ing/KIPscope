@@ -241,3 +241,25 @@ describe("SNA handling (test series Sna_800h, from 2026-10-01T02:00:00Z)", () =>
     expect(r.v).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   });
 });
+
+describe("aligned requests share buckets", () => {
+  it("returns identical buckets for aligned requests that share them", async () => {
+    const to = 1790820080452370432n;
+    const a = asBuckets(await query("Sna_800h.SPEED", 1790820011732893696n, to, 513));
+    const b = asBuckets(await query("Sna_800h.SPEED", 1790820046092632064n, to, 257));
+    expect(a.width).toBe("134217728");
+    expect(b.width).toBe("134217728");
+    const ta = decodeTimes(a.t);
+    const tb = decodeTimes(b.t);
+    const first = ta.findIndex((t) => t >= 1790820046092632064n);
+    expect(first).toBeGreaterThan(0);
+    expect(tb.length).toBeGreaterThan(0);
+    const tail = <T>(xs: T[]) => xs.slice(first);
+    expect(tb).toEqual(tail(ta));
+    expect(b.count).toEqual(tail(a.count));
+    expect(b.sna).toEqual(tail(a.sna));
+    expect(b.mean).toEqual(tail(a.mean));
+    expect(b.min).toEqual(tail(a.min));
+    expect(b.max).toEqual(tail(a.max));
+  });
+});
