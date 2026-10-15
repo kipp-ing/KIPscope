@@ -16,13 +16,14 @@ See proposal.md (D-040 quoted). Current state that shapes the approach:
 **Goals:**
 - D-040 (1): loading follows the shown range during the gesture; a cached view is drawn sharp in the frame that applies the step.
 - D-040 (2): a per-signal overview and placeholders, so an uncached view is never drawn as stretched old data when anything coarser is cached.
+- D-041: linked windows show and load the gesture's preview range in the same frame (Z9).
 - D-040 (3): prefetch at rest so the next zoom out or pan is usually cached.
 - Every number is a constant in one file and unit-tested with fake timers and a fake fetch.
 - Goal (not a must): a gesture of many frames costs no more queries than one per 100 ms per window.
 
 **Non-Goals:**
 - No change in `packages/shared`, `apps/server`, `apps/cli`; no new endpoint, parameter or DTO (D-040: server tile cache and binary transport out of scope). The only interfaces between parallel tasks are the web modules pinned below.
-- No shared preview across linked windows (Q3); no per-region mixed resolution in one curve (Q1); no new visual marker (Q2).
+- No per-region mixed resolution in one curve (Q1); no new visual marker (Q2).
 - The command delay (300 ms) and the zoom history stay as they are.
 
 ## Decisions
@@ -140,9 +141,52 @@ export class SeriesCache {
 
 `new SeriesLoader(tabSeriesCache(), rerender, WINDOW_LOADER_OPTIONS)`; `requests` from the shown range, `committedRequests` from `w.range`; `useLayoutEffect(() => loader.update(requests), …)`; `flushSync(rerender)` in `applyRange`; `const settled = loader.settled(committedRequests) && …`. `COMMIT_DELAY_MS` stays 300. The computation of the shown range (`preview.settle`, `viewRange()`) moves above the `requests` memo.
 
-### T1: UI timing check (evidence for series-cache "Zoom timing", "Prefetch when the view rests", timeseries-window "Loading starts during the gesture")
+### Z9: Linked windows follow the preview (pinned, `chart/linkedPreview.ts` new, `chart/TimeseriesWindow.tsx`, `App.tsx`)
 
-Lead's method from the D-040 measurement. Chrome on localhost, one timeseries window showing `smart451/COMBI_412h.V_ANZ`, run with the browser's JavaScript tool:
+Jan's D-041: „with "Link time axes" on, every linked window shows the preview range and loads during the gesture like the zoomed one (a browser-local shared preview range, like the live cursor); the command is still sent once after the commit delay."
+
+```ts
+import type { Range } from "./zoom.ts";
+
+export interface SharedPreview {
+  /** Window whose gesture previews the range. */
+  source: string;
+  range: Range;
+}
+
+/** Tab singleton like `liveCursor` (live.ts); never workspace state, never sent to the server. */
+export class LinkedPreviewStore {
+  get(): SharedPreview | undefined;
+  /** Replaces the shared preview (the latest gesture wins) and notifies subscribers synchronously. */
+  publish(source: string, range: Range): void;
+  /** Clears it only when `source` is the current source; notifies when it cleared. */
+  clear(source: string): void;
+  subscribe(listener: () => void): () => void;
+}
+export const linkedPreview: LinkedPreviewStore;
+export function useLinkedPreview(store?: LinkedPreviewStore): SharedPreview | undefined; // useSyncExternalStore
+
+/** The range a window shows: its own preview, else (linked, another source) the shared one, else the server range. */
+export function shownRange(
+  windowId: string,
+  own: Range | undefined,
+  shared: SharedPreview | undefined,
+  linked: boolean,
+  server: Range,
+): Range;
+```
+
+- **Who publishes:** only the gesture's window, only while linked: `applyRange` runs `flushSync(() => { linkedPreview.publish(w.id, r); rerender(); })`, so the followers' re-renders (synchronous `useSyncExternalStore` updates), their loader updates and `setData` all happen in the same animation frame as the source's. Only the source schedules `commit` and calls `onZoomed`; the command and the zoom history are unchanged.
+- **Who reads:** every timeseries window, through `useLinkedPreview()` and `shownRange(...)`; the result replaces `preview.view(serverRange)` everywhere the shown range is used (header, x scale, `requests`, live cursor `shown`). A follower's change of shown range goes through the existing "View" layout effect (`setView`, crosshair hidden). Unlinked windows ignore the store (`linked` false).
+- **Own preview wins:** a window with its own pending preview shows that; a second gesture in another window replaces the shared preview (latest source wins); the earlier source's later `clear` is ignored because it is no longer the source.
+- **Cleared:** by the source in the render in which its own preview is dropped (`preview.range` becomes undefined after `preview.settle`: the accepted range arrived, the command was rejected, or another client's range or a history step (Backspace, the bar) won), on its unmount, and when "Link time axes" is switched off (the source clears when `linked` turns false). Since all linked windows receive the accepted revision in the same render, followers switch from the shared preview to the equal server range without a frame of the old range.
+- **Different widths:** each follower builds its own `requests` from the shared range with its own `target` (its own plot width), so it loads its own level and tiles, with its own throttle (Z1), placeholder (Z4) and prefetch at rest (Z7). Only the range is shared.
+- **Acknowledgement:** unchanged rule: every window acknowledges from `committedRequests` (`w.range`); a follower showing the shared preview is not settled for the committed revision until the accepted range arrived and its sharp data is drawn.
+- **`App.tsx`:** passes `linked={linked}` to `TimeseriesWindow` (one new prop).
+
+### T1: UI timing check (evidence for series-cache "Zoom timing", "Prefetch when the view rests", timeseries-window "Loading starts during the gesture", "Linked windows follow the gesture")
+
+Lead's method from the D-040 measurement, extended to two windows (D-041). Chrome on localhost, "Link time axes" on, window 1 (top) showing `smart451/COMBI_412h.V_ANZ`, window 2 showing `smart451/CPC_448h.PTC_HV_Volt`, run with the browser's JavaScript tool:
 
 ```js
 (() => {
@@ -150,13 +194,14 @@ Lead's method from the D-040 measurement. Chrome on localhost, one timeseries wi
     const stroke = CanvasRenderingContext2D.prototype.stroke;
     window.__strokes = [];
     CanvasRenderingContext2D.prototype.stroke = function (...a) {
-      window.__strokes.push(performance.now());
+      const w = this.canvas.closest("[data-window-id]")?.dataset.windowId ?? "?";
+      window.__strokes.push({ t: performance.now(), w });
       return stroke.apply(this, a);
     };
     window.__strokePatched = true;
   }
   window.__zoom = (deltaY) => {
-    const over = document.querySelector(".u-over");
+    const over = document.querySelector(".u-over"); // window 1
     const r = over.getBoundingClientRect();
     window.__strokes.length = 0;
     performance.clearResourceTimings();
@@ -164,27 +209,30 @@ Lead's method from the D-040 measurement. Chrome on localhost, one timeseries wi
     over.dispatchEvent(new WheelEvent("wheel", { deltaY, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true,
       clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
     return new Promise((done) => setTimeout(() => {
-      const bursts = []; // strokes closer than 8 ms belong to one draw
-      for (const t of window.__strokes) {
-        const b = bursts.at(-1);
-        if (b && t - b.end <= 8) b.end = t; else bursts.push({ start: t, end: t });
+      const bursts = {}; // per window; strokes closer than 8 ms belong to one draw
+      for (const { t, w } of window.__strokes) {
+        const list = (bursts[w] ??= []);
+        const b = list.at(-1);
+        if (b && t - b.end <= 8) b.end = t; else list.push({ start: t, end: t });
       }
+      for (const w in bursts) bursts[w] = bursts[w].map((b) => Math.round(b.start - t0));
       done({
-        bursts: bursts.map((b) => Math.round(b.start - t0)),
+        bursts,
         series: performance.getEntriesByType("resource").filter((e) => e.name.includes("/api/series"))
-          .map((e) => ({ start: Math.round(e.startTime - t0), end: Math.round(e.responseEnd - t0) })),
+          .map((e) => ({ signal: new URL(e.name).searchParams.get("signal"),
+            start: Math.round(e.startTime - t0), end: Math.round(e.responseEnd - t0) })),
       });
     }, 1000));
   };
 })();
 ```
 
-1. Set the range: `letsview --wait window range <w> 2026-10-13T09:00:00Z 2026-10-13T10:00:00Z`; wait 2 s (view, overview and prefetch loaded).
-2. **Uncached zoom in:** `await __zoom(-500)` (×2 in, level one finer, never loaded). Pass: `bursts[0] ≤ 50` (placeholder from the 1 h tiles), a `series` entry with `start ≤ 50`, the last burst below 290 is `≤ 200` and later than that entry's `end`. Wait 2 s.
-3. **Cached zoom out:** `await __zoom(500)` (back to 1 h). Pass: no `series` entry with `start < 290`, exactly one burst in `bursts`, `≤ 50`. Wait 2 s.
+1. Set the range (linked, so both windows): `letsview --wait window range <w1> 2026-10-13T09:00:00Z 2026-10-13T10:00:00Z`; wait 2 s (views, overviews and prefetch loaded).
+2. **Uncached zoom in:** `await __zoom(-500)` (×2 in, level one finer, never loaded). Pass, for **each** window and its signal's `series` entries: first burst `≤ 50` (placeholder from the 1 h tiles), a `series` entry with `start ≤ 50`, the last burst below 290 is `≤ 200` and later than that entry's `end`. Wait 2 s.
+3. **Cached zoom out:** `await __zoom(500)` (back to 1 h). Pass, for each window: no `series` entry with `start < 290`, exactly one burst, `≤ 50`. Wait 2 s.
 4. **Prefetched zoom out:** `await __zoom(500)` (2 h, one level coarser, prefetched in step 3's rest). Same pass rule as step 3.
 
-Repeat steps 1–2 on 11:00–12:00 and 13:00–14:00; report all values and the median of step 2. Entries starting after 290 ms are prefetch requests (allowed). A burst after 290 ms in steps 3–4 fails series-cache "Command still delayed, no load after it".
+Repeat steps 1–2 on 11:00–12:00 and 13:00–14:00; report all values and the median of step 2 per window. Entries starting after 290 ms are prefetch requests (allowed). A burst after 290 ms in steps 3–4 fails series-cache "Command still delayed, no load after it". After each step both headers show the same range (screenshot once).
 
 ### Numbers and the factor-two check
 
@@ -222,4 +270,4 @@ Built as recommended until Jan decides otherwise.
 
 - **Q1 Placeholder resolution:** (a) **recommended:** the whole curve at one coarser level until all its sharp tiles are there; keeps `SeriesResult`, drawing, readouts and the live cursor unchanged; with prefetch the placeholder level is usually only one level coarser. (b) Sharp where tiles are cached and coarse only where they are missing: needs mixed bucket widths in one result, a change of `build.ts`, `readout.ts` and the badge.
 - **Q2 Marking the placeholder:** (a) **recommended:** nothing new; the resolution badge shows the coarser width and the legend the existing "loading" status for the ~0.1 s it lasts. (b) Draw placeholder curves dimmed (more flicker on every uncached step).
-- **Q3 Linked windows during a gesture:** (a) **recommended for this change:** linked windows follow the committed range as today (≈ 300 ms + command later, then from the cache or with a placeholder). (b) Share the gesture's preview with linked windows at once: a follow-up change touching the link logic in `App.tsx`.
+- **Q3 Linked windows during a gesture: decided by Jan, D-041** („with "Link time axes" on, every linked window shows the preview range and loads during the gesture like the zoomed one (a browser-local shared preview range, like the live cursor); the command is still sent once after the commit delay"; why: „otherwise the linked windows still lag 0.35–0.45 s, which defeats D-040"). Built in Z9.

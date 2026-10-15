@@ -5,9 +5,10 @@ Web only (design Non-Goals): no task in `packages/shared`, `apps/server` or `app
 - 1.1: `apps/web/src/chart/tiles.ts`
 - 1.2: `apps/web/src/chart/cache.ts`
 - 1.3: `apps/web/src/chart/loader.ts`, `apps/web/src/chart/overview.ts` (new)
-- 1.4: `apps/web/src/chart/TimeseriesWindow.tsx`
+- 1.4: `apps/web/src/chart/TimeseriesWindow.tsx`, `apps/web/src/App.tsx` (one prop)
+- 1.5: `apps/web/src/chart/linkedPreview.ts` (new)
 
-The tasks assume the recommended answers to design Q1 (one placeholder level per curve), Q2 (no new marker) and Q3 (linked windows follow the committed range).
+The tasks assume the recommended answers to design Q1 (one placeholder level per curve), Q2 (no new marker); Q3 is Jan's D-041 (linked windows follow the preview live, design Z9).
 
 ## 1. apps/web/src
 
@@ -30,9 +31,12 @@ The tasks assume the recommended answers to design Q1 (one placeholder level per
   - Prefetch at rest (`SETTLE_MS` timer, all keys complete or error, `prefetchPlan` filtered by `find`, `storable`, extent; ≤ `PREFETCH_MAX_TILES`; owner released on the next changing update, removal, `dispose`).
   - `overview.ts`: `signalExtent` (once per tab, failure forgotten), `WINDOW_LOADER_OPTIONS`.
   - Verify the 2.3 tests pass and every existing `loader.test.ts` and `live.test.ts` case stays green.
-- [ ] 1.4 Window wiring (`chart/TimeseriesWindow.tsx`), per design Z1, Z8:
+- [ ] 1.4 Window wiring (`chart/TimeseriesWindow.tsx`, `App.tsx` one prop), per design Z1, Z8, Z9:
   - Loader with `WINDOW_LOADER_OPTIONS`; `requests` from the shown range (shown-range computation moved above the memo), `committedRequests` from `w.range`; `loader.update` in `useLayoutEffect`; `flushSync(rerender)` in `applyRange`; acknowledgement `loader.settled(committedRequests)`. `COMMIT_DELAY_MS` stays 300.
+  - Shared preview per design Z9: `linked` prop from `App.tsx`; the shown range from `shownRange(w.id, preview.range, useLinkedPreview(), linked, serverRange)`; in `applyRange` while linked `flushSync(() => { linkedPreview.publish(w.id, r); rerender(); })`; `clear(w.id)` when the own preview is dropped, on unmount and when `linked` turns false; only the source commits.
   - Verify: `grep -n "loader.settled(committedRequests)" apps/web/src/chart/TimeseriesWindow.tsx` and `grep -n "COMMIT_DELAY_MS = 300" apps/web/src/chart/TimeseriesWindow.tsx` each print one line; the UI checks of group 3.
+
+- [ ] 1.5 Shared preview store (`chart/linkedPreview.ts`, new), per design Z9: `SharedPreview`, `LinkedPreviewStore` (`get`, `publish` with synchronous notify, `clear` only for the current source, `subscribe`), `linkedPreview`, `useLinkedPreview` (`useSyncExternalStore`), pure `shownRange`. Verify the 2.4 tests pass.
 
 ## 2. Tests (tester)
 
@@ -54,6 +58,8 @@ The tasks assume the recommended answers to design Q1 (one placeholder level per
   - "prefetches after the view rests, never during a gesture" (loader with `prefetch: true`, `loadIntervalMs: 100`, no extent; gesture views far from the rest view so they share no tile with the plan; the three pinned requests, at most two in flight; a new update aborts the running ones and the queued one is never sent).
   - Verify each new test fails before group 1 and passes after; then `pnpm build && pnpm test && pnpm lint` green.
 
+- [ ] 2.4 `apps/web/test/linkedPreview.test.ts` (new): "publishes synchronously and clears only for the current source" (subscriber called inside `publish`; a later `publish` by another source replaces it; `clear` by the earlier source is ignored, by the current one clears and notifies); "shows the own preview, else the linked shared one, else the server range" (own beats shared; shared from another source only while linked; a window's own shared publication does not override its server range when it has no own preview; unlinked → server range).
+
 ## 3. UI check (UI user)
 
-- [ ] 3.1 Design T1 in Chrome on localhost with `smart451/COMBI_412h.V_ANZ`: steps 1–4, steps 1–2 on three 1 h ranges; report `bursts` and `series` per step and the median of step 2 (series-cache "Zoom timing", "Zoom out after rest is cached", "Command still delayed, no load after it"; timeseries-window "Loading starts during the gesture"). Plus the overview network check of series-cache "Overview requested once" and the CLI check of "Placeholder does not settle".
+- [ ] 3.1 Design T1 in Chrome on localhost with two linked windows (`smart451/COMBI_412h.V_ANZ`, `smart451/CPC_448h.PTC_HV_Volt`): steps 1–4, steps 1–2 on three 1 h ranges; report `bursts` per window and `series` per step and the median of step 2 per window (series-cache "Zoom timing", "Zoom out after rest is cached", "Command still delayed, no load after it"; timeseries-window "Loading starts during the gesture", "Linked windows follow the gesture", "Zoom one of two unlinked windows"). Plus the overview network check of series-cache "Overview requested once" and the CLI check of "Placeholder does not settle".

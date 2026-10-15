@@ -16,3 +16,21 @@ After and during a zoom or pan, the window SHALL request the data for the shown 
 - **WHEN** the user zooms with one Ctrl+wheel step into a range that is not cached
 - **THEN** its `/api/series` request starts within 50 ms of the wheel event, not after the 300 ms command delay
 - **Evidence:** UI timing check (design T1 of change `improve-zoom-speed`, step 2: Resource Timing `startTime` − t0); `apps/web/test/loader.test.ts` › "throttles loads during a gesture: first at once, then once per interval"
+
+### Requirement: Linked time zoom
+While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-click reset, history back, "Reset", navigation keys, "Go to" and span presets in or for any window SHALL change the time range of all windows. During a wheel, pan or key gesture in one window, every linked window SHALL show and load the previewed range in the same frame, each at its own resolution; the range command SHALL still be sent once, by the gesture's window. While unlinked, each window SHALL keep its own range. Origin: D-017; D-027; D-041 („every linked window shows the preview range and loads during the gesture like the zoomed one").
+
+#### Scenario: Zoom one of two linked windows
+- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
+- **THEN** within 1 s window 2's header shows the same range as window 1 and its curve is reloaded for it
+- **Evidence:** UI check (screenshot of both headers); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
+
+#### Scenario: Linked windows follow the gesture
+- **WHEN** the two linked windows have rested 2 s on one hour and one Ctrl+wheel event arrives over window 1 (design T1 of change `improve-zoom-speed`)
+- **THEN** window 2 draws the new range in its first stroke burst within 50 ms of the wheel event: from the cache with no further burst when its tiles are cached (zoom out, steps 3–4), as a placeholder followed by its sharp data within 200 ms when they are not (zoom in, step 2); one `window.setRange` command is sent, about 300 ms after the event
+- **Evidence:** UI timing check (design T1, per-window `bursts` and per-signal `series`); `apps/web/test/linkedPreview.test.ts` › "shows the own preview, else the linked shared one, else the server range" and "publishes synchronously and clears only for the current source"
+
+#### Scenario: Zoom one of two unlinked windows
+- **WHEN** the user switches "Link time axes" off and zooms window 1
+- **THEN** window 2 keeps its time range, also during the gesture
+- **Evidence:** UI check (screenshot); `packages/shared/test/apply.test.ts` › "applies a range to one window while unlinked"; `apps/web/test/linkedPreview.test.ts` › "shows the own preview, else the linked shared one, else the server range"

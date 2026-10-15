@@ -13,9 +13,10 @@ and on the plan: „noice! go ahead". D-040 in full: build as one change (1) loa
 - **Load on preview (D-040 (1)):** during a wheel, pan or key gesture the window's loader follows the shown (preview) range, not the committed one. A fully cached preview is drawn sharp in the same frame. Network loads during a gesture start at once for the first step and then at most once per 100 ms with the latest shown range. The `window.setRange` command keeps its 300 ms delay.
 - **Coarse overview and placeholder (D-040 (2)):** per signal the tab fetches its extent once and loads one coarse level over the whole extent (1,024–2,048 buckets) as ordinary tiles; a window holds them while it shows the signal. A view with missing tiles draws at once a placeholder from the finest coarser level the cache can fully serve (the overview at worst), then the sharp data when it arrives. Two cached finer tiles also merge exactly into their parent tile, so a zoom out over loaded data needs no request.
 - **Idle prefetch (D-040 (3)):** 300 ms after a window's view rests with all loads done, it prefetches the next coarser level over three view widths around the view and one view width of tiles on each side at the current level, at most 256 tiles per window, at most 2 prefetch requests in flight per tab, cancelled by the next gesture, never ahead of a visible load.
+- **Linked windows follow live (D-041):** with "Link time axes" on, every linked window shows and loads the gesture's preview range in the same frame through a browser-local shared preview (like the live cursor); the command is still sent once, by the gesture's window, after the commit delay.
 - **Render acknowledgement:** a window acknowledges a revision only when the committed range is drawn with its own sharp data; a placeholder or a different preview range never acknowledges.
 
-Out of scope: a server-side tile cache and a binary transport (D-040); sharing a gesture's preview with linked windows before the command (they follow the committed range as today); per-region mixed resolutions in one curve (design Q1); a visible marker beyond the existing resolution badge and loading status (design Q2); persisting anything across reloads (D-037); caching `/api/value` (D-031, D-039); any server, `packages/shared` or CLI change.
+Out of scope: a server-side tile cache and a binary transport (D-040); per-region mixed resolutions in one curve (design Q1); a visible marker beyond the existing resolution badge and loading status (design Q2); persisting anything across reloads (D-037); caching `/api/value` (D-031, D-039); any server, `packages/shared` or CLI change.
 
 ## Capabilities
 
@@ -26,10 +27,10 @@ None.
 ### Modified Capabilities
 
 - `series-cache`: new requirements for load on preview with a throttle, the per-signal overview, placeholders, merging cached tiles up, idle prefetch with its limits, and the zoom timing targets; "Render acknowledgement unchanged" now says a placeholder or preview never acknowledges.
-- `timeseries-window`: "Reload on navigation" loads during the gesture for the shown range and shows a placeholder instead of stretched old data; the command delay stays.
+- `timeseries-window`: "Reload on navigation" loads during the gesture for the shown range and shows a placeholder instead of stretched old data; the command delay stays. "Linked time zoom": linked windows follow the preview live (D-041).
 
 ## Impact
 
-- `apps/web/src/chart/tiles.ts` (merge, overview level, placeholder search, prefetch plan), `chart/cache.ts` (find through merged children, prefetch priority queue, `storable`), `chart/loader.ts` (options: throttle, overview, placeholder, prefetch), new `chart/overview.ts` (extent once per tab, the window loader options), `chart/TimeseriesWindow.tsx` (requests from the shown range, synchronous preview render, acknowledgement on the committed range).
-- Tests: additions to `apps/web/test/tiles.test.ts`, `cache.test.ts`, `loader.test.ts` (fake timers); a UI timing check in Chrome.
+- `apps/web/src/chart/tiles.ts` (merge, overview level, placeholder search, prefetch plan), `chart/cache.ts` (find through merged children, prefetch priority queue, `storable`), `chart/loader.ts` (options: throttle, overview, placeholder, prefetch), new `chart/overview.ts` (extent once per tab, the window loader options), new `chart/linkedPreview.ts` (shared preview store, D-041), `chart/TimeseriesWindow.tsx` (requests from the shown range, synchronous preview render, shared preview, acknowledgement on the committed range), `App.tsx` (one prop: `linked`).
+- Tests: additions to `apps/web/test/tiles.test.ts`, `cache.test.ts`, `loader.test.ts` (fake timers), new `linkedPreview.test.ts`; a UI timing check in Chrome over two linked windows.
 - No change in `packages/shared`, `apps/server`, `apps/cli`; no new endpoint, DTO or dependency.
