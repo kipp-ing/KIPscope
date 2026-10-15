@@ -362,9 +362,10 @@ export function defaultCursorTime(range: { from: bigint; to: bigint }, cursor: C
 
 The workspace is in memory only, so a server restart (needed for the new code anyway) starts with `EMPTY_WORKSPACE`, including `cursors`. There is no data migration. Rollback means reverting the commit and restarting.
 
-## Open questions for Jan
+## Resolved
 
-1. **Values window resolution (C4).** Recommendation: **R1**, raw neighbours from the server, independent of any window's zoom. It is exact, works for every signal, and the spec is written for it. Alternatives: R2, the representative value of a timeseries window showing the signal (concept §6's "what you see" semantics, but ambiguous across windows and absent for signals not plotted), or R3, the resolution of the linked range. R2 or R3 changes the "Value at cursor A" and "Value at a time" requirements and drops or shrinks task 2.1.
-2. **Default of a legend drop into a values window.** D-023 says "like any window", so the spec moves on a plain drop and copies with Alt/Ctrl. Recommendation: keep it for consistency, and look again after Jan has tried it. The alternative is copy by default into values windows only. The values window usually mirrors chart signals, so that may be what Jan wants, but it would be a second rule.
-3. **Placement gesture (C3).** Recommendation: click = A and Shift+click = B, plus dragging the lines. Alternatives: keys `a`/`b` at the pointer, or a cursor mode in the bar. Keys can be added later without conflict.
-4. **Bar "Back"/"Reset zoom" while unlinked (C5).** Recommendation: act on the window zoomed last and name it in the tooltip. Alternatives: act on every window, or disable both while unlinked.
+Jan (2026-10-15, D-024) took every recommendation; the spec and tasks already follow them:
+1. Values window resolution (C4): R1, raw neighbours from the server, independent of any window's zoom.
+2. Legend drop into a values window: like any window. A plain drop moves, Alt/Ctrl copies.
+3. Placement gesture (C3): click = A, Shift+click = B, and the lines can be dragged.
+4. Bar "Back"/"Reset zoom" while unlinked (C5): act on the window zoomed last, named in the tooltip.

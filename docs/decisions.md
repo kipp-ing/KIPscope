@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-024: Cursor details (2026-10-15)
+
+- **Decision:** Jan, on the open questions of `add-cursors` (all four as recommended by the spec owner):
+  - The values window shows raw values from the server (neighbours around the cursor time, interpolated per display mode), independent of any window's zoom. Concept §6's zoom-dependent cursor value stays for the charts.
+  - A legend row dropped into a values window behaves like any window: a plain drop moves, Alt/Ctrl copies.
+  - Click in a chart sets cursor A, Shift+click sets B; the lines can be dragged.
+  - With time axes unlinked, the bar's "Back" and "Reset zoom" act on the window zoomed last, named in the tooltip.
+- **Why:** Exact values for every signal, including ones not plotted; one drop rule for all windows; a gesture that leaves double-click and rectangle zoom free.
+
 ## D-023: Scope of the cursor change (2026-10-15)
 
 - **Decision:** Jan, after approving `improve-signal-explorer`, for change `add-cursors`:
