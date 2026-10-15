@@ -1,12 +1,13 @@
 # Status
 
-As of 2026-10-15, session 5. No change in flight; all nine changes are archived and the main specs describe the running app.
+As of 2026-10-15, session 5. No change in flight; all ten changes are archived and the main specs describe the running app.
 
 ## What runs
 
 | Capability | Spec | In short |
 |---|---|---|
 | Signal catalog | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Signals with DBC metadata and SNA rules; ranked search, hover card, keyboard and drag in the explorer |
+| Display names | [display-names](../openspec/specs/display-names/spec.md) | `letsview.yaml` rules and renames give short names (`V_ANZ`) in the UI; full name in card and tooltips; search on both |
 | Series queries | [series-query](../openspec/specs/series-query/spec.md) | Raw points or min/mean/max buckets by zoom level; SNA as `null`; verified on 10 h at 5 ms |
 | Workspace | [workspace-state](../openspec/specs/workspace-state/spec.md) | Command-driven state with revisions, live push and render acknowledgement |
 | Chart windows | [timeseries-window](../openspec/specs/timeseries-window/spec.md) | uPlot windows, one axis per unit (max 4), linked zoom, history, drag and drop, wheel and keys |
@@ -18,7 +19,7 @@ As of 2026-10-15, session 5. No change in flight; all nine changes are archived 
 | Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor). Decisions D-001 … D-034: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names). Decisions D-001 … D-036: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -30,6 +31,8 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 ## Session 5 in brief
 
 - Built and archived `add-live-cursor` (D-032 … D-034) in three rounds; Jan: „I like".
+- Built and archived `add-display-names` (D-035, D-036) in three rounds; Jan: „nice. working".
+- Checked `CPC_508h.PNHV_SupBat_Curr` on Jan's question: decoding matches the DBC and raw frames; negative is discharge (−188 A at hard acceleration, +22 A recuperation), so no fix needed.
 
 ## Next
 

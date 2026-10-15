@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-036: Display name conventions (2026-10-15)
+
+From the archived change `add-display-names` (design N1, N5, N6, N7, open questions Q1–Q4 built as recommended); details there.
+
+- **File:** `letsview.yaml` in the repo root, `LETSVIEW_PROJECT_FILE` overrides it (a named file must exist); read at startup only, a catalog refresh does not reread it. Parsed with `yaml`, validated with `zod`.
+- **Invalid file:** the server refuses to start (exit 1), one line per problem `<path>: <field>: <problem>`.
+- **Computed on the server:** once per catalog load, delivered as optional `SignalInfo.displayName` (absent when equal to `name`); the web uses `shownName()` and never evaluates rules. Search ranks the shown name like the name.
+- **Collisions:** a rule's optional `collision` template (e.g. `{signal} ({message})`) applies to rule-made names only; a rename stays as written; names still alike fall back to full names with a server warning. Lists stay ordered by full name; names without hex ID are shortened too.
+
 ## D-035: Display names from a project YAML (2026-10-15)
 
 - **Decision:** Jan: the UI shows short signal names (`V_ANZ` instead of `COMBI_412h.V_ANZ`), defined per project in a YAML. The YAML holds pattern rules (regex with named groups and a `show` template; first match wins) plus an optional `rename` map for single signals (rename beats rules). When two signals get the same shown name, both show the short name plus a message suffix, e.g. `V_ANZ (COMBI)`. The full source name stays in the hover card and tooltips; search matches full name, short name and message alike; CLI and API keep the stable full IDs. Lead's defaults: the file is `letsview.yaml` in the repo root, path overridable by env; no file or no matching rule shows the full name as today.
