@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-15, session 3.
+As of 2026-10-15, session 4.
 
 ## Done
 
@@ -15,8 +15,8 @@ As of 2026-10-15, session 3.
 
 ## Next
 
-1. Change `add-cursors` (D-023): cursors A/B with diff mode, a cursor value window, an option bar, drag and drop from everywhere. Spec written and validated, open questions answered (D-024); ready for the rounds.
-2. CLI remote control of the open view (concept §7).
+1. Jan: hand check of `add-cursors` (all tasks ticked, power-user close-out done), then archive. Answer questions 7–13 of [feedback/2026-10-15-cursors-power-users.md](feedback/2026-10-15-cursors-power-users.md) (number format, Ctrl+wheel zoom, cursor off-screen cue, Diff while B off, hover crosshair).
+2. Jan: review `add-cli` (built on the spec owner's recommendations for its 9 open questions while Jan was away, design.md "Open questions for Jan"); 4.2's "no UI" check needs all letsview tabs closed. Archive after `add-cursors`.
 3. Persistence: save/load, snapshots, templates, undo (concept §8).
 4. Later: playback, ADX adapter, state signals from value tables, timezone selection.
 
@@ -31,6 +31,8 @@ As of 2026-10-15, session 3.
 - Jan's hand checks pending: real mouse drags from explorer and legend, Esc during a drag, Alt-copy, wheel feel, height handle.
 - Seen once, not reproduced: window header range stale after a rectangle zoom. Rename has no visible affordance.
 - `openspec validate --specs --strict` warns that `timeseries-window` requirement 16 (drag) is over 500 characters; `add-cursors` splits it.
+- The dev server restarts on code changes (`--watch`) and the in-memory workspace is lost; rebuild demos with the CLI (`node apps/cli/src/main.ts`).
+- Hidden browser tabs stay connected and never acknowledge renders (7 clients stuck at revision 0 seen); `--wait` takes the first UI that acknowledges.
 
 ## Run
 
