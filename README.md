@@ -1,6 +1,24 @@
 # letsview
 
-Interactive workspace for exploring recorded time series. Requirements: [docs/concept.md](docs/concept.md) (German). Specs and changes: [openspec/](openspec/). Decisions: [docs/decisions.md](docs/decisions.md).
+Interactive workspace for exploring recorded vehicle time series (CAN signals in ClickHouse): search signals, lay them out in linked chart windows, zoom from a whole drive down to single samples, and read exact values and differences with two cursors. Everything in the UI is also a command, so a CLI (or an agent) can drive the same workspace.
+
+| What | Where |
+|---|---|
+| Requirements (German) | [docs/concept.md](docs/concept.md) |
+| Specs, one per capability | [openspec/specs/](openspec/specs/) |
+| Changes in flight and archived | [openspec/changes/](openspec/changes/) |
+| Decisions | [docs/decisions.md](docs/decisions.md) |
+| State and next steps | [docs/status.md](docs/status.md) |
+| Team roles and round flow | [docs/team.md](docs/team.md) |
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `packages/shared` | Workspace model and commands (`apply.ts`), series encoding, cursor evaluation, number and time formats; used by all three apps |
+| `apps/server` | HTTP API on port 7310: signal catalog from the DBC, resolution-aware series queries, cursor values, the workspace and its live channel |
+| `apps/web` | React + uPlot UI on port 5173 |
+| `apps/cli` | `letsview` command line, see [CLI](#cli) |
 
 ## Setup
 
@@ -34,6 +52,27 @@ The seed script refuses to run if `TEST_CLICKHOUSE_URL` equals `CLICKHOUSE_URL`.
 pnpm --filter @letsview/server dev   # server
 pnpm --filter @letsview/web dev      # UI at http://localhost:5173, proxies /api to the server
 ```
+
+## Using the app
+
+**Signals.** The sidebar searches the catalog (`/` focuses it, `s` toggles the sidebar). Arrow keys and Enter, or a row's `+` button, add a signal to the marked window (click a window header to mark it), or to a new one. Drag a signal from the sidebar or a legend row onto a window to add or move it; hold Alt or Ctrl to copy. A window takes up to four units, one y axis each. A window emptied by a move disappears. Hover a legend row and click its `×` to remove the signal.
+
+**Time.** With the time axes linked (default), every window follows.
+
+| Do | Effect |
+|---|---|
+| Drag across a plot | zoom to that range |
+| Ctrl/Shift + wheel, trackpad pinch | zoom at the pointer |
+| Horizontal wheel or swipe | pan |
+| Plain vertical wheel | scrolls the page, never the chart |
+| `+` / `-` | zoom in / out around cursor A when it is in view, else the centre |
+| `←` / `→`, Shift+`←` / `→` | pan by half / a whole span |
+| `t`, or the "Go to" field | type a time or range: `15:08`, `15:07 .. 15:09`, `15:08 ±30s`, `a..b`, `1h`, `+10min` |
+| Span presets | 1 s … 1 day around the anchor |
+| Backspace, "Back" | previous range |
+| Double-click, `Home`, "Reset" | the signals' full extent |
+
+**Cursors.** Click a plot to place cursor A, Shift+click for B, drag a line to move it (Esc puts it back). Each legend row shows the exact value at A and at B; "Diff" adds Δ = B − A and Δt. Hover a value for its kind (linear between points, held, …). A values window ("+ Values") lists many signals at the cursors without a plot.
 
 ## Check
 
