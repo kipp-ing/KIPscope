@@ -107,7 +107,7 @@ The bar's "Back" SHALL step back the zoom history of its target window, and "Res
 - **Evidence:** `apps/web/test/bar.test.ts` › "targets the window zoomed last, else the first timeseries window"; UI check (headers before and after)
 
 ### Requirement: Drop lands under the pointer
-A drop SHALL go to the target under the pointer at release, never to a target the pointer left earlier. While dragging, space of the drop zone's height SHALL be reserved below the last window, so the sticky "+ New window" zone never covers a window. Origin: power-user bug (feedback 2026-10-15, item 1: three stray windows); necessary consequence of "New-window drop zone stays visible".
+A drop SHALL go to the target under the pointer at release, never to a target the pointer left earlier. While dragging, space of the drop zone's height SHALL be reserved below the last window, so the "+ New window" zone never covers a window. Origin: power-user bug (feedback 2026-10-15, item 1: three stray windows); necessary consequence of "New-window drop zone stays visible".
 
 #### Scenario: Values window at the bottom
 - **WHEN** a values window is the last window, the list is scrolled to the end, and the user drags the `COMBI_412h.V_ANZ` explorer row onto the lower part of the values window and releases

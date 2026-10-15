@@ -107,7 +107,7 @@ Alternatives (Q4): act on every window (each one step back in its own history, w
 
 - A values row's grip is a `DragSource` (the same shape as a legend row), so move, Alt/Ctrl copy, ghost text and hint are those of legend drags. The spec follows D-023 literally: "like any window", so a plain drop of a legend row into a values window moves it (Q2).
 - `canDrop`, `canAdd` and `dropStateFor` skip the unit check when the target is a values window. "Already shows the signal" still refuses.
-- "+ New window" is rendered during every drag as the last child of `<main>` with `position: sticky; bottom: 0`, so it sits at the viewport bottom wherever `<main>` is scrolled.
+- "+ New window" is rendered during every drag as a flex sibling below `<main>` inside `.workspace`; `<main>` shrinks by the zone's height, so the zone sits at the viewport bottom and never covers a window (close-out, feedback 2026-10-15 item 1).
 - The auto-scroll bands become the 48 px below the sticky option bar and the 48 px above the drop zone, both measured from their bounding boxes. Pointing at the zone itself does not scroll, so resting on it to drop does not run the list away.
 
 Numbers, each checked at a factor of two:
@@ -344,7 +344,7 @@ export function defaultCursorTime(range: { from: bigint; to: bigint }, cursor: C
 
 ### S5: App wiring (`App.tsx`, `chart/drag.ts`)
 
-- App renders `OptionBar` sticky at the top of `<main>`, removes the top bar's link toggle, renders `ValuesWindow` for `kind === "values"` and `TimeseriesWindow` otherwise, and renders the sticky "+ New window" during every drag.
+- App renders `OptionBar` sticky at the top of `<main>`, removes the top bar's link toggle, renders `ValuesWindow` for `kind === "values"` and `TimeseriesWindow` otherwise, and renders "+ New window" below `<main>` during every drag (C7).
 - App owns `cursorPreview`. It passes `cursors` (effective) to timeseries windows, and `cursors` (committed) plus `dragging` to values windows. `onCursorCommit` sends `{type: "cursor.set", cursor, t: t.toString()}`.
 - `drag.ts`: `canDrop`, `canAdd` and `dropStateFor` take `WorkspaceWindow[]` and skip the unit check for values targets. A values row is a `DragSource`. A drop of a values row on "new" while no timeseries window exists sends `window.create` (with the extent) and then `window.moveSignal` (C6).
 - Kind guards: insets merge only timeseries IDs. `toRange` and `onReset` run only on timeseries windows. Backspace over a values window falls back to `lastZoomed`. A linked "New window" add needs a timeseries window to take the shared range from, else it uses the extent.
@@ -356,7 +356,6 @@ export function defaultCursorTime(range: { from: bigint; to: bigint }, cursor: C
 - [Exact raw hits are rare with clicks: values mostly read `lin` or `hold`.] → The CLI sets exact times. Snapping to raw points is out of scope and can be added later.
 - [Interpolation across recording pauses gives values inside a pause (PTC_HV_Volt at 2026-10-13T12:40Z holds 4.1 over about 1.4 h in "hold").] → Consistent with the drawn curve (D-009). The tooltip names both neighbours with their times.
 - [`before()` has no lower time bound.] → It already runs for every raw series request without complaint. If a source shows slow `LIMIT 1` scans, that is a DataSource fix, not a spec change.
-- [The sticky drop zone covers the bottom of the last window during a drag.] → The band above it auto-scrolls, so every window can be scrolled clear of the zone.
 - [The 500 ms click gate delays the command.] → The line shows at once; only the values follow later.
 
 ## Migration Plan
