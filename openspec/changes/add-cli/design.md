@@ -86,7 +86,7 @@ One JSON line on stdout per call (S2 `CliOutput`); `--pretty` indents it with 2 
 | `timeout` | 4 | `--timeout` ran out during a request or the wait |
 | `render_error` | 5 | the UI acknowledged with `status: "error"` |
 | `no_ui` | 6 | `--wait`/`wait` and no UI was connected for 2 s in a row |
-| `unavailable` | 7 | the server answered 5xx (`catalog_unavailable`, `source_error`, other) |
+| `unavailable` | 7 | the server answered 5xx (`catalog_unavailable`, `source_error`, other), or an unexpected error inside the CLI (lead, close-out: no separate code; the reason line names the error) |
 
 A command that was accepted keeps `accepted: true`, `revision`, `created`, `createdWindow` in the output even when the wait then ends in 3–7, so a caller never repeats an applied command by mistake. `error.code` is the server's code where there is one (`ApiError.error.code`, `CommandResult.code`), else the outcome name.
 
@@ -263,7 +263,7 @@ export type Invocation =
   | { kind: "extent"; signal: SignalArg }
   | { kind: "value"; signal: SignalArg; t: TimeArg; mode?: ValuesMode }
   | { kind: "wait"; revision?: number }
-  | { kind: "command"; template: CommandTemplate };
+  | { kind: "command"; template: CommandTemplate; /** `command JSON`: sent unchanged, never passed to resolveCommand. */ raw?: true };
 /** Throws CliError("usage", "usage", …). server: --server, else env.LETSVIEW_URL, else http://localhost:7310. */
 export function parseArgs(argv: string[], env: Record<string, string | undefined>): { options: GlobalOptions; invocation: Invocation };
 export const USAGE: string;

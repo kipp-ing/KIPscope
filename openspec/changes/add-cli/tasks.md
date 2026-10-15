@@ -31,7 +31,7 @@ No `apps/server` or `apps/web` source changes (design L4, Goals). Test names are
 
 ## 4. Checks against the dev server (UI user; the lead runs the dev server and the tunnel)
 
-- [ ] 4.1 Run the CLI evidence commands of the `cli` spec against the dev server and report the output: `letsview search volt --limit 3` (scenario "Ranked search on real data") and `letsview value smart451/COMBI_412h.V_ANZ "2026-10-13 15:08:00.1435"` (scenario "Local time on real data"). Verify both print the expected values.
+- [x] 4.1 Run the CLI evidence commands of the `cli` spec against the dev server and report the output: `letsview search volt --limit 3` (scenario "Ranked search on real data") and `letsview value smart451/COMBI_412h.V_ANZ "2026-10-13 15:08:00.1435"` (scenario "Local time on real data"). Verify both print the expected values.
 - [ ] 4.2 UI checks with Chrome open on real data, one screenshot each next to the CLI output: "Window from the CLI in the open UI" (with "Bare name on real data"), "Same times as the UI", "Relative move in the open UI", "Real UI" (complete, then `no_ui` with the tab closed), and the `workspace-state` scenarios "Rendered after load" and "Revision without visible change". Report `render.waitedMs` of each `--wait` call. Verify every scenario is reported as fulfilled or not, with its screenshot.
 
 ## Workflow follow-up
