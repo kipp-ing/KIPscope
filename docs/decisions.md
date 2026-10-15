@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-039: Window handling and cache conventions (2026-10-15)
+
+From the archived changes `improve-window-handling` (G1, B2, Q1–Q3) and `add-series-cache` (C1–C6, Q1); details there. Jan: „looks good".
+
+- **Grip:** the corner grip and the bottom strip both drag the height (120–1200 px, `ns-resize`), only on a primary press without Ctrl. A new window takes its source window's height (workspace-state).
+- **Drop below:** the free area starts 8 px below the last grid row and reads "+ New window"; gaps and the space beside a shorter window are no target.
+- **Cache:** one tile cache per tab shared by all windows; power-of-two bucket widths snapped finer (D-038), 256-bucket tiles, neighbouring missing tiles fetched as one aligned `/api/series` request; raw tiles serve finer zooms; limit 4,000,000 values, least recently used dropped; tiles ending within the last hour and failed tiles are not stored; `/api/value` and `/api/extent` stay uncached (D-031).
+- **Known:** for a sparse view, raw vs buckets can depend on what was loaded before (review finding, accepted for now; Jan's concern is speed).
+
 ## D-038: Cache tiles snap finer (2026-10-15)
 
 - **Decision:** Jan, on `add-series-cache` Q2: the power-of-two bucket width snaps down (finer), so a view gets between `target` and 2 × `target` buckets, never coarser than before the cache. Supersedes the design's recommendation to snap up.
