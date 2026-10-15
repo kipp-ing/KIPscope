@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-041: Linked windows follow the zoom live (2026-10-15)
+
+- **Decision:** Jan, on `improve-zoom-speed` Q3: with "Link time axes" on, every linked window shows the preview range and loads during the gesture like the zoomed one (a browser-local shared preview range, like the live cursor); the command is still sent once after the commit delay. Supersedes the design's recommendation that linked windows follow only the committed range.
+- **Why:** Jan's pick "Follow live": otherwise the linked windows still lag 0.35–0.45 s, which defeats D-040.
+
 ## D-040: Near-instant zoom (2026-10-15)
 
 - **Decision:** Jan, after the lead's measurement (one zoom out: 0–5 ms preview of old data, 300 ms commit delay, ~20 ms command, loading starts at ~345 ms, data drawn at 400–455 ms; a fully cached zoom still took 359 ms because loading waits for the commit): build as one change (1) loading on the preview range during the gesture, the command still delayed; (2) a coarse overview of each signal's whole extent loaded once, drawn at once where finer tiles are missing; (3) prefetch in idle time of the next zoom-out level and neighbouring tiles. Targets: a cached zoom draws sharp data within one frame (~16 ms); an uncached one draws coarse data within one frame and sharp data within ~150 ms. Server tile cache and binary transport are out of scope.
