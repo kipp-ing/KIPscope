@@ -17,8 +17,9 @@ As of 2026-10-15, session 4.
 
 1. Jan: hand check of `add-cursors` (all tasks ticked, power-user close-out done), then archive. Answer questions 7–13 of [feedback/2026-10-15-cursors-power-users.md](feedback/2026-10-15-cursors-power-users.md) (number format, Ctrl+wheel zoom, cursor off-screen cue, Diff while B off, hover crosshair).
 2. Jan: review `add-cli` (built on the spec owner's recommendations for its 9 open questions while Jan was away, design.md "Open questions for Jan"); 4.2's "no UI" check needs all letsview tabs closed. Archive after `add-cursors`.
-3. Persistence: save/load, snapshots, templates, undo (concept §8).
-4. Later: playback, ADX adapter, state signals from value tables, timezone selection.
+3. Jan: efficiency test ([feedback/2026-10-15-efficiency-testers.md](feedback/2026-10-15-efficiency-testers.md)). Lead's proposal for the next change: time navigation (type a time, zoom/pan keys, presets, extent) and an A/B/Δ readout on the chart. Two findings contradict D-020 ("Add to" follows the new window) and the spec (emptied window stays); layout and tiling need Jan.
+4. Persistence: save/load, snapshots, templates, undo (concept §8).
+5. Later: playback, ADX adapter, state signals from value tables, timezone selection.
 
 ## Known limitations
 
