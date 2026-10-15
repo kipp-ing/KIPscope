@@ -3,10 +3,12 @@ import type {
   CatalogSnapshot,
   CommandInput,
   CommandResult,
+  CursorValueResult,
   Extent,
   SeriesResult,
   SignalInfo,
   SignalPage,
+  ValuesMode,
 } from "@letsview/shared";
 import type { LoadRequest } from "./chart/loader.ts";
 
@@ -45,6 +47,16 @@ export function fetchSeries(r: LoadRequest, abort: AbortSignal): Promise<SeriesR
     target: String(r.target),
   });
   return getJson(`/api/series?${params}`, abort);
+}
+
+/** Value of one signal at time `t` (decimal ns) from its raw neighbours (design S3, C8). */
+export function fetchCursorValue(
+  signalId: string,
+  t: string,
+  mode: ValuesMode,
+  abort: AbortSignal,
+): Promise<CursorValueResult> {
+  return getJson(`/api/value?${new URLSearchParams({ signal: signalId, t, mode })}`, abort);
 }
 
 export function fetchExtent(signalId: string): Promise<Extent> {

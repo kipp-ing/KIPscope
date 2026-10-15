@@ -1,4 +1,4 @@
-import { type SignalInfo, type TimeseriesWindow, windowTitle } from "@letsview/shared";
+import { type SignalInfo, type WorkspaceWindow, windowTitle } from "@letsview/shared";
 
 /** Rest time on a row (pointer or keyboard) before its card opens (design E7). */
 export const HOVER_DELAY_MS = 350;
@@ -48,12 +48,12 @@ export function formatSource(signal: SignalInfo): string {
 }
 
 /** Titles of the windows showing the signal, in window order. */
-export function windowsShowing(windows: TimeseriesWindow[], signalId: string): string[] {
+export function windowsShowing(windows: WorkspaceWindow[], signalId: string): string[] {
   return windows.filter((w) => w.signals.some((s) => s.signalId === signalId)).map(windowTitle);
 }
 
 /** The "Add to" target after a window change: kept while its window exists, else NEW_WINDOW. */
-export function resolveTarget(target: string, windows: TimeseriesWindow[]): string {
+export function resolveTarget(target: string, windows: WorkspaceWindow[]): string {
   if (target === NEW_WINDOW || windows.some((w) => w.id === target)) return target;
   return NEW_WINDOW;
 }

@@ -5,6 +5,7 @@ import {
   type CommandInput,
   EMPTY_WORKSPACE,
   SIGNAL_COLORS,
+  type TimeseriesWindow,
   type Workspace,
   windowTitle,
 } from "../src/workspace.ts";
@@ -145,7 +146,9 @@ function add(s: Workspace, windowId: string, signalId: string) {
   return ok(s, { type: "window.addSignal", windowId, signalId });
 }
 
-const win = (s: Workspace, id: string) => s.windows.find((w) => w.id === id);
+/** The window with this ID, typed as timeseries (tests of values windows assert on its shape). */
+const win = (s: Workspace, id: string) =>
+  s.windows.find((w) => w.id === id) as TimeseriesWindow | undefined;
 
 describe("moving and copying signals", () => {
   // w1 shows car/V1 as assignment `a`; w3 is empty.
@@ -268,7 +271,8 @@ describe("linked time axes", () => {
     const s = windows(3);
     expect(s.linkTime).toBe(true);
     const r = ok(s, { type: "window.setRange", windowId: "w2", from: "10", to: "20" });
-    for (const w of r.workspace.windows) expect(w.range).toEqual({ from: "10", to: "20" });
+    for (const w of r.workspace.windows)
+      expect((w as TimeseriesWindow).range).toEqual({ from: "10", to: "20" });
   });
 
   it("applies a range to one window while unlinked", () => {
@@ -303,17 +307,21 @@ describe("linked time axes", () => {
     s = ok(s, { type: "window.setRange", windowId: "w2", from: "30", to: "40" }).workspace;
     const linked = ok(s, { type: "workspace.setLinkTime", linked: true }).workspace;
     expect(linked.linkTime).toBe(true);
-    for (const w of linked.windows) expect(w.range).toEqual({ from: "30", to: "40" });
+    for (const w of linked.windows)
+      expect((w as TimeseriesWindow).range).toEqual({ from: "30", to: "40" });
     // Switching off changes no range.
     const off = ok(linked, { type: "workspace.setLinkTime", linked: false }).workspace;
-    expect(off.windows.map((w) => w.range)).toEqual(linked.windows.map((w) => w.range));
+    expect(off.windows.map((w) => (w as TimeseriesWindow).range)).toEqual(
+      linked.windows.map((w) => (w as TimeseriesWindow).range),
+    );
 
     // The last zoomed window is gone: the first window wins.
     let t = ok(off, { type: "window.setRange", windowId: "w2", from: "70", to: "80" }).workspace;
     t = ok(t, { type: "window.create", from: "5", to: "6" }).workspace;
     t = ok(t, { type: "window.remove", windowId: "w3" }).workspace;
     t = ok(t, { type: "workspace.setLinkTime", linked: true }).workspace;
-    for (const w of t.windows) expect(w.range).toEqual({ from: "30", to: "40" });
+    for (const w of t.windows)
+      expect((w as TimeseriesWindow).range).toEqual({ from: "30", to: "40" });
   });
 });
 
@@ -491,5 +499,224 @@ describe("untitled windows (lead decision a)", () => {
     // A signal added later does not give the window a title.
     s = ok(s, { type: "window.addSignal", windowId: "w1", signalId: "car/V1" }).workspace;
     expect(windowTitle(s.windows[0] as never)).toBe("Window 1");
+  });
+});
+
+describe("cursors and values windows (add-cursors)", () => {
+  const A1 = "1791896880093000000"; // 2026-10-13T13:08:00.093Z
+  const A2 = "1791896880995000000"; // A1 + 902 ms
+
+  /** Workspace with a values window `w1` (id taken from the create result). */
+  function withValues(base: Workspace = EMPTY_WORKSPACE) {
+    const r = ok(base, { type: "window.create", kind: "values" });
+    return { s: r.workspace, id: r.created as string };
+  }
+
+  it("starts with both cursors off and diff off", () => {
+    expect(EMPTY_WORKSPACE.cursors).toEqual({ diff: false });
+    expect(Object.keys(EMPTY_WORKSPACE.cursors)).toEqual(["diff"]);
+  });
+
+  it("sets, moves and removes cursors", () => {
+    const set = ok(EMPTY_WORKSPACE, {
+      type: "cursor.set",
+      cursor: "a",
+      t: "2026-10-13T13:08:00.093Z",
+    });
+    expect(set.workspace.cursors).toEqual({ a: A1, diff: false });
+    const moved = ok(set.workspace, { type: "cursor.move", cursor: "a", by: "902000000" });
+    expect(moved.workspace.cursors).toEqual({ a: A2, diff: false });
+    const diff = ok(moved.workspace, { type: "cursor.setDiff", diff: true });
+    expect(diff.workspace.cursors).toEqual({ a: A2, diff: true });
+    const backwards = ok(diff.workspace, { type: "cursor.move", cursor: "a", by: "-902000000" });
+    expect(backwards.workspace.cursors.a).toBe(A1);
+    const off = ok(diff.workspace, { type: "cursor.remove", cursor: "a" });
+    expect(off.workspace.cursors).toEqual({ diff: true });
+    expect("a" in off.workspace.cursors).toBe(false);
+    // B is independent of A; removing an off cursor is accepted and changes nothing.
+    const b = ok(off.workspace, { type: "cursor.set", cursor: "b", t: A2 });
+    expect(b.workspace.cursors).toEqual({ b: A2, diff: true });
+    const again = ok(off.workspace, { type: "cursor.remove", cursor: "a" });
+    expect(again.workspace.cursors).toEqual({ diff: true });
+  });
+
+  it("rejects moving an off cursor or past the time bounds", () => {
+    const set = ok(EMPTY_WORKSPACE, { type: "cursor.set", cursor: "a", t: A1 }).workspace;
+    const frozen = structuredClone(set);
+    expect(run(set, { type: "cursor.move", cursor: "b", by: "1000" })).toMatchObject({
+      ok: false,
+      code: "cursor_off",
+    });
+    const past = run(set, { type: "cursor.move", cursor: "a", by: "-9000000000000000000" });
+    expect(past).toMatchObject({ ok: false, code: "invalid_command" });
+    if (!past.ok) expect(past.message).toContain("1900-01-01T00:00:00Z");
+    const beyond = run(set, { type: "cursor.move", cursor: "a", by: "9000000000000000000" });
+    expect(beyond).toMatchObject({ ok: false, code: "invalid_command" });
+    // cursor.set outside the bounds is invalid at parse time (TimeInput).
+    expect(() =>
+      Command.parse({ type: "cursor.set", cursor: "a", t: "9223286400000000001" }),
+    ).toThrow();
+    expect(set).toEqual(frozen);
+  });
+
+  it("creates a values window without range", () => {
+    const { s, id } = withValues();
+    expect(id).toBe("w1");
+    expect(s.windows).toEqual([{ id: "w1", kind: "values", mode: "line", signals: [] }]);
+    const w = s.windows[0] as unknown as Record<string, unknown>;
+    expect(w.range).toBeUndefined();
+    expect(w.display).toBeUndefined();
+    expect(w.height).toBeUndefined();
+    expect(windowTitle(s.windows[0] as Workspace["windows"][number])).toBe("Values 1");
+    // A values window can be created before any timeseries window while linked.
+    const step = ok(EMPTY_WORKSPACE, { type: "window.create", kind: "values", mode: "step" });
+    expect((step.workspace.windows[0] as { mode: string }).mode).toBe("step");
+    // from, to and envelope are refused with kind "values".
+    for (const extra of [{ from: "0" }, { to: "10" }, { envelope: true }, { mode: "markers" }]) {
+      expect(() => Command.parse({ type: "window.create", kind: "values", ...extra })).toThrow();
+    }
+  });
+
+  it("rejects range, height and envelope commands on a values window", () => {
+    const { s, id } = withValues();
+    const frozen = structuredClone(s);
+    const rejected: CommandInput[] = [
+      { type: "window.setRange", windowId: id, from: "0", to: "10" },
+      { type: "window.setHeight", windowId: id, height: 400 },
+      { type: "window.setDisplay", windowId: id, envelope: true },
+      { type: "window.setDisplay", windowId: id, mode: "markers" },
+    ];
+    for (const input of rejected) {
+      expect(run(s, input)).toMatchObject({ ok: false, code: "invalid_command" });
+    }
+    expect(s).toEqual(frozen);
+    const step = ok(s, { type: "window.setDisplay", windowId: id, mode: "step" });
+    expect((step.workspace.windows[0] as { mode: string }).mode).toBe("step");
+    // Rename works on a values window.
+    const renamed = ok(s, { type: "window.rename", windowId: id, title: "Drive" });
+    expect(windowTitle(renamed.workspace.windows[0] as Workspace["windows"][number])).toBe("Drive");
+  });
+
+  it("adds any number of units to a values window", () => {
+    const { s, id } = withValues();
+    let cur = s;
+    for (const sig of ["car/V1", "car/KMH", "car/DEG", "car/RPM", "car/DN"]) {
+      cur = add(cur, id, sig).workspace; // five units: V, km/h, °C, 1/min, rpm/10ms
+    }
+    expect(cur.windows[0]?.signals).toHaveLength(5);
+    // Moving a signal in from a timeseries window is accepted as well.
+    const made = ok(cur, create); // IDs share one counter with the assignments
+    const tsId = made.created as string;
+    const base = made.workspace;
+    const src = add(base, tsId, "car/N1");
+    const moved = ok(src.workspace, {
+      type: "window.moveSignal",
+      windowId: tsId,
+      assignmentId: src.created as string,
+      targetWindowId: id,
+    });
+    expect(win(moved.workspace, id)?.signals).toHaveLength(6);
+    // A signal the values window already shows is refused on a move.
+    const dup = add(base, tsId, "car/V1");
+    expect(
+      run(dup.workspace, {
+        type: "window.moveSignal",
+        windowId: tsId,
+        assignmentId: dup.created as string,
+        targetWindowId: id,
+      }),
+    ).toMatchObject({ ok: false, code: "already_in_window" });
+  });
+
+  it("keeps values windows out of linked ranges", () => {
+    // Values window first (w1), timeseries window second (w2).
+    let s = withValues().s;
+    s = ok(s, { type: "window.create", from: "100", to: "200" }).workspace;
+    expect(win(s, "w2")?.range).toEqual({ from: "100", to: "200" });
+    s = ok(s, { type: "window.setRange", windowId: "w2", from: "10", to: "20" }).workspace;
+    expect(win(s, "w1")).not.toHaveProperty("range");
+    s = ok(s, { type: "window.create" }).workspace;
+    expect(win(s, "w3")?.range).toEqual({ from: "10", to: "20" });
+    expect(win(s, "w1")).not.toHaveProperty("range");
+    // Unlink, zoom w3, re-link: the values window is still without range and w2 snaps to w3.
+    s = ok(s, { type: "workspace.setLinkTime", linked: false }).workspace;
+    s = ok(s, { type: "window.setRange", windowId: "w3", from: "30", to: "40" }).workspace;
+    s = ok(s, { type: "workspace.setLinkTime", linked: true }).workspace;
+    expect(win(s, "w2")?.range).toEqual({ from: "30", to: "40" });
+    expect(win(s, "w1")).not.toHaveProperty("range");
+    // Only a values window: a linked timeseries create has no range to take.
+    expect(run(withValues().s, { type: "window.create" })).toMatchObject({
+      ok: false,
+      code: "invalid_range",
+    });
+  });
+
+  it("moves a signal from a values window into a new timeseries window", () => {
+    // w1 timeseries, w2 values (with V1), w3 timeseries; w3 was zoomed last.
+    let s = ok(EMPTY_WORKSPACE, { type: "workspace.setLinkTime", linked: false }).workspace;
+    s = ok(s, { type: "window.create", from: "1", to: "2" }).workspace;
+    s = withValues(s).s;
+    s = ok(s, {
+      type: "window.create",
+      from: "5",
+      to: "6",
+      mode: "step",
+      envelope: true,
+    }).workspace;
+    s = ok(s, { type: "window.setHeight", windowId: "w3", height: 400 }).workspace;
+    s = ok(s, { type: "window.setRange", windowId: "w3", from: "7", to: "9" }).workspace;
+    const added = add(s, "w2", "car/V1");
+    const moved = ok(added.workspace, {
+      type: "window.moveSignal",
+      windowId: "w2",
+      assignmentId: added.created as string,
+    });
+    const newId = moved.createdWindow as string;
+    expect(newId).toMatch(/^w\d+$/);
+    expect(win(moved.workspace, "w2")?.signals).toEqual([]);
+    expect(win(moved.workspace, newId)).toEqual({
+      id: newId,
+      kind: "timeseries",
+      range: { from: "7", to: "9" },
+      display: { mode: "line", envelope: false },
+      signals: [{ id: added.created, signalId: "car/V1" }],
+    });
+    // Copy keeps the signal in the values window.
+    const copy = ok(added.workspace, {
+      type: "window.moveSignal",
+      windowId: "w2",
+      assignmentId: added.created as string,
+      copy: true,
+    });
+    expect(win(copy.workspace, "w2")?.signals).toHaveLength(1);
+
+    // Without a timeseries window: invalid_range, nothing changes.
+    const only = withValues().s;
+    const a2 = add(only, "w1", "car/V1");
+    const frozen = structuredClone(a2.workspace);
+    expect(
+      run(a2.workspace, {
+        type: "window.moveSignal",
+        windowId: "w1",
+        assignmentId: a2.created as string,
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_range" });
+    expect(a2.workspace).toEqual(frozen);
+
+    // No lastZoomed: the first timeseries window supplies the range.
+    let t = ok(withValues().s, { type: "workspace.setLinkTime", linked: false }).workspace;
+    t = ok(t, { type: "window.create", from: "100", to: "200" }).workspace;
+    t = ok(t, { type: "window.create", from: "300", to: "400" }).workspace;
+    t = ok(t, { type: "window.remove", windowId: "w3" }).workspace; // lastZoomed is gone
+    expect(t.lastZoomed).toBeUndefined();
+    const a3 = add(t, "w1", "car/V1");
+    const m3 = ok(a3.workspace, {
+      type: "window.moveSignal",
+      windowId: "w1",
+      assignmentId: a3.created as string,
+    });
+    expect(win(m3.workspace, m3.createdWindow as string)).toMatchObject({
+      range: { from: "100", to: "200" },
+    });
   });
 });

@@ -1,4 +1,4 @@
-import type { TimeseriesWindow } from "@letsview/shared";
+import type { TimeseriesWindow, ValuesWindow, WorkspaceWindow } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
 import {
   canAdd,
@@ -153,5 +153,134 @@ describe("explorer drag", () => {
     expect(dropStateFor(dn, "wB", withDn, unitOf)).toBe("source");
     expect(dropStateFor(dn, "wC", withDn, unitOf)).toBe("refused");
     expect(dropStateFor(dn, "wA", withDn, unitOf)).toBe("target");
+  });
+});
+
+function vwin(id: string, signals: string[]): ValuesWindow {
+  return {
+    id,
+    kind: "values",
+    mode: "line",
+    signals: signals.map((signalId, i) => ({ id: `a${id}${i}`, signalId })),
+  };
+}
+
+describe("values windows as drop targets and sources", () => {
+  // wA: four units (V, km/h, °C, 1/min). wB: DNMOT (rpm/10ms). wV: values window with four units.
+  const wA = win("wA", ["c/PTC", "c/V_ANZ", "c/T_MOT", "c/DVL"]);
+  const wB = win("wB", ["c/DNMOT"]);
+  const wV = vwin("wV", ["c/PTC", "c/V_ANZ", "c/T_MOT", "c/DVL"]);
+  const windows: WorkspaceWindow[] = [wA, wB, wV];
+  const toV = { kind: "window", windowId: "wV" } as const;
+  const toA = { kind: "window", windowId: "wA" } as const;
+
+  it("accepts any unit on a values window", () => {
+    // DNMOT legend row from wB into the four-unit values window: a fifth unit is fine.
+    const dn: DragSource = { windowId: "wB", assignmentId: "awB0", signalId: "c/DNMOT" };
+    expect(canDrop(dn, toV, windows, unitOf)).toBe(true);
+    expect(dropStateFor(dn, "wV", windows, unitOf)).toBe("target");
+    expect(dropCommand(dn, toV, windows, unitOf, none)).toEqual({
+      type: "window.moveSignal",
+      windowId: "wB",
+      assignmentId: "awB0",
+      targetWindowId: "wV",
+    });
+    // The same signal into the four-unit timeseries window stays refused.
+    expect(canDrop(dn, toA, windows, unitOf)).toBe(false);
+    expect(dropStateFor(dn, "wA", windows, unitOf)).toBe("refused");
+    // Explorer drag: add to the values window, unit-less signals too.
+    expect(canAdd("c/DNMOT", toV, windows, unitOf)).toBe(true);
+    expect(dropStateFor({ signalId: "c/DNMOT" }, "wV", windows, unitOf)).toBe("target");
+    expect(canAdd("c/NOUNIT", toV, windows, unitOf)).toBe(true);
+    // Five and more units in the values window do not block a sixth.
+    const five = [wA, wB, vwin("wV", ["c/PTC", "c/V_ANZ", "c/T_MOT", "c/DVL", "c/DNMOT"])];
+    expect(canAdd("c/NOUNIT", toV, five, unitOf)).toBe(true);
+    // "Already shows the signal" still refuses.
+    expect(canAdd("c/V_ANZ", toV, windows, unitOf)).toBe(false);
+    expect(dropStateFor({ signalId: "c/V_ANZ" }, "wV", windows, unitOf)).toBe(undefined);
+    expect(
+      canDrop({ windowId: "wB", assignmentId: "x", signalId: "c/DVL" }, toV, windows, unitOf),
+    ).toBe(false);
+  });
+
+  it("drags a values row like a legend row", () => {
+    // Values window wV lists DVL and DNMOT; wB shows PTC only.
+    const full = win("wA", ["c/PTC", "c/V_ANZ", "c/T_MOT", "c/EAC"]); // V, km/h, °C
+    const four = win("wA", ["c/PTC", "c/V_ANZ", "c/T_MOT", "c/DVL"]);
+    const vals = vwin("wV", ["c/DVL", "c/DNMOT"]);
+    const other = win("wB", ["c/PTC"]);
+    const dvl: DragSource = { windowId: "wV", assignmentId: "awV0", signalId: "c/DVL" };
+    const dnmot: DragSource = { windowId: "wV", assignmentId: "awV1", signalId: "c/DNMOT" };
+    const ws: WorkspaceWindow[] = [full, other, vals];
+    const toB = { kind: "window", windowId: "wB" } as const;
+
+    // Move on plain drop, copy with Alt or Ctrl, like a legend row.
+    expect(isLegendSource(dvl)).toBe(true);
+    expect(dropStateFor(dvl, "wV", ws, unitOf)).toBe("source");
+    expect(dropStateFor(dvl, "wB", ws, unitOf)).toBe("target");
+    expect(dropCommand(dvl, toB, ws, unitOf, none)).toEqual({
+      type: "window.moveSignal",
+      windowId: "wV",
+      assignmentId: "awV0",
+      targetWindowId: "wB",
+    });
+    expect(dropCommand(dvl, toB, ws, unitOf, { altKey: true, ctrlKey: false })).toEqual({
+      type: "window.moveSignal",
+      windowId: "wV",
+      assignmentId: "awV0",
+      targetWindowId: "wB",
+      copy: true,
+    });
+    expect(dropCommand(dvl, toB, ws, unitOf, { altKey: false, ctrlKey: true })).toMatchObject({
+      copy: true,
+    });
+    // Onto the values window itself and onto a window already showing the signal: refused.
+    expect(canDrop(dvl, { kind: "window", windowId: "wV" }, ws, unitOf)).toBe(false);
+    expect(canDrop(dvl, toA, [four, other, vals], unitOf)).toBe(false);
+    // The new-window zone accepts: the plain move command without a target.
+    expect(dropCommand(dvl, { kind: "new" }, ws, unitOf, none)).toEqual({
+      type: "window.moveSignal",
+      windowId: "wV",
+      assignmentId: "awV0",
+    });
+    // A fifth unit in a timeseries target is refused, with and without Alt.
+    const fiveUnits = [win("wA", ["c/PTC", "c/V_ANZ", "c/T_MOT", "c/DVL"]), other, vals];
+    expect(canDrop(dnmot, toA, fiveUnits, unitOf)).toBe(false);
+    expect(dropStateFor(dnmot, "wA", fiveUnits, unitOf)).toBe("refused");
+    expect(dropCommand(dnmot, toA, fiveUnits, unitOf, none)).toBe(undefined);
+    expect(dropCommand(dnmot, toA, fiveUnits, unitOf, { altKey: true, ctrlKey: false })).toBe(
+      undefined,
+    );
+  });
+
+  it("moves and copies legend rows into a values window", () => {
+    // wA shows V_ANZ and DVL; the values window wV is empty.
+    const a = win("wA", ["c/V_ANZ", "c/DVL"]);
+    const v = vwin("wV", []);
+    const ws: WorkspaceWindow[] = [a, v];
+    const dvl: DragSource = { windowId: "wA", assignmentId: "awA1", signalId: "c/DVL" };
+    const vanz: DragSource = { windowId: "wA", assignmentId: "awA0", signalId: "c/V_ANZ" };
+
+    expect(dropStateFor(dvl, "wV", ws, unitOf)).toBe("target");
+    // Alt: DVL is copied (stays in wA).
+    expect(dropCommand(dvl, toV, ws, unitOf, { altKey: true, ctrlKey: false })).toEqual({
+      type: "window.moveSignal",
+      windowId: "wA",
+      assignmentId: "awA1",
+      targetWindowId: "wV",
+      copy: true,
+    });
+    // No modifier: V_ANZ is moved, so the next drop of the other row sees it gone.
+    expect(dropCommand(vanz, toV, ws, unitOf, none)).toEqual({
+      type: "window.moveSignal",
+      windowId: "wA",
+      assignmentId: "awA0",
+      targetWindowId: "wV",
+    });
+    // Once DVL is in the values window it cannot be dropped there again.
+    const after: WorkspaceWindow[] = [a, vwin("wV", ["c/DVL"])];
+    expect(canDrop(dvl, toV, after, unitOf)).toBe(false);
+    expect(dropCommand(dvl, toV, after, unitOf, none)).toBe(undefined);
+    expect(dropStateFor(dvl, "wV", after, unitOf)).toBe(undefined);
   });
 });

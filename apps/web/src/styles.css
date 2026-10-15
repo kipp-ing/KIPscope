@@ -359,12 +359,16 @@ button.link {
   padding: 0;
 }
 
-.link-time {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
+/* Option bar (design C5): stays at the top of the window list while it scrolls. Opaque, so windows
+   pass under it; above uPlot's overlays. */
+.option-bar-slot {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -16px 12px;
+  padding: 6px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
 /* Legend-row drag (design D5); window highlights live in chart/window.css. */
@@ -406,16 +410,21 @@ button.link {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* Last child of <main> during every drag, stuck to the viewport bottom over the windows (design C7).
+   The tint lies over an opaque base so the windows below do not show through. */
 .drop-new {
-  margin-bottom: 12px;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 12px;
   padding: 18px;
   border: 2px dashed var(--accent);
   border-radius: 6px;
   color: var(--accent);
   text-align: center;
-  background: rgb(37 99 235 / 0.04);
+  background: linear-gradient(rgb(37 99 235 / 0.04), rgb(37 99 235 / 0.04)), var(--bg);
 }
 
 .drop-new.over {
-  background: rgb(37 99 235 / 0.12);
+  background: linear-gradient(rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.12)), var(--bg);
 }

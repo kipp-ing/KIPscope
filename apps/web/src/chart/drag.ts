@@ -1,5 +1,12 @@
-import { type CommandInput, MAX_UNITS, type TimeseriesWindow, windowUnits } from "@letsview/shared";
+import {
+  type CommandInput,
+  isTimeseries,
+  MAX_UNITS,
+  type WorkspaceWindow,
+  windowUnits,
+} from "@letsview/shared";
 
+/** A legend row or a values row (design C7): both name their window and assignment. */
 export interface DragSource {
   windowId: string;
   assignmentId: string;
@@ -11,25 +18,35 @@ export type DropTarget = { kind: "window"; windowId: string } | { kind: "new" };
 /** Pointer movement before a press on a legend grip becomes a drag. */
 export const DRAG_THRESHOLD_PX = 4;
 
-/** A window accepts a drop when it is not the source, does not show the signal yet and keeps ≤ MAX_UNITS units; "new" always accepts. */
+/** True when the signal would push a timeseries window past MAX_UNITS; a values window takes any unit (C7). */
+function tooManyUnits(
+  w: WorkspaceWindow,
+  signalId: string,
+  unitOf: (signalId: string) => string | undefined,
+): boolean {
+  return isTimeseries(w) && windowUnits(w, unitOf, signalId).length > MAX_UNITS;
+}
+
+/** A window accepts a drop when it is not the source, does not show the signal yet and, if it is a
+ * timeseries window, keeps ≤ MAX_UNITS units; "new" always accepts. */
 export function canDrop(
   source: DragSource,
   target: DropTarget,
-  windows: TimeseriesWindow[],
+  windows: WorkspaceWindow[],
   unitOf: (signalId: string) => string | undefined,
 ): boolean {
   if (target.kind === "new") return true;
   if (target.windowId === source.windowId) return false;
   const w = windows.find((x) => x.id === target.windowId);
   if (!w || w.signals.some((s) => s.signalId === source.signalId)) return false;
-  return windowUnits(w, unitOf, source.signalId).length <= MAX_UNITS;
+  return !tooManyUnits(w, source.signalId, unitOf);
 }
 
 /** The window.moveSignal command for a drop, copy when altKey or ctrlKey; undefined when !canDrop. */
 export function dropCommand(
   source: DragSource,
   target: DropTarget,
-  windows: TimeseriesWindow[],
+  windows: WorkspaceWindow[],
   unitOf: (signalId: string) => string | undefined,
   mods: { altKey: boolean; ctrlKey: boolean },
 ): CommandInput | undefined {
@@ -49,38 +66,38 @@ export interface ExplorerDragSource {
   signalId: string;
 }
 
-/** Anything App drags: a legend row (D5) or an explorer row. */
+/** Anything App drags: a legend or values row (D5, C7) or an explorer row. */
 export type AnyDragSource = DragSource | ExplorerDragSource;
 
-/** True for a legend row (it has a source window). */
+/** True for a legend or values row (it has a source window). */
 export function isLegendSource(source: AnyDragSource): source is DragSource {
   return "windowId" in source;
 }
 
-/** An explorer drop is accepted by a window that does not show the signal yet and keeps ≤ MAX_UNITS
- * units (windowUnits with the signal as extra); "new" always accepts. */
+/** An explorer drop is accepted by a window that does not show the signal yet and, if it is a
+ * timeseries window, keeps ≤ MAX_UNITS units (windowUnits with the signal as extra); "new" always accepts. */
 export function canAdd(
   signalId: string,
   target: DropTarget,
-  windows: TimeseriesWindow[],
+  windows: WorkspaceWindow[],
   unitOf: (signalId: string) => string | undefined,
 ): boolean {
   if (target.kind === "new") return true;
   const w = windows.find((x) => x.id === target.windowId);
   if (!w || w.signals.some((s) => s.signalId === signalId)) return false;
-  return windowUnits(w, unitOf, signalId).length <= MAX_UNITS;
+  return !tooManyUnits(w, signalId, unitOf);
 }
 
 /** Highlight of one window during a drag. */
 export type DropState = "source" | "target" | "refused";
 
-/** "source": the legend source window (never for an explorer source); "target": canDrop (legend) or
- * canAdd (explorer); "refused": the window does not show the signal but would exceed MAX_UNITS with it;
- * else undefined. */
+/** "source": the row's own window (never for an explorer source); "target": canDrop (row) or
+ * canAdd (explorer); "refused": a timeseries window that does not show the signal but would exceed
+ * MAX_UNITS with it; else undefined. */
 export function dropStateFor(
   source: AnyDragSource,
   windowId: string,
-  windows: TimeseriesWindow[],
+  windows: WorkspaceWindow[],
   unitOf: (signalId: string) => string | undefined,
 ): DropState | undefined {
   const target: DropTarget = { kind: "window", windowId };
@@ -94,6 +111,6 @@ export function dropStateFor(
   const refusedByUnits =
     w &&
     !w.signals.some((s) => s.signalId === source.signalId) &&
-    windowUnits(w, unitOf, source.signalId).length > MAX_UNITS;
+    tooManyUnits(w, source.signalId, unitOf);
   return refusedByUnits ? "refused" : undefined;
 }

@@ -1,18 +1,23 @@
 import {
   type CommandInput,
   type CommandResult,
+  type CursorName,
   EMPTY_WORKSPACE,
+  isTimeseries,
   type RenderError,
   type SignalInfo,
   signalColor,
 } from "@letsview/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
+import { barTarget, resetSignals } from "./bar/bar.ts";
+import { OptionBar } from "./bar/OptionBar.tsx";
 import {
   type AnyDragSource,
   canAdd,
   canDrop,
   DRAG_THRESHOLD_PX,
+  type DragSource,
   type DropState,
   type DropTarget,
   dropCommand,
@@ -25,8 +30,9 @@ import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { isTextField } from "./keys.ts";
 import { useLive } from "./live.ts";
+import { ValuesWindow } from "./values/ValuesWindow.tsx";
 
-/** A running legend-row (design D5) or explorer-row drag; `active` once the pointer moved past the threshold. */
+/** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
 interface Drag {
   source: AnyDragSource;
   label: string;
@@ -39,7 +45,7 @@ interface Drag {
   target?: DropTarget | undefined;
 }
 
-/** Auto-scroll zone at the top and bottom edge of the window list, and its top speed per frame. */
+/** Auto-scroll band below the option bar and above the drop zone (design C7), and its top speed per frame. */
 const EDGE_PX = 48;
 const EDGE_SCROLL_PX = 24;
 
@@ -49,6 +55,12 @@ function targetAt(x: number, y: number): DropTarget | undefined {
   const windowId = el?.getAttribute("data-window-id");
   if (windowId) return { kind: "window", windowId };
   return el?.getAttribute("data-drop") === "new" ? { kind: "new" } : undefined;
+}
+
+/** A cursor line placed or dragged but not yet in the workspace (design C2). */
+interface CursorPreview {
+  cursor: CursorName;
+  t: bigint;
 }
 
 /** Optional `dropState` prop; absent rather than undefined (exactOptionalPropertyTypes). */
@@ -116,8 +128,11 @@ export function App() {
     if (target === NEW_WINDOW) {
       try {
         // While linked, a new window takes the shared range (design D6); otherwise the extent.
+        // Values windows have no range, so a timeseries window must exist to take it from.
         const range =
-          linked && windows.length > 0 ? undefined : extentRange([await fetchExtent(signal.id)]);
+          linked && windows.some(isTimeseries)
+            ? undefined
+            : extentRange([await fetchExtent(signal.id)]);
         // Untitled: the header shows "Window <n>", which cannot go stale when signals move.
         const created = await command({
           type: "window.create",
@@ -135,6 +150,31 @@ export function App() {
   // The drag listeners outlive a render; they add through the current function.
   const addSignalRef = useRef(addSignal);
   addSignalRef.current = addSignal;
+
+  // Values row onto "+ New window" while no timeseries window exists: create plus move (design C6).
+  const moveToNewWindow = async (source: DragSource, copy: boolean) => {
+    try {
+      const range = extentRange([await fetchExtent(source.signalId)]);
+      if (!range) return;
+      const created = await command({
+        type: "window.create",
+        from: range.from.toString(),
+        to: range.to.toString(),
+      });
+      if (!created.ok || !created.created) return;
+      await command({
+        type: "window.moveSignal",
+        windowId: source.windowId,
+        assignmentId: source.assignmentId,
+        targetWindowId: created.created,
+        ...(copy ? { copy: true } : {}),
+      });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const moveToNewWindowRef = useRef(moveToNewWindow);
+  moveToNewWindowRef.current = moveToNewWindow;
 
   // Zoom history (design D6): one shared stack while linked, else one per window.
   const histories = useRef(new Map<string, ZoomHistory>());
@@ -179,12 +219,14 @@ export function App() {
     },
     [setRange],
   );
+  // Reset to the extents of the window's signals, or of `signalIds` (the bar while linked, design C5).
   const onReset = useCallback(
-    async (windowId: string) => {
+    async (windowId: string, signalIds?: string[]) => {
       const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
-      if (!w || w.signals.length === 0) return;
+      if (!w || !isTimeseries(w)) return;
+      const ids = [...new Set(signalIds ?? w.signals.map((s) => s.signalId))];
+      if (ids.length === 0) return;
       try {
-        const ids = [...new Set(w.signals.map((s) => s.signalId))];
         // A signal without data (or unknown after a restart) has no extent; the others still count.
         const results = await Promise.allSettled(ids.map((id) => fetchExtent(id)));
         const extents = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
@@ -207,6 +249,46 @@ export function App() {
     [historyOf, setRange],
   );
 
+  // Cursors (design C2): timeseries windows draw the preview over the committed time; release or the
+  // click gate commits one cursor.set, and the preview ends once the workspace shows that time.
+  const [cursorPreview, setCursorPreview] = useState<CursorPreview | undefined>();
+  const committedA = workspace?.cursors?.a;
+  const committedB = workspace?.cursors?.b;
+  const cursors = useMemo(() => {
+    const c: { a?: bigint; b?: bigint } = {};
+    if (committedA !== undefined) c.a = BigInt(committedA);
+    if (committedB !== undefined) c.b = BigInt(committedB);
+    if (cursorPreview) c[cursorPreview.cursor] = cursorPreview.t;
+    return c;
+  }, [committedA, committedB, cursorPreview]);
+  useEffect(() => {
+    setCursorPreview((p) =>
+      p && (p.cursor === "a" ? committedA : committedB) === p.t.toString() ? undefined : p,
+    );
+  }, [committedA, committedB]);
+  const onCursorPreview = useCallback((cursor: CursorName, t: bigint | undefined) => {
+    setCursorPreview((p) =>
+      t !== undefined ? { cursor, t } : p?.cursor === cursor ? undefined : p,
+    );
+  }, []);
+  const onCursorCommit = useCallback(
+    async (cursor: CursorName, t: bigint) => {
+      setCursorPreview({ cursor, t });
+      let ok = false;
+      try {
+        ok = (await command({ type: "cursor.set", cursor, t: t.toString() })).ok;
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e));
+      }
+      // A refused command leaves the line at the committed time; a time that was committed already
+      // changes no cursor, so the effect above would not end the preview.
+      const shown = liveRef.current.workspace?.cursors?.[cursor] === t.toString();
+      if (!ok || shown)
+        setCursorPreview((p) => (p?.cursor === cursor && p.t === t ? undefined : p));
+    },
+    [command],
+  );
+
   // Plot insets (natural, per window): every window gets the widest left and right inset, so the
   // same timestamp sits at the same x in all windows.
   const [natural, setNatural] = useState<ReadonlyMap<string, Insets>>(new Map());
@@ -227,12 +309,12 @@ export function App() {
     );
   }, [windowKey]);
   const { left: maxLeft, right: maxRight } = mergeInsets(
-    windows.map((w) => w.id),
+    windows.filter(isTimeseries).map((w) => w.id),
     natural,
   );
   const insets = useMemo(() => ({ left: maxLeft, right: maxRight }), [maxLeft, maxRight]);
 
-  // Backspace steps back in the window under the pointer, else in the window zoomed last.
+  // Backspace steps back in the timeseries window under the pointer, else in the window zoomed last.
   const hovered = useRef<string | undefined>(undefined);
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -248,7 +330,7 @@ export function App() {
       if (isTextField(document.activeElement)) return;
       const ws = liveRef.current.workspace;
       const id = [hovered.current, ws?.lastZoomed].find(
-        (x) => x && ws?.windows.some((w) => w.id === x),
+        (x) => x && ws?.windows.some((w) => w.id === x && isTimeseries(w)),
       );
       if (!id) return;
       e.preventDefault();
@@ -268,6 +350,8 @@ export function App() {
   const [drag, setDrag] = useState<Drag | undefined>();
   const dragRef = useRef<Drag | undefined>(undefined);
   const mainRef = useRef<HTMLElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
   const update = useCallback((d: Drag | undefined) => {
     dragRef.current = d;
     setDrag(d);
@@ -287,20 +371,25 @@ export function App() {
         copy: false,
       };
       dragRef.current = d;
-      // Only a legend drag can copy; Alt/Ctrl change nothing for an explorer drag.
+      // Only a legend or values row can copy; Alt/Ctrl change nothing for an explorer drag.
       const legend = isLegendSource(source);
       let frame = 0;
 
-      // Pointer near the top or bottom edge of the window list scrolls it, faster the closer.
+      // Pointer near the visible top (below the option bar) or bottom (above the sticky drop zone)
+      // of the window list scrolls it, faster the closer. On the drop zone itself it rests (C7).
       const autoScroll = () => {
         frame = 0;
         const cur = dragRef.current;
         const main = mainRef.current;
         if (!cur?.active || !main) return;
         const box = main.getBoundingClientRect();
-        const top = Math.max(box.top, 0) + EDGE_PX;
-        const bottom = Math.min(box.bottom, window.innerHeight) - EDGE_PX;
-        const depth = cur.y < top ? cur.y - top : cur.y > bottom ? cur.y - bottom : 0;
+        const listTop = barRef.current?.getBoundingClientRect().bottom ?? Math.max(box.top, 0);
+        const listBottom =
+          dropRef.current?.getBoundingClientRect().top ?? Math.min(box.bottom, window.innerHeight);
+        const top = listTop + EDGE_PX;
+        const bottom = listBottom - EDGE_PX;
+        const depth =
+          cur.y < top ? cur.y - top : cur.y > bottom && cur.y < listBottom ? cur.y - bottom : 0;
         if (depth === 0) return;
         const before = main.scrollTop;
         main.scrollTop +=
@@ -365,7 +454,14 @@ export function App() {
           altKey: e.altKey,
           ctrlKey: e.ctrlKey,
         });
-        if (cmd) void command(cmd);
+        if (!cmd) return;
+        // A values row onto "new" with no timeseries window to take the range from: the server cannot
+        // create the window, so App creates it at the signal's extent and moves into it (design C6).
+        if (target.kind === "new" && !ws.windows.some(isTimeseries)) {
+          void moveToNewWindowRef.current(cur.source, e.altKey || e.ctrlKey);
+          return;
+        }
+        void command(cmd);
       };
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
@@ -396,6 +492,11 @@ export function App() {
     },
     [command, unitOf, update],
   );
+
+  // Option bar (design C5): Back and Reset zoom act on the window zoomed last, else the first one.
+  const barWindow = workspace ? barTarget(workspace) : undefined;
+  const canGoBack = (windowId: string | undefined) =>
+    windowId !== undefined && (histories.current.get(historyKey(linked, windowId))?.size ?? 0) > 0;
 
   const activeDrag = drag?.active ? drag : undefined;
   const legendDrag = activeDrag !== undefined && isLegendSource(activeDrag.source);
@@ -462,54 +563,78 @@ export function App() {
           <span className={`conn ${live.connected ? "ok" : "down"}`}>
             {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
           </span>
-          {workspace && (
-            <label className="link-time" title="While on, zooming one window zooms all windows">
-              <input
-                type="checkbox"
-                checked={linked}
-                onChange={(e) =>
-                  void command({ type: "workspace.setLinkTime", linked: e.target.checked })
-                }
-              />
-              Link time axes
-            </label>
-          )}
           {message && (
             <button type="button" className="message" onClick={() => setMessage(undefined)}>
               {message} ✕
             </button>
           )}
         </header>
-        {windows.map((w) => (
-          <TimeseriesWindow
-            key={w.id}
-            window={w}
-            revision={live.revision}
-            info={info}
-            colorOf={colorOf}
-            onCommand={command}
-            onReady={onReady}
-            onZoomed={onZoomed}
-            canGoBack={(histories.current.get(historyKey(linked, w.id))?.size ?? 0) > 0}
-            onBack={onBack}
-            onReset={onReset}
-            onDragStart={onDragStart}
-            insets={insets}
-            onInsets={onInsets}
-            {...dropProp(dropStateOf(w.id))}
-            {...dropActionProp}
-          />
-        ))}
+        {workspace && (
+          <div className="option-bar-slot" ref={barRef}>
+            <OptionBar
+              workspace={workspace}
+              target={barWindow}
+              canGoBack={canGoBack(barWindow?.id)}
+              onCommand={command}
+              onBack={onBack}
+              onReset={() => {
+                if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
+              }}
+            />
+          </div>
+        )}
+        {windows.map((w) =>
+          isTimeseries(w) ? (
+            <TimeseriesWindow
+              key={w.id}
+              window={w}
+              revision={live.revision}
+              info={info}
+              colorOf={colorOf}
+              onCommand={command}
+              onReady={onReady}
+              onZoomed={onZoomed}
+              canGoBack={canGoBack(w.id)}
+              onBack={onBack}
+              onReset={onReset}
+              onDragStart={onDragStart}
+              insets={insets}
+              onInsets={onInsets}
+              cursors={cursors}
+              onCursorPreview={onCursorPreview}
+              onCursorCommit={onCursorCommit}
+              {...dropProp(dropStateOf(w.id))}
+              {...dropActionProp}
+            />
+          ) : (
+            <ValuesWindow
+              key={w.id}
+              window={w}
+              revision={live.revision}
+              cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
+              dragging={cursorPreview !== undefined}
+              info={info}
+              colorOf={colorOf}
+              onCommand={command}
+              onReady={onReady}
+              onDragStart={onDragStart}
+              {...dropProp(dropStateOf(w.id))}
+              {...dropActionProp}
+            />
+          ),
+        )}
+        {workspace && windows.length === 0 && (
+          <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
+        )}
         {activeDrag && (
+          // Last child and sticky: at the viewport bottom wherever the list is scrolled (design C7).
           <div
+            ref={dropRef}
             className={`drop-new${activeDrag.target?.kind === "new" ? " over" : ""}`}
             data-drop="new"
           >
             + New window
           </div>
-        )}
-        {workspace && windows.length === 0 && (
-          <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
         )}
       </main>
       {activeDrag && (

@@ -1,14 +1,18 @@
+import { TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import {
   type Command,
   type CommandErrorCode,
   DEFAULT_DISPLAY,
+  isTimeseries,
   MAX_SIGNALS,
   MAX_UNITS,
   SIGNAL_COLORS,
   type TimeRange,
   type TimeseriesWindow,
   unitKey,
+  type ValuesWindow,
   type Workspace,
+  type WorkspaceWindow,
   windowUnits,
 } from "./workspace.ts";
 
@@ -54,14 +58,29 @@ function pruneColors(workspace: Workspace): Workspace {
   return { ...workspace, colors };
 }
 
-/** `too_many_units` if adding `signalId` to `w` would exceed MAX_UNITS; unchecked without `unitOf`. */
+/** Range of `lastZoomed`, else of the first timeseries window. */
+function referenceRange(state: Workspace): TimeRange | undefined {
+  const timeseries = state.windows.filter(isTimeseries);
+  return (timeseries.find((w) => w.id === state.lastZoomed) ?? timeseries[0])?.range;
+}
+
+/** Gives every timeseries window `range`; values windows have none. */
+function linkRange(windows: WorkspaceWindow[], range: TimeRange): WorkspaceWindow[] {
+  return windows.map((w) => (isTimeseries(w) ? { ...w, range } : w));
+}
+
+/**
+ * `too_many_units` if adding `signalId` to timeseries window `w` would exceed MAX_UNITS;
+ * unchecked without `unitOf` and for values windows.
+ */
 function checkUnits(
-  w: TimeseriesWindow,
+  w: WorkspaceWindow,
   signalId: string,
   ctx: ApplyContext,
 ): ApplyResult | undefined {
   const unitOf = ctx.unitOf?.bind(ctx);
-  if (!unitOf || windowUnits(w, unitOf, signalId).length <= MAX_UNITS) return undefined;
+  if (!unitOf || !isTimeseries(w) || windowUnits(w, unitOf, signalId).length <= MAX_UNITS)
+    return undefined;
   const names = new Map<string, string>();
   for (const s of w.signals) {
     const unit = unitOf(s.signalId)?.trim();
@@ -81,7 +100,7 @@ function checkUnits(
 export function applyCommand(state: Workspace, command: Command, ctx: ApplyContext): ApplyResult {
   const updateWindow = (
     windowId: string,
-    update: (w: TimeseriesWindow) => TimeseriesWindow | ApplyResult,
+    update: (w: WorkspaceWindow) => WorkspaceWindow | ApplyResult,
   ): ApplyResult => {
     const index = state.windows.findIndex((w) => w.id === windowId);
     const current = state.windows[index];
@@ -92,8 +111,27 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
     return { ok: true, workspace: { ...state, windows } };
   };
 
+  const notOnValues = (w: ValuesWindow): ApplyResult =>
+    fail("invalid_command", `${command.type} does not apply to values window ${w.id}`);
+
   switch (command.type) {
     case "window.create": {
+      const id = `w${state.nextId}`;
+      if (command.kind === "values") {
+        const window: ValuesWindow = {
+          id,
+          kind: "values",
+          mode: command.mode === "step" ? "step" : "line",
+          signals: [],
+        };
+        if (command.title !== undefined) window.title = command.title;
+        const workspace = {
+          ...state,
+          windows: [...state.windows, window],
+          nextId: state.nextId + 1,
+        };
+        return { ok: true, workspace, created: id };
+      }
       let range: TimeRange;
       const hasRange = command.from !== undefined && command.to !== undefined;
       if (command.from !== undefined && command.to !== undefined) {
@@ -101,11 +139,10 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
         if (invalid) return invalid;
         range = { from: command.from, to: command.to };
       } else {
-        const shared = state.linkTime ? state.windows[0]?.range : undefined;
+        const shared = state.linkTime ? state.windows.find(isTimeseries)?.range : undefined;
         if (!shared) return fail("invalid_range", "from and to are required");
         range = shared;
       }
-      const id = `w${state.nextId}`;
       const window: TimeseriesWindow = {
         id,
         kind: "timeseries",
@@ -117,8 +154,7 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
         signals: [],
       };
       if (command.title !== undefined) window.title = command.title;
-      const existing =
-        hasRange && state.linkTime ? state.windows.map((w) => ({ ...w, range })) : state.windows;
+      const existing = hasRange && state.linkTime ? linkRange(state.windows, range) : state.windows;
       const workspace: Workspace = {
         ...state,
         windows: [...existing, window],
@@ -191,16 +227,35 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
       let targetId: string;
       let createdWindow: string | undefined;
       if (command.targetWindowId === undefined) {
-        targetId = `w${nextId++}`;
+        let window: TimeseriesWindow;
+        if (isTimeseries(source)) {
+          window = {
+            id: `w${nextId}`,
+            kind: "timeseries",
+            range: source.range,
+            display: { ...source.display },
+            signals: [],
+          };
+          if (source.height !== undefined) window.height = source.height;
+        } else {
+          const range = referenceRange(state);
+          if (!range) {
+            return fail(
+              "invalid_range",
+              "no timeseries window to take the new window's range from",
+            );
+          }
+          window = {
+            id: `w${nextId}`,
+            kind: "timeseries",
+            range,
+            display: { ...DEFAULT_DISPLAY },
+            signals: [],
+          };
+        }
+        targetId = window.id;
         createdWindow = targetId;
-        const window: TimeseriesWindow = {
-          id: targetId,
-          kind: "timeseries",
-          range: source.range,
-          display: { ...source.display },
-          signals: [],
-        };
-        if (source.height !== undefined) window.height = source.height;
+        nextId++;
         windows = [...windows, window];
       } else {
         const target = state.windows.find((w) => w.id === command.targetWindowId);
@@ -235,22 +290,20 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
     case "window.setRange": {
       const target = state.windows.find((w) => w.id === command.windowId);
       if (!target) return fail("unknown_window", `unknown window: ${command.windowId}`);
+      if (!isTimeseries(target)) return notOnValues(target);
       const invalid = checkRange(command.from, command.to);
       if (invalid) return invalid;
       const range = { from: command.from, to: command.to };
-      const windows = state.windows.map((w) =>
-        state.linkTime || w.id === target.id ? { ...w, range } : w,
-      );
+      const windows = state.linkTime
+        ? linkRange(state.windows, range)
+        : state.windows.with(state.windows.indexOf(target), { ...target, range });
       return { ok: true, workspace: { ...state, windows, lastZoomed: target.id } };
     }
 
     case "workspace.setLinkTime": {
       if (!command.linked) return { ok: true, workspace: { ...state, linkTime: false } };
-      const reference =
-        state.windows.find((w) => w.id === state.lastZoomed)?.range ?? state.windows[0]?.range;
-      const windows = reference
-        ? state.windows.map((w) => ({ ...w, range: reference }))
-        : state.windows;
+      const reference = referenceRange(state);
+      const windows = reference ? linkRange(state.windows, reference) : state.windows;
       return { ok: true, workspace: { ...state, windows, linkTime: true } };
     }
 
@@ -263,15 +316,57 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
       });
 
     case "window.setHeight":
-      return updateWindow(command.windowId, (w) => ({ ...w, height: command.height }));
+      return updateWindow(command.windowId, (w) =>
+        isTimeseries(w) ? { ...w, height: command.height } : notOnValues(w),
+      );
 
     case "window.setDisplay":
-      return updateWindow(command.windowId, (w) => ({
-        ...w,
-        display: {
-          mode: command.mode ?? w.display.mode,
-          envelope: command.envelope ?? w.display.envelope,
-        },
-      }));
+      return updateWindow(command.windowId, (w) => {
+        if (!isTimeseries(w)) {
+          if (command.envelope !== undefined || command.mode === "markers") {
+            return fail("invalid_command", `values window ${w.id} takes mode line or step only`);
+          }
+          return command.mode ? { ...w, mode: command.mode } : w;
+        }
+        return {
+          ...w,
+          display: {
+            mode: command.mode ?? w.display.mode,
+            envelope: command.envelope ?? w.display.envelope,
+          },
+        };
+      });
+
+    case "cursor.set":
+      return {
+        ok: true,
+        workspace: { ...state, cursors: { ...state.cursors, [command.cursor]: command.t } },
+      };
+
+    case "cursor.move": {
+      const current = state.cursors[command.cursor];
+      if (current === undefined) {
+        return fail("cursor_off", `cursor ${command.cursor.toUpperCase()} is off`);
+      }
+      const t = BigInt(current) + BigInt(command.by);
+      if (t < TIME_MIN || t > TIME_MAX) {
+        return fail("invalid_command", `time outside ${toIso(TIME_MIN)} … ${toIso(TIME_MAX)}`);
+      }
+      return {
+        ok: true,
+        workspace: { ...state, cursors: { ...state.cursors, [command.cursor]: t.toString() } },
+      };
+    }
+
+    case "cursor.remove": {
+      const { [command.cursor]: _removed, ...cursors } = state.cursors;
+      return { ok: true, workspace: { ...state, cursors } };
+    }
+
+    case "cursor.setDiff":
+      return {
+        ok: true,
+        workspace: { ...state, cursors: { ...state.cursors, diff: command.diff } },
+      };
   }
 }

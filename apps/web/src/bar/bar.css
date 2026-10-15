@@ -1,0 +1,28 @@
+/* Option bar controls (D-023). Sticking, padding and background belong to App's
+   .option-bar-slot (styles.css). */
+
+.option-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.option-bar .toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.option-bar .toggle:has(input:disabled) {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.option-bar .separator {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}

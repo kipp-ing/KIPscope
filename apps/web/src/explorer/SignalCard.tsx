@@ -1,4 +1,4 @@
-import type { SignalMatch, TimeseriesWindow } from "@letsview/shared";
+import type { SignalMatch, WorkspaceWindow } from "@letsview/shared";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { formatSnaValue } from "../chart/build.ts";
 import {
@@ -13,7 +13,7 @@ import { Highlight } from "./Highlight.tsx";
 
 interface SignalCardProps {
   match: SignalMatch;
-  windows: TimeseriesWindow[];
+  windows: WorkspaceWindow[];
   /** The row's rect; the card sits right of it, top aligned, clamped into the viewport. */
   anchor: DOMRect;
   /** DOM id for the row's aria-describedby. */

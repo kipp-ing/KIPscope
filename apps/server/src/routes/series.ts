@@ -1,4 +1,12 @@
-import { type Extent, parseSignalId, TimeInput } from "@letsview/shared";
+import {
+  type CursorValueResult,
+  type EdgePoint,
+  type Extent,
+  evaluateAt,
+  parseSignalId,
+  TimeInput,
+  ValuesMode,
+} from "@letsview/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
@@ -17,6 +25,12 @@ const SeriesQuery = z
   .refine((q) => q.to > q.from, { message: "to must be after from", path: ["to"] });
 
 const ExtentQuery = z.object({ signal: z.string().min(1) });
+
+const ValueQuery = z.object({
+  signal: z.string().min(1),
+  t: Time,
+  mode: ValuesMode.default("line"),
+});
 
 export const seriesRoutes =
   ({ catalog, source }: AppDeps): FastifyPluginAsync =>
@@ -98,4 +112,55 @@ export const seriesRoutes =
         return apiError(reply, 502, "source_error", message, range);
       }
     });
+
+    /** Value of a signal at one time from its raw neighbours (spec series-query, design C4/S3). */
+    app.get("/api/value", async (request, reply) => {
+      const query = parseInput(ValueQuery, request.query, reply);
+      if (!query) return reply;
+      const details = { signalId: query.signal };
+      if (!catalog.loadedAt) {
+        return apiError(
+          reply,
+          503,
+          "catalog_unavailable",
+          "signal catalog not loaded yet; SNA values cannot be identified",
+          details,
+        );
+      }
+      const ref = parseSignalId(query.signal);
+      if (!ref || !catalog.get(query.signal)) {
+        return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
+          signalId: query.signal,
+        });
+      }
+
+      const controller = new AbortController();
+      request.raw.on("close", () => {
+        if (!reply.raw.writableEnded) controller.abort();
+      });
+
+      try {
+        const seriesRef = { ...ref, sna: catalog.snaRanges(query.signal) };
+        // before(t + 1) is the last point at or before t, after(t + 1) the first point after t.
+        const [at, next] = await Promise.all([
+          source.before(seriesRef, query.t + 1n, controller.signal),
+          source.after(seriesRef, query.t + 1n, controller.signal),
+        ]);
+        const body: CursorValueResult = {
+          signalId: query.signal,
+          t: query.t.toString(),
+          mode: query.mode,
+          value: evaluateAt(query.t, query.mode, at, next),
+        };
+        if (at) body.at = edge(at);
+        if (next) body.next = edge(next);
+        return body;
+      } catch (error) {
+        if (controller.signal.aborted) return reply;
+        const message = error instanceof Error ? error.message : String(error);
+        return apiError(reply, 502, "source_error", message, details);
+      }
+    });
   };
+
+const edge = (p: { t: bigint; v: number | null }): EdgePoint => ({ t: p.t.toString(), v: p.v });

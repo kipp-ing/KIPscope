@@ -132,6 +132,65 @@ describe("window-workflow commands over HTTP", () => {
   });
 });
 
+describe("cursor commands over HTTP", () => {
+  const { app } = setup();
+  afterAll(() => app.close());
+
+  const command = async (body: Record<string, unknown>) => {
+    const res = await app.inject({ method: "POST", url: "/api/commands", body });
+    return { status: res.statusCode, body: res.json() };
+  };
+  const state = async () => (await app.inject({ url: "/api/workspace" })).json();
+
+  it("applies cursor commands over HTTP", async () => {
+    // Fresh workspace: both cursors off, diff off.
+    const fresh = await state();
+    expect(fresh.workspace.cursors).toEqual({ diff: false });
+
+    const created = await command({ type: "window.create", kind: "values" });
+    expect(created.body).toEqual({ ok: true, revision: 1, created: "w1" });
+    let ws = (await state()).workspace;
+    expect(ws.windows).toEqual([{ id: "w1", kind: "values", mode: "line", signals: [] }]);
+    expect(ws.windows[0].range).toBeUndefined();
+
+    const set = await command({ type: "cursor.set", cursor: "a", t: "2026-10-13T13:08:00.093Z" });
+    expect(set.body).toEqual({ ok: true, revision: 2 });
+    expect((await state()).workspace.cursors).toEqual({ a: "1791896880093000000", diff: false });
+
+    const moved = await command({ type: "cursor.move", cursor: "a", by: "902000000" });
+    expect(moved.body).toEqual({ ok: true, revision: 3 });
+    expect((await state()).workspace.cursors).toEqual({ a: "1791896880995000000", diff: false });
+
+    const diff = await command({ type: "cursor.setDiff", diff: true });
+    expect(diff.body).toEqual({ ok: true, revision: 4 });
+    expect((await state()).workspace.cursors).toEqual({ a: "1791896880995000000", diff: true });
+
+    // Rejections change nothing: B is off, and a move past the bounds.
+    const off = await command({ type: "cursor.move", cursor: "b", by: "1000" });
+    expect(off.status).toBe(422);
+    expect(off.body).toMatchObject({ ok: false, code: "cursor_off" });
+    const bounds = await command({
+      type: "cursor.move",
+      cursor: "a",
+      by: "-9000000000000000000",
+    });
+    expect(bounds.status).toBe(400);
+    expect(bounds.body).toMatchObject({ ok: false, code: "invalid_command" });
+    expect((await state()).revision).toBe(4);
+
+    const removed = await command({ type: "cursor.remove", cursor: "a" });
+    expect(removed.body).toEqual({ ok: true, revision: 5 });
+    ws = (await state()).workspace;
+    expect(ws.cursors).toEqual({ diff: true });
+    expect(ws.windows).toHaveLength(1);
+
+    // A values window rejects range commands over HTTP.
+    const range = await command({ type: "window.setRange", windowId: "w1", from: "0", to: "10" });
+    expect(range.status).toBe(400);
+    expect(range.body).toMatchObject({ ok: false, code: "invalid_command" });
+  });
+});
+
 describe("POST /api/commands, GET /api/workspace", () => {
   const { app } = setup();
   afterAll(() => app.close());

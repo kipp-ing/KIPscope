@@ -1,4 +1,5 @@
 export * from "./apply.ts";
+export * from "./cursor.ts";
 export * from "./encoding.ts";
 export * from "./search.ts";
 export * from "./series.ts";

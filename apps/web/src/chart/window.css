@@ -85,6 +85,50 @@
   display: none;
 }
 
+/* Cursor lines (design C3): a 12 px hit strip inside u.over with a 1 px line in its centre and a
+   flag at the top. One neutral colour outside the signal palette; A solid, B dashed. */
+.window {
+  --cursor-color: #475569;
+}
+
+.window .plot .cursor-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  margin-left: -6px;
+  z-index: 1;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.window .plot .cursor-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  border-left: 1px solid var(--cursor-color);
+}
+
+.window .plot .cursor-b::before {
+  border-left-style: dashed;
+}
+
+.window .plot .cursor-flag {
+  position: absolute;
+  top: 0;
+  left: 7px;
+  padding: 0 4px;
+  border-radius: 0 3px 3px 0;
+  background: var(--cursor-color);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
 .window .height-handle {
   height: 6px;
   margin: 0 -12px;

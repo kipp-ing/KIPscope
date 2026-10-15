@@ -2,7 +2,7 @@ import {
   buildSearchIndex,
   type SignalInfo,
   searchSignals,
-  type TimeseriesWindow,
+  type WorkspaceWindow,
   windowTitle,
 } from "@letsview/shared";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -28,7 +28,8 @@ export { NEW_WINDOW };
 const RETRY_MS = 5000;
 
 interface Props {
-  windows: TimeseriesWindow[];
+  /** All windows; "Add to" lists timeseries and values windows by windowTitle. */
+  windows: WorkspaceWindow[];
   onAdd: (signal: SignalInfo, target: string) => void;
   onSeen: (signals: SignalInfo[]) => void;
   /** Pointer down on a row's name; App starts its signal drag after DRAG_THRESHOLD_PX (window change D5). Absent → rows not draggable. */

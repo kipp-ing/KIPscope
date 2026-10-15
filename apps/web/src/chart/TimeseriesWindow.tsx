@@ -1,6 +1,7 @@
 import {
   type CommandInput,
   type CommandResult,
+  type CursorName,
   DEFAULT_PLOT_HEIGHT,
   type DisplayMode,
   MAX_PLOT_HEIGHT,
@@ -31,7 +32,8 @@ import {
   snaShare,
   yRange,
 } from "./build.ts";
-import type { DragSource, DropState } from "./drag.ts";
+import { ClickGate, DOUBLE_CLICK_MS, hitCursor, snapCursorTime, stackFlags } from "./cursors.ts";
+import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
 import { clampRange, type Range, wheelZoomFactor } from "./zoom.ts";
@@ -83,6 +85,12 @@ interface Props {
   insets?: Insets;
   /** Reports this window's own total y axis width per side, when it changes. */
   onInsets?: (windowId: string, natural: Insets) => void;
+  /** Effective cursor times: App's preview overrides the workspace. */
+  cursors: { a?: bigint; b?: bigint };
+  /** Local position while placing or dragging; t undefined ends the preview without a command. */
+  onCursorPreview: (cursor: CursorName, t: bigint | undefined) => void;
+  /** Gesture finished: App sends one cursor.set. */
+  onCursorCommit: (cursor: CursorName, t: bigint) => void;
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -123,6 +131,21 @@ const clampHeight = (h: number) =>
   Math.min(MAX_PLOT_HEIGHT, Math.max(MIN_PLOT_HEIGHT, Math.round(h)));
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
+
+/** Same chart inputs (results by identity): buildModel would build the same model. */
+const sameInputs = (a: SignalInput[], b: SignalInput[]) =>
+  a.length === b.length &&
+  a.every((x, i) => {
+    const y = b[i];
+    return (
+      y !== undefined &&
+      x.key === y.key &&
+      x.label === y.label &&
+      x.unit === y.unit &&
+      x.color === y.color &&
+      x.result === y.result
+    );
+  });
 
 /**
  * Hides the crosshair until the next pointer move in the plot. A CSS class, not setCursor:
@@ -269,6 +292,61 @@ function placeTitles(u: uPlot, row: HTMLElement | null, drawn: AxisSpec[], sizes
   });
 }
 
+type CursorLines = Record<CursorName, HTMLElement>;
+/** Row height of a cursor flag (its line-height in window.css); a stacked B flag sits one row down. */
+const CURSOR_FLAG_ROW_PX = 14;
+type CursorX = { a?: number; b?: number };
+
+/**
+ * Cursor overlays inside u.over (design C3): a transparent hit strip with a 1 px line in its
+ * centre and a flag at the top. B is appended after A, so it is drawn above.
+ */
+function createCursorLines(over: HTMLElement): CursorLines {
+  const make = (name: CursorName) => {
+    const strip = document.createElement("div");
+    strip.className = `cursor-line cursor-${name}`;
+    strip.dataset.cursor = name;
+    strip.style.display = "none";
+    const flag = document.createElement("span");
+    flag.className = "cursor-flag";
+    flag.textContent = name.toUpperCase();
+    strip.append(flag);
+    over.append(strip);
+    return strip;
+  };
+  return { a: make("a"), b: make("b") };
+}
+
+/**
+ * Puts each line at its time on the current x scale (the zoom preview included) and hides lines
+ * outside the plot. Returns the shown lines' x in CSS px for the hit test.
+ */
+function placeCursorLines(
+  u: uPlot,
+  lines: CursorLines,
+  cursors: { a?: bigint; b?: bigint },
+  origin: bigint,
+): CursorX {
+  const shown: CursorX = {};
+  const width = u.bbox.width / devicePixelRatio;
+  for (const name of ["a", "b"] as const) {
+    const strip = lines[name];
+    const t = cursors[name];
+    const x = t === undefined ? Number.NaN : u.valToPos(Number(t - origin), "x");
+    // 1 px slack: a time snapped at the plot edge may lie up to half a pixel outside.
+    if (!(x >= -1 && x <= width + 1)) {
+      strip.style.display = "none";
+      continue;
+    }
+    strip.style.display = "";
+    strip.style.left = `${x}px`;
+    shown[name] = x;
+  }
+  const flagB = lines.b.firstElementChild as HTMLElement | null;
+  if (flagB) flagB.style.top = stackFlags(shown, width) ? `${CURSOR_FLAG_ROW_PX}px` : "";
+  return shown;
+}
+
 /** Window title; a click turns it into a text field (Enter or blur saves, Esc cancels). */
 function WindowTitle({
   window: w,
@@ -339,6 +417,9 @@ export function TimeseriesWindow({
   dropAction,
   insets,
   onInsets,
+  cursors,
+  onCursorPreview,
+  onCursorCommit,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const titleRow = useRef<HTMLDivElement>(null);
@@ -367,6 +448,9 @@ export function TimeseriesWindow({
 
   // Local preview during zoom/pan; the server range changes only after the command is accepted.
   const preview = useRef<Range | undefined>(undefined);
+  // Bumped when a preview is dropped without a new server range (rejected, or reset to the same
+  // range): the plot drew the preview directly, so the view effect must set the server range again.
+  const [viewEpoch, reapplyView] = useReducer((n: number) => n + 1, 0);
   const commitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const inFlight = useRef(false);
   // Range shown before the gesture that is being previewed (for the zoom history).
@@ -378,6 +462,38 @@ export function TimeseriesWindow({
   const onInsetsRef = useRef(onInsets);
   onInsetsRef.current = onInsets;
   const reportedInsets = useRef<Insets | undefined>(undefined);
+
+  // Cursors (design C2/C3): drawn from props in the draw hook, gestures report to App.
+  const cursorsRef = useRef(cursors);
+  cursorsRef.current = cursors;
+  const onCursorPreviewRef = useRef(onCursorPreview);
+  onCursorPreviewRef.current = onCursorPreview;
+  const onCursorCommitRef = useRef(onCursorCommit);
+  onCursorCommitRef.current = onCursorCommit;
+  // The overlays of the current uPlot instance, and x of the shown lines in CSS px as last placed.
+  const cursorLines = useRef<CursorLines | undefined>(undefined);
+  const cursorX = useRef<CursorX>({});
+  const gate = useMemo(() => new ClickGate(DOUBLE_CLICK_MS), []);
+  useEffect(() => () => gate.dispose(), [gate]);
+  // The click waiting in the gate; its line shows as App's preview.
+  const pendingClick = useRef<{ name: CursorName; t: bigint } | undefined>(undefined);
+
+  const placeClick = (name: CursorName, t: bigint) => {
+    const pending = pendingClick.current;
+    // A click of the other cursor ends no double-click: the waiting one is committed now.
+    if (pending && pending.name !== name) {
+      gate.doubleClick();
+      onCursorCommitRef.current(pending.name, pending.t);
+    }
+    pendingClick.current = { name, t };
+    onCursorPreviewRef.current(name, t);
+    gate.click(() => {
+      pendingClick.current = undefined;
+      onCursorCommitRef.current(name, t);
+    });
+  };
+  const placeClickRef = useRef(placeClick);
+  placeClickRef.current = placeClick;
 
   const target = Math.min(4000, Math.max(100, Math.round(width)));
   const requests: LoadRequest[] = useMemo(
@@ -407,12 +523,38 @@ export function TimeseriesWindow({
     if (result) input.result = result;
     return input;
   });
-  const model: ChartModel = buildModel(inputs, origin.current, w.display);
+  // Rebuilt only when an input changes: a cursor preview rerenders every window on each move.
+  const built = useRef<
+    | {
+        inputs: SignalInput[];
+        origin: bigint;
+        mode: DisplayMode;
+        envelope: boolean;
+        model: ChartModel;
+      }
+    | undefined
+  >(undefined);
+  const last = built.current;
+  const model: ChartModel =
+    last &&
+    last.origin === origin.current &&
+    last.mode === w.display.mode &&
+    last.envelope === w.display.envelope &&
+    sameInputs(last.inputs, inputs)
+      ? last.model
+      : buildModel(inputs, origin.current, w.display);
+  if (model !== last?.model) {
+    const { mode, envelope } = w.display;
+    built.current = { inputs, origin: origin.current, mode, envelope, model };
+  }
   const modelRef = useRef(model);
   modelRef.current = model;
   // Drawn axes: every axis of the layout, loaded or not, so sides do not jump while loading.
   const drawnAxes = model.layout.axes;
-  const structure = JSON.stringify([model.series, model.bands, [...model.scales], drawnAxes]);
+  const structure = useMemo(
+    () => JSON.stringify([model.series, model.bands, [...model.scales], model.layout.axes]),
+    [model],
+  );
 
   // --- uPlot instance -------------------------------------------------------------------------
 
@@ -440,7 +582,11 @@ export function TimeseriesWindow({
       inFlight.current = false;
       if (result.ok && previous) onZoomed(w.id, previous);
       // The accepted range arrives with the next revision; drop the preview if nothing newer.
-      if (preview.current === r) preview.current = undefined;
+      if (preview.current === r) {
+        preview.current = undefined;
+        // Rejected: no new range comes, so the plot goes back to the server range.
+        if (!result.ok) reapplyView();
+      }
       rerender();
     }, COMMIT_DELAY_MS);
   };
@@ -539,6 +685,8 @@ export function TimeseriesWindow({
       });
     });
 
+    // Cursor overlays; created right after uPlot, read by the draw hook.
+    let lines: CursorLines | undefined;
     const u = new uPlot(
       {
         width,
@@ -570,10 +718,19 @@ export function TimeseriesWindow({
           bind: {
             // Replaces uPlot's reset to the loaded data: App resets to the signals' extents.
             dblclick: (self) => () => {
+              // The double-click's clicks place no cursor.
+              gate.doubleClick();
+              const pending = pendingClick.current;
+              pendingClick.current = undefined;
+              if (pending) onCursorPreviewRef.current(pending.name, undefined);
               clearTimeout(commitTimer.current);
               commitTimer.current = undefined;
               gestureStart.current = undefined;
-              preview.current = undefined;
+              // App may send no range (already at the extents): show the server range meanwhile.
+              if (preview.current) {
+                preview.current = undefined;
+                reapplyView();
+              }
               hideCursor(self);
               onResetRef.current(w.id);
               return null;
@@ -585,6 +742,9 @@ export function TimeseriesWindow({
             (self) => {
               drawSnaLanes(self, modelRef.current.sna);
               drawNarrowSignals(self, modelRef.current);
+              if (lines) {
+                cursorX.current = placeCursorLines(self, lines, cursorsRef.current, origin.current);
+              }
               placeTitles(self, titleRow.current, drawnAxes, sizes);
               const { natural } = axisWidths(drawnAxes, sizes);
               const last = reportedInsets.current;
@@ -613,6 +773,92 @@ export function TimeseriesWindow({
       el,
     );
     uplot.current = u;
+    lines = createCursorLines(u.over);
+    cursorLines.current = lines;
+    const strips = Object.values(lines);
+
+    /** Time at x CSS px in the plot, snapped to the shown span (design C3). */
+    const timeAt = (x: number) => {
+      const min = u.scales.x?.min ?? 0;
+      const max = u.scales.x?.max ?? 1;
+      const t = origin.current + BigInt(Math.round(u.posToVal(x, "x")));
+      return snapCursorTime(t, BigInt(Math.round(max - min)));
+    };
+    const plotX = (clientX: number) => {
+      const rect = u.over.getBoundingClientRect();
+      return Math.min(rect.width, Math.max(0, clientX - rect.left));
+    };
+
+    // Line drag: the strip takes the press, so uPlot starts no selection. Each move previews in
+    // every window through App; release commits once, Esc puts the line back.
+    const stopMouse = (e: MouseEvent) => e.stopPropagation();
+    // The running line drag's cancel; called when this uPlot instance is destroyed mid-drag.
+    let cancelLineDrag: (() => void) | undefined;
+    const startLineDrag = (e: PointerEvent) => {
+      e.stopPropagation();
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const strip = e.currentTarget as HTMLElement;
+      const name =
+        hitCursor(plotX(e.clientX), cursorX.current) ?? (strip.dataset.cursor as CursorName);
+      strip.setPointerCapture(e.pointerId);
+      let t: bigint | undefined;
+      const move = (ev: PointerEvent) => {
+        t = timeAt(plotX(ev.clientX));
+        onCursorPreviewRef.current(name, t);
+      };
+      const end = (commit: boolean) => {
+        cancelLineDrag = undefined;
+        strip.removeEventListener("pointermove", move);
+        strip.removeEventListener("pointerup", release);
+        strip.removeEventListener("pointercancel", cancel);
+        strip.removeEventListener("lostpointercapture", cancel);
+        window.removeEventListener("keydown", onKey);
+        if (strip.hasPointerCapture(e.pointerId)) strip.releasePointerCapture(e.pointerId);
+        if (t === undefined) return;
+        if (commit) onCursorCommitRef.current(name, t);
+        else onCursorPreviewRef.current(name, undefined);
+      };
+      const release = () => end(true);
+      const cancel = () => end(false);
+      const onKey = (ev: KeyboardEvent) => {
+        if (ev.key === "Escape") cancel();
+      };
+      strip.addEventListener("pointermove", move);
+      strip.addEventListener("pointerup", release);
+      strip.addEventListener("pointercancel", cancel);
+      // Capture lost without pointerup (e.g. the strip was hidden): end like Esc.
+      strip.addEventListener("lostpointercapture", cancel);
+      window.addEventListener("keydown", onKey);
+      cancelLineDrag = cancel;
+    };
+    for (const strip of strips) {
+      strip.addEventListener("pointerdown", startLineDrag);
+      strip.addEventListener("mousedown", stopMouse);
+    }
+
+    // Click (< DRAG_THRESHOLD_PX of movement) places A, Shift+click B, through the click gate.
+    // While the button is down the strips let the pointer through: uPlot ignores a mousemove whose
+    // target is not u.over, so a rectangle drag ending on a cursor line would select nothing.
+    let down: { x: number; y: number } | undefined;
+    const passThrough = (on: boolean) => {
+      for (const strip of strips) strip.style.pointerEvents = on ? "none" : "";
+    };
+    const onDown = (e: MouseEvent) => {
+      down = e.button === 0 ? { x: e.clientX, y: e.clientY } : undefined;
+      passThrough(down !== undefined);
+    };
+    const onUp = (e: MouseEvent) => {
+      const start = down;
+      down = undefined;
+      passThrough(false);
+      if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) >= DRAG_THRESHOLD_PX) {
+        return;
+      }
+      placeClickRef.current(e.shiftKey ? "b" : "a", timeAt(plotX(e.clientX)));
+    };
+    u.over.addEventListener("mousedown", onDown);
+    window.addEventListener("mouseup", onUp);
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -624,7 +870,8 @@ export function TimeseriesWindow({
         const delta = ((e.shiftKey ? e.deltaY : e.deltaX) / u.over.clientWidth) * span;
         applyRangeRef.current(u, min + delta, max + delta);
       } else {
-        const at = u.posToVal(e.offsetX, "x");
+        // Not offsetX: over a cursor line the event's target is the line's hit strip.
+        const at = u.posToVal(e.clientX - u.over.getBoundingClientRect().left, "x");
         const factor = wheelZoomFactor(e.deltaY, e.deltaMode);
         applyRangeRef.current(u, at - (at - min) * factor, at + (max - at) * factor);
       }
@@ -636,8 +883,12 @@ export function TimeseriesWindow({
     return () => {
       u.over.removeEventListener("wheel", onWheel);
       u.over.removeEventListener("mousemove", onMove);
+      u.over.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mouseup", onUp);
+      cancelLineDrag?.();
       u.destroy();
       uplot.current = undefined;
+      cursorLines.current = undefined;
     };
   }, [structure, width === 0]);
 
@@ -647,14 +898,19 @@ export function TimeseriesWindow({
     uplot.current?.setSize({ width, height: plotHeight });
   }, [width, plotHeight, insets?.left, insets?.right]);
 
-  // Data and view: runs after every render; cheap compared to drawing.
+  if (!inFlight.current && !commitTimer.current && preview.current) {
+    // A different range arrived from the server (e.g. another client); it wins.
+    preview.current = undefined;
+  }
+  const view = viewRange();
+
+  // Data and view: only when the model, the shown range (or a dropped preview) or the uPlot
+  // instance changed, so a cursor preview (which rerenders every window per move) costs no join,
+  // setData or redraw.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view is tracked via its bounds, a dropped preview via viewEpoch; structure and width === 0 mark a new uPlot instance
   useLayoutEffect(() => {
     const u = uplot.current;
     if (!u) return;
-    if (!inFlight.current && !commitTimer.current && preview.current) {
-      // A different range arrived from the server (e.g. another client); it wins.
-      preview.current = undefined;
-    }
     const data =
       model.tables.length > 0
         ? uPlot.join(
@@ -662,11 +918,19 @@ export function TimeseriesWindow({
             model.tables.map((t) => t.map(() => NULL_EXPAND)),
           )
         : ([[]] as uPlot.AlignedData);
-    const r = viewRange();
-    xView.current = [Number(r.from - origin.current), Number(r.to - origin.current)];
+    xView.current = [Number(view.from - origin.current), Number(view.to - origin.current)];
     u.setData(data, true);
-    setView(u, r);
-  });
+    setView(u, view);
+  }, [model, view.from, view.to, viewEpoch, structure, width === 0]);
+
+  // Cursor lines only: moving a line needs no redraw (the draw hook places them after a redraw).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cursors are read via cursorsRef
+  useLayoutEffect(() => {
+    const u = uplot.current;
+    const lines = cursorLines.current;
+    if (u && lines)
+      cursorX.current = placeCursorLines(u, lines, cursorsRef.current, origin.current);
+  }, [cursors.a, cursors.b]);
 
   useEffect(() => () => clearTimeout(commitTimer.current), []);
 
@@ -735,7 +999,7 @@ export function TimeseriesWindow({
     handle.addEventListener("pointercancel", end);
   };
 
-  const shown = viewRange();
+  const shown = view;
   const range = formatRange(shown.from, shown.to);
   const resolution = resolutionLabel(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =

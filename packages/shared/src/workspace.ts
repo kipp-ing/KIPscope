@@ -81,23 +81,65 @@ export interface TimeseriesWindow {
   height?: number;
 }
 
+export const CursorName = z.enum(["a", "b"]);
+export type CursorName = z.infer<typeof CursorName>;
+
+/** Cursor A/B (decimal-ns strings; absent = off) and diff mode. */
+export interface CursorState {
+  a?: string;
+  b?: string;
+  diff: boolean;
+}
+
+/** "Between points" mode of a values window: line → linear, step → hold (concept §6). */
+export const ValuesMode = z.enum(["line", "step"]);
+export type ValuesMode = z.infer<typeof ValuesMode>;
+
+/** Window that lists the signals' values at the cursors; no range, display or height (D-023). */
+export interface ValuesWindow {
+  id: string;
+  kind: "values";
+  title?: string;
+  /** Default "line". */
+  mode: ValuesMode;
+  signals: SignalAssignment[];
+}
+
+export type WorkspaceWindow = TimeseriesWindow | ValuesWindow;
+
+export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
+
 export interface Workspace {
-  windows: TimeseriesWindow[];
+  windows: WorkspaceWindow[];
   /** Counter for stable IDs (`w1`, `a2`, …); part of the state so applying commands stays pure. */
   nextId: number;
-  /** Linked time axes (D-017): while true, all windows have the same range. */
+  /** Linked time axes (D-017): while true, all timeseries windows have the same range. */
   linkTime: boolean;
-  /** Window whose range was set last by window.create (with a range) or window.setRange. */
+  /**
+   * Timeseries window whose range was set last by window.create (with a range) or
+   * window.setRange.
+   */
   lastZoomed?: string;
   /** Palette index per signal ID that is in at least one window. */
   colors: Record<string, number>;
+  /** Cursors A/B and diff mode (D-023). */
+  cursors: CursorState;
 }
 
-export const EMPTY_WORKSPACE: Workspace = { windows: [], nextId: 1, linkTime: true, colors: {} };
+export const EMPTY_WORKSPACE: Workspace = {
+  windows: [],
+  nextId: 1,
+  linkTime: true,
+  colors: {},
+  cursors: { diff: false },
+};
 
-/** Display title: the title, else "Window <n>" from the stable ID (w6 → "Window 6"). */
-export function windowTitle(w: TimeseriesWindow): string {
-  return w.title ?? `Window ${w.id.replace(/^w/, "")}`;
+/**
+ * Display title: the title, else from the stable ID "Window <n>" (timeseries) or "Values <n>"
+ * (values), e.g. w6 → "Window 6".
+ */
+export function windowTitle(w: WorkspaceWindow): string {
+  return w.title ?? `${w.kind === "values" ? "Values" : "Window"} ${w.id.replace(/^w/, "")}`;
 }
 
 /** Colour of a signal: SIGNAL_COLORS[colors[signalId]], or SIGNAL_COLORS[0] if unknown. */
@@ -113,7 +155,7 @@ export function unitKey(signalId: string, unit: string | undefined): string {
 
 /** Distinct unit keys of a window's signals (plus an optional extra signal), in signal order. */
 export function windowUnits(
-  w: TimeseriesWindow,
+  w: WorkspaceWindow,
   unitOf: (signalId: string) => string | undefined,
   extra?: string,
 ): string[] {
@@ -128,6 +170,8 @@ export const Command = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("window.create"),
+      /** Default "timeseries". */
+      kind: z.enum(["timeseries", "values"]).optional(),
       title: z.string().max(200).optional(),
       from: TimeInput.optional(),
       to: TimeInput.optional(),
@@ -136,7 +180,16 @@ export const Command = z.discriminatedUnion("type", [
     })
     .refine((c) => (c.from === undefined) === (c.to === undefined), {
       message: "from and to must be given together",
-    }),
+    })
+    .refine(
+      (c) =>
+        c.kind !== "values" ||
+        (c.from === undefined &&
+          c.to === undefined &&
+          c.envelope === undefined &&
+          c.mode !== "markers"),
+      { message: "a values window takes no from, to or envelope, and mode line or step only" },
+    ),
   z.object({ type: z.literal("window.rename"), windowId: Id, title: z.string().max(200) }),
   z.object({
     type: z.literal("window.setHeight"),
@@ -161,6 +214,15 @@ export const Command = z.discriminatedUnion("type", [
     mode: DisplayMode.optional(),
     envelope: z.boolean().optional(),
   }),
+  z.object({ type: z.literal("cursor.set"), cursor: CursorName, t: TimeInput }),
+  /** Moves a cursor by signed nanoseconds. */
+  z.object({
+    type: z.literal("cursor.move"),
+    cursor: CursorName,
+    by: z.string().regex(/^-?\d{1,20}$/),
+  }),
+  z.object({ type: z.literal("cursor.remove"), cursor: CursorName }),
+  z.object({ type: z.literal("cursor.setDiff"), diff: z.boolean() }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -174,7 +236,8 @@ export type CommandErrorCode =
   | "signal_limit"
   | "invalid_range"
   | "already_in_window"
-  | "too_many_units";
+  | "too_many_units"
+  | "cursor_off";
 
 export type CommandResult =
   | { ok: true; revision: number; created?: string; createdWindow?: string }

@@ -1,0 +1,64 @@
+/* Values window (design C4, S4). Selectors start with .values-window to win over styles.css. */
+
+.values-window table.values {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.values-window th {
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  padding: 2px 12px 2px 0;
+}
+
+.values-window table.values td {
+  padding: 2px 12px 2px 0;
+  white-space: nowrap;
+}
+
+.values-window .value {
+  text-align: right;
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  min-width: 6em;
+}
+
+.values-window .value .tag {
+  margin-left: 4px;
+  color: var(--muted);
+  font-family: system-ui, sans-serif;
+  font-size: 10px;
+}
+
+.values-window .value.sna-value {
+  color: var(--sna);
+  font-weight: 600;
+}
+
+.values-window .value.error {
+  color: var(--error);
+  font-family: inherit;
+  text-align: left;
+  white-space: normal;
+}
+
+.values-window .value.loading,
+.values-window.dimmed .value {
+  opacity: 0.45;
+}
+
+.values-window .cursor-time {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.values-window .grip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Command, RenderedMessage, type TimeseriesWindow, windowTitle } from "../src/workspace.ts";
+import {
+  Command,
+  RenderedMessage,
+  type TimeseriesWindow,
+  type ValuesWindow,
+  windowTitle,
+} from "../src/workspace.ts";
 
 const untitled = (id: string): TimeseriesWindow => ({
   id,
@@ -70,6 +76,9 @@ describe("Command schema", () => {
     expect(windowTitle(untitled("w6"))).toBe("Window 6");
     expect(windowTitle(untitled("w12"))).toBe("Window 12");
     expect(windowTitle({ ...untitled("w6"), title: "HV voltages" })).toBe("HV voltages");
+    const values: ValuesWindow = { id: "w7", kind: "values", mode: "line", signals: [] };
+    expect(windowTitle(values)).toBe("Values 7");
+    expect(windowTitle({ ...values, title: "Drive" })).toBe("Drive");
   });
 
   it("validates render acknowledgements", () => {
