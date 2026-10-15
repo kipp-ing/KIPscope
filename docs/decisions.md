@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-026: Number format and layout scope (2026-10-15)
+
+- **Decision:** Jan, on the efficiency test:
+  - Numbers are shown with 3 significant digits everywhere (values window, readouts on charts, axes, hover card, human-readable CLI output); the unit may carry an SI prefix (k, M, m, µ, …), e.g. 13 970 1/min → `14.0 k1/min`. 4 significant digits are an option. Machine output (JSON, API) stays exact.
+  - Screen use, next change: collapsible sidebar, windows tiled side by side, compact window headers. The sidebar gets its own work package later; for now only optimization.
+- **Why:** Jan: „signifikante Stellen. 3 reichen. Einheit darf k m M und so haben. optional 4 Stellen" / „Überall" / „Seitenleiste einklappbar, Kacheln nebeneinander, kompakte Fensterköpfe" / „just optimization. later WP". Testers found 2, 45, 16.425, 371.075 in one column and interpolated values with seven decimals on a 1 km/h signal.
+
 ## D-025: Wheel scrolls, one Back and one Reset, screen use (2026-10-15)
 
 - **Decision:** Jan, on the efficiency test ([feedback/2026-10-15-efficiency-testers.md](feedback/2026-10-15-efficiency-testers.md)):
