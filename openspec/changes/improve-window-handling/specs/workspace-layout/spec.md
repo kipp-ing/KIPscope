@@ -20,7 +20,7 @@ During a row drag (explorer, legend or values row), the free area of the window 
 
 #### Scenario: Explorer row below two windows
 - **WHEN** at 1440×900 windows 1 and 2 share the first row, the list has free space below them, and the user drags the `BS_200h.DVL` explorer row into that space, holds, then releases
-- **THEN** while holding, the free area shows a dashed accent outline with "+ New window" in its stronger highlight while the strip at the bottom shows "+ New window" without it; after the release a new window "Window <n>" appears last showing DVL, and the revision rose by exactly one
+- **THEN** while holding, the free area shows a dashed accent outline with "+ New window" in its stronger highlight while the strip at the bottom shows "+ New window" without it; after the release a new window "Window <n>" appears last showing DVL, and the revision rose by two (`window.add` and `signal.add`, as for an explorer drop on the strip)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, screenshot and revision after the release)
 
 #### Scenario: Legend row moved below
