@@ -21,23 +21,23 @@ Test names are those the specs cite as evidence. The tasks assume the recommende
 
 ## 3. apps/web/src
 
-- [ ] 3.1 Cursors in timeseries windows (`chart/cursors.ts`, `chart/TimeseriesWindow.tsx`, `chart/window.css`), per design C3 and S4:
+- [x] 3.1 Cursors in timeseries windows (`chart/cursors.ts`, `chart/TimeseriesWindow.tsx`, `chart/window.css`), per design C3 and S4:
   - `CURSOR_HIT_PX`, `DOUBLE_CLICK_MS`, `snapCursorTime`, `hitCursor`, `ClickGate`.
   - Props `cursors`, `onCursorPreview`, `onCursorCommit`.
   - Overlay lines with A solid, B dashed and flags, inside `u.over` and positioned in the `draw` hook. Hit strips stop `pointerdown` and `mousedown`, and a line drag previews and commits once on release. Esc cancels.
   - Click and Shift+click place A and B through the gate, and `dblclick` drops the pending click.
   - Verify `apps/web/test/cursors.test.ts` from 4.3 passes, plus the UI checks of the `cursors` spec "Cursor lines in every timeseries window", "Placing cursors by click" and "Dragging a cursor line".
-- [ ] 3.2 Values window (`values/ValuesWindow.tsx`, `values/format.ts`, `values/loader.ts`, `values/values.css`, and `fetchCursorValue` in `api.ts`), per design C4, C8 and S4:
+- [x] 3.2 Values window (`values/ValuesWindow.tsx`, `values/format.ts`, `values/loader.ts`, `values/values.css`, and `fetchCursorValue` in `api.ts`), per design C4, C8 and S4:
   - The header has the title (rename in place), the cursor times or "Cursor A off", `Δt` in diff mode, the "Between points" select (linear/hold → `window.setDisplay {mode}`) and Remove.
   - Rows have a grip (`onDragStart` with a `DragSource`), swatch, name, unit, the A cell and, in diff mode, B and Δ cells with tags `lin`/`hold`, the SNA style, `—` with a reason tooltip, neighbour tooltips, per-row errors and remove.
   - Cells are dimmed while `dragging`. Stale responses are dropped, and `onReady` is called per revision.
   - Verify `apps/web/test/values.test.ts` from 4.3 passes, plus the UI checks of the `values-window` spec.
-- [ ] 3.3 Option bar (`bar/OptionBar.tsx`, `bar/bar.ts`, `bar/bar.css`), per design C5 and S4:
+- [x] 3.3 Option bar (`bar/OptionBar.tsx`, `bar/bar.ts`, `bar/bar.css`), per design C5 and S4:
   - Toggles A, B and Diff; A on sends `cursor.set` at `defaultCursorTime`, off sends `cursor.remove`. A and B are disabled without a timeseries window.
   - "Link time axes", "Back" (disabled without history) and "Reset zoom", whose tooltips name the target while unlinked, and "+ Values window" (`window.create {kind: "values"}`).
   - `barTarget`, `resetSignals`, `defaultCursorTime`.
   - Verify `apps/web/test/bar.test.ts` from 4.3 passes, plus the UI checks "Cursor controls in the option bar", "Option bar" and "Bar zoom back and reset".
-- [ ] 3.4 App integration and drag (`App.tsx`, `chart/drag.ts`, `styles.css`, `explorer/SignalExplorer.tsx`), per design C2, C6, C7 and S5:
+- [x] 3.4 App integration and drag (`App.tsx`, `chart/drag.ts`, `styles.css`, `explorer/SignalExplorer.tsx`), per design C2, C6, C7 and S5:
   - Render the sticky `OptionBar` and remove the top bar's link toggle. Render `ValuesWindow` or `TimeseriesWindow` by kind.
   - `cursorPreview` state with the effective and committed cursors passed down. `onCursorCommit` sends `cursor.set`.
   - Sticky "+ New window" during every drag, and auto-scroll bands below the bar and above the zone.
@@ -63,7 +63,7 @@ Test names are those the specs cite as evidence. The tasks assume the recommende
 
 ## 5. Integration check (real carserver data)
 
-- [ ] 5.1 The UI user walks through every UI check in `specs/cursors/spec.md`, `specs/values-window/spec.md` and `specs/timeseries-window/spec.md` on `smart451`, 2026-10-13 around 13:08:00Z (V_ANZ, DVL, PTC_HV_Volt) and 09:56:59Z–09:57:01Z (V_ANZ SNA). The setup uses linked and unlinked windows, a values window, six windows for the sticky zone and auto-scroll, and `curl` for exact cursor times. One screenshot per scenario. The revision is read in the top bar where a scenario counts commands.
+- [x] 5.1 The UI user walks through every UI check in `specs/cursors/spec.md`, `specs/values-window/spec.md` and `specs/timeseries-window/spec.md` on `smart451`, 2026-10-13 around 13:08:00Z (V_ANZ, DVL, PTC_HV_Volt) and 09:56:59Z–09:57:01Z (V_ANZ SNA). The setup uses linked and unlinked windows, a values window, six windows for the sticky zone and auto-scroll, and `curl` for exact cursor times. One screenshot per scenario. The revision is read in the top bar where a scenario counts commands.
 - [x] 5.2 Run the `curl` commands named in the specs against the dev server: `/api/value` for V_ANZ at 13:08:00.093Z (`raw` 23), 13:08:00.1435Z (`interpolated` 22.5 and `held` 23 with `mode=step`), 09:57:00Z (`sna`) and 09:56:59.787Z (`next_sna`); the 400 for an out-of-bounds `t`; `GET /api/workspace` cursors after a restart (`{"diff":false}`); the values-window create; and `/api/render-status` after a CLI `cursor.set`.
 
 ## Workflow follow-up
