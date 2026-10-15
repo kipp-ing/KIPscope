@@ -6,6 +6,7 @@ import {
   historyKey,
   type Range,
   RangePreview,
+  WheelFrame,
   wheelAction,
   wheelZoomFactor,
   ZOOM_HISTORY_LIMIT,
@@ -199,6 +200,39 @@ describe("wheelAction", () => {
     expect(wheelAction(ev(40, 20))).toEqual({ kind: "none" });
     // Meta is no zoom modifier.
     expect(wheelAction({ ...ev(0, 100), metaKey: true } as never)).toEqual({ kind: "none" });
+  });
+});
+
+describe("WheelFrame", () => {
+  const step = 2 ** (1 / 5);
+
+  it("joins the zoom factors and pan deltas of one frame, anchored at the latest zoom x", () => {
+    const f = new WheelFrame();
+    f.add({ kind: "zoom", factor: step }, 100);
+    f.add({ kind: "zoom", factor: step }, 250);
+    f.add({ kind: "pan", px: 30 }, 400);
+    f.add({ kind: "pan", px: -10 }, 410);
+    f.add({ kind: "none" }, 999);
+    const out = f.take();
+    expect(out.factor).toBeCloseTo(2 ** (2 / 5), 12);
+    expect(out.px).toBe(20);
+    expect(out.x).toBe(250);
+  });
+
+  it("caps the joined factor at one event's limit of five ticks (2 or 1/2)", () => {
+    const out = new WheelFrame();
+    for (let i = 0; i < 6; i++) out.add({ kind: "zoom", factor: 2 }, 0);
+    expect(out.take().factor).toBeCloseTo(2, 12);
+    for (let i = 0; i < 6; i++) out.add({ kind: "zoom", factor: 0.5 }, 0);
+    expect(out.take().factor).toBeCloseTo(0.5, 12);
+  });
+
+  it("starts the next frame from nothing", () => {
+    const f = new WheelFrame();
+    f.add({ kind: "zoom", factor: 2 }, 5);
+    f.add({ kind: "pan", px: 7 }, 5);
+    f.take();
+    expect(f.take()).toMatchObject({ factor: 1, px: 0 });
   });
 });
 

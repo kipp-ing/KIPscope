@@ -7,8 +7,12 @@ const MAX_E3 = 12;
 
 /** Units that never take a prefix (N7). */
 const PREFIX_FREE = new Set(["%", "‰", "°", "°C", "°F", "dB", "h", "min", "d"]);
-/** A unit that already starts with an SI prefix of a base unit (km/h, kW, mA, ms, mbar, MΩ). */
-const PREFIXED = /^(p|n|µ|u|m|c|k|M|G|T)(m|g|s|A|V|W|Wh|Hz|Pa|bar|N|Nm|J|l|L|Ω|F)(?![A-Za-z])/;
+/**
+ * A unit that already starts with an SI prefix of a base unit (km/h, kW, mA, ms, mbar, MΩ), also
+ * of a compound one (mAh, kVA, Mvar); the bare compound units (Ah, VA) take a prefix.
+ */
+const PREFIXED =
+  /^(p|n|µ|u|m|c|k|M|G|T)(m|g|s|A|Ah|V|VA|VAr|var|W|Wh|Hz|Pa|bar|N|Nm|J|l|L|Ω|F)(?![A-Za-z])/;
 
 /** True when values of this unit may get an SI prefix (N7). undefined (no unit) → true. */
 export function takesPrefix(unit: string | undefined): boolean {

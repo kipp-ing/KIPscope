@@ -54,7 +54,7 @@ import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
 import { type LoadRequest, type LoadState, SeriesLoader } from "./loader.ts";
 import { chartValueAt, type ReadoutValue, readoutCell, readoutDelta } from "./readout.ts";
-import { clampRange, type Range, RangePreview, wheelAction } from "./zoom.ts";
+import { clampRange, type Range, RangePreview, WheelFrame, wheelAction } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
 const MIN_SPAN_NS = 100n;
@@ -312,6 +312,14 @@ function placeTitles(u: uPlot, row: HTMLElement | null, drawn: AxisSpec[], sizes
   });
 }
 
+/** The range on the x scale (the zoom preview included); offsets stay exact below 2^53. */
+function shownRangeOf(u: uPlot, origin: bigint): Range {
+  return {
+    from: origin + BigInt(Math.round(u.scales.x?.min ?? 0)),
+    to: origin + BigInt(Math.round(u.scales.x?.max ?? 1)),
+  };
+}
+
 type CursorLines = Record<CursorName, HTMLElement> & { delta: HTMLElement };
 /** Row height of a cursor flag (its line-height in window.css); a stacked B flag sits one row down. */
 const CURSOR_FLAG_ROW_PX = 14;
@@ -358,15 +366,16 @@ function placeCursorLines(
 ): CursorX {
   const shown: CursorX = {};
   const width = u.bbox.width / devicePixelRatio;
+  const { from, to } = shownRangeOf(u, origin);
   for (const name of ["a", "b"] as const) {
     const strip = lines[name];
     const t = cursors[name];
-    const x = t === undefined ? Number.NaN : u.valToPos(Number(t - origin), "x");
-    // 1 px slack: a time snapped at the plot edge may lie up to half a pixel outside.
-    if (!(x >= -1 && x <= width + 1)) {
+    // Half-open like the readout (chartValueAt): a line at `to` would read "outside this range".
+    if (t === undefined || t < from || t >= to) {
       strip.style.display = "none";
       continue;
     }
+    const x = u.valToPos(Number(t - origin), "x");
     strip.style.display = "";
     strip.style.left = `${x}px`;
     shown[name] = x;
@@ -870,12 +879,11 @@ export function TimeseriesWindow({
     cursorLines.current = lines;
     const strips = [lines.a, lines.b];
 
-    /** Time at x CSS px in the plot, snapped to the shown span (design C3). */
+    /** Time at x CSS px in the plot, snapped to the shown span and kept inside it (design C3). */
     const timeAt = (x: number) => {
-      const min = u.scales.x?.min ?? 0;
-      const max = u.scales.x?.max ?? 1;
+      const shown = shownRangeOf(u, origin.current);
       const t = origin.current + BigInt(Math.round(u.posToVal(x, "x")));
-      return snapCursorTime(t, BigInt(Math.round(max - min)));
+      return snapCursorTime(t, shown.to - shown.from, shown);
     };
     const plotX = (clientX: number) => {
       const rect = u.over.getBoundingClientRect();
@@ -954,27 +962,38 @@ export function TimeseriesWindow({
     window.addEventListener("mouseup", onUp);
 
     // Plain vertical wheel scrolls the page (design N1): preventDefault only for zoom and pan.
+    // The events of one frame are joined into one step (one preview, one applyRange).
+    const wheelFrame = new WheelFrame();
+    let wheelRaf: number | undefined;
+    const flushWheel = () => {
+      wheelRaf = undefined;
+      const { factor, px, x } = wheelFrame.take();
+      let min = u.scales.x?.min ?? 0;
+      let max = u.scales.x?.max ?? 1;
+      if (factor !== 1) {
+        const at = u.posToVal(x, "x");
+        [min, max] = [at - (at - min) * factor, at + (max - at) * factor];
+      }
+      if (px !== 0) {
+        const delta = (px / u.over.clientWidth) * (max - min);
+        [min, max] = [min + delta, max + delta];
+      }
+      if (factor !== 1 || px !== 0) applyRangeRef.current(u, min, max);
+    };
     const onWheel = (e: WheelEvent) => {
       const action = wheelAction(e);
       if (action.kind === "none") return;
       e.preventDefault();
-      const min = u.scales.x?.min ?? 0;
-      const max = u.scales.x?.max ?? 1;
-      if (action.kind === "pan") {
-        const delta = (action.px / u.over.clientWidth) * (max - min);
-        applyRangeRef.current(u, min + delta, max + delta);
-      } else {
-        // Not offsetX: over a cursor line the event's target is the line's hit strip.
-        const at = u.posToVal(e.clientX - u.over.getBoundingClientRect().left, "x");
-        const { factor } = action;
-        applyRangeRef.current(u, at - (at - min) * factor, at + (max - at) * factor);
-      }
+      // Not offsetX: over a cursor line the event's target is the line's hit strip.
+      wheelFrame.add(action, e.clientX - u.over.getBoundingClientRect().left);
+      wheelRaf ??= requestAnimationFrame(flushWheel);
     };
     // Leaving the plot hides the crosshair through uPlot's own mouseleave handler.
     const onMove = () => showCursor(u);
     u.over.addEventListener("wheel", onWheel, { passive: false });
     u.over.addEventListener("mousemove", onMove);
     return () => {
+      if (wheelRaf !== undefined) cancelAnimationFrame(wheelRaf);
       u.over.removeEventListener("wheel", onWheel);
       u.over.removeEventListener("mousemove", onMove);
       u.over.removeEventListener("mousedown", onDown);

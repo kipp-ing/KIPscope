@@ -7,7 +7,8 @@ import {
   type Workspace,
   windowTitle,
 } from "@letsview/shared";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatRange } from "../time/axis.ts";
 import "./bar.css";
 import { defaultCursorTime, SPAN_PRESETS } from "./bar.ts";
 
@@ -26,6 +27,8 @@ interface OptionBarProps {
   onGoTo: (text: string) => string | undefined;
   /** A span preset in ns, centred on the navigation anchor. */
   onSpan: (span: bigint) => void;
+  /** The "Go to" error is void (text edited, target or its range changed): App clears the message. */
+  onGoToClear?: () => void;
 }
 
 /**
@@ -41,11 +44,35 @@ export function OptionBar({
   onReset,
   onGoTo,
   onSpan,
+  onGoToClear,
 }: OptionBarProps) {
   const { cursors, linkTime } = workspace;
   const digits = workspace.options?.digits ?? 3;
-  // The last Enter in "Go to" failed: field marked invalid until the text changes (App shows the message).
+  // The last Enter in "Go to" failed: field marked invalid until the text, the target or its range
+  // changes (App shows the message).
   const [goToError, setGoToError] = useState<string | undefined>();
+  const [goToText, setGoToText] = useState("");
+  const goToRef = useRef<HTMLInputElement>(null);
+  // Focus by click selects the text too; the click's mouseup would otherwise drop the selection.
+  const selectOnMouseUp = useRef(false);
+  const clearGoToError = () => {
+    if (goToError === undefined) return;
+    setGoToError(undefined);
+    onGoToClear?.();
+  };
+  const clearRef = useRef(clearGoToError);
+  clearRef.current = clearGoToError;
+  // The target's view changed by other means: an error about the old view is void, and text the
+  // user is not editing would be stale, so it shows the new range as the header does.
+  const targetId = target?.id;
+  const from = target?.range.from;
+  const to = target?.range.to;
+  useEffect(() => {
+    clearRef.current();
+    if (targetId === undefined || from === undefined || to === undefined) return;
+    if (goToRef.current === document.activeElement) return;
+    setGoToText((text) => (text === "" ? text : formatRange(BigInt(from), BigInt(to))));
+  }, [targetId, from, to]);
   const toggleCursor = (cursor: CursorName, on: boolean) => {
     if (!on) {
       void onCommand({ type: "cursor.remove", cursor });
@@ -106,6 +133,7 @@ export function OptionBar({
       </label>
       <input
         id="go-to"
+        ref={goToRef}
         className={`go-to${goToError ? " invalid" : ""}`}
         type="text"
         placeholder="Go to"
@@ -121,7 +149,19 @@ export function OptionBar({
         ]
           .filter(Boolean)
           .join("\n")}
-        onChange={() => setGoToError(undefined)}
+        value={goToText}
+        onChange={(e) => {
+          setGoToText(e.target.value);
+          clearGoToError();
+        }}
+        onFocus={(e) => e.currentTarget.select()}
+        onMouseDown={(e) => {
+          selectOnMouseUp.current = document.activeElement !== e.currentTarget;
+        }}
+        onMouseUp={(e) => {
+          if (selectOnMouseUp.current) e.preventDefault();
+          selectOnMouseUp.current = false;
+        }}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
           const field = e.currentTarget;
@@ -137,6 +177,8 @@ export function OptionBar({
         title={named("Span", "Span around cursor A or the centre, all windows")}
         onChange={(e) => {
           const preset = SPAN_PRESETS.find((p) => p.label === e.target.value);
+          // Navigation keys go to the page again, not to the select.
+          e.currentTarget.blur();
           if (preset) onSpan(preset.ns);
         }}
       >

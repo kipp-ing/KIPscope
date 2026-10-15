@@ -344,18 +344,16 @@ export function App() {
           if (failed) throw failed.reason;
           return;
         }
-        const target = clampRange(extent);
-        const current = toRange(w.range);
-        if (target.from === current.from && target.to === current.to) return;
-        pendingNav.current.delete(navKeyOf(liveRef.current.workspace, windowId));
-        historyOf(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId)).push(current);
-        setHistoryVersion((v) => v + 1);
-        await setRange(windowId, target);
+        // A step still on its way (Home right after `+`) is superseded, not compared against the
+        // range the window showed before the await: the reset leaves the latest view (pending, else
+        // the server's) as one history entry and becomes the pending range, so the step's late
+        // result neither ends it nor wins.
+        navigate(windowId, extent, true);
       } catch (e) {
         setMessage(e instanceof Error ? e.message : String(e));
       }
     },
-    [historyOf, setRange],
+    [navigate],
   );
 
   // Cursors (design C2): timeseries windows draw the preview over the committed time; release or the
@@ -401,26 +399,36 @@ export function App() {
   cursorsRef.current = cursors;
 
   // "Go to" and span presets act on the bar target (design S5, D-024).
+  // The Go to error is remembered so clearing the field drops only that message.
+  const goToMessageRef = useRef<string | undefined>(undefined);
   const onGoTo = useCallback(
     (text: string): string | undefined => {
       const ws = liveRef.current.workspace;
       const target = ws && barTarget(ws);
       const view = target && navView(target.id);
+      let error: string | undefined;
       if (!target || !view) {
-        setMessage("Go to needs a timeseries window");
-        return "Go to needs a timeseries window";
+        error = "Go to needs a timeseries window";
+      } else {
+        try {
+          navigate(target.id, resolveTimeNav(text, { view, cursors: cursorsRef.current }), true);
+        } catch (e) {
+          error = e instanceof Error ? e.message : String(e);
+        }
       }
-      try {
-        navigate(target.id, resolveTimeNav(text, { view, cursors: cursorsRef.current }), true);
-        return undefined;
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        setMessage(message);
-        return message;
-      }
+      const previous = goToMessageRef.current;
+      goToMessageRef.current = error;
+      if (error !== undefined) setMessage(error);
+      else if (previous !== undefined) setMessage((m) => (m === previous ? undefined : m));
+      return error;
     },
     [navView, navigate],
   );
+  const onGoToClear = useCallback(() => {
+    const goToMessage = goToMessageRef.current;
+    goToMessageRef.current = undefined;
+    if (goToMessage !== undefined) setMessage((m) => (m === goToMessage ? undefined : m));
+  }, []);
   const onSpan = useCallback(
     (span: bigint) => {
       const ws = liveRef.current.workspace;
@@ -769,6 +777,7 @@ export function App() {
                 onCommand={barCommand}
                 onBack={onBack}
                 onGoTo={onGoTo}
+                onGoToClear={onGoToClear}
                 onSpan={onSpan}
                 onReset={() => {
                   if (barWindow) void onReset(barWindow.id, resetSignals(workspace));

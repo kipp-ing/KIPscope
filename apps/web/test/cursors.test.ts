@@ -110,3 +110,29 @@ describe("ClickGate", () => {
     expect(late).not.toHaveBeenCalled();
   });
 });
+
+describe("snapCursorTime inside a range", () => {
+  const T = 1_791_896_880_000_000_000n;
+  const span = 1_000_000_000n; // 1 s: 1 ms grid
+  const to = T + span;
+
+  it("stays inside the half-open [from, to)", () => {
+    // Rounds up to `to` without a range, to the last grid time before it with one.
+    expect(snapCursorTime(to - 100n, span)).toBe(to);
+    expect(snapCursorTime(to - 100n, span, { from: T, to })).toBe(to - 1_000_000n);
+    expect(snapCursorTime(to + 5n, span, { from: T, to })).toBe(to - 1_000_000n);
+    // Inside and before: unchanged or rounded up to `from`.
+    expect(snapCursorTime(T + 100n, span, { from: T, to })).toBe(T);
+    expect(snapCursorTime(T - 100n, span, { from: T, to })).toBe(T);
+  });
+
+  it("takes the next grid time when the range starts off the grid", () => {
+    expect(snapCursorTime(T + 300_010n, span, { from: T + 300_000n, to: to + 300_000n })).toBe(
+      T + 1_000_000n,
+    );
+  });
+
+  it("returns the raw time in a range narrower than one grid step", () => {
+    expect(snapCursorTime(T + 150n, span, { from: T + 100n, to: T + 200n })).toBe(T + 150n);
+  });
+});

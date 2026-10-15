@@ -7,15 +7,29 @@ export const DOUBLE_CLICK_MS = 500;
 
 /**
  * Rounds a placed time to the largest power of ten in ns that is at most span / 1000: about one
- * pixel at 1000 px, and the time reads short (…:01.512 instead of …:01.512345678).
+ * pixel at 1000 px, and the time reads short (…:01.512 instead of …:01.512345678). With `range`,
+ * the result stays inside the half-open [from, to): a click at the plot's right edge would else
+ * land on `to`, which the window does not contain (no line, "outside this window's range").
  */
-export function snapCursorTime(t: bigint, span: bigint): bigint {
+export function snapCursorTime(
+  t: bigint,
+  span: bigint,
+  range?: { from: bigint; to: bigint },
+): bigint {
   const limit = span / 1000n;
   let step = 1n;
   while (step * 10n <= limit) step *= 10n;
-  if (step === 1n) return t;
-  const down = t - (((t % step) + step) % step);
-  return t - down >= step / 2n ? down + step : down;
+  const floor = (x: bigint) => x - (((x % step) + step) % step);
+  const down = floor(t);
+  let snapped = step > 1n && t - down >= step / 2n ? down + step : down;
+  if (!range) return snapped;
+  if (snapped >= range.to) snapped = floor(range.to - 1n);
+  if (snapped < range.from) snapped = floor(range.from - 1n) + step;
+  // A range narrower than one step: no grid time inside, so the raw time clamped into it.
+  if (snapped < range.from || snapped >= range.to) {
+    snapped = t < range.from ? range.from : t >= range.to ? range.to - 1n : t;
+  }
+  return snapped;
 }
 
 /** The cursor line within CURSOR_HIT_PX of x, the nearer one if both are; B on a tie (drawn above A). */

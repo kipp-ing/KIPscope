@@ -27,8 +27,10 @@
   background: var(--border);
 }
 
+/* Wide enough for the header range text it shows after the view changed. */
 .option-bar .go-to {
-  width: 16em;
+  width: 24em;
+  max-width: 100%;
 }
 
 .option-bar .go-to.invalid {

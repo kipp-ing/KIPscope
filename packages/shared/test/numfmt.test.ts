@@ -67,6 +67,23 @@ describe("numfmt (improve-navigation, D-026)", () => {
     }
   });
 
+  it("prefixes the bare compound units (Ah, VA, Wh) but not the prefixed ones", () => {
+    const cases: [number, string, string][] = [
+      [0.5, "Ah", "500 mAh"],
+      [1234, "Ah", "1.23 kAh"],
+      [1500, "VA", "1.50 kVA"],
+      [1500, "Wh", "1.50 kWh"],
+      [0.5, "mAh", "0.500 mAh"],
+      [1500, "kVA", "1500 kVA"],
+      [1500, "kWh", "1500 kWh"],
+    ];
+    for (const [value, unit, text] of cases) {
+      expect(formatQuantity(value, unit, 3), `${value} ${unit}`).toBe(text);
+    }
+    for (const unit of ["Ah", "VA", "Wh"]) expect(takesPrefix(unit), unit).toBe(true);
+    for (const unit of ["mAh", "kVA", "kWh", "Mvar"]) expect(takesPrefix(unit), unit).toBe(false);
+  });
+
   it("formats axis ticks with one prefix per axis", () => {
     expect(formatAxisTicks([0, 500, 1000, 1500], "1/min", 3)).toEqual({
       title: "k1/min",

@@ -108,13 +108,14 @@ export function readoutCell(
   }
 }
 
-/** Δ = B − A, only from two numbers (else "—"), tagged avg > lin > hold. */
+/** Δ = B − A, only from two numbers (else "—"), tagged avg > lin > hold; loading as readoutCell while a value is not loaded. */
 export function readoutDelta(
   a: ReadoutValue | undefined,
   b: ReadoutValue | undefined,
   unit: string | undefined,
   digits: Digits,
 ): Cell {
+  if (!a || !b) return LOADING_CELL;
   if (!isNumber(a) || !isNumber(b)) return { text: NO_VALUE };
   return numberDelta(a, b, unit, digits);
 }

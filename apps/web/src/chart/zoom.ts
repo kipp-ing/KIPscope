@@ -55,6 +55,39 @@ export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
   return WHEEL_TICK_FACTOR ** ticks;
 }
 
+/** Largest span factor of one wheel step (WHEEL_MAX_TICKS ticks); its inverse is the smallest. */
+const WHEEL_MAX_FACTOR = WHEEL_TICK_FACTOR ** WHEEL_MAX_TICKS;
+
+/**
+ * Wheel actions of one animation frame joined into one zoom/pan step, so a burst of events (a
+ * fast wheel, a trackpad) costs one preview and one range per frame. Zoom factors multiply, up to
+ * one event's limit; pan deltas add up; the zoom is anchored at the latest pointer x.
+ */
+export class WheelFrame {
+  factor = 1;
+  px = 0;
+  /** Pointer x in CSS px of the latest zoom event. */
+  x = 0;
+
+  add(action: WheelAction, x: number): void {
+    if (action.kind === "zoom") {
+      this.factor = Math.min(
+        WHEEL_MAX_FACTOR,
+        Math.max(1 / WHEEL_MAX_FACTOR, this.factor * action.factor),
+      );
+      this.x = x;
+    } else if (action.kind === "pan") this.px += action.px;
+  }
+
+  /** The joined step, and resets for the next frame. */
+  take(): { factor: number; px: number; x: number } {
+    const step = { factor: this.factor, px: this.px, x: this.x };
+    this.factor = 1;
+    this.px = 0;
+    return step;
+  }
+}
+
 export type WheelAction =
   | { kind: "zoom"; factor: number }
   | { kind: "pan"; px: number }

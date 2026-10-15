@@ -1,6 +1,8 @@
 import { type BucketSeries, encodeTimes, type RawSeries } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
+import { snapCursorTime } from "../src/chart/cursors.ts";
 import { chartValueAt, readoutCell, readoutDelta } from "../src/chart/readout.ts";
+import { LOADING } from "../src/values/format.ts";
 
 // 2026-10-13T13:08:00Z in ns; everything below is an offset from it.
 const T0 = 1_791_896_880_000_000_000n;
@@ -187,12 +189,34 @@ describe("readout cells", () => {
       [raw(1), { kind: "sna" as const }],
       [none, raw(1)],
       [raw(1), none],
-      [undefined, raw(1)],
-      [raw(1), undefined],
     ] as const) {
       const cell = readoutDelta(a, b, "km/h", 3);
       expect(cell.text).toBe("—");
       expect(cell.tag).toBeUndefined();
     }
+  });
+
+  it("shows the loading state in Δ while a value is not loaded, like the A and B cells", () => {
+    const loading = { text: LOADING, loading: true, title: "loading" };
+    expect(readoutDelta(undefined, { kind: "raw", value: 1 }, "km/h", 3)).toEqual(loading);
+    expect(readoutDelta({ kind: "raw", value: 1 }, undefined, "km/h", 3)).toEqual(loading);
+    expect(readoutDelta(undefined, undefined, "km/h", 3)).toEqual(loading);
+    expect(readoutCell(undefined, "km/h", 3)).toEqual(loading);
+  });
+});
+
+describe("cursor at the range end", () => {
+  it("a B cursor placed at the right edge snaps inside the range and reads a value", () => {
+    const to = at(3000);
+    const series = rawSeries();
+    // Placed 100 ns before `to` on a 3 s view (1 ms grid): snapping alone would land on `to`.
+    const raw = to - 100n;
+    expect(snapCursorTime(raw, 3_000_000_000n)).toBe(to);
+    const snapped = snapCursorTime(raw, 3_000_000_000n, { from: T0, to });
+    expect(snapped).toBe(to - 1_000_000n);
+    // The flag and the cell agree: a value (interpolated toward the point after), not "—".
+    const v = chartValueAt(series, snapped, "line");
+    expect(v?.kind).toBe("interpolated");
+    expect(chartValueAt(series, to, "line")).toEqual({ kind: "none", reason: "outside_range" });
   });
 });

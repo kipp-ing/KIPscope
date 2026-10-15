@@ -8,11 +8,12 @@ import {
 } from "@letsview/shared";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchCatalog } from "../api.ts";
-import { formatSnaValue, SNA_ALPHA } from "../chart/build.ts";
+import { SNA_ALPHA } from "../chart/build.ts";
 import type { ExplorerDragSource } from "../chart/drag.ts";
 import { isSearchKey } from "../keys.ts";
 import {
   CHUNK,
+  formatSnaPhysical,
   HIDE_GRACE_MS,
   HOVER_DELAY_MS,
   NEW_WINDOW,
@@ -286,9 +287,10 @@ export function SignalExplorer({
         <div ref={listRef} id={listId} role="listbox" aria-label="Signals">
           {matches.slice(0, visible).map((m, i) => {
             const s = m.signal;
+            // Physical SNA values are readings of the signal: number-format with unit (design N9).
             const sna =
               s.sna &&
-              `SNA ${s.sna.map((c) => formatSnaValue(c.value)).join(", ")}${s.unit ? ` ${s.unit}` : ""}`;
+              `SNA ${s.sna.map((c) => formatSnaPhysical(c.value, s.unit, digits)).join(", ")}`;
             return (
               // Options of an aria-activedescendant listbox: focus stays in the combobox.
               // biome-ignore lint/a11y/useFocusableInteractive: see above
