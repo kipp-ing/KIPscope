@@ -7,6 +7,7 @@ import {
   formatCell,
   formatCursorTime,
   formatDeltaT,
+  headerTimes,
   LOADING,
   loadingCell,
   NO_VALUE,
@@ -147,6 +148,53 @@ describe("formatCursorTime", () => {
     expect(formatCursorTime(1791896880093456789n)).toBe("2026-10-13 15:08:00.093456789");
     expect(formatCursorTime(1791896880000000001n)).toBe("2026-10-13 15:08:00.000000001");
     expect(formatCursorTime(fromIso("2026-12-01T12:00:00Z"))).toBe("2026-12-01 13:00:00");
+  });
+});
+
+describe("headerTimes", () => {
+  // 2026-10-13 15:08:00.093 and 15:08:04.500 local (CEST).
+  const a = 1791896880093000000n;
+  const b = 1791896884500000000n;
+  const texts = (fits: (texts: string[]) => boolean, b2 = b) =>
+    headerTimes(a, b2, true, fits).map((t) => t.text);
+
+  it("drops the cursor dates before truncating the times", () => {
+    // Room for the full times: B leaves out A's date only.
+    expect(texts(() => true)).toEqual([
+      "A 2026-10-13 15:08:00.093",
+      "B 15:08:04.500",
+      "Δt +4.407 s",
+    ]);
+    // Not enough room: A and B drop their dates, Δt stays; the tooltips keep the full times.
+    const short = headerTimes(a, b, true, () => false);
+    expect(short.map((t) => t.text)).toEqual(["A 15:08:00.093", "B 15:08:04.500", "Δt +4.407 s"]);
+    expect(short.map((t) => t.title)).toEqual([
+      "A 2026-10-13 15:08:00.093",
+      "B 2026-10-13 15:08:04.500",
+      "Δt +4.407 s",
+    ]);
+    // The decision depends on the room: up to 40 characters fit here.
+    const room = (texts: string[]) => texts.join(" ").length <= 40;
+    expect(texts(room)[0]).toBe("A 15:08:00.093");
+    expect(texts((t) => t.join(" ").length <= 60)[0]).toBe("A 2026-10-13 15:08:00.093");
+  });
+
+  it("decides the same day on the local date of the timestamps", () => {
+    // 23:30 UTC on 2026-10-13 is 01:30 on 2026-10-14 in Berlin: another day than A.
+    const nextDay = fromIso("2026-10-13T23:30:00Z");
+    expect(texts(() => true, nextDay)[1]).toBe("B 2026-10-14 01:30:00");
+    // 21:30 UTC is 23:30 local, still A's day.
+    expect(texts(() => true, fromIso("2026-10-13T21:30:00Z"))[1]).toBe("B 23:30:00");
+  });
+
+  it("shows only A without Diff, and the off states", () => {
+    expect(headerTimes(a, b, false, () => true).map((t) => t.text)).toEqual([
+      "A 2026-10-13 15:08:00.093",
+    ]);
+    expect(headerTimes(undefined, undefined, true, () => false).map((t) => t.text)).toEqual([
+      "Cursor A off",
+      "B off",
+    ]);
   });
 });
 

@@ -40,6 +40,8 @@ export interface CliOutput {
   revision?: number;
   created?: string;
   createdWindow?: string;
+  /** A move that emptied its source window removed it. */
+  removedWindow?: string;
   /** --wait and `wait`. */
   render?: RenderWait;
   /** Reads: the server's body (state: {revision, workspace, render}). */

@@ -33,8 +33,16 @@ import {
 import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
+import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
+import {
+  isSidebarKey,
+  loadSidebar,
+  SIDEBAR_WIDTH_PX,
+  type SidebarState,
+  saveSidebar,
+} from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 
@@ -51,11 +59,11 @@ interface Drag {
   target?: DropTarget | undefined;
 }
 
-/** Auto-scroll band below the option bar and above the drop zone (design C7), and its top speed per frame. */
+/** Auto-scroll band below the top row and above the status strip (design C7, L3), and its top speed per frame. */
 const EDGE_PX = 48;
 const EDGE_SCROLL_PX = 24;
 
-/** Drop target under a viewport point: a window section or the "+ New window" zone. */
+/** Drop target under a viewport point: a window section or the "+ New window" strip. */
 function targetAt(x: number, y: number): DropTarget | undefined {
   const el = document.elementFromPoint(x, y)?.closest("[data-window-id],[data-drop]");
   const windowId = el?.getAttribute("data-window-id");
@@ -78,6 +86,15 @@ const toRange = (r: { from: string; to: string }): Range => ({
 });
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
+
+/** localStorage, or undefined where even reading the property throws (blocked site data). */
+function localStore(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 /** History and pending-navigation key of a window in the current workspace (shared "*" while linked). */
 const navKeyOf = (ws: { linkTime: boolean } | undefined, windowId: string) =>
@@ -118,6 +135,16 @@ export function App() {
   const [live, send] = useLive();
   const [message, setMessage] = useState<string | undefined>();
 
+  // Explorer sidebar (design L1): loaded once, saved on every change, per browser.
+  const [sidebar, setSidebar] = useState<SidebarState>(() => loadSidebar(localStore()));
+  useEffect(() => saveSidebar(localStore(), sidebar), [sidebar]);
+  const toggleSidebar = useCallback(
+    () => setSidebar((s) => (s === "open" ? "collapsed" : "open")),
+    [],
+  );
+  const openSidebar = useCallback(() => setSidebar("open"), []);
+  const sidebarOpen = sidebar === "open";
+
   // Signal metadata seen in the explorer or looked up for signals already in the workspace.
   const infos = useRef(new Map<string, SignalInfo>());
   const [, setInfoVersion] = useState(0);
@@ -137,6 +164,17 @@ export function App() {
   const workspace = live.workspace;
   const windows = workspace?.windows ?? [];
   const linked = workspace?.linkTime ?? true;
+
+  // The marked window, the explorer's add target (design L5, L6): view state of this tab. A removed
+  // window clears it; the render resolves it too, so a stale ID never reaches the explorer.
+  const [marked, setMarked] = useState<string | undefined>();
+  const target = resolveTarget(marked ?? NEW_WINDOW, windows);
+  const markedId = target === NEW_WINDOW ? undefined : target;
+  useEffect(() => {
+    if (marked !== markedId) setMarked(markedId);
+  }, [marked, markedId]);
+  const onMark = useCallback((windowId: string) => setMarked(windowId), []);
+  const onTarget = useCallback((t: string) => setMarked(t === NEW_WINDOW ? undefined : t), []);
   const signalIds = [...new Set(windows.flatMap((w) => w.signals.map((s) => s.signalId)))];
   const missingKey = signalIds.filter((id) => !infos.current.has(id)).join(",");
   useEffect(() => {
@@ -513,6 +551,13 @@ export function App() {
       navigate(id, next, step === "push");
     };
     const onKey = (e: KeyboardEvent) => {
+      if (isSidebarKey(e, document.activeElement)) {
+        // Not during a drag: the list would change width under the pointer.
+        if (dragRef.current) return;
+        e.preventDefault();
+        if (!e.repeat) toggleSidebar();
+        return;
+      }
       if (e.key !== "Backspace") return onNavKey(e);
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTextField(document.activeElement)) return;
@@ -532,7 +577,7 @@ export function App() {
       document.removeEventListener("pointerout", onOut);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onBack, onReset, navView, navigate]);
+  }, [onBack, onReset, navView, navigate, toggleSidebar]);
 
   // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
   const mainRef = useRef<HTMLElement>(null);
@@ -568,8 +613,8 @@ export function App() {
       // so an Alt drag earlier leaves nothing behind.
       let frame = 0;
 
-      // Pointer near the visible top (below the option bar) or bottom (above the drop zone)
-      // of the window list scrolls it, faster the closer. On the drop zone itself it rests (C7).
+      // Pointer near the visible top (below the top row) or bottom (above the status strip)
+      // of the window list scrolls it, faster the closer. On the strip itself it rests (C7).
       const autoScroll = () => {
         frame = 0;
         const cur = dragRef.current;
@@ -740,12 +785,20 @@ export function App() {
     if (!live.connected) lastSent.current = -1;
   }, [live.connected]);
 
-  const appClass = ["app", activeDrag && "dragging", activeDrag && !overValid && "drag-invalid"]
+  const appClass = [
+    "app",
+    !sidebarOpen && "sidebar-collapsed",
+    activeDrag && "dragging",
+    activeDrag && !overValid && "drag-invalid",
+  ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <div className={appClass}>
+    <div
+      className={appClass}
+      style={{ "--sidebar-width": `${SIDEBAR_WIDTH_PX}px` } as React.CSSProperties}
+    >
       <SignalExplorer
         windows={windows}
         onAdd={addSignal}
@@ -754,22 +807,25 @@ export function App() {
         dragging={activeDrag !== undefined}
         colorOf={explorerColorOf}
         digits={digits}
+        target={target}
+        onTarget={onTarget}
+        open={sidebarOpen}
+        onOpen={openSidebar}
       />
       <div className="workspace">
         <main ref={mainRef}>
-          <header className="topbar">
-            <h1>letsview</h1>
-            <span className={`conn ${live.connected ? "ok" : "down"}`}>
-              {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
-            </span>
-            {message && (
-              <button type="button" className="message" onClick={() => setMessage(undefined)}>
-                {message} ✕
-              </button>
-            )}
-          </header>
-          {workspace && (
-            <div className="option-bar-slot" ref={barRef}>
+          {/* The top row (design L3): sidebar toggle and option bar, sticky while the list scrolls. */}
+          <div className="option-bar-slot" ref={barRef}>
+            <button
+              type="button"
+              className="sidebar-toggle"
+              aria-expanded={sidebarOpen}
+              title={sidebarOpen ? "Hide signals (s)" : "Show signals (s)"}
+              onClick={toggleSidebar}
+            >
+              Signals
+            </button>
+            {workspace && (
               <OptionBar
                 workspace={workspace}
                 target={barWindow}
@@ -783,62 +839,87 @@ export function App() {
                   if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
                 }}
               />
-            </div>
-          )}
-          {windows.map((w) =>
-            isTimeseries(w) ? (
-              <TimeseriesWindow
-                key={w.id}
-                window={w}
-                revision={live.revision}
-                info={info}
-                colorOf={colorOf}
-                onCommand={command}
-                onReady={onReady}
-                onZoomed={onZoomed}
-                onReset={onReset}
-                onDragStart={onDragStart}
-                insets={insets}
-                onInsets={onInsets}
-                cursors={cursors}
-                digits={digits}
-                diff={diff}
-                onCursorPreview={onCursorPreview}
-                onCursorCommit={onCursorCommit}
-                {...dropProp(dropStateOf(w.id))}
-                {...dropActionProp}
-              />
-            ) : (
-              <ValuesWindow
-                key={w.id}
-                window={w}
-                revision={live.revision}
-                cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
-                dragging={cursorPreview !== undefined}
-                digits={digits}
-                info={info}
-                colorOf={colorOf}
-                onCommand={command}
-                onReady={onReady}
-                onDragStart={onDragStart}
-                {...dropProp(dropStateOf(w.id))}
-                {...dropActionProp}
-              />
-            ),
-          )}
+            )}
+          </div>
+          <div className="window-grid">
+            {windows.map((w) =>
+              isTimeseries(w) ? (
+                <TimeseriesWindow
+                  key={w.id}
+                  window={w}
+                  revision={live.revision}
+                  info={info}
+                  colorOf={colorOf}
+                  onCommand={command}
+                  onReady={onReady}
+                  onZoomed={onZoomed}
+                  onReset={onReset}
+                  onDragStart={onDragStart}
+                  insets={insets}
+                  onInsets={onInsets}
+                  cursors={cursors}
+                  digits={digits}
+                  diff={diff}
+                  onCursorPreview={onCursorPreview}
+                  onCursorCommit={onCursorCommit}
+                  marked={w.id === markedId}
+                  onMark={onMark}
+                  {...dropProp(dropStateOf(w.id))}
+                  {...dropActionProp}
+                />
+              ) : (
+                <ValuesWindow
+                  key={w.id}
+                  window={w}
+                  revision={live.revision}
+                  cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
+                  dragging={cursorPreview !== undefined}
+                  digits={digits}
+                  info={info}
+                  colorOf={colorOf}
+                  onCommand={command}
+                  onReady={onReady}
+                  onDragStart={onDragStart}
+                  marked={w.id === markedId}
+                  onMark={onMark}
+                  {...dropProp(dropStateOf(w.id))}
+                  {...dropActionProp}
+                />
+              ),
+            )}
+          </div>
           {workspace && windows.length === 0 && (
             <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
           )}
         </main>
         {/* Below the window list, not over it, so it stays at the viewport bottom wherever the list
-            is scrolled and never covers a window (C7). Its space is kept while no drag runs (hidden),
-            so the list does not shrink when a drag starts and nothing moves under the pointer. */}
+            is scrolled and never covers a window (C7). Outside a drag it shows connection, revision
+            and the last message; during a drag it is the "+ New window" zone at the same size, so
+            nothing moves under the pointer when a drag starts (L3). */}
         <div
           ref={dropRef}
-          className={`drop-new${activeDrag ? "" : " idle"}${activeDrag?.target?.kind === "new" ? " over" : ""}`}
-          {...(activeDrag ? { "data-drop": "new" } : { "aria-hidden": true })}
+          className={`status-strip${activeDrag ? " drop" : ""}${activeDrag?.target?.kind === "new" ? " over" : ""}`}
+          {...(activeDrag ? { "data-drop": "new" } : {})}
         >
-          + New window
+          {activeDrag ? (
+            "+ New window"
+          ) : (
+            <>
+              <span className={`conn ${live.connected ? "ok" : "down"}`}>
+                {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
+              </span>
+              {message && (
+                <button
+                  type="button"
+                  className="message"
+                  title={`${message} · Click to dismiss`}
+                  onClick={() => setMessage(undefined)}
+                >
+                  {message} ✕
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
       {activeDrag && (

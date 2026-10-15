@@ -57,19 +57,22 @@ describe("window-workflow commands over HTTP", () => {
     expect((await command({ type: "window.setHeight", windowId: "w2", height: 100 })).status).toBe(
       400,
     );
+    // w1 keeps car/C, so the move below does not empty it (an emptied window is removed).
+    const kept = await command({ type: "window.addSignal", windowId: "w1", signalId: "car/C" });
+    expect(kept.body).toEqual({ ok: true, revision: 6, created: "a4" });
     const moved = await command({
       type: "window.moveSignal",
       windowId: "w1",
       assignmentId: "a3",
       targetWindowId: "w2",
     });
-    expect(moved.body).toEqual({ ok: true, revision: 6 });
+    expect(moved.body).toEqual({ ok: true, revision: 7 });
     // Moving into a window that has the signal answers 422 already_in_window.
     await command({ type: "window.addSignal", windowId: "w1", signalId: "car/A" });
     const dup = await command({
       type: "window.moveSignal",
       windowId: "w1",
-      assignmentId: "a4",
+      assignmentId: "a5",
       targetWindowId: "w2",
     });
     expect(dup.status).toBe(422);
@@ -90,7 +93,10 @@ describe("window-workflow commands over HTTP", () => {
     ]);
     expect(ws.windows[1]).toMatchObject({ title: "HV voltages", height: 400 });
     expect(ws.windows[1].signals).toEqual([{ id: "a3", signalId: "car/A" }]);
-    expect(ws.windows[0].signals).toEqual([{ id: "a4", signalId: "car/A" }]);
+    expect(ws.windows[0].signals).toEqual([
+      { id: "a4", signalId: "car/C" },
+      { id: "a5", signalId: "car/A" },
+    ]);
     expect(ws.colors["car/A"]).toBe(0);
   });
 
@@ -111,6 +117,67 @@ describe("window-workflow commands over HTTP", () => {
     expect(fresh).toMatchObject({ range: { from: "10", to: "20" }, height: 400 });
     expect(fresh).not.toHaveProperty("title");
     expect(fresh.signals).toEqual([{ id: copy.body.created, signalId: "car/A" }]);
+  });
+
+  it("returns the window a move removed", async () => {
+    // Self-contained: its own target window, no reliance on earlier tests.
+    const target = (await command({ type: "window.create", from: "0", to: "1000" })).body.created;
+    const win = (await command({ type: "window.create" })).body.created;
+    const sig = await command({ type: "window.addSignal", windowId: win, signalId: "car/B" });
+    const before = (await state()).revision;
+    const moved = await command({
+      type: "window.moveSignal",
+      windowId: win,
+      assignmentId: sig.body.created,
+      targetWindowId: target,
+    });
+    expect(moved.status).toBe(200);
+    expect(moved.body).toEqual({ ok: true, revision: before + 1, removedWindow: win });
+    let ws = (await state()).workspace;
+    expect(ws.windows.some((w: { id: string }) => w.id === win)).toBe(false);
+    expect(
+      ws.windows
+        .find((w: { id: string }) => w.id === target)
+        .signals.map((a: { signalId: string }) => a.signalId),
+    ).toContain("car/B");
+    // The removed ID answers unknown_window like any removed window.
+    const gone = await command({ type: "window.rename", windowId: win, title: "x" });
+    expect(gone.status).toBe(422);
+    expect(gone.body).toMatchObject({ ok: false, code: "unknown_window" });
+
+    // Into a new window: createdWindow and removedWindow in one answer, one revision.
+    const win2 = (await command({ type: "window.create" })).body.created;
+    const sig2 = await command({ type: "window.addSignal", windowId: win2, signalId: "car/E" });
+    const before2 = (await state()).revision;
+    const fresh = await command({
+      type: "window.moveSignal",
+      windowId: win2,
+      assignmentId: sig2.body.created,
+    });
+    expect(fresh.body).toMatchObject({ ok: true, revision: before2 + 1, removedWindow: win2 });
+    expect(fresh.body.createdWindow).toMatch(/^w\d+$/);
+    expect(fresh.body.createdWindow).not.toBe(win2);
+    ws = (await state()).workspace;
+    expect(ws.windows.some((w: { id: string }) => w.id === win2)).toBe(false);
+    expect(ws.windows.some((w: { id: string }) => w.id === fresh.body.createdWindow)).toBe(true);
+
+    // A copy and removeSignal remove nothing.
+    const win3 = (await command({ type: "window.create" })).body.created;
+    const sig3 = await command({ type: "window.addSignal", windowId: win3, signalId: "car/D" });
+    const copy = await command({
+      type: "window.moveSignal",
+      windowId: win3,
+      assignmentId: sig3.body.created,
+      copy: true,
+    });
+    expect(copy.body).not.toHaveProperty("removedWindow");
+    const rm = await command({
+      type: "window.removeSignal",
+      windowId: win3,
+      assignmentId: sig3.body.created,
+    });
+    expect(rm.body).not.toHaveProperty("removedWindow");
+    expect((await state()).workspace.windows.some((w: { id: string }) => w.id === win3)).toBe(true);
   });
 
   it("answers too_many_units over HTTP", async () => {

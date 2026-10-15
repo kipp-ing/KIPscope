@@ -282,6 +282,36 @@ describe("window, link, signal and cursor commands", () => {
     });
   });
 
+  it("reports the window a move removed", async () => {
+    await withServer(async (s) => {
+      await cli(s, "window", "create", "--from", "0", "--to", "10");
+      const second = await cli(s, "window", "create", "--from", "0", "--to", "10");
+      const w2: string = second.out.created;
+      await cli(s, "signal", "add", "w1", RPM);
+
+      // Moving the only signal away removes w1 and says so in the body, after createdWindow.
+      const moved = await cli(s, "signal", "move", "w1", "RPM", w2);
+      expect(moved.code, moved.stderr.join("")).toBe(0);
+      expect(moved.out.removedWindow).toBe("w1");
+      expect(moved.out.createdWindow).toBeUndefined();
+      expect((await s.workspace()).workspace.windows.map((x) => x.id)).toEqual([w2]);
+      expect(window(await s.workspace(), w2).signals.map((a) => a.signalId)).toEqual([RPM]);
+
+      // Into a new window: both fields are reported; a copy reports none.
+      const fresh = await cli(s, "signal", "move", w2, "RPM", "new");
+      expect(fresh.out.removedWindow).toBe(w2);
+      expect(fresh.out.createdWindow).toMatch(/^w\d+$/);
+      const copy = await cli(s, "signal", "move", fresh.out.createdWindow, "RPM", "new", "--copy");
+      expect(copy.out.removedWindow).toBeUndefined();
+      expect(copy.out.createdWindow).toMatch(/^w\d+$/);
+
+      // The next command on the removed window answers unknown_window.
+      const again = await cli(s, "signal", "add", "w1", SPEED);
+      expect(again.code).toBe(1);
+      expect(again.out).toMatchObject({ outcome: "rejected", error: { code: "unknown_window" } });
+    });
+  });
+
   it("drives signal add, move, copy and remove over HTTP", async () => {
     await withServer(async (s) => {
       expect((await cli(s, "window", "create", "--from", "0", "--to", "10")).out.created).toBe(

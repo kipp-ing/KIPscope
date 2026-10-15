@@ -9,12 +9,12 @@ Precondition: `add-cursors`, `add-cli` and `improve-navigation` are archived (or
 
 ## 1. packages/shared
 
-- [ ] 1.1 In `src/workspace.ts` and `src/apply.ts` add `removedWindow?: string` to `CommandResult` and `ApplyResult` (S1). In `window.moveSignal`, after placing the assignment and only for a move (not a copy), remove a source left without signals exactly as `window.remove` does (filter, `pruneColors`, clear `lastZoomed` when it named the source) and return `removedWindow` (L7). A move into a new window creates it from the source first. Verify the `apply.test.ts` tests of 4.1 pass and the rest of `pnpm --filter @letsview/shared test` stays green.
+- [x] 1.1 In `src/workspace.ts` and `src/apply.ts` add `removedWindow?: string` to `CommandResult` and `ApplyResult` (S1). In `window.moveSignal`, after placing the assignment and only for a move (not a copy), remove a source left without signals exactly as `window.remove` does (filter, `pruneColors`, clear `lastZoomed` when it named the source) and return `removedWindow` (L7). A move into a new window creates it from the source first. Verify the `apply.test.ts` tests of 4.1 pass and the rest of `pnpm --filter @letsview/shared test` stays green.
 
 ## 2. apps/server and apps/cli
 
-- [ ] 2.1 `apps/server/src/workspace.ts`: copy `removedWindow` into the command answer like `createdWindow` (S2). Verify `apps/server/test/workspace.http.test.ts` › "returns the window a move removed" passes.
-- [ ] 2.2 `apps/cli/src/output.ts` and `apps/cli/src/run.ts`: `CliOutput.removedWindow`, `"removedWindow"` in `BODY_KEYS` right after `"createdWindow"`, copied from the answer (S2). Verify `apps/cli/test/cli.test.ts` › "reports the window a move removed" passes.
+- [x] 2.1 `apps/server/src/workspace.ts`: copy `removedWindow` into the command answer like `createdWindow` (S2). Verify `apps/server/test/workspace.http.test.ts` › "returns the window a move removed" passes.
+- [x] 2.2 `apps/cli/src/output.ts` and `apps/cli/src/run.ts`: `CliOutput.removedWindow`, `"removedWindow"` in `BODY_KEYS` right after `"createdWindow"`, copied from the answer (S2). Verify `apps/cli/test/cli.test.ts` › "reports the window a move removed" passes.
 
 ## 3. apps/web/src
 
@@ -33,13 +33,13 @@ Precondition: `add-cursors`, `add-cli` and `improve-navigation` are archived (or
 
 ## 4. Tests (tester)
 
-- [ ] 4.1 `packages/shared/test/apply.test.ts`: replace "keeps an emptied source window" by "removes a window emptied by a move" (timeseries and values source, `removedWindow`, one revision); add "moves the only signal into a new window and removes the source", "keeps a window emptied by removeSignal, a copy or a refused move", "clears lastZoomed when a move removes that window". Adjust other shared tests that moved a window's last signal and then used that window.
-- [ ] 4.2 `apps/server/test/workspace.http.test.ts` › "returns the window a move removed"; `apps/cli/test/cli.test.ts` › "reports the window a move removed". Adjust existing server and CLI tests that relied on an emptied window staying (check "drives signal add, move, copy and remove over HTTP").
-- [ ] 4.3 `apps/web/test/sidebar.test.ts` › "loads and saves the sidebar state, open by default and when storage fails", "toggles with s outside text fields and selects only"; `apps/web/test/build.test.ts` › "gives a short badge and the full resolution as tooltip". Keep `explorer.test.ts` › "keeps the Add to target by window ID while windows change" green.
+- [x] 4.1 `packages/shared/test/apply.test.ts`: replace "keeps an emptied source window" by "removes a window emptied by a move" (timeseries and values source, `removedWindow`, one revision); add "moves the only signal into a new window and removes the source", "keeps a window emptied by removeSignal, a copy or a refused move", "clears lastZoomed when a move removes that window". Adjust other shared tests that moved a window's last signal and then used that window.
+- [x] 4.2 `apps/server/test/workspace.http.test.ts` › "returns the window a move removed"; `apps/cli/test/cli.test.ts` › "reports the window a move removed". Adjust existing server and CLI tests that relied on an emptied window staying (check "drives signal add, move, copy and remove over HTTP").
+- [x] 4.3 `apps/web/test/sidebar.test.ts` › "loads and saves the sidebar state, open by default and when storage fails", "toggles with s outside text fields and selects only"; `apps/web/test/build.test.ts` › "gives a short badge and the full resolution as tooltip". Keep `explorer.test.ts` › "keeps the Add to target by window ID while windows change" green.
 
 ## 5. Checks
 
-- [ ] 5.1 Tester: `pnpm build && pnpm test && pnpm lint` green.
+- [x] 5.1 Tester: `pnpm build && pnpm test && pnpm lint` green.
 - [ ] 5.2 UI user on smart451, six-window setup of design M1, at 1000×557 and (if the tool can resize) 1440×900 and 1920×1080: every UI scenario of `workspace-layout`, the changed scenarios of `timeseries-window` ("Last signal dragged out", "Drop into a new window", "Rename", "Rename from the menu", "Single click does not rename") and `signal-catalog` ("Removed target falls back", "Select and header mark the same window"); the M1 snippet per viewport and sidebar state, reported against the goals table. A viewport the tool cannot set is `not_run`.
 
 ## Workflow follow-up

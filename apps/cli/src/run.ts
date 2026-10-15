@@ -159,6 +159,7 @@ async function runCommand(
   body.revision = answer.revision;
   if (answer.created !== undefined) body.created = answer.created;
   if (answer.createdWindow !== undefined) body.createdWindow = answer.createdWindow;
+  if (answer.removedWindow !== undefined) body.removedWindow = answer.removedWindow;
   if (!options.wait) return result("ok", body);
   return renderResult(await awaitRender(answer.revision, deadline, client), body, options);
 }
@@ -219,6 +220,7 @@ const BODY_KEYS = [
   "revision",
   "created",
   "createdWindow",
+  "removedWindow",
   "render",
   "data",
   "local",

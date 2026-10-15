@@ -18,7 +18,6 @@ import {
   HOVER_DELAY_MS,
   NEW_WINDOW,
   nextShown,
-  resolveTarget,
   visibleCount,
 } from "./format.ts";
 import { Highlight } from "./Highlight.tsx";
@@ -42,6 +41,13 @@ interface Props {
   colorOf?: (signalId: string) => string | undefined;
   /** Significant digits of the hover card's values (workspace option, design N10). */
   digits: Digits;
+  /** NEW_WINDOW or the marked window's ID; App resolves it with resolveTarget. */
+  target: string;
+  /** The "Add to" select changed: a window ID marks it, NEW_WINDOW clears the mark. */
+  onTarget: (target: string) => void;
+  /** Sidebar open; while false, `/` calls onOpen and focuses the search after it becomes true. */
+  open: boolean;
+  onOpen: () => void;
 }
 
 /** The open hover card: row index into the matches, the row's rect, and how it was opened. */
@@ -63,13 +69,16 @@ export function SignalExplorer({
   dragging,
   colorOf,
   digits,
+  target,
+  onTarget,
+  open,
+  onOpen,
 }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(CHUNK);
   const [active, setActive] = useState(0);
-  const [target, setTarget] = useState(NEW_WINDOW);
   const [card, setCard] = useState<Card | undefined>();
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -119,10 +128,7 @@ export function SignalExplorer({
   const matches = useMemo(() => searchSignals(index, query), [index, query]);
   const visible = visibleCount(matches.length, shown);
 
-  // The target is a window ID; only a removed window sends it back to "New window" (design E10).
-  useEffect(() => {
-    setTarget((t) => resolveTarget(t, windows));
-  }, [windows]);
+  // The target is a window ID held by App (the mark, design L5); App resolves it with resolveTarget.
   const targetWindow = windows.find((w) => w.id === target);
   const addLabel = `Add to ${targetWindow ? windowTitle(targetWindow) : "new window"}`;
 
@@ -192,17 +198,33 @@ export function SignalExplorer({
     if (el) scrollToRow(el);
   }, [query]);
 
-  // `/` outside a text field focuses the search (design E8).
+  // `/` outside a text field focuses the search (design E8). While the sidebar is collapsed the
+  // search cannot take focus: `/` opens it, and the search is focused after the open render (L1).
+  const openRef = useRef(open);
+  openRef.current = open;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  const focusOnOpen = useRef(false);
+  const focusSearch = useCallback(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isSearchKey(e, document.activeElement)) return;
       e.preventDefault();
-      inputRef.current?.focus();
-      inputRef.current?.select();
+      if (openRef.current) return focusSearch();
+      focusOnOpen.current = true;
+      onOpenRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [focusSearch]);
+  useEffect(() => {
+    if (!open || !focusOnOpen.current) return;
+    focusOnOpen.current = false;
+    focusSearch();
+  }, [open, focusSearch]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
@@ -265,7 +287,11 @@ export function SignalExplorer({
       />
       <label className="target">
         Add to{" "}
-        <select value={target} onChange={(e) => setTarget(e.target.value)}>
+        <select
+          value={target}
+          title={targetWindow ? windowTitle(targetWindow) : "New window"}
+          onChange={(e) => onTarget(e.target.value)}
+        >
           <option value={NEW_WINDOW}>New window</option>
           {windows.map((w) => (
             <option key={w.id} value={w.id}>

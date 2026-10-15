@@ -53,6 +53,7 @@ export class WorkspaceStore {
     const answer: CommandResult = { ok: true, revision: this.rev };
     if (result.created !== undefined) answer.created = result.created;
     if (result.createdWindow !== undefined) answer.createdWindow = result.createdWindow;
+    if (result.removedWindow !== undefined) answer.removedWindow = result.removedWindow;
     return answer;
   }
 

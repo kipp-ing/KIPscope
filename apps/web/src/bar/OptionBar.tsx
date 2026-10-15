@@ -124,12 +124,13 @@ export function OptionBar({
       <label className="toggle" title="While on, zooming one window zooms all windows">
         <input
           type="checkbox"
+          aria-label="Link time axes"
           checked={linkTime}
           onChange={(e) =>
             void onCommand({ type: "workspace.setLinkTime", linked: e.target.checked })
           }
         />
-        Link time axes
+        Link<span className="long"> time</span> axes
       </label>
       <input
         id="go-to"
@@ -212,21 +213,25 @@ export function OptionBar({
         aria-label="Digits"
         title="Significant digits of all values"
         value={digits}
-        onChange={(e) =>
+        onChange={(e) => {
+          // Navigation keys go to the page again, not to the select.
+          e.currentTarget.blur();
           void onCommand({
             type: "workspace.setOptions",
             digits: Number(e.target.value) as Digits,
-          })
-        }
+          });
+        }}
       >
         <option value={3}>3 digits</option>
         <option value={4}>4 digits</option>
       </select>
       <button
         type="button"
+        aria-label="New values window"
+        title="New values window"
         onClick={() => void onCommand({ type: "window.create", kind: "values" })}
       >
-        + Values window
+        + Values<span className="long"> window</span>
       </button>
     </div>
   );

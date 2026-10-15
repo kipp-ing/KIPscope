@@ -35,7 +35,7 @@ export type NavKey = "in" | "out" | "left" | "right" | "pageLeft" | "pageRight" 
 /**
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
  * Ctrl, Meta or Alt. `+` needs Shift on some layouts, so Shift only matters for the arrows. `s` and
- * `/` stay free (improve-layout, explorer search).
+ * `/` stay free (sidebar toggle, explorer search).
  */
 export function navKey(
   e: KeyLike & { shiftKey: boolean },

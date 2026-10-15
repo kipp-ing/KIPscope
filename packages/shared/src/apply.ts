@@ -24,7 +24,13 @@ export interface ApplyContext {
 }
 
 export type ApplyResult =
-  | { ok: true; workspace: Workspace; created?: string; createdWindow?: string }
+  | {
+      ok: true;
+      workspace: Workspace;
+      created?: string;
+      createdWindow?: string;
+      removedWindow?: string;
+    }
   | { ok: false; code: CommandErrorCode; message: string };
 
 const fail = (code: CommandErrorCode, message: string): ApplyResult => ({
@@ -285,11 +291,23 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
         }
         return w;
       });
+      let workspace: Workspace = { ...state, windows, nextId };
+      // A move that empties its source removes it like window.remove (L7); a copy never does.
+      const emptied =
+        !command.copy && windows.find((w) => w.id === source.id)?.signals.length === 0;
+      if (emptied) {
+        workspace = pruneColors({
+          ...workspace,
+          windows: windows.filter((w) => w.id !== source.id),
+        });
+        if (workspace.lastZoomed === source.id) delete workspace.lastZoomed;
+      }
       return {
         ok: true,
-        workspace: { ...state, windows, nextId },
+        workspace,
         ...(created && { created }),
         ...(createdWindow && { createdWindow }),
+        ...(emptied && { removedWindow: source.id }),
       };
     }
 

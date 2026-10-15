@@ -4,8 +4,9 @@
 .option-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
+  white-space: nowrap;
 }
 
 .option-bar .toggle {
@@ -27,10 +28,21 @@
   background: var(--border);
 }
 
-/* Wide enough for the header range text it shows after the view changed. */
+/* Up to 24em, wide enough for the header range text it shows after the view changed. Line breaking
+   counts only the 6em basis, so the bar stays on one line as long as the field fits at 6em (1000 px
+   with the sidebar open), and the field takes what the line leaves. Only a narrower page wraps. */
 .option-bar .go-to {
-  width: 24em;
-  max-width: 100%;
+  flex: 1 1 6em;
+  min-width: 0;
+  max-width: 24em;
+}
+
+/* Lower-priority label words ("Link time axes", "+ Values window") collapse while the top row is
+   narrower than the full bar needs; title and aria-label keep the full name. */
+@container top-row (max-width: 840px) {
+  .option-bar .long {
+    display: none;
+  }
 }
 
 .option-bar .go-to.invalid {

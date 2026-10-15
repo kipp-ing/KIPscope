@@ -166,7 +166,9 @@ describe("moving and copying signals", () => {
       assignmentId: a,
       targetWindowId: "w3",
     });
-    expect(win(r.workspace, "w1")?.signals).toEqual([]);
+    // The emptied source window is removed (improve-layout L7).
+    expect(win(r.workspace, "w1")).toBeUndefined();
+    expect(r.removedWindow).toBe("w1");
     expect(win(r.workspace, "w3")?.signals).toEqual([{ id: a, signalId: "car/V1" }]);
     expect(r.workspace.colors["car/V1"]).toBe(colorBefore);
     expect(colorBefore).toBe(0);
@@ -188,7 +190,7 @@ describe("moving and copying signals", () => {
     expect(Object.keys(r.workspace.colors)).toEqual(["car/V1"]);
   });
 
-  it("keeps an emptied source window", () => {
+  it("removes a window emptied by a move", () => {
     const { s, a } = setup();
     const r = ok(s, {
       type: "window.moveSignal",
@@ -196,8 +198,96 @@ describe("moving and copying signals", () => {
       assignmentId: a,
       targetWindowId: "w2",
     });
-    expect(r.workspace.windows.map((w) => w.id)).toEqual(["w1", "w2", "w3"]);
-    expect(win(r.workspace, "w1")?.signals).toHaveLength(0);
+    expect(r.workspace.windows.map((w) => w.id)).toEqual(["w2", "w3"]);
+    expect(r.removedWindow).toBe("w1");
+    expect(r.created).toBeUndefined();
+    expect(win(r.workspace, "w2")?.signals).toEqual([{ id: a, signalId: "car/V1" }]);
+    // One command, one removal: the other windows and colours are untouched.
+    expect(r.workspace.colors).toEqual({ "car/V1": 0 });
+
+    // A values window emptied by a move is removed as well.
+    const v = ok(s, { type: "window.create", kind: "values" });
+    const vId = v.created as string;
+    const va = add(v.workspace, vId, "car/KMH");
+    const vm = ok(va.workspace, {
+      type: "window.moveSignal",
+      windowId: vId,
+      assignmentId: va.created as string,
+      targetWindowId: "w2",
+    });
+    expect(vm.removedWindow).toBe(vId);
+    expect(vm.workspace.windows.map((w) => w.id)).toEqual(["w1", "w2", "w3"]);
+    expect(win(vm.workspace, "w2")?.signals).toEqual([{ id: va.created, signalId: "car/KMH" }]);
+  });
+
+  it("moves the only signal into a new window and removes the source", () => {
+    const { s, a } = setup();
+    const r = ok(s, { type: "window.moveSignal", windowId: "w1", assignmentId: a });
+    expect(r.createdWindow).toBeDefined();
+    expect(r.removedWindow).toBe("w1");
+    expect(r.workspace.windows.map((w) => w.id)).toEqual(["w2", "w3", r.createdWindow]);
+    expect(win(r.workspace, r.createdWindow as string)).toMatchObject({
+      range: { from: "0", to: "1000" },
+      signals: [{ id: a, signalId: "car/V1" }],
+    });
+    expect(r.workspace.colors["car/V1"]).toBe(0);
+  });
+
+  it("keeps a window emptied by removeSignal, a copy or a refused move", () => {
+    const { s, a } = setup();
+    const removed = ok(s, { type: "window.removeSignal", windowId: "w1", assignmentId: a });
+    expect(removed.removedWindow).toBeUndefined();
+    expect(removed.workspace.windows.map((w) => w.id)).toEqual(["w1", "w2", "w3"]);
+    expect(win(removed.workspace, "w1")?.signals).toEqual([]);
+
+    // A copy leaves the source with its signal; the target gets its own.
+    const copy = ok(s, {
+      type: "window.moveSignal",
+      windowId: "w1",
+      assignmentId: a,
+      targetWindowId: "w2",
+      copy: true,
+    });
+    expect(copy.removedWindow).toBeUndefined();
+    expect(copy.workspace.windows.map((w) => w.id)).toEqual(["w1", "w2", "w3"]);
+    expect(win(copy.workspace, "w1")?.signals).toHaveLength(1);
+
+    // A refused move (the target already shows the signal) changes nothing.
+    const both = add(s, "w2", "car/V1").workspace;
+    const refused = run(both, {
+      type: "window.moveSignal",
+      windowId: "w1",
+      assignmentId: a,
+      targetWindowId: "w2",
+    });
+    expect(refused).toMatchObject({ ok: false, code: "already_in_window" });
+    expect(both.windows.map((w) => w.id)).toEqual(["w1", "w2", "w3"]);
+  });
+
+  it("clears lastZoomed when a move removes that window", () => {
+    let s = ok(EMPTY_WORKSPACE, { type: "workspace.setLinkTime", linked: false }).workspace;
+    s = ok(s, { type: "window.create", from: "1", to: "2" }).workspace;
+    s = ok(s, { type: "window.create", from: "5", to: "6" }).workspace;
+    s = ok(s, { type: "window.setRange", windowId: "w2", from: "7", to: "9" }).workspace;
+    expect(s.lastZoomed).toBe("w2");
+    const added = add(s, "w2", "car/V1");
+    const moved = ok(added.workspace, {
+      type: "window.moveSignal",
+      windowId: "w2",
+      assignmentId: added.created as string,
+      targetWindowId: "w1",
+    });
+    expect(moved.removedWindow).toBe("w2");
+    expect(moved.workspace.lastZoomed).toBeUndefined();
+    // Another window's lastZoomed survives a removal elsewhere.
+    const other = ok(added.workspace, {
+      type: "window.moveSignal",
+      windowId: "w2",
+      assignmentId: added.created as string,
+      targetWindowId: "w1",
+      copy: true,
+    });
+    expect(other.workspace.lastZoomed).toBe("w2");
   });
 
   it("rejects a move into a window that already shows the signal", () => {
@@ -226,8 +316,8 @@ describe("moving and copying signals", () => {
     s = ok(s, { type: "window.rename", windowId: "w1", title: "Source" }).workspace;
     const moved = ok(s, { type: "window.moveSignal", windowId: "w1", assignmentId: a });
     expect(moved.createdWindow).toBe("w5");
-    expect(moved.workspace.windows).toHaveLength(4);
-    expect(win(moved.workspace, "w1")?.signals).toEqual([]);
+    expect(moved.removedWindow).toBe("w1"); // w1 held only this signal
+    expect(moved.workspace.windows.map((w) => w.id)).toEqual(["w2", "w3", "w5"]);
     const fresh = win(moved.workspace, "w5");
     expect(fresh).toMatchObject({
       kind: "timeseries",
@@ -697,7 +787,8 @@ describe("cursors and values windows (add-cursors)", () => {
     });
     const newId = moved.createdWindow as string;
     expect(newId).toMatch(/^w\d+$/);
-    expect(win(moved.workspace, "w2")?.signals).toEqual([]);
+    expect(moved.removedWindow).toBe("w2");
+    expect(win(moved.workspace, "w2")).toBeUndefined();
     expect(win(moved.workspace, newId)).toEqual({
       id: newId,
       kind: "timeseries",

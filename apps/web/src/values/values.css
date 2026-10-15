@@ -50,9 +50,32 @@
   opacity: 0.45;
 }
 
-.values-window .cursor-time {
+/* Header (design L4), the grid of window.css: the cursor times sit in its `auto` cell, so the
+   title gives way first, down to 6ch, and the times are never cut. Where they would not fit even
+   then, A and B drop their dates (ValuesWindow measures the room). "Between points" drops its word
+   where it would crowd the times. */
+.window.values-window .window-header {
+  container: values-header / inline-size;
+}
+
+.window.values-window .window-header .cursor-times {
+  /* The gap is TIMES_GAP in ValuesWindow.tsx. */
+  gap: 6px;
+  /* 11 px like the timeseries badge. */
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 11px;
+}
+
+@container values-header (max-width: 440px) {
+  .values-window .window-header .mode-word {
+    display: none;
+  }
+}
+
+@container values-header (max-width: 800px) {
+  .values-window .window-header.diff .mode-word {
+    display: none;
+  }
 }
 
 .values-window .grip {

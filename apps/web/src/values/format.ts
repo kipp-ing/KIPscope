@@ -7,7 +7,7 @@ import {
   type NoValueReason,
   parseTimestamp,
 } from "@letsview/shared";
-import { formatFull } from "../time/axis.ts";
+import { formatDate, formatFull } from "../time/axis.ts";
 
 /** One value cell of the values window and the chart readout (design S4). */
 export interface Cell {
@@ -162,4 +162,49 @@ export function formatDeltaT(ns: bigint): string {
 /** Local "YYYY-MM-DD HH:MM:SS[.fff[fff[fff]]]", trailing zero groups of three dropped. */
 export function formatCursorTime(t: bigint): string {
   return formatFull(t);
+}
+
+/** One cursor time of the values window's header, with its full text as tooltip. */
+export interface HeaderTime {
+  text: string;
+  title?: string;
+}
+
+/** "HH:MM:SS…" of a formatted cursor time. */
+const clock = (time: string) => time.slice(time.indexOf(" ") + 1);
+
+/**
+ * The values window's header times (design L4): A, and with Diff B and Δt. B leaves out its date
+ * when it lies on A's local day. If the times do not `fit`, A and B drop their dates (the
+ * tooltips keep them), so the times are never cut; Δt stays.
+ */
+export function headerTimes(
+  a: bigint | undefined,
+  b: bigint | undefined,
+  diff: boolean,
+  fits: (texts: string[]) => boolean,
+): HeaderTime[] {
+  const timeA = a === undefined ? undefined : formatCursorTime(a);
+  const timeB = b === undefined ? undefined : formatCursorTime(b);
+  const sameDay = a !== undefined && b !== undefined && formatDate(a) === formatDate(b);
+  const times = (dates: boolean): HeaderTime[] => {
+    const out: HeaderTime[] = [
+      timeA === undefined
+        ? { text: "Cursor A off" }
+        : { text: `A ${dates ? timeA : clock(timeA)}`, title: `A ${timeA}` },
+    ];
+    if (!diff) return out;
+    out.push(
+      timeB === undefined
+        ? { text: "B off" }
+        : { text: `B ${dates && !sameDay ? timeB : clock(timeB)}`, title: `B ${timeB}` },
+    );
+    if (a !== undefined && b !== undefined) {
+      const dt = `Δt ${formatDeltaT(b - a)}`;
+      out.push({ text: dt, title: dt });
+    }
+    return out;
+  };
+  const full = times(true);
+  return fits(full.map((t) => t.text)) ? full : times(false);
 }

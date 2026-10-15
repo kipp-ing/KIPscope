@@ -5,9 +5,8 @@ import {
   buildModel,
   formatDuration,
   formatSnaShare,
-  formatSnaValue,
   isolatedPoints,
-  resolutionLabel,
+  resolutionBadge,
   snaPeriods,
   snaShare,
   toPoints,
@@ -124,12 +123,31 @@ describe("buildModel", () => {
 
 describe("labels", () => {
   it("summarizes resolution", () => {
-    expect(resolutionLabel([])).toBeUndefined();
-    expect(resolutionLabel([raw([], [])])).toBe("raw");
-    expect(resolutionLabel([buckets])).toBe("aggregated · 1 µs per point");
-    expect(resolutionLabel([buckets, raw([], [])])).toBe("partly aggregated · 1 µs per point");
     expect(formatDuration(4_803_200_000n)).toBe("4.8 s");
     expect(formatDuration(12n)).toBe("12 ns");
+  });
+});
+
+describe("resolutionBadge", () => {
+  const wide: BucketSeries = { ...buckets, width: "120000000000" }; // 2 min
+
+  it("gives a short badge and the full resolution as tooltip", () => {
+    expect(resolutionBadge([])).toBeUndefined();
+    expect(resolutionBadge([undefined])).toBeUndefined();
+    expect(resolutionBadge([raw([], [])])).toEqual({ short: "raw", full: "raw" });
+    expect(resolutionBadge([wide, wide])).toEqual({
+      short: "agg · 2 min",
+      full: "aggregated · 2 min per point",
+    });
+    expect(resolutionBadge([wide, raw([], [])])).toEqual({
+      short: "part · 2 min",
+      full: "partly aggregated · 2 min per point",
+    });
+    // The widest bucket decides, and unloaded signals are ignored.
+    expect(resolutionBadge([buckets, wide, undefined])).toEqual({
+      short: "agg · 2 min",
+      full: "aggregated · 2 min per point",
+    });
   });
 });
 
@@ -421,14 +439,5 @@ describe("SNA handling", () => {
     expect(formatSnaShare(0.999)).toBe("SNA 99.9 %");
     expect(formatSnaShare(0.9995)).toBe("SNA > 99.9 %");
     expect(formatSnaShare(1)).toBe("SNA 100 %");
-  });
-
-  it("formats SNA values without float noise", () => {
-    expect(formatSnaValue(2.5500000000000003)).toBe("2.55");
-    expect(formatSnaValue(10.160000000000002)).toBe("10.16");
-    expect(formatSnaValue(4.175269699999999)).toBe("4.1752697");
-    expect(formatSnaValue(511)).toBe("511");
-    expect(formatSnaValue(8191.5)).toBe("8191.5");
-    expect(formatSnaValue(-128)).toBe("-128");
   });
 });

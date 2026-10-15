@@ -252,7 +252,13 @@ export type CommandErrorCode =
   | "cursor_off";
 
 export type CommandResult =
-  | { ok: true; revision: number; created?: string; createdWindow?: string }
+  | {
+      ok: true;
+      revision: number;
+      created?: string;
+      createdWindow?: string;
+      removedWindow?: string;
+    }
   | { ok: false; code: CommandErrorCode; message: string };
 
 /** Messages on `WS /api/live`. */

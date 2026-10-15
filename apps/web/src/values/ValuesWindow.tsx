@@ -1,28 +1,22 @@
-import {
-  type CommandInput,
-  type CommandResult,
-  type CursorState,
-  type Digits,
-  type RenderError,
-  type SignalInfo,
-  type ValuesMode,
-  type ValuesWindow as WindowState,
-  windowTitle,
+import type {
+  CommandInput,
+  CommandResult,
+  CursorState,
+  Digits,
+  RenderError,
+  SignalInfo,
+  ValuesMode,
+  ValuesWindow as WindowState,
 } from "@letsview/shared";
 import type React from "react";
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import "../chart/window.css";
 import "./values.css";
 import { fetchCursorValue } from "../api.ts";
 import type { DragSource, DropState } from "../chart/drag.ts";
-import {
-  type Cell,
-  deltaCell,
-  formatCell,
-  formatCursorTime,
-  formatDeltaT,
-  loadingCell,
-} from "./format.ts";
+import { WindowMenu } from "../window/WindowMenu.tsx";
+import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
+import { type Cell, deltaCell, formatCell, headerTimes, loadingCell } from "./format.ts";
 import {
   cellState,
   type FetchValue,
@@ -36,6 +30,35 @@ const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r
 
 const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
 const HINT_ADD = "Drop to add";
+
+/** Gap between the header's cursor times (values.css). */
+const TIMES_GAP = 6;
+
+let canvas: CanvasRenderingContext2D | null | undefined;
+
+/** Rendered width of `text` in a CSS `font`. */
+function textWidth(text: string, font: string): number {
+  canvas ??= document.createElement("canvas").getContext("2d");
+  if (!canvas) return 0;
+  canvas.font = font;
+  return canvas.measureText(text).width;
+}
+
+/** Room for the cursor times: the header without the controls, the 6ch title minimum and the gaps (L4). */
+interface TimesRoom {
+  width: number;
+  font: string;
+}
+
+function measureRoom(header: HTMLElement): TimesRoom {
+  const style = getComputedStyle(header);
+  const controls = header.querySelector(".window-controls")?.getBoundingClientRect().width ?? 0;
+  const times = header.querySelector(".cursor-times");
+  const font = times ? getComputedStyle(times).font : style.font;
+  const gap = Number.parseFloat(style.columnGap) || 0;
+  const titleMin = textWidth("000000", style.font);
+  return { width: header.clientWidth - controls - titleMin - 3 * gap, font };
+}
 
 interface Props {
   window: WindowState;
@@ -53,60 +76,10 @@ interface Props {
   onDragStart: (source: DragSource, event: React.PointerEvent) => void;
   dropState?: DropState;
   dropAction?: "add";
-}
-
-/** Window title; a click turns it into a text field (Enter or blur saves, Esc cancels). */
-function WindowTitle({
-  window: w,
-  onCommand,
-}: {
-  window: WindowState;
-  onCommand: Props["onCommand"];
-}) {
-  const [editing, setEditing] = useState(false);
-  const cancelled = useRef(false);
-  const title = windowTitle(w);
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        className="window-title"
-        title={title}
-        onClick={() => {
-          cancelled.current = false;
-          setEditing(true);
-        }}
-      >
-        {title}
-      </button>
-    );
-  }
-  const save = (value: string) => {
-    setEditing(false);
-    if (cancelled.current) return;
-    const next = value.trim();
-    if (next !== (w.title ?? "")) onCommand({ type: "window.rename", windowId: w.id, title: next });
-  };
-  return (
-    <input
-      className="window-title-input"
-      // biome-ignore lint/a11y/noAutofocus: the field appears on an explicit click on the title
-      autoFocus
-      defaultValue={w.title ?? ""}
-      placeholder={title}
-      maxLength={200}
-      aria-label="Window title"
-      onFocus={(e) => e.currentTarget.select()}
-      onBlur={(e) => save(e.currentTarget.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        else if (e.key === "Escape") {
-          cancelled.current = true;
-          e.currentTarget.blur();
-        }
-      }}
-    />
-  );
+  /** This window is the explorer's add target (L5). */
+  marked: boolean;
+  /** A click on the header outside the controls; App marks the window. */
+  onMark: (windowId: string) => void;
 }
 
 /**
@@ -160,7 +133,22 @@ export function ValuesWindow({
   onDragStart,
   dropState,
   dropAction,
+  marked,
+  onMark,
 }: Props) {
+  const [renaming, setRenaming] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+  const [room, setRoom] = useState<TimesRoom>({ width: Number.POSITIVE_INFINITY, font: "" });
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const controls = header?.querySelector(".window-controls");
+    if (!header || !controls) return;
+    const observer = new ResizeObserver(() => setRoom(measureRoom(header)));
+    observer.observe(header);
+    // The controls change width without the header ("Between points" hides with Diff on).
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, []);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const loader = useMemo(() => new ValueLoader(fetchValue, rerender), []);
   useEffect(() => () => loader.dispose(), [loader]);
@@ -187,46 +175,70 @@ export function ValuesWindow({
 
   const a = cursors.a === undefined ? undefined : BigInt(cursors.a);
   const b = cursors.b === undefined ? undefined : BigInt(cursors.b);
+  const times = headerTimes(
+    a,
+    b,
+    diff,
+    (texts) =>
+      texts.reduce((sum, text) => sum + textWidth(text, room.font), 0) +
+        TIMES_GAP * (texts.length - 1) <=
+      room.width,
+  );
   const hint = dropState === "target" ? (dropAction === "add" ? HINT_ADD : HINT_TARGET) : undefined;
 
   return (
     <section
-      className={`window values-window${dropState ? ` drop-${dropState}` : ""}${dragging ? " dimmed" : ""}`}
+      className={`window values-window${marked ? " marked" : ""}${dropState ? ` drop-${dropState}` : ""}${dragging ? " dimmed" : ""}`}
       data-window-id={w.id}
     >
-      <header className="window-header">
-        <WindowTitle key={w.title ?? ""} window={w} onCommand={onCommand} />
-        <span className="cursor-time">
-          {a === undefined ? "Cursor A off" : `A ${formatCursorTime(a)}`}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path to mark is the explorer's "Add to" select (L5) */}
+      <header
+        ref={headerRef}
+        className={`window-header${diff ? " diff" : ""}`}
+        title={marked ? MARKED_HINT : undefined}
+        onClick={(e) => markFromHeader(e, w.id, onMark)}
+      >
+        <WindowTitle
+          key={w.title ?? ""}
+          window={w}
+          editing={renaming}
+          onEditing={setRenaming}
+          onCommand={onCommand}
+        />
+        <span className="cursor-times">
+          {times.map((t) => (
+            <span key={t.text.slice(0, 2)} className="cursor-time" title={t.title}>
+              {t.text}
+            </span>
+          ))}
         </span>
-        {diff && (
-          <span className="cursor-time">
-            {b === undefined ? "B off" : `B ${formatCursorTime(b)}`}
-          </span>
-        )}
-        {diff && a !== undefined && b !== undefined && (
-          <span className="cursor-time">Δt {formatDeltaT(b - a)}</span>
-        )}
-        <span className="spacer" />
-        <label>
-          Between points{" "}
-          <select
-            value={w.mode}
-            onChange={(e) =>
-              onCommand({
-                type: "window.setDisplay",
-                windowId: w.id,
-                mode: e.target.value as ValuesMode,
-              })
-            }
-          >
-            <option value="line">linear</option>
-            <option value="step">hold</option>
-          </select>
-        </label>
-        <button type="button" onClick={() => onCommand({ type: "window.remove", windowId: w.id })}>
-          Remove
-        </button>
+        <div className="window-controls" title="">
+          <label>
+            {/* Hidden in a narrow header (values.css); the select keeps the name. */}
+            <span className="mode-word">Between points</span>
+            <select
+              aria-label="Between points"
+              title="Between points"
+              value={w.mode}
+              onChange={(e) => {
+                onCommand({
+                  type: "window.setDisplay",
+                  windowId: w.id,
+                  mode: e.target.value as ValuesMode,
+                });
+                // A focused select swallows the navigation keys (keys.ts).
+                e.currentTarget.blur();
+              }}
+            >
+              <option value="line">linear</option>
+              <option value="step">hold</option>
+            </select>
+          </label>
+          <WindowMenu
+            onRename={() => setRenaming(true)}
+            onRemove={() => onCommand({ type: "window.remove", windowId: w.id })}
+          />
+        </div>
       </header>
       {w.signals.length === 0 ? (
         <ul className="signals">

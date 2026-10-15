@@ -100,11 +100,6 @@ export function formatSnaShare(share: number | undefined): string | undefined {
   return `SNA ${(share * 100).toFixed(1)} %`;
 }
 
-/** A scaled SNA value for display: at most 12 significant digits, no float noise or trailing zeros. */
-export function formatSnaValue(value: number): string {
-  return String(Number(value.toPrecision(12)));
-}
-
 /**
  * Indices in a joined column whose value is a number while the nearest non-undefined entry on
  * each side is null or missing, at least one of them null: points a broken line would hide.
@@ -294,15 +289,19 @@ export function yRange(
   return [min - pad, max + pad];
 }
 
-/** Aggregation summary for the window header: undefined when nothing is loaded. */
-export function resolutionLabel(results: (SeriesResult | undefined)[]): string | undefined {
+/** Aggregation summary: short badge text for the window header and the full text as tooltip;
+    undefined while nothing is loaded. */
+export function resolutionBadge(
+  results: (SeriesResult | undefined)[],
+): { short: string; full: string } | undefined {
   const loaded = results.filter((r): r is SeriesResult => r !== undefined);
   if (loaded.length === 0) return undefined;
   const widths = loaded.flatMap((r) => (r.kind === "buckets" ? [BigInt(r.width)] : []));
-  if (widths.length === 0) return "raw";
-  const widest = widths.reduce((a, b) => (a > b ? a : b));
-  const prefix = widths.length === loaded.length ? "aggregated" : "partly aggregated";
-  return `${prefix} · ${formatDuration(widest)} per point`;
+  if (widths.length === 0) return { short: "raw", full: "raw" };
+  const widest = formatDuration(widths.reduce((a, b) => (a > b ? a : b)));
+  return widths.length === loaded.length
+    ? { short: `agg · ${widest}`, full: `aggregated · ${widest} per point` }
+    : { short: `part · ${widest}`, full: `partly aggregated · ${widest} per point` };
 }
 
 export function formatDuration(ns: bigint): string {

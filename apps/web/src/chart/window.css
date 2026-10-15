@@ -6,20 +6,28 @@
   transition: opacity 0.1s;
 }
 
+/* Header (design L4): one grid line, title | badge or cursor times | range | controls. The 1fr
+   range cell gets what the others leave, so the range truncates first, then the title down to
+   6ch; the controls cell is sized by its own content, so no text moves it. */
 .window .window-header {
-  flex-wrap: nowrap;
-  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(6ch, max-content) auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  height: 24px;
+  margin: 0;
+  font-size: 12px;
   white-space: nowrap;
-}
-
-.window .window-header > * {
-  flex-shrink: 0;
+  /* Nothing spills sideways out of the tile; the menu popover still opens below. */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .window .window-header .window-title {
-  flex-shrink: 1;
-  min-width: 3em;
-  max-width: 50%;
+  grid-column: 1;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -27,9 +35,10 @@
   background: none;
   padding: 0;
   font: inherit;
+  font-size: 13px;
   font-weight: 600;
   color: inherit;
-  cursor: text;
+  cursor: pointer;
   text-align: left;
 }
 
@@ -38,32 +47,127 @@
 }
 
 .window .window-header .window-title-input {
-  flex-shrink: 1;
-  min-width: 8em;
-  width: 24em;
+  grid-column: 1;
+  box-sizing: border-box;
+  width: 20em;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
   font: inherit;
+  font-size: 13px;
   font-weight: 600;
-  padding: 1px 4px;
+  padding: 0 4px;
 }
 
-/* The range gives way first: its shrink weight dwarfs the title's, so the title keeps its
-   width until the range is gone (the full range stays in the tooltip). */
+.window.marked .window-header .window-title {
+  color: var(--accent);
+}
+
+/* Neutral badge (design L4): status colours would compete with the signal palette. */
+.window .window-header .badge {
+  grid-column: 2;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.window .window-header .cursor-times {
+  grid-column: 2;
+  display: flex;
+  gap: 8px;
+}
+
 .window .window-header .range {
-  flex-shrink: 10000;
+  grid-column: 3;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.window .window-header .spacer {
-  flex-shrink: 1;
+.window .window-header .window-controls {
+  grid-column: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.window .window-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.window .window-controls input[type="checkbox"] {
+  margin: 0;
+}
+
+.window .window-controls :is(select, button) {
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Window menu (design L4): a popover below "⋯", right-aligned with it. */
+.window .window-menu {
+  position: relative;
+}
+
+.window .window-menu-items {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 9em;
+  padding: 4px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
+}
+
+.window .window-menu-items button {
+  height: auto;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.window .window-menu-items button:is(:hover, :focus-visible) {
+  background: var(--border);
+}
+
+/* Marked window (design L5): a 3 px accent bar on the top edge, absolute so nothing moves. */
+.window.marked::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 6px 6px 0 0;
+  pointer-events: none;
 }
 
 .window .axis-titles {
   position: relative;
-  height: 16px;
+  height: 14px;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 14px;
   color: var(--text);
 }
 
@@ -148,7 +252,7 @@
 
 .window .height-handle {
   height: 6px;
-  margin: 0 -12px;
+  margin: 0 -8px;
   cursor: ns-resize;
   touch-action: none;
 }

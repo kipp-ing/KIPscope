@@ -131,7 +131,7 @@ Every window's header, of every kind, SHALL be one line at most 24 px tall: titl
 - **Evidence:** `apps/web/test/build.test.ts` › "gives a short badge and the full resolution as tooltip"; UI check (screenshot of a badge with its tooltip)
 
 ### Requirement: Header truncation
-When a header lacks space, the range SHALL truncate first, then the title down to its first 6 characters, each with an ellipsis and the full text as tooltip. Badge, cursor times, controls and the "⋯" button SHALL NOT be truncated, wrap or leave the line. Origin: D-026 (compact headers); designer finding ("truncate the badge, not the title" read as: the title outlives the range, the badge is short instead of cut); "Long title" bug (feedback 2026-10-14).
+When a header lacks space, the range SHALL truncate first, then the title down to its first 6 characters, each with an ellipsis and the full text as tooltip. Badge, cursor times, controls and the "⋯" button SHALL NOT be truncated, wrap or leave the line. Origin: D-026 (compact headers); designer finding ("truncate the badge, not the title" read as: the title outlives the range, the badge is short instead of cut); "Long title" bug (feedback 2026-10-14)
 
 #### Scenario: Long title
 - **WHEN** a window at 1440×900 (two columns) is renamed to an 80-character title
@@ -142,6 +142,14 @@ When a header lacks space, the range SHALL truncate first, then the title down t
 - **WHEN** the six-window setup is shown at 1000×557 with the sidebar collapsed (two columns of about 480 px)
 - **THEN** every header is one line, every control and "⋯" is fully visible, and every title shows at least 6 characters
 - **Evidence:** UI check on smart451 at 1000×557 (screenshot)
+
+### Requirement: Cursor times drop their date
+If the cursor times in a values window header still do not fit once the title is down to 6 characters, they SHALL drop their date part, with the full times as tooltip, instead of being cut; Δt SHALL stay visible. The same-day decision SHALL use the timestamps, not formatted text. Origin: necessary consequence of "Header truncation" (lead, round 3 review: with Diff on, the times need about 356 px in a 480 px values cell).
+
+#### Scenario: Narrow values window in diff mode
+- **WHEN** a values window cell is about 480 px wide, its title is 40 characters long and A, B and Diff are on
+- **THEN** the header is one line with the title cut to 6 characters, A and B shown without their date, Δt visible, and the full times as tooltip
+- **Evidence:** `apps/web/test/values.test.ts` › "drops the cursor dates before truncating the times"; UI check at 1000×557 (screenshot)
 
 ### Requirement: Window menu
 Each window's header SHALL end with a "⋯" button that opens a menu with "Rename" and "Remove window". "Remove window" SHALL send `window.remove`. Choosing an item, Esc or a click outside SHALL close the menu. The header SHALL have no separate Remove button. Origin: D-026 (compact headers); designer finding ("Remove into a title menu", efficiency test).

@@ -12,7 +12,6 @@ import {
   type RenderError,
   type SignalInfo,
   type TimeseriesWindow as WindowState,
-  windowTitle,
 } from "@letsview/shared";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -28,13 +27,15 @@ import {
   loadingCell,
   NO_VALUE,
 } from "../values/format.ts";
+import { WindowMenu } from "../window/WindowMenu.tsx";
+import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
 import type { AxisSpec } from "./axes.ts";
 import {
   buildModel,
   type ChartModel,
   formatSnaShare,
   isolatedPoints,
-  resolutionLabel,
+  resolutionBadge,
   type SeriesSpec,
   type SignalInput,
   SNA_ALPHA,
@@ -75,6 +76,8 @@ const LEFT = 3;
 const RIGHT = 1;
 /** Inset of a side without y axis (uPlot's own default), room for the edge x tick label. */
 const NO_AXIS_INSET = 25;
+/** Room above the plot area for half of the top y tick label (uPlot's default is 16; design L4). */
+const PLOT_HEADROOM = 6;
 const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
 const HINT_ADD = "Drop to add";
 const HINT_REFUSED = `At most ${MAX_UNITS} units per window`;
@@ -111,6 +114,10 @@ interface Props {
   onCursorPreview: (cursor: CursorName, t: bigint | undefined) => void;
   /** Gesture finished: App sends one cursor.set. */
   onCursorCommit: (cursor: CursorName, t: bigint) => void;
+  /** This window is the explorer's add target (L5). */
+  marked: boolean;
+  /** A click on the header outside the controls; App marks the window. */
+  onMark: (windowId: string) => void;
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -427,60 +434,6 @@ function ReadoutCell({ cell }: { cell: Cell }) {
   );
 }
 
-/** Window title; a click turns it into a text field (Enter or blur saves, Esc cancels). */
-function WindowTitle({
-  window: w,
-  onCommand,
-}: {
-  window: WindowState;
-  onCommand: Props["onCommand"];
-}) {
-  const [editing, setEditing] = useState(false);
-  const cancelled = useRef(false);
-  const title = windowTitle(w);
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        className="window-title"
-        title={title}
-        onClick={() => {
-          cancelled.current = false;
-          setEditing(true);
-        }}
-      >
-        {title}
-      </button>
-    );
-  }
-  const save = (value: string) => {
-    setEditing(false);
-    if (cancelled.current) return;
-    const next = value.trim();
-    if (next !== (w.title ?? "")) onCommand({ type: "window.rename", windowId: w.id, title: next });
-  };
-  return (
-    <input
-      className="window-title-input"
-      // biome-ignore lint/a11y/noAutofocus: the field appears on an explicit click on the title
-      autoFocus
-      defaultValue={w.title ?? ""}
-      placeholder={title}
-      maxLength={200}
-      aria-label="Window title"
-      onFocus={(e) => e.currentTarget.select()}
-      onBlur={(e) => save(e.currentTarget.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        else if (e.key === "Escape") {
-          cancelled.current = true;
-          e.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
-
 export function TimeseriesWindow({
   window: w,
   revision,
@@ -500,8 +453,11 @@ export function TimeseriesWindow({
   diff,
   onCursorPreview,
   onCursorCommit,
+  marked,
+  onMark,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
+  const [renaming, setRenaming] = useState(false);
   const titleRow = useRef<HTMLDivElement>(null);
   const uplot = useRef<uPlot | undefined>(undefined);
   const [width, setWidth] = useState(0);
@@ -796,7 +752,7 @@ export function TimeseriesWindow({
         // Pads the side whose axes are narrower than the widest window's (insets), so the same
         // timestamp sits at the same x in every window. Padding lies outside the outer axes.
         padding: [
-          null,
+          PLOT_HEADROOM,
           () => {
             const { right, natural } = axisWidths(drawnAxes, sizes);
             return Math.max(natural.right, insetsRef.current?.right ?? 0) - right;
@@ -1129,7 +1085,7 @@ export function TimeseriesWindow({
   // Readout (design N3, N4): value columns while a cursor is on, from the drawn data.
   const { a, b } = cursors;
   const readout = a !== undefined || (diff && b !== undefined);
-  const resolution = resolutionLabel(w.signals.map((s) => loader.get(s.id)?.result));
+  const badge = resolutionBadge(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
     dropState === "target"
       ? dropAction === "add"
@@ -1140,46 +1096,65 @@ export function TimeseriesWindow({
         : undefined;
 
   return (
-    <section className={`window${dropState ? ` drop-${dropState}` : ""}`} data-window-id={w.id}>
-      <header className="window-header">
-        <WindowTitle key={w.title ?? ""} window={w} onCommand={onCommand} />
-        {resolution && (
-          <span className={`badge ${resolution === "raw" ? "raw" : "agg"}`}>{resolution}</span>
+    <section
+      className={`window${marked ? " marked" : ""}${dropState ? ` drop-${dropState}` : ""}`}
+      data-window-id={w.id}
+    >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path to mark is the explorer's "Add to" select (L5) */}
+      <header
+        className="window-header"
+        title={marked ? MARKED_HINT : undefined}
+        onClick={(e) => markFromHeader(e, w.id, onMark)}
+      >
+        <WindowTitle
+          key={w.title ?? ""}
+          window={w}
+          editing={renaming}
+          onEditing={setRenaming}
+          onCommand={onCommand}
+        />
+        {badge && (
+          <span className="badge" title={badge.full}>
+            {badge.short}
+          </span>
         )}
         <span className="range" title={range}>
           {range}
         </span>
-        <span className="spacer" />
-        <label>
-          Mode{" "}
+        <div className="window-controls" title="">
           <select
+            aria-label="Display mode"
+            title="Display mode"
             value={w.display.mode}
-            onChange={(e) =>
+            onChange={(e) => {
               onCommand({
                 type: "window.setDisplay",
                 windowId: w.id,
                 mode: e.target.value as DisplayMode,
-              })
-            }
+              });
+              // A focused select swallows the navigation keys (keys.ts).
+              e.currentTarget.blur();
+            }}
           >
             <option value="line">Line</option>
             <option value="step">Step</option>
             <option value="markers">Markers</option>
           </select>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={w.display.envelope}
-            onChange={(e) =>
-              onCommand({ type: "window.setDisplay", windowId: w.id, envelope: e.target.checked })
-            }
-          />{" "}
-          Min/max
-        </label>
-        <button type="button" onClick={() => onCommand({ type: "window.remove", windowId: w.id })}>
-          Remove
-        </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={w.display.envelope}
+              onChange={(e) =>
+                onCommand({ type: "window.setDisplay", windowId: w.id, envelope: e.target.checked })
+              }
+            />
+            Min/max
+          </label>
+          <WindowMenu
+            onRename={() => setRenaming(true)}
+            onRemove={() => onCommand({ type: "window.remove", windowId: w.id })}
+          />
+        </div>
       </header>
       <div className="axis-titles" ref={titleRow}>
         {drawnAxes.map((a, j) => (
