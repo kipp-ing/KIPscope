@@ -4,6 +4,25 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-029: Cursor and CLI conventions (2026-10-15)
+
+From the archived changes `add-cursors` (design C1, C4, C5) and `add-cli`; details there.
+
+- **Cursors:** A, B and diff mode are workspace state set by commands (`cursor.set`/`move`/`remove`/`setDiff`), so the CLI controls them; a line drag stays local and sends one command on release.
+- **Values window:** evaluates raw neighbours from `GET /api/value` (point, `lin` or `hold`), never invents a value, shows SNA as SNA (D-010, D-024).
+- **Bar target:** with time axes unlinked, bar actions act on the window zoomed last.
+- **CLI:** `node apps/cli/src/main.ts`, one JSON line per call, exit codes 0 ok … 7 unavailable, `--wait` polls `GET /api/render-status` and takes the first UI that acknowledges, local times in the process time zone, cursor anchors (`a+500ms`) resolved in the CLI. Its 9 open questions were built as recommended while Jan was away and accepted with the archive.
+
+## D-028: Navigation and layout details (2026-10-15)
+
+- **Decision:** Jan, on the open questions of `improve-navigation` and `improve-layout` (all as recommended by the spec owners):
+  - Chart readout: legend rows get columns A | B | Δ, a readout row shows the A/B times and Δt, and a Δt label sits between the cursor flags.
+  - A new window shows the data extent of its signals; cursors A and B start at ⅓ and ⅔ of the view.
+  - The marked window ("Add to" target) is view state of the browser tab, not workspace state.
+  - All detail questions of both designs follow the recommendations.
+  - `add-cursors` and `add-cli` are archived before Jan's hand check; gaps go into a follow-up change.
+- **Why:** Jan's picks from the lead's question round.
+
 ## D-027: Scope of the next efficiency changes (2026-10-15)
 
 - **Decision:** Jan, on the lead's scope question after D-025/D-026, in addition to them:

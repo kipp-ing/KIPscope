@@ -10,16 +10,17 @@ As of 2026-10-15, session 4.
 - Change `add-sna-handling` built by the agent team (D-013, [team.md](team.md)) in 3 rounds and archived: SNA rules from the DBC (D-010, D-014, D-015), SNA as `null` in series (D-016), line breaks, SNA strips and SNA shares in the UI.
 - Power-user exploration ([feedback/2026-10-14-power-users.md](feedback/2026-10-14-power-users.md)) after Jan's test (D-017).
 - Change `improve-window-workflow` built in 5 rounds plus close-out and a spec audit, archived 2026-10-15: move/copy signals by drag, one axis per unit stacked up to four, linked time zoom (default on), stable colours, rename, heights, zoom history, time bounds (D-017 … D-021).
+- Changes `add-cursors` (cursors A/B, values window, option bar, drag from everywhere) and `add-cli` (CLI remote control) built and archived 2026-10-15 (D-023, D-024, D-029); efficiency test with three testers ([feedback/2026-10-15-efficiency-testers.md](feedback/2026-10-15-efficiency-testers.md)).
 - Change `improve-signal-explorer` built in 2 rounds plus close-out, archived 2026-10-15: one-line explorer with hover card, ranked search with highlighting in the browser (`GET /api/catalog`), keys, explorer drag, stable "Add to" target (D-020, D-022).
-- Decisions D-001 … D-027 in [decisions.md](decisions.md).
+- Decisions D-001 … D-029 in [decisions.md](decisions.md).
 
 ## Next
 
-1. Jan: hand check of `add-cursors` (all tasks ticked, power-user close-out done), then archive. Answer questions 7–13 of [feedback/2026-10-15-cursors-power-users.md](feedback/2026-10-15-cursors-power-users.md) (number format, Ctrl+wheel zoom, cursor off-screen cue, Diff while B off, hover crosshair).
-2. Jan: review `add-cli` (built on the spec owner's recommendations for its 9 open questions while Jan was away, design.md "Open questions for Jan"); 4.2's "no UI" check needs all letsview tabs closed. Archive after `add-cursors`.
-3. Jan: efficiency test ([feedback/2026-10-15-efficiency-testers.md](feedback/2026-10-15-efficiency-testers.md)). Lead's proposal for the next change: time navigation (type a time, zoom/pan keys, presets, extent) and an A/B/Δ readout on the chart. Two findings contradict D-020 ("Add to" follows the new window) and the spec (emptied window stays); layout and tiling need Jan.
+1. Change `improve-navigation` (D-025, D-026, D-028): wheel scrolls / Ctrl+Shift+wheel zooms, one Back and one Reset, time navigation ("Go to", keys, presets), A/B/Δ readout on the chart, 3 significant digits with SI prefixes. Building.
+2. Change `improve-layout` (D-026, D-027, D-028): collapsible sidebar, two-column tiles, compact headers, marked window as "Add to" target, emptied windows removed. Spec done; built after 1.
+3. Jan: hand check of cursors and CLI (archived before the check, D-028): real mouse drags of cursor lines and rows, Esc mid-drag, Alt-copy, CLI `--wait` with no tab open (exit 6).
 4. Persistence: save/load, snapshots, templates, undo (concept §8).
-5. Later: playback, ADX adapter, state signals from value tables, timezone selection.
+5. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
 
 ## Known limitations
 

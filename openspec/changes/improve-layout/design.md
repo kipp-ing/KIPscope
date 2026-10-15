@@ -213,6 +213,8 @@ No data migration: the workspace is in memory and no field changes. The behaviou
 
 ## Open questions for Jan
 
+Resolved by Jan (2026-10-15, D-028): every recommendation below is accepted; the tasks already follow them.
+
 The tasks assume every recommendation. Q1 = workspace state would add a shared command, a CLI form and tests (new tasks in 1, 2 and 4); every other answer changes one CSS rule or one handler inside an existing task.
 
 1. **Mark: view state or workspace state?** (direction) Recommendation: view state per browser tab (L6). Alternative: `Workspace.marked` with `window.mark`, visible to the CLI and an AI caller (concept §7).

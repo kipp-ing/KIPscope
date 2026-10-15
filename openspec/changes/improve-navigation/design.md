@@ -264,6 +264,8 @@ The workspace is in memory; the server restart for the new code starts with `opt
 
 ## Open questions for Jan
 
+Resolved by Jan (2026-10-15, D-028): every recommendation below is accepted; the tasks already follow them.
+
 Tasks assume the recommendations.
 
 1. **Readout placement (direction).** R1: values in the legend rows, readout row with times and Δt, Δt label between the flags (recommended, N3). R2: value labels at the lines on each curve. R3: a box beside each line. R2/R3 change task 3.2 only.
