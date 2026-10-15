@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-040: Near-instant zoom (2026-10-15)
+
+- **Decision:** Jan, after the lead's measurement (one zoom out: 0–5 ms preview of old data, 300 ms commit delay, ~20 ms command, loading starts at ~345 ms, data drawn at 400–455 ms; a fully cached zoom still took 359 ms because loading waits for the commit): build as one change (1) loading on the preview range during the gesture, the command still delayed; (2) a coarse overview of each signal's whole extent loaded once, drawn at once where finer tiles are missing; (3) prefetch in idle time of the next zoom-out level and neighbouring tiles. Targets: a cached zoom draws sharp data within one frame (~16 ms); an uncached one draws coarse data within one frame and sharp data within ~150 ms. Server tile cache and binary transport are out of scope.
+- **Why:** Jan: „a zoom out takes half a second or so to redraw. this is a fast machine. i would like to investigate: how can we create somethin near instant even with bad browsers?" — on the plan: „noice! go ahead".
+
 ## D-039: Window handling and cache conventions (2026-10-15)
 
 From the archived changes `improve-window-handling` (G1, B2, Q1–Q3) and `add-series-cache` (C1–C6, Q1); details there. Jan: „looks good".
