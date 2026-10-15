@@ -6,7 +6,7 @@ Holds the state of the open workspace on the server and changes it only through 
 ## Requirements
 
 ### Requirement: Server-held workspace
-The server SHALL hold one open workspace: windows of kind `timeseries` or `values` with their signals and titles, each timeseries window's range, display options and plot height, each values window's "Between points" mode, the link flag, each signal's colour, cursors A and B with the diff flag, and the user options. Windows and signal assignments SHALL have stable IDs. Origin: D-011 (D8); D-017 (link flag), D-018 (title, height, colours); D-023 (values windows, cursors); D-026 and concept §8 (user options).
+The server SHALL hold one open workspace: windows of kind `timeseries` or `values` with their signals and titles, each timeseries window's range, display options and plot height, each values window's "Between points" mode, the link flag, each signal's colour, cursors A and B with the diff flag, and the user options. Windows and signal assignments SHALL have stable IDs. Origin: D-011; D-017 (link); D-018 (title, height, colours); D-023 (values windows, cursors); D-026, concept §8 (options).
 
 #### Scenario: Browser reload
 - **WHEN** the browser reloads the page

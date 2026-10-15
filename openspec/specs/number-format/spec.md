@@ -27,7 +27,7 @@ A unit that already starts with an SI prefix of a base unit (e.g. `km/h`, `kW`, 
 - **Evidence:** `packages/shared/test/numfmt.test.ts` › "does not prefix prefixed or prefix-free units"
 
 ### Requirement: One format in every human-readable place
-The values window (A, B, Δ), the chart readout (A, B, Δ), the y-axis ticks and the hover card's DBC range and SNA values SHALL use this format with the workspace's digits option. Origin: D-026 („everywhere (values window, readouts on charts, axes, hover card, human-readable CLI output)"); the CLI prints only JSON (add-cli "One JSON result per call"), so it has no text to format.
+The values window (A, B, Δ), the chart readout (A, B, Δ), the y-axis ticks and the hover card's DBC range and SNA values SHALL use this format with the workspace's digits option; the chart readout drops the unit and keeps the SI prefix (D-030). Origin: D-026 („everywhere (values window, readouts on charts, axes, hover card, human-readable CLI output)"); the CLI prints only JSON (add-cli "One JSON result per call"), so it has no text to format.
 
 #### Scenario: Same value, same text
 - **WHEN** a values window lists `CPC_448h.PTC_HV_Volt`, a timeseries window shows it zoomed to 2026-10-13T13:08:00Z–13:08:03Z in line mode, and A is set to 2026-10-13T13:08:00.093Z

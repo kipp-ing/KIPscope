@@ -45,7 +45,7 @@ Each cursor that is on SHALL be drawn in every timeseries window whose range con
 - **Evidence:** UI check (screenshot)
 
 #### Scenario: Lines stay at their time while zooming
-- **WHEN** A and B are on and the user wheel-zooms and Shift+wheel-pans window 1
+- **WHEN** A and B are on and the user wheel-zooms window 1 and pans it by a horizontal swipe
 - **THEN** both lines move with their time on the axis during the zoom preview and after it; they never stay at their old pixel
 - **Evidence:** UI check (screenshots before and after the zoom, tick labels under the lines)
 

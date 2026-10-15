@@ -1,12 +1,20 @@
 # values-window Specification
 
 ## Purpose
-A values window is a dashboard window without a plot. It lists its own signals with their values at cursor A, and in diff mode at A and B with Δ = B−A and Δt. It answers the concept's open question on single-value windows (D-023).
+A values window is a dashboard window without a plot. It lists its own signals with their values at cursor A, and at B whenever B is on; diff mode adds Δ = B−A and Δt (D-031). It answers the concept's open question on single-value windows (D-023).
 
 ## Requirements
 
 ### Requirement: Values window
-The dashboard SHALL offer a window kind "values" with a header (title, "Between points" select, Remove) and one row per signal: drag grip, colour swatch, name and the value cells, each value carrying its unit (number-format); there is no separate unit column. It SHALL have no plot, time range or zoom. It SHALL be created by "+ Values window" in the option bar or by `window.create {kind: "values"}`. An untitled one SHALL be named "Values <n>" after its ID `w<n>`. Origin: D-023; concept §2, §4 (Einzelwertfenster); unit in the cell from D-026 („the unit may carry an SI prefix", e.g. `14.0 k1/min`), so a separate column would repeat it.
+The dashboard SHALL offer a window kind "values" with a header (title, "Between points" select, "⋯" menu) and one row per signal: drag grip, colour swatch, name and the value cells, each value carrying its unit (number-format); there is no separate unit column. It SHALL have no plot, time range or zoom. Origin: D-023; concept §2, §4; unit in the cell: D-026; menu: workspace-layout "Window menu".
+
+#### Scenario: No unit column
+- **WHEN** a values window lists `BS_200h.DVL` and A is off
+- **THEN** the row shows grip, swatch, `DVL` and `—`, and no `[1/min]` column
+- **Evidence:** UI check (screenshot)
+
+### Requirement: Creating a values window
+A values window SHALL be created by "+ Values window" in the option bar or by `window.create {kind: "values"}`. An untitled one SHALL be named "Values <n>" after its ID `w<n>`. Origin: D-023.
 
 #### Scenario: Create from the bar
 - **WHEN** the user clicks "+ Values window" in the option bar
@@ -19,13 +27,8 @@ The dashboard SHALL offer a window kind "values" with a header (title, "Between 
 - **Evidence:** the `curl` commands; UI check (screenshot)
 
 #### Scenario: Rename
-- **WHEN** the user clicks the values window's title, types `Drive` and presses Enter
+- **WHEN** the user double-clicks the values window's title, types `Drive` and presses Enter
 - **THEN** the header and the explorer's "Add to" list show `Drive`
-- **Evidence:** UI check (screenshot)
-
-#### Scenario: No unit column
-- **WHEN** a values window lists `BS_200h.DVL` and A is off
-- **THEN** the row shows grip, swatch, `DVL` and `—`, and no `[1/min]` column
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Signals into a values window
@@ -60,7 +63,7 @@ Pressing a values row's grip and moving the pointer SHALL start the app's signal
 - **Evidence:** `packages/shared/test/apply.test.ts` › "moves a signal from a values window into a new timeseries window"; UI check (screenshot)
 
 ### Requirement: Value at cursor A
-Each row SHALL show its signal's value at cursor A. The value is evaluated from the signal's raw points around A by the series-query "Value at a time" in the window's "Between points" mode: "linear" or "hold", default "linear". The value SHALL NOT depend on any timeseries window's zoom. While A is off, the rows SHALL show `—` and the header "Cursor A off". Origin: D-023 („lists signals with their value at cursor A"); concept §6 (line → linear, step → hold); D-024 (raw values from the server); texts in number-format (D-026).
+Each row SHALL show its signal's value at cursor A. The value is evaluated from the signal's raw points around A by the series-query "Value at a time" in the window's "Between points" mode: "linear" or "hold", default "linear". The value SHALL NOT depend on any timeseries window's zoom. While A is off, the rows SHALL show `—` and the header "Cursor A off". Origin: D-023; concept §6 (line → linear, step → hold); D-024 (raw values from the server); texts: D-026.
 
 #### Scenario: Raw point under the cursor
 - **WHEN** the values window lists `COMBI_412h.V_ANZ`, `BS_200h.DVL` and `CPC_448h.PTC_HV_Volt`, and `cursor.set {cursor: "a", t: "2026-10-13T13:08:00.093Z"}` is posted
@@ -109,7 +112,7 @@ A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, neve
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "formats SNA and missing values without a number"
 
 ### Requirement: Diff columns
-While B is on or diff mode is on, each row SHALL show the value at B next to A's, and the header B's time; diff mode adds Δ = B−A to each row and Δt = B−A, with sign, to the header. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (values at A and B, Δt and ΔWert, B−A); texts in number-format (D-026); B without Diff: D-031.
+While B is on or diff mode is on, each row SHALL show the value at B next to A's, and the header B's time; diff mode adds Δ = B−A to each row and Δt = B−A, with sign, to the header. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (Δt and ΔWert, B−A); texts: D-026; B without Diff: D-031.
 
 #### Scenario: Speed difference
 - **WHEN** diff mode is on, A is at 2026-10-13T13:08:00.093Z and B at 13:08:00.995Z
@@ -131,13 +134,16 @@ While B is on or diff mode is on, each row SHALL show the value at B next to A's
 - **THEN** each row shows A and B but no Δ, and the header shows A's and B's times but no Δt
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "shows B without Diff but no Δt, and the off states", "requests B whenever B is on, with or without Diff"
 
-### Requirement: Value and time formats
-Values and Δ SHALL be printed by number-format with the workspace's digits option, each followed by its unit with SI prefix. The tooltip naming the neighbour points SHALL keep the exact stored values (at most 9 significant digits, trailing zeros dropped). Cursor times SHALL be shown in local time as `YYYY-MM-DD HH:MM:SS`, with the fraction down to nanoseconds and trailing zero groups of three dropped. Δt SHALL be exact, with sign, in ns, µs, ms or s below one minute, else as `h:mm:ss` with fraction. Origin: D-026 (3 significant digits, SI prefix, option 4); exact tooltips and times: design N9 (Jan's call Q7); data fact for the 9-digit tooltip: `CPC_448h.PTC_HV_Volt` stores `362.40000000000003`.
+### Requirement: Value formats
+Values and Δ SHALL be printed by number-format with the workspace's digits option, each followed by its unit with SI prefix. The tooltip naming the neighbour points SHALL keep the exact stored values (at most 9 significant digits, trailing zeros dropped). Origin: D-026 (3 significant digits, SI prefix, option 4); exact tooltips: design N9 (Jan's call Q7); 9 digits: data fact (scenario "Float noise").
 
 #### Scenario: Float noise
-- **WHEN** a value of `CPC_448h.PTC_HV_Volt` is 362.40000000000003 and a Δ is 0.5000000000000568, with 3 and then 4 digits
+- **WHEN** a value of `CPC_448h.PTC_HV_Volt` is 362.40000000000003 (as stored in the data) and a Δ is 0.5000000000000568, with 3 and then 4 digits
 - **THEN** they are printed `362 V` and `500 mV`, then `362.4 V` and `500.0 mV`; the neighbour tooltip shows `362.4`
 - **Evidence:** `apps/web/test/values.test.ts` › "formats values with the digits option and the unit"; `packages/shared/test/cursor.test.ts` › "formats cursor numbers with at most 9 significant digits"
+
+### Requirement: Time formats
+Cursor times SHALL be shown in local time as `YYYY-MM-DD HH:MM:SS`, with the fraction down to nanoseconds and trailing zero groups of three dropped. Δt SHALL be exact, with sign, in ns, µs, ms or s below one minute, else as `h:mm:ss` with fraction. Origin: D-026; exact times: design N9 (Jan's call Q7).
 
 #### Scenario: Time and Δt formats
 - **WHEN** a cursor is at 1791896880093000000 in Europe/Berlin, and Δt values are 902000000, −1500, 3723500000000 and 0 ns

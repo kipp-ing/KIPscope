@@ -182,7 +182,7 @@ The option bar SHALL show a "Link time axes" toggle that reflects and sets the w
 - **Evidence:** UI check (screenshot); `packages/shared/test/apply.test.ts` › "snaps all windows to the last zoomed window when linking"
 
 ### Requirement: Drag signals between windows
-A signal's legend row SHALL be draggable onto another window: a plain drop moves the signal, a drop with Alt or Ctrl held copies it, each as one `window.moveSignal` command. The signal SHALL keep its colour and take the target window's display mode (mode is a window option). A window emptied by the move SHALL disappear (workspace-state "Window emptied by a move is removed"). Origin: D-017 („Signale zwischen zwei anzeigen hin und her“); Alt/Ctrl copy from power-user expectations (feedback 2026-10-14, point 1); D-027 (emptied window removed).
+A signal's legend row SHALL be draggable onto another window: a plain drop moves the signal, a drop with Alt or Ctrl held copies it, each as one `window.moveSignal` command. The signal SHALL keep its colour and take the target window's display mode (mode is a window option). A window emptied by the move SHALL disappear (workspace-state "Window emptied by a move is removed"). Origin: D-017; Alt/Ctrl copy: feedback 2026-10-14, point 1; D-027 (emptied window removed).
 
 #### Scenario: Move by drag
 - **WHEN** window A shows `COMBI_412h.V_ANZ` and `BS_200h.DVL`, window B shows `CPC_448h.PTC_HV_Volt`, and the user drags the V_ANZ legend row onto window B and releases
@@ -270,7 +270,15 @@ Each signal SHALL be drawn, listed and SNA-marked in its workspace colour, the s
 - **Evidence:** UI check (screenshot); `packages/shared/test/apply.test.ts` › "assigns stable colours across windows"
 
 ### Requirement: Window names
-A window SHALL be named by its title or, untitled, "Window <n>" everywhere it is named, including the explorer's "Add to" list. A double-click on the title, or "Rename" in the window menu, SHALL allow renaming in place (Enter or leaving the field saves, Esc cancels); a single click on the title marks the window (workspace-layout "Marked window"). The title's tooltip SHALL name the full title and "Double-click to rename". Origin: D-018 ("window rename"); bug "'Add to' lists raw IDs" (feedback 2026-10-14); D-027 (a click on the header marks, so renaming moves to the double-click).
+A window SHALL be named by its title or, untitled, "Window <n>" everywhere it is named, including the explorer's "Add to" list. Origin: D-018 ("window rename"); bug "'Add to' lists raw IDs" (feedback 2026-10-14).
+
+#### Scenario: New window from the explorer is untitled
+- **WHEN** the user adds `COMBI_412h.V_ANZ` to "New window" in the explorer and the new window gets the ID `w<n>`
+- **THEN** the new window's header reads `Window <n>` (not `V_ANZ`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
+- **Evidence:** UI check (screenshot of header and "Add to" list); the `curl` command. Origin: lead decision (rounds.md round 5): a signal-name title goes stale once that signal is moved out.
+
+### Requirement: Renaming a window
+A double-click on the title, or "Rename" in the window menu, SHALL allow renaming in place (Enter or leaving the field saves, Esc cancels); a single click on the title marks the window (workspace-layout "Marked window"). The title's tooltip SHALL name the full title and "Double-click to rename". Origin: D-018 ("window rename"); D-027 (a click on the header marks, so renaming moves to the double-click).
 
 #### Scenario: Rename
 - **WHEN** the user double-clicks the title of a window, types `HV voltages` and presses Enter
@@ -287,11 +295,6 @@ A window SHALL be named by its title or, untitled, "Window <n>" everywhere it is
 - **THEN** no text field opens, the window is marked, and the title's tooltip reads `<title> · Double-click to rename`
 - **Evidence:** UI check (screenshot after the click, with the tooltip)
 
-#### Scenario: New window from the explorer is untitled
-- **WHEN** the user adds `COMBI_412h.V_ANZ` to "New window" in the explorer and the new window gets the ID `w<n>`
-- **THEN** the new window's header reads `Window <n>` (not `V_ANZ`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
-- **Evidence:** UI check (screenshot of header and "Add to" list); the `curl` command. Origin: lead decision (rounds.md round 5): a signal-name title goes stale once that signal is moved out.
-
 ### Requirement: Aligned time axes
 All windows SHALL use the same plot left and right insets (per side, the widest natural axis width of any window), so that one timestamp sits at the same x position in every window of equal width. Origin: lead decision (rounds.md round 5), a necessary consequence of D-017 (linked zoom is only comparable when the time axes line up).
 
@@ -301,7 +304,7 @@ All windows SHALL use the same plot left and right insets (per side, the widest 
 - **Evidence:** UI check (one screenshot of both windows with a vertical guide or measured plot edges); `apps/web/test/insets.test.ts` › "takes the largest axis width per side across windows"
 
 ### Requirement: Crosshair follows the pointer only
-The plot crosshair SHALL be hidden when the pointer leaves the plot and right after every change of the window's shown range, whatever caused it (wheel zoom, wheel pan, drag-select, double-click reset, navigation keys, "Go to", presets, "Back", "Reset", a linked window or the CLI), until the pointer moves over the plot again. Origin: lead decision (rounds.md round 5 of `improve-window-workflow`): a crosshair left at the old pixel after a zoom points at a wrong time; keys and typed ranges change the range under a resting pointer too (D-027).
+The plot crosshair SHALL be hidden when the pointer leaves the plot and right after every change of the window's shown range, whatever caused it (wheel zoom, wheel pan, drag-select, double-click reset, navigation keys, "Go to", presets, "Back", "Reset", a linked window or the CLI), until the pointer moves over the plot again. Origin: lead decision (rounds.md round 5 of `improve-window-workflow`): a crosshair left at its old pixel points at a wrong time; D-027 (keys and typed ranges).
 
 #### Scenario: Leave and zoom
 - **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), then leaves the plot; then the user returns, Ctrl+wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
@@ -314,22 +317,28 @@ The plot crosshair SHALL be hidden when the pointer leaves the plot and right af
 - **Evidence:** UI check (screenshots after each key)
 
 ### Requirement: Wheel zoom step
-With Ctrl or Shift held, a wheel event over a plot SHALL zoom the time span centred on the pointer (a mouse wheel event by "Mouse wheel steps"): one tick scales it by 2^(1/5), so five ticks double or halve the span, and one event zooms by at most five ticks (at most ×2). A tick is 100 px of delta in pixel mode, 3 lines in line mode, and one page in page mode counts as five ticks. The delta is the vertical one, or the horizontal one when that is larger (macOS turns Shift+wheel into a horizontal delta). A trackpad pinch (a wheel event with Ctrl set by the browser) SHALL zoom the same way, and the browser's own page zoom SHALL NOT happen over a plot. Origin: D-025 („Ctrl+wheel or Shift+wheel zooms the chart under the pointer"); step size: lead decision (rounds.md round 5 of `improve-window-workflow`), the exact feel is Jan's to judge.
+With Ctrl or Shift held, a wheel event over a plot SHALL zoom the time span centred on the pointer (a mouse wheel event by "Mouse wheel steps"): one tick scales it by 2^(1/5), so five ticks double or halve the span, and one event zooms by at most five ticks (at most ×2). Origin: D-025 („Ctrl+wheel or Shift+wheel zooms the chart under the pointer"); step size: lead decision (rounds.md round 5 of `improve-window-workflow`), the exact feel is Jan's to judge.
 
 #### Scenario: Five ticks out
 - **WHEN** a window shows 2026-10-13T09:56:00Z–09:58:00Z (2 min) and five wheel ticks of 100 px each (not a mouse wheel by "Mouse wheel steps") arrive outward with Ctrl held and the pointer at the centre of the plot
 - **THEN** the header range spans about 4 min (±10 %), centred on about 09:57, and the page is not zoomed
 - **Evidence:** UI check (screenshots of the header before and after) if the browser automation can hold Ctrl during a wheel, else `not_run` with the test as evidence; `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event"
 
-#### Scenario: Shift and pinch
-- **WHEN** wheel events arrive with Shift and only a horizontal delta of 500 px, and with Ctrl and a vertical delta of −20 px (a pinch)
-- **THEN** the first zooms out ×2, the second zooms in by 2^(−0.04)
-- **Evidence:** `apps/web/test/zoom.test.ts` › "classifies wheel events: plain scrolls, Ctrl or Shift zooms, horizontal swipe pans"
+### Requirement: Wheel zoom delta
+For a wheel zoom, a tick SHALL be 100 px of delta in pixel mode and 3 lines in line mode, and one page in page mode SHALL count as five ticks. The delta SHALL be the vertical one, or the horizontal one when that is larger (macOS turns Shift+wheel into a horizontal delta). Origin: D-025; lead decision (rounds.md round 5 of `improve-window-workflow`).
 
 #### Scenario: Page-mode wheel
 - **WHEN** a wheel event with Ctrl arrives in page mode with a vertical delta of one page
 - **THEN** the span changes by ×2 (five ticks, the cap)
 - **Evidence:** `apps/web/test/zoom.test.ts` › "wheel factor is 2 per 5 ticks, capped at 5 ticks per event" (includes a page-mode case); no UI check (no test device sends page mode)
+
+### Requirement: Pinch zooms the plot
+A trackpad pinch (a wheel event with Ctrl set by the browser) SHALL zoom like a Ctrl+wheel, and the browser's own page zoom SHALL NOT happen over a plot. Origin: D-025; lead decision (rounds.md round 5 of `improve-window-workflow`).
+
+#### Scenario: Shift and pinch
+- **WHEN** wheel events arrive with Shift and only a horizontal delta of 500 px, and with Ctrl and a vertical delta of −20 px (a pinch)
+- **THEN** the first zooms out ×2, the second zooms in by 2^(−0.04)
+- **Evidence:** `apps/web/test/zoom.test.ts` › "classifies wheel events: plain scrolls, Ctrl or Shift zooms, horizontal swipe pans"
 
 ### Requirement: Minimum zoom span
 A zoom that would make the window's span shorter than 100 ns SHALL be ignored; the range stays as it was. Origin: necessary consequence of nanosecond timestamps (series-query "Timestamp precision"): below 100 ns ticks and the header cannot tell times apart.
@@ -377,12 +386,15 @@ A double-click in the plot SHALL set the window's range to the union of its sign
 - **Evidence:** UI check (screenshot of the header); `apps/web/test/zoom.test.ts` › "computes the extent range rounded up to the next millisecond"
 
 ### Requirement: Zoom history
-Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, "Go to" and span preset SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. Backspace SHALL act on the window under the pointer, else the window zoomed last, and SHALL do nothing while a text field has focus. "Back" SHALL be disabled when there is no previous range. Origin: D-018 ("zoom history back"); D-025 (one "Back", in the bar); D-027 (the new navigation is undone the same way).
+Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, "Go to" and span preset SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. "Back" SHALL be disabled when there is no previous range. Origin: D-018 ("zoom history back"); D-025 (one "Back", in the bar); D-027 (new navigation undone alike).
 
 #### Scenario: Two steps back
 - **WHEN** the user zooms a V_ANZ window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
 - **THEN** the window shows the morning range, then the full extent, and the bar's "Back" is disabled
 - **Evidence:** UI check (screenshots of the header after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
+
+### Requirement: Backspace target
+Backspace SHALL act on the window under the pointer, else the window zoomed last, and SHALL do nothing while a text field has focus. Origin: D-018; D-025.
 
 #### Scenario: Backspace in a text field
 - **WHEN** the search field of the explorer has focus and the user presses Backspace
@@ -448,7 +460,7 @@ While dragging, the window list SHALL scroll when the pointer is within 48 px of
 - **Evidence:** UI check (two screenshots 2 s apart show the same first window)
 
 ### Requirement: No value readout on hover
-Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal at the pointer. Values are read at the cursors, in the values window and in the chart readout (cursors "Chart readout"), and neither changes while the pointer moves. Origin: D-023 („no value readout on hover"); D-027 (readout at the cursors on the chart).
+Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal at the pointer. Values are read at the cursors, in the values window and in the chart readout (cursors "Exact readout values"), and neither changes while the pointer moves. Origin: D-023 („no value readout on hover"); D-027 (readout at the cursors on the chart).
 
 #### Scenario: Hover a speed plot
 - **WHEN** A is on, the pointer moves over a window showing `COMBI_412h.V_ANZ` and `BS_200h.DVL`
@@ -456,7 +468,7 @@ Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal
 - **Evidence:** UI check (two screenshots at different pointer positions)
 
 ### Requirement: Option bar
-Above the windows, an option bar SHALL stay visible while the window list scrolls. It SHALL hold, in this order: the cursor toggles "A", "B" and "Diff" (cursors spec), "Link time axes", the "Go to" field and the span presets (time-navigation), "Back", "Reset", the digits option (number-format) and "+ Values window". Origin: D-023 („a bar holds cursor A/B on/off and diff mode, the "Link time axes" toggle (moved out of the top bar) and zoom back / reset zoom"); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option).
+Above the windows, an option bar SHALL stay visible while the window list scrolls. It SHALL hold, in this order: the cursor toggles "A", "B" and "Diff" (cursors spec), "Link time axes", the "Go to" field and the span presets (time-navigation), "Back", "Reset", the digits option (number-format) and "+ Values window". Origin: D-023 (cursor toggles, diff mode, "Link time axes", zoom back and reset in a bar); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option).
 
 #### Scenario: Scrolled down
 - **WHEN** six windows exist and the list is scrolled to the end
@@ -464,12 +476,15 @@ Above the windows, an option bar SHALL stay visible while the window list scroll
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Bar zoom back and reset
-The bar's "Back" SHALL step back the zoom history of its target window, and "Reset" SHALL set the target's range to the union of its signals' extents. They are the only Back and Reset controls (D-025). The target is the window zoomed last, else the first timeseries window. While linked, "Reset" SHALL use the signals of all timeseries windows. While unlinked, both tooltips SHALL name the target. "Back" SHALL be disabled when the target has no history. Origin: D-023 (zoom back / reset zoom in the bar); D-024 (target while unlinked); D-025 („one "Back" and one "Reset"").
+The bar's "Back" SHALL step back the zoom history of its target window, and "Reset" SHALL set the target's range to the union of its signals' extents. They are the only Back and Reset controls (D-025). While linked, "Reset" SHALL use the signals of all timeseries windows. "Back" SHALL be disabled when the target has no history. Origin: D-023 (zoom back / reset zoom in the bar); D-025 („one "Back" and one "Reset"").
 
 #### Scenario: Linked reset
 - **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, both at 2026-10-13T13:08:00Z–13:08:03Z, and the user clicks "Reset"
 - **THEN** both windows show the union of both signals' extents (earliest first point to just after the latest last point), and "Back" returns both to 13:08:00Z–13:08:03Z
 - **Evidence:** `apps/web/test/bar.test.ts` › "resets to the union of all timeseries extents while linked"; UI check (screenshots of both headers)
+
+### Requirement: Bar target
+The target of the bar's "Back" and "Reset" SHALL be the window zoomed last, else the first timeseries window. While unlinked, both tooltips SHALL name the target. Origin: D-024 (target while unlinked); D-029 (bar target).
 
 #### Scenario: Unlinked back
 - **WHEN** "Link time axes" is off, window 1 was zoomed once and then window 2 zoomed once, and the user clicks the bar's "Back"
