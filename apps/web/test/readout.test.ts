@@ -1,7 +1,14 @@
 import { type BucketSeries, encodeTimes, type RawSeries } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
 import { snapCursorTime } from "../src/chart/cursors.ts";
-import { chartValueAt, readoutCell, readoutDelta } from "../src/chart/readout.ts";
+import {
+  chartValueAt,
+  readoutCell,
+  readoutDelta,
+  readoutSource,
+  sourceCell,
+  sourceDelta,
+} from "../src/chart/readout.ts";
 import { LOADING } from "../src/values/format.ts";
 
 // 2026-10-13T13:08:00Z in ns; everything below is an offset from it.
@@ -224,5 +231,63 @@ describe("cursor at the range end", () => {
     const v = chartValueAt(series, snapped, "line");
     expect(v?.kind).toBe("interpolated");
     expect(chartValueAt(series, to, "line")).toEqual({ kind: "none", reason: "outside_range" });
+  });
+});
+
+describe("readout source (D-031)", () => {
+  const exact = (status: "loading" | "complete" | "error", value?: number) => ({
+    status,
+    request: "r",
+    ...(value === undefined
+      ? {}
+      : {
+          result: {
+            signalId: "c/V",
+            t: "1",
+            mode: "line" as const,
+            value: { kind: "raw" as const, value },
+          },
+        }),
+    ...(status === "error" ? { error: "boom" } : {}),
+  });
+  const avg = { kind: "aggregated" as const, value: 20 };
+  const outside = { kind: "none" as const, reason: "outside_range" as const };
+
+  it("shows the exact server value, inside or outside the zoom", () => {
+    expect(readoutSource(exact("complete", 23), avg, false)).toEqual({
+      value: { kind: "raw", value: 23 },
+      loading: false,
+    });
+    expect(readoutSource(exact("complete", 23), outside, false).value).toEqual({
+      kind: "raw",
+      value: 23,
+    });
+    expect(sourceCell(readoutSource(exact("complete", 23), outside, false), "km/h", 3)).toEqual({
+      text: "23.0",
+    });
+  });
+
+  it("shows the drawn value, dimmed, while the exact one loads; outside the zoom the previous one", () => {
+    expect(readoutSource(exact("loading"), avg, false)).toEqual({ value: avg, loading: true });
+    expect(readoutSource(exact("loading", 18), outside, false)).toEqual({
+      value: { kind: "raw", value: 18 },
+      loading: true,
+    });
+    expect(sourceCell(readoutSource(exact("loading"), outside, false), "km/h", 3).text).toBe("…");
+  });
+
+  it("follows the drawn curve live while a line is dragged", () => {
+    expect(readoutSource(exact("complete", 23), avg, true)).toEqual({ value: avg, loading: false });
+  });
+
+  it("shows a failed request as — with the message, and Δ as —", () => {
+    const failed = readoutSource(exact("error"), avg, false);
+    expect(sourceCell(failed, "V", 3)).toEqual({ text: "—", title: "failed: boom" });
+    const ok = readoutSource(exact("complete", 1), avg, false);
+    expect(sourceDelta(ok, failed, "V", 3)).toEqual({ text: "—" });
+    expect(sourceDelta(ok, readoutSource(exact("complete", 3), avg, false), "V", 3)).toEqual({
+      text: "2.00",
+    });
+    expect(sourceDelta(ok, readoutSource(exact("loading"), avg, false), "V", 3).loading).toBe(true);
   });
 });

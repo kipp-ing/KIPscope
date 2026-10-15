@@ -858,6 +858,7 @@ export function App() {
                   insets={insets}
                   onInsets={onInsets}
                   cursors={cursors}
+                  committed={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
                   digits={digits}
                   diff={diff}
                   onCursorPreview={onCursorPreview}

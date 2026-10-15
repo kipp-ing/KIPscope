@@ -9,7 +9,6 @@ import {
   MAX_PLOT_HEIGHT,
   MAX_UNITS,
   MIN_PLOT_HEIGHT,
-  parseTimestamp,
   type RenderError,
   type SignalInfo,
   type ValuesMode,
@@ -27,16 +26,14 @@ import {
   formatClock,
   formatCursorTime,
   formatDeltaT,
-  loadingCell,
   NO_VALUE,
 } from "../values/format.ts";
 import {
   cellState,
   type FetchValue,
   ValueLoader,
-  type ValueRequest,
-  type ValueState,
   valueErrors,
+  valueRequests,
 } from "../values/loader.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
@@ -64,8 +61,14 @@ import {
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import type { Insets } from "./insets.ts";
-import { type LoadRequest, type LoadState, SeriesLoader } from "./loader.ts";
-import { chartValueAt, type ReadoutValue, readoutCell, readoutDelta } from "./readout.ts";
+import { type LoadRequest, SeriesLoader } from "./loader.ts";
+import {
+  chartValueAt,
+  type ReadoutSource,
+  readoutSource,
+  sourceCell,
+  sourceDelta,
+} from "./readout.ts";
 import { clampRange, type Range, RangePreview, WheelFrame, wheelAction } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
@@ -117,6 +120,8 @@ interface Props {
   onInsets?: (windowId: string, natural: Insets) => void;
   /** Effective cursor times: App's preview overrides the workspace. */
   cursors: { a?: bigint; b?: bigint };
+  /** Committed cursor times (workspace), decimal ns: the readout's exact values are fetched for these. */
+  committed: { a?: string; b?: string };
   /** Significant digits of readout values and y-axis ticks (workspace option). */
   digits: Digits;
   /** Diff mode: show B and Δ columns, the Δt label. `cursors` stays the effective times. */
@@ -422,23 +427,7 @@ function placeCursorLines(
   return shown;
 }
 
-/**
- * A readout cell's state: "—" while its cursor is off, "—" with the error when loading failed,
- * the values window's loading state while data loads (previous value dimmed, else "…").
- */
-function readoutState(state: LoadState | undefined, t: bigint | undefined, cell: Cell): Cell {
-  if (t === undefined) return { text: NO_VALUE, title: "cursor off" };
-  if (state?.status === "error") return { text: NO_VALUE, title: `failed: ${state.error}` };
-  return !state || state.status === "loading" ? loadingCell(cell) : cell;
-}
-
 const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r.mode, abort);
-
-/** A readout cell from the server's value of a cursor outside the loaded range. */
-function farCell(state: ValueState, cell: Cell): Cell {
-  if (state.status === "error") return { text: NO_VALUE, title: `failed: ${state.error}` };
-  return state.status === "loading" ? loadingCell(cell) : cell;
-}
 
 /** One readout value in a legend row: number with unit, tag, SNA style, reason as tooltip. */
 function ReadoutCell({ cell }: { cell: Cell }) {
@@ -468,6 +457,7 @@ export function TimeseriesWindow({
   insets,
   onInsets,
   cursors,
+  committed,
   digits,
   diff,
   onCursorPreview,
@@ -569,27 +559,25 @@ export function TimeseriesWindow({
   );
   useEffect(() => loader.update(requests), [loader, requests]);
 
-  // Readout of a cursor outside the loaded range: the values window's value from the server, so
-  // the cell keeps a value when the cursor leaves the zoom (D-031). Markers evaluate as line.
+  // Readout values (D-031): the exact value at each committed cursor from the server, like the
+  // values window, inside or outside the zoom (readoutSource). Markers evaluate as line.
   const values = useMemo(() => new ValueLoader(fetchValue, rerender), []);
   useEffect(() => () => values.dispose(), [values]);
   const valueMode: ValuesMode = w.display.mode === "step" ? "step" : "line";
-  const farRequests: ValueRequest[] = w.signals.flatMap((s) => {
-    const result = loader.get(s.id)?.result;
-    if (!result) return [];
-    const from = parseTimestamp(result.from);
-    const to = parseTimestamp(result.to);
-    return (["a", "b"] as const).flatMap((name) => {
-      const t = cursors[name];
-      return t === undefined || (t >= from && t < to)
-        ? []
-        : [{ key: `${s.id}|${name}`, signalId: s.signalId, t: String(t), mode: valueMode }];
-    });
-  });
-  const farKey = JSON.stringify(farRequests);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the requests are tracked via farKey
-  useEffect(() => values.update(farRequests), [values, farKey]);
-  const farOf = new Map(farRequests.map((r) => [r.key, r]));
+  const exactRequests = useMemo(
+    () =>
+      valueRequests(
+        w.signals,
+        {
+          ...(committed.a === undefined ? {} : { a: committed.a }),
+          ...(committed.b === undefined ? {} : { b: committed.b }),
+        },
+        valueMode,
+      ),
+    [w.signals, committed.a, committed.b, valueMode],
+  );
+  useEffect(() => values.update(exactRequests), [values, exactRequests]);
+  const exactOf = new Map(exactRequests.map((r) => [r.key, r]));
 
   const inputs = w.signals.map((s) => {
     const meta = info(s.signalId);
@@ -1077,7 +1065,7 @@ export function TimeseriesWindow({
 
   // --- render acknowledgement -----------------------------------------------------------------
 
-  const settled = loader.settled(requests) && values.settled(farRequests) && width > 0;
+  const settled = loader.settled(requests) && values.settled(exactRequests) && width > 0;
   const errors: RenderError[] = [
     ...w.signals.flatMap((s) => {
       const state = loader.get(s.id);
@@ -1085,7 +1073,7 @@ export function TimeseriesWindow({
         ? [{ windowId: w.id, signalId: s.signalId, message: state.error ?? "error" }]
         : [];
     }),
-    ...valueErrors(w.id, farRequests, values),
+    ...valueErrors(w.id, exactRequests, values),
   ];
   const errorKey = JSON.stringify(errors);
   // biome-ignore lint/correctness/useExhaustiveDependencies: errors are tracked via errorKey
@@ -1241,22 +1229,22 @@ export function TimeseriesWindow({
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
           const name = meta?.name ?? s.signalId;
-          // A cursor outside the loaded range reads the server's value (farRequests).
-          const farState = (name: CursorName) =>
-            cellState(values.get(`${s.id}|${name}`), farOf.get(`${s.id}|${name}`));
-          const valueAt = (name: CursorName): ReadoutValue | undefined => {
+          const sourceOf = (name: CursorName) => {
             const t = cursors[name];
-            if (t === undefined) return undefined;
-            const far = farState(name);
-            return far ? far.result?.value : chartValueAt(state?.result, t, w.display.mode);
+            const key = `${s.id}|${name}`;
+            const exact = cellState(values.get(key), exactOf.get(key));
+            const drawn =
+              t === undefined ? undefined : chartValueAt(state?.result, t, w.display.mode);
+            // A dragged line or a click waiting for its double-click: the drawn curve, live.
+            const previewing = t !== undefined && String(t) !== committed[name];
+            return readoutSource(exact, drawn, previewing);
           };
-          const valueA = valueAt("a");
-          const valueB = valueAt("b");
-          const cellAt = (name: CursorName, v: ReadoutValue | undefined) => {
-            const far = farState(name);
-            const cell = readoutCell(v, meta?.unit, digits);
-            return far ? farCell(far, cell) : readoutState(state, cursors[name], cell);
-          };
+          const sourceA = sourceOf("a");
+          const sourceB = sourceOf("b");
+          const cellAt = (name: CursorName, source: ReadoutSource) =>
+            cursors[name] === undefined
+              ? { text: NO_VALUE, title: "cursor off" }
+              : sourceCell(source, meta?.unit, digits);
           return (
             <li key={s.id} title={meta?.description}>
               <span
@@ -1274,15 +1262,15 @@ export function TimeseriesWindow({
                   {meta?.unit && `[${meta.unit}]`}
                 </span>
               )}
-              {readout && <ReadoutCell cell={cellAt("a", valueA)} />}
-              {readout && showB && <ReadoutCell cell={cellAt("b", valueB)} />}
+              {readout && <ReadoutCell cell={cellAt("a", sourceA)} />}
+              {readout && showB && <ReadoutCell cell={cellAt("b", sourceB)} />}
               {readout && diff && (
                 <ReadoutCell
-                  cell={readoutState(
-                    state,
-                    a !== undefined && b !== undefined ? a : undefined,
-                    readoutDelta(valueA, valueB, meta?.unit, digits),
-                  )}
+                  cell={
+                    a === undefined || b === undefined
+                      ? { text: NO_VALUE, title: "cursor off" }
+                      : sourceDelta(sourceA, sourceB, meta?.unit, digits)
+                  }
                 />
               )}
               {/* Only loading or failed is news; complete shows nothing but keeps the column. */}

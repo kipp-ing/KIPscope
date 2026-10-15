@@ -18,6 +18,7 @@ import {
   numberDelta,
   type ValueReason,
 } from "../values/format.ts";
+import type { ValueState } from "../values/loader.ts";
 
 /** A value of the chart readout: the values window's kinds plus a bucket mean (design N4). */
 export type ReadoutValue =
@@ -131,4 +132,54 @@ export function readoutDelta(
   if (!a || !b) return LOADING_CELL;
   if (!isNumber(a) || !isNumber(b)) return { text: NO_VALUE };
   return bare(numberDelta(a, b, unit, digits).tag, b.value - a.value, unit, digits);
+}
+
+/** A readout value with its state (D-031): loading shows dimmed, an error as "—" with the message. */
+export interface ReadoutSource {
+  value: ReadoutValue | undefined;
+  loading: boolean;
+  error?: string;
+}
+
+const isOutside = (v: ReadoutValue | undefined) =>
+  v?.kind === "none" && v.reason === "outside_range";
+
+/**
+ * Where a chart readout value comes from (D-031): the server's exact value at the committed
+ * cursor time, like the values window, inside or outside the zoom. While a line is dragged
+ * (`previewing`) the drawn curve gives the live value; while the exact value loads, the drawn one
+ * (or the previous exact one, outside the zoom) shows dimmed, so crossing the zoom edge is
+ * invisible.
+ */
+export function readoutSource(
+  exact: ValueState | undefined,
+  drawn: ReadoutValue | undefined,
+  previewing: boolean,
+): ReadoutSource {
+  const fallback = isOutside(drawn) ? exact?.result?.value : drawn;
+  if (previewing) return { value: fallback, loading: false };
+  if (exact?.status === "error") {
+    return { value: undefined, loading: false, error: exact.error ?? "error" };
+  }
+  if (exact?.status === "complete") return { value: exact.result?.value, loading: false };
+  return { value: fallback, loading: true };
+}
+
+/** The cell of one readout source. */
+export function sourceCell(source: ReadoutSource, unit: string | undefined, digits: Digits): Cell {
+  if (source.error !== undefined) return { text: NO_VALUE, title: `failed: ${source.error}` };
+  const cell = readoutCell(source.value, unit, digits);
+  return source.loading ? loadingCell(cell) : cell;
+}
+
+/** The Δ cell of two readout sources: loading if either is, "—" if either failed. */
+export function sourceDelta(
+  a: ReadoutSource,
+  b: ReadoutSource,
+  unit: string | undefined,
+  digits: Digits,
+): Cell {
+  if (a.error !== undefined || b.error !== undefined) return { text: NO_VALUE };
+  const cell = readoutDelta(a.value, b.value, unit, digits);
+  return a.loading || b.loading ? loadingCell(cell) : cell;
 }

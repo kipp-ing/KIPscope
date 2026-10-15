@@ -70,6 +70,8 @@ D-027 says „on the chart next to the cursors". R1 reads "on the chart" as "in 
 
 ### N4: Readout values from the drawn data (D-024)
 
+> Superseded by D-031: the readout shows the exact server value at the committed cursor (`readoutSource` in `chart/readout.ts`); `chartValueAt` below now only gives the live value during a drag and the dimmed stand-in while the exact value loads.
+
 `chartValueAt(result, t, mode)` in `chart/readout.ts`:
 - `t` outside `[result.from, result.to)` → `none / outside_range`.
 - Raw: `at` = last point with time ≤ t among `before` and the points, `next` = first point > t among the points and `after` (binary search); `evaluateAt(t, mode === "step" ? "step" : "line", at, next)`. Markers mode evaluates as line: concept §6 names only lines and steps; linear is the values window's default.

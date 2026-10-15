@@ -6,8 +6,8 @@ Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
 ## D-031: Cursor values outside the zoom, B without Diff (2026-10-15)
 
-- **Decision:** Jan, after the D-030 build: a cursor outside a chart's zoom keeps its readout value (the chart asks the server for it, as the values window does). B's value shows whenever B is on, in the chart legend and in the values window; "Diff" adds only Δ and Δt.
-- **Why:** Jan: „if couser go aout of zoom value vanish. should stay. if "diff" is of B has no value."
+- **Decision:** Jan, after the D-030 build: a cursor outside a chart's zoom keeps its readout value. First built as a server lookup only outside the zoom; that felt "reloaded" at the zoom edge, so the chart readout now always shows the exact value at the committed cursor from the server, like the values window (Jan's pick "Always exact"); only a dragged line follows the drawn curve live. Supersedes D-024's zoom-dependent chart value. B's value shows whenever B is on, in the chart legend and in the values window; "Diff" adds only Δ and Δt.
+- **Why:** Jan: „if couser go aout of zoom value vanish. should stay. if "diff" is of B has no value." / „its working, but feels quirky. it seems like beeing reloaded after going out of view".
 
 ## D-030: Compact chart legend (2026-10-15)
 

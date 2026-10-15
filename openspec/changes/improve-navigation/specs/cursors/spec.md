@@ -31,39 +31,34 @@ While a cursor is on, a readout row directly above a timeseries window's legend 
 - **THEN** the plot shows the curves, the cursor lines with their flags and the Δt label only; all values are in the legend rows
 - **Evidence:** UI check (screenshot)
 
-### Requirement: Readout values from the drawn data
-Readout values SHALL come from the window's loaded data at its current range and zoom: in a raw view by the values-window evaluation with edge neighbours, linear in line and markers mode, holding in step mode; in an aggregated view the mean of the bucket containing the cursor time, marked `avg`. The readout SHALL follow the cursor line as drawn, also during a drag. Origin: D-024 („Concept §6's zoom-dependent cursor value stays for the charts"); concept §6; markers mode: design N4.
+### Requirement: Exact readout values
+A chart readout cell SHALL show the values window's exact value at the committed cursor time, fetched from the server for the window's mode (markers as line), inside or outside the zoom and at any zoom level. While that value loads, the cell SHALL show the value of the drawn curve, or outside the zoom the previous value, dimmed. A render is acknowledged once these values are in. Origin: D-031 (Jan's pick "Always exact"); supersedes D-024's zoom-dependent chart value.
 
-#### Scenario: Same as the values window in a raw view
-- **WHEN** a values window and the window of "Speed difference on the chart" both list `COMBI_412h.V_ANZ`, both in linear mode, and A is set to 2026-10-13T13:08:00.1435Z
-- **THEN** the values window reads `22.5 km/h lin` and the chart `22.5` with tooltip "linear between points (lin)"; after switching the timeseries window to step mode its row reads `23.0` with tooltip "held from the last point (hold)"
-- **Evidence:** UI check (screenshots); `apps/web/test/readout.test.ts` › "evaluates raw results like evaluateAt, with edge neighbours"
-
-#### Scenario: Aggregated overview
-- **WHEN** the timeseries window shows V_ANZ at its full extent (aggregated) and A stays at 2026-10-13T13:08:00.093Z, while a values window lists V_ANZ too
-- **THEN** the chart's A cell has the tooltip "bucket mean (avg)" and the values window still reads `23.0 km/h` without tag
-- **Evidence:** UI check (screenshot of both windows); `apps/web/test/readout.test.ts` › "takes the bucket mean in aggregated views, marked avg"
-
-#### Scenario: Follows a dragged line
-- **WHEN** the user drags A's line slowly across the V_ANZ window of "Speed difference on the chart"
-- **THEN** the chart's A cell changes while dragging, and a values window showing V_ANZ keeps its committed value, dimmed, until release
-- **Evidence:** UI check (two screenshots during the drag)
-
-### Requirement: Readout outside the zoom
-A cursor outside a window's loaded range SHALL read the values window's value from the server for the window's mode (markers as line), so its cells keep a value when the cursor leaves the zoom. The window acknowledges a render only once these values are in. Origin: D-031 (Jan: „if couser go aout of zoom value vanish. should stay").
+#### Scenario: Same as the values window
+- **WHEN** a values window and the window of "Speed difference on the chart" both list `COMBI_412h.V_ANZ`, both in linear mode, and A is set to 2026-10-13T13:08:00.1435Z; then the timeseries window is zoomed out to V_ANZ's full extent (aggregated)
+- **THEN** the values window reads `22.5 km/h lin` and the chart `22.5` with tooltip "linear between points (lin)", also when zoomed out
+- **Evidence:** UI check (screenshots); `apps/web/test/readout.test.ts` › "shows the exact server value, inside or outside the zoom"
 
 #### Scenario: Zoom past A
 - **WHEN** a window shows `COMBI_412h.V_ANZ` with A at 2026-10-13T13:08:00.093Z in line mode, and the window is zoomed to 13:08:01Z–13:08:03Z
-- **THEN** the A cell still reads `23.0` (the values window's value at A), not `—`
-- **Evidence:** UI check (screenshot before and after the zoom)
+- **THEN** the A cell still reads `23.0` without a loading state in between
+- **Evidence:** UI check (screenshot before and after the zoom); `apps/web/test/readout.test.ts` › "shows the drawn value, dimmed, while the exact one loads; outside the zoom the previous one"
+
+### Requirement: Live readout during a drag
+While a cursor line is dragged, or a click waits for its double-click, its cells SHALL follow the drawn curve at the shown time (a bucket mean in an aggregated view); on release the exact value replaces it. Origin: D-031; concept §6 (values follow the cursor); design N4.
+
+#### Scenario: Follows a dragged line
+- **WHEN** the user drags A's line slowly across the V_ANZ window of "Speed difference on the chart"
+- **THEN** the chart's A cell changes while dragging, and a values window showing V_ANZ keeps its committed value, dimmed, until release; after release both read the same value
+- **Evidence:** UI check (two screenshots during the drag, one after); `apps/web/test/readout.test.ts` › "follows the drawn curve live while a line is dragged"
 
 ### Requirement: Readout without a value
-A bucket with SNA points only SHALL read `SNA`; a cursor time where no bucket lies `—` "no points in this bucket"; a cursor outside the window's range the server's value ("Readout values from the drawn data"). Δ SHALL be computed only from two numbers and marked `avg` if either value is aggregated, else `lin` if either is interpolated, else `hold` if either is held. Origin: D-010 (SNA never a number); concept §5 (no invented values) and §6 (value kinds stay recognisable).
+A cursor at an SNA value SHALL read `SNA`, a cursor without a value `—` with the values window's reason, a failed request `—` with the message. Δ SHALL be computed only from two numbers and marked `lin` if either value is interpolated, else `hold` if either is held (`avg` only during a drag in an aggregated view). Origin: D-010 (SNA never a number); concept §5 (no invented values) and §6 (value kinds stay recognisable).
 
-#### Scenario: SNA and outside the range
+#### Scenario: SNA in and outside the range
 - **WHEN** a window shows V_ANZ from 2026-10-13T09:56:59Z to 09:57:01Z and A is set to 09:57:00Z; then a second, unlinked window shows 13:09:00Z–13:09:10Z
-- **THEN** the first window's V_ANZ cell reads `SNA`, and the second window's V_ANZ cell reads `SNA` too, the server's value at 09:57:00Z, not `—`
-- **Evidence:** UI check (screenshots); `apps/web/test/readout.test.ts` › "reads SNA, empty buckets and cursors outside the range without a number"
+- **THEN** both windows' V_ANZ cells read `SNA`, the server's value at 09:57:00Z
+- **Evidence:** UI check (screenshots); `apps/web/test/readout.test.ts` › "reads SNA, empty buckets and cursors outside the range without a number", "shows a failed request as — with the message, and Δ as —"
 
 ### Requirement: Δt between the cursor flags
 While diff mode is on and both cursor lines are drawn in a window, a label `Δt` with the signed exact Δt SHALL be drawn at the top of the plot between the flags "A" and "B"; when the gap is narrower than the label, it SHALL sit beside the right-hand flag. It SHALL NOT cover a flag. Origin: D-027 („Δt … readout on the chart next to the cursors").
