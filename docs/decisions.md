@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-032: Live cursor at the pointer (2026-10-15)
+
+- **Decision:** Jan, as a new feature: besides A and B a live cursor "L" follows the mouse. It is local to the browser (no command, no revision, not in the CLI). Every chart legend gets a 4th column L with each signal's value at the pointer time; while one window is hovered, the other timeseries windows show a thin L line at the same time and fill their L column; without a hover L is empty. The L value comes from the drawn data (raw points zoomed in, bucket value zoomed out, kind as tooltip), like a dragged line under D-031. A signal whose curve is within about 8 px vertically of the pointer (nearest wins) is highlighted: thicker line, others faded, its legend row marked, and a label at the curve shows its value at the pointer's x. The values window also gets an L column (lead's pick for the open "values window?" point, from "values for each window"). Supersedes D-023's "no value readout on hover".
+- **Why:** Jan: „now additional to abdiff courser we need a life value. where the mous is. with values for each window so a 4th value. and when mouse ist near one signal this signal shall be highlited and the x aligned value shown." All proposed defaults accepted („excellent. go ahead").
+
 ## D-031: Cursor values outside the zoom, B without Diff (2026-10-15)
 
 - **Decision:** Jan, after the D-030 build: a cursor outside a chart's zoom keeps its readout value. First built as a server lookup only outside the zoom; that felt "reloaded" at the zoom edge, so the chart readout now always shows the exact value at the committed cursor from the server, like the values window (Jan's pick "Always exact"); only a dragged line follows the drawn curve live. Supersedes D-024's zoom-dependent chart value. B's value shows whenever B is on, in the chart legend and in the values window; "Diff" adds only Δ and Δt.
