@@ -12,6 +12,7 @@ import {
   type RenderError,
   type SeriesResult,
   type SignalInfo,
+  shownName,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
 } from "@letsview/shared";
@@ -659,7 +660,7 @@ export function TimeseriesWindow({
     const meta = info(s.signalId);
     const input: SignalInput = {
       key: s.id,
-      label: meta?.name ?? s.signalId,
+      label: meta ? shownName(meta) : s.signalId,
       color: colorOf(s.signalId),
     };
     const result = loader.get(s.id)?.result;
@@ -1410,7 +1411,7 @@ export function TimeseriesWindow({
           const meta = info(s.signalId);
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
-          const name = meta?.name ?? s.signalId;
+          const name = meta ? shownName(meta) : s.signalId;
           const sourceOf = (name: CursorName) => {
             const t = cursors[name];
             const key = `${s.id}|${name}`;
@@ -1441,7 +1442,12 @@ export function TimeseriesWindow({
                 }
               >
                 <span className="swatch" style={{ background: colorOf(s.signalId) }} />
-                <span className="sig">{name}</span>
+                <span
+                  className="sig"
+                  title={meta?.displayName !== undefined ? meta.name : undefined}
+                >
+                  {name}
+                </span>
               </span>
               <span className="unit" title={`y axis ${model.layout.sideOf.get(s.id) ?? "–"}`}>
                 {meta?.unit && `[${meta.unit}]`}

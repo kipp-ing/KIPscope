@@ -126,4 +126,33 @@ describe("searchSignals", () => {
     times.sort((a, b) => a - b);
     expect(times[2]).toBeLessThan(50);
   });
+
+  it("ranks the shown name like the name", () => {
+    const catalog = [
+      sig("c", "COMBI_412h.V_ANZ", { displayName: "Speed" }),
+      sig("c", "B_200h.SPEED_RAW"),
+      sig("c", "C_300h.X", { displayName: "V_ANZ (C)" }),
+    ];
+    const tiers = (q: string) =>
+      Object.fromEntries(search(catalog, q).map((m) => [m.signal.name, m.tier]));
+    expect(tiers("speed")).toEqual({ "COMBI_412h.V_ANZ": 0, "B_200h.SPEED_RAW": 1 });
+    expect(tiers("spe")).toEqual({ "COMBI_412h.V_ANZ": 1, "B_200h.SPEED_RAW": 1 });
+    expect(tiers("(c)")).toEqual({ "C_300h.X": 2 });
+    // The full name still finds the renamed signal.
+    expect(tiers("combi")).toEqual({ "COMBI_412h.V_ANZ": 1 });
+    expect(names(catalog, "combi")).toEqual(["COMBI_412h.V_ANZ"]);
+  });
+
+  it("returns highlight ranges in the shown name", () => {
+    const ptc = sig("smart451", "CPC_448h.PTC_HV_Volt", { displayName: "PTC_HV_Volt" });
+    const m = search([ptc], "volt")[0];
+    expect(m?.shown).toEqual([[7, 11]]);
+    expect(m?.name).toEqual([[16, 20]]);
+    // Without displayName the shown ranges equal the name ranges.
+    const plain = sig("smart451", "CPC_448h.PTC_HV_Volt");
+    const p = search([plain], "volt")[0];
+    expect(p?.shown).toEqual(p?.name);
+    // Empty query: no ranges.
+    expect(search([ptc], "")[0]?.shown).toEqual([]);
+  });
 });

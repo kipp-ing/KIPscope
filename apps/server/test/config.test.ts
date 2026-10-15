@@ -44,4 +44,20 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, LETSVIEW_QUERY_CONCURRENCY: "0" })).toThrow(/positive/);
     expect(() => loadConfig({})).toThrow(/CLICKHOUSE_URL/);
   });
+
+  it("resolves the project file path", () => {
+    expect(loadConfig(base, "/repo/letsview").projectFile).toEqual({
+      path: "/repo/letsview/letsview.yaml",
+      required: false,
+    });
+    expect(
+      loadConfig({ ...base, LETSVIEW_PROJECT_FILE: "conf/p.yaml" }, "/repo/letsview").projectFile,
+    ).toEqual({ path: "/repo/letsview/conf/p.yaml", required: true });
+    expect(
+      loadConfig({ ...base, LETSVIEW_PROJECT_FILE: "/abs/p.yaml" }, "/repo/letsview").projectFile,
+    ).toEqual({ path: "/abs/p.yaml", required: true });
+    expect(
+      loadConfig({ ...base, LETSVIEW_PROJECT_FILE: "" }, "/repo/letsview").projectFile,
+    ).toEqual({ path: "/repo/letsview/letsview.yaml", required: false });
+  });
 });

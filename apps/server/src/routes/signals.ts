@@ -2,7 +2,12 @@ import type { CatalogSnapshot, SignalPage } from "@letsview/shared";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
-import { type Catalog, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../catalog.ts";
+import {
+  type Catalog,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  warnDisplayFallbacks,
+} from "../catalog.ts";
 import { apiError, parseInput } from "../http.ts";
 
 const SearchQuery = z.object({
@@ -52,6 +57,7 @@ export const signalRoutes =
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
       }
+      warnDisplayFallbacks(app.log, catalog);
       return { size: catalog.size, loadedAt: catalog.loadedAt?.toISOString() };
     });
   };

@@ -110,7 +110,7 @@ A collision is one shown name held by two or more **different source names**. Th
 
 Rejected alternatives for step 4: a counter suffix (`V_ANZ (COMBI) #2`) invents a name that appears nowhere in the source; dropping the rule only for one of the pair makes the result depend on catalog order.
 
-`main.ts` logs once per catalog load, when `fellBack` is not empty: `warn` `display names: <n> signals show their full name because their shown names collide: <first 10, comma-separated>`.
+The helper `warnDisplayFallbacks` logs once per catalog load (at startup in `main.ts` and after a successful `POST /api/catalog/refresh` in `routes/signals.ts`), when `fellBack` is not empty: `warn` `display names: <n> signals show their full name because their shown names collide: <first 10, comma-separated>`.
 
 ### N6: Invalid file stops the server (pinned messages)
 

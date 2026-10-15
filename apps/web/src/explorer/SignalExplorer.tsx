@@ -3,6 +3,7 @@ import {
   type Digits,
   type SignalInfo,
   searchSignals,
+  shownName,
   type WorkspaceWindow,
   windowTitle,
 } from "@letsview/shared";
@@ -345,11 +346,12 @@ export function SignalExplorer({
                 )}
                 <span
                   className={onDragStart ? "name draggable" : "name"}
+                  title={s.displayName !== undefined ? s.name : undefined}
                   onPointerDown={(e) => {
                     if (e.button === 0 && onDragStart) onDragStart({ signalId: s.id }, e);
                   }}
                 >
-                  <Highlight text={s.name} ranges={m.name} />
+                  <Highlight text={shownName(s)} ranges={m.shown} />
                 </span>
                 {s.unit && (
                   <span className="unit row-unit">

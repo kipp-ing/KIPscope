@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { Catalog } from "../src/catalog.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
-import { testDbcFiles, testSource } from "./testdb.ts";
+import { loadProjectFile } from "../src/project.ts";
+import { fixture, testDbcFiles, testSource } from "./testdb.ts";
 
 describe("Catalog (test DB)", () => {
   const catalog = new Catalog(testSource(), () => loadDbcFiles(testDbcFiles));
@@ -92,5 +93,44 @@ describe("Catalog (test DB)", () => {
     expect(catalog.snaRanges("testcar/Sna_800h.TEMP")).toEqual([{ lo: -128.5, hi: -127.5 }]);
     expect(catalog.snaRanges("testcar/Nodbc_500h.RAW")).toEqual([]);
     expect(catalog.snaRanges("testcar/Nope.NOPE")).toEqual([]);
+  });
+});
+
+describe("Catalog display names (test DB, test project file)", () => {
+  const rules = loadProjectFile({ path: fixture("letsview.test.yaml"), required: true });
+  const catalog = new Catalog(testSource(), () => loadDbcFiles(testDbcFiles), rules);
+  beforeAll(() => catalog.refresh());
+
+  it("sets display names from the test project file", () => {
+    const shown = (id: string) => {
+      const s = catalog.get(id);
+      expect(s, id).toBeDefined();
+      return s?.displayName;
+    };
+    expect(shown("testcar/Irr_200h.JITTER")).toBe("SPEED");
+    expect(shown("testcar/Sna_800h.SPEED")).toBe("SPEED (Sna)");
+    expect(shown("testcar/Sna_800h.RPM")).toBe("RPM");
+    expect(shown("testcar/Sna_800h.TEMP")).toBe("TEMP");
+    expect(shown("testcar/Many_700h.S0001")).toBe("S0001");
+    expect(shown("testcar/Nodbc_500h.RAW")).toBe("RAW");
+    expect(shown("testcar/Sparse_300h.SLOW")).toBe("SLOW");
+
+    // SIG_A/B/C collide twice and show their full names; both data references alike.
+    for (const id of [
+      "testcar/Fast_100h.SIG_A",
+      "othercar/Fast_100h.SIG_A",
+      "testcar/Fast_100h.SIG_B",
+      "testcar/Fast_100h.SIG_C",
+    ]) {
+      expect(catalog.get(id), id).not.toHaveProperty("displayName");
+    }
+    expect(catalog.displayFallbacks).toEqual([
+      "Fast_100h.SIG_A",
+      "Fast_100h.SIG_B",
+      "Fast_100h.SIG_C",
+    ]);
+    // Identity unchanged.
+    expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
+    expect(catalog.size).toBe(1013);
   });
 });

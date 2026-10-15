@@ -50,6 +50,13 @@ export interface SignalInfo {
   sna?: SnaValue[];
   /** Absent when the signal has no DBC entry. */
   dbc?: DbcInfo;
+  /** Name the UI shows (D-035); absent when it equals `name`. Never used as identity. */
+  displayName?: string;
+}
+
+/** `displayName ?? name`. */
+export function shownName(s: Pick<SignalInfo, "name" | "displayName">): string {
+  return s.displayName ?? s.name;
 }
 
 /** `GET /api/catalog` (design E3). */

@@ -1,0 +1,23 @@
+# letsview project file (D-035): how the UI shows signal names.
+# The server reads <repo root>/letsview.yaml at start (LETSVIEW_PROJECT_FILE overrides the path).
+# Restart the server after editing. An invalid file stops the server with one message per problem.
+# Names only change what the UI shows; signal IDs, the API, the CLI and the workspace keep full names.
+
+# Optional; the only top-level key.
+display:
+  # Optional ordered list of rules; the first rule whose `match` finds the full source name wins.
+  names:
+    # COMBI_412h.V_ANZ -> V_ANZ; on a collision V_ANZ (COMBI)
+    # match: JavaScript RegExp without flags, run on the name without data reference; named groups feed the templates.
+    - match: '^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$'
+      # show: shown name; {group} inserts a named group of `match`. Renders empty -> full name.
+      show: '{signal}'
+      # collision: optional; used instead of `show` when two different signals would show the same name.
+      collision: '{signal} ({message})'
+    # AC_A1.T_SOLL -> T_SOLL; on a collision T_SOLL (AC_A1)
+    - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
+      show: '{signal}'
+      collision: '{signal} ({message})'
+  # rename: optional map from full source name to shown name; beats every rule and gets no collision suffix.
+  # rename:
+  #   COMBI_412h.V_ANZ: Speed

@@ -9,6 +9,7 @@ import {
   type RenderError,
   resolveTimeNav,
   type SignalInfo,
+  shownName,
   signalColor,
   spanAround,
   zoomAround,
@@ -599,7 +600,8 @@ export function App() {
   const onDragStart = useCallback(
     (source: AnyDragSource, event: React.PointerEvent) => {
       if (event.button !== 0 || dragRef.current) return;
-      const label = infos.current.get(source.signalId)?.name ?? source.signalId;
+      const info = infos.current.get(source.signalId);
+      const label = info ? shownName(info) : source.signalId;
       const d: Drag = {
         source,
         label,

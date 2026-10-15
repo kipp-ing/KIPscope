@@ -9,9 +9,19 @@ import {
 } from "@letsview/shared";
 import type { DataSource, SnaRange } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
+import { assignDisplayNames, type DisplayRules, NO_RULES } from "./names.ts";
 
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 200;
+
+/** Logs the collision warning of design N5 when a load left fallbacks; call after every load. */
+export function warnDisplayFallbacks(log: { warn(message: string): void }, catalog: Catalog) {
+  const fellBack = catalog.displayFallbacks;
+  if (fellBack.length)
+    log.warn(
+      `display names: ${fellBack.length} signals show their full name because their shown names collide: ${fellBack.slice(0, 10).join(", ")}`,
+    );
+}
 
 /**
  * In-memory signal catalog (design D5): the signals that have data in the source, merged with
@@ -28,13 +38,21 @@ export class Catalog {
   lastError: string | undefined;
   /** Error of the last failed refresh, cleared on success; source of `unavailableReason`. */
   private lastFailure: unknown;
+  /** Source names that show their full name because their shown names collide (design N5), sorted. */
+  displayFallbacks: readonly string[] = [];
 
   private readonly source: DataSource;
   private readonly loadMetadata: () => Promise<Map<string, DbcSignal>>;
+  private readonly rules: DisplayRules;
 
-  constructor(source: DataSource, loadMetadata: () => Promise<Map<string, DbcSignal>>) {
+  constructor(
+    source: DataSource,
+    loadMetadata: () => Promise<Map<string, DbcSignal>>,
+    rules: DisplayRules = NO_RULES,
+  ) {
     this.source = source;
     this.loadMetadata = loadMetadata;
+    this.rules = rules;
   }
 
   /** Reloads signals and metadata. On failure the previous catalog stays in place. */
@@ -65,10 +83,20 @@ export class Catalog {
       }
       return info;
     });
+    // Display names (design N7): over distinct source names, across all data references.
+    const { shown, fellBack } = assignDisplayNames(
+      [...new Set(refs.map((r) => r.name))],
+      this.rules,
+    );
+    for (const info of entries) {
+      const name = shown.get(info.name);
+      if (name !== undefined && name !== info.name) info.displayName = name;
+    }
     entries.sort((a, b) => a.name.localeCompare(b.name) || a.dataRef.localeCompare(b.dataRef));
     this.entries = entries;
     this.byId = new Map(entries.map((e) => [e.id, e]));
     this.ranges = ranges;
+    this.displayFallbacks = fellBack;
     this.index = buildSearchIndex(entries);
     this.loadedAt = new Date();
     this.lastError = undefined;

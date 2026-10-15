@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
+import { loadProjectFile } from "../src/project.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { testDbcFiles, testSource } from "./testdb.ts";
+import { fixture, testDbcFiles, testSource } from "./testdb.ts";
 
 describe("GET /api/signals", () => {
   const source = testSource();
@@ -152,5 +153,85 @@ describe("503 reason while the catalog is still loading", () => {
       expect(res.json().error.code).toBe("catalog_unavailable");
       expect(res.json().error.reason).toMatch(/^still loading/);
     }
+  });
+});
+
+describe("display names over HTTP (test project file)", () => {
+  const source = testSource();
+  const rules = loadProjectFile({ path: fixture("letsview.test.yaml"), required: true });
+  const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("returns displayName in search and full catalog and keeps IDs", async () => {
+    const hit = (await app.inject({ url: "/api/signals?q=Sna_800h.RPM" })).json().items[0];
+    expect(hit.id).toBe("testcar/Sna_800h.RPM");
+    expect(hit.name).toBe("Sna_800h.RPM");
+    expect(hit.displayName).toBe("RPM");
+
+    const all = (await app.inject({ url: "/api/catalog" })).json().items as {
+      id: string;
+      name: string;
+      displayName?: string;
+    }[];
+    const rpm = all.find((s) => s.id === "testcar/Sna_800h.RPM");
+    expect(rpm).toMatchObject({ name: "Sna_800h.RPM", displayName: "RPM" });
+    const siga = all.find((s) => s.id === "testcar/Fast_100h.SIG_A");
+    expect(siga).toBeDefined();
+    expect(siga).not.toHaveProperty("displayName");
+
+    const spee = (await app.inject({ url: "/api/signals?q=spee" })).json().items;
+    expect(spee.slice(0, 2).map((s: { id: string }) => s.id)).toEqual([
+      "testcar/Irr_200h.JITTER",
+      "testcar/Sna_800h.SPEED",
+    ]);
+  });
+});
+
+describe("collision warning on refresh (N5)", () => {
+  const real = testSource();
+  let failing = false;
+  const source = {
+    ...real,
+    listSignals: () =>
+      failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.listSignals(),
+  } as unknown as DataSource;
+  const rules = loadProjectFile({ path: fixture("letsview.test.yaml"), required: true });
+  const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  // buildApp only takes a boolean logger, so the fake logger replaces app.log.warn.
+  const warn = vi.spyOn(app.log, "warn").mockImplementation(() => undefined);
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("logs exactly one warn line naming the three Fast_100h.SIG_* signals", async () => {
+    warn.mockClear();
+    const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
+    expect(res.statusCode).toBe(200);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0]?.[0]);
+    for (const name of ["Fast_100h.SIG_A", "Fast_100h.SIG_B", "Fast_100h.SIG_C"])
+      expect(line).toContain(name);
+  });
+
+  it("logs no warn line when the refresh fails with 502", async () => {
+    warn.mockClear();
+    failing = true;
+    try {
+      const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
+      expect(res.statusCode).toBe(502);
+    } finally {
+      failing = false;
+    }
+    expect(warn).not.toHaveBeenCalled();
   });
 });

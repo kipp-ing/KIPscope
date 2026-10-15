@@ -1,0 +1,8 @@
+display:
+  names:
+    - match: '^(?<message>[A-Z+)\.(?<signal>.+)$'
+      show: '{signal}'
+    - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
+      show: '{sig}'
+    - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
+      show: '{signal'

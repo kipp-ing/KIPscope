@@ -1,0 +1,10 @@
+display:
+  names:
+    - match: '^(?<message>[A-Za-z]+)_[0-9A-Fa-f]+h\.(?<signal>[A-Z]+)_[A-Z]$'
+      show: '{signal}'
+      collision: '{signal} ({message})'
+    - match: '^(?<message>[A-Za-z]+)_[0-9A-Fa-f]+h\.(?<signal>.+)$'
+      show: '{signal}'
+      collision: '{signal} ({message})'
+  rename:
+    Irr_200h.JITTER: SPEED

@@ -1,6 +1,6 @@
-import type { SignalInfo } from "./signals.ts";
+import { type SignalInfo, shownName } from "./signals.ts";
 
-/** 0 exact, 1 prefix, 2 name substring, 3 description/alias/unit (design E2). */
+/** 0 exact, 1 prefix, 2 name or shown-name substring, 3 description/alias/unit (design E2). */
 export type MatchTier = 0 | 1 | 2 | 3;
 /** Half-open [start, end) in UTF-16 indices of the original string. */
 export type MatchRange = readonly [start: number, end: number];
@@ -10,6 +10,8 @@ export interface SignalMatch {
   tier: MatchTier;
   /** Sorted, merged; [] when nothing matched in that field. */
   name: MatchRange[];
+  /** Ranges in `shownName(signal)`. */
+  shown: MatchRange[];
   unit: MatchRange[];
   description: MatchRange[];
 }
@@ -22,10 +24,14 @@ export interface SearchIndex {
   readonly [indexBrand]: true;
 }
 
-/** Lower-cased fields of one signal; `short` is the name after the first `.` (whole name if none). */
+/**
+ * Lower-cased fields of one signal; `short` is the name after the first `.` (whole name if none),
+ * `shown` the shown name (D-035).
+ */
 interface Fields {
   name: string;
   short: string;
+  shown: string;
   description: string;
   alias: string;
   unit: string;
@@ -44,6 +50,7 @@ export function buildSearchIndex(signals: readonly SignalInfo[]): SearchIndex {
     return {
       name,
       short: dot < 0 ? name : name.slice(dot + 1),
+      shown: shownName(s).toLowerCase(),
       description: s.description?.toLowerCase() ?? "",
       alias: s.alias?.toLowerCase() ?? "",
       unit: s.unit?.toLowerCase() ?? "",
@@ -55,9 +62,9 @@ export function buildSearchIndex(signals: readonly SignalInfo[]): SearchIndex {
 
 /** Tier of one term for one signal, or undefined when it matches no field. */
 function termTier(f: Fields, t: string): MatchTier | undefined {
-  if (t === f.name || t === f.short) return 0;
-  if (f.name.startsWith(t) || f.short.startsWith(t)) return 1;
-  if (f.name.includes(t)) return 2;
+  if (t === f.name || t === f.short || t === f.shown) return 0;
+  if (f.name.startsWith(t) || f.short.startsWith(t) || f.shown.startsWith(t)) return 1;
+  if (f.name.includes(t) || f.shown.includes(t)) return 2;
   if (f.description.includes(t) || f.alias.includes(t) || f.unit.includes(t)) return 3;
   return undefined;
 }
@@ -87,7 +94,14 @@ export function searchSignals(index: SearchIndex, query: string): SignalMatch[] 
   const { signals, fields } = index as unknown as Index;
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
-    return signals.map((signal) => ({ signal, tier: 3, name: [], unit: [], description: [] }));
+    return signals.map((signal) => ({
+      signal,
+      tier: 3,
+      name: [],
+      shown: [],
+      unit: [],
+      description: [],
+    }));
   }
   // Buckets per tier keep catalog order within a tier (stable).
   const buckets: SignalMatch[][] = [[], [], [], []];
@@ -109,6 +123,7 @@ export function searchSignals(index: SearchIndex, query: string): SignalMatch[] 
       signal,
       tier,
       name: ranges(f.name, terms),
+      shown: ranges(f.shown, terms),
       unit: ranges(f.unit, terms),
       description: ranges(f.description, terms),
     });

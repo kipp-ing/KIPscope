@@ -1,0 +1,11 @@
+# letsview project file (D-035). See letsview.example.yaml. Restart the server after editing.
+display:
+  names:
+    # COMBI_412h.V_ANZ -> V_ANZ; on a collision V_ANZ (COMBI)
+    - match: '^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$'
+      show: '{signal}'
+      collision: '{signal} ({message})'
+    # AC_A1.T_SOLL -> T_SOLL; on a collision T_SOLL (AC_A1)
+    - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
+      show: '{signal}'
+      collision: '{signal} ({message})'

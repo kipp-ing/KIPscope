@@ -19,6 +19,8 @@ export interface Config {
   dbcFiles: string[];
   queryConcurrency: number;
   queryTimeoutSeconds: number;
+  /** Project file (D-035). Default `<repo root>/letsview.yaml`, optional; `LETSVIEW_PROJECT_FILE` overrides it and must exist. */
+  projectFile: { path: string; required: boolean };
 }
 
 export const REPO_ROOT = resolve(import.meta.dirname, "../../..");
@@ -51,6 +53,7 @@ function positiveInt(env: Env, key: string, fallback: number): number {
 export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
   const url = env.CLICKHOUSE_URL;
   if (!url) throw new Error("CLICKHOUSE_URL is not set (see .env.example)");
+  const project = env.LETSVIEW_PROJECT_FILE;
   const dbc = env.LETSVIEW_DBC_FILES ? env.LETSVIEW_DBC_FILES.split(",") : DEFAULT_DBC_FILES;
   return {
     host: env.LETSVIEW_HOST || "127.0.0.1",
@@ -74,5 +77,8 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       .map((p) => (isAbsolute(p) ? p : resolve(root, p))),
     queryConcurrency: positiveInt(env, "LETSVIEW_QUERY_CONCURRENCY", 4),
     queryTimeoutSeconds: positiveInt(env, "LETSVIEW_QUERY_TIMEOUT_S", 30),
+    projectFile: project
+      ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }
+      : { path: resolve(root, "letsview.yaml"), required: false },
   };
 }

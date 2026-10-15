@@ -74,6 +74,35 @@ pnpm --filter @letsview/web dev      # UI at http://localhost:5173, proxies /api
 
 **Cursors.** Click a plot to place cursor A, Shift+click for B, drag a line to move it (Esc puts it back). Each legend row shows the exact value at A and at B; "Diff" adds Δ = B − A and Δt. Hover a value for its kind (linear between points, held, …). A values window ("+ Values") lists many signals at the cursors without a plot.
 
+## Display names
+
+The UI shows short signal names from the project file `letsview.yaml` in the repo root (keys explained in [letsview.example.yaml](letsview.example.yaml)). The shipped rules shorten every smart451 name to the part after the message:
+
+```yaml
+display:
+  names:
+    - match: '^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$'   # COMBI_412h.V_ANZ -> V_ANZ
+      show: '{signal}'
+      collision: '{signal} ({message})'
+    - match: '^(?<message>[^.]+)\.(?<signal>.+)$'                   # AC_A1.T_SOLL -> T_SOLL
+      show: '{signal}'
+      collision: '{signal} ({message})'
+```
+
+| Key | Meaning |
+|---|---|
+| `match` | JavaScript RegExp (no flags) on the full source name without data reference; its named groups feed the templates |
+| `show` | Shown name, `{group}` inserts a named group; renders empty → full name |
+| `collision` | Optional; used instead of `show` when different signals would show the same name (`V_ANZ (COMBI)`) |
+| `rename` | Map full source name → shown name (`COMBI_412h.V_ANZ: Speed`) |
+
+- Rules run in order, the first whose `match` finds the name wins; no match shows the full name.
+- `rename` beats every rule and gets no collision suffix.
+- Collisions are checked over the whole catalog: rule-made names take their `collision` suffix; names still shared fall back to the full name (logged as `warn`).
+- Only the UI changes: explorer, legend, values window and drag ghost show the short name; hover card and name tooltips show the full name; search matches short name, message and full name. IDs, API, CLI and workspace keep full names.
+- `LETSVIEW_PROJECT_FILE` points to another file (relative to the repo root); it must then exist. Without it a missing `letsview.yaml` means full names.
+- Restart the server after editing the file. An invalid file (YAML syntax, unknown key, bad regex, unknown group in a template) stops the server with one line per problem.
+
 ## Check
 
 ```sh

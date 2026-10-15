@@ -1,12 +1,13 @@
-import type {
-  CommandInput,
-  CommandResult,
-  CursorState,
-  Digits,
-  RenderError,
-  SignalInfo,
-  ValuesMode,
-  ValuesWindow as WindowState,
+import {
+  type CommandInput,
+  type CommandResult,
+  type CursorState,
+  type Digits,
+  type RenderError,
+  type SignalInfo,
+  shownName,
+  type ValuesMode,
+  type ValuesWindow as WindowState,
 } from "@letsview/shared";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -320,7 +321,7 @@ export function ValuesWindow({
           <tbody>
             {w.signals.map((s) => {
               const meta = info(s.signalId);
-              const name = meta?.name ?? s.signalId;
+              const name = meta ? shownName(meta) : s.signalId;
               const keyA = `${s.id}|a`;
               const keyB = `${s.id}|b`;
               const keyL = `${s.id}|l`;
@@ -339,7 +340,12 @@ export function ValuesWindow({
                       }
                     >
                       <span className="swatch" style={{ background: colorOf(s.signalId) }} />
-                      <span className="sig">{breakable(name)}</span>
+                      <span
+                        className="sig"
+                        title={meta?.displayName !== undefined ? meta.name : undefined}
+                      >
+                        {breakable(name)}
+                      </span>
                     </span>
                   </td>
                   <ValueCell state={stateA} unit={unit} digits={digits} />
