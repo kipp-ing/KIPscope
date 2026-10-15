@@ -14,8 +14,16 @@ import "../chart/window.css";
 import "./values.css";
 import { fetchCursorValue } from "../api.ts";
 import type { DragSource, DropState } from "../chart/drag.ts";
-import { type Cell, deltaCell, formatCell, formatCursorTime, formatDeltaT } from "./format.ts";
 import {
+  type Cell,
+  deltaCell,
+  formatCell,
+  formatCursorTime,
+  formatDeltaT,
+  loadingCell,
+} from "./format.ts";
+import {
+  cellState,
   type FetchValue,
   ValueLoader,
   type ValueState,
@@ -98,8 +106,11 @@ function WindowTitle({
   );
 }
 
-/** One value cell: the loaded value, the request's error, or "—" while off or not loaded yet. */
-function ValueCell({ state, off }: { state: ValueState | undefined; off: boolean }) {
+/**
+ * One value cell (state from cellState): "—" while its cursor is off, the request's error, the
+ * loading state until the value for the current time arrives, then the value.
+ */
+function ValueCell({ state }: { state: ValueState | undefined }) {
   if (state?.status === "error") {
     return (
       <td className="value error" title={state.error}>
@@ -107,15 +118,15 @@ function ValueCell({ state, off }: { state: ValueState | undefined; off: boolean
       </td>
     );
   }
-  const r = off ? undefined : state?.result;
+  const r = state?.result;
   const cell = formatCell(r?.value, r?.at, r?.next);
-  return <CellView cell={cell} loading={!off && state?.status !== "complete"} />;
+  return <CellView cell={state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
-function CellView({ cell, loading = false }: { cell: Cell; loading?: boolean }) {
+function CellView({ cell }: { cell: Cell }) {
   return (
     <td
-      className={`value${cell.sna ? " sna-value" : ""}${loading ? " loading" : ""}`}
+      className={`value${cell.sna ? " sna-value" : ""}${cell.loading ? " loading" : ""}`}
       title={cell.title}
     >
       {cell.text}
@@ -148,6 +159,7 @@ export function ValuesWindow({
     [w.signals, cursors, w.mode],
   );
   useEffect(() => loader.update(requests), [loader, requests]);
+  const requestOf = new Map(requests.map((r) => [r.key, r]));
 
   // --- render acknowledgement -----------------------------------------------------------------
 
@@ -224,10 +236,11 @@ export function ValuesWindow({
             {w.signals.map((s) => {
               const meta = info(s.signalId);
               const name = meta?.name ?? s.signalId;
-              const stateA = loader.get(`${s.id}|a`);
-              const stateB = loader.get(`${s.id}|b`);
-              const valueA = a === undefined ? undefined : stateA?.result?.value;
-              const valueB = b === undefined ? undefined : stateB?.result?.value;
+              const keyA = `${s.id}|a`;
+              const keyB = `${s.id}|b`;
+              const stateA = cellState(loader.get(keyA), requestOf.get(keyA));
+              const stateB = cellState(loader.get(keyB), requestOf.get(keyB));
+              const delta = deltaCell(stateA?.result?.value, stateB?.result?.value);
               return (
                 <tr key={s.id} title={meta?.description}>
                   <td>
@@ -243,14 +256,14 @@ export function ValuesWindow({
                     </span>
                   </td>
                   <td className="unit">{meta?.unit && `[${meta.unit}]`}</td>
-                  <ValueCell state={stateA} off={a === undefined} />
-                  {diff && <ValueCell state={stateB} off={b === undefined} />}
+                  <ValueCell state={stateA} />
+                  {diff && <ValueCell state={stateB} />}
                   {diff && (
                     <CellView
-                      cell={deltaCell(valueA, valueB)}
-                      loading={
-                        (a !== undefined && stateA?.status === "loading") ||
-                        (b !== undefined && stateB?.status === "loading")
+                      cell={
+                        stateA && stateB && [stateA, stateB].some((x) => x.status === "loading")
+                          ? loadingCell(delta)
+                          : delta
                       }
                     />
                   )}

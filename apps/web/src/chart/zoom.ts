@@ -84,19 +84,38 @@ export class ZoomHistory {
   }
 }
 
+const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
+
 /**
- * Local zoom/pan preview of one window: the plot shows the preview while a gesture runs and its
- * setRange command is on its way; the server range changes only after the command is accepted.
+ * Local zoom/pan preview of one window: the plot and the header show the preview while a gesture
+ * runs, its setRange command is on its way and, once accepted, until the new server range arrives.
  */
 export class RangePreview {
   /** Previewed range; undefined shows the server range. */
   range: Range | undefined;
   /** A setRange command is on its way. */
   inFlight = false;
+  /** Server range at the last settle. */
+  private seen: Range | undefined;
+  /** The server range changed since the last command was sent. */
+  private moved = false;
 
-  /** The range the plot shows. */
+  /** The range the plot and the header show. */
   view(server: Range): Range {
     return this.range ?? server;
+  }
+
+  /**
+   * Called on each render with the server range; pending: a commit is scheduled but not sent.
+   * While no command is pending or on its way, an accepted preview is dropped once the server
+   * range equals it or changed since the command was sent (the accepted range, or another
+   * client's, which wins). The accept may arrive before the revision that carries the range.
+   */
+  settle(server: Range, pending: boolean): void {
+    if (this.seen && !sameRange(this.seen, server)) this.moved = true;
+    this.seen = server;
+    if (!this.range || pending || this.inFlight) return;
+    if (this.moved || sameRange(this.range, server)) this.range = undefined;
   }
 
   /**
@@ -109,6 +128,7 @@ export class RangePreview {
     send: () => Promise<{ ok: boolean }>,
   ): Promise<{ ok: boolean; reapply: boolean }> {
     this.inFlight = true;
+    this.moved = false;
     let ok = false;
     try {
       ok = (await send()).ok;
@@ -117,11 +137,11 @@ export class RangePreview {
     } finally {
       this.inFlight = false;
     }
-    // The accepted range arrives with the next revision; drop the preview if nothing newer.
-    if (this.range !== r) return { ok, reapply: false };
-    this.range = undefined;
+    // Accepted, or a newer preview: settle drops the preview once the server range arrives.
+    if (ok || this.range !== r) return { ok, reapply: false };
     // Rejected: no new range comes, so the plot goes back to the server range.
-    return { ok, reapply: !ok };
+    this.range = undefined;
+    return { ok, reapply: true };
   }
 
   /** Drops the preview without a command; true if there was one (the plot must show the server range again). */

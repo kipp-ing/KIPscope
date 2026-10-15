@@ -13,9 +13,22 @@ export interface Cell {
   tag?: "lin" | "hold";
   sna?: boolean;
   title?: string;
+  /** The value for the current cursor time is loading: shown dimmed. */
+  loading?: boolean;
 }
 
 export const NO_VALUE = "—";
+/** Shown while a value loads and no previous one is there; "—" means only "no value". */
+export const LOADING = "…";
+
+/** A cell whose value is loading: the previous value dimmed, or "…" instead of "—"; tooltip "loading". */
+export function loadingCell(previous: Cell): Cell {
+  return {
+    ...(previous.text === NO_VALUE ? { text: LOADING } : previous),
+    loading: true,
+    title: "loading",
+  };
+}
 
 const REASONS: Record<NoValueReason, string> = {
   no_data: "no data",

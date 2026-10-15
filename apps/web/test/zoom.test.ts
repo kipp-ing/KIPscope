@@ -4,6 +4,7 @@ import {
   clampRange,
   extentRange,
   historyKey,
+  type Range,
   RangePreview,
   wheelZoomFactor,
   ZOOM_HISTORY_LIMIT,
@@ -199,12 +200,59 @@ describe("RangePreview", () => {
 
   it("drops the preview without a view reset when the server accepts the range", async () => {
     const p = new RangePreview();
+    p.settle(server, false);
     p.range = zoomed;
     expect(await p.commit(zoomed, async () => ({ ok: true }))).toEqual({
       ok: true,
       reapply: false,
     });
-    expect(p.range).toBeUndefined();
     expect(p.inFlight).toBe(false);
+    // The accepted range arrives with the next revision; then the preview is dropped.
+    p.settle(zoomed, false);
+    expect(p.range).toBeUndefined();
+    expect(p.view(zoomed)).toEqual(zoomed);
+  });
+
+  it("shows the preview range in the header", async () => {
+    // The header shows view(server), like the plot: three quick wheel zooms, then their commands.
+    const p = new RangePreview();
+    p.settle(server, false);
+    const steps = [
+      { from: 100n, to: 900n },
+      { from: 200n, to: 800n },
+      { from: 300n, to: 700n },
+    ];
+    for (const step of steps) {
+      p.range = step;
+      p.settle(server, true); // commit scheduled, not sent
+      expect(p.view(server)).toBe(step);
+    }
+    const last = steps[2] as Range;
+    let accept: (r: { ok: boolean }) => void = () => {};
+    const done = p.commit(last, () => new Promise((resolve) => (accept = resolve)));
+    p.settle(server, false); // in flight
+    expect(p.view(server)).toBe(last);
+    // The accept arrives before the revision that carries the range: still the preview, never
+    // the range of the step before.
+    accept({ ok: true });
+    await done;
+    p.settle(server, false);
+    expect(p.view(server)).toBe(last);
+    p.settle(last, false);
+    expect(p.range).toBeUndefined();
+    expect(p.view(last)).toEqual(last);
+    // Revision first, then the accept: the same.
+    p.range = zoomed;
+    const second = p.commit(zoomed, async () => ({ ok: true }));
+    p.settle(zoomed, false);
+    expect(p.view(zoomed)).toBe(zoomed);
+    await second;
+    p.settle(zoomed, false);
+    expect(p.range).toBeUndefined();
+    // Another client's range that arrives after the accept wins.
+    p.range = { from: 0n, to: 10n };
+    await p.commit(p.range, async () => ({ ok: true }));
+    p.settle(server, false);
+    expect(p.view(server)).toBe(server);
   });
 });

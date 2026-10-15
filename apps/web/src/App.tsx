@@ -22,6 +22,7 @@ import {
   type DropTarget,
   dropCommand,
   dropStateFor,
+  isCopy,
   isLegendSource,
 } from "./chart/drag.ts";
 import { type Insets, mergeInsets } from "./chart/insets.ts";
@@ -123,6 +124,18 @@ export function App() {
     return result;
   }, []);
 
+  // A window created by "+ Values window" or a drop on "+ New window" is scrolled into view once the
+  // workspace shows it (the effect below the window list refs).
+  const [reveal, setReveal] = useState<string | undefined>();
+  const barCommand = useCallback(
+    async (input: CommandInput): Promise<CommandResult> => {
+      const result = await command(input);
+      if (result.ok && input.type === "window.create" && result.created) setReveal(result.created);
+      return result;
+    },
+    [command],
+  );
+
   const addSignal = async (signal: SignalInfo, target: string) => {
     let windowId = target;
     if (target === NEW_WINDOW) {
@@ -140,6 +153,7 @@ export function App() {
         });
         if (!created.ok || !created.created) return;
         windowId = created.created;
+        setReveal(windowId);
       } catch (e) {
         setMessage(e instanceof Error ? e.message : String(e));
         return;
@@ -162,6 +176,7 @@ export function App() {
         to: range.to.toString(),
       });
       if (!created.ok || !created.created) return;
+      setReveal(created.created);
       await command({
         type: "window.moveSignal",
         windowId: source.windowId,
@@ -356,6 +371,13 @@ export function App() {
     dragRef.current = d;
     setDrag(d);
   }, []);
+  useEffect(() => {
+    if (!reveal || !windowKey.split(",").includes(reveal)) return;
+    setReveal(undefined);
+    mainRef.current
+      ?.querySelector(`[data-window-id="${CSS.escape(reveal)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [reveal, windowKey]);
   const onDragStart = useCallback(
     (source: AnyDragSource, event: React.PointerEvent) => {
       if (event.button !== 0 || dragRef.current) return;
@@ -371,11 +393,11 @@ export function App() {
         copy: false,
       };
       dragRef.current = d;
-      // Only a legend or values row can copy; Alt/Ctrl change nothing for an explorer drag.
-      const legend = isLegendSource(source);
+      // Copy mode follows the modifiers of this drag's latest pointer or key event only (isCopy),
+      // so an Alt drag earlier leaves nothing behind.
       let frame = 0;
 
-      // Pointer near the visible top (below the option bar) or bottom (above the sticky drop zone)
+      // Pointer near the visible top (below the option bar) or bottom (above the drop zone)
       // of the window list scrolls it, faster the closer. On the drop zone itself it rests (C7).
       const autoScroll = () => {
         frame = 0;
@@ -432,7 +454,7 @@ export function App() {
           active: true,
           x: e.clientX,
           y: e.clientY,
-          copy: legend && (e.altKey || e.ctrlKey),
+          copy: isCopy(source, e),
           target: targetAt(e.clientX, e.clientY),
         });
         if (!frame) frame = requestAnimationFrame(autoScroll);
@@ -458,26 +480,27 @@ export function App() {
         // A values row onto "new" with no timeseries window to take the range from: the server cannot
         // create the window, so App creates it at the signal's extent and moves into it (design C6).
         if (target.kind === "new" && !ws.windows.some(isTimeseries)) {
-          void moveToNewWindowRef.current(cur.source, e.altKey || e.ctrlKey);
+          void moveToNewWindowRef.current(cur.source, isCopy(cur.source, e));
           return;
         }
-        void command(cmd);
+        void command(cmd).then((r) => {
+          if (r.ok && r.createdWindow) setReveal(r.createdWindow);
+        });
+      };
+      const onModifier = (e: KeyboardEvent) => {
+        const cur = dragRef.current;
+        if ((e.key === "Alt" || e.key === "Control") && cur?.active) {
+          update({ ...cur, copy: isCopy(source, e) });
+        }
       };
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
           finish();
-        } else if (legend && (e.key === "Alt" || e.key === "Control") && dragRef.current?.active) {
-          update({ ...dragRef.current, copy: true });
-        }
+        } else onModifier(e);
       };
-      const onKeyUp = (e: KeyboardEvent) => {
-        const cur = dragRef.current;
-        if (legend && (e.key === "Alt" || e.key === "Control") && cur?.active) {
-          update({ ...cur, copy: e.altKey || e.ctrlKey });
-        }
-      };
+      const onKeyUp = onModifier;
       // Ctrl+drag on macOS would open the context menu.
       const onMenu = (e: Event) => e.preventDefault();
       mainRef.current?.addEventListener("scroll", onScroll);
@@ -557,77 +580,80 @@ export function App() {
         dragging={activeDrag !== undefined}
         colorOf={explorerColorOf}
       />
-      <main ref={mainRef}>
-        <header className="topbar">
-          <h1>letsview</h1>
-          <span className={`conn ${live.connected ? "ok" : "down"}`}>
-            {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
-          </span>
-          {message && (
-            <button type="button" className="message" onClick={() => setMessage(undefined)}>
-              {message} ✕
-            </button>
+      <div className="workspace">
+        <main ref={mainRef}>
+          <header className="topbar">
+            <h1>letsview</h1>
+            <span className={`conn ${live.connected ? "ok" : "down"}`}>
+              {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
+            </span>
+            {message && (
+              <button type="button" className="message" onClick={() => setMessage(undefined)}>
+                {message} ✕
+              </button>
+            )}
+          </header>
+          {workspace && (
+            <div className="option-bar-slot" ref={barRef}>
+              <OptionBar
+                workspace={workspace}
+                target={barWindow}
+                canGoBack={canGoBack(barWindow?.id)}
+                onCommand={barCommand}
+                onBack={onBack}
+                onReset={() => {
+                  if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
+                }}
+              />
+            </div>
           )}
-        </header>
-        {workspace && (
-          <div className="option-bar-slot" ref={barRef}>
-            <OptionBar
-              workspace={workspace}
-              target={barWindow}
-              canGoBack={canGoBack(barWindow?.id)}
-              onCommand={command}
-              onBack={onBack}
-              onReset={() => {
-                if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
-              }}
-            />
-          </div>
-        )}
-        {windows.map((w) =>
-          isTimeseries(w) ? (
-            <TimeseriesWindow
-              key={w.id}
-              window={w}
-              revision={live.revision}
-              info={info}
-              colorOf={colorOf}
-              onCommand={command}
-              onReady={onReady}
-              onZoomed={onZoomed}
-              canGoBack={canGoBack(w.id)}
-              onBack={onBack}
-              onReset={onReset}
-              onDragStart={onDragStart}
-              insets={insets}
-              onInsets={onInsets}
-              cursors={cursors}
-              onCursorPreview={onCursorPreview}
-              onCursorCommit={onCursorCommit}
-              {...dropProp(dropStateOf(w.id))}
-              {...dropActionProp}
-            />
-          ) : (
-            <ValuesWindow
-              key={w.id}
-              window={w}
-              revision={live.revision}
-              cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
-              dragging={cursorPreview !== undefined}
-              info={info}
-              colorOf={colorOf}
-              onCommand={command}
-              onReady={onReady}
-              onDragStart={onDragStart}
-              {...dropProp(dropStateOf(w.id))}
-              {...dropActionProp}
-            />
-          ),
-        )}
-        {workspace && windows.length === 0 && (
-          <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
-        )}
+          {windows.map((w) =>
+            isTimeseries(w) ? (
+              <TimeseriesWindow
+                key={w.id}
+                window={w}
+                revision={live.revision}
+                info={info}
+                colorOf={colorOf}
+                onCommand={command}
+                onReady={onReady}
+                onZoomed={onZoomed}
+                canGoBack={canGoBack(w.id)}
+                onBack={onBack}
+                onReset={onReset}
+                onDragStart={onDragStart}
+                insets={insets}
+                onInsets={onInsets}
+                cursors={cursors}
+                onCursorPreview={onCursorPreview}
+                onCursorCommit={onCursorCommit}
+                {...dropProp(dropStateOf(w.id))}
+                {...dropActionProp}
+              />
+            ) : (
+              <ValuesWindow
+                key={w.id}
+                window={w}
+                revision={live.revision}
+                cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
+                dragging={cursorPreview !== undefined}
+                info={info}
+                colorOf={colorOf}
+                onCommand={command}
+                onReady={onReady}
+                onDragStart={onDragStart}
+                {...dropProp(dropStateOf(w.id))}
+                {...dropActionProp}
+              />
+            ),
+          )}
+          {workspace && windows.length === 0 && (
+            <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
+          )}
+        </main>
         {activeDrag && (
-          // Last child and sticky: at the viewport bottom wherever the list is scrolled (design C7).
+          // Below the window list, not over it: the list shrinks by the zone's height, so the zone
+          // stays at the viewport bottom wherever the list is scrolled and never covers a window (C7).
           <div
             ref={dropRef}
             className={`drop-new${activeDrag.target?.kind === "new" ? " over" : ""}`}
@@ -636,7 +662,7 @@ export function App() {
             + New window
           </div>
         )}
-      </main>
+      </div>
       {activeDrag && (
         <div className="drag-ghost" style={{ left: activeDrag.x + 12, top: activeDrag.y + 12 }}>
           <span className="swatch" style={{ background: colorOf(activeDrag.source.signalId) }} />

@@ -7,6 +7,7 @@ import {
   type DragSource,
   dropCommand,
   dropStateFor,
+  isCopy,
   isLegendSource,
 } from "../src/chart/drag.ts";
 
@@ -110,6 +111,15 @@ describe("drag and drop", () => {
     // Even the only signal of the source window can go to a new window.
     const solo = [win("wA", ["c/V_ANZ"])];
     expect(canDrop(source, { kind: "new" }, solo, unitOf)).toBe(true);
+  });
+
+  it("takes copy mode from the given event's modifiers only", () => {
+    // A plain event after an Alt one: move again, nothing carried over.
+    expect(isCopy(source, { altKey: true, ctrlKey: false })).toBe(true);
+    expect(isCopy(source, none)).toBe(false);
+    expect(isCopy(source, { altKey: false, ctrlKey: true })).toBe(true);
+    // An explorer drag always adds.
+    expect(isCopy({ signalId: "c/V_ANZ" }, { altKey: true, ctrlKey: true })).toBe(false);
   });
 });
 

@@ -628,6 +628,30 @@ describe("cursors and values windows (add-cursors)", () => {
     ).toMatchObject({ ok: false, code: "already_in_window" });
   });
 
+  it("rejects adding a signal the window already shows", () => {
+    const { s, id } = withValues();
+    const made = ok(s, create);
+    const tsId = made.created as string;
+    let cur = add(add(made.workspace, id, "car/KMH").workspace, tsId, "car/KMH").workspace;
+    const frozen = structuredClone(cur);
+    // Both window kinds refuse a second V_ANZ; the workspace and its ID counter stay unchanged.
+    for (const windowId of [id, tsId]) {
+      expect(run(cur, { type: "window.addSignal", windowId, signalId: "car/KMH" })).toMatchObject({
+        ok: false,
+        code: "already_in_window",
+      });
+    }
+    expect(cur).toEqual(frozen);
+    // After removing it, the window takes the signal again.
+    const assignment = win(cur, tsId)?.signals[0]?.id as string;
+    cur = ok(cur, {
+      type: "window.removeSignal",
+      windowId: tsId,
+      assignmentId: assignment,
+    }).workspace;
+    expect(win(add(cur, tsId, "car/KMH").workspace, tsId)?.signals).toHaveLength(1);
+  });
+
   it("keeps values windows out of linked ranges", () => {
     // Values window first (w1), timeseries window second (w2).
     let s = withValues().s;

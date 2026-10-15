@@ -185,14 +185,20 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
         return fail("signal_limit", `at most ${MAX_SIGNALS} distinct signals per workspace`);
       }
       const id = `a${state.nextId}`;
-      const result = updateWindow(
-        command.windowId,
-        (w) =>
+      const result = updateWindow(command.windowId, (w) => {
+        if (w.signals.some((s) => s.signalId === command.signalId)) {
+          return fail(
+            "already_in_window",
+            `window ${w.id} already shows signal ${command.signalId}`,
+          );
+        }
+        return (
           checkUnits(w, command.signalId, ctx) ?? {
             ...w,
             signals: [...w.signals, { id, signalId: command.signalId }],
-          },
-      );
+          }
+        );
+      });
       if (!result.ok) return result;
       const colors =
         command.signalId in state.colors

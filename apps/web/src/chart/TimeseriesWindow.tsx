@@ -597,6 +597,8 @@ export function TimeseriesWindow({
     setView(u, r);
     hideCursor(u);
     commit(r);
+    // The header shows the preview at once.
+    rerender();
   };
   const applyRangeRef = useRef(applyRange);
   applyRangeRef.current = applyRange;
@@ -889,16 +891,14 @@ export function TimeseriesWindow({
     uplot.current?.setSize({ width, height: plotHeight });
   }, [width, plotHeight, insets?.left, insets?.right]);
 
-  if (!preview.inFlight && !commitTimer.current && preview.range) {
-    // A different range arrived from the server (e.g. another client); it wins.
-    preview.range = undefined;
-  }
+  // Drops an accepted preview once its server range arrived, or another client's range wins.
+  preview.settle(serverRange, commitTimer.current !== undefined);
+  // The header shows this range too, so it always matches the plot.
   const view = viewRange();
 
-  // Data and view: only when the model, the shown range (or a dropped preview) or the uPlot
-  // instance changed, so a cursor preview (which rerenders every window per move) costs no join,
-  // setData or redraw.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: view is tracked via its bounds, a dropped preview via viewEpoch; structure and width === 0 mark a new uPlot instance
+  // Data: only when the model, a dropped preview or the uPlot instance changed, so a cursor
+  // preview (which rerenders every window per move) costs no join, setData or redraw.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view is read for the scale reset only, a dropped preview is tracked via viewEpoch; structure and width === 0 mark a new uPlot instance
   useLayoutEffect(() => {
     const u = uplot.current;
     if (!u) return;
@@ -912,7 +912,16 @@ export function TimeseriesWindow({
     xView.current = [Number(view.from - origin.current), Number(view.to - origin.current)];
     u.setData(data, true);
     setView(u, view);
-  }, [model, view.from, view.to, viewEpoch, structure, width === 0]);
+  }, [model, viewEpoch, structure, width === 0]);
+
+  // View: a gesture already set the scale it previews, so only a range set elsewhere redraws.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view is tracked via its bounds
+  useLayoutEffect(() => {
+    const u = uplot.current;
+    if (!u) return;
+    const x = [Number(view.from - origin.current), Number(view.to - origin.current)];
+    if (x[0] !== xView.current[0] || x[1] !== xView.current[1]) setView(u, view);
+  }, [view.from, view.to]);
 
   // Cursor lines only: moving a line needs no redraw (the draw hook places them after a redraw).
   // biome-ignore lint/correctness/useExhaustiveDependencies: cursors are read via cursorsRef

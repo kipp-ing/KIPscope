@@ -73,9 +73,15 @@ export class ValueLoader {
     if (changed) this.onChange();
   }
 
+  /**
+   * Aborts every request and forgets every state, so a later update starts all of them again
+   * (React's StrictMode disposes and remounts once; a kept "loading" state would never fill).
+   */
   dispose(): void {
     for (const controller of this.controllers.values()) controller.abort();
     this.controllers.clear();
+    this.states.clear();
+    this.latest.clear();
   }
 
   private start(request: ValueRequest): void {
@@ -108,6 +114,20 @@ export class ValueLoader {
       },
     );
   }
+}
+
+/**
+ * The state of one cell for its current request; undefined while its cursor is off. A state of an
+ * older request counts as loading and keeps its result, so the cell shows it dimmed meanwhile.
+ */
+export function cellState(
+  state: ValueState | undefined,
+  request: ValueRequest | undefined,
+): ValueState | undefined {
+  if (!request) return undefined;
+  const id = requestId(request);
+  if (state?.request === id) return state;
+  return { status: "loading", request: id, ...(state?.result ? { result: state.result } : {}) };
 }
 
 /** Requests of one values window: A for every row, B too in diff mode; none for a cursor that is off. */

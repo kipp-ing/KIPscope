@@ -2,8 +2,16 @@ import type { CursorValue, CursorValueResult } from "@letsview/shared";
 import { fromIso } from "@letsview/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchCursorValue } from "../src/api.ts";
-import { deltaCell, formatCell, formatCursorTime, formatDeltaT } from "../src/values/format.ts";
-import { ValueLoader } from "../src/values/loader.ts";
+import {
+  deltaCell,
+  formatCell,
+  formatCursorTime,
+  formatDeltaT,
+  LOADING,
+  loadingCell,
+  NO_VALUE,
+} from "../src/values/format.ts";
+import { cellState, ValueLoader, valueRequests } from "../src/values/loader.ts";
 
 process.env.TZ = "Europe/Berlin"; // also set by the package's test script
 
@@ -198,6 +206,78 @@ describe("ValueLoader", () => {
     // Both rows have finished, so the revision can be reported (with an error).
     expect(loader.settled(rows)).toBe(true);
     expect(changes).toHaveBeenCalled();
+  });
+
+  it("shows a loading state distinct from no value", async () => {
+    const { fetch, pending } = controllableFetch();
+    const loader = new ValueLoader(fetch, () => {});
+    const show = (request: ReturnType<typeof row> | undefined) => {
+      const state = cellState(loader.get("a1:a"), request);
+      const r = state?.result;
+      const cell = formatCell(r?.value, r?.at, r?.next);
+      return state?.status === "loading" ? loadingCell(cell) : cell;
+    };
+    // First value: nothing to show yet, so "…" with tooltip "loading", never "—".
+    const first = row("100");
+    expect(show(first)).toEqual({ text: LOADING, loading: true, title: "loading" });
+    loader.update([first]);
+    expect(show(first)).toEqual({ text: LOADING, loading: true, title: "loading" });
+    pending[0]?.resolve(result("100", raw(23)));
+    await flush();
+    expect(show(first)).toEqual({ text: "23" });
+    // Cursor moved: before and after the loader saw the new time, the old value shows dimmed.
+    const moved = row("200");
+    expect(show(moved)).toEqual({ text: "23", loading: true, title: "loading" });
+    loader.update([moved]);
+    expect(show(moved)).toEqual({ text: "23", loading: true, title: "loading" });
+    pending[1]?.resolve(result("200", { kind: "none", reason: "after_last" }));
+    await flush();
+    // "—" only once the answer is "no value"; a later load does not show it as the old value.
+    expect(show(moved)).toMatchObject({ text: NO_VALUE, title: "after the last point" });
+    expect(show(row("300"))).toEqual({ text: LOADING, loading: true, title: "loading" });
+    // Cursor off: "—", not loading.
+    expect(show(undefined)).toEqual({ text: NO_VALUE });
+    // Δ while either side loads: "…" instead of "—".
+    expect(loadingCell(deltaCell(raw(1), undefined))).toEqual({
+      text: LOADING,
+      loading: true,
+      title: "loading",
+    });
+  });
+
+  it("requests B whenever diff mode and B are on", async () => {
+    const rows = [{ id: "a1", signalId: "c/V_ANZ" }];
+    const keys = (c: { a?: string; b?: string; diff: boolean }) =>
+      valueRequests(rows, c, "line").map((r) => r.key);
+    expect(keys({ a: "100", b: "200", diff: true })).toEqual(["a1|a", "a1|b"]);
+    expect(keys({ b: "200", diff: true })).toEqual(["a1|b"]);
+    expect(keys({ a: "100", b: "200", diff: false })).toEqual(["a1|a"]);
+    expect(keys({ a: "100", diff: true })).toEqual(["a1|a"]);
+
+    // A window that mounts with B set: React's StrictMode disposes the loader once and updates
+    // it again. Every request must start again, or B would stay loading forever.
+    const { fetch, pending } = controllableFetch();
+    const loader = new ValueLoader(fetch, () => {});
+    const both = valueRequests(rows, { a: "100", b: "200", diff: true }, "line");
+    loader.update(both);
+    loader.dispose();
+    loader.update(both);
+    expect(pending).toHaveLength(4);
+    expect(pending.slice(2).map((p) => p.abort.aborted)).toEqual([false, false]);
+    pending[2]?.resolve(result("100", raw(23)));
+    pending[3]?.resolve(result("200", raw(18)));
+    await flush();
+    expect(loader.get("a1|b")).toMatchObject({ status: "complete", result: { t: "200" } });
+    expect(loader.settled(both)).toBe(true);
+
+    // Diff off and on again, and B off and on again: B is requested anew each time.
+    loader.update(valueRequests(rows, { a: "100", b: "200", diff: false }, "line"));
+    loader.update(both);
+    expect(pending).toHaveLength(5);
+    loader.update(valueRequests(rows, { a: "100", diff: true }, "line"));
+    loader.update(both);
+    expect(pending).toHaveLength(6);
+    expect(loader.get("a1|b")?.status).toBe("loading");
   });
 });
 

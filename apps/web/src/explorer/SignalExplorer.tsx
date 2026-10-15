@@ -289,6 +289,8 @@ export function SignalExplorer({ windows, onAdd, onSeen, onDragStart, dragging, 
                 className={i === active ? "row active" : "row"}
                 onPointerEnter={() => requestCard(i, false)}
                 onPointerLeave={releaseCard}
+                // A click or a drag start on the row closes the card; it reopens on the next row entered.
+                onPointerDown={closeCard}
               >
                 {sna ? (
                   <span

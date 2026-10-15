@@ -231,7 +231,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Window list plus, during a drag, the "+ New window" zone below it (design C7). */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 main {
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 16px;
 }
@@ -410,13 +420,11 @@ button.link {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* Last child of <main> during every drag, stuck to the viewport bottom over the windows (design C7).
-   The tint lies over an opaque base so the windows below do not show through. */
+/* Below <main> during every drag, at the viewport bottom; <main> shrinks by its height, so the zone
+   covers no window and a drop goes to what is under the pointer (design C7). */
 .drop-new {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  margin-top: 12px;
+  flex: none;
+  margin: 4px 16px 12px;
   padding: 18px;
   border: 2px dashed var(--accent);
   border-radius: 6px;

@@ -51,7 +51,7 @@ export function dropCommand(
   mods: { altKey: boolean; ctrlKey: boolean },
 ): CommandInput | undefined {
   if (!canDrop(source, target, windows, unitOf)) return undefined;
-  const copy = mods.altKey || mods.ctrlKey;
+  const copy = isCopy(source, mods);
   return {
     type: "window.moveSignal",
     windowId: source.windowId,
@@ -72,6 +72,15 @@ export type AnyDragSource = DragSource | ExplorerDragSource;
 /** True for a legend or values row (it has a source window). */
 export function isLegendSource(source: AnyDragSource): source is DragSource {
   return "windowId" in source;
+}
+
+/** Copy mode of a drag from the modifiers of one event of it: Alt or Ctrl on a legend or values
+ * row; an explorer drag always adds. */
+export function isCopy(
+  source: AnyDragSource,
+  mods: { altKey: boolean; ctrlKey: boolean },
+): boolean {
+  return isLegendSource(source) && (mods.altKey || mods.ctrlKey);
 }
 
 /** An explorer drop is accepted by a window that does not show the signal yet and, if it is a
