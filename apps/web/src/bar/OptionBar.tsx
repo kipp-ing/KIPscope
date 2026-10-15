@@ -112,7 +112,7 @@ export function OptionBar({
     <div className="option-bar">
       {cursorToggle("a")}
       {cursorToggle("b")}
-      <label className="toggle" title="Show cursor B and the differences B − A">
+      <label className="toggle" title="Show the differences B − A (Δ and Δt)">
         <input
           type="checkbox"
           checked={cursors.diff}

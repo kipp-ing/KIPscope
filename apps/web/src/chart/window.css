@@ -284,15 +284,11 @@
 
 .window .signals.readout {
   display: grid;
-  /* name, unit, A, status, SNA share, remove; diff adds B and Δ. */
-  grid-template-columns: repeat(6, auto);
+  /* Columns set inline (TimeseriesWindow): name, unit, A, status, SNA share, remove; B while B
+     is on or in diff mode; Δ in diff mode. */
   justify-content: start;
   align-items: center;
   gap: 2px 10px;
-}
-
-.window .signals.readout.diff {
-  grid-template-columns: repeat(8, auto);
 }
 
 .window .signals.readout li {

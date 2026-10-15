@@ -9,8 +9,10 @@ import {
   MAX_PLOT_HEIGHT,
   MAX_UNITS,
   MIN_PLOT_HEIGHT,
+  parseTimestamp,
   type RenderError,
   type SignalInfo,
+  type ValuesMode,
   type TimeseriesWindow as WindowState,
 } from "@letsview/shared";
 import type React from "react";
@@ -18,7 +20,7 @@ import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } fro
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import "./window.css";
-import { fetchSeries } from "../api.ts";
+import { fetchCursorValue, fetchSeries } from "../api.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import {
   type Cell,
@@ -28,6 +30,14 @@ import {
   loadingCell,
   NO_VALUE,
 } from "../values/format.ts";
+import {
+  cellState,
+  type FetchValue,
+  ValueLoader,
+  type ValueRequest,
+  type ValueState,
+  valueErrors,
+} from "../values/loader.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
 import type { AxisSpec } from "./axes.ts";
@@ -422,6 +432,14 @@ function readoutState(state: LoadState | undefined, t: bigint | undefined, cell:
   return !state || state.status === "loading" ? loadingCell(cell) : cell;
 }
 
+const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r.mode, abort);
+
+/** A readout cell from the server's value of a cursor outside the loaded range. */
+function farCell(state: ValueState, cell: Cell): Cell {
+  if (state.status === "error") return { text: NO_VALUE, title: `failed: ${state.error}` };
+  return state.status === "loading" ? loadingCell(cell) : cell;
+}
+
 /** One readout value in a legend row: number with unit, tag, SNA style, reason as tooltip. */
 function ReadoutCell({ cell }: { cell: Cell }) {
   return (
@@ -550,6 +568,28 @@ export function TimeseriesWindow({
     [w.signals, w.range.from, w.range.to, target, width],
   );
   useEffect(() => loader.update(requests), [loader, requests]);
+
+  // Readout of a cursor outside the loaded range: the values window's value from the server, so
+  // the cell keeps a value when the cursor leaves the zoom (D-031). Markers evaluate as line.
+  const values = useMemo(() => new ValueLoader(fetchValue, rerender), []);
+  useEffect(() => () => values.dispose(), [values]);
+  const valueMode: ValuesMode = w.display.mode === "step" ? "step" : "line";
+  const farRequests: ValueRequest[] = w.signals.flatMap((s) => {
+    const result = loader.get(s.id)?.result;
+    if (!result) return [];
+    const from = parseTimestamp(result.from);
+    const to = parseTimestamp(result.to);
+    return (["a", "b"] as const).flatMap((name) => {
+      const t = cursors[name];
+      return t === undefined || (t >= from && t < to)
+        ? []
+        : [{ key: `${s.id}|${name}`, signalId: s.signalId, t: String(t), mode: valueMode }];
+    });
+  });
+  const farKey = JSON.stringify(farRequests);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the requests are tracked via farKey
+  useEffect(() => values.update(farRequests), [values, farKey]);
+  const farOf = new Map(farRequests.map((r) => [r.key, r]));
 
   const inputs = w.signals.map((s) => {
     const meta = info(s.signalId);
@@ -1037,13 +1077,16 @@ export function TimeseriesWindow({
 
   // --- render acknowledgement -----------------------------------------------------------------
 
-  const settled = loader.settled(requests) && width > 0;
-  const errors: RenderError[] = w.signals.flatMap((s) => {
-    const state = loader.get(s.id);
-    return state?.status === "error"
-      ? [{ windowId: w.id, signalId: s.signalId, message: state.error ?? "error" }]
-      : [];
-  });
+  const settled = loader.settled(requests) && values.settled(farRequests) && width > 0;
+  const errors: RenderError[] = [
+    ...w.signals.flatMap((s) => {
+      const state = loader.get(s.id);
+      return state?.status === "error"
+        ? [{ windowId: w.id, signalId: s.signalId, message: state.error ?? "error" }]
+        : [];
+    }),
+    ...valueErrors(w.id, farRequests, values),
+  ];
   const errorKey = JSON.stringify(errors);
   // biome-ignore lint/correctness/useExhaustiveDependencies: errors are tracked via errorKey
   useEffect(() => {
@@ -1085,7 +1128,10 @@ export function TimeseriesWindow({
   const range = formatRange(shown.from, shown.to);
   // Readout (design N3, N4): value columns while a cursor is on, from the drawn data.
   const { a, b } = cursors;
-  const readout = a !== undefined || (diff && b !== undefined);
+  const readout = a !== undefined || b !== undefined;
+  // B's column while B is on; Diff adds Δ and Δt (D-031).
+  const showB = b !== undefined || diff;
+  const columns = 6 + (showB ? 1 : 0) + (diff ? 1 : 0);
   const badge = resolutionBadge(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
     dropState === "target"
@@ -1176,7 +1222,7 @@ export function TimeseriesWindow({
           <span className="cursor-time" title={a === undefined ? undefined : formatCursorTime(a)}>
             {a === undefined ? "A off" : `A ${formatClock(a)}`}
           </span>
-          {diff && (
+          {showB && (
             <span className="cursor-time" title={b === undefined ? undefined : formatCursorTime(b)}>
               {b === undefined ? "B off" : `B ${formatClock(b)}`}
             </span>
@@ -1186,18 +1232,31 @@ export function TimeseriesWindow({
           )}
         </div>
       )}
-      <ul className={`signals${readout ? ` readout${diff ? " diff" : ""}` : ""}`}>
+      <ul
+        className={`signals${readout ? " readout" : ""}`}
+        style={readout ? { gridTemplateColumns: `repeat(${columns}, auto)` } : undefined}
+      >
         {w.signals.map((s) => {
           const meta = info(s.signalId);
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
           const name = meta?.name ?? s.signalId;
-          const valueAt = (t: bigint | undefined): ReadoutValue | undefined =>
-            t === undefined ? undefined : chartValueAt(state?.result, t, w.display.mode);
-          const valueA = valueAt(a);
-          const valueB = valueAt(b);
-          const cellAt = (t: bigint | undefined, v: ReadoutValue | undefined) =>
-            readoutState(state, t, readoutCell(v, meta?.unit, digits));
+          // A cursor outside the loaded range reads the server's value (farRequests).
+          const farState = (name: CursorName) =>
+            cellState(values.get(`${s.id}|${name}`), farOf.get(`${s.id}|${name}`));
+          const valueAt = (name: CursorName): ReadoutValue | undefined => {
+            const t = cursors[name];
+            if (t === undefined) return undefined;
+            const far = farState(name);
+            return far ? far.result?.value : chartValueAt(state?.result, t, w.display.mode);
+          };
+          const valueA = valueAt("a");
+          const valueB = valueAt("b");
+          const cellAt = (name: CursorName, v: ReadoutValue | undefined) => {
+            const far = farState(name);
+            const cell = readoutCell(v, meta?.unit, digits);
+            return far ? farCell(far, cell) : readoutState(state, cursors[name], cell);
+          };
           return (
             <li key={s.id} title={meta?.description}>
               <span
@@ -1215,8 +1274,8 @@ export function TimeseriesWindow({
                   {meta?.unit && `[${meta.unit}]`}
                 </span>
               )}
-              {readout && <ReadoutCell cell={cellAt(a, valueA)} />}
-              {readout && diff && <ReadoutCell cell={cellAt(b, valueB)} />}
+              {readout && <ReadoutCell cell={cellAt("a", valueA)} />}
+              {readout && showB && <ReadoutCell cell={cellAt("b", valueB)} />}
               {readout && diff && (
                 <ReadoutCell
                   cell={readoutState(

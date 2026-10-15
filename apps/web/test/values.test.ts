@@ -187,8 +187,12 @@ describe("headerTimes", () => {
     expect(texts(() => true, fromIso("2026-10-13T21:30:00Z"))[1]).toBe("B 23:30:00");
   });
 
-  it("shows only A without Diff, and the off states", () => {
+  it("shows B without Diff but no Δt, and the off states", () => {
     expect(headerTimes(a, b, false, () => true).map((t) => t.text)).toEqual([
+      "A 2026-10-13 15:08:00.093",
+      "B 15:08:04.500",
+    ]);
+    expect(headerTimes(a, undefined, false, () => true).map((t) => t.text)).toEqual([
       "A 2026-10-13 15:08:00.093",
     ]);
     expect(headerTimes(undefined, undefined, true, () => false).map((t) => t.text)).toEqual([
@@ -317,20 +321,19 @@ describe("ValueLoader", () => {
     });
   });
 
-  it("requests B whenever diff mode and B are on", async () => {
+  it("requests B whenever B is on, with or without Diff", async () => {
     const rows = [{ id: "a1", signalId: "c/V_ANZ" }];
-    const keys = (c: { a?: string; b?: string; diff: boolean }) =>
+    const keys = (c: { a?: string; b?: string }) =>
       valueRequests(rows, c, "line").map((r) => r.key);
-    expect(keys({ a: "100", b: "200", diff: true })).toEqual(["a1|a", "a1|b"]);
-    expect(keys({ b: "200", diff: true })).toEqual(["a1|b"]);
-    expect(keys({ a: "100", b: "200", diff: false })).toEqual(["a1|a"]);
-    expect(keys({ a: "100", diff: true })).toEqual(["a1|a"]);
+    expect(keys({ a: "100", b: "200" })).toEqual(["a1|a", "a1|b"]);
+    expect(keys({ b: "200" })).toEqual(["a1|b"]);
+    expect(keys({ a: "100" })).toEqual(["a1|a"]);
 
     // A window that mounts with B set: React's StrictMode disposes the loader once and updates
     // it again. Every request must start again, or B would stay loading forever.
     const { fetch, pending } = controllableFetch();
     const loader = new ValueLoader(fetch, () => {});
-    const both = valueRequests(rows, { a: "100", b: "200", diff: true }, "line");
+    const both = valueRequests(rows, { a: "100", b: "200" }, "line");
     loader.update(both);
     loader.dispose();
     loader.update(both);
@@ -342,13 +345,10 @@ describe("ValueLoader", () => {
     expect(loader.get("a1|b")).toMatchObject({ status: "complete", result: { t: "200" } });
     expect(loader.settled(both)).toBe(true);
 
-    // Diff off and on again, and B off and on again: B is requested anew each time.
-    loader.update(valueRequests(rows, { a: "100", b: "200", diff: false }, "line"));
+    // B off and on again: B is requested anew.
+    loader.update(valueRequests(rows, { a: "100" }, "line"));
     loader.update(both);
     expect(pending).toHaveLength(5);
-    loader.update(valueRequests(rows, { a: "100", diff: true }, "line"));
-    loader.update(both);
-    expect(pending).toHaveLength(6);
     expect(loader.get("a1|b")?.status).toBe("loading");
   });
 });

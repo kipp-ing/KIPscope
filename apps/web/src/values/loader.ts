@@ -130,15 +130,15 @@ export function cellState(
   return { status: "loading", request: id, ...(state?.result ? { result: state.result } : {}) };
 }
 
-/** Requests of one values window: A for every row, B too in diff mode; none for a cursor that is off. */
+/** Requests of one values window: A and B for every row; none for a cursor that is off. */
 export function valueRequests(
   rows: { id: string; signalId: string }[],
-  cursors: { a?: string; b?: string; diff: boolean },
+  cursors: { a?: string; b?: string },
   mode: ValuesMode,
 ): ValueRequest[] {
   const times = [
     ["a", cursors.a],
-    ["b", cursors.diff ? cursors.b : undefined],
+    ["b", cursors.b],
   ] as const;
   return rows.flatMap((row) =>
     times.flatMap(([cursor, t]) =>

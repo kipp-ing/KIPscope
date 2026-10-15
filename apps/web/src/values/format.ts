@@ -177,7 +177,8 @@ const clock = (time: string) => time.slice(time.indexOf(" ") + 1);
 export const formatClock = (t: bigint): string => clock(formatCursorTime(t));
 
 /**
- * The values window's header times (design L4): A, and with Diff B and Δt. B leaves out its date
+ * The values window's header times (design L4): A, B while B is on or in diff mode, and Δt in
+ * diff mode (D-031). B leaves out its date
  * when it lies on A's local day. If the times do not `fit`, A and B drop their dates (the
  * tooltips keep them), so the times are never cut; Δt stays.
  */
@@ -196,13 +197,14 @@ export function headerTimes(
         ? { text: "Cursor A off" }
         : { text: `A ${dates ? timeA : clock(timeA)}`, title: `A ${timeA}` },
     ];
-    if (!diff) return out;
-    out.push(
-      timeB === undefined
-        ? { text: "B off" }
-        : { text: `B ${dates && !sameDay ? timeB : clock(timeB)}`, title: `B ${timeB}` },
-    );
-    if (a !== undefined && b !== undefined) {
+    if (timeB !== undefined || diff) {
+      out.push(
+        timeB === undefined
+          ? { text: "B off" }
+          : { text: `B ${dates && !sameDay ? timeB : clock(timeB)}`, title: `B ${timeB}` },
+      );
+    }
+    if (diff && a !== undefined && b !== undefined) {
       const dt = `Δt ${formatDeltaT(b - a)}`;
       out.push({ text: dt, title: dt });
     }

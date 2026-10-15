@@ -154,6 +154,8 @@ export function ValuesWindow({
   useEffect(() => () => loader.dispose(), [loader]);
 
   const diff = cursors.diff;
+  // B's column while B is on; Diff adds Δ (D-031).
+  const showB = cursors.b !== undefined || diff;
   const requests = useMemo(
     () => valueRequests(w.signals, cursors, w.mode),
     [w.signals, cursors, w.mode],
@@ -194,7 +196,7 @@ export function ValuesWindow({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path to mark is the explorer's "Add to" select (L5) */}
       <header
         ref={headerRef}
-        className={`window-header${diff ? " diff" : ""}`}
+        className={`window-header${showB ? " diff" : ""}`}
         title={marked ? MARKED_HINT : undefined}
         onClick={(e) => markFromHeader(e, w.id, onMark)}
       >
@@ -250,7 +252,7 @@ export function ValuesWindow({
             <tr>
               <th>Signal</th>
               <th className="value">A</th>
-              {diff && <th className="value">B</th>}
+              {showB && <th className="value">B</th>}
               {diff && <th className="value">Δ</th>}
               <th />
             </tr>
@@ -280,7 +282,7 @@ export function ValuesWindow({
                     </span>
                   </td>
                   <ValueCell state={stateA} unit={unit} digits={digits} />
-                  {diff && <ValueCell state={stateB} unit={unit} digits={digits} />}
+                  {showB && <ValueCell state={stateB} unit={unit} digits={digits} />}
                   {diff && (
                     <CellView
                       cell={
