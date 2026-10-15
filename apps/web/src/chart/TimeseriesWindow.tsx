@@ -20,6 +20,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import "./window.css";
 import { fetchCursorValue, fetchSeries } from "../api.ts";
+import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import {
   type Cell,
@@ -888,6 +889,7 @@ export function TimeseriesWindow({
       const name =
         hitCursor(plotX(e.clientX), cursorX.current) ?? (strip.dataset.cursor as CursorName);
       strip.setPointerCapture(e.pointerId);
+      const releaseSelect = holdNoSelect();
       let t: bigint | undefined;
       const move = (ev: PointerEvent) => {
         t = timeAt(plotX(ev.clientX));
@@ -895,6 +897,7 @@ export function TimeseriesWindow({
       };
       const end = (commit: boolean) => {
         cancelLineDrag = undefined;
+        releaseSelect();
         strip.removeEventListener("pointermove", move);
         strip.removeEventListener("pointerup", release);
         strip.removeEventListener("pointercancel", cancel);
@@ -1088,6 +1091,7 @@ export function TimeseriesWindow({
     e.preventDefault();
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
+    const releaseSelect = holdNoSelect();
     const startY = e.clientY;
     const startHeight = plotHeight;
     const base = w.height;
@@ -1097,6 +1101,7 @@ export function TimeseriesWindow({
       setHeightDrag({ ...(base !== undefined ? { base } : {}), height });
     };
     const end = async () => {
+      releaseSelect();
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);

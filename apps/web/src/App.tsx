@@ -44,6 +44,7 @@ import {
   saveSidebar,
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
+import { holdNoSelect } from "./noselect.ts";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 
 /** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
@@ -612,6 +613,8 @@ export function App() {
       // Copy mode follows the modifiers of this drag's latest pointer or key event only (isCopy),
       // so an Alt drag earlier leaves nothing behind.
       let frame = 0;
+      // From the press on: a pointer moving off the grip would otherwise select text.
+      const releaseSelect = holdNoSelect();
 
       // Pointer near the visible top (below the top row) or bottom (above the status strip)
       // of the window list scrolls it, faster the closer. On the strip itself it rests (C7).
@@ -647,6 +650,7 @@ export function App() {
 
       const finish = () => {
         cancelAnimationFrame(frame);
+        releaseSelect();
         mainRef.current?.removeEventListener("scroll", onScroll);
         window.removeEventListener("wheel", onWheel, true);
         document.removeEventListener("pointermove", onMove);
@@ -664,7 +668,6 @@ export function App() {
         const moved =
           Math.hypot(e.clientX - cur.startX, e.clientY - cur.startY) >= DRAG_THRESHOLD_PX;
         if (!cur.active && !moved) return;
-        if (!cur.active) window.getSelection()?.removeAllRanges();
         update({
           ...cur,
           active: true,

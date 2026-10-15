@@ -362,6 +362,13 @@ main {
   color: var(--ok);
 }
 
+/* While a drag runs (noselect.ts). */
+.no-select,
+.no-select * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 button.link {
   border: none;
   background: none;

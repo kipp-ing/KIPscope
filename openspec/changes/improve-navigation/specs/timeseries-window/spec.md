@@ -37,6 +37,14 @@ A wheel event over a plot without Ctrl or Shift whose horizontal delta is more t
 - **THEN** the first pans by 12 s, the second and third change no range and are left to the page
 - **Evidence:** `apps/web/test/zoom.test.ts` › "classifies wheel events: plain scrolls, Ctrl or Shift zooms, horizontal swipe pans"; UI check on a trackpad only, else `not_run`
 
+### Requirement: No text selection while dragging
+While a cursor line, a legend or explorer row, or a height handle is dragged, the page SHALL select no text, wherever the pointer goes. Origin: D-031 follow-up (Jan: „while draggin browser selects text. thats strange").
+
+#### Scenario: Line dragged over the legend
+- **WHEN** the user drags cursor A's line and moves the pointer down over the legend rows before releasing
+- **THEN** no text is highlighted during or after the drag
+- **Evidence:** UI check by hand (real mouse), else `not_run`
+
 ### Requirement: Mouse wheel steps
 A mouse wheel event in pixel mode SHALL move by a fixed step whatever its delta: a pan by 2 % of the plot width, a zoom by a quarter tick (2^(1/20)). It is a mouse event when Chrome's `wheelDelta` is a non-zero multiple of 120 and not exactly 3 × the pixel delta (a trackpad's); other events keep their deltas. Origin: D-030 (Jan: „on my mouse … wheel oversensitive"; one slow notch arrives as 4–7 accelerated events, over 1000 px in all).
 

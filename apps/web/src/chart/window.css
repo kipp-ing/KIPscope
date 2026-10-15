@@ -323,9 +323,10 @@
   opacity: 0.45;
 }
 
-/* Remove (×): shown only while the pointer is on the row or the button has keyboard focus. */
+/* Remove (×): shown while the pointer is on the row or on the × itself, or it has keyboard focus.
+   Transparent, not hidden, so the × keeps its hover and click on the way to it. */
 .window .signals .remove {
-  visibility: hidden;
+  opacity: 0;
   border: none;
   background: none;
   padding: 0 2px;
@@ -336,8 +337,9 @@
 }
 
 .window .signals li:hover .remove,
+.window .signals .remove:hover,
 .window .signals .remove:focus-visible {
-  visibility: visible;
+  opacity: 1;
 }
 
 .window .signals .remove:hover {

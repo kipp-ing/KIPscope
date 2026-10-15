@@ -69,9 +69,9 @@ While diff mode is on and both cursor lines are drawn in a window, a label `Δt`
 - **Evidence:** UI check (two screenshots); `apps/web/test/cursors.test.ts` › "places the Δt label between the flags or beside the right one"
 
 ### Requirement: Compact legend rows
-A timeseries window's legend row SHALL show the signal, its `[unit]` (tooltip: its y axis side), the readout cells, the loading state only while loading or failed, and the SNA share; nothing for a complete load. Removing a signal SHALL be a `×` at the row's end, visible only while the pointer is on the row or the button has keyboard focus. Origin: D-030 (Jan on the diff legend: "the hint wich axes can go", "the "complete" can go", "the remove can go"; × on row hover his pick).
+A timeseries window's legend row SHALL show the signal, its `[unit]` (tooltip: its y axis side), the readout cells, the loading state only while loading or failed, and the SNA share; nothing for a complete load. Removing a signal SHALL be a `×` at the row's end, visible while the pointer is on the row or on the `×` itself, or the button has keyboard focus. Origin: D-030 (Jan on the diff legend: "the hint wich axes can go", "the "complete" can go", "the remove can go"; × on row hover his pick).
 
 #### Scenario: Diff legend on one line
 - **WHEN** a window shows `CPC_168h.EAC_HV_Volt`, `MS_312h.DNMOT` and `BS_200h.DVL` from 2026-10-13 15:06:30 to 15:18:20 local, all loaded, with A at 15:10:50.3, B at 15:13:34.2 and diff mode on
-- **THEN** each row reads name, `[unit]`, A, B, Δ and the SNA share, with no axis side, no `complete`, no `avg` and no `remove`; hovering a row shows its `×`, and clicking it removes that signal
+- **THEN** each row reads name, `[unit]`, A, B, Δ and the SNA share, with no axis side, no `complete`, no `avg` and no `remove`; hovering a row shows its `×`, it stays while the pointer moves along the row onto it, and clicking it removes that signal
 - **Evidence:** UI check (screenshot, and one with the pointer on a row)
