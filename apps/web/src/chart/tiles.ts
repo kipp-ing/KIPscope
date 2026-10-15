@@ -18,6 +18,16 @@ export const FRESH_MARGIN_NS = 3_600_000_000_000n; // 1 h (C6)
 export const TILE_OVERHEAD = 16; // weight units per tile (C5)
 export const RAW_POINT_WEIGHT = 2;
 export const BUCKET_WEIGHT = 6;
+export const OVERVIEW_TARGET = 1025; // 1,024 to 2,048 buckets over the extent (Z2)
+export const MERGE_DEPTH = 2; // levels below the asked one that `find` merges up (Z3)
+export const PLACEHOLDER_SEARCH = 6; // coarser levels searched for a placeholder (Z4)
+
+/** Tiles `first` … `last` of one level. */
+export interface TileRange {
+  level: number;
+  first: bigint;
+  last: bigint;
+}
 
 /** Largest span one result may cover: `encodeTimes` offsets are exact below 2^53 ns. */
 const MAX_SPAN = 2n ** 53n;
@@ -303,6 +313,110 @@ export function stitch(tiles: readonly Tile[], from: bigint, to: bigint): Series
     width,
     list,
   );
+}
+
+/**
+ * Parent tile (k, left.index / 2) from its two children at level k − 1 (Z3): two raw children give
+ * raw, else buckets of width 2^k merged like the server's aligned buckets (count and sna summed,
+ * mean weighted by count, all-SNA buckets without values).
+ */
+export function mergeUp(left: Tile, right: Tile): Tile {
+  if (left.index % 2n !== 0n || right.index !== left.index + 1n || right.level !== left.level) {
+    throw new RangeError("mergeUp needs an even tile and its right sibling");
+  }
+  const level = left.level + 1;
+  const index = left.index / 2n;
+  const span = tileSpan(level);
+  const from = index * span;
+  const to = from + span;
+  if (left.data.kind === "raw" && right.data.kind === "raw") {
+    const points = [...rawPoints(left.data), ...rawPoints(right.data)];
+    const data = cutRaw(left.signalId, points, from, to, left.data.before, right.data.after);
+    return { signalId: left.signalId, level, index, data };
+  }
+  const width = bucketWidthOf(level);
+  const list: (Bucket & { sum: number })[] = [];
+  for (const b of [left, right].flatMap((t) => buckets(aggregateRaw(t).data as BucketSeries))) {
+    const start = floorDiv(b.start, width) * width;
+    let current = list.at(-1);
+    if (!current || current.start !== start) {
+      current = { start, count: 0, sna: 0, mean: null, min: null, max: null, sum: 0 };
+      list.push(current);
+    }
+    current.sna += b.sna;
+    if (b.count > 0 && b.mean !== null) {
+      current.count += b.count;
+      current.sum += b.mean * b.count;
+    }
+    if (b.min !== null) current.min = current.min === null ? b.min : Math.min(current.min, b.min);
+    if (b.max !== null) current.max = current.max === null ? b.max : Math.max(current.max, b.max);
+  }
+  const merged = list.map(({ sum, ...b }) =>
+    b.count > 0 ? { ...b, mean: sum / b.count } : { ...b, mean: null, min: null, max: null },
+  );
+  return {
+    signalId: left.signalId,
+    level,
+    index,
+    data: bucketSeries(left.signalId, from, to, width, merged),
+  };
+}
+
+/** Bucket tile without buckets, for indices outside a signal's extent (Z4). */
+export function emptyTile(signalId: string, level: number, index: bigint): Tile {
+  const span = tileSpan(level);
+  const data = bucketSeries(signalId, index * span, (index + 1n) * span, bucketWidthOf(level), []);
+  return { signalId, level, index, data };
+}
+
+/** Level of a signal's overview: 1,024 to 2,048 buckets over [first, last] (Z2). */
+export function overviewLevel(first: bigint, last: bigint): number {
+  return levelFor(first, last + 1n, OVERVIEW_TARGET);
+}
+
+/** Tiles of a signal's overview (Z2); the caller checks `tileable`. */
+export function overviewTiles(first: bigint, last: bigint): TileRange {
+  const level = overviewLevel(first, last);
+  return { level, ...touchedTiles(first, last + 1n, level) };
+}
+
+/**
+ * The view [from, to) stitched at the finest level above `level`, up to `maxLevel`, for which
+ * `lookup` returns every touched tile; undefined when no level does (Z4).
+ */
+export function placeholder(
+  from: bigint,
+  to: bigint,
+  level: number,
+  maxLevel: number,
+  lookup: (level: number, index: bigint) => Tile | undefined,
+): SeriesResult | undefined {
+  for (let p = level + 1; p <= maxLevel; p++) {
+    const { first, last } = touchedTiles(from, to, p);
+    if (!tileable(p, first, last)) continue;
+    const tiles: Tile[] = [];
+    for (let j = first; j <= last; j++) {
+      const tile = lookup(p, j);
+      if (!tile) break;
+      tiles.push(tile);
+    }
+    if (tiles.length === Number(last - first + 1n)) return stitch(tiles, from, to);
+  }
+  return undefined;
+}
+
+/**
+ * Tiles to prefetch at rest (Z7), in this order: the next coarser level over three view widths,
+ * then the view's level one view width before and after it.
+ */
+export function prefetchPlan(from: bigint, to: bigint, level: number): TileRange[] {
+  const span = to - from;
+  const coarser = Math.min(level + 1, MAX_LEVEL);
+  return [
+    { level: coarser, ...touchedTiles(from - span, to + span, coarser) },
+    { level, ...touchedTiles(from - span, from, level) },
+    { level, ...touchedTiles(to, to + span, level) },
+  ];
 }
 
 export function tileWeight(tile: Tile): number {

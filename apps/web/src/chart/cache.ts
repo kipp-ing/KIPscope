@@ -4,6 +4,8 @@ import {
   deriveRaw,
   FRESH_MARGIN_NS,
   MAX_RUN_TILES,
+  MERGE_DEPTH,
+  mergeUp,
   runRequest,
   type SeriesRequest,
   splitRun,
@@ -14,6 +16,9 @@ import {
 } from "./tiles.ts";
 
 export const CACHE_LIMIT = 4_000_000; // weight units (C5)
+export const PREFETCH_IN_FLIGHT = 2; // prefetch runs fetched at once per tab (Z6)
+
+export type Priority = "visible" | "prefetch";
 
 export type FetchSeries = (request: SeriesRequest, abort: AbortSignal) => Promise<SeriesResult>;
 
@@ -26,6 +31,10 @@ export interface CacheOptions {
 interface Run {
   controller: AbortController;
   owners: Set<string>;
+  /** Fetches the run; set only while it waits in the prefetch queue (Z6). */
+  begin?: (() => void) | undefined;
+  /** Fetched as prefetch: holds one of the PREFETCH_IN_FLIGHT slots until it finishes. */
+  counted?: boolean;
 }
 
 interface Stored {
@@ -53,6 +62,9 @@ export class SeriesCache {
   private readonly rawLevels = new Map<string, Map<number, number>>();
   private readonly inFlight = new Map<string, InFlight>();
   private readonly owned = new Map<string, Set<Run>>();
+  /** Prefetch runs waiting for a slot, oldest first (Z6). */
+  private readonly queue: Run[] = [];
+  private prefetchRunning = 0;
   private weight = 0;
 
   constructor(fetch: FetchSeries, options: CacheOptions = {}) {
@@ -69,24 +81,56 @@ export class SeriesCache {
     return this.tiles.get(tileId(signalId, level, index))?.tile;
   }
 
+  get queuedPrefetch(): number {
+    return this.queue.length;
+  }
+
+  /**
+   * The stored tile, else one cut from a stored coarser raw tile (C3), else merged from its two
+   * children found the same way, at most MERGE_DEPTH levels down (Z3); derived tiles are not stored.
+   */
   find(signalId: string, level: number, index: bigint): Tile | undefined {
+    return this.findUpTo(signalId, level, index, MERGE_DEPTH);
+  }
+
+  private findUpTo(
+    signalId: string,
+    level: number,
+    index: bigint,
+    depth: number,
+  ): Tile | undefined {
     const own = this.use(tileId(signalId, level, index));
     if (own) return own;
     const levels = this.rawLevels.get(signalId);
-    if (!levels) return undefined;
-    for (const parentLevel of levels.keys()) {
+    for (const parentLevel of levels?.keys() ?? []) {
       if (parentLevel <= level) continue;
       const parent = this.use(tileId(signalId, parentLevel, index >> BigInt(parentLevel - level)));
       if (parent?.data.kind === "raw") return deriveRaw(parent, level, index);
     }
-    return undefined;
+    if (depth <= 0 || level <= 0) return undefined;
+    const left = this.findUpTo(signalId, level - 1, index * 2n, depth - 1);
+    if (!left) return undefined;
+    const right = this.findUpTo(signalId, level - 1, index * 2n + 1n, depth - 1);
+    return right && mergeUp(left, right);
   }
 
+  /** False for a tile that would not be stored (ends after now − FRESH_MARGIN_NS, C6). */
+  storable(level: number, index: bigint): boolean {
+    const end = (index + 1n) * tileSpan(level);
+    return end <= BigInt(Math.floor(this.now())) * 1_000_000n - FRESH_MARGIN_NS;
+  }
+
+  /**
+   * Promises of the tiles, joining runs in flight and starting runs for the rest. A "prefetch" run
+   * waits while PREFETCH_IN_FLIGHT prefetch runs are fetched; a "visible" load never waits and
+   * starts a waiting prefetch run it wants at once (Z6).
+   */
   load(
     owner: string,
     signalId: string,
     level: number,
     indices: readonly bigint[],
+    priority: Priority = "visible",
   ): Promise<Tile>[] {
     const runs = this.owned.get(owner) ?? new Set<Run>();
     this.owned.set(owner, runs);
@@ -98,6 +142,10 @@ export class SeriesCache {
         flight.run.owners.add(owner);
         runs.add(flight.run);
         promises.set(index, flight.promise);
+        if (priority === "visible" && flight.run.begin) {
+          this.queue.splice(this.queue.indexOf(flight.run), 1);
+          flight.run.begin();
+        }
       } else if (!missing.includes(index)) {
         missing.push(index);
       }
@@ -119,7 +167,10 @@ export class SeriesCache {
       for (const [index, promise] of this.startRun(run, signalId, level, first, last)) {
         promises.set(index, promise);
       }
+      if (priority === "visible") run.begin?.();
+      else this.queue.push(run);
     }
+    this.pump();
     return indices.map((index) => promises.get(index) as Promise<Tile>);
   }
 
@@ -130,6 +181,10 @@ export class SeriesCache {
     for (const run of runs) {
       run.owners.delete(owner);
       if (run.owners.size > 0) continue;
+      // A waiting run leaves the queue unfetched; the abort rejects its promises.
+      const waiting = this.queue.indexOf(run);
+      if (waiting >= 0) this.queue.splice(waiting, 1);
+      run.begin = undefined;
       run.controller.abort();
       // An aborted run takes no new owners: a later load of its tiles starts a new run.
       for (const [id, flight] of this.inFlight) if (flight.run === run) this.inFlight.delete(id);
@@ -148,7 +203,17 @@ export class SeriesCache {
     const aborted = new Promise<never>((_, reject) =>
       signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
     );
-    const fetched = this.fetch(runRequest(signalId, level, first, last), signal);
+    // Fetched when `begin` is called: at once for a visible load, later for a waiting prefetch run.
+    const fetched = new Promise<SeriesResult>((resolve, reject) => {
+      run.begin = () => {
+        run.begin = undefined;
+        try {
+          this.fetch(runRequest(signalId, level, first, last), signal).then(resolve, reject);
+        } catch (error) {
+          reject(error);
+        }
+      };
+    });
     const answer = Promise.race([fetched, aborted]).then((result) => {
       // A fetch that ignores its abort signal must not fill the cache either.
       if (signal.aborted) throw signal.reason;
@@ -163,6 +228,11 @@ export class SeriesCache {
       for (let index = first; index <= last; index++) {
         const id = tileId(signalId, level, index);
         if (this.inFlight.get(id)?.run === run) this.inFlight.delete(id);
+      }
+      if (run.counted) {
+        run.counted = false;
+        this.prefetchRunning--;
+        this.pump();
       }
     };
     answer.then(done, done);
@@ -181,11 +251,20 @@ export class SeriesCache {
     return promises;
   }
 
+  /** Fetches waiting prefetch runs while fewer than PREFETCH_IN_FLIGHT are in flight (Z6). */
+  private pump(): void {
+    while (this.prefetchRunning < PREFETCH_IN_FLIGHT) {
+      const run = this.queue.shift();
+      if (!run) return;
+      run.counted = true;
+      this.prefetchRunning++;
+      run.begin?.();
+    }
+  }
+
   /** Stores a tile unless it is recent (C6) or heavier than the limit, then evicts the oldest (C5). */
   private store(tile: Tile): void {
-    const end = (tile.index + 1n) * tileSpan(tile.level);
-    const freshFrom = BigInt(Math.floor(this.now())) * 1_000_000n - FRESH_MARGIN_NS;
-    if (end > freshFrom) return;
+    if (!this.storable(tile.level, tile.index)) return;
     const weight = tileWeight(tile);
     if (weight > this.limit) return;
     const id = tileId(tile.signalId, tile.level, tile.index);

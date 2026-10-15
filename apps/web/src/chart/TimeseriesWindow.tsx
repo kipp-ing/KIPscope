@@ -16,6 +16,7 @@ import {
 } from "@letsview/shared";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import "./window.css";
@@ -63,6 +64,7 @@ import {
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
 import { draggedHeight, heightCommand, startsHeightDrag } from "./height.ts";
 import type { Insets } from "./insets.ts";
+import { linkedPreview, shownRange, useLinkedPreview } from "./linkedPreview.ts";
 import {
   FADE_ALPHA,
   HIGHLIGHT_WIDTH,
@@ -78,6 +80,7 @@ import {
   useLiveNear,
 } from "./live.ts";
 import { type LoadRequest, SeriesLoader } from "./loader.ts";
+import { WINDOW_LOADER_OPTIONS } from "./overview.ts";
 import {
   chartValueAt,
   type ReadoutSource,
@@ -150,6 +153,8 @@ interface Props {
   marked: boolean;
   /** A click on the header outside the controls; App marks the window. */
   onMark: (windowId: string) => void;
+  /** "Link time axes" is on: the window shows another linked window's gesture preview (Z9). */
+  linked: boolean;
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -526,6 +531,7 @@ export function TimeseriesWindow({
   onCursorCommit,
   marked,
   onMark,
+  linked,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState(false);
@@ -533,7 +539,10 @@ export function TimeseriesWindow({
   const uplot = useRef<uPlot | undefined>(undefined);
   const [width, setWidth] = useState(0);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
-  const loader = useMemo(() => new SeriesLoader(tabSeriesCache(), rerender), []);
+  const loader = useMemo(
+    () => new SeriesLoader(tabSeriesCache(), rerender, WINDOW_LOADER_OPTIONS),
+    [],
+  );
   useEffect(() => () => loader.dispose(), [loader]);
 
   // Height being dragged; shown until the window's stored height changes from `base`.
@@ -617,21 +626,41 @@ export function TimeseriesWindow({
   const placeClickRef = useRef(placeClick);
   placeClickRef.current = placeClick;
 
+  // The shown range (Z1, Z9): the own preview, else a linked window's gesture, else the server
+  // range. Drops an accepted preview once its server range arrived, or another client's range wins.
+  const shared = useLinkedPreview();
+  const viewRange = () => shownRange(w.id, preview.range, shared, linked, serverRange);
+  preview.settle(serverRange, commitTimer.current !== undefined);
+  // The header shows this range too, so it always matches the plot.
+  const view = viewRange();
+  const ownPreview = preview.range;
+  // The source clears the shared preview once its own is dropped, or when unlinked.
+  useLayoutEffect(() => {
+    if (!ownPreview || !linked) linkedPreview.clear(w.id);
+  }, [ownPreview, linked, w.id]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a window keeps its id
+  useEffect(() => () => linkedPreview.clear(w.id), []);
+
   const target = Math.min(4000, Math.max(100, Math.round(width)));
-  const requests: LoadRequest[] = useMemo(
-    () =>
-      width === 0
-        ? []
-        : w.signals.map((s) => ({
-            key: s.id,
-            signalId: s.signalId,
-            from: w.range.from,
-            to: w.range.to,
-            target,
-          })),
+  const loadRequests = (from: string, to: string): LoadRequest[] =>
+    width === 0
+      ? []
+      : w.signals.map((s) => ({ key: s.id, signalId: s.signalId, from, to, target }));
+  // Loads follow the shown range during the gesture (Z1); the acknowledgement the committed one.
+  const viewFrom = view.from.toString();
+  const viewTo = view.to.toString();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
+  const requests = useMemo(
+    () => loadRequests(viewFrom, viewTo),
+    [w.signals, viewFrom, viewTo, target, width],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
+  const committedRequests = useMemo(
+    () => loadRequests(w.range.from, w.range.to),
     [w.signals, w.range.from, w.range.to, target, width],
   );
-  useEffect(() => loader.update(requests), [loader, requests]);
+  // Before paint, so a cached view is drawn in the frame that applied the step.
+  useLayoutEffect(() => loader.update(requests), [loader, requests]);
 
   // Readout values (D-031): the exact value at each committed cursor from the server, like the
   // values window, inside or outside the zoom (readoutSource). Markers evaluate as line.
@@ -705,7 +734,6 @@ export function TimeseriesWindow({
 
   // --- uPlot instance -------------------------------------------------------------------------
 
-  const viewRange = () => preview.view(serverRange);
   // The x range we last set; y ranges read it because u.scales.x is stale while new data is set.
   const xView = useRef<[number, number]>([0, 1]);
   const setView = (u: uPlot, r: Range) => {
@@ -745,8 +773,13 @@ export function TimeseriesWindow({
     setView(u, r);
     hideCursor(u, w.id);
     commit(r);
-    // The header shows the preview at once.
-    rerender();
+    // The header, the loader and cached data (and the linked windows) follow in this frame.
+    if (linked) {
+      flushSync(() => {
+        linkedPreview.publish(w.id, r);
+        rerender();
+      });
+    } else flushSync(rerender);
   };
   const applyRangeRef = useRef(applyRange);
   applyRangeRef.current = applyRange;
@@ -1172,11 +1205,6 @@ export function TimeseriesWindow({
     uplot.current?.setSize({ width, height: plotHeight });
   }, [width, plotHeight, insets?.left, insets?.right]);
 
-  // Drops an accepted preview once its server range arrived, or another client's range wins.
-  preview.settle(serverRange, commitTimer.current !== undefined);
-  // The header shows this range too, so it always matches the plot.
-  const view = viewRange();
-
   // Data: only when the model, a dropped preview or the uPlot instance changed, so a cursor
   // preview (which rerenders every window per move) costs no join, setData or redraw.
   // biome-ignore lint/correctness/useExhaustiveDependencies: view is read for the scale reset only, a dropped preview is tracked via viewEpoch; structure and width === 0 mark a new uPlot instance
@@ -1198,12 +1226,12 @@ export function TimeseriesWindow({
   // View: a gesture already set the scale it previews, so only a range set elsewhere redraws.
   // Every change of the shown range (keys, "Go to", Back, a linked window, the CLI, …) hides the
   // crosshair until the pointer moves: at its old pixel it would point at a wrong time.
-  const shownRange = useRef(view);
+  const lastShown = useRef(view);
   // biome-ignore lint/correctness/useExhaustiveDependencies: view is tracked via its bounds
   useLayoutEffect(() => {
     const u = uplot.current;
-    const changed = !sameRange(shownRange.current, view);
-    shownRange.current = view;
+    const changed = !sameRange(lastShown.current, view);
+    lastShown.current = view;
     if (!u) return;
     if (changed) hideCursor(u, w.id);
     const x = [Number(view.from - origin.current), Number(view.to - origin.current)];
@@ -1241,7 +1269,7 @@ export function TimeseriesWindow({
 
   // --- render acknowledgement -----------------------------------------------------------------
 
-  const settled = loader.settled(requests) && values.settled(exactRequests) && width > 0;
+  const settled = loader.settled(committedRequests) && values.settled(exactRequests) && width > 0;
   const errors: RenderError[] = [
     ...w.signals.flatMap((s) => {
       const state = loader.get(s.id);

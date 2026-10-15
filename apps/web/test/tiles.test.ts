@@ -1,18 +1,35 @@
-import { decodeTimes, TIME_MAX } from "@letsview/shared";
+import {
+  type BucketSeries,
+  decodeTimes,
+  encodeTimes,
+  type SeriesResult,
+  TIME_MAX,
+} from "@letsview/shared";
 import { describe, expect, it } from "vitest";
 import {
   aggregateRaw,
   deriveRaw,
+  emptyTile,
   levelFor,
+  MAX_LEVEL,
+  MERGE_DEPTH,
+  mergeUp,
+  OVERVIEW_TARGET,
+  overviewLevel,
+  overviewTiles,
+  PLACEHOLDER_SEARCH,
+  placeholder,
+  prefetchPlan,
   runRequest,
   splitRun,
   stitch,
+  type Tile,
   tileable,
   tileSpan,
   tileWeight,
   touchedTiles,
 } from "../src/chart/tiles.ts";
-import { type FakePoint, fakeAnswer, fakeBuckets, fakeRaw } from "./fakeSeries.ts";
+import { densePoints, type FakePoint, fakeAnswer, fakeBuckets, fakeRaw } from "./fakeSeries.ts";
 
 const SIG = "c/s";
 const S10 = 262144n; // tile span at level 10: 256 × 1024 ns
@@ -205,5 +222,192 @@ describe("tile weight", () => {
     if (!bucketTile) throw new Error("no tile");
     expect(bucketTile.data.kind).toBe("buckets");
     expect(tileWeight(bucketTile)).toBe(1552);
+  });
+});
+
+describe("zoom-speed constants", () => {
+  it("pins the numbers of design Z2, Z3, Z4", () => {
+    expect([OVERVIEW_TARGET, MERGE_DEPTH, PLACEHOLDER_SEARCH]).toEqual([1025, 2, 6]);
+  });
+});
+
+/** Bucket result equals the fake server's: count, sna, min, max exactly, mean within 1e-12 relative. */
+function expectBucketsLikeServer(got: SeriesResult, want: BucketSeries) {
+  if (got.kind !== "buckets") throw new Error("expected buckets");
+  expect([got.from, got.to, got.width]).toEqual([want.from, want.to, want.width]);
+  expect(got.t).toEqual(want.t);
+  expect(got.count).toEqual(want.count);
+  expect(got.sna).toEqual(want.sna);
+  expect(got.min).toEqual(want.min);
+  expect(got.max).toEqual(want.max);
+  expect(got.mean).toHaveLength(want.mean.length);
+  want.mean.forEach((w, i) => {
+    const m = got.mean[i];
+    if (w === null) {
+      expect(m).toBeNull();
+      return;
+    }
+    expect(Math.abs((m as number) - w)).toBeLessThanOrEqual(1e-12 * Math.abs(w));
+  });
+}
+
+describe("merges two child tiles into their parent like the server", () => {
+  const tilesOf = (points: FakePoint[], level: number, first: bigint, last: bigint) =>
+    splitRun(fakeAnswer(points, runRequest(SIG, level, first, last)), level, first, last);
+  const two = (tiles: Tile[], i: number): [Tile, Tile] => {
+    const a = tiles[i];
+    const b = tiles[i + 1];
+    if (!a || !b) throw new Error("no tiles");
+    return [a, b];
+  };
+
+  // 3,400 points every 300 ns from 50 (up to 1,020,050): values 0.5 … 12.5; every 97th point and
+  // the run i = 100 … 110 are SNA (the run empties the buckets in [30,720, 33,792)).
+  const dense = densePoints(3400, 300n, 50n, (i) =>
+    i % 97 === 0 || (i >= 100 && i <= 110) ? null : ((i * 7) % 13) + 0.5,
+  );
+
+  it("buckets: level-10 tiles 0+1 and 2+3 become level-11 tiles 0 and 1", () => {
+    const tiles = tilesOf(dense, 10, 0n, 3n);
+    expect(tiles[0]?.data.kind).toBe("buckets");
+    const want = fakeBuckets(dense, SIG, 0n, 4n * S10, 2048n);
+    for (const [i, index] of [
+      [0, 0n],
+      [2, 1n],
+    ] as const) {
+      const parent = mergeUp(...two(tiles, i));
+      expect([parent.signalId, parent.level, parent.index]).toEqual([SIG, 11, index]);
+      const span = 2n * S10;
+      expectBucketsLikeServer(
+        parent.data,
+        fakeBuckets(dense, SIG, index * span, (index + 1n) * span, 2048n),
+      );
+    }
+    // The SNA run really yields a bucket without valid points, so the all-SNA rule is exercised.
+    expect(want.count.includes(0)).toBe(true);
+    const parent = mergeUp(...two(tiles, 0));
+    if (parent.data.kind !== "buckets") throw new Error("expected buckets");
+    const k = parent.data.count.indexOf(0);
+    expect(k).toBeGreaterThan(-1);
+    expect([parent.data.mean[k], parent.data.min[k], parent.data.max[k]]).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect((parent.data.sna[k] ?? 0) > 0).toBe(true);
+  });
+
+  it("raw + raw: concatenated points, neighbours from the outer sides", () => {
+    // 60 points in tile 0 and tile 1 (some SNA), one point before and one after the pair.
+    const sparse: FakePoint[] = [
+      { t: -1000n, v: -5 },
+      ...densePoints(60, 8000n, 100n, (i) => (i % 11 === 0 ? null : i)),
+      { t: 600_000n, v: 99 },
+    ];
+    const tiles = tilesOf(sparse, 10, 0n, 1n);
+    expect(tiles[0]?.data.kind).toBe("raw");
+    const parent = mergeUp(...two(tiles, 0));
+    expect([parent.level, parent.index]).toEqual([11, 0n]);
+    expect(parent.data).toEqual(fakeRaw(sparse, SIG, 0n, 2n * S10));
+    if (parent.data.kind !== "raw") throw new Error("expected raw");
+    expect(parent.data.before).toEqual({ t: "-1000", v: -5 });
+    expect(parent.data.after).toEqual({ t: "600000", v: 99 });
+  });
+
+  it("raw + buckets: the raw child is aggregated first", () => {
+    // Tile 0 sparse (50 points, raw), tile 1 dense (600 points, buckets of 1024 ns).
+    const mixed: FakePoint[] = [
+      ...densePoints(50, 5000n, 100n, (i) => (i % 7 === 0 ? null : i)),
+      ...densePoints(600, 300n, S10 + 50n, (i) => ((i * 5) % 11) + 0.25),
+    ];
+    const left = tilesOf(mixed, 10, 0n, 0n);
+    const right = tilesOf(mixed, 10, 1n, 1n);
+    expect(left[0]?.data.kind).toBe("raw");
+    expect(right[0]?.data.kind).toBe("buckets");
+    const parent = mergeUp(...two([...left, ...right], 0));
+    expectBucketsLikeServer(parent.data, fakeBuckets(mixed, SIG, 0n, 2n * S10, 2048n));
+  });
+});
+
+describe("finds the finest coarser level for a placeholder", () => {
+  // 300 points every 5 × 10^6 ns from 10^6 (up to 1.4960 × 10^9): one level-23 tile (2^31 ns) of buckets.
+  const points = densePoints(300, 5_000_000n, 1_000_000n);
+  const tile23 = splitRun(fakeAnswer(points, runRequest(SIG, 23, 0n, 0n)), 23, 0n, 0n)[0];
+  const to = 1000n * 2n ** 20n; // view [0, 1000 × 2^20) at level 20 touches level-21 tiles 0, 1 and level-23 tile 0
+
+  it("takes level 23 when levels 21 and 22 have nothing", () => {
+    if (!tile23) throw new Error("no tile");
+    const asked: number[] = [];
+    const r = placeholder(0n, to, 20, 26, (level, index) => {
+      asked.push(level);
+      return level === 23 && index === 0n ? tile23 : undefined;
+    });
+    expect(asked[0]).toBe(21); // finest first
+    expect(r).toEqual(stitch([tile23], 0n, to));
+    if (r?.kind !== "buckets") throw new Error("expected buckets");
+    expect(r.width).toBe("8388608"); // 2^23
+    // 210 points (i = 0 … 209) lie below 1,048,576,000; 125 buckets of 2^23 cover the view.
+    expect(r.count.reduce((a, b) => a + b, 0)).toBe(210);
+  });
+
+  it("skips a level that provides only some of the touched tiles", () => {
+    if (!tile23) throw new Error("no tile");
+    const part = splitRun(fakeAnswer(points, runRequest(SIG, 21, 0n, 0n)), 21, 0n, 0n)[0];
+    if (!part) throw new Error("no tile");
+    const r = placeholder(0n, to, 20, 26, (level, index) =>
+      level === 21 ? (index === 0n ? part : undefined) : level === 23 ? tile23 : undefined,
+    );
+    if (r?.kind !== "buckets") throw new Error("expected buckets");
+    expect(r.width).toBe("8388608");
+  });
+
+  it("is undefined when no level up to maxLevel is complete", () => {
+    expect(placeholder(0n, to, 20, 26, () => undefined)).toBeUndefined();
+    expect(placeholder(0n, to, 20, 20, () => tile23)).toBeUndefined(); // nothing coarser to search
+  });
+});
+
+describe("plans the overview and the prefetch", () => {
+  it("overview of 0 … 4294967295 is level 22 over tiles 0 to 3", () => {
+    expect(overviewLevel(0n, 4294967295n)).toBe(22); // 2^32 / 1024 = 2^22
+    expect(overviewTiles(0n, 4294967295n)).toEqual({ level: 22, first: 0n, last: 3n });
+  });
+
+  it("overview of three days is level 37 over 8 tiles", () => {
+    const last = 3n * 86_400n * 1_000_000_000n; // 2.592 × 10^14 ns, width ceil(… / 1024) = 253,125,000,000
+    expect(overviewLevel(0n, last)).toBe(37); // 2^37 = 137,438,953,472 <= width < 2^38
+    expect(overviewTiles(0n, last)).toEqual({ level: 37, first: 0n, last: 7n });
+  });
+
+  it("an empty tile is a bucket tile without buckets", () => {
+    const t = emptyTile(SIG, 22, 5n);
+    expect([t.signalId, t.level, t.index]).toEqual([SIG, 22, 5n]);
+    expect(t.data).toMatchObject({
+      kind: "buckets",
+      signalId: SIG,
+      from: "5368709120", // 5 × 2^30
+      to: "6442450944", // 6 × 2^30
+      width: "4194304",
+      count: [],
+      sna: [],
+      mean: [],
+      min: [],
+      max: [],
+    });
+    if (t.data.kind !== "buckets") throw new Error("expected buckets");
+    expect(t.data.t).toEqual(encodeTimes([]));
+  });
+
+  it("plans the prefetch: next coarser level three views wide, one view each side", () => {
+    // View [0, 1000 × 2^20) at level 20: span 1,048,576,000 ns.
+    expect(prefetchPlan(0n, 1000n * 2n ** 20n, 20)).toEqual([
+      { level: 21, first: -2n, last: 3n }, // [-span, 2 span) over tiles of 2^29 ns
+      { level: 20, first: -4n, last: -1n }, // [-span, 0) over tiles of 2^28 ns
+      { level: 20, first: 3n, last: 7n }, // [span, 2 span)
+    ]);
+  });
+
+  it("caps the coarser level at MAX_LEVEL", () => {
+    expect(prefetchPlan(0n, 1000n, MAX_LEVEL)[0]?.level).toBe(MAX_LEVEL);
   });
 });

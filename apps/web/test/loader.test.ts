@@ -1,8 +1,8 @@
-import { decodeTimes, type RawSeries, type SeriesResult } from "@letsview/shared";
-import { describe, expect, it } from "vitest";
+import { decodeTimes, type Extent, type RawSeries, type SeriesResult } from "@letsview/shared";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SeriesCache } from "../src/chart/cache.ts";
-import { type LoadRequest, SeriesLoader } from "../src/chart/loader.ts";
-import { type FakePoint, fakeFetch, flush } from "./fakeSeries.ts";
+import { type LoaderOptions, type LoadRequest, SeriesLoader } from "../src/chart/loader.ts";
+import { densePoints, type FakeCall, type FakePoint, fakeFetch, flush } from "./fakeSeries.ts";
 
 const SIG = "c/s";
 const S10 = 262144n; // tile span of level 10 (width 1024 ns)
@@ -275,5 +275,261 @@ describe("SeriesLoader on the tab cache", () => {
     calls[1]?.answer();
     await flush();
     expect(loader.get("a1")?.status).toBe("complete");
+  });
+});
+
+describe("SeriesLoader with the window options", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // 4,295 points every 10^6 ns from 500 (up to 4,294,500,500): dense at every level of these tests.
+  const DENSE = densePoints(4295, 1_000_000n, 500n);
+  const EXTENT: Extent = { signalId: SIG, first: "0", last: "4294967295" };
+  const WIDE_TO = 1000n * 2n ** 20n; // level 20 at target 1001: tiles 0 to 3
+
+  const wide = (key = "a1"): LoadRequest => ({
+    key,
+    signalId: SIG,
+    from: "0",
+    to: WIDE_TO.toString(),
+    target: 1001,
+  });
+
+  const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
+
+  /** Answers every call that is not yet answered or aborted, until no new call appears. */
+  async function answerAll(calls: FakeCall[], answered: Set<FakeCall>) {
+    for (let round = 0; round < 20; round++) {
+      await tick();
+      const open = calls.filter((c) => !answered.has(c) && !c.abort.aborted);
+      if (open.length === 0) return;
+      for (const c of open) {
+        answered.add(c);
+        c.answer();
+      }
+    }
+  }
+
+  function wsetup(
+    options: LoaderOptions = {},
+    extent: Extent | null = EXTENT,
+    cacheOptions: { limit?: number } = {},
+  ) {
+    const server = fakeFetch(DENSE);
+    const starts: number[] = [];
+    const calls = server.calls;
+    const fetch: typeof server.fetch = (request, abort) => {
+      starts.push(Date.now());
+      return server.fetch(request, abort);
+    };
+    const cache = new SeriesCache(fetch, { now: NOW, ...cacheOptions });
+    const extentCalls: string[] = [];
+    const extents = new Map<string, Promise<Extent>>();
+    const extentOf = (signalId: string) => {
+      let p = extents.get(signalId);
+      if (!p) {
+        extentCalls.push(signalId);
+        p = Promise.resolve(extent as Extent);
+        extents.set(signalId, p);
+      }
+      return p;
+    };
+    let changes = 0;
+    const make = () =>
+      new SeriesLoader(cache, () => changes++, {
+        loadIntervalMs: 100,
+        ...(extent ? { extent: extentOf } : {}),
+        ...options,
+      });
+    const answered = new Set<FakeCall>();
+    return {
+      cache,
+      calls,
+      starts,
+      extentCalls,
+      make,
+      answered,
+      changes: () => changes,
+      drain: () => answerAll(calls, answered),
+    };
+  }
+
+  it("draws a cached zoom in the same update, without a request", async () => {
+    const t = wsetup({ prefetch: true });
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await t.drain();
+    await tick(150);
+    loader.update([view(1n)]);
+    await t.drain();
+    await tick(150);
+    expect(loader.get("a1")).toMatchObject({
+      status: "complete",
+      result: { from: S10.toString() },
+    });
+
+    const requests = t.calls.length;
+    const changes = t.changes();
+    loader.update([view(0n)]); // back to view A
+    expect(t.calls).toHaveLength(requests); // no fetch
+    expect(loader.get("a1")).toMatchObject({ status: "complete", result: { from: "0" } });
+    expect(loader.settled([view(0n)])).toBe(true);
+    expect(t.changes()).toBeGreaterThan(changes); // onChange ran inside the update
+    loader.dispose();
+  });
+
+  it("throttles loads during a gesture: first at once, then once per interval", async () => {
+    const t = wsetup({}, null); // no overview, no prefetch: only visible loads
+    const loader = t.make();
+    const t0 = Date.now();
+    // A new uncached tile every 16 ms from 0 ms to 240 ms (16 views).
+    for (let i = 0; i < 16; i++) {
+      loader.update([view(BigInt(i))]);
+      if (i === 0) expect(t.calls).toHaveLength(1); // at once
+      await tick(16);
+    }
+    await tick(200);
+    expect(t.starts.map((s) => s - t0)).toEqual([0, 100, 200, 300]);
+    // The 0, 96, 192 and 240 ms views.
+    expect(t.calls.map((c) => c.request.from)).toEqual(
+      [0n, 6n, 12n, 15n].map((j) => (j * S10).toString()),
+    );
+    // Each earlier run, which the next view does not want, is aborted.
+    expect(t.calls.map((c) => c.abort.aborted)).toEqual([true, true, true, false]);
+
+    // A single step after a pause starts within the update call.
+    loader.update([view(20n)]);
+    expect(t.calls).toHaveLength(5);
+    expect(t.calls[4]?.request.from).toBe((20n * S10).toString());
+    loader.dispose();
+  });
+
+  it("loads the overview once per signal after its first view", async () => {
+    const t = wsetup({}); // extent set, no prefetch
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]);
+    w2.update([view(0n, "b1")]);
+    expect(t.calls).toHaveLength(1); // the first view, shared
+    expect(t.extentCalls).toEqual([]); // not before the first view has loaded
+    t.calls[0]?.answer();
+    t.answered.add(t.calls[0] as FakeCall);
+    await tick();
+    expect(t.extentCalls).toEqual([SIG]);
+    expect(t.calls).toHaveLength(2);
+    expect(t.calls[1]?.request).toEqual({
+      signalId: SIG,
+      from: "0",
+      to: "4294967296",
+      target: 1025,
+    });
+    await t.drain();
+    await tick(1000);
+    expect(t.calls).toHaveLength(2); // one overview request for both loaders, nothing else
+    expect(w1.get("a1")?.status).toBe("complete");
+    expect(w2.get("b1")?.status).toBe("complete");
+    w1.dispose();
+    w2.dispose();
+  });
+
+  it("keeps the overview tiles when the cache drops them", async () => {
+    const t = wsetup({}, EXTENT, { limit: 1 }); // no tile fits: everything stored is dropped
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await t.drain(); // first view, then the overview
+    expect(t.calls.some((c) => c.request.target === 1025 && c.request.to === "4294967296")).toBe(
+      true,
+    );
+    expect(t.cache.size).toBe(0);
+    await tick(150);
+
+    loader.update([wide()]);
+    const state = loader.get("a1");
+    expect(state).toMatchObject({ status: "loading", placeholder: true });
+    expect(state?.result).toMatchObject({ kind: "buckets", width: "4194304" }); // level 22, from the overview
+    loader.dispose();
+  });
+
+  it("shows a placeholder at once and sharp data after the response", async () => {
+    const t = wsetup({});
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await t.drain(); // first view and overview (level 22)
+    await tick(150);
+
+    const before = t.calls.length;
+    loader.update([wide()]);
+    expect(t.calls).toHaveLength(before + 1);
+    expect(t.calls[before]?.request).toEqual({
+      signalId: SIG,
+      from: "0",
+      to: "1073741824",
+      target: 1025,
+    });
+    const state = loader.get("a1");
+    expect(state).toMatchObject({ status: "loading", placeholder: true });
+    expect(state?.result).toMatchObject({ kind: "buckets", width: "4194304" }); // 2^22
+    expect(loader.settled([wide()])).toBe(false);
+
+    await t.drain();
+    const done = loader.get("a1");
+    expect(done?.status).toBe("complete");
+    expect(done?.placeholder).toBeUndefined();
+    expect(done?.result).toMatchObject({ kind: "buckets", width: "1048576" }); // 2^20
+    expect(loader.settled([wide()])).toBe(true);
+    loader.dispose();
+  });
+
+  it("prefetches after the view rests, never during a gesture", async () => {
+    const t = wsetup({ prefetch: true }, null);
+    const loader = t.make();
+    // A changing view every 50 ms for one second.
+    for (let i = 0; i < 20; i++) {
+      loader.update([view(BigInt(i))]);
+      await tick(50);
+    }
+    await tick(150);
+    const gesture = t.calls.length;
+    expect(t.calls.every((c) => c.request.target === 257)).toBe(true); // visible views only
+
+    loader.update([wide()]);
+    expect(t.calls).toHaveLength(gesture + 1);
+    t.calls[gesture]?.answer();
+    t.answered.add(t.calls[gesture] as FakeCall);
+    await tick(299);
+    expect(t.calls).toHaveLength(gesture + 1); // still no prefetch 299 ms after the change
+    await tick(1);
+
+    // Level 21 tiles 0 and 1 are merged from the cached level-20 tiles and tile 3 of level 20 is
+    // cached, so the plan's tiles -2…3 / -4…-1 / 3…7 shrink to these runs (design Z7: cache.find).
+    const expected = [
+      { signalId: SIG, from: "-1073741824", to: "0", target: 513 }, // level 21, tiles -2…-1
+      { signalId: SIG, from: "1073741824", to: "2147483648", target: 513 }, // level 21, tiles 2…3
+      { signalId: SIG, from: "-1073741824", to: "0", target: 1025 }, // level 20, tiles -4…-1
+      { signalId: SIG, from: "1073741824", to: "2147483648", target: 1025 }, // level 20, tiles 4…7
+    ];
+    const prefetch = () => t.calls.slice(gesture + 1);
+    expect(prefetch().map((c) => c.request)).toEqual(expected.slice(0, 2)); // two in flight at most
+    prefetch()[0]?.answer();
+    await tick();
+    expect(prefetch().map((c) => c.request)).toEqual(expected.slice(0, 3));
+
+    // A new view that wants none of them: running prefetch is aborted, queued prefetch never sent.
+    loader.update([view(30n)]);
+    await tick();
+    expect(
+      prefetch()
+        .slice(1, 3)
+        .map((c) => c.abort.aborted),
+    ).toEqual([true, true]);
+    expect(prefetch().map((c) => c.request.from)).toEqual([
+      ...expected.slice(0, 3).map((e) => e.from),
+      (30n * S10).toString(),
+    ]);
+    loader.dispose();
   });
 });

@@ -122,3 +122,13 @@ export function fakeFetch(points: readonly FakePoint[]) {
 
 /** Lets pending promise callbacks run. */
 export const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/** `count` points at start + step × i, value `value(i)` (null = SNA); a dense signal for bucket answers. */
+export function densePoints(
+  count: number,
+  step: bigint,
+  start = 0n,
+  value: (i: number) => number | null = (i) => i,
+): FakePoint[] {
+  return Array.from({ length: count }, (_, i) => ({ t: start + step * BigInt(i), v: value(i) }));
+}

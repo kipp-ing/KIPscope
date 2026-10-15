@@ -878,6 +878,7 @@ export function App() {
                   onCursorCommit={onCursorCommit}
                   marked={w.id === markedId}
                   onMark={onMark}
+                  linked={linked}
                   {...dropProp(dropStateOf(w.id))}
                   {...dropActionProp}
                 />
