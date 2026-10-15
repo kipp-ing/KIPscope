@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-027: Scope of the next efficiency changes (2026-10-15)
+
+- **Decision:** Jan, on the lead's scope question after D-025/D-026, in addition to them:
+  - Time navigation: type a time or range, zoom/pan keys, jump to the data extent, presets.
+  - A/B values and Δt/Δ readout on the chart next to the cursors (the values window stays for many signals).
+  - A window emptied by a move is removed automatically (supersedes "a window emptied by a move stays", D-017 feedback).
+  - "Add to" goes to a marked window: the user marks a window, and adds go there. The user's own act of marking sets the target, so D-020's "the target stays where the user put it" still holds.
+- **Why:** Jan picked these from the efficiency test; the marked window is his own idea („add to ist ein markiertes Fenster?"), instead of the testers' "follow the new window". The lead splits the work into `improve-navigation` and `improve-layout`.
+
 ## D-026: Number format and layout scope (2026-10-15)
 
 - **Decision:** Jan, on the efficiency test:
