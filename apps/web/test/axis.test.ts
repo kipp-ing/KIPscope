@@ -1,4 +1,4 @@
-import { fromIso, NS_PER_MS, NS_PER_S } from "@letsview/shared";
+import { formatLocal, fromIso, NS_PER_MS, NS_PER_S } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
 import {
   formatFull,
@@ -88,5 +88,23 @@ describe("formatRange", () => {
   it("truncates instead of rounding up", () => {
     const t = fromIso("2026-10-13T09:12:00.999999999Z");
     expect(formatRange(t, t)).toBe("2026-10-13 11:12:00.999 – 2026-10-13 11:12:00.999");
+  });
+});
+
+describe("shared local time", () => {
+  it("formats local times like the shared formatLocal", () => {
+    const times = [
+      fromIso("2026-10-13T13:08:00Z"), // 0 fraction digits
+      fromIso("2026-10-13T13:08:01.5Z"), // 3
+      fromIso("2026-10-13T13:08:00.123456Z"), // 6
+      fromIso("2026-10-13T13:08:00.123456789Z"), // 9
+      fromIso("2026-10-25T00:30:00Z"), // fold, first 02:30 (+02:00)
+      fromIso("2026-10-25T01:30:00Z"), // fold, second 02:30 (+01:00)
+      fromIso("1900-01-01T00:00:00Z"),
+      fromIso("2262-04-10T12:00:00.000000001Z"),
+    ];
+    for (const t of times) expect(formatFull(t), String(t)).toBe(formatLocal(t));
+    expect(formatLocal(times[4] as bigint)).toBe("2026-10-25 02:30:00");
+    expect(formatLocal(times[5] as bigint)).toBe("2026-10-25 02:30:00");
   });
 });

@@ -1,0 +1,15 @@
+{
+  "name": "@letsview/cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "letsview": "src/main.ts"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "TZ=Europe/Berlin vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@letsview/shared": "workspace:*"
+  }
+}

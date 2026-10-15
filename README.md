@@ -42,3 +42,56 @@ pnpm build   # typecheck (+ web bundle)
 pnpm test
 pnpm lint    # pnpm format to fix
 ```
+
+## CLI
+
+`letsview` controls the open workspace through the server's HTTP API (spec [cli](openspec/specs/cli/spec.md)). Run it from the repo root while the server runs:
+
+```sh
+node apps/cli/src/main.ts --help
+node apps/cli/src/main.ts state
+```
+
+Server: `--server URL` (an `http://` or `https://` URL), else `LETSVIEW_URL`, else `http://localhost:7310`. Global options anywhere on the line: `--wait` (block until an open UI rendered the command), `--timeout DURATION` (default `30s`), `--pretty`, `--help`; `--` ends options.
+
+W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/`±HH:MM`, local wall time `YYYY-MM-DD[T ]HH:MM[:SS[.fffffffff]]` in the process's zone (`TZ`), or a cursor anchor `a`, `b+500ms`, `a-1s`. DURATION is `[+-]<number><unit>` with `ns us µs ms s min h`. SIGNAL is a full ID (`smart451/COMBI_412h.V_ANZ`) or a unique bare name (`V_ANZ`); REF is an assignment ID (`a7`) or a signal in window W.
+
+| Form | Command |
+|---|---|
+| `window create [--values] [--title T] [--from TIME --to TIME] [--mode line\|step\|markers] [--envelope on\|off]` | `window.create` |
+| `window remove W` | `window.remove` |
+| `window rename W TITLE` | `window.rename` (`""` clears) |
+| `window height W PX` | `window.setHeight` |
+| `window range W FROM TO` | `window.setRange` |
+| `window display W [--mode M] [--envelope on\|off]` | `window.setDisplay` |
+| `link on\|off` | `workspace.setLinkTime` |
+| `signal add W SIGNAL` | `window.addSignal` |
+| `signal remove W REF` | `window.removeSignal` |
+| `signal move W REF TARGET\|new [--copy]` | `window.moveSignal` |
+| `cursor set C TIME` | `cursor.set` |
+| `cursor move C DURATION` | `cursor.move` |
+| `cursor remove C` | `cursor.remove` |
+| `diff on\|off` | `cursor.setDiff` |
+| `command JSON` | the JSON as is (no anchors, names or REFs resolved) |
+
+Reads: `state`, `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]`, `wait [REVISION]`.
+
+Each call prints one JSON line (`ok`, `outcome`, `exitCode`, and where they apply `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local`, `error`); a failure also prints one line to stderr. `local` holds times as local wall time with offset.
+
+| Exit | Outcome | When |
+|---|---|---|
+| 0 | `ok` | read answered, or command accepted (with `--wait`: and rendered) |
+| 1 | `rejected` | the server or a lookup refused it (`cursor_off`, `unknown_signal`, `ambiguous_signal`, …) |
+| 2 | `usage` | arguments do not parse; nothing was sent |
+| 3 | `unreachable` | no connection to the server |
+| 4 | `timeout` | `--timeout` ran out during a request or the wait |
+| 5 | `render_error` | the UI rendered with data errors |
+| 6 | `no_ui` | waiting, and no UI connected for 2 s |
+| 7 | `unavailable` | the server answered 5xx (e.g. `catalog_unavailable`) |
+
+Examples:
+
+```sh
+node apps/cli/src/main.ts --wait window create --title Speeds --from "2026-10-13 15:08:00" --to "2026-10-13 15:08:03"
+node apps/cli/src/main.ts state | jq -r .local.cursors.a   # 2026-10-13 15:08:01.500+02:00
+```

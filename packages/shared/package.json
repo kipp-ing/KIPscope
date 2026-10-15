@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "test": "vitest run --passWithNoTests"
+    "test": "TZ=Europe/Berlin vitest run --passWithNoTests"
   },
   "dependencies": {
     "zod": "4.6.7"
