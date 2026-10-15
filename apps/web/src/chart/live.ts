@@ -160,6 +160,42 @@ export function nearestSignal(
   return best;
 }
 
+/** The number of a readout value; undefined for SNA, no value and loading (L5: no candidate). */
+export const numberOf = (v: ReadoutValue | undefined): number | undefined =>
+  v && "value" in v ? v.value : undefined;
+
+/**
+ * Near candidates (L5): each signal's curve y in plot CSS px on its own scale (toY is
+ * `u.valToPos`). Skipped: no scale (envelope edges, Q3), no number (SNA, gap, loading) or y
+ * outside [0, plotHeight]. Legend order is kept for nearestSignal's tie rule.
+ */
+export function liveCandidates(
+  signals: readonly { key: string; scale: string | undefined; value: ReadoutValue | undefined }[],
+  toY: (value: number, scale: string) => number,
+  plotHeight: number,
+): { key: string; y: number }[] {
+  const candidates: { key: string; y: number }[] = [];
+  for (const { key, scale, value } of signals) {
+    const n = numberOf(value);
+    if (scale === undefined || n === undefined) continue;
+    const y = toY(n, scale);
+    if (y >= 0 && y <= plotHeight) candidates.push({ key, y });
+  }
+  return candidates;
+}
+
+/**
+ * Whether a mouse up republishes L at its position (L8, D-033): only after a press on the plot
+ * (down) that moved less than thresholdPx, i.e. a click; after a drag L stays cleared.
+ */
+export function shouldRepublishLive(
+  down: { x: number; y: number } | undefined,
+  up: { x: number; y: number },
+  thresholdPx: number,
+): boolean {
+  return down !== undefined && Math.hypot(up.x - down.x, up.y - down.y) < thresholdPx;
+}
+
 /** Text of the highlight label (L6): the number with SI prefix and unit, no kind; none without a number. */
 export function liveLabelText(
   v: ReadoutValue | undefined,

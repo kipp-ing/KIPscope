@@ -58,7 +58,6 @@ import {
   DOUBLE_CLICK_MS,
   deltaLabelX,
   hitCursor,
-  snapCursorTime,
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
@@ -67,11 +66,13 @@ import {
   FADE_ALPHA,
   HIGHLIGHT_WIDTH,
   labelPosition,
+  liveCandidates,
   liveCell,
   liveCursor,
   liveLabelText,
   liveTime,
   nearestSignal,
+  shouldRepublishLive,
   useLiveCursor,
   useLiveNear,
 } from "./live.ts";
@@ -79,7 +80,6 @@ import { type LoadRequest, SeriesLoader } from "./loader.ts";
 import {
   chartValueAt,
   type ReadoutSource,
-  type ReadoutValue,
   readoutSource,
   sourceCell,
   sourceDelta,
@@ -445,9 +445,6 @@ function placeCursorLines(
   label.style.left = `${x}px`;
   return shown;
 }
-
-/** The number of a readout value; undefined for SNA and no value (design L3: no candidate). */
-const numberOf = (v: ReadoutValue | undefined) => (v && "value" in v ? v.value : undefined);
 
 /** Live overlays inside u.over (design L3, L6): the L line of other windows and the owner's label. */
 type LiveOverlays = { line: HTMLElement; label: HTMLElement };
@@ -946,12 +943,9 @@ export function TimeseriesWindow({
     cursorLines.current = lines;
     const strips = [lines.a, lines.b];
 
-    /** Time at x CSS px in the plot, snapped to the shown span and kept inside it (design C3). */
-    const timeAt = (x: number) => {
-      const shown = shownRangeOf(u, origin.current);
-      const t = origin.current + BigInt(Math.round(u.posToVal(x, "x")));
-      return snapCursorTime(t, shown.to - shown.from, shown);
-    };
+    /** Time at x CSS px in the plot, snapped to the shown span and kept inside it (design C3, L2). */
+    const timeAt = (x: number) =>
+      liveTime(u.posToVal(x, "x"), origin.current, shownRangeOf(u, origin.current));
     const plotX = (clientX: number) => {
       const rect = u.over.getBoundingClientRect();
       return Math.min(rect.width, Math.max(0, clientX - rect.left));
@@ -1020,17 +1014,21 @@ export function TimeseriesWindow({
     const onDown = (e: MouseEvent) => {
       down = e.button === 0 ? { x: e.clientX, y: e.clientY } : undefined;
       passThrough(down !== undefined);
-      // No L while a button is held on the plot (design L8); the next move after release sets it.
+      // No L while a button is held on the plot (design L8); a click brings it back on release.
       liveCursor.clear(w.id);
     };
     const onUp = (e: MouseEvent) => {
       const start = down;
       down = undefined;
       passThrough(false);
-      if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) >= DRAG_THRESHOLD_PX) {
-        return;
-      }
+      // A drag (rectangle zoom) keeps L cleared until the next move.
+      if (!shouldRepublishLive(start, { x: e.clientX, y: e.clientY }, DRAG_THRESHOLD_PX)) return;
       placeClickRef.current(e.shiftKey ? "b" : "a", timeAt(plotX(e.clientX)));
+      // A and L read the same right after a click (D-033); released outside the plot (mouseleave
+      // already cleared L) it stays cleared.
+      const r = u.over.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom)
+        publishLive(e);
     };
     u.over.addEventListener("mousedown", onDown);
     window.addEventListener("mouseup", onUp);
@@ -1062,29 +1060,21 @@ export function TimeseriesWindow({
       wheelFrame.add(action, e.clientX - u.over.getBoundingClientRect().left);
       wheelRaf ??= requestAnimationFrame(flushWheel);
     };
-    // Scale of each signal's mean line by assignment id; envelope edges are no candidates (Q3).
-    const scaleOf = new Map(
-      model.series.filter((s) => !s.envelopeEdge).map((s) => [s.key, s.scale] as const),
-    );
-    /** L at the pointer (design L3): the snapped time and the nearest curve on its own scale. */
+    // Scale of each signal by assignment id; envelope edges have none of their own (Q3).
+    const { scaleOf } = model.layout;
+    // NaN (no candidate) for a scale this uPlot instance lacks: data that arrived before the
+    // effect re-ran for the new structure.
+    const toY = (v: number, scale: string) => (u.scales[scale] ? u.valToPos(v, scale) : Number.NaN);
+    /** L at the pointer (design L3, L5): the snapped time and the nearest curve on its own scale. */
     const publishLive = (e: MouseEvent) => {
       const rect = u.over.getBoundingClientRect();
-      const t = liveTime(
-        u.posToVal(plotX(e.clientX), "x"),
-        origin.current,
-        shownRangeOf(u, origin.current),
-      );
-      const pointerY = e.clientY - rect.top;
-      const candidates: { key: string; y: number }[] = [];
-      for (const s of signalsRef.current) {
-        const scale = scaleOf.get(s.id);
-        if (scale === undefined) continue;
-        const value = numberOf(chartValueAt(loader.get(s.id)?.result, t, modeRef.current));
-        if (value === undefined) continue;
-        const y = u.valToPos(value, scale);
-        if (y >= 0 && y <= rect.height) candidates.push({ key: s.id, y });
-      }
-      const near = nearestSignal(candidates, pointerY);
+      const t = timeAt(plotX(e.clientX));
+      const signals = signalsRef.current.map((s) => ({
+        key: s.id,
+        scale: scaleOf.get(s.id),
+        value: chartValueAt(loader.get(s.id)?.result, t, modeRef.current),
+      }));
+      const near = nearestSignal(liveCandidates(signals, toY, rect.height), e.clientY - rect.top);
       liveCursor.set({ windowId: w.id, t, ...(near === undefined ? {} : { near }) });
     };
 
@@ -1124,16 +1114,20 @@ export function TimeseriesWindow({
       const label = live.label;
       const near = own ? current.near : undefined;
       const assignment = signalsRef.current.find((s) => s.id === near);
-      const scale = near === undefined ? undefined : scaleOf.get(near);
-      if (!current || !assignment || scale === undefined) {
+      if (!current || !assignment) {
         label.style.display = "none";
         return;
       }
       const v = chartValueAt(loader.get(assignment.id)?.result, current.t, modeRef.current);
-      const value = numberOf(v);
+      // The near signal's curve point, by the same rule that made it a candidate (design L5).
+      const [point] = liveCandidates(
+        [{ key: assignment.id, scale: scaleOf.get(assignment.id), value: v }],
+        toY,
+        u.over.clientHeight,
+      );
       const unit = infoRef.current(assignment.signalId)?.unit;
       const text = liveLabelText(v, unit, digitsRef.current);
-      if (value === undefined || text === undefined) {
+      if (!point || text === undefined) {
         label.style.display = "none";
         return;
       }
@@ -1141,7 +1135,7 @@ export function TimeseriesWindow({
       label.style.color = colorOfRef.current(assignment.signalId);
       label.style.display = "";
       const { left, top } = labelPosition(
-        { x: u.valToPos(Number(current.t - origin.current), "x"), y: u.valToPos(value, scale) },
+        { x: u.valToPos(Number(current.t - origin.current), "x"), y: point.y },
         { width: label.offsetWidth, height: label.offsetHeight },
         { width: u.over.clientWidth, height: u.over.clientHeight },
       );
@@ -1307,8 +1301,9 @@ export function TimeseriesWindow({
   const readout = a !== undefined || b !== undefined;
   // B's column while B is on; Diff adds Δ and Δt (D-031).
   const showB = b !== undefined || diff;
-  // L (D-032) is always a column, so filling and emptying it moves nothing.
-  const columns = 7 + (showB ? 1 : 0) + (diff ? 1 : 0);
+  // The legend is always a grid (D-033): name, unit, A | B | Δ while a cursor is on, then L
+  // (D-032, always, so filling and emptying it moves nothing), status, SNA share, remove.
+  const columns = 6 + (readout ? 1 + (showB ? 1 : 0) + (diff ? 1 : 0) : 0);
   const liveNear = useLiveNear(w.id);
   const badge = resolutionBadge(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
@@ -1410,10 +1405,7 @@ export function TimeseriesWindow({
           )}
         </div>
       )}
-      <ul
-        className={`signals${readout ? " readout" : ""}`}
-        style={readout ? { gridTemplateColumns: `repeat(${columns}, auto)` } : undefined}
-      >
+      <ul className="signals" style={{ gridTemplateColumns: `repeat(${columns}, auto)` }}>
         {w.signals.map((s) => {
           const meta = info(s.signalId);
           const state = loader.get(s.id);
@@ -1451,11 +1443,9 @@ export function TimeseriesWindow({
                 <span className="swatch" style={{ background: colorOf(s.signalId) }} />
                 <span className="sig">{name}</span>
               </span>
-              {(meta?.unit || readout) && (
-                <span className="unit" title={`y axis ${model.layout.sideOf.get(s.id) ?? "–"}`}>
-                  {meta?.unit && `[${meta.unit}]`}
-                </span>
-              )}
+              <span className="unit" title={`y axis ${model.layout.sideOf.get(s.id) ?? "–"}`}>
+                {meta?.unit && `[${meta.unit}]`}
+              </span>
               {readout && <ReadoutCell cell={cellAt("a", sourceA)} />}
               {readout && showB && <ReadoutCell cell={cellAt("b", sourceB)} />}
               {readout && diff && (
@@ -1481,7 +1471,7 @@ export function TimeseriesWindow({
                     ? ""
                     : "loading"}
               </span>
-              {(sna || readout) && <span className="sna">{sna}</span>}
+              <span className="sna">{sna}</span>
               <button
                 type="button"
                 className="remove"

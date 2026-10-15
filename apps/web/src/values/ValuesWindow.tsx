@@ -136,6 +136,19 @@ function LiveValueCell({
   return <CellView cell={moving || state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
+/** A signal name with a line break opportunity after its message, `MS_212h.<wbr>M_FEV` (design L7). */
+function breakable(name: string) {
+  const dot = name.indexOf(".") + 1;
+  if (dot === 0) return name;
+  return (
+    <>
+      {name.slice(0, dot)}
+      <wbr />
+      {name.slice(dot)}
+    </>
+  );
+}
+
 function CellView({ cell }: { cell: Cell }) {
   return (
     <td
@@ -317,7 +330,7 @@ export function ValuesWindow({
               const delta = deltaCell(stateA?.result?.value, stateB?.result?.value, unit, digits);
               return (
                 <tr key={s.id} title={meta?.description}>
-                  <td>
+                  <td className="name">
                     <span
                       className="grip"
                       title="Drag onto another window"
@@ -326,7 +339,7 @@ export function ValuesWindow({
                       }
                     >
                       <span className="swatch" style={{ background: colorOf(s.signalId) }} />
-                      <span className="sig">{name}</span>
+                      <span className="sig">{breakable(name)}</span>
                     </span>
                   </td>
                   <ValueCell state={stateA} unit={unit} digits={digits} />

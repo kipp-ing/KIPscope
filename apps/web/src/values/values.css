@@ -10,12 +10,29 @@
   color: var(--muted);
   font-weight: 500;
   text-align: left;
-  padding: 2px 12px 2px 0;
+  padding: 2px 8px 2px 0;
 }
 
+/* Narrow enough for A | B | Δ | L in a 485 px window (design L7): 8 px gaps, the last column
+   without one, values and names in 11 px monospace like the header times. */
 .values-window table.values td {
-  padding: 2px 12px 2px 0;
+  padding: 2px 8px 2px 0;
   white-space: nowrap;
+}
+
+.values-window table.values tr > :last-child {
+  padding-right: 0;
+}
+
+/* The name column gives way first: the name breaks after its message (the <wbr> in
+   ValuesWindow), then anywhere, so the table never needs more than the value columns. */
+.values-window table.values td.name {
+  white-space: normal;
+}
+
+.values-window td.name .sig {
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .values-window .value {
@@ -23,7 +40,11 @@
   font-family: ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   /* Cells carry the unit (number-format), e.g. "8.19 k1/min lin". */
-  min-width: 8em;
+  min-width: 6em;
+}
+
+.values-window td.value {
+  font-size: 11px;
 }
 
 .values-window .value .tag {
@@ -79,7 +100,8 @@
 }
 
 .values-window .grip {
-  display: inline-flex;
+  /* Block-level, so the name inside can wrap (td.name). */
+  display: flex;
   gap: 6px;
   align-items: center;
   cursor: grab;

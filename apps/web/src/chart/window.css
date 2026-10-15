@@ -296,8 +296,7 @@
   touch-action: none;
 }
 
-/* Readout (design N3): cursor times above the legend rows; with a cursor on, the legend is a
-   grid so the A, B and Δ columns align across rows (each row's cells are grid items). */
+/* Readout (design N3): cursor times above the legend rows. */
 .window .readout-row {
   display: flex;
   flex-wrap: wrap;
@@ -305,24 +304,6 @@
   margin-top: 6px;
   font-family: ui-monospace, monospace;
   font-size: 12px;
-}
-
-.window .signals.readout {
-  display: grid;
-  /* Columns set inline (TimeseriesWindow): name, unit, A, B (while B is on or in diff mode),
-     Δ (diff mode), L (always), status, SNA share, remove. */
-  justify-content: start;
-  align-items: center;
-  gap: 2px 10px;
-}
-
-.window .signals.readout li {
-  display: contents;
-}
-
-.window .signals.readout li.empty {
-  display: block;
-  grid-column: 1 / -1;
 }
 
 .window .signals .value {

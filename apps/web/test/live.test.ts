@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   LiveStore,
   labelPosition,
+  liveCandidates,
   liveCell,
   liveLabelText,
   liveTime,
   NEAR_PX,
   nearestSignal,
+  shouldRepublishLive,
 } from "../src/chart/live.ts";
 import { chartValueAt } from "../src/chart/readout.ts";
 
@@ -336,5 +338,81 @@ describe("LiveStore", () => {
     store.set({ windowId: "w1", t: 4n });
     f.run();
     expect(store.get()).toEqual({ windowId: "w1", t: 4n });
+  });
+
+  it("hides L during a drag: suspend drops a queued set and the release restores the next one", () => {
+    const { f, store, listener } = make();
+    store.set({ windowId: "w1", t: 1n });
+    f.run();
+    expect(listener).toHaveBeenCalledTimes(1);
+    // A set is queued in the frame in which a cursor-line or height drag starts.
+    store.set({ windowId: "w1", t: 2n });
+    expect(f.pending()).toBe(1);
+    const release = store.suspend();
+    // The queued set is dropped (no frame left) and L is cleared at once: 1 publish + 1 clear.
+    expect(f.pending()).toBe(0);
+    expect(store.get()).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(2);
+    // Moves during the drag change nothing and notify nobody.
+    store.set({ windowId: "w1", t: 3n });
+    store.set({ windowId: "w2", t: 4n });
+    expect(f.pending()).toBe(0);
+    f.run();
+    expect(store.get()).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(2);
+    // Release does not bring the old L back; only the next set after it publishes.
+    release();
+    expect(store.get()).toBeUndefined();
+    f.run();
+    expect(store.get()).toBeUndefined();
+    store.set({ windowId: "w1", t: 5n });
+    f.run();
+    expect(store.get()).toEqual({ windowId: "w1", t: 5n });
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("near candidates", () => {
+  it("builds near candidates only from numbers inside the plot", () => {
+    const num = (value: number) => ({ kind: "raw" as const, value });
+    // toY maps a value to its y per scale; here the value is the y itself (scale "y" or "y2").
+    const toY = (value: number) => value;
+    const signals = [
+      { key: "sna", scale: "y", value: { kind: "sna" as const } },
+      { key: "gap", scale: "y", value: { kind: "none" as const, reason: "empty_bucket" as const } },
+      {
+        key: "out",
+        scale: "y",
+        value: { kind: "none" as const, reason: "outside_range" as const },
+      },
+      { key: "loading", scale: "y", value: undefined },
+      { key: "noscale", scale: undefined, value: num(40) },
+      { key: "above", scale: "y", value: num(-2) },
+      { key: "a", scale: "y", value: num(40) },
+      { key: "b", scale: "y2", value: num(40) },
+    ];
+    const candidates = liveCandidates(signals, toY, 100);
+    expect(candidates).toEqual([
+      { key: "a", y: 40 },
+      { key: "b", y: 40 },
+    ]);
+    // Equal distance at pointer y 40: the later one in legend order.
+    expect(nearestSignal(candidates, 40)).toBe("b");
+  });
+});
+
+describe("republish on mouse up", () => {
+  it("republishes L on mouse up without movement", () => {
+    const up = { x: 100, y: 50 };
+    // No press on the plot (e.g. the press started elsewhere): never republish.
+    expect(shouldRepublishLive(undefined, up, 4)).toBe(false);
+    // No movement and a move of 3 px (below 4): a click, republish.
+    expect(shouldRepublishLive({ x: 100, y: 50 }, up, 4)).toBe(true);
+    expect(shouldRepublishLive({ x: 97, y: 50 }, up, 4)).toBe(true);
+    // Exactly the threshold (4 px; 3-4-5 diagonal = 5 px) and beyond: a drag, stay cleared.
+    expect(shouldRepublishLive({ x: 96, y: 50 }, up, 4)).toBe(false);
+    expect(shouldRepublishLive({ x: 100, y: 20 }, up, 4)).toBe(false);
+    expect(shouldRepublishLive({ x: 97, y: 46 }, up, 5)).toBe(false);
+    expect(shouldRepublishLive({ x: 97, y: 47 }, up, 5)).toBe(true); // 4.24 px < 5
   });
 });
