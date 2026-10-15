@@ -774,14 +774,17 @@ export function App() {
 
   // Render acknowledgement: a revision counts as rendered once every window reported it.
   const ready = useRef(new Map<string, { revision: number; errors: RenderError[] }>());
-  const lastSent = useRef(-1);
+  // Sent again for the same revision when its errors change (a retry succeeded or failed differently).
+  const lastSent = useRef("");
   const acknowledge = useCallback(() => {
     const { revision, workspace } = liveRef.current;
-    if (!workspace || revision === lastSent.current) return;
+    if (!workspace) return;
     const reports = workspace.windows.map((w) => ready.current.get(w.id));
     if (reports.some((r) => r?.revision !== revision)) return;
     const errors = reports.flatMap((r) => r?.errors ?? []);
-    lastSent.current = revision;
+    const key = JSON.stringify([revision, errors]);
+    if (key === lastSent.current) return;
+    lastSent.current = key;
     send({ type: "rendered", revision, status: errors.length ? "error" : "complete", errors });
   }, [send]);
   const onReady = useCallback(
@@ -795,7 +798,7 @@ export function App() {
     if (live.revision >= 0) acknowledge();
   }, [live.revision, acknowledge]);
   useEffect(() => {
-    if (!live.connected) lastSent.current = -1;
+    if (!live.connected) lastSent.current = "";
   }, [live.connected]);
 
   const appClass = [

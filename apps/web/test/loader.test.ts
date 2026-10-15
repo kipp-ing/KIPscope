@@ -1,7 +1,14 @@
 import { decodeTimes, type Extent, type RawSeries, type SeriesResult } from "@letsview/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "../src/api.ts";
 import { SeriesCache } from "../src/chart/cache.ts";
-import { type LoaderOptions, type LoadRequest, SeriesLoader } from "../src/chart/loader.ts";
+import {
+  LOAD_INTERVAL_MS,
+  type LoaderOptions,
+  type LoadRequest,
+  loadStatusText,
+  SeriesLoader,
+} from "../src/chart/loader.ts";
 import { densePoints, type FakeCall, type FakePoint, fakeFetch, flush } from "./fakeSeries.ts";
 
 const SIG = "c/s";
@@ -530,6 +537,424 @@ describe("SeriesLoader with the window options", () => {
       ...expected.slice(0, 3).map((e) => e.from),
       (30n * S10).toString(),
     ]);
+    loader.dispose();
+  });
+});
+
+describe("SeriesLoader retries", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const DENSE = densePoints(4295, 1_000_000n, 500n);
+  const EXTENT: Extent = { signalId: SIG, first: "0", last: "4294967295" };
+  const WIDE_TO = 1000n * 2n ** 20n;
+  const wide = (key = "a1"): LoadRequest => ({
+    key,
+    signalId: SIG,
+    from: "0",
+    to: WIDE_TO.toString(),
+    target: 1001,
+  });
+  const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
+  const down = (message = "down") => new ApiRequestError(502, "source_error", message);
+  const DOWN = "source_error: down";
+
+  /** Window options (throttle interval, retry) over a fake server; `at()` lists fetch start times in ms. */
+  function rsetup(options: LoaderOptions = {}, extent?: LoaderOptions["extent"]) {
+    const server = fakeFetch(DENSE);
+    const starts: number[] = [];
+    const fetch: typeof server.fetch = (request, abort) => {
+      starts.push(Date.now());
+      return server.fetch(request, abort);
+    };
+    const cache = new SeriesCache(fetch, { now: NOW });
+    const t0 = Date.now();
+    const make = (extra: LoaderOptions = {}) =>
+      new SeriesLoader(cache, () => {}, {
+        loadIntervalMs: LOAD_INTERVAL_MS,
+        retry: true,
+        ...(extent ? { extent } : {}),
+        ...options,
+        ...extra,
+      });
+    return { cache, calls: server.calls, at: () => starts.map((s) => s - t0), make };
+  }
+
+  /** Fails a call and lets the loader see it. */
+  const fail = async (call: FakeCall | undefined, error: Error = down()) => {
+    call?.fail(error);
+    await tick();
+  };
+  /** Answers a call and lets the loader see it. */
+  const answer = async (call: FakeCall | undefined) => {
+    call?.answer();
+    await tick();
+  };
+
+  it("retries a failed load with backoff 1, 2, 4, 8, 16, 30 s", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    // The first seven fetches fail; the delays after each failure are 1, 2, 4, 8, 16, 30, 30 s.
+    const delays = [1000, 2000, 4000, 8000, 16000, 30000, 30000];
+    for (const [i, delay] of delays.entries()) {
+      expect(t.calls).toHaveLength(i + 1);
+      await fail(t.calls[i]);
+      await tick(delay - 1);
+      expect(t.calls).toHaveLength(i + 1); // nothing in between
+      await tick(1);
+    }
+    expect(t.at()).toEqual([0, 1000, 3000, 7000, 15000, 31000, 61000, 91000]);
+    await answer(t.calls[7]);
+    expect(loader.get("a1")?.status).toBe("complete");
+    expect(loader.get("a1")?.error).toBeUndefined();
+    await tick(120000);
+    expect(t.calls).toHaveLength(8);
+    loader.dispose();
+  });
+
+  it("resets the backoff after a complete load", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await fail(t.calls[0]);
+    await tick(1000); // retry 1
+    await fail(t.calls[1]);
+    await tick(2000); // retry 2
+    expect(t.calls).toHaveLength(3);
+    await answer(t.calls[2]);
+    expect(loader.get("a1")?.status).toBe("complete");
+
+    await tick(LOAD_INTERVAL_MS); // the throttle interval of the last load ends
+    loader.update([view(1n)]);
+    expect(t.calls).toHaveLength(4);
+    await fail(t.calls[3]);
+    await tick(999);
+    expect(t.calls).toHaveLength(4);
+    await tick(1);
+    expect(t.calls).toHaveLength(5); // 1 s after the failure, not 4 s
+    expect(t.calls[4]?.request.from).toBe(S10.toString());
+    loader.dispose();
+  });
+
+  it("does not retry a 4xx failure by itself", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await fail(t.calls[0], new ApiRequestError(404, "unknown_signal", "no such signal"));
+    await tick(120000);
+    expect(t.calls).toHaveLength(1);
+    expect(loader.get("a1")).toMatchObject({
+      status: "error",
+      error: "unknown_signal: no such signal",
+    });
+
+    // Second half: the identical request again retries it.
+    loader.update([view(0n)]);
+    await tick(LOAD_INTERVAL_MS);
+    expect(t.calls).toHaveLength(2);
+    expect(t.calls[1]?.request).toEqual(t.calls[0]?.request);
+    loader.dispose();
+  });
+
+  it("retries at once when another request of the tab succeeds", async () => {
+    const t = rsetup();
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]);
+    // Four failures in a row: fetches at 0, 1, 3 and 7 s; the fourth retry is due 8 s after 7 s.
+    for (const wait of [1000, 2000, 4000, 0]) {
+      await fail(t.calls.at(-1));
+      await tick(wait);
+    }
+    expect(t.at()).toEqual([0, 1000, 3000, 7000]);
+    await fail(t.calls[3]); // fourth failure at 7 s
+    await tick(3000); // 10 s: A's retry is due at 15 s
+    expect(t.calls).toHaveLength(4);
+    w2.update([view(1n, "b1")]);
+    expect(t.calls).toHaveLength(5);
+    await answer(t.calls[4]);
+    expect(t.calls).toHaveLength(6); // A's retry started right after that answer
+    expect(t.calls[5]?.request.from).toBe("0");
+    expect(t.at()[5]).toBe(10000);
+    w1.dispose();
+    w2.dispose();
+  });
+
+  it("retries at once on recovery, not sooner than 1 s after the failure", async () => {
+    const t = rsetup();
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]);
+    for (const wait of [1000, 2000]) {
+      await fail(t.calls.at(-1));
+      await tick(wait);
+    }
+    await fail(t.calls[2]); // third failure at F = 3 s; next retry due at F + 4 s
+    await tick(500);
+    w2.update([view(1n, "b1")]);
+    expect(t.calls).toHaveLength(4);
+    await answer(t.calls[3]); // answers at F + 0.5 s
+    expect(t.calls).toHaveLength(4); // floor: not yet
+    await tick(499);
+    expect(t.calls).toHaveLength(4);
+    await tick(1);
+    expect(t.calls).toHaveLength(5);
+    expect(t.at()[4]).toBe(4000); // F + 1 s
+    expect(t.calls[4]?.request.from).toBe("0");
+    w1.dispose();
+    w2.dispose();
+  });
+
+  it("retries at once when the cache reports a recovery", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    for (const wait of [1000, 2000]) {
+      await fail(t.calls.at(-1));
+      await tick(wait);
+    }
+    await fail(t.calls[2]); // third failure at 3 s; next retry due at 7 s
+    await tick(2000);
+    expect(t.calls).toHaveLength(3);
+    t.cache.recover(); // the live channel opened
+    await tick();
+    expect(t.calls).toHaveLength(4);
+    expect(t.at()[3]).toBe(5000);
+    loader.dispose();
+  });
+
+  it("retries a failed load at once when the same request comes again", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    for (const wait of [1000, 2000]) {
+      await fail(t.calls.at(-1));
+      await tick(wait);
+    }
+    await fail(t.calls[2]); // third failure at 3 s; next retry due at 7 s
+    await tick(2000);
+    expect(t.calls).toHaveLength(3);
+    loader.update([view(0n)]); // identical request in a new array
+    await tick(LOAD_INTERVAL_MS); // an update within a running throttle interval starts at its end
+    expect(t.calls).toHaveLength(4);
+    expect(t.at()[3]).toBeLessThanOrEqual(5000 + LOAD_INTERVAL_MS);
+    loader.dispose();
+  });
+
+  it("stops retrying when the signal is removed, the view changes or the loader is disposed", async () => {
+    // Removed while waiting.
+    const a = rsetup();
+    const removed = a.make();
+    removed.update([view(0n)]);
+    await fail(a.calls[0]);
+    removed.update([]);
+    await tick(60000);
+    expect(a.calls).toHaveLength(1);
+
+    // View changed while waiting: B is fetched at once, A never again; B's failure continues the sequence.
+    const b = rsetup();
+    const changed = b.make();
+    changed.update([view(0n)]);
+    await fail(b.calls[0]);
+    await tick(500);
+    changed.update([view(1n)]);
+    expect(b.calls).toHaveLength(2);
+    expect(b.calls[1]?.request.from).toBe(S10.toString());
+    await fail(b.calls[1]); // second failure of the key: next delay 2 s
+    await tick(1999);
+    expect(b.calls).toHaveLength(2);
+    await tick(1);
+    expect(b.calls).toHaveLength(3);
+    expect(b.at()[2]).toBe(2500);
+    await tick(60000);
+    expect(b.calls.slice(1).every((c) => c.request.from === S10.toString())).toBe(true);
+    changed.dispose();
+
+    // Disposed while waiting.
+    const c = rsetup();
+    const disposed = c.make();
+    disposed.update([view(0n)]);
+    await fail(c.calls[0]);
+    disposed.dispose();
+    await tick(60000);
+    expect(c.calls).toHaveLength(1);
+  });
+
+  it("two windows retry with one request", async () => {
+    const t = rsetup();
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]);
+    w2.update([view(0n)]);
+    expect(t.calls).toHaveLength(1); // shared request
+    await fail(t.calls[0]);
+    expect(w1.get("a1")?.status).toBe("error");
+    expect(w2.get("a1")?.status).toBe("error");
+    await tick(1000);
+    expect(t.calls).toHaveLength(2); // one retry for both
+    await answer(t.calls[1]);
+    expect(w1.get("a1")).toMatchObject({ status: "complete", result: { from: "0" } });
+    expect(w2.get("a1")).toMatchObject({ status: "complete", result: { from: "0" } });
+    expect(t.calls).toHaveLength(2);
+    w1.dispose();
+    w2.dispose();
+  });
+
+  it("a retry completes from the cache without a request", async () => {
+    const t = rsetup();
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]);
+    await fail(t.calls[0]); // window 1 failed at 0; its retry is due at 1 s
+    await tick(300);
+    w2.update([view(0n, "b1")]); // window 2 loads the same tiles
+    expect(t.calls).toHaveLength(2);
+    await answer(t.calls[1]);
+    await tick(700); // 1 s after the failure
+    expect(t.calls).toHaveLength(2); // no fetch of window 1's own
+    expect(w1.get("a1")).toMatchObject({ status: "complete", result: { from: "0" } });
+    w1.dispose();
+    w2.dispose();
+  });
+
+  it("does not retry a failed prefetch", async () => {
+    const t = rsetup({ prefetch: true });
+    const loader = t.make();
+    loader.update([wide()]);
+    await answer(t.calls[0]);
+    expect(loader.get("a1")?.status).toBe("complete");
+    // Let the view rest and fail every prefetch request as it appears.
+    const failed = new Set<FakeCall>([t.calls[0] as FakeCall]);
+    await tick(400);
+    for (let round = 0; round < 40; round++) {
+      const open = t.calls.filter((c) => !failed.has(c));
+      if (open.length === 0) break;
+      for (const c of open) {
+        failed.add(c);
+        c.fail(down());
+      }
+      await tick(100);
+    }
+    expect(t.calls.length).toBeGreaterThan(1); // prefetch did run
+    const sent = t.calls.length;
+    await tick(120000);
+    expect(t.calls).toHaveLength(sent); // nothing again
+    const keys = t.calls.map((c) => JSON.stringify(c.request));
+    expect(new Set(keys).size).toBe(keys.length); // no tile fetched twice
+    loader.dispose();
+  });
+
+  it("starts a failed overview again after a complete view", async () => {
+    let extentCalls = 0;
+    let extentDown = true;
+    const extent = async (): Promise<Extent> => {
+      extentCalls++;
+      if (extentDown) throw down();
+      return EXTENT;
+    };
+    const t = rsetup({}, extent);
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await fail(t.calls[0]); // the first view fails; its overview starts and the extent fails
+    expect(extentCalls).toBe(1);
+    await tick(1000);
+    await fail(t.calls[1]); // the retry fails too: no extent request
+    expect(extentCalls).toBe(1);
+    extentDown = false;
+    await tick(2000);
+    expect(t.calls).toHaveLength(3);
+    await answer(t.calls[2]); // the view completes
+    await tick();
+    expect(extentCalls).toBe(2); // right after that complete view
+    // Overview tiles arrive: placeholders come from it again.
+    const overview = t.calls.slice(3);
+    expect(overview.length).toBeGreaterThan(0);
+    for (const c of overview) c.answer();
+    await tick(LOAD_INTERVAL_MS + 50);
+    loader.update([wide()]);
+    expect(loader.get("a1")).toMatchObject({ status: "loading", placeholder: true });
+    loader.dispose();
+  });
+
+  it("is settled while failed, not while a retry loads", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    expect(loader.settled([view(0n)])).toBe(false);
+    await fail(t.calls[0]);
+    expect(loader.get("a1")?.status).toBe("error");
+    expect(loader.settled([view(0n)])).toBe(true);
+    await tick(1000); // the retry starts
+    expect(t.calls).toHaveLength(2);
+    expect(loader.get("a1")?.status).toBe("loading");
+    expect(loader.settled([view(0n)])).toBe(false);
+    await answer(t.calls[1]);
+    expect(loader.get("a1")?.status).toBe("complete");
+    expect(loader.get("a1")?.error).toBeUndefined();
+    expect(loader.settled([view(0n)])).toBe(true);
+    loader.dispose();
+  });
+
+  it("keeps the shown result when a load fails", async () => {
+    const t = rsetup({ retry: false });
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await answer(t.calls[0]);
+    const shown = loader.get("a1")?.result;
+    expect(shown).toMatchObject({ from: "0" });
+    await tick(LOAD_INTERVAL_MS);
+    loader.update([view(1n)]);
+    await fail(t.calls[1]);
+    const state = loader.get("a1");
+    expect(state).toMatchObject({
+      status: "error",
+      request: `c/s|${S10}|${2n * S10}|257`,
+      error: DOWN,
+    });
+    expect(state?.result).toBe(shown);
+    expect(state?.placeholder).toBeUndefined();
+    loader.dispose();
+  });
+
+  it("keeps the placeholder when a load fails", async () => {
+    const t = rsetup({ retry: false }, async () => EXTENT);
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await answer(t.calls[0]); // first view
+    await tick();
+    for (const c of t.calls.slice(1)) c.answer(); // overview
+    await tick(150);
+    const before = t.calls.length;
+    loader.update([wide()]);
+    const shown = loader.get("a1");
+    expect(shown).toMatchObject({ status: "loading", placeholder: true });
+    expect(t.calls).toHaveLength(before + 1);
+    await fail(t.calls[before]);
+    const state = loader.get("a1");
+    expect(state).toMatchObject({ status: "error", error: DOWN, placeholder: true });
+    expect(state?.result).toBe(shown?.result);
+    expect(state?.result).toMatchObject({ kind: "buckets", width: "4194304" });
+    loader.dispose();
+  });
+
+  it("names the legend status, failed while a retry loads", async () => {
+    const t = rsetup();
+    const loader = t.make();
+    expect(loadStatusText(undefined)).toBe("loading");
+    loader.update([view(0n)]);
+    expect(loadStatusText(loader.get("a1"))).toBe("loading"); // plain loading
+    await fail(t.calls[0]);
+    expect(loadStatusText(loader.get("a1"))).toBe(`failed: ${DOWN}`);
+    await tick(1000); // retry loads and carries the last error
+    expect(loader.get("a1")).toMatchObject({ status: "loading", error: DOWN });
+    expect(loadStatusText(loader.get("a1"))).toBe(`failed: ${DOWN}`);
+    await answer(t.calls[1]);
+    expect(loadStatusText(loader.get("a1"))).toBe("");
     loader.dispose();
   });
 });

@@ -191,4 +191,47 @@ describe("SeriesCache", () => {
       expect(calls[1]?.abort.aborted).toBe(true);
     });
   });
+
+  describe("recovery signal", () => {
+    it("notifies recovery listeners after a successful answer, not after a failure", async () => {
+      const { fetch, calls } = fakeFetch(POINTS);
+      const cache = new SeriesCache(fetch, { now: OLD_NOW });
+      let notified = 0;
+      const off = cache.onRecover(() => notified++);
+
+      const [failing] = cache.load("o", SIG, 0, [1n]);
+      calls[0]?.fail(new Error("source_error: timeout"));
+      await failing?.catch(() => {});
+      await flush();
+      expect(notified).toBe(0);
+
+      const tiles = cache.load("o", SIG, 0, [1n, 2n]); // one run, one answer
+      expect(calls).toHaveLength(2);
+      calls[1]?.answer();
+      await Promise.all(tiles);
+      await flush();
+      expect(notified).toBe(1);
+
+      off();
+      const [later] = cache.load("o", SIG, 0, [3n]);
+      calls[2]?.answer();
+      await later;
+      await flush();
+      expect(notified).toBe(1);
+    });
+
+    it("notifies recovery listeners on recover()", async () => {
+      const { fetch } = fakeFetch(POINTS);
+      const cache = new SeriesCache(fetch, { now: OLD_NOW });
+      let notified = 0;
+      const off = cache.onRecover(() => notified++);
+      cache.recover();
+      await flush();
+      expect(notified).toBe(1);
+      off();
+      cache.recover();
+      await flush();
+      expect(notified).toBe(1);
+    });
+  });
 });

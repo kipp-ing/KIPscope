@@ -1,4 +1,5 @@
 import type { Extent, SeriesResult } from "@letsview/shared";
+import { ApiRequestError } from "../api.ts";
 import type { SeriesCache } from "./cache.ts";
 import {
   emptyTile,
@@ -20,6 +21,8 @@ import {
 export const LOAD_INTERVAL_MS = 100; // visible loads start at most once per interval (Z1)
 export const SETTLE_MS = 300; // rest before the prefetch (Z7)
 export const PREFETCH_MAX_TILES = 256; // per window and rest (Z7)
+export const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000] as const; // last one repeats (R2)
+export const RETRY_FLOOR_MS = 1000; // no retry sooner after a key's failure (R3)
 
 export interface LoaderOptions {
   /** Visible loads start at most once per interval (Z1); absent or 0: every load starts at once. */
@@ -28,6 +31,8 @@ export interface LoaderOptions {
   extent?: (signalId: string) => Promise<Extent>;
   /** Prefetch at rest (Z7); absent or false: none. */
   prefetch?: boolean;
+  /** Retry failed loads with backoff and on recovery (R1); absent or false: a failed request stays failed. */
+  retry?: boolean;
 }
 
 export interface LoadRequest extends SeriesRequest {
@@ -39,11 +44,26 @@ export interface LoadState {
   status: "loading" | "complete" | "error";
   /** Identity of the request this state belongs to. */
   request: string;
-  /** While loading, a placeholder or the previous result stays here so the window keeps showing it. */
+  /**
+   * While loading, a placeholder or the previous result stays here so the window keeps showing it;
+   * after a failure, the result shown when it failed (R5).
+   */
   result?: SeriesResult;
+  /** The failure; also kept while a retry of the same request loads (R5). */
   error?: string;
-  /** Set while `result` is a placeholder of coarser tiles (Z4); only with status "loading". */
+  /** Set while `result` is a placeholder of coarser tiles (Z4); never with status "complete". */
   placeholder?: true;
+}
+
+/** False only for a client error (4xx), which only the same request again retries (R4). */
+export function retryable(error: unknown): boolean {
+  return !(error instanceof ApiRequestError && error.status >= 400 && error.status <= 499);
+}
+
+/** The legend's status text of a signal: failed while an error is kept, empty when complete. */
+export function loadStatusText(state: LoadState | undefined): string {
+  if (state?.error !== undefined) return `failed: ${state.error}`;
+  return state?.status === "complete" ? "" : "loading";
 }
 
 const requestId = (r: LoadRequest) => `${r.signalId}|${r.from}|${r.to}|${r.target}`;
@@ -73,6 +93,16 @@ interface Overview {
   range?: TileRange;
   tiles: Map<bigint, Tile>;
   owner?: string;
+  /** The extent or its tiles failed; started again after the key's next complete view (R6). */
+  failed?: true;
+}
+
+/** A key's failures in a row (R2): reset on a complete state. */
+interface Failures {
+  count: number;
+  /** `Date.now()` of the last failure. */
+  at: number;
+  retryable: boolean;
 }
 
 let loaders = 0;
@@ -108,6 +138,15 @@ export class SeriesLoader {
   private rested = false;
   private prefetchOwner: string | undefined;
   private prefetches = 0;
+  /** Per key: its failures in a row (R2). */
+  private readonly failures = new Map<string, Failures>();
+  /** Per key: its scheduled retry and when it is due (R6). */
+  private readonly retries = new Map<
+    string,
+    { timer: ReturnType<typeof setTimeout>; at: number }
+  >();
+  /** Set while subscribed to the cache's recovery signal: while a key holds an error (R3, R7). */
+  private unsubscribe: (() => void) | undefined;
 
   constructor(cache: SeriesCache, onChange: () => void, options: LoaderOptions = {}) {
     this.cache = cache;
@@ -138,8 +177,22 @@ export class SeriesLoader {
     }
     this.order = requests;
     const loads: LoadRequest[] = [];
+    let retried = false;
     for (const request of requests) {
-      if (this.states.get(request.key)?.request === requestId(request)) continue;
+      const state = this.states.get(request.key);
+      if (state?.request === requestId(request)) {
+        // The same request again retries a failed load, a 4xx too, after the floor (R3 c).
+        if (this.options.retry && state.status === "error") {
+          const at = (this.failures.get(request.key)?.at ?? 0) + RETRY_FLOOR_MS;
+          if (at <= Date.now()) {
+            this.clearRetry(request.key);
+            this.beginRetry(request.key, state);
+            loads.push(request);
+            retried = true;
+          } else this.retryAt(request.key, at);
+        }
+        continue;
+      }
       if (this.show(request)) loads.push(request);
       changed = true;
     }
@@ -151,10 +204,9 @@ export class SeriesLoader {
         this.beginInterval();
       }
     }
-    if (changed) {
-      this.restartRest();
-      this.onChange();
-    }
+    this.maybeUnsubscribe();
+    if (changed) this.restartRest();
+    if (changed || retried) this.onChange();
   }
 
   /**
@@ -175,6 +227,9 @@ export class SeriesLoader {
     this.settleTimer = undefined;
     this.rested = false;
     this.stopPrefetch();
+    for (const key of [...this.retries.keys()]) this.clearRetry(key);
+    this.failures.clear();
+    this.maybeUnsubscribe();
   }
 
   private remove(key: string): void {
@@ -183,6 +238,8 @@ export class SeriesLoader {
     this.pending.delete(key);
     this.states.delete(key);
     this.latest.delete(key);
+    this.clearRetry(key);
+    this.failures.delete(key);
   }
 
   /** Lets go of the key's tiles and aborts its exact request. */
@@ -212,6 +269,7 @@ export class SeriesLoader {
   private show(request: LoadRequest): boolean {
     const { key, signalId } = request;
     this.latest.set(key, ++this.seq);
+    this.clearRetry(key);
     const id = requestId(request);
     const view = viewOf(request);
     if (view.tileable) {
@@ -219,11 +277,7 @@ export class SeriesLoader {
       if (tiles) {
         this.pending.delete(key);
         this.forget(key);
-        this.states.set(key, {
-          status: "complete",
-          request: id,
-          result: stitch(tiles, view.from, view.to),
-        });
+        this.complete(key, id, stitch(tiles, view.from, view.to));
         this.firstViewDone(key, signalId);
         return false;
       }
@@ -307,8 +361,7 @@ export class SeriesLoader {
     if (missing.length === 0) {
       this.owners.delete(key);
       if (previousOwner !== undefined) this.cache.release(previousOwner);
-      const result = stitch(tiles as Tile[], view.from, view.to);
-      this.states.set(key, { status: "complete", request: id, result });
+      this.complete(key, id, stitch(tiles as Tile[], view.from, view.to));
       this.firstViewDone(key, signalId);
       return false;
     }
@@ -325,14 +378,12 @@ export class SeriesLoader {
         if (!isCurrent()) return;
         let next = 0;
         const all = tiles.map((tile) => tile ?? (loaded[next++] as Tile));
-        const result = stitch(all, view.from, view.to);
-        this.states.set(key, { status: "complete", request: id, result });
+        this.complete(key, id, stitch(all, view.from, view.to));
         this.finished(key, signalId);
       },
       (error: unknown) => {
         if (!isCurrent()) return;
-        const message = error instanceof Error ? error.message : String(error);
-        this.states.set(key, { status: "error", request: id, error: message });
+        this.fail(key, id, error);
         this.finished(key, signalId);
       },
     );
@@ -350,16 +401,101 @@ export class SeriesLoader {
     this.cache.fetch({ signalId, from, to, target }, controller.signal).then(
       (result) => {
         if (!isCurrent()) return;
-        this.states.set(key, { status: "complete", request: id, result });
+        this.complete(key, id, result);
         this.finished(key, signalId);
       },
       (error: unknown) => {
         if (!isCurrent() || controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : String(error);
-        this.states.set(key, { status: "error", request: id, error: message });
+        this.fail(key, id, error);
         this.finished(key, signalId);
       },
     );
+  }
+
+  /** The key's request is complete: its failures in a row end (R2). */
+  private complete(key: string, id: string, result: SeriesResult): void {
+    this.states.set(key, { status: "complete", request: id, result });
+    this.failures.delete(key);
+    this.clearRetry(key);
+    this.maybeUnsubscribe();
+  }
+
+  /**
+   * The key's request failed: the shown result and placeholder stay (R5). With `retry`, the failure
+   * counts and a retryable one is retried after the next delay of the sequence (R2).
+   */
+  private fail(key: string, id: string, error: unknown): void {
+    const shown = this.states.get(key);
+    this.states.set(key, {
+      status: "error",
+      request: id,
+      error: error instanceof Error ? error.message : String(error),
+      ...(shown?.result ? { result: shown.result } : {}),
+      ...(shown?.placeholder ? { placeholder: true } : {}),
+    });
+    if (!this.options.retry) return;
+    const count = (this.failures.get(key)?.count ?? 0) + 1;
+    const at = Date.now();
+    const again = retryable(error);
+    this.failures.set(key, { count, at, retryable: again });
+    this.unsubscribe ??= this.cache.onRecover(() => this.recovered());
+    if (!again) return;
+    const delay = RETRY_DELAYS_MS[Math.min(count, RETRY_DELAYS_MS.length) - 1] as number;
+    this.retryAt(key, at + delay);
+  }
+
+  /** Something of the tab succeeded or the live channel opened: retry failed keys now (R3 a, b). */
+  private recovered(): void {
+    const now = Date.now();
+    const keys = [...this.states].filter(([, s]) => s.status === "error").map(([key]) => key);
+    for (const key of keys) {
+      const failures = this.failures.get(key);
+      if (failures?.retryable) this.retryAt(key, Math.max(now, failures.at + RETRY_FLOOR_MS));
+    }
+  }
+
+  /** Retries the key at `at`, at once when due; an earlier scheduled retry stays. */
+  private retryAt(key: string, at: number): void {
+    const scheduled = this.retries.get(key);
+    if (scheduled && scheduled.at <= at) return;
+    this.clearRetry(key);
+    const delay = at - Date.now();
+    if (delay <= 0) {
+      this.retry(key);
+      return;
+    }
+    this.retries.set(key, { timer: setTimeout(() => this.retry(key), delay), at });
+  }
+
+  private clearRetry(key: string): void {
+    clearTimeout(this.retries.get(key)?.timer);
+    this.retries.delete(key);
+  }
+
+  /** Loads the key's current request again, like a throttled visible load, if it is still failed. */
+  private retry(key: string): void {
+    this.clearRetry(key);
+    const request = this.order.find((r) => r.key === key);
+    const state = this.states.get(key);
+    if (!request || state?.status !== "error" || state.request !== requestId(request)) return;
+    this.beginRetry(key, state);
+    if (this.interval !== undefined) this.pending.set(key, request);
+    else if (this.load(request)) this.beginInterval();
+    this.onChange();
+  }
+
+  /** A retry loads under a new sequence number and keeps the failed state's result and error (R5). */
+  private beginRetry(key: string, state: LoadState): void {
+    this.latest.set(key, ++this.seq);
+    this.states.set(key, { ...state, status: "loading" });
+  }
+
+  /** Drops the recovery subscription once no key holds an error. */
+  private maybeUnsubscribe(): void {
+    if (this.unsubscribe === undefined) return;
+    for (const state of this.states.values()) if (state.error !== undefined) return;
+    this.unsubscribe();
+    this.unsubscribe = undefined;
   }
 
   /** After a load of the key's current request answered. */
@@ -369,12 +505,13 @@ export class SeriesLoader {
     this.maybePrefetch();
   }
 
-  /** Loads the key's overview once its first view has finished (Z2). */
+  /** Loads the key's overview once its first view has finished (Z2), again after a failed one (R6). */
   private firstViewDone(key: string, signalId: string): void {
     const extentOf = this.options.extent;
     if (!extentOf) return;
     const existing = this.overviews.get(key);
-    if (existing?.signalId === signalId) return;
+    const restart = existing?.failed && this.states.get(key)?.status === "complete";
+    if (existing?.signalId === signalId && !restart) return;
     if (existing) this.dropOverview(key);
     const overview: Overview = { signalId, tiles: new Map() };
     this.overviews.set(key, overview);
@@ -400,17 +537,21 @@ export class SeriesLoader {
         }
         overview.owner = `${this.id}|overview|${key}`;
         const loads = this.cache.load(overview.owner, signalId, range.level, missing, "prefetch");
-        // A failed overview is tried again when the key is added again.
+        // A failed overview is tried again after the key's next complete view (R6).
         Promise.all(loads).then(
           (loaded) => {
             if (!isCurrent()) return;
             for (const tile of loaded) overview.tiles.set(tile.index, tile);
             this.overviewLoaded();
           },
-          () => {},
+          () => {
+            overview.failed = true;
+          },
         );
       })
-      .catch(() => {});
+      .catch(() => {
+        overview.failed = true;
+      });
   }
 
   private dropOverview(key: string): void {
@@ -419,12 +560,13 @@ export class SeriesLoader {
     this.overviews.delete(key);
   }
 
-  /** Recomputes the placeholder of every key still loading (Z2). */
+  /** Recomputes the placeholder of every key still loading, or failed without sharp data (Z2, R5). */
   private overviewLoaded(): void {
     let changed = false;
     for (const request of this.order) {
       const state = this.states.get(request.key);
-      if (state?.status !== "loading" || state.request !== requestId(request)) continue;
+      if (!state || state.status === "complete" || state.request !== requestId(request)) continue;
+      if (state.status === "error" && state.result && !state.placeholder) continue;
       const view = viewOf(request);
       if (!view.tileable) continue;
       const shown = this.placeholderOf(request.key, request.signalId, view);

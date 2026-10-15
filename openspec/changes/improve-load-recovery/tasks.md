@@ -10,12 +10,12 @@ The tasks assume the recommended answers to design Q1–Q4: backoff per key, no 
 
 ## 1. apps/web/src
 
-- [ ] 1.1 Errors with status, cache recovery signal, reconnect, per design R4 and R7:
+- [x] 1.1 Errors with status, cache recovery signal, reconnect, per design R4 and R7:
   - `api.ts`: `ApiRequestError(status, code, message)` with message `"<code>: <message>"`. `getJson` throws it for every response that is not ok, with code `http_<status>` and `statusText` when the body is not an `ApiError`.
   - `cache.ts`: `onRecover(listener)` (returns unsubscribe) and `recover()`. The constructor wraps `fetch` so every successful answer notifies the listeners once, in a microtask. Failures notify nothing.
   - `live.ts`: `ws.onopen` calls `tabSeriesCache().recover()`.
   - Verify: the 2.1 tests "throws errors with HTTP status and code" and the cache recovery tests pass, all existing `cache.test.ts` cases stay green, and `grep -n "tabSeriesCache().recover()" apps/web/src/live.ts` prints one line.
-- [ ] 1.2 Retry and kept data, per design R1–R3, R5 and R6:
+- [x] 1.2 Retry and kept data, per design R1–R3, R5 and R6:
   - `loader.ts`: `LoaderOptions.retry`, `RETRY_DELAYS_MS`, `RETRY_FLOOR_MS`, `retryable(error)` and `loadStatusText(state)`. Per key: a failure counter (reset on `complete`) and a retry timer (cleared on removal, request change, `dispose` and retry start). Immediate triggers: cache `onRecover` (lazy subscription, unsubscribed when no key is in `error` and on `dispose`), and `update` with the identical request on an `error` key. All of them respect the 1 s floor. Retries go through `load` and the throttle.
   - `loader.ts`: on failure, keep the shown `result` and `placeholder`. While a retry loads, its state keeps `error`. `overviewLoaded` also covers `error` keys without data or with a placeholder. `Overview.failed`, and the overview starts again after a `complete` view.
   - `overview.ts`: `WINDOW_LOADER_OPTIONS.retry = true`.
@@ -25,7 +25,7 @@ The tasks assume the recommended answers to design Q1–Q4: backoff per key, no 
 
 ## 2. Tests
 
-- [ ] 2.1 Test-first, vitest with `vi.useFakeTimers()` and the manual fake fetch (`calls[i].fail(new ApiRequestError(502, "source_error", "…"))`, then `answer()`). One test per scenario evidence named in the delta specs:
+- [x] 2.1 Test-first, vitest with `vi.useFakeTimers()` and the manual fake fetch (`calls[i].fail(new ApiRequestError(502, "source_error", "…"))`, then `answer()`). One test per scenario evidence named in the delta specs:
   - `loader.test.ts`, new `describe("SeriesLoader retries")`:
     - "retries a failed load with backoff 1, 2, 4, 8, 16, 30 s"
     - "resets the backoff after a complete load"

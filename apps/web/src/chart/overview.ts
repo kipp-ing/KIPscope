@@ -22,4 +22,5 @@ export const WINDOW_LOADER_OPTIONS: LoaderOptions = {
   loadIntervalMs: LOAD_INTERVAL_MS,
   extent: signalExtent,
   prefetch: true,
+  retry: true,
 };

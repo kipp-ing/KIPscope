@@ -12,14 +12,31 @@ import type {
 } from "@letsview/shared";
 import type { SeriesRequest } from "./chart/tiles.ts";
 
+/** A response that is not ok, with its HTTP status and error code (design R4). */
+export class ApiRequestError extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string, message: string) {
+    super(`${code}: ${message}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
   const res = await fetch(url, abort ? { signal: abort } : {});
-  const body = await res.json();
   if (!res.ok) {
-    const { error } = body as ApiError;
-    throw new Error(`${error.code}: ${error.message}`);
+    // A proxy or a crashed server may answer without an ApiError body.
+    const body = (await res.json().catch(() => undefined)) as Partial<ApiError> | undefined;
+    const error = body?.error;
+    if (typeof error?.code === "string" && typeof error.message === "string") {
+      throw new ApiRequestError(res.status, error.code, error.message);
+    }
+    throw new ApiRequestError(res.status, `http_${res.status}`, res.statusText);
   }
-  return body as T;
+  return (await res.json()) as T;
 }
 
 /** One page of the server-side search; the explorer searches the full catalog locally instead. */

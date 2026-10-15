@@ -66,9 +66,15 @@ export class SeriesCache {
   private readonly queue: Run[] = [];
   private prefetchRunning = 0;
   private weight = 0;
+  private readonly recoverListeners = new Set<() => void>();
 
   constructor(fetch: FetchSeries, options: CacheOptions = {}) {
-    this.fetch = fetch;
+    // Every successful answer through the cache tells the listeners the source is reachable (R7).
+    this.fetch = (request, abort) =>
+      fetch(request, abort).then((result) => {
+        this.notify();
+        return result;
+      });
     this.limit = options.limit ?? CACHE_LIMIT;
     this.now = options.now ?? Date.now;
   }
@@ -83,6 +89,26 @@ export class SeriesCache {
 
   get queuedPrefetch(): number {
     return this.queue.length;
+  }
+
+  /** Called after every successful answer through the cache and on `recover()`; returns unsubscribe (R7). */
+  onRecover(listener: () => void): () => void {
+    this.recoverListeners.add(listener);
+    return () => {
+      this.recoverListeners.delete(listener);
+    };
+  }
+
+  /** Tells listeners the source may be reachable again (live channel opened). */
+  recover(): void {
+    this.notify();
+  }
+
+  /** Calls the listeners once, in a microtask, outside the cache's own bookkeeping. */
+  private notify(): void {
+    queueMicrotask(() => {
+      for (const listener of [...this.recoverListeners]) listener();
+    });
   }
 
   /**

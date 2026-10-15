@@ -1,5 +1,6 @@
 import type { LiveServerMessage, RenderedMessage, Workspace } from "@letsview/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { tabSeriesCache } from "./chart/cache.ts";
 
 export interface LiveState {
   connected: boolean;
@@ -23,7 +24,11 @@ export function useLive(): [LiveState, (message: RenderedMessage) => void] {
       const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live`;
       const ws = new WebSocket(url);
       socket.current = ws;
-      ws.onopen = () => setState((s) => ({ ...s, connected: true }));
+      ws.onopen = () => {
+        setState((s) => ({ ...s, connected: true }));
+        // The server may have lost the source while the channel was down: failed loads retry (R7).
+        tabSeriesCache().recover();
+      };
       ws.onmessage = (event) => {
         const message = JSON.parse(event.data) as LiveServerMessage;
         if (message.type === "hello") setState((s) => ({ ...s, clientId: message.clientId }));

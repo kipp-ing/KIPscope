@@ -79,7 +79,7 @@ import {
   useLiveCursor,
   useLiveNear,
 } from "./live.ts";
-import { type LoadRequest, SeriesLoader } from "./loader.ts";
+import { type LoadRequest, loadStatusText, SeriesLoader } from "./loader.ts";
 import { WINDOW_LOADER_OPTIONS } from "./overview.ts";
 import {
   chartValueAt,
@@ -1500,12 +1500,8 @@ export function TimeseriesWindow({
                 digits={digits}
               />
               {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
-              <span className={`status ${state?.status ?? "loading"}`}>
-                {state?.status === "error"
-                  ? `failed: ${state.error}`
-                  : state?.status === "complete"
-                    ? ""
-                    : "loading"}
+              <span className={`status ${state?.error ? "error" : (state?.status ?? "loading")}`}>
+                {loadStatusText(state)}
               </span>
               <span className="sna">{sna}</span>
               <button
