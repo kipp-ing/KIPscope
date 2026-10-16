@@ -1,7 +1,14 @@
+import { type SignalGaps, splitPoints } from "./gaps.ts";
 import type { EdgePoint } from "./series.ts";
 import type { ValuesMode } from "./workspace.ts";
 
-export type NoValueReason = "no_data" | "before_first" | "after_last" | "next_sna";
+export type NoValueReason =
+  | "no_data"
+  | "before_first"
+  | "after_last"
+  | "next_sna"
+  | "logger_gap"
+  | "period_gap";
 
 export type CursorValue =
   /** A point lies exactly at t; `label`: its state name, whole (design N3). */
@@ -38,7 +45,8 @@ export interface Point {
  * curve rules of timeseries-window (design C4): no invented values, SNA never a number, step
  * holds up to an SNA point, line mode draws no segment into SNA. With `named` (has a state
  * name), line mode holds when `at` or `next` is named: no interpolation into a state (D-059,
- * design N3). Pure.
+ * design N3). With `gaps`, nothing is read across a split pair (D-062, design G4): the earlier
+ * value holds only up to the split's hold end, after it there is no value. Pure.
  */
 export function evaluateAt(
   t: bigint,
@@ -46,10 +54,20 @@ export function evaluateAt(
   at: Point | undefined,
   next: Point | undefined,
   named?: (p: Point) => boolean,
+  gaps?: SignalGaps,
 ): CursorValue {
   if (!at) return { kind: "none", reason: next ? "before_first" : "no_data" };
   if (at.t === t) return at.v === null ? { kind: "sna" } : { kind: "raw", value: at.v };
   if (!next) return { kind: "none", reason: "after_last" };
+  const split = gaps && splitPoints(at.t, next.t, gaps);
+  if (split) {
+    if (t <= split.holdEnd) {
+      if (at.v === null) return { kind: "sna" };
+      if (mode === "step" || named?.(at) || (next.v !== null && named?.(next)))
+        return { kind: "held", value: at.v };
+    }
+    return { kind: "none", reason: split.kind === "logger" ? "logger_gap" : "period_gap" };
+  }
   if (at.v === null) return { kind: "sna" };
   if (mode === "step" || named?.(at) || (next.v !== null && named?.(next)))
     return { kind: "held", value: at.v };

@@ -1,4 +1,10 @@
-import { type BucketSeries, encodeTimes, type RawSeries, type SignalInfo } from "@kipscope/shared";
+import {
+  type BucketSeries,
+  encodeTimes,
+  type RawSeries,
+  type SignalGaps,
+  type SignalInfo,
+} from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { snapCursorTime } from "../src/chart/cursors.ts";
 import {
@@ -421,5 +427,120 @@ describe("atLevel (open=0, precharge=1, closed=2)", () => {
     const named = { kind: "raw", value: 0, label: "closed" } as const;
     expect(atLevel(named, undefined)).toBe(named);
     expect(atLevel(undefined, states)).toBeUndefined();
+  });
+});
+
+describe("readouts across gaps (add-gap-display)", () => {
+  const cyc: SignalGaps = { period: ms(20), logger: [] };
+
+  it("reads gaps from the drawn data", () => {
+    // Period 20 ms: points 1 at 0, 2 at 20, 3 at 40 and 4 at 500 ms.
+    const r = rawSeries({ t: encodeTimes([at(0), at(20), at(40), at(500)]), v: [1, 2, 3, 4] }, [
+      "before",
+      "after",
+    ]);
+    // Step at 50 ms: held up to the hold end (40 + 20 = 60 ms).
+    expect(chartValueAt(r, at(50), "step", undefined, cyc)).toEqual({ kind: "held", value: 3 });
+    // Line at 30 ms between 2 and 3: interpolated; at 100 ms between 3 and 4: no data, period gap.
+    expect(chartValueAt(r, at(30), "line", undefined, cyc)).toEqual({
+      kind: "interpolated",
+      value: 2.5,
+    });
+    expect(chartValueAt(r, at(100), "line", undefined, cyc)).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    // Step beyond the hold end, and without gap info the old behaviour.
+    expect(chartValueAt(r, at(70), "step", undefined, cyc)).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    expect(chartValueAt(r, at(100), "line")).toMatchObject({ kind: "interpolated" });
+
+    // Buckets of 1 s at 0, 1, 6 and 7 s (means 1..4), no period, a logger gap 1.5 s - 5.5 s.
+    const b = {
+      ...buckets([0, 1000, 6000, 7000], [1, 1, 1, 1], [0, 0, 0, 0], [1, 2, 3, 4]),
+      to: at(10_000).toString(),
+    };
+    const logger: SignalGaps = { logger: [{ from: at(1500), to: at(5500) }] };
+    // Inside the logger gap, and in the empty stretch beside it (5.7 s, after the gap's end).
+    expect(chartValueAt(b, at(3000), "line", undefined, logger)).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+    expect(chartValueAt(b, at(5700), "line", undefined, logger)).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+    // A bucket that merely contains the start of the gap is read as its mean at a time before the gap.
+    expect(chartValueAt(b, at(1200), "line", undefined, logger)).toEqual({
+      kind: "aggregated",
+      value: 2,
+    });
+    // Without gap info the empty stretch is just an empty bucket.
+    expect(chartValueAt(b, at(5700), "line")).toEqual({ kind: "none", reason: "empty_bucket" });
+
+    // A 20 ms signal's buckets of 5 ms with an empty stretch of 100 ms (5 ms - 105 ms).
+    const fine: BucketSeries = {
+      ...buckets([0, 105], [1, 1], [0, 0], [1, 2]),
+      width: "5000000",
+    };
+    expect(chartValueAt(fine, at(50), "line", undefined, cyc)).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    expect(chartValueAt(fine, at(2), "line", undefined, cyc)).toEqual({
+      kind: "aggregated",
+      value: 1,
+    });
+  });
+
+  it("reads gaps as no data, and Δ as —", () => {
+    const logger = { kind: "none" as const, reason: "logger_gap" as const };
+    const period = { kind: "none" as const, reason: "period_gap" as const };
+    expect(readoutCell(logger, "V", 3)).toEqual({
+      text: "no data",
+      title: "no data: the logger recorded nothing",
+      gap: true,
+    });
+    expect(readoutCell(period, "V", 3)).toEqual({
+      text: "no data",
+      title: "no data: more than 3 periods without a point",
+      gap: true,
+    });
+    // Other reasons keep the dash.
+    expect(readoutCell({ kind: "none", reason: "empty_bucket" }, "V", 3).text).toBe("—");
+
+    // Δ needs two numbers: a gap on either side gives a plain dash.
+    for (const [a, b] of [
+      [logger, { kind: "raw" as const, value: 1 }],
+      [{ kind: "raw" as const, value: 1 }, period],
+      [logger, period],
+    ] as const) {
+      const cell = readoutDelta(a, b, "V", 3);
+      expect(cell).toEqual({ text: "—" });
+    }
+
+    // From the server's exact value (A and B legends) the same cell.
+    const exact = readoutSource(
+      {
+        status: "complete",
+        request: "r",
+        result: { signalId: "c/V", t: "1", mode: "line", value: logger },
+      },
+      { kind: "aggregated", value: 20 },
+      false,
+    );
+    expect(sourceCell(exact, "V", 3)).toMatchObject({ text: "no data", gap: true });
+    const ok = readoutSource(
+      {
+        status: "complete",
+        request: "r",
+        result: { signalId: "c/V", t: "1", mode: "line", value: { kind: "raw", value: 3 } },
+      },
+      { kind: "aggregated", value: 20 },
+      false,
+    );
+    expect(sourceDelta(exact, ok, "V", 3)).toEqual({ text: "—" });
   });
 });

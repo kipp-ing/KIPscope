@@ -7,11 +7,15 @@ import {
   type EdgePoint,
   evaluateAt,
   formatQuantityBare,
+  loggerGapAt,
+  NO_GAPS,
   parseTimestamp,
   type RawSeries,
   type SeriesResult,
+  type SignalGaps,
   type SignalInfo,
   shortLabel,
+  splitBuckets,
 } from "@kipscope/shared";
 import {
   type Cell,
@@ -72,7 +76,10 @@ function named(t: bigint, v: number | null, label: string | undefined): NamedPoi
 const edge = (p: EdgePoint | undefined, info: SignalInfo | undefined) =>
   p && named(parseTimestamp(p.t), p.v, stateName(info, p.v, p.label));
 
-/** Raw value at t (line mode holds next to a named point, N3), named after the point it came from. */
+/**
+ * Raw value at t (line mode holds next to a named point, N3), named after the point it came from;
+ * nothing across a split pair beyond its hold end (G4).
+ */
 function rawValueAt(
   result: RawSeries,
   times: readonly bigint[],
@@ -80,6 +87,7 @@ function rawValueAt(
   t: bigint,
   mode: DisplayMode,
   info: SignalInfo | undefined,
+  gaps: SignalGaps,
 ): ReadoutValue {
   const point = (k: number) => {
     const v = result.v[k] ?? null;
@@ -93,6 +101,7 @@ function rawValueAt(
     at,
     next,
     info?.states ? (p) => (p as NamedPoint).label !== undefined : undefined,
+    gaps,
   );
   return (v.kind === "raw" || v.kind === "held") && at?.label !== undefined
     ? { ...v, label: at.label }
@@ -103,22 +112,33 @@ function rawValueAt(
  * Value of one signal at `t` from a window's loaded data (design N4): outside [from, to) none;
  * raw by evaluateAt with the edge neighbours (markers evaluate as line), named by `info` (N3);
  * buckets by the mean of the bucket containing t, SNA if it holds SNA points only, named when
- * its minimum and maximum share a state name. undefined: nothing loaded yet.
+ * its minimum and maximum share a state name. With `gaps` (G7 "Drawn value"): raw reads no
+ * value across a split pair; buckets read none inside a logger gap and in the empty stretch
+ * between two split buckets. undefined: nothing loaded yet.
  */
 export function chartValueAt(
   result: SeriesResult | undefined,
   t: bigint,
   mode: DisplayMode,
   info?: SignalInfo,
+  gaps: SignalGaps = NO_GAPS,
 ): ReadoutValue | undefined {
   if (!result) return undefined;
   if (t < parseTimestamp(result.from) || t >= parseTimestamp(result.to))
     return { kind: "none", reason: "outside_range" };
   const times = timesOf(result);
   const i = lastAtOrBefore(times, t);
-  if (result.kind === "raw") return rawValueAt(result, times, i, t, mode, info);
-  if (i < 0 || t >= (times[i] as bigint) + BigInt(result.width))
+  if (result.kind === "raw") return rawValueAt(result, times, i, t, mode, info, gaps);
+  if (loggerGapAt(t, gaps.logger)) return { kind: "none", reason: "logger_gap" };
+  const width = BigInt(result.width);
+  if (i < 0) return { kind: "none", reason: "empty_bucket" };
+  if (t >= (times[i] as bigint) + width) {
+    const next = times[i + 1];
+    const split =
+      next === undefined ? undefined : splitBuckets(times[i] as bigint, next, width, gaps);
+    if (split) return { kind: "none", reason: split === "logger" ? "logger_gap" : "period_gap" };
     return { kind: "none", reason: "empty_bucket" };
+  }
   const mean = result.mean[i];
   if (mean === null || mean === undefined) return { kind: "sna" };
   // Buckets carry no text: only VAL_ labels name a bucket.

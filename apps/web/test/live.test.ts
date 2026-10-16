@@ -1,4 +1,4 @@
-import { type BucketSeries, encodeTimes, type RawSeries } from "@kipscope/shared";
+import { type BucketSeries, encodeTimes, type RawSeries, type SignalGaps } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   LiveStore,
@@ -147,6 +147,31 @@ describe("live value", () => {
       title: "outside this window's range",
     });
     expect(liveLabelText(outside, "1/min", 3)).toBeUndefined();
+
+    // Inside a logger gap (add-gap-display): "no data" in the gap style, no label, never a candidate.
+    const paused = raw("c/PTC", [
+      [500, 360],
+      [2500, 361],
+    ]);
+    const gaps: SignalGaps = { logger: [{ from: at(1000), to: at(2000) }] };
+    const vGap = chartValueAt(paused, at(1500), "line", undefined, gaps);
+    expect(vGap).toEqual({ kind: "none", reason: "logger_gap" });
+    expect(liveCell(vGap, true, "V", 3)).toEqual({
+      text: "no data",
+      title: "no data: the logger recorded nothing",
+      gap: true,
+    });
+    expect(liveLabelText(vGap, "V", 3)).toBeUndefined();
+    expect(liveCandidates([{ key: "s1", scale: "u:V", value: vGap }], () => 50, 100)).toEqual([]);
+    // More than 3 periods without a point: the same, with the period reason.
+    const vPeriod = chartValueAt(paused, at(1500), "line", undefined, {
+      period: ms(100),
+      logger: [],
+    });
+    expect(liveCell(vPeriod, true, "V", 3)).toMatchObject({ text: "no data", gap: true });
+    expect(liveCandidates([{ key: "s1", scale: "u:V", value: vPeriod }], () => 50, 100)).toEqual(
+      [],
+    );
   });
 });
 

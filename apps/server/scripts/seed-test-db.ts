@@ -40,6 +40,19 @@
  *                         note boot at 04:00:00, and DTC P0NULL0 without a time (never returned).
  *                         Categories: active 2, pending 1, stored 2, untested 2, passed 1, change 2, snapshot 4,
  *                         refused 1, transport 1, other 2; BMS 11, VCU 7.
+ * - gapcar (design T of add-gap-display, device test-gap, chunk g1, 32,187 rows), base G = 2026-10-03T00:00:00Z, all rows in
+ *                         [G, G + 10 min). No gapcar row lies in [00:05:00, 00:06:00) (logger pause P1), in (00:09:30.000,
+ *                         00:09:31.900) (silence S1, 1.9 s, not a logger gap) or in (00:09:40.000, 00:09:42.000) (pause P2, 2.0 s).
+ *                         Cyc_B10h.CYC  every 20 ms (DBC cycle 20 ms), value n mod 100, except P1, S1, P2, the open interval
+ *                         (00:02:00.100, 00:02:00.600) (dropout, 24 rows) and 00:03:00.120 and 00:03:00.140 (spacing of exactly
+ *                         3 periods): 26,781 rows
+ *                         Evt_B11h.EVT  1, 2, 3, 4 at 00:00:30, 00:04:00, 00:07:00, 00:09:00 (DBC cycle 0)
+ *                         Msr_B12h.MSR  every 100 ms (not in any DBC), value n mod 10, except P1, S1, P2 and the open interval
+ *                         (00:08:00.000, 00:08:01.000) (9 rows): 5,354 rows
+ *                         TBMS.current  every 10 s from 00:00:00 to 00:09:50 (diag group DT_Pack, 10s), 12.5, except P1 and
+ *                         00:01:10, :20, :30, :50, 00:02:00, :10: 48 rows
+ *                         Logger gaps 00:04:59.980-00:06:00.000 and 00:09:40.000-00:09:42.000; last row 00:09:59.980.
+ *                         Catalog 1,021 -> 1,025 signals.
  *
  * Run: pnpm --filter @kipscope/server seed:test   (needs `docker compose up -d`)
  */
@@ -91,6 +104,21 @@ const DRIVE_BURSTS: [number, number][] = [
   [10800, 11100],
   [11190, 11400],
 ];
+/** gapcar starts two days after testcar: 2026-10-03T00:00:00Z. */
+const GAP_BASE_MS = Date.UTC(2026, 9, 3);
+const gapMs = (offsetExpr: string) =>
+  `fromUnixTimestamp64Milli(toInt64(${GAP_BASE_MS} + ${offsetExpr}), 'UTC')`;
+const insertGap = (
+  signal: string,
+  offsetExpr: string,
+  value: string,
+  count: number,
+  where: string,
+) =>
+  insert(
+    "signals",
+    `SELECT 'gapcar', 'test-gap', 'g1', '${signal}', ${gapMs(offsetExpr)}, ${value} FROM numbers(${count}) WHERE ${where}`,
+  );
 const NS_BASE = 1791964800123456789n; // 2026-10-14T08:00:00.123456789Z
 
 const schema = (table: string, precision: number) => `
@@ -301,6 +329,44 @@ const statements = [
     [hms(2, 1, 30), "locked"],
   ]),
   `INSERT INTO sdlog.events (vehicle, device, chunk, utc, source, kind, name, value, text, detail) VALUES ${eventValues}`,
+  // gapcar (design T of add-gap-display): n = row index; P1 pause, S1 silence of 1.9 s, P2 pause of 2.0 s, dropouts.
+  insertGap(
+    "Cyc_B10h.CYC",
+    "number * 20",
+    "number % 100",
+    30000,
+    `NOT (number >= 15000 AND number < 18000) AND NOT (number > 28500 AND number < 28595)
+     AND NOT (number > 29000 AND number < 29100) AND NOT (number > 6005 AND number < 6030)
+     AND number NOT IN (9006, 9007)`,
+  ),
+  `INSERT INTO sdlog.signals (vehicle, device, chunk, signal, utc, value) VALUES ${(
+    [
+      [30, 1],
+      [240, 2],
+      [420, 3],
+      [540, 4],
+    ] satisfies [number, number][]
+  )
+    .map(
+      ([s, v]) =>
+        `('gapcar', 'test-gap', 'g1', 'Evt_B11h.EVT', fromUnixTimestamp64Milli(toInt64(${GAP_BASE_MS + s * 1000}), 'UTC'), ${v})`,
+    )
+    .join(", ")}`,
+  insertGap(
+    "Msr_B12h.MSR",
+    "number * 100",
+    "number % 10",
+    6000,
+    `NOT (number >= 3000 AND number < 3600) AND NOT (number > 5700 AND number < 5719)
+     AND NOT (number > 5800 AND number < 5820) AND NOT (number > 4800 AND number < 4810)`,
+  ),
+  insertGap(
+    "TBMS.current",
+    "number * 10000",
+    "12.5",
+    60,
+    "NOT (number >= 30 AND number <= 35) AND number NOT IN (7, 8, 9, 11, 12, 13)",
+  ),
   insert(
     "signals_ns",
     `SELECT 'testcar', 'test-dev', 'c7', 'Ns_600h.FINE',
@@ -311,10 +377,19 @@ const statements = [
 
 /** Spot checks: query → expected single value. */
 const checks: [string, string][] = [
-  ["SELECT count() FROM sdlog.signals", "21910630"],
+  ["SELECT count() FROM sdlog.signals", "21942817"],
   [
     "SELECT count() FROM (SELECT DISTINCT vehicle, signal FROM sdlog.signals WHERE utc IS NOT NULL)",
-    "1021",
+    "1025",
+  ],
+  ["SELECT count() FROM sdlog.signals WHERE vehicle = 'gapcar'", "32187"],
+  [
+    "SELECT arrayStringConcat(arrayMap(s -> concat(s.1, ':', toString(s.2)), arraySort(groupArray((signal, n)))), ',') FROM (SELECT signal, count() AS n FROM sdlog.signals WHERE vehicle = 'gapcar' GROUP BY signal)",
+    "Cyc_B10h.CYC:26781,Evt_B11h.EVT:4,Msr_B12h.MSR:5354,TBMS.current:48",
+  ],
+  [
+    "SELECT toString(min(utc)) || ' ' || toString(max(utc)) FROM sdlog.signals WHERE vehicle = 'gapcar'",
+    "2026-10-03 00:00:00.000 2026-10-03 00:09:59.980",
   ],
   [
     "SELECT max(value) FROM sdlog.signals WHERE signal = 'Fast_100h.SIG_A' AND vehicle = 'testcar' AND utc IS NOT NULL",

@@ -57,6 +57,29 @@ describe("formatCell", () => {
     });
   });
 
+  it("formats gaps as no data", () => {
+    const gap = (reason: "logger_gap" | "period_gap") =>
+      formatCell({ kind: "none", reason }, undefined, undefined, "V", 3);
+    expect(gap("logger_gap")).toEqual({
+      text: "no data",
+      title: "no data: the logger recorded nothing",
+      gap: true,
+    });
+    expect(gap("period_gap")).toEqual({
+      text: "no data",
+      title: "no data: more than 3 periods without a point",
+      gap: true,
+    });
+    // Not SNA, no kind tag, no digit.
+    expect(gap("logger_gap").sna).toBeUndefined();
+    expect(gap("logger_gap").tag).toBeUndefined();
+    expect(gap("period_gap").text).not.toMatch(/\d/);
+    // Δ with a gap on either side is a plain dash.
+    const g = { kind: "none" as const, reason: "logger_gap" as const };
+    expect(deltaCell(g, raw(1), "V", 3)).toEqual({ text: NO_VALUE });
+    expect(deltaCell(raw(1), g, "V", 3)).toEqual({ text: NO_VALUE });
+  });
+
   it("formats SNA and missing values without a number", () => {
     const sna = formatCell({ kind: "sna" }, undefined, undefined, "V", 3);
     expect(sna.text).toBe("SNA");

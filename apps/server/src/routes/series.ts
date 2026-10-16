@@ -5,6 +5,7 @@ import {
   evaluateAt,
   parseSignalId,
   type SignalInfo,
+  signalGaps,
   stateLabel,
   TimeInput,
   ValuesMode,
@@ -14,6 +15,7 @@ import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import type { RawPoint, SeriesRef } from "../datasource.ts";
 import { DensityCache } from "../density.ts";
+import { GapCache } from "../gaps.ts";
 import { apiError, parseInput } from "../http.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
 
@@ -32,6 +34,8 @@ const ExtentQuery = z.object({ signal: z.string().min(1) });
 
 const DensityQuery = z.object({ dataRef: z.string().min(1) });
 
+const GapsQuery = z.object({ dataRef: z.string().min(1) });
+
 const ValueQuery = z.object({
   signal: z.string().min(1),
   t: Time,
@@ -42,10 +46,17 @@ export const seriesRoutes =
   ({ catalog, source }: AppDeps): FastifyPluginAsync =>
   async (app) => {
     const density = new DensityCache(source, () => catalog.loadedAt);
-    // Warm the cache after each catalog load (design Q4 (b)); the load does not wait for it.
+    const gaps = new GapCache(source, catalog);
+    // Warm the caches after each catalog load (design Q4 (b)); the load does not wait for it. The
+    // gap info follows the density, so carserver sees one full scan at a time (design G6); a newer
+    // load starts its own run.
     const stopPrefetch = catalog.onLoaded(() => {
+      const loadedAt = catalog.loadedAt;
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
-      void density.prefetch(dataRefs, (message) => app.log.warn(message));
+      const warn = (message: string) => app.log.warn(message);
+      void density.prefetch(dataRefs, warn).then(() => {
+        if (catalog.loadedAt === loadedAt) return gaps.prefetch(dataRefs, warn);
+      });
     });
     app.addHook("onClose", async () => {
       stopPrefetch();
@@ -64,6 +75,32 @@ export const seriesRoutes =
         const body = await density.get(dataRef);
         if (!body) return apiError(reply, 404, "no_data", `no data for data ref: ${dataRef}`);
         return body;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return apiError(reply, 502, "source_error", message);
+      }
+    });
+
+    /** Logger gaps and periods of a data ref (spec data-gaps, design G6). */
+    app.get("/api/gaps", async (request, reply) => {
+      const query = parseInput(GapsQuery, request.query, reply);
+      if (!query) return reply;
+      const { dataRef } = query;
+      // Periods come from the catalog, so there is no gap info without one.
+      if (!catalog.loadedAt) {
+        return apiError(
+          reply,
+          503,
+          "catalog_unavailable",
+          "signal catalog not loaded yet; gaps cannot be computed",
+        );
+      }
+      if (!catalog.all().some((s) => s.dataRef === dataRef)) {
+        return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
+      }
+      try {
+        // Shared and cached, so a client close does not abort it.
+        return await gaps.get(dataRef);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
@@ -187,9 +224,11 @@ export const seriesRoutes =
         const ref = seriesRef(info, catalog.snaRanges(query.signal));
         const text = ref.text === true;
         // before(t + 1) is the last point at or before t, after(t + 1) the first point after t.
-        const [at, next] = await Promise.all([
+        // Without gap info there is no value: it could lie across a gap (design G6).
+        const [at, next, gapInfo] = await Promise.all([
           source.before(ref, query.t + 1n, controller.signal),
           source.after(ref, query.t + 1n, controller.signal),
+          gaps.get(info.dataRef),
         ]);
         // State names (add-events N2): the row text of a text signal, else the VAL_ label.
         const labelOf = (p: RawPoint | undefined): string | undefined =>
@@ -203,6 +242,7 @@ export const seriesRoutes =
           at,
           next,
           (p) => (p === at ? atLabel : nextLabel) !== undefined,
+          signalGaps(gapInfo, query.signal),
         );
         // Raw and held values are at's.
         if ((value.kind === "raw" || value.kind === "held") && atLabel !== undefined)

@@ -60,6 +60,10 @@
   font-weight: 600;
 }
 
+.values-window .value.gap-value {
+  color: var(--muted);
+}
+
 .values-window .value.error {
   color: var(--error);
   font-family: inherit;

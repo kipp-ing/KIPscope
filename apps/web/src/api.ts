@@ -7,6 +7,7 @@ import type {
   Density,
   EventList,
   Extent,
+  GapInfo,
   SeriesResult,
   ServerMeta,
   SignalInfo,
@@ -86,6 +87,11 @@ export function fetchExtent(signalId: string): Promise<Extent> {
 /** Rows per bucket of one data ref over its whole recording, for the time strip (design T8). */
 export function fetchDensity(dataRef: string, signal?: AbortSignal): Promise<Density> {
   return getJson(`/api/density?${new URLSearchParams({ dataRef })}`, signal);
+}
+
+/** Logger gaps and signal periods of one data ref (add-gap-display G6, G7). */
+export function fetchGaps(dataRef: string, signal?: AbortSignal): Promise<GapInfo> {
+  return getJson(`/api/gaps?${new URLSearchParams({ dataRef })}`, signal);
 }
 
 /** All events of one data ref with the state changes of its events-line signals, no filter (add-events V9). */

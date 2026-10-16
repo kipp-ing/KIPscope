@@ -27,6 +27,7 @@
   --error: #be123c;
   --error-fill: #fff1f2;
   --mark: #fde68a; /* search hit, unchanged */
+  --gap-fill: #f1f5f9; /* logger-gap band (add-gap-display G7; the canvas uses GAP_FILL) */
   /* events (add-events V1; the chart's canvas uses the same hex values from events/marks.ts) */
   --ev-fault: #be123c; /* = --error; active, pending */
   --ev-stored: #b45309; /* amber-700 */
@@ -43,6 +44,11 @@
   font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--bg);
+}
+
+/* A "no data" cell: a cursor inside a gap (add-gap-display G7 "Cells"). */
+.gap-value {
+  color: var(--muted);
 }
 
 button,

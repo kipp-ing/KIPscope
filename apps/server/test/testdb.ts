@@ -1,6 +1,9 @@
 import { resolve } from "node:path";
+import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
 import type { EventMapping, TableMapping } from "../src/config.ts";
+import { loadDbcFiles } from "../src/dbc.ts";
+import { loadDiagCatalogs } from "../src/diag.ts";
 
 /** Client for the seeded test DB (`docker compose up -d` + `seed:test`); never the real one. */
 export function testClient() {
@@ -39,3 +42,14 @@ export function testSource(table = "signals", events: EventMapping = testEventMa
 export const fixture = (name: string) => resolve(import.meta.dirname, "fixtures", name);
 export const testDbcFiles = [fixture("test-a.dbc"), fixture("test-b.dbc")];
 export const testDiagCatalogs = [fixture("test-diag.manifest.json")];
+
+/** Catalog with the test DBCs and the test diag catalog, so DBC cycle times and diag intervals are known (add-gap-display). */
+export function testCatalog(source: ClickHouseSource = testSource()) {
+  return new Catalog(
+    source,
+    () => loadDbcFiles(testDbcFiles),
+    undefined,
+    undefined,
+    (warn) => loadDiagCatalogs(testDiagCatalogs, warn),
+  );
+}

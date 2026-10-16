@@ -3,10 +3,11 @@ import type {
   Display,
   EdgePoint,
   SeriesResult,
+  SignalGaps,
   SignalInfo,
   Timestamp,
 } from "@kipscope/shared";
-import { decodeTimes, stateLabel } from "@kipscope/shared";
+import { decodeTimes, NO_GAPS, splitBuckets, splitPoints, stateLabel } from "@kipscope/shared";
 import { type AxisLayout, layoutAxes } from "./axes.ts";
 
 /** x/y arrays of one signal; x is the ns offset from the window origin. */
@@ -84,8 +85,14 @@ function namedPoints(result: SeriesResult, info: SignalInfo): boolean[] {
  * end holds the earlier valid point's level until 1 ns before the next point, envelope edges
  * likewise, so it never slopes into or out of a state; a segment between two unnamed values
  * stays a line. A range without points thus holds a named edge point's level across the view.
+ * A raw gap break sits 1 ns after its hold end, so a hold up to it ends at the hold end (G7
+ * "Every hold obeys G4"); nothing holds into a `stop` (a bucket gap break).
  */
-function holdStates(points: SignalPoints, named: readonly boolean[]): SignalPoints {
+function holdStates(
+  points: SignalPoints,
+  named: readonly boolean[],
+  stop?: readonly boolean[],
+): SignalPoints {
   // Source indices of the drawn points: each point, plus a hold point before the next one.
   const at: number[] = [];
   const xs: number[] = [];
@@ -93,7 +100,7 @@ function holdStates(points: SignalPoints, named: readonly boolean[]): SignalPoin
     at.push(i);
     xs.push(x);
     const next = points.xs[i + 1];
-    if (next === undefined || next <= x + 1 || points.ys[i] === null) return;
+    if (next === undefined || next <= x + 1 || points.ys[i] === null || stop?.[i + 1]) return;
     if (!named[i] && !named[i + 1]) return;
     at.push(i);
     xs.push(next - 1);
@@ -144,6 +151,79 @@ export function toPoints(
   };
 }
 
+/** Times of a raw result's drawn points: [before, …points, after], as toPoints orders them. */
+function rawTimes(result: SeriesResult & { kind: "raw" }): bigint[] {
+  const times = decodeTimes(result.t);
+  return [
+    ...(result.before ? [BigInt(result.before.t)] : []),
+    ...times,
+    ...(result.after ? [BigInt(result.after.t)] : []),
+  ];
+}
+
+/** Drawable points with gap breaks; `gap` marks the breaks, `named` follows the inserted points. */
+interface Broken {
+  points: SignalPoints;
+  gap: boolean[];
+  named?: boolean[];
+}
+
+const hasGaps = (gaps: SignalGaps) => gaps.period !== undefined || gaps.logger.length > 0;
+
+/**
+ * Inserts the gap breaks of design G7. Raw: after each split pair p, q (G4), in step mode a hold
+ * point (holdEnd, p's value) when p is valid and holdEnd > p, then in every mode a break
+ * (holdEnd + 1, null), which takes q's name. Buckets: a break at the later bucket's start between
+ * each split pair (G5), in mean, min and max.
+ */
+function breakAtGaps(
+  result: SeriesResult,
+  points: SignalPoints,
+  origin: Timestamp,
+  gaps: SignalGaps,
+  step: boolean,
+  named: readonly boolean[] | undefined,
+): Broken {
+  if (!hasGaps(gaps)) {
+    return { points, gap: points.xs.map(() => false), ...(named ? { named: [...named] } : {}) };
+  }
+  const xs: number[] = [];
+  const ys: (number | null)[] = [];
+  const min: (number | null)[] = [];
+  const max: (number | null)[] = [];
+  const gap: boolean[] = [];
+  const names: boolean[] = [];
+  const push = (x: number, y: number | null, isGap: boolean, name: boolean, i?: number) => {
+    xs.push(x);
+    ys.push(y);
+    min.push(i === undefined ? null : (points.min?.[i] ?? null));
+    max.push(i === undefined ? null : (points.max?.[i] ?? null));
+    gap.push(isGap);
+    names.push(name);
+  };
+  const raw = result.kind === "raw";
+  const times = raw ? rawTimes(result) : decodeTimes(result.t);
+  const width = raw ? 0n : BigInt(result.width);
+  points.xs.forEach((x, i) => {
+    const y = points.ys[i] ?? null;
+    push(x, y, false, named?.[i] ?? false, i);
+    const p = times[i] as bigint;
+    const q = times[i + 1];
+    if (q === undefined) return;
+    if (raw) {
+      const split = splitPoints(p, q, gaps);
+      if (!split) return;
+      if (step && y !== null && split.holdEnd > p)
+        push(offset(split.holdEnd, origin), y, false, named?.[i] ?? false);
+      push(offset(split.holdEnd + 1n, origin), null, true, named?.[i + 1] ?? false);
+    } else if (splitBuckets(p, q, width, gaps)) {
+      push(offset(q, origin), null, true, false);
+    }
+  });
+  const columns = points.min && points.max ? { min, max } : {};
+  return { points: { xs, ys, ...columns }, gap, ...(named ? { named: names } : {}) };
+}
+
 /** Merges sorted periods that touch or overlap. */
 function mergePeriods(periods: [number, number][]): [number, number][] {
   const merged: [number, number][] = [];
@@ -157,15 +237,25 @@ function mergePeriods(periods: [number, number][]): [number, number][] {
 
 /**
  * SNA periods as [start, end] x offsets, sorted and merged; end may equal start. Raw: from each
- * SNA point (edge neighbors included) to the next point. Buckets: every bucket with SNA points.
+ * SNA point (edge neighbors included) to the next point, or to the hold end when the next point
+ * is split off (G7). Buckets: every bucket with SNA points.
  */
-export function snaPeriods(result: SeriesResult, origin: Timestamp): [number, number][] {
+export function snaPeriods(
+  result: SeriesResult,
+  origin: Timestamp,
+  gaps: SignalGaps = NO_GAPS,
+): [number, number][] {
   const periods: [number, number][] = [];
   if (result.kind === "raw") {
     const { xs, ys } = toPoints(result, origin);
+    const times = hasGaps(gaps) ? rawTimes(result) : undefined;
     ys.forEach((y, i) => {
       const x = xs[i] as number;
-      if (y === null) periods.push([x, xs[i + 1] ?? x]);
+      if (y !== null) return;
+      const p = times?.[i];
+      const q = times?.[i + 1];
+      const split = p !== undefined && q !== undefined ? splitPoints(p, q, gaps) : undefined;
+      periods.push([x, split ? offset(split.holdEnd, origin) : (xs[i + 1] ?? x)]);
     });
   } else {
     const width = BigInt(result.width);
@@ -224,16 +314,17 @@ export function isolatedPoints(ys: readonly (number | null | undefined)[]): numb
 
 /**
  * Step mode: holds each valid value up to the timestamp of a following SNA point by inserting a
- * hold point there and moving the SNA null 1 ns later (skipped when that time is taken).
+ * hold point there and moving the SNA null 1 ns later (skipped when that time is taken). A gap
+ * break (`gap`) is no SNA point: it is never moved or held into (G7).
  */
-function holdBeforeSna(pts: SignalPoints): SignalPoints {
+function holdBeforeSna(pts: SignalPoints, gap?: readonly boolean[]): SignalPoints {
   const xs: number[] = [];
   const ys: (number | null)[] = [];
   pts.ys.forEach((y, i) => {
     const x = pts.xs[i] as number;
     const prev = ys.at(-1);
     const next = pts.xs[i + 1];
-    if (y === null && typeof prev === "number" && next !== x + 1) {
+    if (y === null && !gap?.[i] && typeof prev === "number" && next !== x + 1) {
       xs.push(x, x + 1);
       ys.push(prev, null);
     } else {
@@ -257,6 +348,8 @@ export interface SignalInput {
   /** A state signal's catalog entry (`states` set): its line is drawn as steps (holdStates);
       a code-valued one spans its flat axis over its states (stateDomain). */
   info?: SignalInfo;
+  /** The signal's gap rule (design G7); absent = NO_GAPS. */
+  gaps?: SignalGaps;
 }
 
 /** One uPlot series, without uPlot runtime objects (paths are resolved by the component). */
@@ -320,20 +413,30 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     if (!input.result) continue;
     const raw = input.result.kind === "raw";
     const path: PathKind = raw ? display.mode : "line";
-    const points = toPoints(input.result, origin, input.states);
+    const gaps = input.gaps ?? NO_GAPS;
+    const named = input.info?.states ? namedPoints(input.result, input.info) : undefined;
+    const broken = breakAtGaps(
+      input.result,
+      toPoints(input.result, origin, input.states),
+      origin,
+      gaps,
+      path === "step",
+      named,
+    );
+    // Gap breaks first: the holds below never move a break or hold past it (G7).
     const pts =
       path === "step"
-        ? holdBeforeSna(points)
-        : path === "line" && input.info?.states
-          ? holdStates(points, namedPoints(input.result, input.info))
-          : points;
+        ? holdBeforeSna(broken.points, broken.gap)
+        : path === "line" && broken.named
+          ? holdStates(broken.points, broken.named, raw ? undefined : broken.gap)
+          : broken.points;
     const scale = layout.scaleOf.get(input.key) as string;
     if (!model.scales.has(scale)) {
       model.scales.set(scale, titles.get(scale) ?? (input.unit?.trim() || input.label));
     }
     const key = input.key;
     model.series.push({ key, label: input.label, scale, color: input.color, path });
-    model.sna.push({ color: input.color, periods: snaPeriods(input.result, origin) });
+    model.sna.push({ color: input.color, periods: snaPeriods(input.result, origin, gaps) });
     const table: (number | null)[][] = [pts.xs, pts.ys];
     if (!raw && display.envelope && pts.min && pts.max) {
       const maxIndex = model.series.length + 1;

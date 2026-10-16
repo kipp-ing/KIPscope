@@ -4,7 +4,7 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { testDbcFiles, testSource } from "./testdb.ts";
+import { testCatalog, testDbcFiles, testSource } from "./testdb.ts";
 
 const SIGNAL = "testcar/Sna_800h.SPEED";
 // SPEED: point n at 2026-10-01T02:00:00Z + n * 100 ms, value n mod 100;
@@ -201,5 +201,90 @@ describe("GET /api/value with state names (add-events)", () => {
     const plain = await get("testcar/Sna_800h.SPEED", "2026-10-01T02:00:01Z");
     expect(plain.value).toEqual({ kind: "raw", value: 10 });
     expect(plain.at).not.toHaveProperty("label");
+  });
+});
+
+describe("GET /api/value across gaps (add-gap-display)", () => {
+  const source = testSource();
+  const catalog = testCatalog(source);
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
+  });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  const value = async (signal: string, t: string, mode?: string) => {
+    const res = await app.inject({
+      url: "/api/value",
+      query: { signal, t, ...(mode ? { mode } : {}) },
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json().value;
+  };
+  const CYC = "gapcar/Cyc_B10h.CYC";
+  const EVT = "gapcar/Evt_B11h.EVT";
+  const MSR = "gapcar/Msr_B12h.MSR";
+  const TBMS = "gapcar/TBMS.current";
+
+  it("evaluates across gaps", async () => {
+    // Exactly three periods apart (5 at 00:03:00.100, 8 at .160) is no gap.
+    expect(await value(CYC, "2026-10-03T00:03:00.130Z", "line")).toEqual({
+      kind: "interpolated",
+      value: 6.5,
+    });
+    // Dropout: 5 at 00:02:00.100, next at 00:02:00.600.
+    expect(await value(CYC, "2026-10-03T00:02:00.110Z", "line")).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    expect(await value(CYC, "2026-10-03T00:02:00.110Z", "step")).toEqual({
+      kind: "held",
+      value: 5,
+    });
+    expect(await value(CYC, "2026-10-03T00:02:00.130Z", "step")).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    // Logger pause: the last point before it is at 00:04:59.980.
+    expect(await value(CYC, "2026-10-03T00:04:59.990Z", "step")).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+    expect(await value(CYC, "2026-10-03T00:05:30Z", "line")).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+
+    // Event signal (cycle 0, no period): joined without a logger gap, held up to the gap, none in it.
+    expect(await value(EVT, "2026-10-03T00:01:40Z", "line")).toEqual({
+      kind: "interpolated",
+      value: 1.3333333333333333,
+    });
+    expect(await value(EVT, "2026-10-03T00:04:30Z", "step")).toEqual({ kind: "held", value: 2 });
+    expect(await value(EVT, "2026-10-03T00:04:30Z", "line")).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+    expect(await value(EVT, "2026-10-03T00:06:30Z", "step")).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+
+    // Measured period (100 ms): nothing in (00:08:00, 00:08:01).
+    expect(await value(MSR, "2026-10-03T00:08:00.5Z")).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    // Diag period (10 s): 12.5 at 00:01:00, next at 00:01:40.
+    expect(await value(TBMS, "2026-10-03T00:01:05Z", "step")).toEqual({
+      kind: "held",
+      value: 12.5,
+    });
+    expect(await value(TBMS, "2026-10-03T00:01:20Z", "line")).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
   });
 });

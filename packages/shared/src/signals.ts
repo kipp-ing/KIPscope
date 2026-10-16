@@ -37,6 +37,8 @@ export interface DbcInfo {
   max?: number;
   /** `VAL_` table sorted by raw ascending; absent (never empty) when none. */
   values?: DbcValueLabel[];
+  /** `GenMsgCycleTime` of the signal's message in ms, > 0; absent for 0 or none (D-062). */
+  cycleMs?: number;
 }
 
 /** One scale row of a diagnostic catalog field (raw bounds inclusive), D-061. */
@@ -68,6 +70,8 @@ export interface DiagInfo {
   states?: DiagScaleRow[];
   /** Rows marked invalid, table order; absent when none. Never stored (the decoder drops them), not SNA codes. */
   invalid?: DiagScaleRow[];
+  /** The group's `interval` in ms, > 0; absent for `never` or none (D-062). */
+  intervalMs?: number;
 }
 
 /** A signal in the catalog. Optional fields are absent (not empty) when the metadata is unknown. */

@@ -167,3 +167,50 @@ describe("evaluateAt with named points", () => {
     });
   });
 });
+
+describe("evaluateAt across gaps", () => {
+  const MS = 1_000_000n;
+  const cyc = { period: 20n * MS, logger: [] };
+  const none = (reason: string) => ({ kind: "none", reason });
+
+  it("returns no value across a gap", () => {
+    // 4 at 0 ns and 7 at 100 ms, period 20 ms: more than 3 periods apart, hold end 20 ms.
+    const a = p(0n, 4);
+    const b = p(100n * MS, 7);
+    expect(evaluateAt(10n * MS, "line", a, b, undefined, cyc)).toEqual(none("period_gap"));
+    expect(evaluateAt(30n * MS, "line", a, b, undefined, cyc)).toEqual(none("period_gap"));
+    expect(evaluateAt(10n * MS, "step", a, b, undefined, cyc)).toEqual({ kind: "held", value: 4 });
+    expect(evaluateAt(30n * MS, "step", a, b, undefined, cyc)).toEqual(none("period_gap"));
+    // The earlier point is SNA: SNA up to the hold end, then no data.
+    const sna = p(0n, null);
+    expect(evaluateAt(10n * MS, "line", sna, b, undefined, cyc)).toEqual({ kind: "sna" });
+    expect(evaluateAt(10n * MS, "step", sna, b, undefined, cyc)).toEqual({ kind: "sna" });
+    expect(evaluateAt(30n * MS, "line", sna, b, undefined, cyc)).toEqual(none("period_gap"));
+    expect(evaluateAt(30n * MS, "step", sna, b, undefined, cyc)).toEqual(none("period_gap"));
+    // 4 at 0 and 7 at 2.1 s, no period, a logger gap 50 ms - 2.05 s: held to the gap's start, then logger_gap.
+    const far = p(2100n * MS, 7);
+    const logger = { logger: [{ from: 50n * MS, to: 2050n * MS }] };
+    expect(evaluateAt(30n * MS, "step", a, far, undefined, logger)).toEqual({
+      kind: "held",
+      value: 4,
+    });
+    expect(evaluateAt(60n * MS, "step", a, far, undefined, logger)).toEqual(none("logger_gap"));
+    expect(evaluateAt(60n * MS, "line", a, far, undefined, logger)).toEqual(none("logger_gap"));
+  });
+
+  it("holds a named point up to the hold end, and leaves points at t and unsplit pairs alone", () => {
+    const named = () => true;
+    const a = p(0n, 4);
+    const b = p(100n * MS, 7);
+    expect(evaluateAt(10n * MS, "line", a, b, named, cyc)).toEqual({ kind: "held", value: 4 });
+    expect(evaluateAt(30n * MS, "line", a, b, named, cyc)).toEqual(none("period_gap"));
+    // A point at t is raw whatever the gaps; exactly 3 periods apart is no split.
+    expect(evaluateAt(0n, "line", a, b, undefined, cyc)).toEqual({ kind: "raw", value: 4 });
+    expect(evaluateAt(30n * MS, "line", a, p(60n * MS, 8), undefined, cyc)).toEqual({
+      kind: "interpolated",
+      value: 6,
+    });
+    // After the last point is still after_last, with or without gaps.
+    expect(evaluateAt(30n * MS, "line", a, undefined, undefined, cyc)).toEqual(none("after_last"));
+  });
+});

@@ -304,6 +304,7 @@ function dbcInfo(meta: DbcSignal): DbcInfo {
   if (meta.offset !== undefined) dbc.offset = meta.offset;
   if (meta.min !== undefined) dbc.min = meta.min;
   if (meta.max !== undefined) dbc.max = meta.max;
+  if (meta.cycleMs !== undefined) dbc.cycleMs = meta.cycleMs;
   if (meta.values && meta.values.size > 0) {
     dbc.values = [...meta.values]
       .sort(([a], [b]) => a - b)

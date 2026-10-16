@@ -9,12 +9,16 @@ import {
   EVENT_CATEGORIES,
   type EventCategory,
   formatAxisTicks,
+  type LoggerGap,
   MAX_UNITS,
+  parseSignalId,
   type RenderError,
   type SeriesResult,
+  type SignalGaps,
   type SignalInfo,
   shortLabel,
   shownName,
+  signalGaps,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
 } from "@kipscope/shared";
@@ -68,6 +72,7 @@ import {
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
+import { bandsIn, useGapInfo } from "./gaps.ts";
 import { draggedHeight, heightCommand, startsHeightDrag, trackHeightDrag } from "./height.ts";
 import type { Insets } from "./insets.ts";
 import { linkedPreview, shownRange, useLinkedPreview } from "./linkedPreview.ts";
@@ -106,6 +111,10 @@ const MAX_ORIGIN_DISTANCE = 2n ** 50n;
 const AXIS_FONT = '11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 /** Grid lines, the --border value (design T4); uPlot draws on canvas, so no CSS variable. */
 const GRID_STROKE = "#e2e8f0";
+/** Logger-gap bands, the --gap-fill value (add-gap-display G7); canvas, so no CSS variable. */
+const GAP_FILL = "#f1f5f9";
+/** A logger-gap band is at least this many CSS px wide. */
+const GAP_MIN_WIDTH = 1;
 /** Ticks and labels of an axis without its own signal colour, the --muted value (design T4). */
 const AXIS_STROKE = "#64748b";
 /** y axis size beyond the widest tick label: tick (4) + gap (5) + spare (3). */
@@ -232,7 +241,8 @@ const sameInputs = (a: SignalInput[], b: SignalInput[]) =>
       x.color === y.color &&
       x.result === y.result &&
       x.states === y.states &&
-      x.info === y.info
+      x.info === y.info &&
+      x.gaps === y.gaps
     );
   });
 
@@ -278,6 +288,36 @@ function seriesOptions(spec: SeriesSpec): uPlot.Series {
     ...(paths ? { paths } : {}),
     points,
   };
+}
+
+/**
+ * Paints the logger gaps that meet the shown range as bands over the plot's full height (G7), in
+ * the drawClear hook: under the grid, the event lines, the curves and the SNA lanes.
+ */
+function drawGapBands(u: uPlot, logger: readonly LoggerGap[], origin: bigint) {
+  if (logger.length === 0) return;
+  const { from, to } = shownRangeOf(u, origin);
+  const bands = bandsIn(logger, from, to);
+  if (bands.length === 0) return;
+  const { ctx } = u;
+  const { left, top, width, height } = u.bbox;
+  const minWidth = GAP_MIN_WIDTH * devicePixelRatio;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  ctx.fillStyle = GAP_FILL;
+  for (const band of bands) {
+    let x0 = u.valToPos(Number(band.from - origin), "x", true);
+    let x1 = u.valToPos(Number(band.to - origin), "x", true);
+    if (x1 - x0 < minWidth) {
+      const center = (x0 + x1) / 2;
+      x0 = center - minWidth / 2;
+      x1 = center + minWidth / 2;
+    }
+    ctx.fillRect(x0, top, x1 - x0, height);
+  }
+  ctx.restore();
 }
 
 /** Paints each signal's SNA periods as a strip at the bottom of the plot area, lane 0 lowest. */
@@ -600,11 +640,11 @@ function placeLiveLine(u: uPlot, line: HTMLElement, t: bigint | undefined, origi
 
 const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r.mode, abort);
 
-/** One readout value in a legend row: number with unit, tag, SNA style, reason as tooltip. */
+/** One readout value in a legend row: number with unit, tag, SNA or gap style, reason as tooltip. */
 function ReadoutCell({ cell, className }: { cell: Cell; className?: string }) {
   return (
     <span
-      className={`value${className ? ` ${className}` : ""}${cell.sna ? " sna-value" : ""}${cell.loading ? " loading" : ""}`}
+      className={`value${className ? ` ${className}` : ""}${cell.sna ? " sna-value" : ""}${cell.gap ? " gap-value" : ""}${cell.loading ? " loading" : ""}`}
       title={cell.title}
     >
       {cell.text}
@@ -623,15 +663,17 @@ function LiveCell({
   unit,
   digits,
   info,
+  gaps,
 }: {
   result: SeriesResult | undefined;
   mode: DisplayMode;
   unit: string | undefined;
   digits: Digits;
   info: SignalInfo | undefined;
+  gaps: SignalGaps;
 }) {
   const live = useLiveCursor();
-  const v = live && chartValueAt(result, live.t, mode, info);
+  const v = live && chartValueAt(result, live.t, mode, info, gaps);
   return (
     <ReadoutCell cell={liveCell(v, live !== undefined, unit, digits, info)} className="live" />
   );
@@ -734,6 +776,38 @@ export function TimeseriesWindow({
   // Event marks (design V6): read by the drawAxes and draw hooks.
   const eventsRef = useRef<readonly DiagEvent[]>(events ?? []);
   eventsRef.current = events ?? [];
+  // Gap info of the signals' data refs (add-gap-display G7), once per browser tab. Keyed on the
+  // data refs' content: `signals` is a new array on every revision.
+  const dataRefsKey = [
+    ...new Set(w.signals.flatMap((s) => parseSignalId(s.signalId)?.dataRef ?? [])),
+  ].join("\n");
+  const dataRefs = useMemo(
+    () => (dataRefsKey === "" ? [] : dataRefsKey.split("\n")),
+    [dataRefsKey],
+  );
+  const gapInfo = useGapInfo(dataRefs);
+  const gapsOf = (signalId: string): SignalGaps => {
+    const dataRef = parseSignalId(signalId)?.dataRef;
+    return signalGaps(dataRef === undefined ? undefined : gapInfo.infos.get(dataRef), signalId);
+  };
+  const gapsOfRef = useRef(gapsOf);
+  gapsOfRef.current = gapsOf;
+  // The union of the data refs' logger gaps, sorted by `from`: read by the drawClear hook.
+  const loggerInfos = dataRefs.map((r) => gapInfo.infos.get(r));
+  const windowGaps = useRef<{ infos: typeof loggerInfos; logger: readonly LoggerGap[] }>({
+    infos: [],
+    logger: [],
+  });
+  if (
+    loggerInfos.length !== windowGaps.current.infos.length ||
+    loggerInfos.some((x, i) => x !== windowGaps.current.infos[i])
+  ) {
+    const logger = loggerInfos
+      .flatMap((x) => x?.logger ?? [])
+      .map((g) => ({ from: BigInt(g.from), to: BigInt(g.to) }))
+      .sort((p, q) => (p.from < q.from ? -1 : p.from > q.from ? 1 : 0));
+    windowGaps.current = { infos: loggerInfos, logger };
+  }
   // A window removed while it owns L gets no mouseleave.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a window keeps its id
   useEffect(() => () => liveCursor.clear(w.id), []);
@@ -834,6 +908,7 @@ export function TimeseriesWindow({
     if (result) input.result = result;
     if (states) input.states = states;
     if (meta?.states) input.info = meta;
+    input.gaps = gapsOf(s.signalId);
     return input;
   });
   // Rebuilt only when an input changes: a cursor preview rerenders every window on each move.
@@ -1073,6 +1148,7 @@ export function TimeseriesWindow({
           },
         },
         hooks: {
+          drawClear: [(self) => drawGapBands(self, windowGaps.current.logger, origin.current)],
           drawAxes: [(self) => drawEventLines(self, eventsRef.current, origin.current)],
           draw: [
             (self) => {
@@ -1272,7 +1348,13 @@ export function TimeseriesWindow({
         key: s.id,
         scale: scaleOf.get(s.id),
         value: atLevel(
-          chartValueAt(loader.get(s.id)?.result, t, modeRef.current, infoRef.current(s.signalId)),
+          chartValueAt(
+            loader.get(s.id)?.result,
+            t,
+            modeRef.current,
+            infoRef.current(s.signalId),
+            gapsOfRef.current(s.signalId),
+          ),
           stateLevels(infoRef.current(s.signalId)),
         ),
       }));
@@ -1321,7 +1403,13 @@ export function TimeseriesWindow({
         return;
       }
       const meta = infoRef.current(assignment.signalId);
-      const v = chartValueAt(loader.get(assignment.id)?.result, current.t, modeRef.current, meta);
+      const v = chartValueAt(
+        loader.get(assignment.id)?.result,
+        current.t,
+        modeRef.current,
+        meta,
+        gapsOfRef.current(assignment.signalId),
+      );
       // The near signal's curve point, by the same rule that made it a candidate (design L5).
       const [point] = liveCandidates(
         [
@@ -1436,6 +1524,14 @@ export function TimeseriesWindow({
     uplot.current?.redraw(false, true);
   }, [digits]);
 
+  // Bands follow the gap info (read via windowGaps); new gap info also rebuilds the model.
+  const drawnGaps = useRef(windowGaps.current.logger);
+  useLayoutEffect(() => {
+    if (drawnGaps.current === windowGaps.current.logger) return;
+    drawnGaps.current = windowGaps.current.logger;
+    uplot.current?.redraw(false);
+  });
+
   // Event lines and glyphs follow the shown events (read via eventsRef); a new array with the
   // same events (App's union per render) redraws nothing.
   const drawnEvents = useRef(eventsRef.current);
@@ -1461,7 +1557,11 @@ export function TimeseriesWindow({
 
   // --- render acknowledgement -----------------------------------------------------------------
 
-  const settled = loader.settled(committedRequests) && values.settled(exactRequests) && width > 0;
+  const settled =
+    loader.settled(committedRequests) &&
+    values.settled(exactRequests) &&
+    gapInfo.settled &&
+    width > 0;
   const errors: RenderError[] = [
     ...w.signals.flatMap((s) => {
       const state = loader.get(s.id);
@@ -1470,6 +1570,10 @@ export function TimeseriesWindow({
         : [];
     }),
     ...valueErrors(w.id, exactRequests, values),
+    ...gapInfo.errors.map((e) => ({
+      windowId: w.id,
+      message: `gap info for ${e.dataRef} unavailable: ${e.message}`,
+    })),
   ];
   const errorKey = JSON.stringify(errors);
   // biome-ignore lint/correctness/useExhaustiveDependencies: errors are tracked via errorKey
@@ -1636,12 +1740,15 @@ export function TimeseriesWindow({
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
           const name = meta ? shownName(meta) : s.signalId;
+          const gaps = gapsOf(s.signalId);
           const sourceOf = (name: CursorName) => {
             const t = cursors[name];
             const key = `${s.id}|${name}`;
             const exact = cellState(values.get(key), exactOf.get(key));
             const drawn =
-              t === undefined ? undefined : chartValueAt(state?.result, t, w.display.mode, meta);
+              t === undefined
+                ? undefined
+                : chartValueAt(state?.result, t, w.display.mode, meta, gaps);
             // A dragged line or a click waiting for its double-click: the drawn curve, live.
             const previewing = t !== undefined && String(t) !== committed[name];
             return readoutSource(exact, drawn, previewing);
@@ -1693,6 +1800,7 @@ export function TimeseriesWindow({
                 unit={meta?.unit}
                 digits={digits}
                 info={meta}
+                gaps={gaps}
               />
               {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
               <span className={`status ${state?.error ? "error" : (state?.status ?? "loading")}`}>

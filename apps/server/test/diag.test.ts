@@ -178,3 +178,43 @@ DT_Pack_Current = "current"
     },
   );
 });
+
+describe("group intervals (add-gap-display)", () => {
+  it("reads group intervals", () => {
+    const { map, warnings } = parse(namesText);
+    // DT_Pack says 10s, DT_Cell never, DT_Contactor and the identity groups nothing.
+    expect(map.get("TBMS.current")?.diag.intervalMs).toBe(10000);
+    expect(map.get("TBMS.DT_Pack.PRES_Temp_2Byte")?.diag.intervalMs).toBe(10000);
+    expect(map.get("TBMS.cell_voltage.03")?.diag).not.toHaveProperty("intervalMs");
+    expect(map.get("TBMS.contactor")?.diag).not.toHaveProperty("intervalMs");
+    expect(map.get("TBMS.vin")?.diag).not.toHaveProperty("intervalMs");
+    expect(warnings.filter((w) => w.includes("interval"))).toEqual([]);
+
+    // A copy whose DT_Contactor has "2 sec": no interval for it and one warning naming group and text.
+    const copy = manifestText.replace(
+      '"name": "DT_Contactor",',
+      '"name": "DT_Contactor",\n      "interval": "2 sec",',
+    );
+    expect(copy).not.toBe(manifestText);
+    const warned: string[] = [];
+    const map2 = parseDiagCatalog(copy, namesText, FILE, (m) => warned.push(m), "names.toml");
+    expect(map2.get("TBMS.contactor")?.diag).not.toHaveProperty("intervalMs");
+    expect(map2.get("TBMS.current")?.diag.intervalMs).toBe(10000);
+    const intervalWarnings = warned.filter((w) => w.includes("interval"));
+    expect(intervalWarnings).toHaveLength(1);
+    expect(intervalWarnings[0]).toContain("DT_Contactor");
+    expect(intervalWarnings[0]).toContain("2 sec");
+
+    // Units: ms, s, min, h; a fraction rounds to whole ms.
+    const units = (text: string) => {
+      const c = manifestText.replace('"interval": "10s"', `"interval": "${text}"`);
+      const m = parseDiagCatalog(c, namesText, FILE, () => undefined, "names.toml");
+      return m.get("TBMS.current")?.diag.intervalMs;
+    };
+    expect(units("500ms")).toBe(500);
+    expect(units("30s")).toBe(30000);
+    expect(units("2min")).toBe(120000);
+    expect(units("1h")).toBe(3600000);
+    expect(units("0.5s")).toBe(500);
+  });
+});

@@ -83,7 +83,7 @@ const loadStubDbc = async () => {
 const id = (r: SignalRef) => `${r.dataRef}/${r.name}`;
 
 /**
- * SPEED: extent T0 ... T0 + 99.9 s; points 10 at T0 + 1 s and 11 at T0 + 1.1 s (and nothing else
+ * SPEED: extent T0 ... T0 + 99.9 s; points 10 at T0 + 1 s, 11 at T0 + 1.1 s and 12 at T0 + 5 s (and nothing else
  * that the tests read). Other signals have no points.
  */
 const POINTS = new Map<string, RawPoint[]>([
@@ -100,6 +100,8 @@ const POINTS = new Map<string, RawPoint[]>([
     [
       { t: T0 + 1_000_000_000n, v: 10 },
       { t: T0 + 1_100_000_000n, v: 11 },
+      // Point 12 after the logger gap of the stub (add-gap-display G8).
+      { t: T0 + 5_000_000_000n, v: 12 },
     ],
   ],
 ]);
@@ -122,6 +124,13 @@ export function stubSource(): DataSource {
     buckets: unused,
     refExtent: unused,
     refBuckets: unused,
+    // testcar's logger paused from T0 + 2 s to T0 + 4 s; the others never (add-gap-display G8).
+    loggerGaps: async (dataRef) => ({
+      gaps: dataRef === "testcar" ? [{ from: T0 + 2_000_000_000n, to: T0 + 4_000_000_000n }] : [],
+      last: T0 + 99_900_000_000n,
+    }),
+    // No signal has a measurable period in the stub.
+    firstTimes: async () => new Map(),
     events: async (dataRef) => (dataRef === "testcar" ? EVENT_ROWS : []),
     stateChanges: async (ref) => (ref.name === "Ign_A20h.MODE" ? MODE_CHANGES : []),
     textSignals: async () => [{ dataRef: "testcar", name: "DIAG.door" }],

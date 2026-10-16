@@ -1,4 +1,10 @@
-import { type BucketSeries, encodeTimes, type RawSeries, type SignalInfo } from "@kipscope/shared";
+import {
+  type BucketSeries,
+  encodeTimes,
+  type RawSeries,
+  type SignalGaps,
+  type SignalInfo,
+} from "@kipscope/shared";
 import uPlot from "uplot";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,6 +20,9 @@ import {
   toPoints,
   yRange,
 } from "../src/chart/build.ts";
+import { chartValueAt } from "../src/chart/readout.ts";
+import { runRequest, splitRun, stitch } from "../src/chart/tiles.ts";
+import { fakeAnswer, fakeRaw } from "./fakeSeries.ts";
 
 const origin = 1_000_000_000_000n;
 
@@ -663,5 +672,252 @@ describe("state signals drawn as steps (N3)", () => {
     const [slo, shi] = yRange(ms, ms.tableScales[0] as string, 0, 100) as [number, number];
     expect(slo).toBeCloseTo(45, 9);
     expect(shi).toBeCloseTo(55, 9);
+  });
+});
+
+describe("gap breaks (add-gap-display)", () => {
+  const MS = 1_000_000n;
+  const S = 1_000_000_000n;
+  const none = { mode: "line", envelope: false } as const;
+  const step = { mode: "step", envelope: false } as const;
+  const at = (n: bigint) => origin + n;
+  const input = (result: RawSeries | BucketSeries, gaps?: SignalGaps, info?: SignalInfo) => ({
+    key: "a",
+    label: "a",
+    color: "#000",
+    result,
+    ...(gaps ? { gaps } : {}),
+    ...(info ? { info } : {}),
+  });
+  const table = (m: ReturnType<typeof buildModel>) => m.tables[0] as (number | null)[][];
+  /** Drawn segments: consecutive points that are both numbers (a null ends a line or a hold). */
+  const segments = (xs: readonly (number | null)[], ys: readonly (number | null)[]) => {
+    const out: [number, number][] = [];
+    for (let i = 0; i + 1 < xs.length; i++) {
+      if (ys[i] !== null && ys[i + 1] !== null) out.push([xs[i] as number, xs[i + 1] as number]);
+    }
+    return out;
+  };
+  const meets = (segs: [number, number][], a: number, b: number) =>
+    segs.some(([from, to]) => from < b && to > a);
+
+  it("breaks lines and steps at gaps", () => {
+    // Period 20 ms: points at 0, 20, 40 ms and 500, 520 ms. The 40 -> 500 ms stretch is split, hold end 60 ms.
+    const cyc: SignalGaps = { period: 20n * MS, logger: [] };
+    const r = raw(
+      [0n, 20n, 40n, 500n, 520n].map((n) => at(n * MS)),
+      [1, 2, 3, 4, 5],
+    );
+    const line = table(buildModel([input(r, cyc)], origin, none));
+    expect(line).toEqual([
+      [0, 20e6, 40e6, 60e6 + 1, 500e6, 520e6],
+      [1, 2, 3, null, 4, 5],
+    ]);
+    const held = table(buildModel([input(r, cyc)], origin, step));
+    expect(held).toEqual([
+      [0, 20e6, 40e6, 60e6, 60e6 + 1, 500e6, 520e6],
+      [1, 2, 3, 3, null, 4, 5],
+    ]);
+    expect(meets(segments(held[0] ?? [], held[1] ?? []), 60e6, 500e6)).toBe(false);
+
+    // No period, a logger gap 1 s - 9 s between the points at 0 and 10 s: no segment; the step holds to 1 s.
+    const far = raw([at(0n), at(10n * S)], [1, 2]);
+    const abs: SignalGaps = {
+      logger: [{ from: at(1n * S), to: at(9n * S) }],
+    };
+    expect(table(buildModel([input(far, abs)], origin, none))).toEqual([
+      [0, 1e9 + 1, 10e9],
+      [1, null, 2],
+    ]);
+    expect(table(buildModel([input(far, abs)], origin, step))).toEqual([
+      [0, 1e9, 1e9 + 1, 10e9],
+      [1, 1, null, 2],
+    ]);
+
+    // Without gap info (or NO_GAPS) nothing changes.
+    expect(table(buildModel([input(far)], origin, none))).toEqual([
+      [0, 10e9],
+      [1, 2],
+    ]);
+
+    // Window inside a split. gapcar Evt_B11h.EVT: 2 at 00:04:00, 3 at 00:07:00; logger gap 00:04:59.980 - 00:06:00.000;
+    // the view 00:05:10 - 00:05:50 holds no point.
+    const G = 1_790_985_600n * S;
+    const from = G + 310n * S;
+    const to = G + 350n * S;
+    const emptyView = raw([], [], {
+      from: from.toString(),
+      to: to.toString(),
+      before: { t: (G + 240n * S).toString(), v: 2 },
+      after: { t: (G + 420n * S).toString(), v: 3 },
+    });
+    const gaps: SignalGaps = { logger: [{ from: G + 299_980n * MS, to: G + 360n * S }] };
+    for (const display of [none, step]) {
+      const [xs = [], ys = []] = table(buildModel([input(emptyView, gaps)], from, display));
+      const view: [number, number] = [0, Number(to - from)];
+      expect(meets(segments(xs, ys), ...view), display.mode).toBe(false);
+    }
+    // Without the gap the line crosses the window.
+    const [xs = [], ys = []] = table(buildModel([input(emptyView)], from, none));
+    expect(meets(segments(xs, ys), 0, Number(to - from))).toBe(true);
+  });
+
+  it("breaks buckets only where a gap is certain", () => {
+    const bucketResult = (width: bigint, starts: bigint[]): BucketSeries => ({
+      kind: "buckets",
+      signalId: "c/s",
+      from: "0",
+      to: "1",
+      width: width.toString(),
+      t: encodeTimes(starts.map((s) => at(s))),
+      count: starts.map(() => 3),
+      sna: starts.map(() => 0),
+      mean: starts.map((_, i) => i + 1),
+      min: starts.map((_, i) => i),
+      max: starts.map((_, i) => i + 2),
+    });
+    // 5 ms buckets of a 30 s signal, 30 s apart: one line, mean and envelope.
+    const slow = buildModel(
+      [input(bucketResult(5n * MS, [0n, 30n * S]), { period: 30n * S, logger: [] })],
+      origin,
+      { mode: "line", envelope: true },
+    );
+    expect(slow.tables[0]).toEqual([
+      [2.5e6, 30e9 + 2.5e6],
+      [1, 2],
+      [2, 3],
+      [0, 1],
+    ]);
+
+    // 5 ms buckets of a 20 ms signal with an empty stretch of 100 ms: broken at the later bucket's start.
+    const drop = buildModel(
+      [input(bucketResult(5n * MS, [0n, 105n * MS]), { period: 20n * MS, logger: [] })],
+      origin,
+      { mode: "line", envelope: true },
+    );
+    expect(drop.tables[0]).toEqual([
+      [2.5e6, 105e6, 107.5e6],
+      [1, null, 2],
+      [2, null, 3],
+      [0, null, 1],
+    ]);
+
+    // 1 min buckets without a period, adjacent, a logger gap in the second half of the first one.
+    const MIN = 60n * S;
+    const gaps: SignalGaps = { logger: [{ from: at(45n * S), to: at(55n * S) }] };
+    const logger = buildModel([input(bucketResult(MIN, [0n, MIN]), gaps)], origin, {
+      mode: "line",
+      envelope: true,
+    });
+    expect(logger.tables[0]).toEqual([
+      [30e9, 60e9, 90e9],
+      [1, null, 2],
+      [2, null, 3],
+      [0, null, 1],
+    ]);
+  });
+
+  it("ends an SNA mark at the hold end", () => {
+    // Period 20 ms: SNA at 0 ms, the next point at 1 s: the mark covers 0 - 20 ms, not up to 1 s.
+    const r = raw([at(0n), at(S)], [null, 5]);
+    const cyc: SignalGaps = { period: 20n * MS, logger: [] };
+    expect(snaPeriods(r, origin, cyc)).toEqual([[0, 20e6]]);
+    expect(snaPeriods(r, origin)).toEqual([[0, 1e9]]);
+    const m = buildModel([input(r, cyc)], origin, none);
+    expect(m.sna).toEqual([{ color: "#000", periods: [[0, 20e6]] }]);
+    // A logger gap ends it at the gap's start.
+    const gap: SignalGaps = { logger: [{ from: at(300n * MS), to: at(900n * MS) }] };
+    expect(snaPeriods(r, origin, gap)).toEqual([[0, 300e6]]);
+  });
+
+  it("draws a point between two splits as a marker", () => {
+    // gapcar TBMS.current (10 s): 12.5 at 00:01:00, 00:01:40 and 00:02:20, 40 s apart.
+    const r = raw([at(60n * S), at(100n * S), at(140n * S)], [12.5, 12.5, 12.5]);
+    const m = buildModel([input(r, { period: 10n * S, logger: [] })], origin, none);
+    const [xs = [], ys = []] = table(m);
+    expect(xs).toEqual([60e9, 70e9 + 1, 100e9, 110e9 + 1, 140e9]);
+    expect(ys).toEqual([12.5, null, 12.5, null, 12.5]);
+    expect(isolatedPoints(ys)).toEqual([0, 2, 4]);
+    // Three periods apart (30 s) is no split: the points stay joined.
+    const joined = raw([at(60n * S), at(90n * S)], [12.5, 12.5]);
+    expect(
+      table(buildModel([input(joined, { period: 10n * S, logger: [] })], origin, none))[1],
+    ).toEqual([12.5, 12.5]);
+  });
+
+  it("ends state signal holds at gaps", () => {
+    // Named states (0 OFF, 3 KEYON), period 100 ms: points at 0, 100, 200 ms and 10 s; logger gap 250 ms - 9.9 s.
+    const info = {
+      states: "labels",
+      dbc: {
+        values: [
+          { raw: 0, value: 0, label: "OFF" },
+          { raw: 3, value: 3, label: "KEYON" },
+        ],
+      },
+    } as unknown as SignalInfo;
+    const gaps: SignalGaps = {
+      period: 100n * MS,
+      logger: [{ from: at(250n * MS), to: at(9900n * MS) }],
+    };
+    const r = raw([at(0n), at(100n * MS), at(200n * MS), at(10n * S)], [0, 0, 0, 3]);
+    const [xs = [], ys = []] = table(buildModel([input(r, gaps, info)], origin, none));
+    const segs = segments(xs, ys);
+    // The 200 ms value is held to 250 ms (not to 300 ms, nor to 10 s) and nothing is drawn until 10 s.
+    expect(Math.max(...segs.map(([, to]) => to).filter((to) => to < 10e9))).toBe(250e6);
+    expect(meets(segs, 250e6, 10e9)).toBe(false);
+    // Without the gaps the hold runs to 10 s.
+    const [pxs = [], pys = []] = table(buildModel([input(r, undefined, info)], origin, none));
+    expect(meets(segments(pxs, pys), 250e6, 10e9 - 2)).toBe(true);
+
+    // A view 1 s - 9 s without a point, edge neighbours at 200 ms and 10 s: blank, no synthetic edge hold.
+    const empty = raw([], [], {
+      from: at(S).toString(),
+      to: at(9n * S).toString(),
+      before: { t: at(200n * MS).toString(), v: 0 },
+      after: { t: at(10n * S).toString(), v: 3 },
+    });
+    const [exs = [], eys = []] = table(buildModel([input(empty, gaps, info)], origin, none));
+    expect(meets(segments(exs, eys), 1e9, 9e9)).toBe(false);
+    const [fxs = [], fys = []] = table(buildModel([input(empty, undefined, info)], origin, none));
+    expect(meets(segments(fxs, fys), 1e9, 9e9)).toBe(true);
+  });
+
+  it("breaks a gap across a tile edge like one request", () => {
+    // Level 24 tiles span 2^32 ns (4.29 s). Tile 0 ends with the point at T - 20 ms, tile 1 starts
+    // with T + 380 ms: a dropout of 400 ms (> 3 x 20 ms) right across the edge.
+    const T = 2n ** 32n;
+    const points = [-100, -80, -60, -40, -20, 380, 400, 420].map((d, i) => ({
+      t: T + BigInt(d) * MS,
+      v: i + 1,
+    }));
+    const from = T - 50n * MS;
+    const to = T + 410n * MS;
+    const tiles = splitRun(fakeAnswer(points, runRequest("c/s", 24, 0n, 1n)), 24, 0n, 1n);
+    const stitched = stitch(tiles, from, to);
+    const direct = fakeRaw(points, "c/s", from, to);
+    expect(stitched).toEqual(direct);
+
+    const cyc: SignalGaps = { period: 20n * MS, logger: [] };
+    const drawn = (result: RawSeries) =>
+      buildModel([input(result, cyc)], from, none).tables[0] as (number | null)[][];
+    // Hand-computed columns, offsets from the view start T - 50 ms; the break sits 1 ns after the hold end T.
+    const expected = [
+      [-10e6, 10e6, 30e6, 50e6 + 1, 430e6, 450e6, 470e6],
+      [3, 4, 5, null, 6, 7, 8],
+    ];
+    expect(drawn(stitched as RawSeries)).toEqual(expected);
+    expect(drawn(direct)).toEqual(expected);
+
+    // Inside the dropout both give no value; at a point both give it.
+    const inside = T + 100n * MS;
+    expect(chartValueAt(stitched, inside, "line", undefined, cyc)).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
+    expect(chartValueAt(direct, inside, "line", undefined, cyc)).toEqual({
+      kind: "none",
+      reason: "period_gap",
+    });
   });
 });

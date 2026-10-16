@@ -77,3 +77,26 @@ describe("QueryQueue", () => {
     await expect(queue.run(async () => "next")).resolves.toBe("next");
   });
 });
+
+describe("queuedSource gaps", () => {
+  it("forwards loggerGaps and firstTimes to the wrapped source", async () => {
+    const seen: unknown[][] = [];
+    const stub = {
+      loggerGaps: async (...a: unknown[]) => {
+        seen.push(a);
+        return { gaps: [{ from: 1n, to: 9n }], last: 9n };
+      },
+      firstTimes: async (...a: unknown[]) => {
+        seen.push(a);
+        return new Map([["x", [1n, 2n]]]);
+      },
+    } as unknown as DataSource;
+    const source = queuedSource(stub, new QueryQueue(2));
+    expect(await source.loggerGaps("car", 2n, 5n)).toEqual({
+      gaps: [{ from: 1n, to: 9n }],
+      last: 9n,
+    });
+    expect(await source.firstTimes("car", ["x"], 2)).toEqual(new Map([["x", [1n, 2n]]]));
+    expect(seen.map((a) => a[0])).toEqual(["car", "car"]);
+  });
+});

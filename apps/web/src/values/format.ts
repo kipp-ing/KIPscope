@@ -18,6 +18,8 @@ export interface Cell {
   text: string;
   tag?: "lin" | "hold" | "avg";
   sna?: boolean;
+  /** "no data" inside a gap (add-gap-display G7): shown muted, class `gap-value`. */
+  gap?: boolean;
   title?: string;
   /** The value for the current cursor time is loading: shown dimmed. */
   loading?: boolean;
@@ -44,15 +46,17 @@ const REASONS: Record<ValueReason, string> = {
   before_first: "before the first point",
   after_last: "after the last point",
   next_sna: "next point is SNA",
+  logger_gap: "no data: the logger recorded nothing",
+  period_gap: "no data: more than 3 periods without a point",
   empty_bucket: "no points in this bucket",
   outside_range: "outside this window's range",
 };
 
-/** "—" with the reason as tooltip. */
-export const noValueCell = (reason: ValueReason): Cell => ({
-  text: NO_VALUE,
-  title: REASONS[reason],
-});
+/** "—" with the reason as tooltip; "no data" in the gap style inside a gap (G7 "Cells"). */
+export const noValueCell = (reason: ValueReason): Cell =>
+  reason === "logger_gap" || reason === "period_gap"
+    ? { text: "no data", title: REASONS[reason], gap: true }
+    : { text: NO_VALUE, title: REASONS[reason] };
 
 /** The state name of a neighbour point: the row's text of a text signal, else the VAL_ label (N2). */
 function pointLabel(p: EdgePoint, info: SignalInfo | undefined): string | undefined {

@@ -690,6 +690,17 @@ describe("search, extent, state and value", () => {
       const heldInLine = await cli(s, "value", mode, "2026-10-01T01:20:00.05Z");
       expect(heldInLine.out.data.value).toEqual(named.out.data.value);
 
+      // Inside the stub's logger gap (02:00:02Z - 02:00:04Z), between the points 11 (02:00:01.1Z) and
+      // 12 (02:00:05Z): no value, the server's reason unchanged, exit code 0.
+      const gap = await cli(s, "value", SPEED, "2026-10-01T02:00:03Z", "--mode", "step");
+      expect(gap.code, gap.stderr.join("")).toBe(0);
+      expect(gap.out.data.value).toEqual({ kind: "none", reason: "logger_gap" });
+      expect(gap.out.data.at.v).toBe(11);
+      expect(gap.out.data.next.v).toBe(12);
+      // Outside the gap the same pair is still held in step mode (up to the gap's start).
+      const before = await cli(s, "value", SPEED, "2026-10-01T02:00:01.5Z", "--mode", "step");
+      expect(before.out.data.value).toEqual({ kind: "held", value: 11 });
+
       const unknown = await cli(s, "value", "testcar/NOPE.X", "0");
       expect(unknown.code).toBe(1);
       expect(unknown.out.error.code).toBe("unknown_signal");

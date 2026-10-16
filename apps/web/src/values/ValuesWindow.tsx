@@ -149,7 +149,7 @@ function LiveValueCell({
 function CellView({ cell }: { cell: Cell }) {
   return (
     <td
-      className={`value${cell.sna ? " sna-value" : ""}${cell.loading ? " loading" : ""}`}
+      className={`value${cell.sna ? " sna-value" : ""}${cell.gap ? " gap-value" : ""}${cell.loading ? " loading" : ""}`}
       title={cell.title}
     >
       {cell.text}

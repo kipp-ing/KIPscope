@@ -4,7 +4,7 @@ import { REPO_ROOT } from "../src/config.ts";
 
 /**
  * Runs once before all test files: checks that the test ClickHouse answers and holds the seed
- * (`sdlog.events` with its 19 rows, the newest seed data), so a stopped or stale database fails with one message, not per test.
+ * (`sdlog.events` with its 19 rows and the 32,187 `gapcar` rows, the newest seed data), so a stopped or stale database fails with one message, not per test.
  */
 export default async function setup() {
   try {
@@ -25,6 +25,11 @@ export default async function setup() {
       format: "TabSeparated",
     });
     if (Number((await result.text()).trim()) !== 19) throw new Error("not seeded");
+    const gap = await client.query({
+      query: "SELECT count() FROM sdlog.signals WHERE vehicle = 'gapcar'",
+      format: "TabSeparated",
+    });
+    if (Number((await gap.text()).trim()) !== 32187) throw new Error("stale seed");
   } catch {
     throw new Error(
       `test ClickHouse at ${url} is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @kipscope/server seed:test\``,

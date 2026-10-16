@@ -42,9 +42,19 @@ describe("Catalog (test DB)", () => {
   });
 
   it("lists exactly the signals with data, per data reference", () => {
-    expect(catalog.size).toBe(1021);
+    expect(catalog.size).toBe(1025);
     expect(catalog.get("testcar/Fast_100h.SIG_A")).toBeDefined();
     expect(catalog.get("othercar/Fast_100h.SIG_A")).toBeDefined();
+  });
+
+  it("carries message cycle times and group intervals into the details", () => {
+    // gapcar (add-gap-display): DBC cycle 20 ms, cycle 0 (none), not in a DBC; diag group DT_Pack 10s.
+    expect(catalog.get("gapcar/Cyc_B10h.CYC")?.dbc?.cycleMs).toBe(20);
+    expect(catalog.get("gapcar/Evt_B11h.EVT")?.dbc).toBeDefined();
+    expect(catalog.get("gapcar/Evt_B11h.EVT")?.dbc).not.toHaveProperty("cycleMs");
+    expect(catalog.get("gapcar/Msr_B12h.MSR")).not.toHaveProperty("dbc");
+    expect(catalog.get("gapcar/TBMS.current")?.diag?.intervalMs).toBe(10000);
+    expect(catalog.get("testcar/Fast_100h.SIG_A")?.dbc).not.toHaveProperty("cycleMs");
   });
 
   it("does not list signals that exist only in the DBC", () => {
@@ -176,7 +186,7 @@ describe("Catalog display names (test DB, test project file)", () => {
     ]);
     // Identity unchanged.
     expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
-    expect(catalog.size).toBe(1021);
+    expect(catalog.size).toBe(1025);
   });
 });
 
@@ -289,6 +299,7 @@ describe("Catalog diag catalogs (stubbed source)", () => {
         field: "DT_Pack_Current",
         kind: "number",
         invalid: [{ low: -32768, high: -32768, text: "SNA" }],
+        intervalMs: 10000,
       },
     });
     expect(catalog.snaRanges("car/TBMS.current")).toEqual([]);

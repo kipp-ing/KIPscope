@@ -95,7 +95,7 @@ describe("GET /api/signals", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     const total = (await app.inject({ url: "/api/signals?q=" })).json().total;
-    expect(total).toBe(1021);
+    expect(total).toBe(1025);
     expect(body.items).toHaveLength(total);
     expect(body.items.map((s: { id: string }) => s.id)).toContain("testcar/Many_700h.S0999");
     expect(Number.isNaN(Date.parse(body.loadedAt))).toBe(false);
@@ -106,7 +106,7 @@ describe("GET /api/signals", () => {
   it("refreshes the catalog", async () => {
     const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().size).toBe(1021);
+    expect(res.json().size).toBe(1025);
   });
 });
 
@@ -210,6 +210,9 @@ describe("collision warning on refresh (N5)", () => {
     refExtent: async () => undefined,
     // No events either, so the events prefetch logs no warn line of its own (add-events E3).
     events: async () => [],
+    // No gap info either (add-gap-display G6 prefetch).
+    loggerGaps: async () => ({ gaps: [] }),
+    firstTimes: async () => new Map(),
   } as unknown as DataSource;
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);

@@ -4,6 +4,7 @@ export * from "./drives.ts";
 export * from "./encoding.ts";
 export * from "./eventFilter.ts";
 export * from "./events.ts";
+export * from "./gaps.ts";
 export * from "./localtime.ts";
 export * from "./meta.ts";
 export * from "./numfmt.ts";

@@ -82,6 +82,27 @@ export interface DataSource {
     abort?: AbortSignal,
   ): Promise<{ start: Timestamp; count: number }[]>;
   /**
+   * Consecutive timestamped rows of the data ref at least `minGap` apart, exact, time order, found
+   * on the floor grid `grid` (≤ minGap / 2) (design G2); `last`: the data ref's last row time,
+   * undefined without rows.
+   */
+  loggerGaps(
+    dataRef: string,
+    grid: bigint,
+    minGap: bigint,
+    abort?: AbortSignal,
+  ): Promise<{ gaps: { from: Timestamp; to: Timestamp }[]; last?: Timestamp }>;
+  /**
+   * Up to `rows` timestamps of each named signal of the data ref, any order (design G3); signals
+   * without rows are absent; no query for [].
+   */
+  firstTimes(
+    dataRef: string,
+    names: readonly string[],
+    rows: number,
+    abort?: AbortSignal,
+  ): Promise<Map<string, Timestamp[]>>;
+  /**
    * The data ref's event rows with a time, time order (ties kind, source, name), at most `limit`;
    * undefined when the events table does not exist (design E4).
    */

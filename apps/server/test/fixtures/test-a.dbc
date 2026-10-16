@@ -63,3 +63,14 @@ VAL_ 2592 MODE 0 "NONE" 1 "CHARGE" 3 "KEYON: Ignition on" 15 "SNA" ;
 BO_ 2593 Tmp_A21h: 8 VCU
  SG_ TEMP : 0|8@1+ (1,0) [0|255] "degC"  VCU
 VAL_ 2593 TEMP 254 "SENSOR_DEF" 255 "SNA" ;
+
+BO_ 2832 Cyc_B10h: 8 VCU
+ SG_ CYC : 0|8@1+ (1,0) [0|255] "" VCU
+
+BO_ 2833 Evt_B11h: 8 VCU
+ SG_ EVT : 0|8@1+ (1,0) [0|255] "" VCU
+
+BA_DEF_ BO_  "GenMsgCycleTime" INT 0 65535;
+BA_DEF_DEF_  "GenMsgCycleTime" 0;
+BA_ "GenMsgCycleTime" BO_ 2832 20;
+BA_ "GenMsgCycleTime" BO_ 2833 0;

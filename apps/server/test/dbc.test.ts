@@ -293,3 +293,35 @@ describe("SNA derivation (design S1)", () => {
     expect([...meta.values()].filter((e) => e.sna).length).toBe(171);
   });
 });
+
+describe("GenMsgCycleTime (add-gap-display)", () => {
+  it("reads GenMsgCycleTime per message", async () => {
+    const meta = await loadDbcFiles([fixture("test-a.dbc")]);
+    // BA_ "GenMsgCycleTime" BO_ 2832 20; the default is 0, message 2833 says 0 itself.
+    expect(meta.get("Cyc_B10h.CYC")?.cycleMs).toBe(20);
+    expect(meta.get("Evt_B11h.EVT")).toBeDefined();
+    expect(meta.get("Evt_B11h.EVT")).not.toHaveProperty("cycleMs");
+    expect(meta.get("Fast_100h.SIG_A")).not.toHaveProperty("cycleMs");
+
+    // A default of 100: a message without its own value gets it, one with its own value keeps that,
+    // 0 means none even against the default. GenMsgCycleTimeActive is another attribute.
+    const text = [
+      'BO_ 1 A: 8 X\n SG_ S : 0|8@1+ (1,0) [0|0] ""  X\n',
+      'BO_ 2 B: 8 X\n SG_ S : 0|8@1+ (1,0) [0|0] ""  X\n SG_ T : 8|8@1+ (1,0) [0|0] ""  X\n',
+      'BO_ 3 C: 8 X\n SG_ S : 0|8@1+ (1,0) [0|0] ""  X\n',
+      'BO_ 4 D: 8 X\n SG_ S : 0|8@1+ (1,0) [0|0] ""  X\n',
+      'BA_DEF_ BO_  "GenMsgCycleTime" INT 0 65535;',
+      'BA_DEF_DEF_  "GenMsgCycleTime" 100;',
+      'BA_ "GenMsgCycleTime" BO_ 2 250;',
+      'BA_ "GenMsgCycleTime" BO_ 3 0;',
+      'BA_ "GenMsgCycleTimeActive" BO_ 4 5;',
+      "",
+    ].join("\n");
+    const inline = parseDbc(text);
+    expect(inline.get("A.S")?.cycleMs).toBe(100);
+    expect(inline.get("B.S")?.cycleMs).toBe(250);
+    expect(inline.get("B.T")?.cycleMs).toBe(250);
+    expect(inline.get("C.S")).not.toHaveProperty("cycleMs");
+    expect(inline.get("D.S")?.cycleMs).toBe(100);
+  });
+});

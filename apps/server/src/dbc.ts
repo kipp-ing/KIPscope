@@ -31,6 +31,8 @@ export interface DbcSignal {
   physical?: Map<number, number>;
   /** Absent when the signal has no SNA code. */
   sna?: DbcSna;
+  /** `GenMsgCycleTime` of the message in ms (own value, else the file's default); absent for 0 (D-062). */
+  cycleMs?: number;
 }
 
 /** Bit layout and scaling of an `SG_` line, needed to derive SNA. */
@@ -52,6 +54,9 @@ const GEN_SIG_SNA = /BA_\s+"GenSigSNA"\s+SG_\s+(\d+)\s+(\w+)\s+"([^"]*)"\s*;/g;
 const COMMENT = /CM_\s+SG_\s+(\d+)\s+(\w+)\s+"((?:[^"\\]|\\.)*)"\s*;/g;
 const VALUES = /VAL_\s+(\d+)\s+(\w+)((?:\s+-?\d+\s+"(?:[^"\\]|\\.)*")*)\s*;/g;
 const VALUE_PAIR = /(-?\d+)\s+"((?:[^"\\]|\\.)*)"/g;
+/** The closing quote keeps `GenMsgCycleTimeActive` out (design G3). */
+const CYCLE_TIME = /BA_\s+"GenMsgCycleTime"\s+BO_\s+(\d+)\s+(\d+)\s*;/g;
+const CYCLE_TIME_DEFAULT = /BA_DEF_DEF_\s+"GenMsgCycleTime"\s+(\d+)\s*;/;
 
 const unquote = (s: string) => s.replace(/\\(.)/g, "$1");
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -195,6 +200,14 @@ export function parseDbc(text: string, file?: string): Map<string, DbcSignal> {
       values.set(Number(value), unquote(label));
     }
     entry.values = values;
+  }
+
+  const cycles = new Map<number, number>();
+  for (const [, id = "", ms = ""] of text.matchAll(CYCLE_TIME)) cycles.set(Number(id), Number(ms));
+  const cycleDefault = Number(CYCLE_TIME_DEFAULT.exec(text)?.[1] ?? 0);
+  for (const entry of result.values()) {
+    const cycle = cycles.get(entry.messageId) ?? cycleDefault;
+    if (cycle > 0) entry.cycleMs = cycle;
   }
 
   const attributes = new Map<string, string>();

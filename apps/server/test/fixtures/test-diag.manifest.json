@@ -5,6 +5,7 @@
     {
       "name": "DT_Cell",
       "did": 520,
+      "interval": "never",
       "services": ["DT_Cell_Voltage_Cell"],
       "fields": [
         {
@@ -21,6 +22,7 @@
     {
       "name": "DT_Pack",
       "did": 516,
+      "interval": "10s",
       "fields": [
         {
           "name": "DT_Pack_Current",

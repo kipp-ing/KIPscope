@@ -263,6 +263,52 @@ export class ClickHouseSource implements DataSource {
     return rows.map(([b, count]) => ({ start: BigInt(b), count: Number(count) }));
   }
 
+  // One scan of the data-ref and time columns on a fixed floor grid: the bounding rows of every
+  // silence of at least two grid widths are the `hi` and `lo` of consecutive non-empty buckets.
+  // The first bucket's row only carries `last` and is never a gap (design G2).
+  async loggerGaps(dataRef: string, grid: bigint, minGap: bigint, abort?: AbortSignal) {
+    const { dataRef: refColumn, time } = this.c;
+    const rows = await this.rows<[string, string, string, string]>(
+      `SELECT toString(prev_hi), toString(lo), toString(last), rn FROM (
+         SELECT lo, lagInFrame(hi) OVER w AS prev_hi, row_number() OVER w AS rn, max(hi) OVER () AS last
+         FROM (
+           SELECT x - positiveModulo(x, {g:Int64}) AS b, min(x) AS lo, max(x) AS hi
+           FROM (SELECT toUnixTimestamp64Nano(${time}) AS x FROM ${this.table}
+                 WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL)
+           GROUP BY b)
+         WINDOW w AS (ORDER BY b ROWS BETWEEN 1 PRECEDING AND CURRENT ROW))
+       WHERE rn = 1 OR lo - prev_hi >= {min:Int64}
+       ORDER BY lo`,
+      { ref: dataRef, g: grid, min: minGap },
+      abort,
+    );
+    const gaps: { from: Timestamp; to: Timestamp }[] = [];
+    let last: Timestamp | undefined;
+    for (const [prevHi, lo, lastRow, rn] of rows) {
+      last = BigInt(lastRow);
+      if (Number(rn) !== 1) gaps.push({ from: BigInt(prevHi), to: BigInt(lo) });
+    }
+    return last === undefined ? { gaps } : { gaps, last };
+  }
+
+  // Reads the listed signals in key order, at most `rows` per signal (design G3).
+  async firstTimes(dataRef: string, names: readonly string[], rows: number, abort?: AbortSignal) {
+    const times = new Map<string, Timestamp[]>();
+    if (names.length === 0) return times;
+    const { dataRef: refColumn, signal, time } = this.c;
+    const result = await this.rows<[string, string[]]>(
+      `SELECT ${signal}, groupArray(toString(toUnixTimestamp64Nano(${time}))) FROM (
+         SELECT ${signal}, ${time} FROM ${this.table}
+         WHERE ${refColumn} = {ref:String} AND ${signal} IN {names:Array(String)} AND ${time} IS NOT NULL
+         ORDER BY ${signal}, ${time} LIMIT {rows:UInt32} BY ${signal})
+       GROUP BY ${signal}`,
+      { ref: dataRef, names: [...names], rows },
+      abort,
+    );
+    for (const [name, ts] of result) times.set(name, ts.map(BigInt));
+    return times;
+  }
+
   async events(dataRef: string, limit: number, abort?: AbortSignal) {
     const { dataRef: refColumn, time } = this.c;
     const { source, kind, name, value, text, detail } = this.e;

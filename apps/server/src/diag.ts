@@ -34,6 +34,7 @@ const ManifestSchema = z.looseObject({
       name: z.string(),
       did: z.number(),
       services: z.array(z.string()).optional(),
+      interval: z.string().optional(),
       fields: z.array(FieldSchema),
     }),
   ),
@@ -46,6 +47,8 @@ type Scale = z.infer<typeof ScaleSchema>;
 const NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const DID = /^0[xX][0-9A-Fa-f]{1,4}$/;
 const MANIFEST_SUFFIX = /\.manifest\.json$/;
+const INTERVAL = /^(\d+(?:\.\d+)?)(ms|s|min|h)$/;
+const INTERVAL_MS: Record<string, number> = { ms: 1, s: 1000, min: 60_000, h: 3_600_000 };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -103,6 +106,23 @@ function namesEntries(
   return Object.entries(fields);
 }
 
+/** A group's `interval` in ms (design G3); undefined for `never`, none, 0 or text not understood. */
+function intervalMs(
+  group: Group,
+  file: string,
+  warn: (message: string) => void,
+): number | undefined {
+  const text = group.interval;
+  if (text === undefined || text === "never") return undefined;
+  const match = INTERVAL.exec(text);
+  if (!match) {
+    warn(`${file}: group ${group.name}: interval "${text}" not understood`);
+    return undefined;
+  }
+  const ms = Math.round(Number(match[1]) * (INTERVAL_MS[match[2] ?? ""] ?? 0));
+  return ms > 0 ? ms : undefined;
+}
+
 const rows = (scales: readonly Scale[]): DiagScaleRow[] | undefined =>
   scales.length > 0
     ? scales.map((s) => ({ low: s.low, high: s.high, text: s.text ?? "" }))
@@ -148,6 +168,7 @@ export function parseDiagCatalog(
     else result.set(name, signal);
   };
   for (const group of groups) {
+    const interval = intervalMs(group, file, warn);
     for (const field of group.fields) {
       const name = named.get(field);
       const base = name ? `${ecu.name}.${name}` : `${ecu.name}.${group.name}.${field.name}`;
@@ -167,6 +188,7 @@ export function parseDiagCatalog(
       const invalid = rows(scales.filter((s) => s.invalid));
       if (states) info.states = states;
       if (invalid) info.invalid = invalid;
+      if (interval !== undefined) info.intervalMs = interval;
       const signal = (diag: DiagInfo): DiagSignal => (unit ? { unit, diag } : { diag });
 
       const count = field.element_count ?? 1;
