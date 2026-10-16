@@ -4,6 +4,20 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-066: Multi-select drops overflow by units (2026-10-17)
+
+From the archived change `add-multi-select`; details there.
+
+- **Decision:** „Only by unit limit": a multi-select drop or add has no signal-count limit. Signals go into the target window until one would need a 5th unit (`MAX_UNITS` = 4). From there on they continue in a new window, and further new windows as needed, each again up to 4 units. „Fill it up": the target window's current units count. Single adds and drops behave as today. Lead's defaults (Jan can veto): plain click selects one row, Ctrl (Cmd on macOS) toggles, Shift selects a range across groups, Shift+Arrow in the search extends it, a query change clears it; dragging a selected row drags the selection, `+`/Enter add it; first window that fits (target, then the drop's new windows); a signal without unit is its own unit; signals already shown are skipped; on the strip only new state signals are added.
+- **Why:** Jan (2026-10-17): „I wish i could selct multple entries with shift ctrl or so (win ) to select signals . draw them to one or a new window. after 4 legends signals overflow to new window or so".
+
+## D-065: No text selection in the signal explorer list (2026-10-17)
+
+From the archived change `add-multi-select`.
+
+- **Decision:** „Clicking, double-clicking or Shift/Ctrl-clicking in the signal explorer list (rows and group headers) never selects page text. The search field stays a normal text field." A click in the list moves focus into the search (text not selected), so keys work after a click.
+- **Why:** Jan (2026-10-17): „when i select a signal left in signal explorer: many times text ist selected over the browser. thats awkward." Only a drag from the row's name blocked selection.
+
 ## D-064: Events conventions (2026-10-16)
 
 From the archived change `add-events`; details there.

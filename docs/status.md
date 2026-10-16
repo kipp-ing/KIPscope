@@ -29,7 +29,7 @@ As of 2026-10-16, session 6. Next to build: `add-gap-display` (spec ready, D-062
 | Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language). Decisions D-001 … D-056: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language). Decisions D-001 … D-066: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -61,6 +61,10 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - carserver now has decoded diagnostic data (device `smart451-diag`): 125 `BMS.*` readings and table `sdlog.events` (DTCs, states, NRCs, ISO-TP). `BMS.*` grouped as `BMS (diag)` in `kipscope.yaml` (active after the next server restart). Built and archived `add-diag-metadata` (D-061, D-063): units from the decoder's catalog, cell voltages share one `V` axis. Built and archived `add-events` (D-058, D-059, D-064) in four rounds plus a lead fix (steps only where a segment has a named end): events line, human filter, Events tab, state names, state signals on the strip, CLI. Jan: „so far all good. consider it done".
 - Jan: lines drawn through times without data are wrong; D-062 supersedes D-009. `add-gap-display` is specced (logger gaps ≥ 2 s from per-second row times; cyclic signals break after 3 periods from DBC `GenMsgCycleTime`, diag interval or measured; faint band; cursors „no data").
 - carserver: ClickHouse read errors „errno 6, No such device or address" on a few part files during round 1, transient; Jan brought the server back.
+
+## Session 7 in brief
+
+- Built and archived `add-multi-select` (D-065, D-066) in three rounds plus a lead fix after Jan's check (a list click focuses the search, so Shift+Arrow works without typing first). No text selection in the explorer list; Ctrl/Cmd and Shift selection; a selection drags and adds as one, overflowing into new windows by the 4-unit limit. Jan: „good", then „now it works".
 
 ## Next
 
