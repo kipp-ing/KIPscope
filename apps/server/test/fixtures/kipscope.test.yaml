@@ -8,3 +8,7 @@ display:
       collision: '{signal} ({message})'
   rename:
     Irr_200h.JITTER: SPEED
+  groups:
+    - match: '^Sna_'
+      group: 'SNA codes'
+    - group: '{sender}'

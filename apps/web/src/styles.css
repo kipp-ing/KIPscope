@@ -164,6 +164,48 @@ body {
   background: var(--panel);
 }
 
+/* Group header (signal-groups, design G6): [chevron] name … count, one line like a row. */
+.explorer .group-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px 0 4px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.explorer .group-head:hover {
+  background: var(--bg);
+}
+
+.explorer .group-head.active {
+  background: rgb(37 99 235 / 0.1);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.explorer .group-head .chevron {
+  flex-shrink: 0;
+  width: 10px;
+  color: var(--muted);
+}
+
+.explorer .group-head .group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.explorer .group-head .group-count {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-weight: normal;
+}
+
 .explorer .show-more {
   display: block;
   margin: 6px 12px 12px;

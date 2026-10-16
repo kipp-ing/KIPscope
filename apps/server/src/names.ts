@@ -1,3 +1,5 @@
+import type { GroupRule } from "./groups.ts";
+
 /** Compiled template (design N3): literal text and placeholders of named groups. */
 export type Template = readonly (string | { group: string })[];
 
@@ -15,10 +17,12 @@ export interface DisplayRules {
   rules: readonly DisplayRule[];
   /** Full source name (without data reference) → shown name; beats every rule. */
   rename: ReadonlyMap<string, string>;
+  /** Explorer group rules of `display.groups` (design G3), in file order. */
+  groups: readonly GroupRule[];
 }
 
-/** No project file: every signal shows its full name. */
-export const NO_RULES: DisplayRules = { rules: [], rename: new Map() };
+/** No project file: every signal shows its full name and has no group. */
+export const NO_RULES: DisplayRules = { rules: [], rename: new Map(), groups: [] };
 
 /** Replaces each placeholder with its group's text, `""` for a group that did not take part. */
 export function renderTemplate(

@@ -1,0 +1,2 @@
+Round 1: continue - build fails on names.test.ts (groups missing, tester fix); README 5.1 still open (lead); UI keyboard checks (Enter/arrows on headers, Esc, flat list) not run, so 3.1 stays open; grouping speed closed (0.59 ms, reviewer).
+Round 2: needs_jan - 4.1 ticked (build, 140 server tests, lint green); open only README 5.1 (lead) and the UI keyboard checks of 3.1 (arrows/Enter on headers, Esc, flat list), which need a deliberate UI-user run since round 2 did not touch apps/web.

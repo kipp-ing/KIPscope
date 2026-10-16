@@ -5,8 +5,8 @@ import { snapCursorTime } from "./cursors.ts";
 import { type ReadoutValue, readoutCell } from "./readout.ts";
 import type { Range } from "./zoom.ts";
 
-/** Max distance in CSS px from the pointer to a curve for it to be near (D-032 "about 8 px"). */
-export const NEAR_PX = 8;
+/** Max distance in CSS px from the pointer to a curve for it to be near (D-032, doubled by D-052: 16 px). */
+export const NEAR_PX = 16;
 /** Line width in px of the near signal; normal series width is 1.5. */
 export const HIGHLIGHT_WIDTH = 3;
 /** Alpha of every other signal of the hovered window while one is near. */

@@ -25,6 +25,8 @@ export interface DbcInfo {
   message: string;
   /** `BO_` ID as written (decimal; extended IDs keep bit 31), e.g. 1042. */
   messageId: number;
+  /** `BO_` transmitter (last token), e.g. `CGW`; absent for `Vector__XXX` or none written (D-053). */
+  sender?: string;
   /** physical = raw × factor + offset. */
   factor?: number;
   offset?: number;
@@ -52,11 +54,21 @@ export interface SignalInfo {
   dbc?: DbcInfo;
   /** Name the UI shows (D-035); absent when it equals `name`. Never used as identity. */
   displayName?: string;
+  /** Explorer group from `display.groups` (D-053); absent means OTHER_GROUP. Never "Other", never blank. */
+  group?: string;
 }
 
 /** `displayName ?? name`. */
 export function shownName(s: Pick<SignalInfo, "name" | "displayName">): string {
   return s.displayName ?? s.name;
+}
+
+/** Group of signals without a group (D-053); always last. */
+export const OTHER_GROUP = "Other";
+
+/** `group ?? OTHER_GROUP`. */
+export function groupOf(s: Pick<SignalInfo, "group">): string {
+  return s.group ?? OTHER_GROUP;
 }
 
 /** `GET /api/catalog` (design E3). */

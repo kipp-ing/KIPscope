@@ -10,6 +10,7 @@ import {
 } from "@kipscope/shared";
 import { parseDocument } from "yaml";
 import { z } from "zod";
+import type { GroupRule } from "./groups.ts";
 import { type DisplayRule, type DisplayRules, NO_RULES, type Template } from "./names.ts";
 
 /** Invalid or missing required project file; message: one or more lines `<path>: <field>: <problem>` (design N6). */
@@ -40,6 +41,9 @@ const FileSchema = z
             z.string(),
             z.string().refine((v) => v.trim() !== "", "empty name"),
           )
+          .nullish(),
+        groups: z
+          .array(z.object({ match: nonEmpty.optional(), group: nonEmpty }).strict())
           .nullish(),
       })
       .strict()
@@ -83,6 +87,39 @@ function parseTemplate(text: string): Template | string {
   return parts;
 }
 
+/** Regex and its named groups; a string is the problem. */
+function compileRegex(source: string): { match: RegExp; groups: string[] } | string {
+  let match: RegExp;
+  try {
+    match = new RegExp(source);
+  } catch (error) {
+    return `invalid regex: ${(error as Error).message}`;
+  }
+  // The empty alternative always matches; `groups` then lists every named group (design N3).
+  const groups = Object.keys(new RegExp(`(?:${source})|`).exec("")?.groups ?? {});
+  return { match, groups };
+}
+
+/** Template of `field` whose placeholders must be in `known`; problems go to `problems`. */
+function compileTemplate(
+  field: string,
+  text: string,
+  known: readonly string[],
+  unknownProblem: (placeholder: string) => string,
+  problems: string[],
+): Template | undefined {
+  const parsed = parseTemplate(text);
+  if (typeof parsed === "string") {
+    problems.push(`${field}: ${parsed}`);
+    return undefined;
+  }
+  const unknown = new Set<string>();
+  for (const part of parsed)
+    if (typeof part !== "string" && !known.includes(part.group)) unknown.add(part.group);
+  for (const placeholder of unknown) problems.push(`${field}: ${unknownProblem(placeholder)}`);
+  return unknown.size ? undefined : parsed;
+}
+
 /** Stage 3: regex, templates and their groups of one rule; problems go to `problems`. */
 function compileRule(
   rule: { match: string; show: string; collision?: string | undefined },
@@ -90,35 +127,58 @@ function compileRule(
   problems: string[],
 ): DisplayRule | undefined {
   const field = `display.names[${index}]`;
-  let match: RegExp;
-  try {
-    match = new RegExp(rule.match);
-  } catch (error) {
-    problems.push(`${field}.match: invalid regex: ${(error as Error).message}`);
+  const regex = compileRegex(rule.match);
+  if (typeof regex === "string") {
+    problems.push(`${field}.match: ${regex}`);
     return undefined;
   }
-  // The empty alternative always matches; `groups` then lists every named group (design N3).
-  const groups = Object.keys(new RegExp(`(?:${rule.match})|`).exec("")?.groups ?? {});
-  const template = (key: "show" | "collision", text: string): Template | undefined => {
-    const parsed = parseTemplate(text);
-    if (typeof parsed === "string") {
-      problems.push(`${field}.${key}: ${parsed}`);
-      return undefined;
-    }
-    const unknown = new Set<string>();
-    for (const part of parsed)
-      if (typeof part !== "string" && !groups.includes(part.group)) unknown.add(part.group);
-    for (const group of unknown)
-      problems.push(
-        `${field}.${key}: unknown group "${group}" (groups: ${groups.join(", ") || "none"})`,
-      );
-    return unknown.size ? undefined : parsed;
-  };
+  const { match, groups } = regex;
+  const template = (key: "show" | "collision", text: string): Template | undefined =>
+    compileTemplate(
+      `${field}.${key}`,
+      text,
+      groups,
+      (group) => `unknown group "${group}" (groups: ${groups.join(", ") || "none"})`,
+      problems,
+    );
   const show = template("show", rule.show);
   const collision =
     rule.collision === undefined ? undefined : template("collision", rule.collision);
   if (!show || (rule.collision !== undefined && !collision)) return undefined;
   return collision ? { index, match, show, collision } : { index, match, show };
+}
+
+/** Stage 3 for one `display.groups` rule (design G3): placeholders are `sender` and the regex's groups. */
+function compileGroupRule(
+  rule: { match?: string | undefined; group: string },
+  index: number,
+  problems: string[],
+): GroupRule | undefined {
+  const field = `display.groups[${index}]`;
+  let match: RegExp | undefined;
+  let groups: string[] = [];
+  if (rule.match !== undefined) {
+    const regex = compileRegex(rule.match);
+    if (typeof regex === "string") {
+      problems.push(`${field}.match: ${regex}`);
+      return undefined;
+    }
+    ({ match, groups } = regex);
+    if (groups.includes("sender")) {
+      problems.push(`${field}.match: group "sender" clashes with the field {sender}`);
+      match = undefined;
+    }
+  }
+  const known = ["sender", ...groups.filter((g) => g !== "sender")];
+  const group = compileTemplate(
+    `${field}.group`,
+    rule.group,
+    known,
+    (placeholder) => `unknown placeholder "${placeholder}" (known: ${known.join(", ")})`,
+    problems,
+  );
+  if (!group || (rule.match !== undefined && !match)) return undefined;
+  return match ? { index, match, group } : { index, group };
 }
 
 function fail(path: string, problems: string[]): never {
@@ -230,12 +290,14 @@ export function parseProject(text: string, path: string): ProjectFile {
   const display = result.data.display;
   const problems: string[] = [];
   const rules = (display?.names ?? []).map((rule, i) => compileRule(rule, i, problems));
+  const groups = (display?.groups ?? []).map((rule, i) => compileGroupRule(rule, i, problems));
   problems.push(...measurementProblems);
   if (problems.length) fail(path, problems);
   const file: ProjectFile = {
     rules: {
       rules: rules.filter((r): r is DisplayRule => r !== undefined),
       rename: new Map(Object.entries(display?.rename ?? {})),
+      groups: groups.filter((g): g is GroupRule => g !== undefined),
     },
   };
   if (measurement) file.measurement = measurement;

@@ -68,6 +68,7 @@ describe("parseDbc / loadDbcFiles", () => {
       min: -100,
       max: 100,
       file: "test-a.dbc",
+      sender: "TEST",
     });
     expect(meta.get("Sparse_300h.MODE")?.values).toEqual(
       new Map([
@@ -91,6 +92,26 @@ describe("parseDbc / loadDbcFiles", () => {
     });
   });
 
+  it("reads the sender of each message, none for Vector__XXX", () => {
+    const text = [
+      "BO_ 342 YRG_156h: 8 YRG",
+      ' SG_ A : 0|8@1+ (1,0) [0|0] ""  X',
+      "",
+      "BO_ 147 CBX_A2: 8 Vector__XXX",
+      ' SG_ B : 0|8@1+ (1,0) [0|0] ""  X',
+      "",
+      "BO_ 7 Bare_7h:",
+      ' SG_ C : 0|8@1+ (1,0) [0|0] ""  X',
+      "",
+    ].join("\r\n");
+    const meta = parseDbc(text);
+    expect(meta.get("YRG_156h.A")?.sender).toBe("YRG");
+    expect(meta.get("CBX_A2.B")).toBeDefined();
+    expect(meta.get("CBX_A2.B")).not.toHaveProperty("sender");
+    expect(meta.get("Bare_7h.C")).toBeDefined();
+    expect(meta.get("Bare_7h.C")).not.toHaveProperty("sender");
+  });
+
   it.runIf(existsSync(REAL_HCAN))("derives DBC details from the real h-can.dbc", async () => {
     const meta = await loadDbcFiles([REAL_HCAN]);
     const vAnz = meta.get("COMBI_412h.V_ANZ");
@@ -98,6 +119,7 @@ describe("parseDbc / loadDbcFiles", () => {
       file: "h-can.dbc",
       message: "COMBI_412h",
       messageId: 1042,
+      sender: "CGW",
       factor: 1,
       offset: 0,
       min: 0,
@@ -106,12 +128,21 @@ describe("parseDbc / loadDbcFiles", () => {
     expect(vAnz?.values).toEqual(new Map([[511, "SNV"]]));
     expect(meta.get("MS_608h.T_MOT")).toMatchObject({
       messageId: 1544,
+      sender: "Engine",
       factor: 1,
       offset: -40,
       min: -40,
       max: 214,
     });
-    expect(meta.get("BS_200h.DVL")).toMatchObject({ messageId: 512, factor: 0.5, max: 8191 });
+    expect(meta.get("BS_200h.DVL")).toMatchObject({
+      messageId: 512,
+      sender: "ESP",
+      factor: 0.5,
+      max: 8191,
+    });
+    // Vector__XXX: no sender key at all.
+    expect(meta.get("CPC_448h.PTC_HV_Volt")).toBeDefined();
+    expect(meta.get("CPC_448h.PTC_HV_Volt")).not.toHaveProperty("sender");
   });
 
   it("skips unreadable files and reports them", async () => {

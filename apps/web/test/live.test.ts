@@ -157,10 +157,10 @@ describe("nearest curve", () => {
       pointerY,
     );
 
-  it("picks the nearest curve within 8 px, on a tie the later one", () => {
-    expect(NEAR_PX).toBe(8);
-    // 9 px, 3 px, 5 px: the second.
-    expect(key([9, 3, 5])).toBe("s2");
+  it("picks the nearest curve within 16 px, on a tie the later one", () => {
+    expect(NEAR_PX).toBe(16);
+    // 17 px, 3 px, 5 px: the second.
+    expect(key([17, 3, 5])).toBe("s2");
     // 3 px above and 3 px below: equal distance, the later in the legend.
     expect(
       nearestSignal(
@@ -180,10 +180,10 @@ describe("nearest curve", () => {
         100,
       ),
     ).toBe("s2");
-    // Exactly 8 px is a hit, 8.5 px is not.
-    expect(key([8])).toBe("s1");
-    expect(key([-8])).toBe("s1");
-    expect(key([8.5])).toBeUndefined();
+    // Exactly 16 px is a hit, 16.5 px is not.
+    expect(key([16])).toBe("s1");
+    expect(key([-16])).toBe("s1");
+    expect(key([16.5])).toBeUndefined();
     // No candidates, none near.
     expect(nearestSignal([], 100)).toBeUndefined();
     expect(key([20, -30])).toBeUndefined();

@@ -30,6 +30,7 @@ const dotRule = (show: Template = [g("signal")], collision = true) =>
 const rules = (list: DisplayRule[], rename: [string, string][] = []): DisplayRules => ({
   rules: list,
   rename: new Map(rename),
+  groups: [],
 });
 
 describe("assignDisplayNames", () => {

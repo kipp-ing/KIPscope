@@ -16,6 +16,8 @@ export interface DbcSignal {
   /** `BO_` message name and ID (as written, decimal). */
   message: string;
   messageId: number;
+  /** `BO_` transmitter; absent for `Vector__XXX` or none written (design G2). */
+  sender?: string;
   /** Scaling and `[min|max]` from the `SG_` line; absent when the line does not parse. */
   factor?: number;
   offset?: number;
@@ -37,7 +39,7 @@ interface Layout {
   offset: number;
 }
 
-const MESSAGE = /^BO_\s+(\d+)\s+(\w+)\s*:/;
+const MESSAGE = /^BO_\s+(\d+)\s+(\w+)\s*:(?:\s*\d+\s+(\w+))?/;
 const SIGNAL = /^\s*SG_\s+(\w+)\s*(?:[mM]\w*\s*)?:[^"]*"([^"]*)"/;
 const NUMBER = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`;
 const LAYOUT = new RegExp(
@@ -116,14 +118,14 @@ export function parseDbc(text: string, file?: string): Map<string, DbcSignal> {
   const result = new Map<string, DbcSignal>();
   const messages = new Map<string, string>();
   const layouts = new Map<string, Layout>();
-  let message: { name: string; id: number } | undefined;
+  let message: { name: string; id: number; sender: string | undefined } | undefined;
 
   for (const line of text.split(/\r?\n/)) {
     const bo = MESSAGE.exec(line);
     if (bo) {
-      const [, id = "", name = ""] = bo;
+      const [, id = "", name = "", sender] = bo;
       messages.set(id, name);
-      message = { name, id: Number(id) };
+      message = { name, id: Number(id), sender: sender === "Vector__XXX" ? undefined : sender };
       continue;
     }
     const sg = SIGNAL.exec(line);
@@ -131,6 +133,7 @@ export function parseDbc(text: string, file?: string): Map<string, DbcSignal> {
       const [, name = "", unit = ""] = sg;
       const key = `${message.name}.${name}`;
       const entry: DbcSignal = { message: message.name, messageId: message.id };
+      if (message.sender !== undefined) entry.sender = message.sender;
       if (file !== undefined) entry.file = file;
       const layout = LAYOUT.exec(line);
       if (layout) {

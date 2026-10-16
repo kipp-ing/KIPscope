@@ -21,6 +21,7 @@ import {
   nextShown,
   visibleCount,
 } from "./format.ts";
+import { explorerItems, firstSignal } from "./groups.ts";
 import { Highlight } from "./Highlight.tsx";
 import { SignalCard } from "./SignalCard.tsx";
 
@@ -51,7 +52,7 @@ interface Props {
   onOpen: () => void;
 }
 
-/** The open hover card: row index into the matches, the row's rect, and how it was opened. */
+/** The open hover card: index of a signal item, the row's rect, and how it was opened. */
 interface Card {
   index: number;
   anchor: DOMRect;
@@ -60,7 +61,8 @@ interface Card {
 
 /**
  * Searches the full catalog in the browser on every keystroke (spec signal-catalog, design E1–E10):
- * one line per match, hover card, keys, chunks, drag source and a stable "Add to" target.
+ * one line per match, hover card, keys, chunks, drag source and a stable "Add to" target; with
+ * groups, a header per group that opens and closes (signal-groups, design G6).
  */
 export function SignalExplorer({
   windows,
@@ -79,7 +81,10 @@ export function SignalExplorer({
   const [error, setError] = useState<string | undefined>();
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(CHUNK);
-  const [active, setActive] = useState(0);
+  /** Item index; undefined after a query change means firstSignal(items) (design G6). */
+  const [active, setActive] = useState<number | undefined>();
+  /** Groups flipped since the last query change (design G6); not remembered. */
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(() => new Set());
   const [card, setCard] = useState<Card | undefined>();
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -127,7 +132,13 @@ export function SignalExplorer({
 
   const index = useMemo(() => buildSearchIndex(catalog ?? []), [catalog]);
   const matches = useMemo(() => searchSignals(index, query), [index, query]);
-  const visible = visibleCount(matches.length, shown);
+  const grouped = useMemo(() => (catalog ?? []).some((s) => s.group !== undefined), [catalog]);
+  const items = useMemo(
+    () => explorerItems(matches, query.trim() !== "", grouped, toggled),
+    [matches, query, grouped, toggled],
+  );
+  const activeItem = active ?? firstSignal(items);
+  const visible = visibleCount(items.length, shown);
 
   // The target is a window ID held by App (the mark, design L5); App resolves it with resolveTarget.
   const targetWindow = windows.find((w) => w.id === target);
@@ -155,7 +166,7 @@ export function SignalExplorer({
 
   const showCard = (i: number, byKey: boolean) => {
     const el = rowElement(i);
-    if (!el || draggingRef.current) return;
+    if (!el || draggingRef.current || items[i]?.kind !== "signal") return;
     setCard({ index: i, anchor: el.getBoundingClientRect(), byKey });
   };
 
@@ -175,27 +186,40 @@ export function SignalExplorer({
 
   const changeQuery = (q: string) => {
     setQuery(q);
-    setActive(0);
+    setActive(undefined);
+    setToggled(new Set());
     setShown(CHUNK);
     closeCard();
   };
 
-  // After an arrow key: keep the active row in view and let the card follow it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only after a key moved the row
+  /** Opens or closes a group; the header at item i stays active. */
+  const toggleGroup = (name: string, i: number) => {
+    setToggled((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
+    setActive(i);
+    closeCard();
+  };
+
+  // After an arrow key: keep the active item in view and let the card follow it (rows only).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only after a key moved the item
   useEffect(() => {
     if (!keyMoved.current) return;
     keyMoved.current = false;
-    const el = rowElement(active);
+    const el = rowElement(activeItem);
     if (!el) return;
     keyScrollAt.current = performance.now();
     scrollToRow(el);
-    requestCard(active, true);
+    if (items[activeItem]?.kind === "signal") requestCard(activeItem, true);
+    else closeCard();
   }, [active, shown]);
 
-  // After a query change the first match is active; bring it into view.
+  // After a query change the first signal item is active; bring it into view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the query changed
   useEffect(() => {
-    const el = rowElement(0);
+    const el = rowElement(activeItem);
     if (el) scrollToRow(el);
   }, [query]);
 
@@ -236,23 +260,23 @@ export function SignalExplorer({
       case "ArrowDown":
       case "ArrowUp": {
         e.preventDefault();
-        if (matches.length === 0) return;
+        if (items.length === 0) return;
         const next = Math.max(
           0,
-          Math.min(matches.length - 1, active + (e.key === "ArrowDown" ? 1 : -1)),
+          Math.min(items.length - 1, activeItem + (e.key === "ArrowDown" ? 1 : -1)),
         );
-        if (next === active) return;
-        if (next >= visible) setShown(nextShown(matches.length, shown));
+        if (next === activeItem) return;
+        if (next >= visible) setShown(nextShown(items.length, shown));
         keyMoved.current = true;
         setActive(next);
         return;
       }
       case "Enter": {
-        const match = matches[active];
-        if (match) {
-          e.preventDefault();
-          onAdd(match.signal, target);
-        }
+        const item = items[activeItem];
+        if (!item) return;
+        e.preventDefault();
+        if (item.kind === "group") toggleGroup(item.name, activeItem);
+        else onAdd(item.match.signal, target);
         return;
       }
     }
@@ -263,8 +287,14 @@ export function SignalExplorer({
     closeCard();
   };
 
-  const cardMatch = card && matches[card.index];
-  const more = nextShown(matches.length, shown) - visible;
+  const cardItem = card && items[card.index];
+  const cardMatch = cardItem?.kind === "signal" ? cardItem.match : undefined;
+  const more = nextShown(items.length, shown) - visible;
+  /** Signal rows rendered while items are cut off ("showing N"); undefined when all are rendered. */
+  const shownRows =
+    visible < items.length
+      ? items.slice(0, visible).filter((it) => it.kind === "signal").length
+      : undefined;
 
   return (
     <aside className="explorer">
@@ -282,9 +312,9 @@ export function SignalExplorer({
         aria-label="Search signals"
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={matches.length > 0}
+        aria-expanded={items.length > 0}
         aria-controls={listId}
-        aria-activedescendant={matches.length > 0 ? optionId(active) : undefined}
+        aria-activedescendant={items.length > 0 ? optionId(activeItem) : undefined}
       />
       <label className="target">
         Add to{" "}
@@ -305,14 +335,38 @@ export function SignalExplorer({
       {catalog ? (
         <p className="count">
           {matches.length} match{matches.length === 1 ? "" : "es"}
-          {visible < matches.length ? `, showing ${visible}` : ""}
+          {shownRows !== undefined ? `, showing ${shownRows}` : ""}
         </p>
       ) : (
         !error && <p className="count">Loading catalog…</p>
       )}
       <div className="results" onScroll={onListScroll}>
         <div ref={listRef} id={listId} role="listbox" aria-label="Signals">
-          {matches.slice(0, visible).map((m, i) => {
+          {items.slice(0, visible).map((item, i) => {
+            if (item.kind === "group") {
+              return (
+                // A header is an option too, so arrows and aria-activedescendant reach it (design G6).
+                // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the combobox
+                // biome-ignore lint/a11y/useKeyWithClickEvents: Enter in the search toggles the active header
+                // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-expanded on the header option is pinned (design G6)
+                <div
+                  key={`g:${item.name}`}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={i === activeItem}
+                  aria-expanded={item.open}
+                  className={i === activeItem ? "group-head active" : "group-head"}
+                  onClick={() => toggleGroup(item.name, i)}
+                >
+                  <span className="chevron" aria-hidden="true">
+                    {item.open ? "▾" : "▸"}
+                  </span>
+                  <span className="group-name">{item.name}</span>
+                  <span className="group-count">{item.count}</span>
+                </div>
+              );
+            }
+            const m = item.match;
             const s = m.signal;
             // Physical SNA values are readings of the signal: number-format with unit (design N9).
             const sna =
@@ -322,12 +376,12 @@ export function SignalExplorer({
               // Options of an aria-activedescendant listbox: focus stays in the combobox.
               // biome-ignore lint/a11y/useFocusableInteractive: see above
               <div
-                key={s.id}
+                key={`s:${s.id}`}
                 id={optionId(i)}
                 role="option"
-                aria-selected={i === active}
+                aria-selected={i === activeItem}
                 aria-describedby={card?.index === i ? cardId : undefined}
-                className={i === active ? "row active" : "row"}
+                className={i === activeItem ? "row active" : "row"}
                 onPointerEnter={() => requestCard(i, false)}
                 onPointerLeave={releaseCard}
                 // A click or a drag start on the row closes the card; it reopens on the next row entered.
@@ -378,7 +432,7 @@ export function SignalExplorer({
           <button
             type="button"
             className="show-more"
-            onClick={() => setShown(nextShown(matches.length, shown))}
+            onClick={() => setShown(nextShown(items.length, shown))}
           >
             Show {more} more
           </button>

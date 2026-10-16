@@ -9,6 +9,7 @@ import {
 } from "@kipscope/shared";
 import type { DataSource, SnaRange } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
+import { assignGroup } from "./groups.ts";
 import { assignDisplayNames, type DisplayRules, NO_RULES } from "./names.ts";
 
 export const DEFAULT_PAGE_SIZE = 50;
@@ -115,6 +116,14 @@ export class Catalog {
     for (const info of entries) {
       const name = shown.get(info.name);
       if (name !== undefined && name !== info.name) info.displayName = name;
+      // Group (design G5): per entry; metadata is keyed by name, so every data reference agrees.
+      const sender = metadata.get(info.name)?.sender;
+      const group = assignGroup(
+        info.name,
+        sender === undefined ? {} : { sender },
+        this.rules.groups,
+      );
+      if (group !== undefined) info.group = group;
     }
     entries.sort((a, b) => a.name.localeCompare(b.name) || a.dataRef.localeCompare(b.dataRef));
     this.entries = entries;
@@ -236,6 +245,7 @@ function errorMessage(error: unknown): string {
 /** DBC details of a catalog entry (design E4): `values` sorted by raw, absent fields stay absent. */
 function dbcInfo(meta: DbcSignal): DbcInfo {
   const dbc: DbcInfo = { message: meta.message, messageId: meta.messageId };
+  if (meta.sender !== undefined) dbc.sender = meta.sender;
   if (meta.file !== undefined) dbc.file = meta.file;
   if (meta.factor !== undefined) dbc.factor = meta.factor;
   if (meta.offset !== undefined) dbc.offset = meta.offset;

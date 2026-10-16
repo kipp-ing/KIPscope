@@ -21,6 +21,21 @@ display:
   # rename: optional map from full source name to shown name; beats every rule and gets no collision suffix.
   # rename:
   #   COMBI_412h.V_ANZ: Speed
+  # groups: optional ordered list of rules that sort the explorer list into groups (D-053).
+  # For each signal the first rule that matches and renders non-blank wins; the group is that render, trimmed.
+  # Unlike `names`, a blank render falls through to the next rule.
+  # A signal no rule gives a group, or whose render is `Other`, lands in `Other`, always listed last.
+  # Without `groups` the explorer list is flat.
+  groups:
+    # match: optional JavaScript RegExp without flags on the full source name; without it the rule applies to every signal.
+    # group: the group name; {sender} inserts the sending ECU of the signal's DBC message (`BO_` transmitter),
+    # blank without a DBC entry or for `Vector__XXX`. A named group of `match` inserts its text, e.g. {ecu};
+    # a named group may not be called `sender`.
+    # COMBI_412h.V_ANZ -> CGW (its DBC sender)
+    - group: '{sender}'
+    # CPC_448h.PTC_HV_Volt -> CPC: fallback for messages h-can.dbc gives no sender (D-053 Q1)
+    - match: '^(?<ecu>CPC|PNHV)_'
+      group: '{ecu}'
 
 # Optional: measurement info, shown in the footer and held in the workspace (`kipscope state`).
 # This is only the start value: `kipscope measurement name|object|meta|clear` changes it, and

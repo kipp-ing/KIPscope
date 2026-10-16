@@ -9,5 +9,11 @@ display:
     - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
       show: '{signal}'
       collision: '{signal} ({message})'
+  groups:
+    # Explorer groups by sending ECU (D-053); no sender -> next rule
+    - group: '{sender}'
+    # CPC_448h.PTC_HV_Volt -> CPC; h-can.dbc names no sender for these (D-053 Q1)
+    - match: '^(?<ecu>CPC|PNHV)_'
+      group: '{ecu}'
 measurement:
   object: smart451

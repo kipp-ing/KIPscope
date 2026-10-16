@@ -31,6 +31,7 @@ describe("Catalog (test DB)", () => {
         file: "test-a.dbc",
         message: "Fast_100h",
         messageId: 256,
+        sender: "TEST",
         factor: 0.1,
         offset: 0,
         min: 0,
@@ -101,6 +102,13 @@ describe("Catalog display names (test DB, test project file)", () => {
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(testSource(), () => loadDbcFiles(testDbcFiles), rules);
   beforeAll(() => catalog.refresh());
+
+  it("sets groups from the test project file", () => {
+    expect(catalog.get("testcar/Sna_800h.SPEED")?.group).toBe("SNA codes");
+    expect(catalog.get("testcar/Fast_100h.SIG_A")?.group).toBe("TEST");
+    expect(catalog.get("othercar/Fast_100h.SIG_A")?.group).toBe("TEST");
+    expect(catalog.get("testcar/Nodbc_500h.RAW")).not.toHaveProperty("group");
+  });
 
   it("sets display names from the test project file", () => {
     const shown = (id: string) => {

@@ -90,7 +90,41 @@ describe("project file", () => {
         file,
       ).toEqual(["V_ANZ", "LWS_CHKSUM", "PTC_HV_Volt", "T_SOLL", "D_RS_AC"]);
       expect(fellBack).toEqual([]);
+      // Two group rules (D-053 Q1): {sender}, then the CPC/PNHV fallback.
+      expect(rules.groups, file).toHaveLength(2);
+      expect(rules.groups[0]?.match, file).toBeUndefined();
+      expect(rules.groups[0]?.group, file).toEqual([{ group: "sender" }]);
+      expect(rules.groups[1]?.match?.source, file).toBe("^(?<ecu>CPC|PNHV)_");
+      expect(rules.groups[1]?.group, file).toEqual([{ group: "ecu" }]);
     }
+  });
+
+  it("reports every problem of the group rules", () => {
+    const out = lines(
+      [
+        "display:",
+        "  groups:",
+        "    - { match: '^(?<ecu>[A-Z+)_', group: '{ecu}' }",
+        "    - { match: '^(?<sender>[A-Z]+)_', group: '{sender}' }",
+        "    - { match: '^(?<ecu>[A-Z]+)_', group: '{ecux}' }",
+        "    - { group: '{sender' }",
+        "",
+      ].join("\n"),
+    );
+    expect(out).toHaveLength(4);
+    expect(out[0]).toMatch(/^p\.yaml: display\.groups\[0\]\.match: invalid regex: /);
+    expect(out[1]).toBe(
+      'p.yaml: display.groups[1].match: group "sender" clashes with the field {sender}',
+    );
+    expect(out[2]).toBe(
+      'p.yaml: display.groups[2].group: unknown placeholder "ecux" (known: sender, ecu)',
+    );
+    expect(out[3]).toBe('p.yaml: display.groups[3].group: stray "{" at column 1');
+
+    // Structure errors stop before the rules are compiled.
+    expect(lines("display:\n  groups:\n    - { group: 'x', mtach: 'y' }\n")).toContain(
+      'p.yaml: display.groups[0]: unknown key "mtach"',
+    );
   });
 });
 

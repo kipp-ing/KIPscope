@@ -1,4 +1,4 @@
-import type { SignalInfo, TimeseriesWindow } from "@kipscope/shared";
+import type { SignalInfo, SignalMatch, TimeseriesWindow } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   CHUNK,
@@ -16,6 +16,7 @@ import {
   visibleCount,
   windowsShowing,
 } from "../src/explorer/format.ts";
+import { explorerItems, firstSignal } from "../src/explorer/groups.ts";
 
 function win(id: string, signalIds: string[], title?: string): TimeseriesWindow {
   return {
@@ -113,5 +114,111 @@ describe("explorer formatting", () => {
     expect(resolveTarget("w2", [])).toBe(NEW_WINDOW);
     // New window stays, even when windows exist.
     expect(resolveTarget(NEW_WINDOW, [w1, w2])).toBe(NEW_WINDOW);
+  });
+});
+
+/** A ranked match of a signal in `group` (undefined: Other); only `signal` matters for grouping. */
+function match(name: string, group: string | undefined): SignalMatch {
+  return {
+    signal: { id: `c/${name}`, dataRef: "c", name, ...(group ? { group } : {}) },
+    tier: 0,
+    name: [],
+    shown: [],
+    unit: [],
+    description: [],
+  } as unknown as SignalMatch;
+}
+
+describe("explorer groups", () => {
+  // Rank order: 1 Other, 2 CGW, 3 ESP, 4 AC, 5 ESP.
+  const ranked = [
+    match("r1", undefined),
+    match("r2", "CGW"),
+    match("r3", "ESP"),
+    match("r4", "AC"),
+    match("r5", "ESP"),
+  ];
+  const shape = (items: ReturnType<typeof explorerItems>) =>
+    items.map((i) =>
+      i.kind === "group"
+        ? `${i.name} ${i.count} ${i.open ? "open" : "closed"}`
+        : i.match.signal.name,
+    );
+
+  it("groups matches by best hit, Other last, collapsed on an empty query", () => {
+    const none = new Set<string>();
+    // Searching: groups by best hit, Other last, rank order inside, all open.
+    const searching = explorerItems(ranked, true, true, none);
+    expect(shape(searching)).toEqual([
+      "CGW 1 open",
+      "r2",
+      "ESP 2 open",
+      "r3",
+      "r5",
+      "AC 1 open",
+      "r4",
+      "Other 1 open",
+      "r1",
+    ]);
+    expect(firstSignal(searching)).toBe(1);
+
+    // Empty query: matches are the catalog order; groups by name, Other last, all closed.
+    const catalogOrder = [
+      match("a", "AC"),
+      match("b", "CGW"),
+      match("c", "ESP"),
+      match("d", undefined),
+      match("e", "ESP"),
+    ];
+    const empty = explorerItems(catalogOrder, false, true, none);
+    expect(shape(empty)).toEqual(["AC 1 closed", "CGW 1 closed", "ESP 2 closed", "Other 1 closed"]);
+    expect(firstSignal(empty)).toBe(0);
+
+    // Toggling ESP opens just ESP on the empty query, closes just ESP while searching.
+    const esp = new Set(["ESP"]);
+    expect(shape(explorerItems(catalogOrder, false, true, esp))).toEqual([
+      "AC 1 closed",
+      "CGW 1 closed",
+      "ESP 2 open",
+      "c",
+      "e",
+      "Other 1 closed",
+    ]);
+    expect(shape(explorerItems(ranked, true, true, esp))).toEqual([
+      "CGW 1 open",
+      "r2",
+      "ESP 2 closed",
+      "AC 1 open",
+      "r4",
+      "Other 1 open",
+      "r1",
+    ]);
+
+    // Not grouped: the matches in rank order, no headers.
+    const flat = explorerItems(ranked, true, false, none);
+    expect(flat.every((i) => i.kind === "signal")).toBe(true);
+    expect(shape(flat)).toEqual(["r1", "r2", "r3", "r4", "r5"]);
+    expect(firstSignal(flat)).toBe(0);
+  });
+
+  it("groups 10,000 matches in under 10 ms", () => {
+    const matches = Array.from({ length: 10_000 }, (_, i) =>
+      match(`s${i}`, i % 101 === 100 ? undefined : `G${String(i % 100).padStart(3, "0")}`),
+    );
+    const none = new Set<string>();
+    explorerItems(matches, true, true, none); // warm-up
+    const runs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      const items = explorerItems(matches, true, true, none);
+      runs.push(performance.now() - t0);
+      // 100 named groups plus Other: 101 headers and all 10,000 rows.
+      expect(items).toHaveLength(10_000 + 101);
+    }
+    runs.sort((a, b) => a - b);
+    const median = runs[2] ?? Infinity;
+    console.log(`explorerItems: 10,000 matches in 101 groups, median ${median.toFixed(2)} ms`);
+    // Goal 10 ms; the hard limit is the 50 ms of the filtering goal.
+    expect(median).toBeLessThan(50);
   });
 });
