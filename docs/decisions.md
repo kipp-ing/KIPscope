@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-059: State names at the cursors, state changes on the events line (2026-10-16)
+
+- **Context:** Jan: „it fits her. many signals are state, or have some values defined as state. the coursers shall show the statename. like OFF. and if one drags a signal with stats to horizon. the changes are marked. not all stuff shall go to horizon. automatically only two things (yaml define) IGN and contactor state (not recorded yet)". The DBCs hold 441 `VAL_` tables (h-can 195, hybrid-can 246; parsed, so far used only for SNA); diag states carry their label in `sdlog.signals.text` (`BMS.contactor` „open", `BMS.clamp15` „not active"). Ignition candidates: `CPC_168h.IgnCurMode` (`VAL_` KEYON, CHARGE_KEYON, CHARGE, NONE), `SAM_423h.KL_15` (0/1, no `VAL_`).
+- **Decision:** Part of `add-events` (D-058):
+  - Cursor readouts (A, B, L; legends and values window) show the state name where the value has one (`OFF`), from the DBC `VAL_` table or the row's text.
+  - Dragging a signal with states onto the events line (lead's reading of „horizon") marks its state changes there.
+  - Only signals listed in `kipscope.yaml` go to the events line automatically: ignition and the contactor state. The contactor is not recorded yet; the entry must wait quietly until it is.
+
 ## D-058: Diagnostic data: BMS group and filtered events (2026-10-16)
 
 - **Context:** Jan: „clickhouse supplies now decoded diagnostic data. how can we see it?" carserver now has (device `smart451-diag`): 125 numeric `BMS.*` readings in `sdlog.signals` (no DBC, so group `Other`, no units; already plottable) and a new table `sdlog.events` (`kind` dtc / state / nrc / isotp, `source`, `name`, `value`, `text`, `detail`): 55 DTCs at one time (value = UDS status byte: 41/105 active, 40 stored, 64/80 "test not completed"), 315 state snapshots every ~90 s plus 11 transitions (`detail` „from …"), 2 NRCs, 2 ISO-TP errors.
