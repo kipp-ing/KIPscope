@@ -4,6 +4,18 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-053: Signal groups in the explorer (2026-10-16)
+
+- **Context:** Jan: „signals shall be grouped on left bar. user defined. here as example we use sending ECU". The DBCs name a sender per `BO_` (h-can: Engine, CGW, ESP, …; hybrid-can: CPC, BMS, EM2, …); `Vector__XXX` means no sender.
+- **Decision:** Jan chose:
+  - Groups are defined by rules in `kipscope.yaml` (like the display-name rules of D-035); the shipped file groups by sending ECU. Restart to change.
+  - Empty search: all groups, collapsed. While searching: only groups with a hit, all open, ordered by their best hit; the ranking stays inside each group.
+  - Signals without a group (no DBC entry, sender `Vector__XXX`) go to one group `Other`, always last.
+
+## D-052: Near-curve distance 16 px (2026-10-16)
+
+- **Decision:** Supersedes the 8 px of D-032. Jan: „the live courser is 8px until highlight. should be double, its hard do see." The live cursor highlights the nearest curve within 16 px vertically of the pointer; the rest of D-032 stands.
+
 ## D-051: Measurement info (2026-10-16)
 
 From the archived change `add-footer`; details there.
