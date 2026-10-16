@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-16, session 6. No change in flight; all eighteen changes are archived and the main specs describe the running app.
+As of 2026-10-16, session 6. In flight: `add-events` (spec being written; D-058, D-059). Nineteen changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -8,7 +8,7 @@ As of 2026-10-16, session 6. No change in flight; all eighteen changes are archi
 |---|---|---|
 | Signal catalog | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Signals with DBC metadata and SNA rules; ranked search, hover card, keyboard and drag in the explorer |
 | Design language | [design-language](../openspec/specs/design-language/spec.md) | KI.ping look (D-055): slate neutrals, sky accent, dense 12 px, pills, grey group bands, Okabe-Ito series |
-| Time strip | [time-strip](../openspec/specs/time-strip/spec.md) | Data density over the whole recording under the option bar, shown range in the accent; `/api/density`, prefetched after each catalog load |
+| Time strip | [time-strip](../openspec/specs/time-strip/spec.md) | Data density and drives over the whole recording under the option bar; click jumps, drag zooms, the shown range slides and resizes, a drive fits, double-click shows all, `,`/`.` step drives; A/B/L marked; `/api/density` with drives, prefetched after each catalog load |
 | Signal groups | [signal-groups](../openspec/specs/signal-groups/spec.md) | `display.groups` rules in `kipscope.yaml` group the explorer by sending ECU (DBC `BO_` sender, CPC/PNHV fallback); collapsible headers, groups with hits open while searching, `Other` last |
 | Display names | [display-names](../openspec/specs/display-names/spec.md) | `kipscope.yaml` rules and renames give short names (`V_ANZ`) in the UI; full name in card and tooltips; search on both |
 | Series cache | [series-cache](../openspec/specs/series-cache/spec.md) | Power-of-two tiles kept in tab memory (LRU, 4 M values); zoom/pan back without a request |
@@ -54,13 +54,16 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Built and archived `add-signal-groups` (D-052 … D-054) in two rounds plus the lead's keyboard check: explorer grouped by sending ECU, near-curve distance 16 px. Jan: „good".
 
 - Built and archived `adopt-design-language` (D-055, D-056) in two rounds plus the lead's checks and two follow-up fixes (values-window names on one line, density prefetch: first strip 9.2 s → 2 ms). Mock: https://claude.ai/artifact/V6naWfZvN9od7JpM482nta, source in [design/](design/). Jan: „this is great. we keep it".
+- Built and archived `add-strip-navigation` (D-057, D-060) in two rounds plus a lead fix (whole-view brush on smart451); Jan: „strip drags are fine".
+- carserver now has decoded diagnostic data (device `smart451-diag`): 125 `BMS.*` readings and table `sdlog.events` (DTCs, states, NRCs, ISO-TP). `BMS.*` grouped as `BMS (diag)` in `kipscope.yaml` (active after the next server restart). Events with a human filter (UI and CLI), state names at the cursors and state changes on the events line: `add-events` (D-058, D-059), spec owner writing.
 - carserver: ClickHouse read errors „errno 6, No such device or address" on a few part files during round 1, transient; Jan brought the server back.
 
 ## Next
 
-1. Persistence: save and load, snapshots, templates, undo (concept §8). The workspace still lives in server memory.
-2. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
-3. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
+1. `add-events`: Jan's open questions, then rounds.
+2. Persistence: save and load, snapshots, templates, undo (concept §8). The workspace still lives in server memory.
+3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
+4. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
 
 ## Known limitations
 
@@ -72,6 +75,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Seen once, not reproduced: header range stale after a rectangle zoom. Rename has no visible affordance (click the title).
 - Hidden browser tabs stay connected but never acknowledge renders; `--wait` takes the first UI that does, and times out when only hidden tabs are open.
 - Tabs opened before a web change may need a reload: hot reload swaps modules but keeps old state (seen once: a tab kept reporting render errors until reloaded).
+- A strip step whose `window.setRange` the server refuses stays shown in the strip until the server range changes (`navigate` returns only a boolean).
 - `/api/value` is not retried after an outage: readouts and the values window stay failed until cursor or range change.
 - Not checked by hand: the 1000×557 small-screen checks (iframe stand-in, plot share 31.3 %); the footer during a legend drag (code read); the 16 px near distance (unit test only); the flat explorer list without `display.groups` (unit test only); L hidden while a cursor line is dragged (unit test only; the browser tool cannot hold a drag); CLI `--wait` with no tab open (exit 6, covered by tests); mouse wheel steps on mice other than Jan's.
 

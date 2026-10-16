@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-060: Strip navigation conventions (2026-10-16)
+
+From the archived change `add-strip-navigation`; details there.
+
+- **Decision:** `Density` gains `grid` (bar width / 400, 9 s at 1 h bars) and `drives` `{from, to, rows}`; one grouping on the grid replaces the bar query (no extra source query). Drive rule: a grid bucket is active at ≥ 1/10 of the fullest one; active runs ≤ 60 s apart merge; a run is a drive only if longer than 2 min (smart451: 5 drives, 3.9–66.3 min; stable under ×½ and ×2 of grid, threshold and merge gap). Every strip action and `,`/`.` sends one `window.setRange` through App's `navigate` (one Back entry; a double-click replaces its first click's entry); drags apply once on release. A window is full, and its body brushes instead of panning, when it covers the recorded data to within 4 px at both ends.
+
 ## D-059: State names at the cursors, state changes on the events line (2026-10-16)
 
 - **Context:** Jan: „it fits her. many signals are state, or have some values defined as state. the coursers shall show the statename. like OFF. and if one drags a signal with stats to horizon. the changes are marked. not all stuff shall go to horizon. automatically only two things (yaml define) IGN and contactor state (not recorded yet)". The DBCs hold 441 `VAL_` tables (h-can 195, hybrid-can 246; parsed, so far used only for SNA); diag states carry their label in `sdlog.signals.text` (`BMS.contactor` „open", `BMS.clamp15` „not active"). Ignition candidates: `CPC_168h.IgnCurMode` (`VAL_` KEYON, CHARGE_KEYON, CHARGE, NONE), `SAM_423h.KL_15` (0/1, no `VAL_`).
