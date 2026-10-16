@@ -96,11 +96,11 @@ During a drag the drop target SHALL be the window under the pointer in any colum
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots while scrolling and after the drop)
 
 ### Requirement: Top row and status strip
-There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle and the option bar and stay visible while the list scrolls. The strip kept reserved below the window list SHALL show the connection state, the revision and the last error message outside a drag, and the "+ New window" zone during a drag, at the same size. Origin: D-025 („more of the screen shows data"); necessary consequence of add-cursors design C7 (the zone's space stays reserved).
+There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle and the option bar and stay visible while the list scrolls. Outside a drag, the strip below the window list SHALL show connection, revision, last error message and the footer (`app-footer`). During a drag the whole strip SHALL be the "+ New window" zone at the same size; only the attribution stays in place. Origin: D-025; add-cursors design C7; Jan's footer request, D-049, add-footer design F5.
 
 #### Scenario: Idle strip
 - **WHEN** the app is connected at revision n and no drag runs
-- **THEN** the bottom strip reads `connected · revision n`, no "KIPscope" top bar is shown, and the top row holds "Signals" followed by the option bar
+- **THEN** the bottom strip starts with `connected · revision n` and ends with `KIPscope · kipp.ing · AAL`, no "KIPscope" top bar is shown, and the top row holds "Signals" followed by the option bar
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Error in the strip
@@ -110,8 +110,13 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 
 #### Scenario: Drag start moves nothing
 - **WHEN** the user presses on an explorer row and drags past the threshold
-- **THEN** the strip shows "+ New window" at the same height as before, and every window's `getBoundingClientRect()` top is the same as just before the drag (±0.5 px)
+- **THEN** the strip shows "+ New window" and the attribution at the same height as before (±0.5 px), and every window's `getBoundingClientRect()` top is the same as just before the drag (±0.5 px)
 - **Evidence:** UI check (rects read before and during the drag, screenshot during the drag)
+
+#### Scenario: Drop on the attribution
+- **WHEN** the user drags the `BS_200h.DVL` explorer row onto the attribution text in the strip and releases there
+- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows DVL, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
+- **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, revision and tab count after); `apps/web/test/drag.test.ts` › "maps drop elements to targets" stays green
 
 #### Scenario: Compact bars
 - **WHEN** the six-window setup is shown at 1440×900 and the list is scrolled to the end

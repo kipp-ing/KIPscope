@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-16, session 6. In flight: `add-footer` (permanent footer with attribution, meta items and measurement info). The fifteen other changes are archived and the main specs describe the running app.
+As of 2026-10-16, session 6. No change in flight; all sixteen changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -19,9 +19,11 @@ As of 2026-10-16, session 6. In flight: `add-footer` (permanent footer with attr
 | Number format | [number-format](../openspec/specs/number-format/spec.md) | 3 (or 4) significant digits with SI prefixes everywhere people read numbers |
 | Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
+| Footer | [app-footer](../openspec/specs/app-footer/spec.md) | Permanent bottom bar: status, measurement info, source/catalog/zone/build items, `KIPscope · kipp.ing · AAL` at the far right |
+| Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness). Decisions D-001 … D-049: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer). Decisions D-001 … D-051: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -44,7 +46,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Archived `harden-robustness` (D-045 … D-047).
 - Renamed letsview to KIPscope (D-048); new home https://github.com/kipp-ing/KIPscope, local folder `~/dev/repos/KIPscope`. The carserver ClickHouse user stays `letsview`.
 - License: Attribution Assurance License, GPG-signed (D-049).
-- Wrote `add-footer` with Jan's answers (Q1–Q9).
+- Built and archived `add-footer` (D-050, D-051) in two rounds plus a wording change; Jan: „looks great". The bar shows `KIPscope · kipp.ing · AAL`; name and profession sit in the `kipp.ing` tooltip, the full attribution in `kipscope --help` and the start log.
 
 ## Next
 

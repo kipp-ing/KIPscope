@@ -4,6 +4,18 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-051: Measurement info (2026-10-16)
+
+From the archived change `add-footer`; details there.
+
+- **Decision:** `workspace.measurement {name, object, meta[{key, value}]}`, commands `measurement.set`, `measurement.setMeta`, `measurement.clear`; limits 120 / 40 / 200 characters, 8 entries; the project file's `measurement` section gives the start value, commands win until restart, nothing writes the file. (F6, F7)
+
+## D-050: Footer conventions (2026-10-16)
+
+From the archived change `add-footer`; details there.
+
+- **Decision:** The status strip is the footer: status, measurement info, automatic items (source by ping, catalog, browser zone, server commit at start) and at the far right `KIPscope · kipp.ing · AAL` in 11 px muted text, name and profession in the `kipp.ing` tooltip (Jan revised Q1); `/api/meta` and `/api/license` (from `LICENSE`); items hide whole in the order build, zone, catalog, meta entries, source, object, name; the attribution is never cut and wraps to a second line instead; `kipscope --help` and the server start log end with `attributionText()`. (F1–F5, F8)
+
 ## D-049: Attribution Assurance License (2026-10-16)
 
 - **Decision:** Jan: KIPscope is licensed under the AAL (SPDX `AAL`). Author attribution: Jan Kipping, Agentic engineer, https://kipp.ing, "efficient agentic engineering". `LICENSE` holds the text, `LICENSE.asc` the GPG-clearsigned copy clause 1 asks for, `KEYS.asc` the public key (ed25519, `1E3BF6DE3CC6227749622E8EA53393CE9B74E4F7`, valid until 2028-10-15). Every package.json says `"license": "AAL"`.
