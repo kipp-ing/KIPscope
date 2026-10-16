@@ -113,6 +113,8 @@ export function SignalExplorer({
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Set while a list click focuses the search: its text is not selected then. */
+  const quietFocus = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const openTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -251,6 +253,17 @@ export function SignalExplorer({
       return;
     setSelection(selectClick(selection, items, i, clickMode(e, isMacPlatform(navigator.platform))));
     setActive(i);
+    keepKeys();
+  };
+
+  /** Focus into the search after a click in the list, so arrows, Shift+Arrow and Enter reach it
+   * (the list keeps no focus, D-065); the query text stays unselected. */
+  const keepKeys = () => {
+    const input = inputRef.current;
+    if (!input || document.activeElement === input) return;
+    quietFocus.current = true;
+    input.focus({ preventScroll: true });
+    quietFocus.current = false;
   };
 
   // After an arrow key: keep the active item in view and let the card follow it (rows only).
@@ -379,7 +392,7 @@ export function SignalExplorer({
         onChange={(e) => changeQuery(e.target.value)}
         onKeyDown={onKeyDown}
         // Typing after focusing replaces the last query.
-        onFocus={(e) => e.currentTarget.select()}
+        onFocus={(e) => quietFocus.current || e.currentTarget.select()}
         onBlur={() => card?.byKey && closeCard()}
         aria-label="Search signals"
         role="combobox"
@@ -435,7 +448,10 @@ export function SignalExplorer({
                   aria-selected={false}
                   aria-expanded={item.open}
                   className={i === activeItem ? "group-head active" : "group-head"}
-                  onClick={() => toggleGroup(item.name, i)}
+                  onClick={() => {
+                    toggleGroup(item.name, i);
+                    keepKeys();
+                  }}
                 >
                   <span className="chevron" aria-hidden="true">
                     {item.open ? "▾" : "▸"}

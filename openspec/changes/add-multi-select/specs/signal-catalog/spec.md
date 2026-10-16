@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: No text selection in the explorer list
-A click, double-click, Shift-click or Ctrl/Cmd-click anywhere in the explorer's result list (rows, group headers, "Show more") SHALL NOT select page text, and a press in the list SHALL NOT move the focus. The search field SHALL stay a normal text field. Origin: D-065 (quoted in design.md); focus: necessary consequence of design M1, needed for Shift+Arrow after a click.
+A click, double-click, Shift-click or Ctrl/Cmd-click anywhere in the explorer's result list (rows, group headers, "Show more") SHALL NOT select page text, and a press in the list SHALL NOT take the focus; a click on a row or group header SHALL move the focus into the search without selecting its text, so arrows, Shift+Arrow and Enter work after a click. The search field SHALL stay a normal text field. Origin: D-065 (quoted in design.md); focus: Jan's check 2026-10-17 (Shift+Arrow after a click).
 
 #### Scenario: Presses in the list select nothing
 - **WHEN** on smart451 at 1440×900 the user types `speed`, then clicks the padding right of `DVL`'s unit, double-clicks the name `DVR`, Shift-clicks the unit of `DHL`, Ctrl-clicks (Cmd on macOS) the SNA-dot column of `V_ANZ`, and double-clicks the group header `ESP`

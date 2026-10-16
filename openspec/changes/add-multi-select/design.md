@@ -33,7 +33,7 @@
 ### M1: No text selection in the list (D-065)
 
 - `styles.css`: `.explorer .results { user-select: none; -webkit-user-select: none; }`. It covers rows, group headers and "Show more", not the search field, the "Add to" select or the count.
-- `explorer/selection.ts` exports `preventListPress(e: { button: number; preventDefault(): void }): void`, which calls `e.preventDefault()` for every button. `SignalExplorer` attaches it as `onMouseDown` of the `.results` element. Effect: no text selection starts on press, double-click or Shift-click, and focus stays where it was (in the search after typing, so Enter and Shift+Arrow keep working after a click). Pointer events, `click` and the App's document-level drag listeners are unaffected (`mousedown`'s default is selection and focus, not event dispatch).
+- `explorer/selection.ts` exports `preventListPress(e: { button: number; preventDefault(): void }): void`, which calls `e.preventDefault()` for every button. `SignalExplorer` attaches it as `onMouseDown` of the `.results` element. Effect: no text selection starts on press, double-click or Shift-click, and the list never takes focus. A click on a row or group header then focuses the search without selecting its text (`keepKeys`), so arrows, Shift+Arrow and Enter work after a click even when the user never typed (Jan's check 2026-10-17). Pointer events, `click` and the App's document-level drag listeners are unaffected (`mousedown`'s default is selection and focus, not event dispatch).
 - `noselect.ts` is unchanged; drags still hold it.
 
 Alternative rejected: blocking `selectstart` on the list. It stops a selection starting in the list, but a Shift-click there still extends a selection anchored elsewhere in Chrome, and the press still blurs the search.
