@@ -10,7 +10,7 @@ import {
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";
-import type { ExplorerDragSource } from "../chart/drag.ts";
+import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
 import { isSearchKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
 import {
@@ -25,6 +25,17 @@ import {
 import { explorerItems, firstSignal } from "./groups.ts";
 import { Highlight } from "./Highlight.tsx";
 import { SignalCard } from "./SignalCard.tsx";
+import {
+  clickMode,
+  extendTo,
+  isMacPlatform,
+  NO_SELECTION,
+  preventListPress,
+  pruneSelection,
+  type Selection,
+  selectClick,
+  selectedInOrder,
+} from "./selection.ts";
 
 export { NEW_WINDOW };
 
@@ -35,6 +46,8 @@ interface Props {
   /** All windows; "Add to" lists timeseries and values windows by windowTitle. */
   windows: WorkspaceWindow[];
   onAdd: (signal: SignalInfo, target: string) => void;
+  /** `+` or Enter on a selected row of a selection of two or more (design M5): the selection in list order. */
+  onAddMany: (signalIds: string[], target: string) => void;
   onSeen: (signals: SignalInfo[]) => void;
   /** Pointer down on a row's name; App starts its signal drag after DRAG_THRESHOLD_PX (window change D5). Absent → rows not draggable. */
   onDragStart?: (source: ExplorerDragSource, event: React.PointerEvent) => void;
@@ -73,6 +86,7 @@ interface Card {
 export function SignalExplorer({
   windows,
   onAdd,
+  onAddMany,
   onSeen,
   onDragStart,
   dragging,
@@ -95,6 +109,8 @@ export function SignalExplorer({
   /** Groups flipped since the last query change (design G6); not remembered. */
   const [toggled, setToggled] = useState<ReadonlySet<string>>(() => new Set());
   const [card, setCard] = useState<Card | undefined>();
+  /** Selected signal rows (design M5); cleared by a query change, pruned when a group closes. */
+  const [selection, setSelection] = useState<Selection>(NO_SELECTION);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -102,6 +118,8 @@ export function SignalExplorer({
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   /** Set by arrow keys: the next render scrolls the active row into view and moves the card. */
   const keyMoved = useRef(false);
+  /** Where the pointer went down on a row; a click after a move of DRAG_THRESHOLD_PX ends a drag. */
+  const pressAt = useRef<{ index: number; x: number; y: number }>(undefined);
   /** Time of the last scroll caused by arrow keys; such scrolls keep the card open. */
   const keyScrollAt = useRef(0);
   const draggingRef = useRef(dragging);
@@ -198,18 +216,41 @@ export function SignalExplorer({
     setActive(undefined);
     setToggled(new Set());
     setShown(CHUNK);
+    setSelection(NO_SELECTION);
     closeCard();
   };
 
   /** Opens or closes a group; the header at item i stays active. */
   const toggleGroup = (name: string, i: number) => {
-    setToggled((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(name)) next.add(name);
-      return next;
-    });
+    const next = new Set(toggled);
+    if (!next.delete(name)) next.add(name);
+    setToggled(next);
+    // A closed group's rows leave the selection (design M5).
+    setSelection(
+      pruneSelection(selection, explorerItems(matches, query.trim() !== "", grouped, next)),
+    );
     setActive(i);
     closeCard();
+  };
+
+  /** `+` and Enter: the whole selection when the row is in one of two or more, else the row (L3). */
+  const addSet = (s: SignalInfo) => {
+    const selected = selectedInOrder(selection, items);
+    if (selection.ids.has(s.id) && selected.length >= 2) onAddMany(selected, target);
+    else onAdd(s, target);
+  };
+
+  /** A click on signal row i selects (L1) and makes it active; a click that ends a drag does nothing. */
+  const clickRow = (e: React.MouseEvent, i: number) => {
+    const press = pressAt.current;
+    if (
+      press &&
+      press.index === i &&
+      Math.hypot(e.clientX - press.x, e.clientY - press.y) >= DRAG_THRESHOLD_PX
+    )
+      return;
+    setSelection(selectClick(selection, items, i, clickMode(e, isMacPlatform(navigator.platform))));
+    setActive(i);
   };
 
   // After an arrow key: keep the active item in view and let the card follow it (rows only).
@@ -282,6 +323,7 @@ export function SignalExplorer({
         );
         if (next === activeItem) return;
         if (next >= visible) setShown(nextShown(items.length, shown));
+        if (e.shiftKey) setSelection(extendTo(selection, items, activeItem, next));
         keyMoved.current = true;
         setActive(next);
         return;
@@ -291,7 +333,7 @@ export function SignalExplorer({
         if (!item) return;
         e.preventDefault();
         if (item.kind === "group") toggleGroup(item.name, activeItem);
-        else onAdd(item.match.signal, target);
+        else addSet(item.match.signal);
         return;
       }
     }
@@ -370,8 +412,15 @@ export function SignalExplorer({
       ) : (
         !error && <p className="count">Loading catalog…</p>
       )}
-      <div className="results" onScroll={onListScroll}>
-        <div ref={listRef} id={listId} role="listbox" aria-label="Signals">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: only blocks text selection and focus loss (D-065) */}
+      <div className="results" onScroll={onListScroll} onMouseDown={preventListPress}>
+        <div
+          ref={listRef}
+          id={listId}
+          role="listbox"
+          aria-label="Signals"
+          aria-multiselectable="true"
+        >
           {items.slice(0, visible).map((item, i) => {
             if (item.kind === "group") {
               return (
@@ -383,7 +432,7 @@ export function SignalExplorer({
                   key={`g:${item.name}`}
                   id={optionId(i)}
                   role="option"
-                  aria-selected={i === activeItem}
+                  aria-selected={false}
                   aria-expanded={item.open}
                   className={i === activeItem ? "group-head active" : "group-head"}
                   onClick={() => toggleGroup(item.name, i)}
@@ -398,6 +447,7 @@ export function SignalExplorer({
             }
             const m = item.match;
             const s = m.signal;
+            const selected = selection.ids.has(s.id);
             // Physical SNA values are readings of the signal: number-format with unit (design N9).
             const sna =
               s.sna &&
@@ -405,17 +455,22 @@ export function SignalExplorer({
             return (
               // Options of an aria-activedescendant listbox: focus stays in the combobox.
               // biome-ignore lint/a11y/useFocusableInteractive: see above
+              // biome-ignore lint/a11y/useKeyWithClickEvents: Shift+Arrow in the search selects by keyboard
               <div
                 key={`s:${s.id}`}
                 id={optionId(i)}
                 role="option"
-                aria-selected={i === activeItem}
+                aria-selected={selected}
                 aria-describedby={card?.index === i ? cardId : undefined}
-                className={i === activeItem ? "row active" : "row"}
+                className={`row${i === activeItem ? " active" : ""}${selected ? " selected" : ""}`}
                 onPointerEnter={() => requestCard(i, false)}
                 onPointerLeave={releaseCard}
                 // A click or a drag start on the row closes the card; it reopens on the next row entered.
-                onPointerDown={closeCard}
+                onPointerDown={(e) => {
+                  pressAt.current = { index: i, x: e.clientX, y: e.clientY };
+                  closeCard();
+                }}
+                onClick={(e) => clickRow(e, i)}
               >
                 {sna ? (
                   <span
@@ -432,7 +487,12 @@ export function SignalExplorer({
                   className={onDragStart ? "name draggable" : "name"}
                   title={s.displayName !== undefined ? s.name : undefined}
                   onPointerDown={(e) => {
-                    if (e.button === 0 && onDragStart) onDragStart({ signalId: s.id }, e);
+                    if (e.button !== 0 || !onDragStart) return;
+                    // A selected row of two or more drags the selection (L2).
+                    const list = selected ? selectedInOrder(selection, items) : [];
+                    const source: ExplorerDragSource =
+                      list.length >= 2 ? { signalId: s.id, signalIds: list } : { signalId: s.id };
+                    onDragStart(source, e);
                   }}
                 >
                   <Highlight text={shownName(s)} ranges={m.shown} />
@@ -450,7 +510,10 @@ export function SignalExplorer({
                   // Not a tab stop: Enter in the search adds the active row.
                   tabIndex={-1}
                   onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => onAdd(s, target)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addSet(s);
+                  }}
                 >
                   +
                 </button>

@@ -7,6 +7,7 @@ export * from "./events.ts";
 export * from "./localtime.ts";
 export * from "./meta.ts";
 export * from "./numfmt.ts";
+export * from "./placement.ts";
 export * from "./search.ts";
 export * from "./series.ts";
 export * from "./signals.ts";

@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   canAdd,
+  canAddAny,
   canDrop,
   DRAG_THRESHOLD_PX,
   DROP_EVENTS,
@@ -18,7 +19,9 @@ import {
   dropCommand,
   dropStateFor,
   dropTargetOf,
+  type ExplorerDragSource,
   eventsDrop,
+  eventsDropMany,
   isCopy,
   isLegendSource,
 } from "../src/chart/drag.ts";
@@ -396,5 +399,52 @@ describe("drop below the windows", () => {
     expect(canDrop(source, below, windows, unitOf)).toBe(true);
     expect(canAdd("c/V_ANZ", below, windows, unitOf)).toBe(true);
     expect(canAdd("c/V_ANZ", below, [], unitOf)).toBe(true);
+  });
+
+  it("highlights a window for a selection while one signal is new", () => {
+    // wA shows both selected signals; wE shows one of them; wD shows both plus another.
+    const wins = [win("wA", ["c/V_ANZ", "c/DVL"]), win("wD", ["c/V_ANZ", "c/DVL", "c/EAC"])];
+    const showsOne = [win("wE", ["c/V_ANZ"])];
+    const sel: ExplorerDragSource = { signalId: "c/V_ANZ", signalIds: ["c/V_ANZ", "c/DVL"] };
+    const only = { kind: "window", windowId: "wA" } as const;
+    expect(dropStateFor(sel, "wE", showsOne, unitOf)).toBe("target");
+    expect(canAddAny(sel.signalIds ?? [], { kind: "window", windowId: "wE" }, showsOne)).toBe(true);
+    // A window showing all of them is not highlighted.
+    expect(dropStateFor(sel, "wA", wins, unitOf)).toBe(undefined);
+    expect(canAddAny(sel.signalIds ?? [], only, wins)).toBe(false);
+    expect(dropStateFor(sel, "wD", wins, unitOf)).toBe(undefined);
+    // A window with four other units is a target, never "refused": overflow handles the units.
+    const crowded = [win("wC", ["c/PTC", "c/T_MOT", "c/DNMOT", "c/NOUNIT"])];
+    expect(dropStateFor(sel, "wC", crowded, unitOf)).toBe("target");
+    // A single-signal explorer source still gets "refused" there.
+    expect(dropStateFor({ signalId: "c/V_ANZ" }, "wC", crowded, unitOf)).toBe("refused");
+    // "+ New window" always accepts, the strip is eventsDrop's.
+    expect(canAddAny(["c/V_ANZ", "c/DVL"], { kind: "new" }, [])).toBe(true);
+    expect(canAddAny(["c/V_ANZ", "c/DVL"], { kind: "new", place: "below" }, wins)).toBe(true);
+    expect(canAddAny(["c/V_ANZ", "c/DVL"], { kind: "events" }, wins)).toBe(false);
+    expect(canAddAny(["c/V_ANZ"], { kind: "window", windowId: "nope" }, wins)).toBe(false);
+  });
+
+  it("adds the selection's new state signals on the strip", () => {
+    const info = (name: string, states?: SignalInfo["states"]): SignalInfo => ({
+      id: `car/${name}`,
+      dataRef: "car",
+      name,
+      ...(states ? { states } : {}),
+    });
+    const states = "labels" as const;
+    const infos: Record<string, SignalInfo> = {
+      "car/S1": info("S1", states),
+      "car/PLAIN": info("PLAIN"),
+      "car/S2": info("S2", states),
+      "car/S3": info("S3", states),
+    };
+    const infoOf = (id: string) => infos[id];
+    const ws = { ...EMPTY_WORKSPACE, eventSignals: ["car/S3"] };
+    expect(
+      eventsDropMany(["car/S1", "car/PLAIN", "car/S3", "car/S2", "car/MISSING"], infoOf, ws),
+    ).toEqual(["car/S1", "car/S2"]);
+    expect(eventsDropMany(["car/PLAIN", "car/S3"], infoOf, ws)).toEqual([]);
+    expect(eventsDropMany([], infoOf, EMPTY_WORKSPACE)).toEqual([]);
   });
 });

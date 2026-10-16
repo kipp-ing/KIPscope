@@ -11,22 +11,26 @@ import {
   navAnchor,
   panBy,
   parseSignalId,
+  placeSignals,
   type RenderError,
   resolveTimeNav,
   type SignalInfo,
   shownName,
   signalColor,
   spanAround,
+  type Workspace,
   zoomAround,
 } from "@kipscope/shared";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
+import { runPlan } from "./addSignals.ts";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar } from "./bar/OptionBar.tsx";
 import {
   type AnyDragSource,
   canAdd,
+  canAddAny,
   canDrop,
   DRAG_THRESHOLD_PX,
   DROP_NEW_BELOW,
@@ -37,6 +41,8 @@ import {
   dropStateFor,
   dropTargetOf,
   eventsDrop,
+  eventsDropMany,
+  ghostPosition,
   isCopy,
   isLegendSource,
 } from "./chart/drag.ts";
@@ -93,6 +99,11 @@ interface Drag {
 /** Auto-scroll band below the top row and above the status strip (design C7, L3), and its top speed per frame. */
 const EDGE_PX = 48;
 const EDGE_SCROLL_PX = 24;
+
+/** The explorer selection a drag carries (two or more signals, M4); undefined for one row. */
+function selectionOf(source: AnyDragSource): readonly string[] | undefined {
+  return isLegendSource(source) ? undefined : source.signalIds;
+}
 
 /** Drop target under a viewport point: a window section, the "+ New window" strip or the free area
  * below the windows (design B1). */
@@ -361,6 +372,37 @@ export function App() {
   // The drag listeners outlive a render; they add through the current function.
   const addSignalRef = useRef(addSignal);
   addSignalRef.current = addSignal;
+
+  // A selection of two or more (D-066): placed on the live workspace (placeSignals), sent in order.
+  const addSignals = async (signalIds: string[], target: string) => {
+    const only = signalIds.length === 1 ? infos.current.get(signalIds[0] ?? "") : undefined;
+    if (only) return addSignal(only, target);
+    const ws = liveRef.current.workspace;
+    if (!ws) return;
+    const targetWindow =
+      target === NEW_WINDOW ? undefined : ws.windows.find((w) => w.id === target);
+    if (target !== NEW_WINDOW && !targetWindow) return;
+    const plan = placeSignals(signalIds, targetWindow, unitOf);
+    // Today's new-window rule per created window: while linked, the shared range once a timeseries
+    // window exists (the first one this add creates counts); otherwise its signals' extent.
+    const linkedNow = ws.linkTime ?? true;
+    let haveTimeseries = ws.windows.some(isTimeseries);
+    try {
+      const created = await runPlan(plan, targetWindow?.id, {
+        command,
+        rangeFor: async (ids) => {
+          if (linkedNow && haveTimeseries) return undefined;
+          haveTimeseries = true;
+          return extentRange(await Promise.all(ids.map((id) => fetchExtent(id))));
+        },
+      });
+      if (created[0]) setReveal(created[0]);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const addSignalsRef = useRef(addSignals);
+  addSignalsRef.current = addSignals;
 
   // Values row onto "+ New window" while no timeseries window exists: create plus move (design C6).
   const moveToNewWindow = async (source: DragSource, copy: boolean) => {
@@ -757,7 +799,8 @@ export function App() {
     (source: AnyDragSource, event: React.PointerEvent) => {
       if (event.button !== 0 || dragRef.current) return;
       const info = infos.current.get(source.signalId);
-      const label = info ? shownName(info) : source.signalId;
+      const many = selectionOf(source);
+      const label = many ? `${many.length} signals` : info ? shownName(info) : source.signalId;
       const d: Drag = {
         source,
         label,
@@ -848,6 +891,25 @@ export function App() {
         const ws = liveRef.current.workspace;
         if (!target || !ws) return;
         // Any signal dropped on the strip goes on the events line (V10); nothing moves.
+        const many = selectionOf(cur.source);
+        if (many) {
+          if (target.kind === "events") {
+            // Each new state signal of the selection in list order, until the first refusal (L5).
+            const ids = eventsDropMany(many, (id) => infos.current.get(id), ws);
+            void (async () => {
+              for (const signalId of ids) {
+                if (!(await command({ type: "events.addSignal", signalId })).ok) return;
+              }
+            })();
+            return;
+          }
+          if (!canAddAny(many, target, ws.windows)) return;
+          void addSignalsRef.current(
+            [...many],
+            target.kind === "new" ? NEW_WINDOW : target.windowId,
+          );
+          return;
+        }
         if (target.kind === "events") {
           const signalId = cur.source.signalId;
           if (eventsDrop(infos.current.get(signalId), ws).ok)
@@ -918,12 +980,22 @@ export function App() {
     activeDrag && dropStateFor(activeDrag.source, windowId, windows, unitOf);
   const dropActionProp = activeDrag && !legendDrag ? { dropAction: "add" as const } : {};
   // Over the strip: what a drop on the events line would do (V10).
+  const dragMany = activeDrag && selectionOf(activeDrag.source);
+  // A selection over the strip (M4): the one new state signal's name, else "<k> signals".
+  const selectionStripDrop = (ids: readonly string[], ws: Workspace): StripDrop => {
+    const fresh = eventsDropMany(ids, (id) => infos.current.get(id), ws);
+    const one = fresh.length === 1 ? infos.current.get(fresh[0] ?? "") : undefined;
+    if (fresh.length === 0) return { name: `${ids.length} signals`, ok: false, reason: "none_new" };
+    return { name: one ? shownName(one) : `${fresh.length} signals`, ok: true };
+  };
   const stripDrop: StripDrop | undefined =
     activeDrag?.target?.kind === "events" && workspace
-      ? {
-          name: activeDrag.label,
-          ...eventsDrop(infos.current.get(activeDrag.source.signalId), workspace),
-        }
+      ? dragMany
+        ? selectionStripDrop(dragMany, workspace)
+        : {
+            name: activeDrag.label,
+            ...eventsDrop(infos.current.get(activeDrag.source.signalId), workspace),
+          }
       : undefined;
   const overValid =
     activeDrag?.target !== undefined &&
@@ -931,17 +1003,21 @@ export function App() {
       ? stripDrop.ok
       : isLegendSource(activeDrag.source)
         ? canDrop(activeDrag.source, activeDrag.target, windows, unitOf)
-        : canAdd(activeDrag.source.signalId, activeDrag.target, windows, unitOf));
+        : dragMany
+          ? canAddAny(dragMany, activeDrag.target, windows)
+          : canAdd(activeDrag.source.signalId, activeDrag.target, windows, unitOf));
   const newTarget = activeDrag?.target?.kind === "new" ? activeDrag.target : undefined;
   const belowOver = newTarget?.place === "below";
   const stripOver = newTarget !== undefined && !belowOver;
-  // Over another window that already shows the dragged signal: say why the drop is refused.
+  // Over another window that already shows the dragged signal (all of a selection): say why the
+  // drop is refused.
   const over = activeDrag?.target?.kind === "window" ? activeDrag.target.windowId : undefined;
+  const dragIds = activeDrag ? (dragMany ?? [activeDrag.source.signalId]) : [];
   const overShown =
     activeDrag !== undefined &&
     !(isLegendSource(activeDrag.source) && over === activeDrag.source.windowId) &&
     windows.some(
-      (w) => w.id === over && w.signals.some((s) => s.signalId === activeDrag.source.signalId),
+      (w) => w.id === over && dragIds.every((id) => w.signals.some((s) => s.signalId === id)),
     );
 
   // Render acknowledgement (design H6): one Acknowledger per tab; `send` is stable.
@@ -966,6 +1042,22 @@ export function App() {
 
   // A file dropped anywhere on the page would navigate the tab away (design H8).
   useEffect(() => ignoreFileDrops(document), []);
+
+  // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
+  const ghostRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ghostRef.current;
+    if (!el || !activeDrag) return;
+    const at = ghostPosition(
+      activeDrag,
+      el.offsetWidth,
+      el.offsetHeight,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    el.style.left = `${at.left}px`;
+    el.style.top = `${at.top}px`;
+  });
 
   const appClass = [
     "app",
@@ -995,6 +1087,7 @@ export function App() {
       <SignalExplorer
         windows={windows}
         onAdd={addSignal}
+        onAddMany={addSignals}
         onSeen={remember}
         onDragStart={onDragStart}
         dragging={activeDrag !== undefined}
@@ -1138,7 +1231,7 @@ export function App() {
         />
       </div>
       {activeDrag && (
-        <div className="drag-ghost" style={{ left: activeDrag.x + 12, top: activeDrag.y + 12 }}>
+        <div className="drag-ghost" ref={ghostRef}>
           <span className="swatch" style={{ background: colorOf(activeDrag.source.signalId) }} />
           {activeDrag.label}
           <span className="drag-mode">

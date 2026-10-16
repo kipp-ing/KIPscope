@@ -146,8 +146,10 @@ body {
 }
 
 /* The list scrolls on its own so search, target and count stay in view; its divider spans the
-   sidebar, its rows keep the explorer's 8 px inset. */
+   sidebar, its rows keep the explorer's 8 px inset. No press in it selects page text (D-065). */
 .explorer .results {
+  user-select: none;
+  -webkit-user-select: none;
   flex: 1;
   min-height: 0;
   margin: 0 -8px;
@@ -176,6 +178,11 @@ body {
   background: var(--accent-soft);
 }
 
+/* Selected rows (design M6): a 3 px accent bar; the active row keeps its fill, so both read apart. */
+.explorer .row.selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .explorer .sna-dot {
   flex-shrink: 0;
   width: 7px;
@@ -198,7 +205,8 @@ body {
   color: var(--name);
 }
 
-.explorer .row.active .name {
+.explorer .row.active .name,
+.explorer .row.selected .name {
   color: var(--accent-ink);
 }
 

@@ -14,6 +14,7 @@ import {
   stripDataRef,
   stripLabel,
 } from "../src/time/strip.ts";
+import { stripDropText } from "../src/time/TimeStrip.tsx";
 
 const S = 1_000_000_000n;
 const MIN = 60n * S;
@@ -130,5 +131,18 @@ describe("stripDataRef", () => {
     expect(stripDataRef(ws([ts("w1", ["smart451/A/B"])]))).toBe("smart451");
     // Windows without any signal.
     expect(stripDataRef(ws([ts("w1", []), values("w2", [])]))).toBeUndefined();
+  });
+});
+
+describe("strip drop text for a selection", () => {
+  it("names a selection that has no new state signals", () => {
+    expect(stripDropText({ name: "4 signals", ok: false, reason: "none_new" })).toBe(
+      "None of 4 signals has new named states",
+    );
+    // The one-signal wording stays as it was.
+    expect(stripDropText({ name: "BLS", ok: true })).toBe("Drop to mark state changes of BLS");
+    expect(stripDropText({ name: "3 signals", ok: true })).toBe(
+      "Drop to mark state changes of 3 signals",
+    );
   });
 });

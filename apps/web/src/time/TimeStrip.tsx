@@ -97,12 +97,13 @@ export interface StripEvents {
 /** A signal dragged over the strip (add-events V10): eventsDrop's answer and the signal's name. */
 export type StripDrop = { name: string } & (
   | { ok: true }
-  | { ok: false; reason: "no_states" | "already_listed" }
+  | { ok: false; reason: "no_states" | "already_listed" | "none_new" }
 );
 
 /** Head text of a drag over the strip (time-strip "Signal drop on the strip"). */
 export function stripDropText(d: StripDrop): string {
   if (d.ok) return `Drop to mark state changes of ${d.name}`;
+  if (d.reason === "none_new") return `None of ${d.name} has new named states`;
   return d.reason === "no_states"
     ? `${d.name} has no named states`
     : `${d.name} is already on the events line`;

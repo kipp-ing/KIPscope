@@ -1,0 +1,123 @@
+import { readFileSync } from "node:fs";
+import type { SignalMatch } from "@kipscope/shared";
+import { describe, expect, it } from "vitest";
+import type { ExplorerItem } from "../src/explorer/groups.ts";
+import {
+  clickMode,
+  extendTo,
+  isMacPlatform,
+  NO_SELECTION,
+  preventListPress,
+  pruneSelection,
+  type Selection,
+  selectClick,
+  selectedInOrder,
+} from "../src/explorer/selection.ts";
+
+const header = (name: string): ExplorerItem => ({ kind: "group", name, count: 2, open: true });
+const row = (id: string): ExplorerItem => ({
+  kind: "signal",
+  match: { signal: { id } } as unknown as SignalMatch,
+});
+
+// 0 G1, 1 a, 2 b, 3 G2, 4 c, 5 d
+const items: ExplorerItem[] = [header("G1"), row("a"), row("b"), header("G2"), row("c"), row("d")];
+const sel = (ids: string[], anchor?: string): Selection => ({
+  ids: new Set(ids),
+  ...(anchor !== undefined ? { anchor } : {}),
+});
+const idsOf = (s: Selection) => [...s.ids].sort();
+
+describe("explorer selection", () => {
+  it("selects one row on a plain click", () => {
+    const first = selectClick(NO_SELECTION, items, 2, "plain");
+    expect(idsOf(first)).toEqual(["b"]);
+    expect(first.anchor).toBe("b");
+    // A plain click replaces an existing multi-selection.
+    const second = selectClick(sel(["a", "b", "c"], "a"), items, 5, "plain");
+    expect(idsOf(second)).toEqual(["d"]);
+    expect(second.anchor).toBe("d");
+  });
+
+  it("toggles with Ctrl, or Cmd on macOS", () => {
+    const e = (o: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }>) => ({
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      ...o,
+    });
+    expect(clickMode(e({ ctrlKey: true }), false)).toBe("toggle");
+    expect(clickMode(e({ metaKey: true }), true)).toBe("toggle");
+    expect(clickMode(e({ metaKey: true }), false)).toBe("plain");
+    expect(clickMode(e({ ctrlKey: true }), true)).toBe("plain");
+    expect(clickMode(e({}), false)).toBe("plain");
+    expect(clickMode(e({ shiftKey: true }), true)).toBe("range");
+    expect(clickMode(e({ shiftKey: true, ctrlKey: true }), false)).toBe("range");
+    expect(isMacPlatform("MacIntel")).toBe(true);
+    expect(isMacPlatform("Win32")).toBe(false);
+    expect(isMacPlatform("Linux x86_64")).toBe(false);
+
+    const one = selectClick(NO_SELECTION, items, 1, "plain");
+    const two = selectClick(one, items, 4, "toggle");
+    expect(idsOf(two)).toEqual(["a", "c"]);
+    expect(two.anchor).toBe("c");
+    const off = selectClick(two, items, 1, "toggle");
+    expect(idsOf(off)).toEqual(["c"]);
+  });
+
+  it("selects a range of signal rows across groups with Shift", () => {
+    const start = selectClick(NO_SELECTION, items, 2, "plain");
+    const range = selectClick(start, items, 5, "range");
+    expect(idsOf(range)).toEqual(["b", "c", "d"]); // header G2 is skipped
+    expect(range.anchor).toBe("b"); // anchor kept
+    // Backwards from the same anchor.
+    const back = selectClick(start, items, 1, "range");
+    expect(idsOf(back)).toEqual(["a", "b"]);
+    // A second Shift-click re-ranges from the same anchor instead of growing.
+    expect(idsOf(selectClick(range, items, 4, "range"))).toEqual(["b", "c"]);
+    // An anchor that is not in the list counts as the clicked row.
+    expect(idsOf(selectClick(sel(["gone"], "gone"), items, 4, "range"))).toEqual(["c"]);
+  });
+
+  it("extends the range with Shift+Arrow", () => {
+    const anchored = sel(["b"], "b");
+    expect(idsOf(extendTo(anchored, items, 2, 3))).toEqual(["b"]); // onto the header
+    expect(idsOf(extendTo(anchored, items, 3, 4))).toEqual(["b", "c"]);
+    expect(idsOf(extendTo(sel(["b", "c"], "b"), items, 4, 3))).toEqual(["b"]);
+    expect(idsOf(extendTo(anchored, items, 2, 1))).toEqual(["a", "b"]); // across the anchor
+    // No anchor: the signal at `from`, else the one at `to`.
+    expect(idsOf(extendTo(NO_SELECTION, items, 1, 2))).toEqual(["a", "b"]);
+    expect(idsOf(extendTo(NO_SELECTION, items, 0, 1))).toEqual(["a"]);
+    // Nothing to anchor on: unchanged.
+    expect(extendTo(NO_SELECTION, items, 0, 3)).toEqual(NO_SELECTION);
+  });
+
+  it("lists the selection in list order and drops hidden rows", () => {
+    const picked = sel(["d", "a", "c", "b"], "d");
+    expect(selectedInOrder(picked, items)).toEqual(["a", "b", "c", "d"]);
+    // Group G2 closes: c and d are no signal items any more.
+    const closed: ExplorerItem[] = [
+      header("G1"),
+      row("a"),
+      row("b"),
+      { kind: "group", name: "G2", count: 2, open: false },
+    ];
+    expect(selectedInOrder(picked, closed)).toEqual(["a", "b"]);
+    const pruned = pruneSelection(picked, closed);
+    expect(idsOf(pruned)).toEqual(["a", "b"]);
+    expect(pruned.anchor).toBeUndefined(); // anchor d was dropped
+    expect(pruneSelection(sel(["a", "d"], "a"), closed).anchor).toBe("a");
+  });
+
+  it("keeps presses in the list from selecting text", () => {
+    for (const button of [0, 1, 2]) {
+      let prevented = 0;
+      preventListPress({ button, preventDefault: () => prevented++ });
+      expect(prevented).toBe(1);
+    }
+    const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+    const rule = /\.explorer \.results\s*\{([^}]*)\}/.exec(css);
+    expect(rule?.[1]).toMatch(/user-select:\s*none/);
+    expect(rule?.[1]).toMatch(/-webkit-user-select:\s*none/);
+  });
+});

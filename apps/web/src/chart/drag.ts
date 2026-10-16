@@ -55,6 +55,16 @@ export function eventsDrop(
   return { ok: true };
 }
 
+/** A selection dropped on the strip (L5): the IDs whose info has states and that are not listed yet,
+ * in order; the others are skipped. */
+export function eventsDropMany(
+  signalIds: readonly string[],
+  infoOf: (id: string) => SignalInfo | undefined,
+  ws: Workspace,
+): string[] {
+  return signalIds.filter((id) => eventsDrop(infoOf(id), ws).ok);
+}
+
 /** Pointer movement before a press on a legend grip becomes a drag. */
 export const DRAG_THRESHOLD_PX = 4;
 
@@ -104,7 +114,9 @@ export function dropCommand(
 
 /** A signal dragged out of the explorer (D-020): no source window, a drop always adds. */
 export interface ExplorerDragSource {
-  signalId: string;
+  signalId: string; // the pressed row (ghost swatch; single-signal paths)
+  /** Set only for a selection of two or more: the selection in list order, including signalId. */
+  signalIds?: readonly string[];
 }
 
 /** Anything App drags: a legend or values row (D5, C7) or an explorer row. */
@@ -140,12 +152,25 @@ export function canAdd(
   return !tooManyUnits(w, signalId, unitOf);
 }
 
+/** A selection drop (L6): "new" always accepts; "events" is eventsDropMany's; a window accepts when
+ * it exists and does not show at least one of the signals (units overflow into new windows, D-066). */
+export function canAddAny(
+  signalIds: readonly string[],
+  target: DropTarget,
+  windows: WorkspaceWindow[],
+): boolean {
+  if (target.kind === "new") return true;
+  if (target.kind === "events") return false;
+  const w = windows.find((x) => x.id === target.windowId);
+  return !!w && signalIds.some((id) => !w.signals.some((s) => s.signalId === id));
+}
+
 /** Highlight of one window during a drag. */
 export type DropState = "source" | "target" | "refused";
 
-/** "source": the row's own window (never for an explorer source); "target": canDrop (row) or
- * canAdd (explorer); "refused": a timeseries window that does not show the signal but would exceed
- * MAX_UNITS with it; else undefined. */
+/** "source": the row's own window (never for an explorer source); "target": canDrop (row),
+ * canAddAny (explorer selection) or canAdd (explorer row); "refused": a timeseries window that does
+ * not show the signal but would exceed MAX_UNITS with it, never for a selection; else undefined. */
 export function dropStateFor(
   source: AnyDragSource,
   windowId: string,
@@ -153,6 +178,9 @@ export function dropStateFor(
   unitOf: (signalId: string) => string | undefined,
 ): DropState | undefined {
   const target: DropTarget = { kind: "window", windowId };
+  if (!isLegendSource(source) && source.signalIds) {
+    return canAddAny(source.signalIds, target, windows) ? "target" : undefined;
+  }
   if (isLegendSource(source)) {
     if (windowId === source.windowId) return "source";
     if (canDrop(source, target, windows, unitOf)) return "target";
@@ -165,4 +193,22 @@ export function dropStateFor(
     !w.signals.some((s) => s.signalId === source.signalId) &&
     tooManyUnits(w, source.signalId, unitOf);
   return refusedByUnits ? "refused" : undefined;
+}
+
+const GHOST_OFFSET = 12;
+
+/** The drag ghost's viewport position: 12 px right of and below the pointer; where it would cross the
+ *  bottom edge it flips above the pointer, and it is clamped to the right and top edges, so its text
+ *  stays readable where the user releases (e.g. over "+ New window" at the viewport bottom). */
+export function ghostPosition(
+  pointer: { x: number; y: number },
+  width: number,
+  height: number,
+  viewWidth: number,
+  viewHeight: number,
+): { left: number; top: number } {
+  const below = pointer.y + GHOST_OFFSET;
+  const top = below + height > viewHeight ? pointer.y - GHOST_OFFSET - height : below;
+  const left = Math.min(pointer.x + GHOST_OFFSET, viewWidth - width);
+  return { left: Math.max(0, left), top: Math.max(0, top) };
 }
