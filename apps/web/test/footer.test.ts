@@ -43,9 +43,7 @@ describe("measurement items (app-footer)", () => {
     expect(measurementItems({}).items).toEqual([]);
     const html = renderToStaticMarkup(createElement(StatusBar, barProps()));
     expect(html).not.toContain("Measurement");
-    expect(textOf(html)).toBe(
-      "connected · revision 7 KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL",
-    );
+    expect(textOf(html)).toBe("connected · revision 7 KIPscope · kipp.ing · AAL");
   });
 
   it("turns measurement info into footer items", () => {
@@ -160,7 +158,8 @@ describe("automatic meta items (app-footer)", () => {
 });
 
 describe("fitFooter (app-footer)", () => {
-  const base = { status: 160, attribution: 360, gap: 12 };
+  // Attribution about the width of `KIPscope · kipp.ing · AAL` at 11 px.
+  const base = { status: 160, attribution: 140, gap: 12 };
   const auto = [
     { key: "source", width: 100, rank: 20 },
     { key: "catalog", width: 80, rank: 3 },
@@ -170,18 +169,18 @@ describe("fitFooter (app-footer)", () => {
 
   it("hides whole meta items in a fixed order", () => {
     const at = (available: number) => fitFooter({ ...base, available, items: auto });
-    expect(at(1000)).toEqual({ shown: ["source", "catalog", "zone", "build"], wrap: false });
-    expect(at(900)).toEqual({ shown: ["source", "catalog", "zone"], wrap: false });
-    expect(at(800)).toEqual({ shown: ["source", "catalog"], wrap: false });
-    expect(at(700)).toEqual({ shown: ["source"], wrap: false });
-    expect(at(600)).toEqual({ shown: [], wrap: false });
-    // 160 + 12 + 360 = 532 > 500: the attribution wraps, three items stay on the first line.
-    expect(at(500)).toEqual({ shown: ["source", "catalog", "zone"], wrap: true });
+    expect(at(780)).toEqual({ shown: ["source", "catalog", "zone", "build"], wrap: false });
+    expect(at(680)).toEqual({ shown: ["source", "catalog", "zone"], wrap: false });
+    expect(at(580)).toEqual({ shown: ["source", "catalog"], wrap: false });
+    expect(at(480)).toEqual({ shown: ["source"], wrap: false });
+    expect(at(380)).toEqual({ shown: [], wrap: false });
+    // 160 + 12 + 140 = 312 > 280: the attribution wraps, source stays on the first line.
+    expect(at(280)).toEqual({ shown: ["source"], wrap: true });
   });
 
   it("lets a message push out meta items before it truncates", () => {
     const withMessage = (message: number) =>
-      fitFooter({ ...base, available: 1000, message, items: auto });
+      fitFooter({ ...base, available: 780, message, items: auto });
     expect(withMessage(300)).toEqual({ shown: ["source"], wrap: false });
     expect(withMessage(900)).toEqual({ shown: [], wrap: false });
   });
@@ -198,12 +197,12 @@ describe("fitFooter (app-footer)", () => {
       { key: "build", width: 60, rank: 1 },
     ];
     const at = (available: number) => fitFooter({ ...base, available, items });
-    expect(at(1000)).toEqual({
+    expect(at(780)).toEqual({
       shown: ["m:name", "m:object", "m:meta:driver", "source"],
       wrap: false,
     });
-    expect(at(900)).toEqual({ shown: ["m:name", "m:object", "source"], wrap: false });
-    expect(at(800)).toEqual({ shown: ["m:name", "m:object"], wrap: false });
+    expect(at(680)).toEqual({ shown: ["m:name", "m:object", "source"], wrap: false });
+    expect(at(580)).toEqual({ shown: ["m:name", "m:object"], wrap: false });
   });
 });
 
@@ -244,7 +243,7 @@ describe("status bar markup (app-footer)", () => {
       "connected · revision 7",
       "Testfahrt A9",
       "ClickHouse sdlog",
-      "KIPscope · © 2026",
+      "KIPscope · kipp.ing · AAL",
     ].map((part) => text.indexOf(part));
     for (const i of order) expect(i).toBeGreaterThanOrEqual(0);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -262,15 +261,14 @@ describe("status bar markup (app-footer)", () => {
 
   it("renders the attribution with both links", () => {
     const html = render();
-    expect(textOf(html)).toContain(
-      "KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL",
-    );
+    expect(textOf(html)).toContain("KIPscope · kipp.ing · AAL");
+    expect(textOf(html)).not.toContain("Jan Kipping");
     const anchors = [...html.matchAll(/<a\b[^>]*>/g)].map((m) => m[0]);
     const attr = (tag: string, name: string) => new RegExp(`${name}="([^"]*)"`).exec(tag)?.[1];
     const site = anchors.find((a) => attr(a, "href") === "https://kipp.ing");
     const licence = anchors.find((a) => attr(a, "href") === "/api/license");
     for (const [tag, title] of [
-      [site, "efficient agentic engineering"],
+      [site, "© 2026 Jan Kipping, Agentic engineer · efficient agentic engineering"],
       [licence, "Attribution Assurance License"],
     ] as const) {
       expect(tag, title).toBeDefined();

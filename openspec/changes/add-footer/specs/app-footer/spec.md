@@ -5,11 +5,11 @@ The footer part of KIPscope's bottom bar: the author's attribution and the licen
 ## ADDED Requirements
 
 ### Requirement: Footer in the bottom bar
-The footer SHALL be part of the status strip below the window list (`workspace-layout` "Top row and status strip"), not a second strip. From left to right the bar SHALL hold the status (connection, revision, message), the measurement info, the automatic meta items and, as its last element at the right end, the attribution group with tool name, author and license. Origin: Jan („a footer permanently visible"; license and link at the far right); D-025 (no extra strip).
+The footer SHALL be part of the status strip below the window list (`workspace-layout` "Top row and status strip"), not a second strip. From left to right the bar SHALL hold the status (connection, revision, message), the measurement info, the automatic meta items and, as its last element at the right end, the attribution group with tool name, the link to the author's site and license. Origin: Jan („a footer permanently visible"; license and link at the far right); D-025 (no extra strip).
 
 #### Scenario: Order in the bar
 - **WHEN** the workspace holds measurement name `Testfahrt A9`, the meta answer is in, and the bar is rendered to static markup
-- **THEN** the text order is `connected · revision`, `Testfahrt A9`, `ClickHouse sdlog`, `KIPscope · © 2026 …` from left to right, all inside the one status strip element, and the attribution group is its last child
+- **THEN** the text order is `connected · revision`, `Testfahrt A9`, `ClickHouse sdlog`, `KIPscope · kipp.ing · AAL` from left to right, all inside the one status strip element, and the attribution group is its last child
 - **Evidence:** `apps/web/test/footer.test.ts` › "orders status, measurement, meta and attribution"
 
 ### Requirement: Footer always visible
@@ -17,7 +17,7 @@ The bar SHALL stay inside the viewport and fully visible while the window list s
 
 #### Scenario: Visible while scrolling
 - **WHEN** the six-window setup (`workspace-layout` design M1) is shown at 1440×900 with the sidebar open, the list is scrolled to the top, then to the end, then the sidebar is collapsed
-- **THEN** in all three states the bar's `getBoundingClientRect().bottom` is ≤ 900 and ≥ 892, the attribution `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL` is fully shown, and no window overlaps the bar
+- **THEN** in all three states the bar's `getBoundingClientRect().bottom` is ≤ 900 and ≥ 892, the attribution `KIPscope · kipp.ing · AAL` is fully shown, and no window overlaps the bar
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot per state, bar rect)
 
 #### Scenario: No window
@@ -31,11 +31,11 @@ The bar SHALL stay inside the viewport and fully visible while the window list s
 - **Evidence:** UI check on smart451 (bar height per state, snippet output of design M1 at 1000×557)
 
 ### Requirement: Attribution and license link
-The attribution group SHALL read `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, where `kipp.ing` links to `https://kipp.ing` and `AAL` to `/api/license`. Both links SHALL open in a new tab with `rel="noopener noreferrer"` and carry the tooltips of design F1. Origin: Jan („the name of the tool, the license and a short link to my web page"); AAL clause 2 ((a) name, (b) professional identification, (c) URL) per D-049; slogan as tooltip: design Q1.
+The attribution group SHALL read `KIPscope · kipp.ing · AAL`, where `kipp.ing` links to `https://kipp.ing` and `AAL` to `/api/license`. Both links SHALL open in a new tab with `rel="noopener noreferrer"` and carry the tooltips of design F1 (`kipp.ing`: name, profession and slogan). Origin: Jan („the name of the tool, the license and a short link to my web page"); AAL clause 2 per D-049; tooltip: design Q1, revised by Jan 2026-10-16.
 
 #### Scenario: Markup
 - **WHEN** the status bar is rendered to static markup outside a drag
-- **THEN** it contains the text `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, an `a` with `href="https://kipp.ing"`, `target="_blank"`, `rel="noopener noreferrer"` and `title="efficient agentic engineering"`, and an `a` with `href="/api/license"`, `target="_blank"`, `rel="noopener noreferrer"` and `title="Attribution Assurance License"`
+- **THEN** its visible text is `KIPscope · kipp.ing · AAL` and does not contain `Jan Kipping`; it has an `a` with `href="https://kipp.ing"`, `target="_blank"`, `rel="noopener noreferrer"` and `title="© 2026 Jan Kipping, Agentic engineer · efficient agentic engineering"`, and an `a` with `href="/api/license"`, `target="_blank"`, `rel="noopener noreferrer"` and `title="Attribution Assurance License"`
 - **Evidence:** `apps/web/test/footer.test.ts` › "renders the attribution with both links"
 
 #### Scenario: Links in the browser
@@ -169,18 +169,18 @@ The UI SHALL fetch `/api/meta` when the page loads, every 30 s and each time the
 The bar SHALL never cut the status or the attribution, nor an item beyond its own limit. When the line lacks space, whole items SHALL be hidden in this order until the rest fits: build, time zone, catalog, measurement meta entries from the last, source, object, name. A shown message counts at full width and truncates with `…` only once all items are hidden. Origin: Jan („permanently visible"); AAL clause 2 (D-049); order per design F5.
 
 #### Scenario: Drop order
-- **WHEN** `fitFooter` gets status width 160, attribution 360, item widths source 100, catalog 80, zone 90, build 60, gap 12, no message, and available widths 1000, 900, 800, 700, 600 and 500
-- **THEN** it shows all four items at 1000; source, catalog, zone at 900; source, catalog at 800; source at 700; none at 600, `wrap` false in all of these; at 500 `wrap` is true and the first line shows source, catalog, zone
+- **WHEN** `fitFooter` gets status width 160, attribution 140 (about the width of `KIPscope · kipp.ing · AAL` at 11 px), item widths source 100, catalog 80, zone 90, build 60, gap 12, no message, and available widths 780, 680, 580, 480, 380 and 280
+- **THEN** it shows all four items at 780; source, catalog, zone at 680; source, catalog at 580; source at 480; none at 380, `wrap` false in all of these; at 280 `wrap` is true (160 + 12 + 140 > 280) and the first line shows source
 - **Evidence:** `apps/web/test/footer.test.ts` › "hides whole meta items in a fixed order"
 
 #### Scenario: Message beats meta
-- **WHEN** `fitFooter` gets the widths of the previous scenario, available 1000 and a message of 300 px, then a message of 900 px
+- **WHEN** `fitFooter` gets the widths of the previous scenario, available 780 and a message of 300 px, then a message of 900 px
 - **THEN** with 300 px it shows only source and does not wrap; with 900 px it shows no item and does not wrap (the message truncates)
 - **Evidence:** `apps/web/test/footer.test.ts` › "lets a message push out meta items before it truncates"
 
 #### Scenario: Measurement outlives automatic items
-- **WHEN** `fitFooter` gets status 160, attribution 360, gap 12, items in display order name 100, object 70, `driver: Jan` 80, `weather: rain` 100, source 100, catalog 80, zone 90, build 60, no message, and available 1000, 900 and 800
-- **THEN** at 1000 it shows name, object, `driver: Jan`, source; at 900 name, object, source; at 800 name, object; `wrap` is false in all three
+- **WHEN** `fitFooter` gets status 160, attribution 140, gap 12, items in display order name 100, object 70, `driver: Jan` 80, `weather: rain` 100, source 100, catalog 80, zone 90, build 60, no message, and available 780, 680 and 580
+- **THEN** at 780 it shows name, object, `driver: Jan`, source; at 680 name, object, source; at 580 name, object; `wrap` is false in all three
 - **Evidence:** `apps/web/test/footer.test.ts` › "hides automatic items before measurement items"
 
 #### Scenario: Error message at 1000×557
@@ -192,9 +192,9 @@ The bar SHALL never cut the status or the attribution, nor an item beyond its ow
 When status and attribution alone do not fit one line, the attribution SHALL move to a second line, still right-aligned, the first line keeping status, message and items by the same rules, and the bar SHALL be at most 48 px tall. Hidden items SHALL be listed in the tooltip of the attribution's leading `KIPscope`. Origin: necessary consequence of "Attribution small and subtle" (never cut) on narrow screens; 48 px per design F5.
 
 #### Scenario: Narrow viewport
-- **WHEN** the six-window setup is shown at 700×557 with the sidebar open
+- **WHEN** the six-window setup is shown at 520×557 with the sidebar open (the bar's content box is about 228 px, less than status and attribution need, about 290 px; the shorter attribution keeps one line down to a viewport of about 580 px)
 - **THEN** the bar has two lines, at most 48 px tall, the first starting with `connected · revision`, the second holding the whole attribution with both links, right-aligned; no text of the bar is cut
-- **Evidence:** UI check on smart451 at 700×557 (screenshot, bar height); `not_run` if the browser tool cannot set the viewport
+- **Evidence:** UI check on smart451 at 520×557 (screenshot, bar height); `not_run` if the browser tool cannot set the viewport
 
 #### Scenario: Hidden items in the tooltip
 - **WHEN** the status bar is rendered with build and zone hidden by the fit

@@ -28,6 +28,9 @@ interface Widths {
   items: Record<string, number>;
 }
 
+/** Tooltip of the `kipp.ing` link: the full attribution, kept out of the visible text (design F1, Q1). */
+const SITE_TITLE = `© ${ATTRIBUTION.year} ${ATTRIBUTION.author}, ${ATTRIBUTION.identification} · ${ATTRIBUTION.slogan}`;
+
 const UNMEASURED: Widths = {
   available: 0,
   status: 0,
@@ -206,13 +209,8 @@ export function StatusBar(props: StatusBarProps) {
         <span title={hidden.length > 0 ? hidden.map((i) => i.text).join("\n") : undefined}>
           {ATTRIBUTION.product}
         </span>
-        {` · © ${ATTRIBUTION.year} ${ATTRIBUTION.author}, ${ATTRIBUTION.identification} · `}
-        <a
-          href={ATTRIBUTION.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={ATTRIBUTION.slogan}
-        >
+        {" · "}
+        <a href={ATTRIBUTION.url} target="_blank" rel="noopener noreferrer" title={SITE_TITLE}>
           {ATTRIBUTION.urlLabel}
         </a>
         {" · "}

@@ -5,7 +5,7 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 
 #### Scenario: Idle strip
 - **WHEN** the app is connected at revision n and no drag runs
-- **THEN** the bottom strip starts with `connected · revision n` and ends with `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, no "KIPscope" top bar is shown, and the top row holds "Signals" followed by the option bar
+- **THEN** the bottom strip starts with `connected · revision n` and ends with `KIPscope · kipp.ing · AAL`, no "KIPscope" top bar is shown, and the top row holds "Signals" followed by the option bar
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Error in the strip

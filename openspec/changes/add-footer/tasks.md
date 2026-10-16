@@ -42,7 +42,7 @@ Every task has its own files; all build in one round against the interfaces pinn
   - `footer/useMeta.ts`: `META_POLL_MS`, `useMeta(connected)`.
   - `api.ts`: `fetchMeta`.
   - Verify: scenarios "Items from the workspace", "Empty state" (function part), "Items from meta", "Unhappy states", "Stale and missing meta", "Drop order", "Message beats meta", "Measurement outlives automatic items".
-- [ ] 3.2 Status bar (F1, F3, F5):
+- [x] 3.2 Status bar (F1, F3, F5):
   - `footer/StatusBar.tsx`: status, message, measurement and automatic items, attribution group with both links and the hidden-items tooltip; measuring copy, `ResizeObserver`, `fitFooter`; drag overlay with the left part kept in place.
   - `App.tsx`: the strip becomes `<StatusBar>` with `workspace?.measurement`, `useMeta(live.connected)`, the existing `dropRef`, `data-drop` and message state.
   - `styles.css`: `.status-strip` `min-height` and `flex-wrap`, attribution 11 px `--muted` at the right end, items 12 px, drag overlay.
@@ -68,6 +68,10 @@ Every task has its own files; all build in one round against the interfaces pinn
 ## 6. Docs (lead)
 
 - [x] 6.1 `README.md`: the four `measurement` CLI forms in the CLI table, the `measurement` section under "Display names" (or a new "Project file" heading), `/api/meta` and `/api/license` in "Run", and one sentence under "License" that the app shows the attribution in its footer. Verify: scenario "Documented" (`grep -n "measurement" kipscope.example.yaml README.md`).
+
+## 7. Q1 revision (Jan, 2026-10-16)
+
+- [x] 7.1 Footer reads `KIPscope · kipp.ing · AAL`; `kipp.ing` tooltip `© 2026 Jan Kipping, Agentic engineer · efficient agentic engineering` (design F1); `attributionText()` unchanged. `apps/web/src/footer/StatusBar.tsx`, `apps/web/test/footer.test.ts` (text, tooltip, fit widths of attribution 140). Verify: scenarios "Markup", "Order in the bar", the three `fitFooter` scenarios by test; UI scenarios "Visible while scrolling", "Narrow viewport" (now 520×557), `workspace-layout` "Idle strip".
 
 ## Workflow follow-up
 

@@ -42,15 +42,15 @@ export const ATTRIBUTION = {
 export function attributionText(): string;
 ```
 
-Footer markup (text exactly `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`):
+Footer markup (visible text exactly `KIPscope · kipp.ing · AAL`):
 
 ```html
-<span class="attribution"><span title="{hidden items}">KIPscope</span> · © 2026 Jan Kipping, Agentic engineer ·
-  <a href="https://kipp.ing" target="_blank" rel="noopener noreferrer" title="efficient agentic engineering">kipp.ing</a> ·
+<span class="attribution"><span title="{hidden items}">KIPscope</span> ·
+  <a href="https://kipp.ing" target="_blank" rel="noopener noreferrer" title="© 2026 Jan Kipping, Agentic engineer · efficient agentic engineering">kipp.ing</a> ·
   <a href="/api/license" target="_blank" rel="noopener noreferrer" title="Attribution Assurance License">AAL</a></span>
 ```
 
-Slogan as tooltip only (Q1). `©` and the year follow `LICENSE` ("Copyright (c) 2026 by Jan Kipping").
+The `kipp.ing` tooltip is `© {year} {author}, {identification} · {slogan}` from `ATTRIBUTION`. Name, profession and slogan only in that tooltip (Q1, revised by Jan 2026-10-16); `attributionText()` keeps the full text for `--help` and the start log. `©` and the year follow `LICENSE` ("Copyright (c) 2026 by Jan Kipping").
 
 ### F2: Server meta and license (pinned)
 
@@ -216,14 +216,15 @@ Forms `measurement name TEXT`, `measurement object TEXT`, `measurement meta KEY 
 | Clip 40 characters | 20: names unreadable | 80: one item can push every other item out at 1000 px |
 | Name/object 120 | 60: long descriptive names refused | 240: only state size; the footer clips at 40 anyway |
 | 8 meta entries | 4: may be too few for a test log | 16: harmless; the footer shows few, tooltip lists all |
-| Attribution 11 px | 5.5 px: unreadable (AAL display fails) | 22 px: not subtle, breaks one line at 1000 px |
+| Attribution 11 px | 5.5 px: unreadable (AAL display fails) | 22 px: not subtle, about 280 px wide, pushes meta items out at 1000 px |
+| Attribution width about 140 px (`KIPscope · kipp.ing · AAL`, 11 px) | 70 px: wraps later, nothing breaks | 280 px: wraps below about 730 px viewport with the sidebar open instead of below about 580 px; still within 48 px |
 | Wrapped bar 48 px | 24 px: two lines do not fit | 96 px: wasted height on small screens |
 
 ## Risks / Trade-offs
 
 - [The measuring copy and ResizeObserver cost layout work on every resize] → widths are re-read only when texts change; the fit itself is a pure loop over ≤ 15 items.
 - [`git` missing or slow at start] → `readBuildInfo` catches every failure with a 2 s timeout; the build item disappears.
-- [11 px muted text may read as less "prominent" than AAL clause 2 suggests] → it is Jan's own license and his call („small and subtle"); the text is never hidden or cut and keeps AA contrast (`#64748b` on `#f8fafc`).
+- [11 px muted text, with name and profession only in a tooltip, may read as less "prominent" than AAL clause 2 suggests] → it is Jan's own license and his call („small and subtle"; Q1 revised 2026-10-16); the full attribution stays in `--help` and the start log, the footer text is never hidden or cut and keeps AA contrast (`#64748b` on `#f8fafc`).
 - [Measurement info set by CLI is lost on restart] → stated in the example file and README; persistence is the next change.
 - [`measurement` appears in the workspace object that later persistence stores] → it is ordinary workspace state, so persistence covers it without a special case.
 
@@ -248,7 +249,7 @@ No stored data. `kipscope.yaml` without `measurement` behaves as before. Deploy 
 
 Answered by Jan on 2026-10-16; the change is built this way.
 
-- **Q1: Attribution wording.** As recommended: `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, the slogan "efficient agentic engineering" only as the link's tooltip.
+- **Q1: Attribution wording.** First answer, as recommended: `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, the slogan "efficient agentic engineering" only as the link's tooltip. Revised by Jan 2026-10-16: name and profession only in the kipp.ing tooltip; AAL clause 2 attribution stays in --help and the start log. The footer reads `KIPscope · kipp.ing · AAL`; the `kipp.ing` tooltip is `© 2026 Jan Kipping, Agentic engineer · efficient agentic engineering`.
 - **Q2: License link target.** As recommended: the running server's `/api/license` (local). The repository is public, so a GitHub link could be added later.
 - **Q3: Build label.** As recommended: the server's short commit at start with `*` for uncommitted changes. Jan: a version tag comes later (its own change).
 - **Q4: Attribution outside the UI.** Yes: the last line of `kipscope --help` and one info line at server start.
