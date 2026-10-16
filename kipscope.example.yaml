@@ -1,9 +1,9 @@
-# KIPscope project file (D-035): how the UI shows signal names.
+# KIPscope project file (D-035): how the UI shows signal names and which measurement is open.
 # The server reads <repo root>/kipscope.yaml at start (KIPSCOPE_PROJECT_FILE overrides the path).
 # Restart the server after editing. An invalid file stops the server with one message per problem.
-# Names only change what the UI shows; signal IDs, the API, the CLI and the workspace keep full names.
+# Top-level keys: `display` and `measurement`, both optional; any other key is an error.
 
-# Optional; the only top-level key.
+# Optional. Names only change what the UI shows; signal IDs, the API, the CLI and the workspace keep full names.
 display:
   # Optional ordered list of rules; the first rule whose `match` finds the full source name wins.
   names:
@@ -21,3 +21,20 @@ display:
   # rename: optional map from full source name to shown name; beats every rule and gets no collision suffix.
   # rename:
   #   COMBI_412h.V_ANZ: Speed
+
+# Optional: measurement info, shown in the footer and held in the workspace (`kipscope state`).
+# This is only the start value: `kipscope measurement name|object|meta|clear` changes it, and
+# commands win until restart. A restart reads this file again and drops those changes; nothing writes the file.
+# Texts are trimmed; numbers and true/false become text ("3"); empty or null counts as absent;
+# no text may hold a line break or control character.
+# measurement:
+#   # name: the measurement under investigation; at most 120 characters.
+#   name: Testfahrt A9
+#   # object: the vehicle or device under test; at most 120 characters.
+#   object: smart451
+#   # meta: further key: value entries, at most 8, in file order.
+#   # A key has at most 40 characters, starts with a letter and holds only letters, digits, space, _ . -
+#   # A value has at most 200 characters.
+#   meta:
+#     driver: Jan
+#     run: 3

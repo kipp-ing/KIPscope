@@ -885,3 +885,94 @@ describe("user options (improve-navigation)", () => {
     }
   });
 });
+
+describe("measurement info (add-footer)", () => {
+  const measurementOf = (state: Workspace) => (state as { measurement?: unknown }).measurement;
+  const accepted = (state: Workspace, input: unknown) => {
+    const parsed = Command.safeParse(input);
+    if (!parsed.success) throw new Error(`rejected by the schema: ${JSON.stringify(input)}`);
+    const result = applyCommand(state, parsed.data, unitCtx);
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    return result.workspace;
+  };
+
+  it("sets, replaces and clears measurement info", () => {
+    expect(EMPTY_WORKSPACE).not.toHaveProperty("measurement");
+    let s: Workspace = EMPTY_WORKSPACE;
+
+    s = accepted(s, { type: "measurement.set", name: "  Testfahrt A9 " });
+    expect(measurementOf(s)).toEqual({ name: "Testfahrt A9" });
+    s = accepted(s, { type: "measurement.set", object: "smart451" });
+    expect(measurementOf(s)).toEqual({ name: "Testfahrt A9", object: "smart451" });
+    s = accepted(s, { type: "measurement.setMeta", key: "driver", value: "Jan" });
+    s = accepted(s, { type: "measurement.setMeta", key: "weather", value: "rain" });
+    s = accepted(s, { type: "measurement.setMeta", key: "driver", value: "Eva" });
+    // Fifth command: replaced in place, order kept.
+    expect(measurementOf(s)).toEqual({
+      name: "Testfahrt A9",
+      object: "smart451",
+      meta: [
+        { key: "driver", value: "Eva" },
+        { key: "weather", value: "rain" },
+      ],
+    });
+    s = accepted(s, { type: "measurement.setMeta", key: "weather", value: " " });
+    expect(measurementOf(s)).toMatchObject({ meta: [{ key: "driver", value: "Eva" }] });
+    s = accepted(s, { type: "measurement.set", name: "" });
+    expect(measurementOf(s)).toEqual({
+      object: "smart451",
+      meta: [{ key: "driver", value: "Eva" }],
+    });
+    expect(measurementOf(s)).not.toHaveProperty("name");
+    s = accepted(s, { type: "measurement.clear" });
+    expect(s).not.toHaveProperty("measurement");
+    expect(s).toEqual(EMPTY_WORKSPACE);
+  });
+
+  it("drops an empty meta list and an empty measurement", () => {
+    let s = accepted(EMPTY_WORKSPACE, { type: "measurement.setMeta", key: "k", value: "v" });
+    expect(measurementOf(s)).toEqual({ meta: [{ key: "k", value: "v" }] });
+    s = accepted(s, { type: "measurement.setMeta", key: "k", value: "" });
+    expect(s).not.toHaveProperty("measurement");
+    s = accepted(EMPTY_WORKSPACE, { type: "measurement.set", object: "x" });
+    s = accepted(s, { type: "measurement.set", object: "  " });
+    expect(s).not.toHaveProperty("measurement");
+  });
+
+  it("rejects measurement info beyond its limits", () => {
+    const rejected = (input: unknown) => expect(Command.safeParse(input).success).toBe(false);
+    rejected({ type: "measurement.set" }); // no field at all
+    rejected({ type: "measurement.set", name: "x".repeat(121) });
+    rejected({ type: "measurement.set", object: "x".repeat(121) });
+    rejected({ type: "measurement.setMeta", key: "1st", value: "v" });
+    rejected({ type: "measurement.setMeta", key: "x".repeat(41), value: "v" });
+    rejected({ type: "measurement.setMeta", key: "k", value: "x".repeat(201) });
+    rejected({ type: "measurement.set", name: "line\nbreak" });
+    rejected({ type: "measurement.setMeta", key: "k", value: "tab\there" });
+    rejected({ type: "measurement.setMeta", key: "bad/key", value: "v" });
+
+    // Exactly at the limits.
+    let s = accepted(EMPTY_WORKSPACE, { type: "measurement.set", name: "x".repeat(120) });
+    expect((measurementOf(s) as { name: string }).name).toHaveLength(120);
+    s = accepted(s, { type: "measurement.setMeta", key: "a".repeat(40), value: "v".repeat(200) });
+    s = accepted(s, { type: "measurement.setMeta", key: "with space_.-1", value: "v" });
+
+    // Fill up to eight entries, then a ninth key hits measurement_limit.
+    s = EMPTY_WORKSPACE;
+    for (let i = 1; i <= 8; i++) {
+      s = accepted(s, { type: "measurement.setMeta", key: `k${i}`, value: "v" });
+    }
+    expect((measurementOf(s) as { meta: unknown[] }).meta).toHaveLength(8);
+    const ninth = applyCommand(
+      s,
+      Command.parse({ type: "measurement.setMeta", key: "k9", value: "v" }),
+      unitCtx,
+    );
+    expect(ninth.ok).toBe(false);
+    if (!ninth.ok) expect(ninth.code).toBe("measurement_limit");
+    // Replacing and removing at eight entries still works.
+    s = accepted(s, { type: "measurement.setMeta", key: "k3", value: "w" });
+    s = accepted(s, { type: "measurement.setMeta", key: "k8", value: "" });
+    expect((measurementOf(s) as { meta: unknown[] }).meta).toHaveLength(7);
+  });
+});

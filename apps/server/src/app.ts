@@ -4,6 +4,7 @@ import { type AccessOptions, hostAllowed, originAllowed } from "./access.ts";
 import type { Catalog } from "./catalog.ts";
 import type { DataSource } from "./datasource.ts";
 import { apiError } from "./http.ts";
+import { type MetaDeps, metaRoutes } from "./meta.ts";
 import { seriesRoutes } from "./routes/series.ts";
 import { signalRoutes } from "./routes/signals.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
@@ -17,6 +18,10 @@ export interface AppDeps {
   /** Source for series queries; in production wrapped by the query queue. */
   source: DataSource;
   workspace: WorkspaceStore;
+  /** Build and source labels plus the ping for `/api/meta`; without it the route answers 404 (tests only). */
+  meta?: MetaDeps;
+  /** Content of `LICENSE`, read once at start; without it `/api/license` answers 404. */
+  licenseText?: string;
 }
 
 export function buildApp(
@@ -43,5 +48,6 @@ export function buildApp(
   app.register(signalRoutes(deps));
   app.register(seriesRoutes(deps));
   app.register(workspaceRoutes(deps));
+  app.register(metaRoutes(deps));
   return app;
 }

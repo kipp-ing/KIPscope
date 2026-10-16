@@ -475,23 +475,44 @@ button.link {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* Below <main>, at the viewport bottom (design C7, L3): connection, revision and the last message
-   outside a drag; the "+ New window" zone during one, so it covers no window and a drop goes to what
-   is under the pointer. Same box in both states (2 px border, transparent when idle), so <main>
-   keeps its height when a drag starts or ends. Without data-drop the idle strip is no target. */
+/* Below <main>, at the viewport bottom (design C7, L3): status, message and the footer (add-footer
+   F5) outside a drag; the "+ New window" zone during one, so it covers no window and a drop goes to
+   what is under the pointer. Same box in both states (2 px border, transparent when idle), so <main>
+   keeps its height when a drag starts or ends. Without data-drop the idle strip is no target. One
+   line is 28 px; when status and attribution do not fit one line (StatusBar adds .wrap) the
+   attribution moves to a second line, at most 48 px in all. */
 .status-strip {
   flex: none;
+  position: relative;
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 2px 12px;
   align-items: center;
-  height: 28px;
+  min-height: 28px;
   margin: 4px 16px;
-  padding: 0 8px;
+  padding: 2px 8px;
   overflow: hidden;
   border: 2px solid transparent;
   border-radius: 6px;
   font-size: 12px;
+  line-height: 16px;
   white-space: nowrap;
+}
+
+/* Status, message and items; its basis 0 never pushes the attribution to a second line, which
+   only .wrap does. The fit keeps every shown item whole; only the message truncates. */
+.status-left {
+  flex: 1 1 0;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  overflow: hidden;
+}
+
+.status-strip.wrap .status-left {
+  flex-basis: 100%;
 }
 
 .status-strip .conn {
@@ -499,23 +520,112 @@ button.link {
 }
 
 .status-strip .message {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 1px 6px;
   font-size: 12px;
+  line-height: 16px;
   cursor: pointer;
 }
 
+/* Groups add no box: their items are flex children of .status-left, 12 px apart, with a dot in the
+   gap; a group's tooltip comes from the element. */
+.footer-group {
+  display: contents;
+}
+
+.footer-item {
+  flex: none;
+  position: relative;
+  font-size: 12px;
+}
+
+.footer-group > .footer-item + .footer-item::before,
+.footer-group + .footer-group > .footer-item:first-child::before {
+  content: "·";
+  position: absolute;
+  left: -6px;
+  transform: translateX(-50%);
+  color: var(--muted);
+}
+
+.measurement .footer-item {
+  color: var(--text);
+}
+
+.footer-item.tone-plain {
+  color: var(--muted);
+}
+
+.footer-item.tone-ok {
+  color: var(--ok);
+}
+
+.footer-item.tone-error {
+  color: var(--error);
+}
+
+.footer-item.tone-muted {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+/* Natural widths for the fit; never drawn or hit. */
+.status-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.status-measure .footer-item {
+  position: static;
+}
+
+/* Small and subtle at the right end, also on a second line; never cut, faded or hidden. */
+.attribution {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.attribution a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.attribution a:hover {
+  text-decoration: underline;
+}
+
 .status-strip.drop {
-  justify-content: center;
   border: 2px dashed var(--accent);
-  color: var(--accent);
   background: linear-gradient(rgb(37 99 235 / 0.04), rgb(37 99 235 / 0.04)), var(--bg);
 }
 
 .status-strip.drop.over {
   background: linear-gradient(rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.12)), var(--bg);
+}
+
+/* During a drag the left part keeps its boxes (nothing moves) and "+ New window" covers it. */
+.status-strip.drop .status-left {
+  visibility: hidden;
+}
+
+.status-strip .drop-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  visibility: visible;
+  color: var(--accent);
 }
 
 /* Free area below the windows (design B1, B2): a second "+ New window" zone during a drag. It gets

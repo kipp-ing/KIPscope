@@ -1,4 +1,5 @@
 import {
+  attributionText,
   type Command,
   type CursorName,
   DisplayMode,
@@ -52,6 +53,10 @@ Commands (each sends one command to the open workspace):
   cursor remove a|b
   diff on|off
   digits 3|4                       (significant digits of values in the UI)
+  measurement name TEXT            ("" clears the name)
+  measurement object TEXT          (vehicle or device under test; "" clears it)
+  measurement meta KEY VALUE       ("" removes the entry)
+  measurement clear                (removes all measurement info)
   command JSON                     (one command of the shared command model, sent as is)
 
 Reads:
@@ -78,6 +83,8 @@ REF      assignment ID (a3) or a SIGNAL shown in window W
 
 Output: one JSON line on stdout. Exit codes: 0 ok, 1 rejected, 2 usage, 3 unreachable,
 4 timeout, 5 render_error, 6 no_ui, 7 unavailable.
+
+${attributionText()}
 `;
 
 const VALUE_OPTIONS = new Set([
@@ -231,7 +238,7 @@ export function parseArgs(
 function invocation(pos: string[], opts: Map<string, string | true>): Invocation {
   const [first, second] = pos;
   if (first === undefined) usage("no command given (see --help)");
-  const group = ["window", "signal", "cursor"].includes(first);
+  const group = ["window", "signal", "cursor", "measurement"].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
 
@@ -382,6 +389,18 @@ function invocation(pos: string[], opts: Map<string, string | true>): Invocation
       if (digits !== "3" && digits !== "4") usage(`digits must be 3|4, got "${digits}"`);
       return command({ type: "workspace.setOptions", digits: Number(digits) });
     }
+    case "measurement name":
+      take(1);
+      return command({ type: "measurement.set", name: arg(0) });
+    case "measurement object":
+      take(1);
+      return command({ type: "measurement.set", object: arg(0) });
+    case "measurement meta":
+      take(2);
+      return command({ type: "measurement.setMeta", key: arg(0), value: arg(1) });
+    case "measurement clear":
+      take(0);
+      return command({ type: "measurement.clear" });
     case "command": {
       take(1);
       try {

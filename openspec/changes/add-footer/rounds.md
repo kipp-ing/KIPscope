@@ -1,0 +1,1 @@
+- Round 1: needs_jan - build, test and lint green and all but a few scenarios fulfilled; drag-start stability, hidden-items tooltip, tunnel drop and refetch on reconnect need a human at the mouse or the lead restarting the tunnel/server; README 6.1 is the lead's; 3.2 stays open until then.

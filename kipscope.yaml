@@ -9,3 +9,5 @@ display:
     - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
       show: '{signal}'
       collision: '{signal} ({message})'
+measurement:
+  object: smart451

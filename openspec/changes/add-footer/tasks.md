@@ -14,7 +14,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 
 ## 1. packages/shared
 
-- [ ] 1.1 Attribution, meta and measurement types (F1, F2, F6):
+- [x] 1.1 Attribution, meta and measurement types (F1, F2, F6):
   - `meta.ts`: `ATTRIBUTION`, `attributionText()`, `CatalogState`, `ServerMeta`.
   - `workspace.ts`: measurement limits and `MEASUREMENT_KEY`, `MeasurementEntry`, `Measurement`, optional `Workspace.measurement`; commands `measurement.set`, `measurement.setMeta`, `measurement.clear`; `CommandErrorCode` `measurement_limit`.
   - `apply.ts`: the three commands with normalisation (empty fields, meta and measurement removed).
@@ -23,12 +23,12 @@ Every task has its own files; all build in one round against the interfaces pinn
 
 ## 2. apps/server/src
 
-- [ ] 2.1 Meta and license routes, wiring (F2):
+- [x] 2.1 Meta and license routes, wiring (F2):
   - `meta.ts`: `readBuildInfo`, `PING_TIMEOUT_MS`, `MetaDeps`, `metaRoutes` (`/api/meta` with single-flight ping and 2 s timeout, `/api/license`).
   - `app.ts`: `AppDeps.meta?`, `AppDeps.licenseText?`; register `metaRoutes`.
   - `main.ts`: ClickHouse client in a variable, unqueued ping, source label, `readBuildInfo(REPO_ROOT)`, `LICENSE` read with warning when missing, `loadProject` (from 2.2) with its `measurement` passed to `WorkspaceStore`, `app.log.info(attributionText())` before listen (Q4).
   - Verify: scenarios "Text served", "File missing", "Foreign host refused", "Reachable source", "Catalog not loaded", "Build info", "Source down", "One ping for concurrent requests", "No credentials", "Start log" (grep part).
-- [ ] 2.2 Measurement section of the project file (F7):
+- [x] 2.2 Measurement section of the project file (F7):
   - `project.ts`: `ProjectFile`, `parseProject`, `loadProject`; `measurement` schema with the problem texts of F7; `parseProjectFile` and `loadProjectFile` keep their signatures.
   - `workspace.ts`: `WorkspaceStoreOptions.measurement` sets the state at revision 0.
   - `kipscope.example.yaml`: commented `measurement` section with keys, limits and "commands win until restart"; the header no longer says `display` is the only top-level key. `kipscope.yaml` gets `measurement:` with `object: smart451` only (Jan, Q7).
@@ -36,7 +36,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 
 ## 3. apps/web/src
 
-- [ ] 3.1 Footer logic (F3, F5):
+- [x] 3.1 Footer logic (F3, F5):
   - `footer/items.ts`: `Tone`, `FooterItem`, `MEASUREMENT_CLIP`, `measurementItems`, `footerItems`, `browserZone`, ranks of F3.
   - `footer/fit.ts`: `fitFooter`.
   - `footer/useMeta.ts`: `META_POLL_MS`, `useMeta(connected)`.
@@ -50,19 +50,19 @@ Every task has its own files; all build in one round against the interfaces pinn
 
 ## 4. apps/cli/src
 
-- [ ] 4.1 Measurement forms and help line (F8):
+- [x] 4.1 Measurement forms and help line (F8):
   - `args.ts`: `measurement name|object|meta|clear` forms with usage errors for missing or extra arguments; help text lists them and ends with `attributionText()` (Q4).
   - Verify: scenarios "Forms map to commands", "Over HTTP", "Help lists the forms", "Help ends with the attribution", "Results unchanged", "Read by the CLI".
 
 ## 5. Tests
 
-- [ ] 5.1 Shared, server and CLI tests, test-first from the scenarios:
+- [x] 5.1 Shared, server and CLI tests, test-first from the scenarios:
   - `packages/shared/test/apply.test.ts`: "sets, replaces and clears measurement info", "rejects measurement info beyond its limits"; `packages/shared/test/meta.test.ts`: `attributionText()` equals the text of design F1.
   - `apps/server/test/meta.http.test.ts` (new): every test named in `app-footer` for the server, with fake `MetaDeps` (ping that resolves, rejects, never settles, takes 100 ms and counts calls) and the test database's catalog.
   - `apps/server/test/project.test.ts`: "reads the measurement section", "refuses an invalid measurement section"; `apps/server/test/workspace.http.test.ts`: "starts with the measurement from the project file".
   - `apps/cli/test/args.test.ts`: measurement forms in "maps every command form to its command"; `apps/cli/test/cli.test.ts`: "ends the help with the attribution", "keeps results one JSON line without the attribution", "sets and reads measurement info over HTTP", form list of "prints the usage with --help".
   - Verify: `pnpm build && pnpm test && pnpm lint` green.
-- [ ] 5.2 Web tests, `apps/web/test/footer.test.ts` (new): every test named in `app-footer` for the web; markup tests through `renderToStaticMarkup(createElement(StatusBar, props))`.
+- [x] 5.2 Web tests, `apps/web/test/footer.test.ts` (new): every test named in `app-footer` for the web; markup tests through `renderToStaticMarkup(createElement(StatusBar, props))`.
   - Verify: `pnpm --filter @kipscope/web test` green.
 
 ## 6. Docs (lead)

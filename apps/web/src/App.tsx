@@ -24,7 +24,6 @@ import {
   canAdd,
   canDrop,
   DRAG_THRESHOLD_PX,
-  DROP_NEW,
   DROP_NEW_BELOW,
   type DragSource,
   type DropState,
@@ -42,6 +41,8 @@ import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { ignoreFileDrops } from "./filedrop.ts";
+import { StatusBar } from "./footer/StatusBar.tsx";
+import { useMeta } from "./footer/useMeta.ts";
 import { isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
 import {
   isSidebarKey,
@@ -141,6 +142,7 @@ function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undef
 export function App() {
   const [live, send] = useLive();
   const [message, setMessage] = useState<string | undefined>();
+  const dismissMessage = useCallback(() => setMessage(undefined), []);
 
   // Explorer sidebar (design L1): loaded once, saved on every change, per browser.
   const [sidebar, setSidebar] = useState<SidebarState>(() => loadSidebar(localStore()));
@@ -169,6 +171,7 @@ export function App() {
   const unitOf = useCallback((id: string) => infos.current.get(id)?.unit, []);
 
   const workspace = live.workspace;
+  const meta = useMeta(live.connected);
   const windows = workspace?.windows ?? [];
   const linked = workspace?.linkTime ?? true;
 
@@ -917,34 +920,21 @@ export function App() {
           </div>
         </main>
         {/* Below the window list, not over it, so it stays at the viewport bottom wherever the list
-            is scrolled and never covers a window (C7). Outside a drag it shows connection, revision
-            and the last message; during a drag it is the "+ New window" zone at the same size, so
-            nothing moves under the pointer when a drag starts (L3). */}
-        <div
-          ref={dropRef}
-          className={`status-strip${activeDrag ? " drop" : ""}${stripOver ? " over" : ""}`}
-          {...(activeDrag ? { "data-drop": DROP_NEW } : {})}
-        >
-          {activeDrag ? (
-            "+ New window"
-          ) : (
-            <>
-              <span className={`conn ${live.connected ? "ok" : "down"}`}>
-                {live.connected ? `connected · revision ${live.revision}` : "disconnected"}
-              </span>
-              {message && (
-                <button
-                  type="button"
-                  className="message"
-                  title={`${message} · Click to dismiss`}
-                  onClick={() => setMessage(undefined)}
-                >
-                  {message} ✕
-                </button>
-              )}
-            </>
-          )}
-        </div>
+            is scrolled and never covers a window (C7). Outside a drag it shows connection, revision,
+            the last message and the footer; during a drag it is the "+ New window" zone at the same
+            size, so nothing moves under the pointer when a drag starts (L3, add-footer F5). */}
+        <StatusBar
+          connected={live.connected}
+          revision={live.revision}
+          message={message}
+          onDismissMessage={dismissMessage}
+          measurement={workspace?.measurement}
+          meta={meta.meta}
+          metaStale={meta.stale}
+          dragging={activeDrag !== undefined}
+          over={stripOver}
+          dropRef={dropRef}
+        />
       </div>
       {activeDrag && (
         <div className="drag-ghost" style={{ left: activeDrag.x + 12, top: activeDrag.y + 12 }}>

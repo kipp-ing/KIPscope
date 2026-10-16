@@ -6,6 +6,7 @@ import type {
   CursorValueResult,
   Extent,
   SeriesResult,
+  ServerMeta,
   SignalInfo,
   SignalPage,
   ValuesMode,
@@ -78,6 +79,11 @@ export function fetchCursorValue(
 
 export function fetchExtent(signalId: string): Promise<Extent> {
   return getJson(`/api/extent?${new URLSearchParams({ signal: signalId })}`);
+}
+
+/** Build, source and catalog state of the running server for the footer (design F2). */
+export function fetchMeta(abort?: AbortSignal): Promise<ServerMeta> {
+  return getJson("/api/meta", abort);
 }
 
 /** True when `body` has the shape of a `CommandResult` (design H6). */

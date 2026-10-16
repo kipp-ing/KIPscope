@@ -97,6 +97,10 @@ describe("server address and usage", () => {
       "cursor move",
       "cursor remove",
       "diff",
+      "measurement name",
+      "measurement object",
+      "measurement meta",
+      "measurement clear",
       "command",
       "state",
       "search",
@@ -114,6 +118,55 @@ describe("server address and usage", () => {
     const short = await runCli(["window", "range", "w1", "--help"], { KIPSCOPE_URL: h.url });
     expect(short.code).toBe(0);
     expect(h.requests.length).toBe(before);
+  });
+
+  it("ends the help with the attribution", async () => {
+    const result = await runCli(["--help"], { KIPSCOPE_URL: h.url });
+    expect(result.code).toBe(0);
+    const lines = result.stdout
+      .join("\n")
+      .split("\n")
+      .filter((l) => l.trim() !== "");
+    expect(lines.at(-1)).toBe(
+      "KIPscope © 2026 Jan Kipping, Agentic engineer, https://kipp.ing · Attribution Assurance License (AAL)",
+    );
+  });
+
+  it("keeps results one JSON line without the attribution", async () => {
+    const result = await cli(h, "state");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toHaveLength(1);
+    expect(() => JSON.parse(result.stdout[0] as string)).not.toThrow();
+    expect(result.stdout[0]).not.toContain("kipp.ing");
+    expect(result.stderr.join("\n")).not.toContain("kipp.ing");
+  });
+
+  it("sets and reads measurement info over HTTP", async () => {
+    await withServer(async (s) => {
+      const start = await revisionOf(s);
+      const name = await cli(s, "measurement", "name", "Testfahrt A9");
+      const object = await cli(s, "measurement", "object", "smart451");
+      const meta = await cli(s, "measurement", "meta", "driver", "Jan");
+      for (const [i, r] of [name, object, meta].entries()) {
+        expect(r.code).toBe(0);
+        expect(r.out).toMatchObject({ ok: true, revision: start + i + 1 });
+      }
+      const state = await cli(s, "state");
+      expect(state.out.data.workspace.measurement).toEqual({
+        name: "Testfahrt A9",
+        object: "smart451",
+        meta: [{ key: "driver", value: "Jan" }],
+      });
+
+      const tooLong = await cli(s, "measurement", "meta", "k", "x".repeat(201));
+      expect(tooLong.code).toBe(1);
+      expect(tooLong.out.error.code).toBe("invalid_command");
+      expect(await revisionOf(s)).toBe(start + 3);
+
+      const cleared = await cli(s, "measurement", "clear");
+      expect(cleared.code).toBe(0);
+      expect((await s.workspace()).workspace).not.toHaveProperty("measurement");
+    });
   });
 
   it("prints one JSON object per call, indented with --pretty", async () => {

@@ -4,9 +4,11 @@ import {
   type CommandErrorCode,
   DEFAULT_DISPLAY,
   isTimeseries,
+  MAX_MEASUREMENT_META,
   MAX_SIGNALS,
   MAX_UNITS,
   MAX_WINDOWS,
+  type Measurement,
   SIGNAL_COLORS,
   type TimeRange,
   type TimeseriesWindow,
@@ -98,6 +100,16 @@ function checkUnits(
     "too_many_units",
     `a window shows at most ${MAX_UNITS} units (has: ${[...names.values()].join(", ")})`,
   );
+}
+
+/** Sets `measurement` normalised: empty fields, an empty meta and an empty measurement absent. */
+function withMeasurement(state: Workspace, measurement: Measurement): Workspace {
+  const next: Measurement = {};
+  if (measurement.name) next.name = measurement.name;
+  if (measurement.object) next.object = measurement.object;
+  if (measurement.meta?.length) next.meta = measurement.meta;
+  const { measurement: _removed, ...rest } = state;
+  return Object.keys(next).length > 0 ? { ...rest, measurement: next } : rest;
 }
 
 /**
@@ -402,5 +414,30 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
       if (command.digits !== undefined) options.digits = command.digits;
       return { ok: true, workspace: { ...state, options } };
     }
+
+    case "measurement.set": {
+      const measurement = { ...state.measurement };
+      if (command.name !== undefined) measurement.name = command.name;
+      if (command.object !== undefined) measurement.object = command.object;
+      return { ok: true, workspace: withMeasurement(state, measurement) };
+    }
+
+    case "measurement.setMeta": {
+      const meta = state.measurement?.meta ?? [];
+      const index = meta.findIndex((e) => e.key === command.key);
+      let next = meta;
+      if (!command.value) next = meta.filter((e) => e.key !== command.key);
+      else if (index >= 0) next = meta.with(index, { key: command.key, value: command.value });
+      else if (meta.length >= MAX_MEASUREMENT_META) {
+        return fail(
+          "measurement_limit",
+          `measurement info holds at most ${MAX_MEASUREMENT_META} meta entries`,
+        );
+      } else next = [...meta, { key: command.key, value: command.value }];
+      return { ok: true, workspace: withMeasurement(state, { ...state.measurement, meta: next }) };
+    }
+
+    case "measurement.clear":
+      return { ok: true, workspace: withMeasurement(state, {}) };
   }
 }

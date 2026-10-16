@@ -6,6 +6,7 @@ import {
   type CommandResult,
   type CommandType,
   EMPTY_WORKSPACE,
+  type Measurement,
   type RenderedMessage,
   type RenderStatus,
   type Workspace,
@@ -16,6 +17,8 @@ type Listener = (revision: number, workspace: Workspace, command: CommandType) =
 export interface WorkspaceStoreOptions {
   /** Gets what a listener threw; default `console.error`. */
   onListenerError?(error: unknown): void;
+  /** Measurement info at revision 0, from the project file (design F7); commands win until restart. */
+  measurement?: Measurement;
 }
 
 /**
@@ -34,6 +37,7 @@ export class WorkspaceStore {
   constructor(ctx: ApplyContext, options: WorkspaceStoreOptions = {}) {
     this.ctx = ctx;
     this.onListenerError = options.onListenerError ?? ((error) => console.error(error));
+    if (options.measurement) this.state = { ...EMPTY_WORKSPACE, measurement: options.measurement };
   }
 
   get workspace(): Workspace {

@@ -304,6 +304,54 @@ describe("POST /api/commands, GET /api/workspace", () => {
   });
 });
 
+describe("measurement start value (add-footer)", () => {
+  const measurement = {
+    name: "Testfahrt A9",
+    object: "smart451",
+    meta: [
+      { key: "driver", value: "Jan" },
+      { key: "run", value: "3" },
+      { key: "wet", value: "true" },
+    ],
+  };
+
+  it("starts with the measurement from the project file", async () => {
+    const workspace = new WorkspaceStore({ signalExists: () => true }, { measurement });
+    const app = buildApp({
+      catalog: new Catalog(source, async () => new Map()),
+      source,
+      workspace,
+    });
+    try {
+      const start = (await app.inject({ url: "/api/workspace" })).json();
+      expect(start.revision).toBe(0);
+      expect(start.workspace.measurement).toEqual(measurement);
+
+      // Commands win: the start value is only the state at revision 0.
+      const set = await app.inject({
+        method: "POST",
+        url: "/api/commands",
+        body: { type: "measurement.set", object: "testcar" },
+      });
+      expect(set.json()).toEqual({ ok: true, revision: 1 });
+      const after = (await app.inject({ url: "/api/workspace" })).json();
+      expect(after.workspace.measurement).toEqual({ ...measurement, object: "testcar" });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("has no measurement without a project section", async () => {
+    const { app } = setup();
+    try {
+      const state = (await app.inject({ url: "/api/workspace" })).json();
+      expect(state.workspace).not.toHaveProperty("measurement");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 /** Opens a WebSocket and collects server messages. */
 async function connect(base: string) {
   const ws = new WebSocket(`${base.replace("http", "ws")}/api/live`);

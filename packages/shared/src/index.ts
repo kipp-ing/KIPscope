@@ -2,6 +2,7 @@ export * from "./apply.ts";
 export * from "./cursor.ts";
 export * from "./encoding.ts";
 export * from "./localtime.ts";
+export * from "./meta.ts";
 export * from "./numfmt.ts";
 export * from "./search.ts";
 export * from "./series.ts";

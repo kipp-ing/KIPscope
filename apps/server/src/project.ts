@@ -1,4 +1,13 @@
 import { readFileSync } from "node:fs";
+import {
+  MAX_MEASUREMENT_KEY,
+  MAX_MEASUREMENT_META,
+  MAX_MEASUREMENT_TEXT,
+  MAX_MEASUREMENT_VALUE,
+  MEASUREMENT_KEY,
+  type Measurement,
+  type MeasurementEntry,
+} from "@kipscope/shared";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import { type DisplayRule, type DisplayRules, NO_RULES, type Template } from "./names.ts";
@@ -8,8 +17,14 @@ export class ProjectFileError extends Error {}
 
 const nonEmpty = z.string().min(1);
 
-/** File format of design N2; `null` (a key without value) counts as absent. */
-const ProjectFile = z
+/** A parsed project file: display rules and the start value of the measurement info (design F7). */
+export interface ProjectFile {
+  rules: DisplayRules;
+  measurement?: Measurement;
+}
+
+/** File format of design N2 and F7; `null` (a key without value) counts as absent. */
+const FileSchema = z
   .object({
     display: z
       .object({
@@ -29,6 +44,8 @@ const ProjectFile = z
       })
       .strict()
       .nullish(),
+    // Checked by parseMeasurement for the problem texts of design F7.
+    measurement: z.unknown().optional(),
   })
   .strict();
 
@@ -108,8 +125,66 @@ function fail(path: string, problems: string[]): never {
   throw new ProjectFileError(problems.map((p) => `${path}: ${p}`).join("\n"));
 }
 
-/** Pure part, for tests: text → rules. `path` only labels the messages. */
-export function parseProjectFile(text: string, path: string): DisplayRules {
+const MEASUREMENT_FIELDS = new Set(["name", "object", "meta"]);
+const CONTROL = /\p{Cc}/u;
+
+function isMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Text, number or boolean as trimmed text; `null` and blank as undefined; a string is the problem. */
+function scalarText(value: unknown, max: number): { text?: string } | string {
+  if (value === null || value === undefined) return {};
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean")
+    return "must be text, a number or true/false";
+  const text = String(value).trim();
+  if (CONTROL.test(text)) return "no line breaks or control characters";
+  if (text.length > max) return `at most ${max} characters`;
+  return text ? { text } : {};
+}
+
+/** The `measurement` section (design F7) with the limits of F6; problems go to `problems`. */
+function parseMeasurement(section: unknown, problems: string[]): Measurement | undefined {
+  if (section === null || section === undefined) return undefined;
+  if (!isMap(section)) {
+    problems.push("measurement: must be a map with name, object and meta");
+    return undefined;
+  }
+  const measurement: Measurement = {};
+  for (const key of Object.keys(section))
+    if (!MEASUREMENT_FIELDS.has(key)) problems.push(`measurement: unknown key "${key}"`);
+  for (const field of ["name", "object"] as const) {
+    const parsed = scalarText(section[field], MAX_MEASUREMENT_TEXT);
+    if (typeof parsed === "string") problems.push(`measurement.${field}: ${parsed}`);
+    else if (parsed.text !== undefined) measurement[field] = parsed.text;
+  }
+  const meta = section.meta;
+  if (meta !== null && meta !== undefined) {
+    if (!isMap(meta)) problems.push("measurement.meta: must be a map of key: value");
+    else {
+      const keys = Object.keys(meta);
+      if (keys.length > MAX_MEASUREMENT_META)
+        problems.push(`measurement.meta: at most ${MAX_MEASUREMENT_META} entries`);
+      const entries: MeasurementEntry[] = [];
+      for (const key of keys) {
+        const field = `measurement.meta.${key}`;
+        if (!/^\p{L}/u.test(key)) problems.push(`${field}: key must start with a letter`);
+        else if (!MEASUREMENT_KEY.test(key))
+          problems.push(`${field}: key may hold only letters, digits, space, _ . -`);
+        else if (key.length > MAX_MEASUREMENT_KEY)
+          problems.push(`${field}: at most ${MAX_MEASUREMENT_KEY} characters`);
+        const parsed = scalarText(meta[key], MAX_MEASUREMENT_VALUE);
+        if (typeof parsed === "string") problems.push(`${field}: ${parsed}`);
+        else if (parsed.text !== undefined) entries.push({ key, value: parsed.text });
+      }
+      if (entries.length) measurement.meta = entries;
+    }
+  }
+  return Object.keys(measurement).length ? measurement : undefined;
+}
+
+/** Pure part, for tests: text → rules and measurement info. `path` only labels the messages. */
+export function parseProject(text: string, path: string): ProjectFile {
   // Stage 1: YAML syntax. parseDocument (not parse) to report every error, not only the first.
   const doc = parseDocument(text, { uniqueKeys: true });
   const syntax = doc.errors.map(
@@ -123,8 +198,13 @@ export function parseProjectFile(text: string, path: string): DisplayRules {
     fail(path, [`yaml: ${(error as Error).message}`]);
   }
 
-  // Stage 2: structure.
-  const result = ProjectFile.safeParse(data ?? {});
+  // Stage 2: structure; the measurement section is checked alongside, so one error lists both.
+  const result = FileSchema.safeParse(data ?? {});
+  const measurementProblems: string[] = [];
+  const measurement = parseMeasurement(
+    isMap(data) ? data.measurement : undefined,
+    measurementProblems,
+  );
   if (!result.success) {
     const problems: string[] = [];
     for (const issue of result.error.issues) {
@@ -134,31 +214,46 @@ export function parseProjectFile(text: string, path: string): DisplayRules {
         for (const key of issue.keys) problems.push(`${prefix}unknown key "${key}"`);
       else problems.push(`${prefix}${issue.message}`);
     }
-    fail(path, problems);
+    fail(path, [...problems, ...measurementProblems]);
   }
 
   // Stage 3: regexes and templates.
   const display = result.data.display;
   const problems: string[] = [];
   const rules = (display?.names ?? []).map((rule, i) => compileRule(rule, i, problems));
+  problems.push(...measurementProblems);
   if (problems.length) fail(path, problems);
-  return {
-    rules: rules.filter((r): r is DisplayRule => r !== undefined),
-    rename: new Map(Object.entries(display?.rename ?? {})),
+  const file: ProjectFile = {
+    rules: {
+      rules: rules.filter((r): r is DisplayRule => r !== undefined),
+      rename: new Map(Object.entries(display?.rename ?? {})),
+    },
   };
+  if (measurement) file.measurement = measurement;
+  return file;
 }
 
-/** Reads, parses, validates and compiles; NO_RULES for a missing optional file. Throws ProjectFileError. */
-export function loadProjectFile(file: { path: string; required: boolean }): DisplayRules {
+/** Display rules only; see parseProject. */
+export function parseProjectFile(text: string, path: string): DisplayRules {
+  return parseProject(text, path).rules;
+}
+
+/** Reads, parses, validates and compiles; `{rules: NO_RULES}` for a missing optional file. Throws ProjectFileError. */
+export function loadProject(file: { path: string; required: boolean }): ProjectFile {
   let text: string;
   try {
     text = readFileSync(file.path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      if (!file.required) return NO_RULES;
+      if (!file.required) return { rules: NO_RULES };
       fail(file.path, ["file not found"]);
     }
     fail(file.path, [`cannot read: ${(error as Error).message}`]);
   }
-  return parseProjectFile(text, file.path);
+  return parseProject(text, file.path);
+}
+
+/** Display rules only; see loadProject. */
+export function loadProjectFile(file: { path: string; required: boolean }): DisplayRules {
+  return loadProject(file).rules;
 }

@@ -123,6 +123,29 @@ export interface WorkspaceOptions {
   digits: Digits;
 }
 
+/** Measurement info limits (design F6): characters of name and object, meta key and value. */
+export const MAX_MEASUREMENT_TEXT = 120;
+export const MAX_MEASUREMENT_KEY = 40;
+export const MAX_MEASUREMENT_VALUE = 200;
+/** Meta entries per measurement. */
+export const MAX_MEASUREMENT_META = 8;
+/** Starts with a letter; letters, digits, space, _ . - */
+export const MEASUREMENT_KEY = /^\p{L}[\p{L}\p{N} _.-]*$/u;
+
+export interface MeasurementEntry {
+  key: string;
+  value: string;
+}
+
+/** User-defined info about the measurement under investigation; empty fields are absent. */
+export interface Measurement {
+  name?: string;
+  /** Vehicle or device under test. */
+  object?: string;
+  /** Unique keys in order; absent when empty. */
+  meta?: MeasurementEntry[];
+}
+
 export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
 
 export interface Workspace {
@@ -141,6 +164,8 @@ export interface Workspace {
   /** Cursors A/B and diff mode (D-023). */
   cursors: CursorState;
   options: WorkspaceOptions;
+  /** Measurement info (design F6); absent when empty. */
+  measurement?: Measurement;
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -183,6 +208,14 @@ export function windowUnits(
 }
 
 const Id = z.string().min(1).max(200);
+
+/** Trimmed text of at most `max` characters without control characters; "" clears. */
+const MeasurementText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .refine((s) => !/\p{Cc}/u.test(s), { message: "no line breaks or control characters" });
 
 export const Command = z.discriminatedUnion("type", [
   z
@@ -242,6 +275,23 @@ export const Command = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cursor.remove"), cursor: CursorName }),
   z.object({ type: z.literal("cursor.setDiff"), diff: z.boolean() }),
   z.object({ type: z.literal("workspace.setOptions"), digits: Digits.optional() }),
+  z
+    .object({
+      type: z.literal("measurement.set"),
+      name: MeasurementText(MAX_MEASUREMENT_TEXT).optional(),
+      object: MeasurementText(MAX_MEASUREMENT_TEXT).optional(),
+    })
+    .refine((c) => c.name !== undefined || c.object !== undefined, {
+      message: "name or object is required",
+    }),
+  z.object({
+    type: z.literal("measurement.setMeta"),
+    key: z.string().trim().max(MAX_MEASUREMENT_KEY).regex(MEASUREMENT_KEY, {
+      message: "key must start with a letter and hold only letters, digits, space, _ . -",
+    }),
+    value: MeasurementText(MAX_MEASUREMENT_VALUE),
+  }),
+  z.object({ type: z.literal("measurement.clear") }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -259,6 +309,7 @@ export type CommandErrorCode =
   | "too_many_units"
   | "cursor_off"
   | "window_limit"
+  | "measurement_limit"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */
