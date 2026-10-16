@@ -8,6 +8,7 @@ Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
 - **Context:** Jan: „KI.ping has a ui too. i want to take over the design language". Reference: KI.ping `ui/proto-v1` (Tailwind slate, sky accent, dense 12 px, caps section labels, grey group bands, one dark primary per surface, status pills, Okabe-Ito series). Mock: https://claude.ai/artifact/V6naWfZvN9od7JpM482nta (artboards "Workspace" and "Tokens and parts"), source in [docs/design/](design/) (`Main.dc.html`, `Tokens.dc.html`).
 - **Decision:** Jan accepted the mock as shown („accepted right away"), with its defaults: accent sky `#0284c7`, Okabe-Ito series palette, compact density (12 px), and the time strip (data density over the whole recording, the shown range in the accent) on.
+- **Jan's answers on the spec:** Q1 no dark "Add … to …" button at the explorer foot (adding stays row "+" and Enter); Q2 the marked "Add to" window gets the ring frame and "Add to" pill of the mock, the accent top bar goes; Q3 the L line is drawn in slate-500, not in the accent (too close to series colour `#0072B2`).
 - **Consequences:** restyle only, no behaviour change, except the time strip, which is new. Mock parts with no app feature behind them (the "Values" half of the Signals switch, the `ready` legend pill) are illustration, not requirements.
 
 ## D-054: Signal group conventions (2026-10-16)

@@ -72,11 +72,11 @@ Every window SHALL be a white tile with a slate-200 border and 6 px radius; its 
 - **Evidence:** UI check on smart451 at 1440×900 (computed values, one screenshot)
 
 ### Requirement: Cursor and L line look
-Cursor lines and flags SHALL be slate-900: A solid with a filled flag, B dashed with a white flag, slate-900 border and text. The L line in the other windows SHALL be a 1 px line in the accent. Origin: D-055 (mock: A solid / B dashed slate-900, L line in the accent); neutral cursor colour outside the palette: `cursors` "Cursor lines in every timeseries window".
+Cursor lines and flags SHALL be slate-900: A solid with a filled flag, B dashed with a white flag, slate-900 border and text. The L line in the other windows SHALL be a 1 px solid line in slate-500. Origin: D-055 (mock: A solid / B dashed slate-900, L line); slate-500 L line: D-055 (Jan, Q3: too close to series blue in the accent); neutral cursor colour outside the palette: `cursors` "Cursor lines in every timeseries window".
 
 #### Scenario: Cursors and L line
 - **WHEN** two linked windows show the same time, A and B are on, and the pointer hovers window 1
-- **THEN** A's flag has background `rgb(15, 23, 42)`, B's flag background `rgb(255, 255, 255)` with border `rgb(15, 23, 42)`; window 2's L line has colour `rgb(2, 132, 199)`
+- **THEN** A's flag has background `rgb(15, 23, 42)`, B's flag background `rgb(255, 255, 255)` with border `rgb(15, 23, 42)`; window 2's L line has colour `rgb(100, 116, 139)`
 - **Evidence:** UI check on smart451 at 1440×900 (computed values, one screenshot with A, B and the L line)
 
 ### Requirement: Legend look
