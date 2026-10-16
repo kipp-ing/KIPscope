@@ -1,7 +1,8 @@
-import { type BucketSeries, encodeTimes, type RawSeries } from "@kipscope/shared";
+import { type BucketSeries, encodeTimes, type RawSeries, type SignalInfo } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { snapCursorTime } from "../src/chart/cursors.ts";
 import {
+  atLevel,
   chartValueAt,
   readoutCell,
   readoutDelta,
@@ -289,5 +290,136 @@ describe("readout source (D-031)", () => {
       text: "2.00",
     });
     expect(sourceDelta(ok, readoutSource(exact("loading"), avg, false), "V", 3).loading).toBe(true);
+  });
+});
+
+describe("state names in readouts", () => {
+  const mode: SignalInfo = {
+    id: "testcar/Ign_A20h.MODE",
+    dataRef: "testcar",
+    name: "Ign_A20h.MODE",
+    states: "labels",
+    sna: [{ raw: 15, value: 15, sources: ["VAL_"] }],
+    dbc: {
+      message: "Ign_A20h",
+      messageId: 2592,
+      factor: 1,
+      offset: 0,
+      values: [
+        { raw: 0, label: "NONE", value: 0 },
+        { raw: 3, label: "KEYON: Ignition on", value: 3 },
+        { raw: 15, label: "SNA", value: 15 },
+      ],
+    },
+  };
+  const door: SignalInfo = {
+    id: "testcar/DIAG.door",
+    dataRef: "testcar",
+    name: "DIAG.door",
+    states: "text",
+  };
+
+  it("shows state names in readout cells", () => {
+    expect(
+      readoutCell({ kind: "raw", value: 3, label: "KEYON: Ignition on" }, undefined, 3),
+    ).toEqual({ text: "KEYON", title: "KEYON: Ignition on · 3" });
+    expect(readoutCell({ kind: "raw", value: 254, label: "SENSOR_DEF" }, undefined, 3)).toEqual({
+      text: "SENSOR_DEF",
+      title: "SENSOR_DEF · 254",
+    });
+    expect(readoutCell({ kind: "raw", value: 20.5 }, undefined, 3)).toEqual({ text: "20.5" });
+    // A held value keeps its name too.
+    expect(readoutCell({ kind: "held", value: 0, label: "NONE" }, undefined, 3).text).toBe("NONE");
+
+    // Diff: "=" for the same state, "≠" for another; either side named is enough.
+    const keyon = { kind: "raw" as const, value: 3, label: "KEYON: Ignition on" };
+    const none = { kind: "raw" as const, value: 0, label: "NONE" };
+    expect(readoutDelta(keyon, { ...keyon }, undefined, 3, mode).text).toBe("=");
+    expect(readoutDelta(keyon, none, undefined, 3, mode).text).toBe("≠");
+    // Text signals compare the text.
+    const open = { kind: "raw" as const, value: 0, label: "open" };
+    const closed = { kind: "raw" as const, value: 0, label: "closed" };
+    expect(readoutDelta(open, closed, undefined, 3, door).text).toBe("≠");
+    expect(readoutDelta(open, { ...open }, undefined, 3, door).text).toBe("=");
+    // Numbers keep the plain Δ.
+    expect(
+      readoutDelta({ kind: "raw", value: 23 }, { kind: "raw", value: 18 }, "km/h", 3).text,
+    ).toBe("-5.00");
+  });
+
+  it("names raw points and single-name buckets (L from drawn data)", () => {
+    const raw = rawSeries(
+      {
+        t: encodeTimes([at(100), at(200), at(300)]),
+        v: [0, 3, 3],
+      },
+      ["before", "after"],
+    );
+    // A point exactly at t: raw with its name.
+    expect(chartValueAt(raw, at(200), "line", mode)).toEqual({
+      kind: "raw",
+      value: 3,
+      label: "KEYON: Ignition on",
+    });
+    // Between NONE and KEYON the line mode holds the earlier name instead of 1.5.
+    expect(chartValueAt(raw, at(150), "line", mode)).toEqual({
+      kind: "held",
+      value: 0,
+      label: "NONE",
+    });
+    // Without info the value is a plain number.
+    expect(chartValueAt(raw, at(150), "line")).toEqual({ kind: "interpolated", value: 1.5 });
+    // A text signal: the row's text names the point.
+    const text = rawSeries(
+      { t: encodeTimes([at(100), at(200)]), v: [0, 0], text: ["closed", "open"] },
+      ["before", "after"],
+    );
+    expect(chartValueAt(text, at(150), "step", door)).toEqual({
+      kind: "held",
+      value: 0,
+      label: "closed",
+    });
+
+    // A bucket whose minimum and maximum share a name is named; one with two names shows the number.
+    const same = { ...buckets([0], [4], [0], [3]), min: [3], max: [3] };
+    expect(chartValueAt(same, at(500), "line", mode)).toEqual({
+      kind: "aggregated",
+      value: 3,
+      label: "KEYON: Ignition on",
+    });
+    const mixed = { ...buckets([0], [4], [0], [1.5]), min: [0], max: [3] };
+    expect(chartValueAt(mixed, at(500), "line", mode)).toEqual({ kind: "aggregated", value: 1.5 });
+  });
+});
+
+describe("atLevel (open=0, precharge=1, closed=2)", () => {
+  const states = [
+    { low: 0, high: 0, text: "open" },
+    { low: 1, high: 1, text: "precharge" },
+    { low: 2, high: 2, text: "closed" },
+  ];
+
+  it("moves a named text state to its drawn level", () => {
+    expect(atLevel({ kind: "raw", value: 0, label: "closed" }, states)).toEqual({
+      kind: "raw",
+      value: 2,
+      label: "closed",
+    });
+    expect(atLevel({ kind: "held", value: 0, label: "precharge" }, states)).toEqual({
+      kind: "held",
+      value: 1,
+      label: "precharge",
+    });
+    expect(atLevel({ kind: "raw", value: 0, label: "open" }, states)?.kind).toBe("raw");
+  });
+
+  it("leaves unnamed values, unknown names and signals without states as they are", () => {
+    const plain = { kind: "raw", value: 5 } as const;
+    expect(atLevel(plain, states)).toBe(plain);
+    const unknown = { kind: "raw", value: 4, label: "other" } as const;
+    expect(atLevel(unknown, states)).toEqual(unknown);
+    const named = { kind: "raw", value: 0, label: "closed" } as const;
+    expect(atLevel(named, undefined)).toBe(named);
+    expect(atLevel(undefined, states)).toBeUndefined();
   });
 });

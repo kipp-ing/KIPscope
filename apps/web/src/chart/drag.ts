@@ -2,6 +2,8 @@ import {
   type CommandInput,
   isTimeseries,
   MAX_UNITS,
+  type SignalInfo,
+  type Workspace,
   type WorkspaceWindow,
   windowUnits,
 } from "@kipscope/shared";
@@ -18,15 +20,18 @@ export type NewWindowPlace = "strip" | "below";
 
 export type DropTarget =
   | { kind: "window"; windowId: string }
-  | { kind: "new"; place?: NewWindowPlace }; // absent counts as "strip"
+  | { kind: "new"; place?: NewWindowPlace } // absent counts as "strip"
+  | { kind: "events" }; // the time strip: the events line (design V10)
 
 /** data-drop values. */
 export const DROP_NEW = "new";
 export const DROP_NEW_BELOW = "new-below";
+export const DROP_EVENTS = "events";
 
 /** Target named by an element (the closest [data-window-id],[data-drop] under the pointer):
  * data-window-id → window; data-drop "new" → { kind: "new", place: "strip" };
- * "new-below" → { kind: "new", place: "below" }; anything else or no element → undefined. */
+ * "new-below" → { kind: "new", place: "below" }; "events" → { kind: "events" }; anything else or
+ * no element → undefined. */
 export function dropTargetOf(
   el: { getAttribute(name: string): string | null } | null | undefined,
 ): DropTarget | undefined {
@@ -35,7 +40,19 @@ export function dropTargetOf(
   const drop = el?.getAttribute("data-drop");
   if (drop === DROP_NEW) return { kind: "new", place: "strip" };
   if (drop === DROP_NEW_BELOW) return { kind: "new", place: "below" };
+  if (drop === DROP_EVENTS) return { kind: "events" };
   return undefined;
+}
+
+/** A signal dropped on the strip goes on the events line (design V10): only a signal with states
+ * that is not listed yet. */
+export function eventsDrop(
+  info: SignalInfo | undefined,
+  ws: Workspace,
+): { ok: true } | { ok: false; reason: "no_states" | "already_listed" } {
+  if (info?.states === undefined) return { ok: false, reason: "no_states" };
+  if (ws.eventSignals?.includes(info.id)) return { ok: false, reason: "already_listed" };
+  return { ok: true };
 }
 
 /** Pointer movement before a press on a legend grip becomes a drag. */
@@ -51,7 +68,7 @@ function tooManyUnits(
 }
 
 /** A window accepts a drop when it is not the source, does not show the signal yet and, if it is a
- * timeseries window, keeps ≤ MAX_UNITS units; "new" always accepts. */
+ * timeseries window, keeps ≤ MAX_UNITS units; "new" always accepts; "events" is eventsDrop's. */
 export function canDrop(
   source: DragSource,
   target: DropTarget,
@@ -59,6 +76,7 @@ export function canDrop(
   unitOf: (signalId: string) => string | undefined,
 ): boolean {
   if (target.kind === "new") return true;
+  if (target.kind === "events") return false;
   if (target.windowId === source.windowId) return false;
   const w = windows.find((x) => x.id === target.windowId);
   if (!w || w.signals.some((s) => s.signalId === source.signalId)) return false;
@@ -107,7 +125,8 @@ export function isCopy(
 }
 
 /** An explorer drop is accepted by a window that does not show the signal yet and, if it is a
- * timeseries window, keeps ≤ MAX_UNITS units (windowUnits with the signal as extra); "new" always accepts. */
+ * timeseries window, keeps ≤ MAX_UNITS units (windowUnits with the signal as extra); "new" always
+ * accepts; "events" is eventsDrop's. */
 export function canAdd(
   signalId: string,
   target: DropTarget,
@@ -115,6 +134,7 @@ export function canAdd(
   unitOf: (signalId: string) => string | undefined,
 ): boolean {
   if (target.kind === "new") return true;
+  if (target.kind === "events") return false;
   const w = windows.find((x) => x.id === target.windowId);
   if (!w || w.signals.some((s) => s.signalId === signalId)) return false;
   return !tooManyUnits(w, signalId, unitOf);

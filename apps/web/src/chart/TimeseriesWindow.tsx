@@ -3,13 +3,17 @@ import {
   type CommandResult,
   type CursorName,
   DEFAULT_PLOT_HEIGHT,
+  type DiagEvent,
   type Digits,
   type DisplayMode,
+  EVENT_CATEGORIES,
+  type EventCategory,
   formatAxisTicks,
   MAX_UNITS,
   type RenderError,
   type SeriesResult,
   type SignalInfo,
+  shortLabel,
   shownName,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
@@ -21,6 +25,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import "./window.css";
 import { fetchCursorValue } from "../api.ts";
+import { groupMarks, type Mark, markColor, markTitle, PIN_H } from "../events/marks.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import {
@@ -50,6 +55,7 @@ import {
   type SignalInput,
   SNA_ALPHA,
   snaShare,
+  stateLevels,
   yRange,
 } from "./build.ts";
 import { tabSeriesCache } from "./cache.ts";
@@ -82,6 +88,7 @@ import {
 import { type LoadRequest, loadKey, loadStatusText, SeriesLoader } from "./loader.ts";
 import { WINDOW_LOADER_OPTIONS } from "./overview.ts";
 import {
+  atLevel,
   chartValueAt,
   type ReadoutSource,
   readoutSource,
@@ -161,6 +168,8 @@ interface Props {
   onMark: (windowId: string) => void;
   /** "Link time axes" is on: the window shows another linked window's gesture preview (Z9). */
   linked: boolean;
+  /** The shown events of the window's data refs (design V6), from App. */
+  events?: readonly DiagEvent[];
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -197,6 +206,17 @@ function textWidth(text: string): number {
   return measureContext.measureText(text).width;
 }
 
+/**
+ * A y range uPlot can split: a flat or non-finite one (a constant signal whose data arrived before
+ * the model) would make its axis splits endless (RangeError: Invalid array length).
+ */
+function spread([min, max]: [number, number]): [number, number] {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
+  if (min < max) return [min, max];
+  const pad = Math.max(Math.abs(min) * 0.1, 1);
+  return [min - pad, max + pad];
+}
+
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
 
 /** Same chart inputs (results by identity): buildModel would build the same model. */
@@ -210,7 +230,9 @@ const sameInputs = (a: SignalInput[], b: SignalInput[]) =>
       x.label === y.label &&
       x.unit === y.unit &&
       x.color === y.color &&
-      x.result === y.result
+      x.result === y.result &&
+      x.states === y.states &&
+      x.info === y.info
     );
   });
 
@@ -340,6 +362,102 @@ function drawNarrowSignals(u: uPlot, model: ChartModel) {
  * Centres each axis title over its axis column. uPlot stacks axes of one side from the plot
  * outward in array order (L before L2, R before R2); sizes[j] is the size of axes[j] in CSS px.
  */
+/** Event lines (design V6): faults solid, changes dashed, others dotted, at half opacity. */
+const FAULTS: ReadonlySet<EventCategory> = new Set(["active", "pending", "stored"]);
+const EVENT_LINE_ALPHA = 0.5;
+/** A glyph's hit reaches this far below the headroom into the plot, CSS px (design V6). */
+const GLYPH_HIT_BELOW = 4;
+
+const eventDash = (c: EventCategory): number[] =>
+  FAULTS.has(c) ? [] : c === "change" ? [4, 3] : [1, 3];
+
+/**
+ * A 1 px line over the plot area at each event's x, behind the curves (the drawAxes hook,
+ * design V6); where events share a device pixel, the most severe category's line only.
+ */
+function drawEventLines(u: uPlot, events: readonly DiagEvent[], origin: bigint) {
+  if (events.length === 0) return;
+  const { ctx } = u;
+  const { left, top, width, height } = u.bbox;
+  const severest = new Map<number, number>();
+  for (const e of events) {
+    const x = Math.round(u.valToPos(Number(BigInt(e.t) - origin), "x", true));
+    if (x < left || x > left + width) continue;
+    const rank = EVENT_CATEGORIES.indexOf(e.category);
+    const known = severest.get(x);
+    if (known === undefined || rank < known) severest.set(x, rank);
+  }
+  const dpr = devicePixelRatio;
+  const lineWidth = Math.max(1, Math.round(dpr));
+  const offset = lineWidth % 2 === 1 ? 0.5 : 0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  ctx.globalAlpha = EVENT_LINE_ALPHA;
+  ctx.lineWidth = lineWidth;
+  for (const [x, rank] of severest) {
+    const category = EVENT_CATEGORIES[rank] ?? "other";
+    ctx.strokeStyle = markColor(category);
+    ctx.setLineDash(eventDash(category).map((d) => d * dpr));
+    ctx.beginPath();
+    ctx.moveTo(x + offset, top);
+    ctx.lineTo(x + offset, top + height);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Event glyphs (design V6): a box over the headroom beside u.over, one span per mark. */
+function createEventGlyphs(u: uPlot): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "event-glyphs";
+  box.style.height = `${PLOT_HEADROOM + GLYPH_HIT_BELOW}px`;
+  box.style.setProperty("--glyph-height", `${PIN_H}px`);
+  u.over.after(box);
+  return box;
+}
+
+/**
+ * Groups the events on the current x scale (zoom previews included) and puts one glyph per mark
+ * in the headroom, its hit span from `hit`, the drawn pin from `drawn`. The spans are rebuilt
+ * only when a mark changed, so a redraw keeps an open tooltip. Returns the marks.
+ */
+function placeEventGlyphs(
+  u: uPlot,
+  box: HTMLElement,
+  events: readonly DiagEvent[],
+  origin: bigint,
+): Mark[] {
+  const dpr = devicePixelRatio;
+  const px = u.bbox.width / dpr;
+  box.style.left = `${u.bbox.left / dpr}px`;
+  box.style.top = `${u.bbox.top / dpr - PLOT_HEADROOM}px`;
+  box.style.width = `${px}px`;
+  const marks = groupMarks(events, (t) => u.valToPos(Number(t - origin), "x"), px);
+  const titles = marks.map(markTitle);
+  const key = marks
+    .map((m, i) => `${m.hit.left},${m.hit.right},${m.drawn.left},${m.drawn.right},${titles[i]}`)
+    .join("\n");
+  if (box.dataset.key === key) return marks;
+  box.dataset.key = key;
+  box.replaceChildren(
+    ...marks.map((m, i) => {
+      const glyph = document.createElement("span");
+      glyph.className = "event-glyph";
+      glyph.dataset.index = String(i);
+      glyph.title = titles[i] ?? "";
+      glyph.style.left = `${m.hit.left}px`;
+      glyph.style.width = `${m.hit.right - m.hit.left}px`;
+      glyph.style.color = markColor(m.category);
+      glyph.style.setProperty("--glyph-left", `${m.drawn.left - m.hit.left}px`);
+      glyph.style.setProperty("--glyph-width", `${m.drawn.right - m.drawn.left}px`);
+      return glyph;
+    }),
+  );
+  return marks;
+}
+
 function placeTitles(u: uPlot, row: HTMLElement | null, drawn: AxisSpec[], sizes: number[]) {
   if (!row) return;
   const dpr = devicePixelRatio;
@@ -504,14 +622,16 @@ function LiveCell({
   mode,
   unit,
   digits,
+  info,
 }: {
   result: SeriesResult | undefined;
   mode: DisplayMode;
   unit: string | undefined;
   digits: Digits;
+  info: SignalInfo | undefined;
 }) {
   const live = useLiveCursor();
-  const v = live && chartValueAt(result, live.t, mode);
+  const v = live && chartValueAt(result, live.t, mode, info);
   return <ReadoutCell cell={liveCell(v, live !== undefined, unit, digits)} className="live" />;
 }
 
@@ -539,6 +659,7 @@ export function TimeseriesWindow({
   marked,
   onMark,
   linked,
+  events,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState(false);
@@ -608,6 +729,9 @@ export function TimeseriesWindow({
   infoRef.current = info;
   const colorOfRef = useRef(colorOf);
   colorOfRef.current = colorOf;
+  // Event marks (design V6): read by the drawAxes and draw hooks.
+  const eventsRef = useRef<readonly DiagEvent[]>(events ?? []);
+  eventsRef.current = events ?? [];
   // A window removed while it owns L gets no mouseleave.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a window keeps its id
   useEffect(() => () => liveCursor.clear(w.id), []);
@@ -703,8 +827,11 @@ export function TimeseriesWindow({
       color: colorOf(s.signalId),
     };
     const result = loader.get(s.id)?.result;
+    const states = stateLevels(meta);
     if (meta?.unit) input.unit = meta.unit;
     if (result) input.result = result;
+    if (states) input.states = states;
+    if (meta?.states) input.info = meta;
     return input;
   });
   // Rebuilt only when an input changes: a cursor preview rerenders every window on each move.
@@ -840,10 +967,12 @@ export function TimeseriesWindow({
       scales[key] = {
         auto: true,
         range: (_u, dataMin, dataMax) =>
-          yRange(modelRef.current, key, xView.current[0], xView.current[1]) ?? [
-            dataMin ?? 0,
-            dataMax ?? 1,
-          ],
+          spread(
+            yRange(modelRef.current, key, xView.current[0], xView.current[1]) ?? [
+              dataMin ?? 0,
+              dataMax ?? 1,
+            ],
+          ),
       };
     }
     // y axis sizes in CSS px, index j = drawnAxes[j] (uPlot axis j + 1).
@@ -891,6 +1020,9 @@ export function TimeseriesWindow({
     let lines: CursorLines | undefined;
     // Places the L line and label (design L3, L6); set right after uPlot, called by the draw hook.
     let placeLive: (() => void) | undefined;
+    // Event glyphs and the marks they show (design V6, V7); created right after uPlot.
+    let glyphs: HTMLElement | undefined;
+    let marks: Mark[] = [];
     const u = new uPlot(
       {
         width,
@@ -939,10 +1071,12 @@ export function TimeseriesWindow({
           },
         },
         hooks: {
+          drawAxes: [(self) => drawEventLines(self, eventsRef.current, origin.current)],
           draw: [
             (self) => {
               drawSnaLanes(self, modelRef.current.sna);
               drawNarrowSignals(self, modelRef.current);
+              if (glyphs) marks = placeEventGlyphs(self, glyphs, eventsRef.current, origin.current);
               if (lines) {
                 cursorX.current = placeCursorLines(
                   self,
@@ -989,6 +1123,22 @@ export function TimeseriesWindow({
     lines = createCursorLines(u.over);
     cursorLines.current = lines;
     const strips = [lines.a, lines.b];
+    const glyphBox = createEventGlyphs(u);
+    glyphs = glyphBox;
+    marks = placeEventGlyphs(u, glyphBox, eventsRef.current, origin.current);
+    // Glyph click (design V7): no zoom selection or signal drag; A at the first event's time at
+    // once (no double-click meaning), Shift+click B.
+    const stopPress = (e: Event) => e.stopPropagation();
+    const onGlyphClick = (e: MouseEvent) => {
+      const glyph = (e.target as HTMLElement).closest<HTMLElement>(".event-glyph");
+      const first = glyph && marks[Number(glyph.dataset.index)]?.events[0];
+      if (!first) return;
+      e.stopPropagation();
+      onCursorCommitRef.current(e.shiftKey ? "b" : "a", BigInt(first.t));
+    };
+    glyphBox.addEventListener("pointerdown", stopPress);
+    glyphBox.addEventListener("mousedown", stopPress);
+    glyphBox.addEventListener("click", onGlyphClick);
 
     /** Time at x CSS px in the plot, snapped to the shown span and kept inside it (design C3, L2). */
     const timeAt = (x: number) =>
@@ -1119,7 +1269,10 @@ export function TimeseriesWindow({
       const signals = signalsRef.current.map((s) => ({
         key: s.id,
         scale: scaleOf.get(s.id),
-        value: chartValueAt(loader.get(s.id)?.result, t, modeRef.current),
+        value: atLevel(
+          chartValueAt(loader.get(s.id)?.result, t, modeRef.current, infoRef.current(s.signalId)),
+          stateLevels(infoRef.current(s.signalId)),
+        ),
       }));
       const near = nearestSignal(liveCandidates(signals, toY, rect.height), e.clientY - rect.top);
       liveCursor.set({ windowId: w.id, t, ...(near === undefined ? {} : { near }) });
@@ -1165,15 +1318,25 @@ export function TimeseriesWindow({
         label.style.display = "none";
         return;
       }
-      const v = chartValueAt(loader.get(assignment.id)?.result, current.t, modeRef.current);
+      const meta = infoRef.current(assignment.signalId);
+      const v = chartValueAt(loader.get(assignment.id)?.result, current.t, modeRef.current, meta);
       // The near signal's curve point, by the same rule that made it a candidate (design L5).
       const [point] = liveCandidates(
-        [{ key: assignment.id, scale: scaleOf.get(assignment.id), value: v }],
+        [
+          {
+            key: assignment.id,
+            scale: scaleOf.get(assignment.id),
+            value: atLevel(v, stateLevels(meta)),
+          },
+        ],
         toY,
         u.over.clientHeight,
       );
-      const unit = infoRef.current(assignment.signalId)?.unit;
-      const text = liveLabelText(v, unit, digitsRef.current);
+      // A state shows its name like the legend (N3), a number with its unit.
+      const text =
+        v && "label" in v && v.label !== undefined
+          ? shortLabel(v.label)
+          : liveLabelText(v, meta?.unit, digitsRef.current);
       if (!point || text === undefined) {
         label.style.display = "none";
         return;
@@ -1270,6 +1433,17 @@ export function TimeseriesWindow({
     drawnDigits.current = digits;
     uplot.current?.redraw(false, true);
   }, [digits]);
+
+  // Event lines and glyphs follow the shown events (read via eventsRef); a new array with the
+  // same events (App's union per render) redraws nothing.
+  const drawnEvents = useRef(eventsRef.current);
+  useLayoutEffect(() => {
+    const next = eventsRef.current;
+    const last = drawnEvents.current;
+    if (next.length === last.length && next.every((e, i) => e === last[i])) return;
+    drawnEvents.current = next;
+    uplot.current?.redraw(false);
+  });
 
   useEffect(() => () => clearTimeout(commitTimer.current), []);
 
@@ -1465,7 +1639,7 @@ export function TimeseriesWindow({
             const key = `${s.id}|${name}`;
             const exact = cellState(values.get(key), exactOf.get(key));
             const drawn =
-              t === undefined ? undefined : chartValueAt(state?.result, t, w.display.mode);
+              t === undefined ? undefined : chartValueAt(state?.result, t, w.display.mode, meta);
             // A dragged line or a click waiting for its double-click: the drawn curve, live.
             const previewing = t !== undefined && String(t) !== committed[name];
             return readoutSource(exact, drawn, previewing);
@@ -1507,7 +1681,7 @@ export function TimeseriesWindow({
                   cell={
                     a === undefined || b === undefined
                       ? { text: NO_VALUE, title: "cursor off" }
-                      : sourceDelta(sourceA, sourceB, meta?.unit, digits)
+                      : sourceDelta(sourceA, sourceB, meta?.unit, digits, meta)
                   }
                 />
               )}
@@ -1516,6 +1690,7 @@ export function TimeseriesWindow({
                 mode={w.display.mode}
                 unit={meta?.unit}
                 digits={digits}
+                info={meta}
               />
               {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
               <span className={`status ${state?.error ? "error" : (state?.status ?? "loading")}`}>

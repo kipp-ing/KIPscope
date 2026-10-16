@@ -11,6 +11,7 @@ let failing = false;
 const extentCalls: string[] = [];
 /** The test source, whose density queries fail on demand ("source unreachable"). */
 const source = {
+  textSignals: async () => [],
   listSignals: (abort?: AbortSignal) => real.listSignals(abort),
   refExtent: (...args: Parameters<typeof real.refExtent>) => {
     extentCalls.push(args[0]);
@@ -23,7 +24,7 @@ const catalog = new Catalog(source, async () => new Map());
 const app = buildApp({
   catalog,
   source,
-  workspace: new WorkspaceStore({ signalExists: () => true }),
+  workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
 });
 
 const density = (dataRef?: string) =>
@@ -151,7 +152,7 @@ describe("GET /api/density", () => {
     const fresh = buildApp({
       catalog,
       source,
-      workspace: new WorkspaceStore({ signalExists: () => true }),
+      workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
     });
     failing = true;
     try {

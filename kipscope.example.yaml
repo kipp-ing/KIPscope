@@ -1,7 +1,7 @@
 # KIPscope project file (D-035): how the UI shows signal names and which measurement is open.
 # The server reads <repo root>/kipscope.yaml at start (KIPSCOPE_PROJECT_FILE overrides the path).
 # Restart the server after editing. An invalid file stops the server with one message per problem.
-# Top-level keys: `display` and `measurement`, both optional; any other key is an error.
+# Top-level keys: `display`, `measurement` and `events`, all optional; any other key is an error.
 
 # Optional. Names only change what the UI shows; signal IDs, the API, the CLI and the workspace keep full names.
 display:
@@ -56,3 +56,13 @@ display:
 #   meta:
 #     driver: Jan
 #     run: 3
+
+# Optional: signals whose state changes are on the events line from the start (D-059).
+# Like `measurement` this is only the start value: `kipscope events add|remove` changes it, and commands
+# win until restart; nothing writes the file. `events` holds only `signals`.
+events:
+  # signals: at most 8 signal IDs (<data ref>/<signal name>). A signal not recorded yet waits quietly
+  # (logged once per catalog load) and shows once recorded; a signal without states is skipped.
+  signals:
+    - smart451/CPC_168h.IgnCurMode   # ignition (D-058, Q4)
+    - smart451/BMS.contactor         # HV contactor (D-058, Q5)

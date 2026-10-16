@@ -19,6 +19,8 @@ export interface WorkspaceStoreOptions {
   onListenerError?(error: unknown): void;
   /** Measurement info at revision 0, from the project file (design F7); commands win until restart. */
   measurement?: Measurement;
+  /** Events-line signals at revision 0, from the project file (add-events E8), unchecked: a signal not in the catalog waits. */
+  eventSignals?: readonly string[];
 }
 
 /**
@@ -37,7 +39,9 @@ export class WorkspaceStore {
   constructor(ctx: ApplyContext, options: WorkspaceStoreOptions = {}) {
     this.ctx = ctx;
     this.onListenerError = options.onListenerError ?? ((error) => console.error(error));
-    if (options.measurement) this.state = { ...EMPTY_WORKSPACE, measurement: options.measurement };
+    if (options.measurement) this.state = { ...this.state, measurement: options.measurement };
+    if (options.eventSignals?.length)
+      this.state = { ...this.state, eventSignals: [...options.eventSignals] };
   }
 
   get workspace(): Workspace {

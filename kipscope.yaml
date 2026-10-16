@@ -20,3 +20,8 @@ display:
       group: '{ecu} (diag)'
 measurement:
   object: smart451
+events:
+  # Signals whose state changes are on the events line from the start (D-059); a signal not recorded yet waits.
+  signals:
+    - smart451/CPC_168h.IgnCurMode   # ignition (D-058, Q4)
+    - smart451/BMS.contactor         # HV contactor (D-058, Q5)

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
-import type { TableMapping } from "../src/config.ts";
+import type { EventMapping, TableMapping } from "../src/config.ts";
 
 /** Client for the seeded test DB (`docker compose up -d` + `seed:test`); never the real one. */
 export function testClient() {
@@ -18,10 +18,22 @@ export const testMapping: TableMapping = {
   signal: "signal",
   time: "utc",
   value: "value",
+  text: "text",
 };
 
-export function testSource(table = "signals") {
-  return new ClickHouseSource(testClient(), { ...testMapping, table }, 30);
+/** Events table of the test DB (design T): carserver's defaults. */
+export const testEventMapping: EventMapping = {
+  table: "events",
+  source: "source",
+  kind: "kind",
+  name: "name",
+  value: "value",
+  text: "text",
+  detail: "detail",
+};
+
+export function testSource(table = "signals", events: EventMapping = testEventMapping) {
+  return new ClickHouseSource(testClient(), { ...testMapping, table }, 30, events);
 }
 
 export const fixture = (name: string) => resolve(import.meta.dirname, "fixtures", name);

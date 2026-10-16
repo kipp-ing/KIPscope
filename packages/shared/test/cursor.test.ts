@@ -131,3 +131,39 @@ describe("formatCursorNumber", () => {
     expect(formatCursorNumber(123456789.987)).toBe("123456790");
   });
 });
+
+describe("evaluateAt with named points", () => {
+  const named = (point: { v: number | null }) => point.v === 0 || point.v === 3;
+
+  it("holds line mode next to a named point", () => {
+    // 0 is named: between 0 and 5 the earlier value is held, not interpolated to 2.5.
+    expect(evaluateAt(50n, "line", p(0n, 0), p(100n, 5), named)).toEqual({
+      kind: "held",
+      value: 0,
+    });
+    // The next point named holds the earlier one as well.
+    expect(evaluateAt(50n, "line", p(0n, 5), p(100n, 3), named)).toEqual({
+      kind: "held",
+      value: 5,
+    });
+    // Without a name on either side the value is interpolated as before.
+    expect(evaluateAt(50n, "line", p(0n, 4), p(100n, 6), named)).toEqual({
+      kind: "interpolated",
+      value: 5,
+    });
+    // Without the option nothing changes.
+    expect(evaluateAt(50n, "line", p(0n, 0), p(100n, 5))).toEqual({
+      kind: "interpolated",
+      value: 2.5,
+    });
+    // A point exactly at t is raw, named or not; step mode holds anyway.
+    expect(evaluateAt(100n, "line", p(100n, 3), p(200n, 5), named)).toEqual({
+      kind: "raw",
+      value: 3,
+    });
+    expect(evaluateAt(50n, "step", p(0n, 0), p(100n, 5), named)).toEqual({
+      kind: "held",
+      value: 0,
+    });
+  });
+});

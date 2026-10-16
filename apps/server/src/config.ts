@@ -8,6 +8,22 @@ export interface TableMapping {
   signal: string;
   time: string;
   value: string;
+  /** Text column (state names, design E1); a missing column is no config error (textSignals → []). */
+  text: string;
+}
+
+/**
+ * Columns of the events table (design E1). Database, data-ref and time columns come from the
+ * signals `mapping`; a missing table is no config error (the source answers none).
+ */
+export interface EventMapping {
+  table: string;
+  source: string;
+  kind: string;
+  name: string;
+  value: string;
+  text: string;
+  detail: string;
 }
 
 export interface Config {
@@ -15,6 +31,7 @@ export interface Config {
   port: number;
   clickhouse: { url: string; username: string; password: string };
   mapping: TableMapping;
+  events: EventMapping;
   /** Absolute paths, in priority order (first file wins). */
   dbcFiles: string[];
   /** Diagnostic catalog manifests, absolute paths in priority order (design M2); names file next to each. */
@@ -37,6 +54,17 @@ const DEFAULT_DBC_FILES = [
 export const DEFAULT_DIAG_CATALOGS = [
   "../CarController/vehicles/smart451/uds/bms-live.manifest.json",
 ];
+
+/** Defaults of `KIPSCOPE_EVENTS_TABLE` and `KIPSCOPE_EVENT_COLUMN_*` (design E1). */
+export const DEFAULT_EVENT_MAPPING: EventMapping = {
+  table: "events",
+  source: "source",
+  kind: "kind",
+  name: "name",
+  value: "value",
+  text: "text",
+  detail: "detail",
+};
 
 type Env = Record<string, string | undefined>;
 
@@ -84,6 +112,16 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       signal: identifier(env, "KIPSCOPE_COLUMN_SIGNAL", "signal"),
       time: identifier(env, "KIPSCOPE_COLUMN_TIME", "utc"),
       value: identifier(env, "KIPSCOPE_COLUMN_VALUE", "value"),
+      text: identifier(env, "KIPSCOPE_COLUMN_TEXT", "text"),
+    },
+    events: {
+      table: identifier(env, "KIPSCOPE_EVENTS_TABLE", DEFAULT_EVENT_MAPPING.table),
+      source: identifier(env, "KIPSCOPE_EVENT_COLUMN_SOURCE", DEFAULT_EVENT_MAPPING.source),
+      kind: identifier(env, "KIPSCOPE_EVENT_COLUMN_KIND", DEFAULT_EVENT_MAPPING.kind),
+      name: identifier(env, "KIPSCOPE_EVENT_COLUMN_NAME", DEFAULT_EVENT_MAPPING.name),
+      value: identifier(env, "KIPSCOPE_EVENT_COLUMN_VALUE", DEFAULT_EVENT_MAPPING.value),
+      text: identifier(env, "KIPSCOPE_EVENT_COLUMN_TEXT", DEFAULT_EVENT_MAPPING.text),
+      detail: identifier(env, "KIPSCOPE_EVENT_COLUMN_DETAIL", DEFAULT_EVENT_MAPPING.detail),
     },
     dbcFiles: pathList(env, "KIPSCOPE_DBC_FILES", DEFAULT_DBC_FILES, root),
     diagCatalogs: pathList(env, "KIPSCOPE_DIAG_CATALOGS", DEFAULT_DIAG_CATALOGS, root),

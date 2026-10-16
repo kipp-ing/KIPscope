@@ -5,6 +5,7 @@ import type { Catalog } from "./catalog.ts";
 import type { DataSource } from "./datasource.ts";
 import { apiError } from "./http.ts";
 import { type MetaDeps, metaRoutes } from "./meta.ts";
+import { eventsRoutes } from "./routes/events.ts";
 import { seriesRoutes } from "./routes/series.ts";
 import { signalRoutes } from "./routes/signals.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
@@ -47,6 +48,7 @@ export function buildApp(
   });
   app.register(signalRoutes(deps));
   app.register(seriesRoutes(deps));
+  app.register(eventsRoutes(deps));
   app.register(workspaceRoutes(deps));
   app.register(metaRoutes(deps));
   return app;

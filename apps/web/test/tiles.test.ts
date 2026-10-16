@@ -2,6 +2,7 @@ import {
   type BucketSeries,
   decodeTimes,
   encodeTimes,
+  type RawSeries,
   type SeriesResult,
   TIME_MAX,
 } from "@kipscope/shared";
@@ -422,5 +423,51 @@ describe("plans the overview and the prefetch", () => {
 
   it("caps the coarser level at MAX_LEVEL", () => {
     expect(prefetchPlan(0n, 1000n, MAX_LEVEL)[0]?.level).toBe(MAX_LEVEL);
+  });
+});
+
+describe("text signals keep row text and edge labels through tiles", () => {
+  const R = (tile: Tile | undefined) => (tile as Tile).data as RawSeries;
+  const TS = "c/Bms.CONTACTOR";
+  // Points every 100,000 ns; tile span at level 10 is 262,144 ns: the third point is in tile 1.
+  const rawText = (): SeriesResult => ({
+    kind: "raw",
+    signalId: TS,
+    from: "0",
+    to: (2n * S10).toString(),
+    t: encodeTimes([100_000n, 200_000n, 300_000n, 400_000n]),
+    v: [0, 0, 0, 0],
+    text: ["open", "precharge", "closed", "closed"],
+    before: { t: "-1000", v: 0, label: "open" },
+    after: { t: (3n * S10).toString(), v: 0, label: "closed" },
+  });
+
+  it("splitRun cuts text with the points and labels the edges", () => {
+    const [t0, t1] = splitRun(rawText(), 10, 0n, 1n);
+    expect(R(t0).text).toEqual(["open", "precharge"]);
+    expect(R(t1).text).toEqual(["closed", "closed"]);
+    // Neighbours across the tile border come from the adjacent points, with their text.
+    expect(R(t0).after).toEqual({ t: "300000", v: 0, label: "closed" });
+    expect(R(t1).before).toEqual({ t: "200000", v: 0, label: "precharge" });
+    expect(R(t0).before?.label).toBe("open");
+    expect(R(t1).after?.label).toBe("closed");
+  });
+
+  it("stitch and mergeUp keep text and labels", () => {
+    const tiles = splitRun(rawText(), 10, 0n, 1n);
+    const stitched = stitch(tiles, 150_000n, 350_000n) as RawSeries;
+    expect(stitched.text).toEqual(["precharge", "closed"]);
+    expect(stitched.before).toEqual({ t: "100000", v: 0, label: "open" });
+    expect(stitched.after).toEqual({ t: "400000", v: 0, label: "closed" });
+
+    const merged = mergeUp(tiles[0] as Tile, tiles[1] as Tile).data as RawSeries;
+    expect(merged.text).toEqual(["open", "precharge", "closed", "closed"]);
+    expect(merged.before?.label).toBe("open");
+    expect(merged.after?.label).toBe("closed");
+  });
+
+  it("a numeric series gains no text", () => {
+    const tiles = splitRun(fakeAnswer([{ t: 5n, v: 1 }], runRequest(SIG, 10, 0n, 1n)), 10, 0n, 1n);
+    expect(R(tiles[0]).text).toBeUndefined();
   });
 });

@@ -20,7 +20,7 @@ function metaDeps(ping: MetaDeps["ping"], build?: Partial<BuildInfo>): MetaDeps 
   };
 }
 
-const workspace = () => new WorkspaceStore({ signalExists: () => true });
+const workspace = () => new WorkspaceStore({ signalExists: () => true, hasStates: () => false });
 const never = {} as DataSource;
 /** An unloaded catalog over a source that is never asked. */
 const idleCatalog = () => new Catalog(never, async () => new Map());
@@ -117,6 +117,7 @@ describe("GET /api/meta catalog states", () => {
   it("reports a catalog that has not loaded", async () => {
     let fail = false;
     const source = {
+      textSignals: async () => [],
       listSignals: () =>
         fail ? Promise.reject(new Error("connect ECONNREFUSED")) : new Promise<never>(() => {}),
     } as unknown as DataSource;

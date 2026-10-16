@@ -6,6 +6,7 @@ import {
   type SignalPage,
   searchSignals,
   signalId,
+  valueLabels,
 } from "@kipscope/shared";
 import type { DataSource, SnaRange } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
@@ -92,13 +93,15 @@ export class Catalog {
 
   private async load(): Promise<void> {
     let refs: Awaited<ReturnType<DataSource["listSignals"]>>;
+    let textRefs: Awaited<ReturnType<DataSource["textSignals"]>>;
     let metadata: Map<string, DbcSignal>;
     let diag: Map<string, DiagSignal>;
     const warn = (message: string) => this.log?.warn(`DBC file skipped: ${message}`);
     const warnDiag = (message: string) => this.log?.warn(`diag catalog: ${message}`);
     try {
-      [refs, metadata, diag] = await Promise.all([
-        this.source.listSignals(),
+      [[refs, textRefs], metadata, diag] = await Promise.all([
+        // Signals whose rows carry text, once per load after the list (add-events N1).
+        this.source.listSignals().then(async (r) => [r, await this.source.textSignals()] as const),
         this.loadMetadata(warn),
         this.loadDiag(warnDiag),
       ]);
@@ -108,6 +111,7 @@ export class Catalog {
       throw error;
     }
     const ranges = new Map<string, SnaRange[]>();
+    const textIds = new Set(textRefs.map((r) => signalId(r.dataRef, r.name)));
     // Names with data that a DBC and a diagnostic catalog both define; the DBC wins (design M5).
     const both = new Set<string>();
     const entries = refs.map(({ dataRef, name }) => {
@@ -118,7 +122,7 @@ export class Catalog {
         // No description, no SNA: invalid rows are never stored (design M1).
         if (d?.unit) info.unit = d.unit;
         if (d) info.diag = d.diag;
-        return info;
+        return withStates(info, textIds);
       }
       if (diag.has(name)) both.add(name);
       if (meta.description) info.description = meta.description;
@@ -132,7 +136,7 @@ export class Catalog {
           values.map(({ value }) => ({ lo: value - tolerance, hi: value + tolerance })),
         );
       }
-      return info;
+      return withStates(info, textIds);
     });
     if (both.size > 0)
       warnDiag(
@@ -279,6 +283,18 @@ function errorMessage(error: unknown): string {
   return message || (error instanceof Error ? error.name : "unknown error");
 }
 
+/**
+ * Marks a signal with states (add-events N1): "text" when its rows carry text or it is a diag
+ * enum (the state is in the row text, D-061), never for diag kind "text" (VIN, hexdump);
+ * else "labels" when a VAL_ entry names a code that is not SNA.
+ */
+function withStates(info: SignalInfo, textIds: ReadonlySet<string>): SignalInfo {
+  if (info.diag?.kind === "text") return info;
+  if (textIds.has(info.id) || info.diag?.kind === "enum") info.states = "text";
+  else if (valueLabels(info).length > 0) info.states = "labels";
+  return info;
+}
+
 /** DBC details of a catalog entry (design E4): `values` sorted by raw, absent fields stay absent. */
 function dbcInfo(meta: DbcSignal): DbcInfo {
   const dbc: DbcInfo = { message: meta.message, messageId: meta.messageId };
@@ -289,7 +305,9 @@ function dbcInfo(meta: DbcSignal): DbcInfo {
   if (meta.min !== undefined) dbc.min = meta.min;
   if (meta.max !== undefined) dbc.max = meta.max;
   if (meta.values && meta.values.size > 0) {
-    dbc.values = [...meta.values].sort(([a], [b]) => a - b).map(([raw, label]) => ({ raw, label }));
+    dbc.values = [...meta.values]
+      .sort(([a], [b]) => a - b)
+      .map(([raw, label]) => ({ raw, label, value: meta.physical?.get(raw) ?? raw }));
   }
   return dbc;
 }

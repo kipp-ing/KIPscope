@@ -1,4 +1,4 @@
-import type { Timestamp } from "@kipscope/shared";
+import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
 
 /** A signal as the source knows it, without metadata. */
 export interface SignalRef {
@@ -15,13 +15,22 @@ export interface SnaRange {
 /** A signal plus its SNA ranges, for value-returning queries. Empty `sna`: no SNA. */
 export interface SeriesRef extends SignalRef {
   sna: readonly SnaRange[];
+  /** A text signal (state names in the row text, design N2): raw, before and after also read `text`. */
+  text?: boolean;
 }
 
 export interface RawPoint {
   t: Timestamp;
   /** null: the point is SNA. */
   v: number | null;
+  /** The row's text, only for a `SeriesRef` marked `text` (design E4). */
+  text?: string;
 }
+
+/** How `stateChanges` detects a change (design E7): by row text, or into or out of a named value. */
+export type StateChangeRule =
+  | { kind: "text" }
+  | { kind: "labels"; values: number[]; tolerance: number };
 
 export interface Bucket {
   start: Timestamp;
@@ -72,4 +81,20 @@ export interface DataSource {
     width: bigint,
     abort?: AbortSignal,
   ): Promise<{ start: Timestamp; count: number }[]>;
+  /**
+   * The data ref's event rows with a time, time order (ties kind, source, name), at most `limit`;
+   * undefined when the events table does not exist (design E4).
+   */
+  events(dataRef: string, limit: number, abort?: AbortSignal): Promise<EventRow[] | undefined>;
+  /** Rows of one signal (SNA left out) where the state changes, plus its first row; at most `limit` rows (E7). */
+  stateChanges(
+    ref: SeriesRef,
+    by: StateChangeRule,
+    limit: number,
+    abort?: AbortSignal,
+  ): Promise<StateRow[]>;
+  /** Signals with non-empty text (one query); [] when the text column does not exist. */
+  textSignals(abort?: AbortSignal): Promise<SignalRef[]>;
+  /** Qualified events table name for log messages, e.g. `sdlog.events`; absent: "the events table". */
+  readonly eventsTable?: string;
 }

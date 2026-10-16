@@ -1,9 +1,14 @@
 import {
   type CommandInput,
   type CursorValueResult,
+  DEFAULT_EVENT_FILTER,
+  describeEventFilter,
+  type EventList,
   type Extent,
   formatLocal,
   isTimeseries,
+  parseEventFilter,
+  parseSignalId,
   type RenderStatus,
   type SignalPage,
   type Workspace,
@@ -13,7 +18,9 @@ import { type Client, createClient, type Deadline } from "./client.ts";
 import {
   CliError,
   type CliOutput,
+  type EventListData,
   EXIT,
+  eventTable,
   type Outcome,
   printOutput,
   type RenderWait,
@@ -33,6 +40,7 @@ type Body = Omit<CliOutput, "ok" | "outcome" | "exitCode">;
 /** Parses, executes and prints one call; returns the exit code. Never throws. */
 export async function run(argv: string[], io: Io): Promise<number> {
   let out: CliOutput;
+  let table: string | undefined;
   let pretty = prettyRequested(argv);
   try {
     const { options, invocation } = parseArgs(argv, io.env);
@@ -42,11 +50,16 @@ export async function run(argv: string[], io: Io): Promise<number> {
     }
     pretty = options.pretty;
     out = await execute(invocation, options);
+    if (invocation.kind === "events" && invocation.table && out.ok) {
+      table = eventTable(out.data as EventListData, out.local?.t as string[]);
+    }
   } catch (e) {
     out = failure({}, e);
   }
   try {
-    printOutput(out, io, pretty);
+    // `events list --table` prints its lines instead of the JSON, on success only (spec cli).
+    if (table !== undefined) io.stdout(table);
+    else printOutput(out, io, pretty);
   } catch {
     // A closed stdout must not turn into a throw; the exit code still tells the result.
   }
@@ -104,6 +117,36 @@ async function execute(
           ...(value.at && { at: local(value.at.t) }),
           ...(value.next && { next: local(value.next.t) }),
         };
+        return result("ok", body);
+      }
+      case "events": {
+        const { workspace } = await lookups.workspace();
+        const dataRef = invocation.dataRef ?? firstDataRef(workspace);
+        if (dataRef === undefined) {
+          throw new CliError(
+            "rejected",
+            "no_data_ref",
+            "no window shows a signal; name the data ref with --ref",
+          );
+        }
+        const filter = invocation.filter ?? workspace.eventFilter ?? DEFAULT_EVENT_FILTER;
+        const query = new URLSearchParams({ dataRef, filter });
+        for (const id of workspace.eventSignals ?? []) {
+          if (parseSignalId(id)?.dataRef === dataRef) query.append("signal", id);
+        }
+        if (invocation.from && invocation.to) {
+          query.set("from", (await resolveTime(invocation.from, lookups)).toString());
+          query.set("to", (await resolveTime(invocation.to, lookups)).toString());
+        }
+        // In the path: the query map of client.get cannot repeat `signal`.
+        const list = await client.get<EventList>(`/api/events?${query}`);
+        const parsed = parseEventFilter(list.filter ?? filter);
+        const data: EventListData = {
+          ...list,
+          description: parsed.ok ? describeEventFilter(parsed.filter) : "",
+        };
+        body.data = data;
+        body.local = { t: list.events.map((e) => local(e.t)) };
         return result("ok", body);
       }
       case "wait": {
@@ -253,6 +296,17 @@ function createLookups(client: Client): Lookups {
     search: (query, limit) =>
       client.get<SignalPage>("/api/signals", { q: query, limit: String(limit) }),
   };
+}
+
+/** Data ref of the first signal in window order (`events list` without --ref). */
+function firstDataRef(workspace: Workspace): string | undefined {
+  for (const w of workspace.windows) {
+    for (const a of w.signals) {
+      const id = parseSignalId(a.signalId);
+      if (id) return id.dataRef;
+    }
+  }
+  return undefined;
 }
 
 /** Local time with offset (design L5), from decimal ns. */

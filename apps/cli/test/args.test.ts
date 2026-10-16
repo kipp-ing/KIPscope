@@ -147,6 +147,20 @@ const FORMS: [string[], Record<string, unknown>][] = [
     { type: "measurement.setMeta", key: "driver", value: "" },
   ],
   [["measurement", "clear"], { type: "measurement.clear" }],
+  [["events", "filter", "faults", "bms"], { type: "events.setFilter", filter: "faults bms" }],
+  [
+    ["events", "filter", "changes", "-snapshots"],
+    { type: "events.setFilter", filter: "changes -snapshots" },
+  ],
+  [["events", "filter", ""], { type: "events.setFilter", filter: "" }],
+  [
+    ["events", "add", "testcar/Ign_A20h.MODE"],
+    { type: "events.addSignal", signalId: "testcar/Ign_A20h.MODE" },
+  ],
+  [
+    ["events", "remove", "testcar/Ign_A20h.MODE"],
+    { type: "events.removeSignal", signalId: "testcar/Ign_A20h.MODE" },
+  ],
   [["diff", "on"], { type: "cursor.setDiff", diff: true }],
   [["diff", "off"], { type: "cursor.setDiff", diff: false }],
   [
@@ -161,6 +175,71 @@ describe("argument grammar", () => {
     for (const [argv, expected] of FORMS) {
       expect(await commandOf(argv), argv.join(" ")).toEqual(expected);
     }
+  });
+
+  it("resolves a bare name in the events forms and refuses the malformed ones", async () => {
+    // `events remove MODE`: the bare name goes through the search like `signal add`.
+    const { invocation } = parseArgs(["events", "remove", "MODE"], {});
+    if (invocation.kind !== "command") throw new Error("not a command");
+    expect(invocation.template.signalId).toEqual({ kind: "name", name: "MODE" });
+    const resolved = await resolveCommand(invocation.template, {
+      workspace: noLookups.workspace,
+      search: async () => ({
+        items: [{ id: "testcar/Ign_A20h.MODE", dataRef: "testcar", name: "Ign_A20h.MODE" }],
+        total: 1,
+        more: false,
+      }),
+    });
+    expect(JSON.parse(JSON.stringify(resolved))).toEqual({
+      type: "events.removeSignal",
+      signalId: "testcar/Ign_A20h.MODE",
+    });
+
+    // `events filter` needs at least one word (the empty string counts); unknown forms are usage errors.
+    for (const argv of [
+      ["events"],
+      ["events", "frob"],
+      ["events", "filter"],
+      ["events", "add"],
+      ["events", "remove"],
+      ["events", "add", "a", "b"],
+      ["events", "list", "--from", "2026-10-01T00:00Z"],
+      ["events", "list", "--to", "2026-10-01T00:00Z"],
+      ["events", "list", "--ref"],
+    ]) {
+      expect(usageError(argv).outcome, argv.join(" ")).toBe("usage");
+    }
+  });
+
+  it("reads the events list form", () => {
+    const parse = (...argv: string[]) => parseArgs(argv, {}).invocation;
+    expect(parse("events", "list")).toMatchObject({ kind: "events", table: false });
+    expect(parse("events", "list")).not.toHaveProperty("filter");
+    expect(parse("events", "list", "faults", "ecu:bms")).toMatchObject({
+      kind: "events",
+      filter: "faults ecu:bms",
+    });
+    expect(parse("events", "list", "--table", "--ref", "testcar")).toMatchObject({
+      kind: "events",
+      table: true,
+      dataRef: "testcar",
+    });
+    expect(
+      parse(
+        "events",
+        "list",
+        "changes",
+        "--from",
+        "2026-10-01T00:00Z",
+        "--to",
+        "2026-10-01T03:00Z",
+      ),
+    ).toMatchObject({
+      kind: "events",
+      filter: "changes",
+      from: { kind: "abs", t: 1790812800000000000n },
+      to: { kind: "abs", t: 1790823600000000000n },
+    });
   });
 
   it("reads the read forms", () => {
@@ -285,6 +364,22 @@ describe("argument grammar", () => {
     });
   });
 
+  it("keeps single-dash words as arguments", async () => {
+    const { invocation } = parseArgs(["events", "list", "all", "-snapshots", "-ecu:VCU"], {});
+    expect(invocation).toMatchObject({ kind: "events", filter: "all -snapshots -ecu:VCU" });
+    // Any other command takes them as values as well.
+    expect(await commandOf(["window", "rename", "w1", "-x"])).toEqual({
+      type: "window.rename",
+      windowId: "w1",
+      title: "-x",
+    });
+    // -h is still the help; --long words are still options.
+    expect(parseArgs(["-h"], {}).invocation).toEqual({ kind: "help" });
+    expect(parseArgs(["events", "list", "-h"], {}).invocation).toEqual({ kind: "help" });
+    expect(parseArgs(["events", "list", "--table"], {}).invocation).toMatchObject({ table: true });
+    expect(usageError(["events", "list", "--bogus"]).outcome).toBe("usage");
+  });
+
   it("refuses malformed lines as usage errors", () => {
     const bad: string[][] = [
       ["frobnicate"],
@@ -372,6 +467,10 @@ describe("argument grammar", () => {
       "cursor move",
       "cursor remove",
       "diff",
+      "events list",
+      "events filter",
+      "events add",
+      "events remove",
       "command",
       "state",
       "search",

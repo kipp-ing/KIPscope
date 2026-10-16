@@ -107,12 +107,22 @@ export function runRequest(
 interface Point {
   t: Timestamp;
   v: number | null;
+  /** Row text of a text signal's point (add-events N3); absent for other signals. */
+  text?: string;
 }
 
 const rawPoints = (data: RawSeries): Point[] =>
-  decodeTimes(data.t).map((t, i) => ({ t, v: data.v[i] ?? null }));
+  decodeTimes(data.t).map((t, i) => {
+    const v = data.v[i] ?? null;
+    return data.text ? { t, v, text: data.text[i] ?? "" } : { t, v };
+  });
 
-const edge = (p: Point): EdgePoint => ({ t: p.t.toString(), v: p.v });
+/** Edge point; a text signal's carries its row text as `label` when valid (as the server's). */
+function edge(p: Point): EdgePoint {
+  const point: EdgePoint = { t: p.t.toString(), v: p.v };
+  if (p.v !== null && p.text) point.label = p.text;
+  return point;
+}
 
 /** First index whose time is at or after `t` (points in time order). */
 function lowerBound(points: readonly Point[], t: Timestamp): number {
@@ -149,6 +159,8 @@ function cutRaw(
     t: encodeTimes(inside.map((p) => p.t)),
     v: inside.map((p) => p.v),
   };
+  // Text signals keep their row text through cutting, stitching and merging.
+  if (points[0]?.text !== undefined) result.text = inside.map((p) => p.text ?? "");
   const before = lo > 0 ? edge(points[lo - 1] as Point) : outerBefore;
   const after = hi < points.length ? edge(points[hi] as Point) : outerAfter;
   if (before) result.before = before;

@@ -264,3 +264,57 @@ describe("project file measurement section (add-footer)", () => {
     );
   });
 });
+
+describe("project file events section (add-events)", () => {
+  function problems(text: string): string[] {
+    try {
+      parseProject(text, "p.yaml");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ProjectFileError);
+      return (e as Error).message.split("\n").filter((l) => l.trim() !== "");
+    }
+    throw new Error("expected parseProject to throw");
+  }
+
+  it("reads events.signals", () => {
+    expect(
+      parseProject("events:\n  signals:\n    - smart451/CPC_168h.IgnCurMode\n", "p.yaml").events,
+    ).toEqual({ signals: ["smart451/CPC_168h.IgnCurMode"] });
+    // Absent or empty: no events section.
+    expect(parseProject("", "p.yaml").events?.signals ?? []).toEqual([]);
+    expect(parseProject("events:\n", "p.yaml").events?.signals ?? []).toEqual([]);
+
+    // Nine entries: at most 8.
+    const nine = Array.from({ length: 9 }, (_, i) => `    - car/S${i + 1}`).join("\n");
+    const tooMany = problems(`events:\n  signals:\n${nine}\n`);
+    expect(tooMany.some((l) => l.includes("events.signals") && l.includes("at most 8"))).toBe(true);
+
+    // Not a signal ID (no data ref).
+    const notId = problems("events:\n  signals: [nodataref]\n");
+    expect(notId.some((l) => l.includes("events.signals") && l.includes("not a signal ID"))).toBe(
+      true,
+    );
+
+    // Only `signals` is a key.
+    expect(problems("events: { colour: red }\n")).toContain('p.yaml: events: unknown key "colour"');
+
+    // Eight entries are fine; problems come together with the other sections'.
+    const eight = Array.from({ length: 8 }, (_, i) => `car/S${i + 1}`);
+    expect(parseProject(`events: { signals: [${eight.join(", ")}] }\n`, "p.yaml").events).toEqual({
+      signals: eight,
+    });
+    const both = problems("measurement: { objekt: x }\nevents: { colour: red }\n");
+    expect(both).toContain('p.yaml: measurement: unknown key "objekt"');
+    expect(both).toContain('p.yaml: events: unknown key "colour"');
+  });
+
+  it("lists the ignition and the contactor in the shipped project file", () => {
+    const shipped = parseProject(
+      readFileSync(resolve(repoRoot, "kipscope.yaml"), "utf8"),
+      "kipscope.yaml",
+    );
+    expect(shipped.events).toEqual({
+      signals: ["smart451/CPC_168h.IgnCurMode", "smart451/BMS.contactor"],
+    });
+  });
+});

@@ -18,7 +18,7 @@ function appFor() {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   return { app, catalog };
 }
@@ -130,7 +130,7 @@ describe("GET /api/value", () => {
     const cold = buildApp({
       catalog: new Catalog(source, async () => new Map()),
       source,
-      workspace: new WorkspaceStore({ signalExists: () => true }),
+      workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
     });
     try {
       const res = await cold.inject({
@@ -145,5 +145,61 @@ describe("GET /api/value", () => {
     } finally {
       await cold.close();
     }
+  });
+});
+
+describe("GET /api/value with state names (add-events)", () => {
+  const { app, catalog } = appFor();
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  const get = async (signal: string, t: string, mode?: string) => {
+    const res = await app.inject({
+      url: "/api/value",
+      query: { signal, t, ...(mode ? { mode } : {}) },
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json();
+  };
+  const B = fromIso("2026-10-01T00:00:00Z");
+  const at = (h: number, m: number, s: number, ms = 0) =>
+    (B + BigInt(((h * 60 + m) * 60 + s) * 1000 + ms) * 1_000_000n).toString();
+
+  it("holds and names state values", async () => {
+    // Line mode between NONE (0) at 01:09:59.9 and KEYON (3) at 01:10:00: held, not 1.5.
+    const none = await get("testcar/Ign_A20h.MODE", "2026-10-01T01:09:59.95Z", "line");
+    expect(none.value).toEqual({ kind: "held", value: 0, label: "NONE" });
+    // Inside the KEYON run between two points of the same name: held as well.
+    const keyon = await get("testcar/Ign_A20h.MODE", "2026-10-01T01:20:00.05Z", "line");
+    expect(keyon.value).toEqual({
+      kind: "held",
+      value: 3,
+      label: "KEYON: Ignition on",
+    });
+    // A signal with a name only on 254 interpolates where neither neighbour is named.
+    const mid = await get("testcar/Tmp_A21h.TEMP", "2026-10-01T01:02:00.5Z", "line");
+    expect(mid.value).toEqual({ kind: "interpolated", value: 20.5 });
+    expect(mid.value).not.toHaveProperty("label");
+
+    // A raw value with a name; SNA has none (D-010).
+    const raw = await get("testcar/Tmp_A21h.TEMP", "2026-10-01T01:05:05Z");
+    expect(raw.value).toEqual({ kind: "raw", value: 254, label: "SENSOR_DEF" });
+    const sna = await get("testcar/Ign_A20h.MODE", "2026-10-01T01:40:00.5Z");
+    expect(sna.value).toEqual({ kind: "sna" });
+    expect(sna.value).not.toHaveProperty("label");
+
+    // A text signal: the row text names at and next, in both modes.
+    for (const mode of ["step", "line"]) {
+      const door = await get("testcar/DIAG.door", "2026-10-01T01:02:00Z", mode);
+      expect(door.value).toEqual({ kind: "held", value: 0, label: "closed" });
+      expect(door.at).toEqual({ t: at(1, 1, 30), v: 0, label: "closed" });
+      expect(door.next).toEqual({ t: at(1, 3, 0), v: 0, label: "open" });
+    }
+    const exact = await get("testcar/DIAG.door", "2026-10-01T01:03:00Z");
+    expect(exact.value).toEqual({ kind: "raw", value: 0, label: "open" });
+    // Numbers without names carry no label anywhere.
+    const plain = await get("testcar/Sna_800h.SPEED", "2026-10-01T02:00:01Z");
+    expect(plain.value).toEqual({ kind: "raw", value: 10 });
+    expect(plain.at).not.toHaveProperty("label");
   });
 });

@@ -1,9 +1,11 @@
+import { DEFAULT_EVENT_FILTER, formatEventFilter, parseEventFilter } from "./eventFilter.ts";
 import { TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import {
   type Command,
   type CommandErrorCode,
   DEFAULT_DISPLAY,
   isTimeseries,
+  MAX_EVENT_SIGNALS,
   MAX_MEASUREMENT_META,
   MAX_SIGNALS,
   MAX_UNITS,
@@ -24,6 +26,8 @@ export interface ApplyContext {
   signalExists(signalId: string): boolean;
   /** Unit of a signal; when absent, the unit limit per window is not checked. */
   unitOf?(signalId: string): string | undefined;
+  /** Whether a signal has states (catalog: SignalInfo.states present), design E8. */
+  hasStates(signalId: string): boolean;
 }
 
 export type ApplyResult =
@@ -110,6 +114,12 @@ function withMeasurement(state: Workspace, measurement: Measurement): Workspace 
   if (measurement.meta?.length) next.meta = measurement.meta;
   const { measurement: _removed, ...rest } = state;
   return Object.keys(next).length > 0 ? { ...rest, measurement: next } : rest;
+}
+
+/** Sets `eventSignals`; absent when empty. */
+function withEventSignals(state: Workspace, eventSignals: string[]): Workspace {
+  const { eventSignals: _removed, ...rest } = state;
+  return eventSignals.length > 0 ? { ...rest, eventSignals } : rest;
 }
 
 /**
@@ -439,5 +449,39 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
 
     case "measurement.clear":
       return { ok: true, workspace: withMeasurement(state, {}) };
+
+    case "events.setFilter": {
+      const parsed = parseEventFilter(command.filter);
+      if (!parsed.ok) return fail("invalid_filter", parsed.message);
+      const filter = formatEventFilter(parsed.filter);
+      const { eventFilter: _removed, ...rest } = state;
+      // The default is stored as no field (design E8).
+      const workspace = filter === DEFAULT_EVENT_FILTER ? rest : { ...rest, eventFilter: filter };
+      return { ok: true, workspace };
+    }
+
+    case "events.addSignal": {
+      const id = command.signalId;
+      const listed = state.eventSignals ?? [];
+      if (!ctx.signalExists(id)) return fail("unknown_signal", `unknown signal: ${id}`);
+      if (!ctx.hasStates(id)) return fail("not_state_signal", `signal ${id} has no states`);
+      if (listed.includes(id))
+        return fail("already_listed", `signal ${id} is already on the events line`);
+      if (listed.length >= MAX_EVENT_SIGNALS) {
+        return fail(
+          "event_signal_limit",
+          `the events line holds at most ${MAX_EVENT_SIGNALS} signals`,
+        );
+      }
+      return { ok: true, workspace: withEventSignals(state, [...listed, id]) };
+    }
+
+    case "events.removeSignal": {
+      const listed = state.eventSignals ?? [];
+      if (!listed.includes(command.signalId))
+        return fail("not_listed", `signal ${command.signalId} is not on the events line`);
+      const rest = listed.filter((id) => id !== command.signalId);
+      return { ok: true, workspace: withEventSignals(state, rest) };
+    }
   }
 }

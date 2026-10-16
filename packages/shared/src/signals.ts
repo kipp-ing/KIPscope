@@ -15,6 +15,8 @@ export interface SnaValue {
 export interface DbcValueLabel {
   raw: number;
   label: string;
+  /** Physical value: raw (two's complement if the signal is signed) × factor + offset, as SnaValue.value (D-012). */
+  value: number;
 }
 
 /** DBC metadata of a signal (design E4). Fields absent when the DBC line could not be parsed. */
@@ -89,6 +91,11 @@ export interface SignalInfo {
   displayName?: string;
   /** Explorer group from `display.groups` (D-053); absent means OTHER_GROUP. Never "Other", never blank. */
   group?: string;
+  /**
+   * "labels": a VAL_ name on a code that is not SNA; "text": the state is in the row text (rows
+   * carry text, or diag.kind "enum", D-061; not diag.kind "text"). Absent: no states (D-059, design N1).
+   */
+  states?: "labels" | "text";
 }
 
 /** `displayName ?? name`. */

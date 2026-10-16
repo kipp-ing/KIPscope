@@ -5,6 +5,7 @@ import type {
   CommandResult,
   CursorValueResult,
   Density,
+  EventList,
   Extent,
   SeriesResult,
   ServerMeta,
@@ -85,6 +86,17 @@ export function fetchExtent(signalId: string): Promise<Extent> {
 /** Rows per bucket of one data ref over its whole recording, for the time strip (design T8). */
 export function fetchDensity(dataRef: string, signal?: AbortSignal): Promise<Density> {
   return getJson(`/api/density?${new URLSearchParams({ dataRef })}`, signal);
+}
+
+/** All events of one data ref with the state changes of its events-line signals, no filter (add-events V9). */
+export function fetchEvents(
+  dataRef: string,
+  signals: readonly string[],
+  abort?: AbortSignal,
+): Promise<EventList> {
+  const params = new URLSearchParams({ dataRef });
+  for (const s of signals) params.append("signal", s);
+  return getJson(`/api/events?${params}`, abort);
 }
 
 /** Build, source and catalog state of the running server for the footer (design F2). */

@@ -1,4 +1,4 @@
-import { type BucketSeries, encodeTimes, type RawSeries } from "@kipscope/shared";
+import { type BucketSeries, encodeTimes, type RawSeries, type SignalInfo } from "@kipscope/shared";
 import uPlot from "uplot";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,6 +9,8 @@ import {
   resolutionBadge,
   snaPeriods,
   snaShare,
+  stateLevel,
+  stateLevels,
   toPoints,
   yRange,
 } from "../src/chart/build.ts";
@@ -439,5 +441,53 @@ describe("SNA handling", () => {
     expect(formatSnaShare(0.999)).toBe("SNA 99.9 %");
     expect(formatSnaShare(0.9995)).toBe("SNA > 99.9 %");
     expect(formatSnaShare(1)).toBe("SNA 100 %");
+  });
+});
+
+describe("state levels of a diag enum (open=0, precharge=1, closed=2)", () => {
+  const rows = [
+    { low: 0, high: 0, text: "open" },
+    { low: 1, high: 1, text: "precharge" },
+    { low: 2, high: 2, text: "closed" },
+  ];
+  const info = { states: "text", diag: { states: rows } } as unknown as SignalInfo;
+
+  it("stateLevels reads the rows of a text signal only", () => {
+    expect(stateLevels(info)).toBe(rows);
+    expect(stateLevels({ ...info, states: "labels" } as unknown as SignalInfo)).toBeUndefined();
+    expect(stateLevels(undefined)).toBeUndefined();
+  });
+
+  it("stateLevel maps row text to its code, else keeps the stored value", () => {
+    expect(stateLevel(rows, 0, "open")).toBe(0);
+    expect(stateLevel(rows, 0, "precharge")).toBe(1);
+    expect(stateLevel(rows, 0, "closed")).toBe(2);
+    expect(stateLevel(rows, 7, "unknown")).toBe(7);
+    expect(stateLevel(rows, 7, undefined)).toBe(7);
+    expect(stateLevel(undefined, 0, "closed")).toBe(0);
+  });
+
+  it("toPoints draws points and edges at their level; SNA stays null", () => {
+    const r = raw([origin + 10n, origin + 20n, origin + 30n], [0, null, 0], {
+      text: ["precharge", "", "closed"],
+      before: { t: (origin - 5n).toString(), v: 0, label: "open" },
+      after: { t: (origin + 99n).toString(), v: 0, label: "closed" },
+    });
+    expect(toPoints(r, origin, rows).ys).toEqual([0, 1, null, 2, 2]);
+    // Without states the stored 0 is drawn.
+    expect(toPoints(r, origin).ys).toEqual([0, 0, null, 0, 0]);
+  });
+
+  it("a flat enum series is drawn at its level and has a y range", () => {
+    const r = raw([origin + 10n, origin + 20n], [0, 0], { text: ["closed", "closed"] });
+    const m = buildModel(
+      [{ key: "a", label: "a", color: "#000", result: r, states: rows }],
+      origin,
+      { mode: "step", envelope: false },
+    );
+    expect(m.tables[0]?.[1]).toEqual([2, 2]);
+    const scale = m.tableScales[0] as string;
+    expect(() => yRange(m, scale, 0, 100)).not.toThrow();
+    expect(yRange(m, scale, 0, 100)).toEqual([1, 3]);
   });
 });

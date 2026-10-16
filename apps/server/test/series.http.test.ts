@@ -11,7 +11,11 @@ function appFor(table = "signals") {
   const source = testSource(table);
   const catalog = new Catalog(source, async () => new Map());
   return {
-    app: buildApp({ catalog, source, workspace: new WorkspaceStore({ signalExists: () => true }) }),
+    app: buildApp({
+      catalog,
+      source,
+      workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
+    }),
     catalog,
   };
 }
@@ -139,7 +143,7 @@ describe("GET /api/series before the catalog was ever loaded", () => {
   const app = buildApp({
     catalog: new Catalog(source, async () => new Map()),
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   afterAll(() => app.close());
 
@@ -172,7 +176,7 @@ describe("GET /api/series with the database unavailable", () => {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
@@ -287,6 +291,7 @@ describe("GET /api/series beyond 104 days and at the bounds (harden-robustness)"
 
 describe("GET /api/series when the server cannot compute (harden-robustness)", () => {
   const source = {
+    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "car", name: "S" }],
     count: async () => {
       throw new RangeError("cannot compute");
@@ -296,7 +301,7 @@ describe("GET /api/series when the server cannot compute (harden-robustness)", (
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
@@ -308,5 +313,62 @@ describe("GET /api/series when the server cannot compute (harden-robustness)", (
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe("invalid_request");
+  });
+});
+
+describe("GET /api/series text signals (add-events)", () => {
+  const { app, catalog } = appFor();
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("carries the text of a text signal", async () => {
+    const res = await app.inject({
+      url: "/api/series",
+      query: {
+        signal: "testcar/DIAG.door",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T03:00:00Z",
+        target: "100",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.kind).toBe("raw");
+    expect(body.v).toEqual([0, 0, 0, 0, 0]);
+    expect(body.text).toEqual(["closed", "closed", "open", "open", "closed"]);
+    // The edge points name their state too: nothing before, the lock-free door has no row after.
+    expect(body.before).toBeUndefined();
+    expect(body.after).toBeUndefined();
+
+    // A window inside: the neighbours carry their text.
+    const inner = await app.inject({
+      url: "/api/series",
+      query: {
+        signal: "testcar/DIAG.door",
+        from: "2026-10-01T01:02:00Z",
+        to: "2026-10-01T01:04:00Z",
+        target: "100",
+      },
+    });
+    const part = inner.json();
+    expect(part.text).toEqual(["open"]);
+    expect(part.before).toMatchObject({ v: 0, label: "closed" });
+    expect(part.after).toMatchObject({ v: 0, label: "open" });
+  });
+
+  it("leaves numeric signals without text", async () => {
+    const res = await app.inject({
+      url: "/api/series",
+      query: {
+        signal: "testcar/Tmp_A21h.TEMP",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T01:00:05Z",
+        target: "100",
+      },
+    });
+    const body = res.json();
+    expect(body.kind).toBe("raw");
+    expect(body.v).toEqual([20, 21, 22, 23, 24]);
+    expect(body).not.toHaveProperty("text");
   });
 });

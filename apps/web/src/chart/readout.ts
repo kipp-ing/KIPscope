@@ -1,5 +1,6 @@
 import {
   type CursorValue,
+  type DiagScaleRow,
   type Digits,
   type DisplayMode,
   decodeTimes,
@@ -7,23 +8,31 @@ import {
   evaluateAt,
   formatQuantityBare,
   parseTimestamp,
+  type RawSeries,
   type SeriesResult,
+  type SignalInfo,
+  shortLabel,
+  stateLabel,
 } from "@kipscope/shared";
 import {
   type Cell,
+  isNamed,
+  labelTitle,
   loadingCell,
   NO_VALUE,
   type NumberValue,
   noValueCell,
   numberDelta,
+  stateDelta,
   type ValueReason,
 } from "../values/format.ts";
 import type { ValueState } from "../values/loader.ts";
+import { stateLevel } from "./build.ts";
 
 /** A value of the chart readout: the values window's kinds plus a bucket mean (design N4). */
 export type ReadoutValue =
   | CursorValue
-  | { kind: "aggregated"; value: number }
+  | { kind: "aggregated"; value: number; label?: string }
   | { kind: "none"; reason: ValueReason };
 
 // Decoded once per loaded result: the readout runs per frame while a cursor line is dragged.
@@ -50,35 +59,96 @@ function lastAtOrBefore(times: readonly bigint[], t: bigint): number {
   return lo - 1;
 }
 
-const edge = (p: EdgePoint | undefined) => p && { t: parseTimestamp(p.t), v: p.v };
+/** A raw point with its state name (N2). */
+interface NamedPoint {
+  t: bigint;
+  v: number | null;
+  label?: string;
+}
+
+/** The state name of a valid value: the row's text of a text signal, else the VAL_ label. */
+function nameOf(
+  info: SignalInfo | undefined,
+  v: number | null,
+  text: string | undefined,
+): string | undefined {
+  if (v === null || !info?.states) return undefined;
+  return info.states === "text" ? text || undefined : stateLabel(info, v);
+}
+
+function named(t: bigint, v: number | null, label: string | undefined): NamedPoint {
+  return label === undefined ? { t, v } : { t, v, label };
+}
+
+const edge = (p: EdgePoint | undefined, info: SignalInfo | undefined) =>
+  p && named(parseTimestamp(p.t), p.v, nameOf(info, p.v, p.label));
+
+/** Raw value at t (line mode holds next to a named point, N3), named after the point it came from. */
+function rawValueAt(
+  result: RawSeries,
+  times: readonly bigint[],
+  i: number,
+  t: bigint,
+  mode: DisplayMode,
+  info: SignalInfo | undefined,
+): ReadoutValue {
+  const point = (k: number) => {
+    const v = result.v[k] ?? null;
+    return named(times[k] as bigint, v, nameOf(info, v, result.text?.[k]));
+  };
+  const at = i >= 0 ? point(i) : edge(result.before, info);
+  const next = i + 1 < times.length ? point(i + 1) : edge(result.after, info);
+  const v = evaluateAt(
+    t,
+    mode === "step" ? "step" : "line",
+    at,
+    next,
+    info?.states ? (p) => (p as NamedPoint).label !== undefined : undefined,
+  );
+  return (v.kind === "raw" || v.kind === "held") && at?.label !== undefined
+    ? { ...v, label: at.label }
+    : v;
+}
 
 /**
  * Value of one signal at `t` from a window's loaded data (design N4): outside [from, to) none;
- * raw by evaluateAt with the edge neighbours (markers evaluate as line); buckets by the mean of
- * the bucket containing t, SNA if it holds SNA points only. undefined: nothing loaded yet.
+ * raw by evaluateAt with the edge neighbours (markers evaluate as line), named by `info` (N3);
+ * buckets by the mean of the bucket containing t, SNA if it holds SNA points only, named when
+ * its minimum and maximum share a state name. undefined: nothing loaded yet.
  */
 export function chartValueAt(
   result: SeriesResult | undefined,
   t: bigint,
   mode: DisplayMode,
+  info?: SignalInfo,
 ): ReadoutValue | undefined {
   if (!result) return undefined;
   if (t < parseTimestamp(result.from) || t >= parseTimestamp(result.to))
     return { kind: "none", reason: "outside_range" };
   const times = timesOf(result);
   const i = lastAtOrBefore(times, t);
-  if (result.kind === "raw") {
-    const point = (k: number) => ({ t: times[k] as bigint, v: result.v[k] ?? null });
-    const at = i >= 0 ? point(i) : edge(result.before);
-    const next = i + 1 < times.length ? point(i + 1) : edge(result.after);
-    return evaluateAt(t, mode === "step" ? "step" : "line", at, next);
-  }
+  if (result.kind === "raw") return rawValueAt(result, times, i, t, mode, info);
   if (i < 0 || t >= (times[i] as bigint) + BigInt(result.width))
     return { kind: "none", reason: "empty_bucket" };
   const mean = result.mean[i];
-  return mean === null || mean === undefined
-    ? { kind: "sna" }
+  if (mean === null || mean === undefined) return { kind: "sna" };
+  // Buckets carry no text: only VAL_ labels name a bucket.
+  const low =
+    info?.states === "labels" ? nameOf(info, result.min[i] ?? null, undefined) : undefined;
+  const high = low && nameOf(info, result.max[i] ?? null, undefined);
+  return low !== undefined && low === high
+    ? { kind: "aggregated", value: mean, label: low }
     : { kind: "aggregated", value: mean };
+}
+
+/** A readout value at its drawn y (near candidates, L5): a named text signal state at its level. */
+export function atLevel(
+  v: ReadoutValue | undefined,
+  states: readonly DiagScaleRow[] | undefined,
+): ReadoutValue | undefined {
+  return states && v && "label" in v && v.label !== undefined
+    ? { ...v, value: stateLevel(states, v.value, v.label) }
+    : v;
 }
 
 const isNumber = (v: ReadoutValue | undefined): v is NumberValue =>
@@ -99,13 +169,18 @@ function bare(tag: Cell["tag"], value: number, unit: string | undefined, digits:
   return tag ? { text, title: KIND_TITLES[tag] } : { text };
 }
 
-/** A readout cell: SNA, "—" with the reason, or the bare number; undefined is the loading state. */
+/**
+ * A readout cell: SNA, "—" with the reason, a state name as its short label (N3), or the bare
+ * number; undefined is the loading state.
+ */
 export function readoutCell(
   v: ReadoutValue | undefined,
   unit: string | undefined,
   digits: Digits,
 ): Cell {
   if (!v) return LOADING_CELL;
+  if ("label" in v && v.label !== undefined)
+    return { text: shortLabel(v.label), title: labelTitle(v.label, v.value, unit) };
   switch (v.kind) {
     case "none":
       return noValueCell(v.reason);
@@ -122,15 +197,20 @@ export function readoutCell(
   }
 }
 
-/** Δ = B − A, only from two numbers (else "—"), kind avg > lin > hold; loading as readoutCell while a value is not loaded. */
+/**
+ * Δ = B − A, only from two numbers (else "—"), kind avg > lin > hold; "=" / "≠" when either has a
+ * state name (stateDelta); loading as readoutCell while a value is not loaded.
+ */
 export function readoutDelta(
   a: ReadoutValue | undefined,
   b: ReadoutValue | undefined,
   unit: string | undefined,
   digits: Digits,
+  info?: SignalInfo,
 ): Cell {
   if (!a || !b) return LOADING_CELL;
   if (!isNumber(a) || !isNumber(b)) return { text: NO_VALUE };
+  if (isNamed(a) || isNamed(b)) return stateDelta(a, b, info);
   return bare(numberDelta(a, b, unit, digits).tag, b.value - a.value, unit, digits);
 }
 
@@ -178,8 +258,9 @@ export function sourceDelta(
   b: ReadoutSource,
   unit: string | undefined,
   digits: Digits,
+  info?: SignalInfo,
 ): Cell {
   if (a.error !== undefined || b.error !== undefined) return { text: NO_VALUE };
-  const cell = readoutDelta(a.value, b.value, unit, digits);
+  const cell = readoutDelta(a.value, b.value, unit, digits, info);
   return a.loading || b.loading ? loadingCell(cell) : cell;
 }

@@ -8,11 +8,15 @@ import type { DataSource } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
 const source = {
+  textSignals: async () => [],
   listSignals: async () => [{ dataRef: "car", name: "S" }],
 } as unknown as DataSource;
 
 function setup(options: { extraHost?: string } = {}) {
-  const workspace = new WorkspaceStore({ signalExists: (id) => id.startsWith("car/") });
+  const workspace = new WorkspaceStore({
+    signalExists: (id) => id.startsWith("car/"),
+    hasStates: () => false,
+  });
   const catalog = new Catalog(source, async () => new Map());
   const app = buildApp({ catalog, source, workspace }, options);
   return { app, workspace };

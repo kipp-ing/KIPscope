@@ -1,4 +1,9 @@
-import type { CommandInput, RenderError } from "@kipscope/shared";
+import {
+  CATEGORY_TEXT,
+  type CommandInput,
+  type EventList,
+  type RenderError,
+} from "@kipscope/shared";
 import type { Io } from "./run.ts";
 
 /** Exit code per outcome (design L3). */
@@ -83,4 +88,42 @@ export function printOutput(out: CliOutput, io: Io, pretty: boolean): void {
 function renderMessage(render: RenderWait | undefined): string | undefined {
   if (render === undefined) return undefined;
   return `render ${render.status} for revision ${render.target} after ${render.waitedMs} ms`;
+}
+
+/** `data` of `events list`: the body of GET /api/events plus the filter in words (design C1). */
+export type EventListData = EventList & { description: string };
+
+/**
+ * Lines of `events list --table` (design C1): local time, category, source, name, text (a change
+ * as `<from> → <to>`), padded to the widest cell; then the skipped signals and, last, the count line.
+ */
+export function eventTable(data: EventListData, localT: string[]): string {
+  const rows = data.events.map((e, i) => [
+    tableTime(localT[i] ?? e.t),
+    CATEGORY_TEXT[e.category].label,
+    e.source,
+    e.name,
+    e.category === "change" && e.from ? `${e.from.text} → ${e.text}` : e.text,
+  ]);
+  const widths = rows.reduce<number[]>(
+    (w, row) => row.map((cell, c) => Math.max(w[c] ?? 0, cell.length)),
+    [],
+  );
+  const lines = rows.map((row) =>
+    row
+      .map((cell, c) => cell.padEnd(widths[c] ?? 0))
+      .join("  ")
+      .trimEnd(),
+  );
+  for (const s of data.skipped) lines.push(`skipped: ${s.signalId} (${s.reason})`);
+  lines.push(
+    `${data.events.length} of ${data.total} events · ${data.filter ?? ""} · ${data.description}`,
+  );
+  return lines.join("\n");
+}
+
+/** formatLocal with offset, at least to the millisecond so the column stays aligned. */
+function tableTime(local: string): string {
+  // "YYYY-MM-DD HH:MM:SS" is 19 characters; a fraction, if any, follows it.
+  return local[19] === "." ? local : `${local.slice(0, 19)}.000${local.slice(19)}`;
 }

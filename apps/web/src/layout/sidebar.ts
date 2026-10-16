@@ -38,3 +38,38 @@ export function isSidebarKey(
   if (e.key !== "s" || e.ctrlKey || e.metaKey || e.altKey) return false;
   return !isTextField(focused);
 }
+
+/** What the sidebar shows under its switch (design V11, D-058): the explorer or the events panel. */
+export type SidebarPart = "signals" | "events";
+
+export const SIDEBAR_PART_KEY = "kipscope.sidebarPart";
+
+/** Unknown value, missing or throwing storage → "signals". */
+export function loadSidebarPart(storage: Pick<Storage, "getItem"> | undefined): SidebarPart {
+  try {
+    return storage?.getItem(SIDEBAR_PART_KEY) === "events" ? "events" : "signals";
+  } catch {
+    return "signals";
+  }
+}
+
+/** Never throws. */
+export function saveSidebarPart(
+  storage: Pick<Storage, "setItem"> | undefined,
+  part: SidebarPart,
+): void {
+  try {
+    storage?.setItem(SIDEBAR_PART_KEY, part);
+  } catch {
+    // Storage full or blocked: the part lasts for this page only.
+  }
+}
+
+/** `e` without Ctrl/Meta/Alt while focus is not in a text field or select (like `s` and `/`). */
+export function isEventsKey(
+  e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean },
+  focused: Element | null,
+): boolean {
+  if (e.key !== "e" || e.ctrlKey || e.metaKey || e.altKey) return false;
+  return !isTextField(focused);
+}

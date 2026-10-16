@@ -1,8 +1,10 @@
 import type { Density, Drive } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
+import { groupMarks } from "../src/events/marks.ts";
 import {
   barTitle,
   brushRange,
+  centreRange,
   driveRects,
   driveTitle,
   hitZone,
@@ -21,6 +23,7 @@ import {
   windowRects,
   xOf,
 } from "../src/time/stripGeometry.ts";
+import { fakeEvent } from "./fakeEvents.ts";
 
 // Tests run with TZ=Europe/Berlin (see package.json); October 2026 is CEST, UTC+2.
 
@@ -141,6 +144,25 @@ describe("strip geometry", () => {
 
     // Without a target range there are only bars.
     expect(zone(62, 10, undefined)).toEqual({ kind: "bars" });
+
+    // Pins (add-events V3): events at 5 h, 5 h 20 min and 5 h 40 min, i.e. x 60, 64 and 68, form two
+    // pins with hit spans [58, 66] and [64, 72]. They are checked first, in the pin lane (y < 8).
+    const pins = groupMarks(
+      [5n * H, 5n * H + 20n * MIN, 5n * H + 40n * MIN].map((t) => fakeEvent(t, "active")),
+      (t) => xOf(tr, t),
+      tr.px,
+    ).map((m) => m.hit);
+    expect(pins).toHaveLength(2);
+    const withPins = (x: number, y: number) => hitZone(tr, x, y, mid, [], pins);
+    expect(withPins(62, 3)).toEqual({ kind: "pin", index: 0 });
+    // Both spans hold 64.5; the nearer centre (62 vs 68) wins.
+    expect(withPins(64.5, 3)).toEqual({ kind: "pin", index: 0 });
+    expect(withPins(69, 3)).toEqual({ kind: "pin", index: 1 });
+    // Below the lane the window's zones apply again, and away from the pins the body.
+    expect(withPins(62, 12)).toEqual({ kind: "edge", side: "from" });
+    expect(withPins(90, 3)).toEqual({ kind: "body" });
+    // Without pins nothing changes.
+    expect(hitZone(tr, 62, 3, mid, [])).toEqual({ kind: "edge", side: "from" });
   });
 
   it("computes jump, brush, pan and resize ranges", () => {
@@ -175,6 +197,12 @@ describe("strip geometry", () => {
     // The end cannot cross the start either.
     expect(resizeRange(tr, view, "to", -500)).toEqual(r(5n * H, 5n * H + 100n));
 
+    // Centre (add-events V3): the span is kept, the pin's first event is the exact middle, no snapping.
+    const pinT = 5n * H + 135n * 1_000_000n; // 5 h 0 min 0.135 s
+    expect(centreRange(r(0n, 20n * MIN), pinT)).toEqual(
+      r(5n * H - 10n * MIN + 135n * 1_000_000n, 5n * H + 10n * MIN + 135n * 1_000_000n),
+    );
+
     // Whole recording: first to just after last, rounded up to the next ms.
     expect(wholeRange(density({ first: "1000000000", last: "5000000500" }))).toEqual(
       r(1_000_000_000n, 5_001_000_000n),
@@ -203,6 +231,15 @@ describe("strip geometry", () => {
     g.down(120, 10, { kind: "edge", side: "to" }, 0);
     expect(g.move(140, 10)).toEqual({ kind: "resize", side: "to", dx: 20 });
     expect(g.up(140, 10, 80)).toEqual({ kind: "resize", side: "to", dx: 20 });
+
+    // A click on a pin centres on it; a drag from a pin brushes like one on the bars.
+    g = new StripGesture();
+    g.down(62, 3, { kind: "pin", index: 1 }, 0);
+    expect(g.up(62, 3, 40)).toEqual({ kind: "centre", pin: 1 });
+    g = new StripGesture();
+    g.down(62, 3, { kind: "pin", index: 1 }, 0);
+    expect(g.move(102, 3)).toEqual({ kind: "brush", x0: 62, x1: 102 });
+    expect(g.up(102, 3, 90)).toEqual({ kind: "brush", x0: 62, x1: 102 });
 
     // A click on a drive fits it.
     g = new StripGesture();

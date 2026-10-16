@@ -27,6 +27,11 @@
   --error: #be123c;
   --error-fill: #fff1f2;
   --mark: #fde68a; /* search hit, unchanged */
+  /* events (add-events V1; the chart's canvas uses the same hex values from events/marks.ts) */
+  --ev-fault: #be123c; /* = --error; active, pending */
+  --ev-stored: #b45309; /* amber-700 */
+  --ev-change: #7c3aed; /* violet-600 */
+  --ev-info: #64748b; /* = --muted; all other categories */
   /* shape and type */
   --radius: 4px;
   --control-h: 26px;

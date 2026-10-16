@@ -294,6 +294,36 @@
   pointer-events: none;
 }
 
+/* Event glyphs (design V6, V7): pins in the 6 px headroom above the plot, grouped and coloured
+   like the strip's pins (colour from markColor as currentColor); the hit span reaches 4 px down
+   into the plot. The box takes no pointer, the glyphs do. */
+.window .plot .event-glyphs {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.window .plot .event-glyph {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.window .plot .event-glyph::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--glyph-left);
+  width: var(--glyph-width);
+  height: var(--glyph-height);
+  box-sizing: border-box;
+  border-radius: 1px;
+  background: currentColor;
+  outline: 1px solid var(--panel);
+}
+
 .window .height-handle {
   height: 6px;
   margin: 0 -8px;

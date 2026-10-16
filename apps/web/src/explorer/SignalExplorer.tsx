@@ -12,6 +12,7 @@ import { fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";
 import type { ExplorerDragSource } from "../chart/drag.ts";
 import { isSearchKey } from "../keys.ts";
+import type { SidebarPart } from "../layout/sidebar.ts";
 import {
   CHUNK,
   formatSnaPhysical,
@@ -50,6 +51,11 @@ interface Props {
   /** Sidebar open; while false, `/` calls onOpen and focuses the search after it becomes true. */
   open: boolean;
   onOpen: () => void;
+  /** The part under the sidebar's switch (design V11); `/` switches to "signals" before focusing. */
+  part: SidebarPart;
+  onPart: (part: SidebarPart) => void;
+  /** The events panel, shown in place of the explorer while `part` is "events". */
+  children?: React.ReactNode;
 }
 
 /** The open hover card: index of a signal item, the row's rect, and how it was opened. */
@@ -76,6 +82,9 @@ export function SignalExplorer({
   onTarget,
   open,
   onOpen,
+  part,
+  onPart,
+  children,
 }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -223,12 +232,17 @@ export function SignalExplorer({
     if (el) scrollToRow(el);
   }, [query]);
 
-  // `/` outside a text field focuses the search (design E8). While the sidebar is collapsed the
-  // search cannot take focus: `/` opens it, and the search is focused after the open render (L1).
+  // `/` outside a text field focuses the search (design E8). While the sidebar is collapsed or shows
+  // the events the search cannot take focus: `/` opens it on Signals, and the search is focused
+  // after that render (L1, V11).
   const openRef = useRef(open);
   openRef.current = open;
   const onOpenRef = useRef(onOpen);
   onOpenRef.current = onOpen;
+  const partRef = useRef(part);
+  partRef.current = part;
+  const onPartRef = useRef(onPart);
+  onPartRef.current = onPart;
   const focusOnOpen = useRef(false);
   const focusSearch = useCallback(() => {
     inputRef.current?.focus();
@@ -238,18 +252,19 @@ export function SignalExplorer({
     const onKey = (e: KeyboardEvent) => {
       if (!isSearchKey(e, document.activeElement)) return;
       e.preventDefault();
-      if (openRef.current) return focusSearch();
+      if (openRef.current && partRef.current === "signals") return focusSearch();
       focusOnOpen.current = true;
-      onOpenRef.current();
+      if (!openRef.current) onOpenRef.current();
+      if (partRef.current !== "signals") onPartRef.current("signals");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [focusSearch]);
   useEffect(() => {
-    if (!open || !focusOnOpen.current) return;
+    if (!open || part !== "signals" || !focusOnOpen.current) return;
     focusOnOpen.current = false;
     focusSearch();
-  }, [open, focusSearch]);
+  }, [open, part, focusSearch]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
@@ -297,8 +312,23 @@ export function SignalExplorer({
       : undefined;
 
   return (
-    <aside className="explorer">
-      <h2 className="section-label">Signals</h2>
+    // While the events show, the explorer's own elements stay mounted but hidden (events.css), so
+    // query, scroll position and active row survive the switch.
+    <aside className={part === "events" ? "explorer part-events" : "explorer"}>
+      <div className="sidebar-switch" role="tablist" aria-label="Sidebar">
+        {(["signals", "events"] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            role="tab"
+            aria-selected={part === p}
+            title={p === "signals" ? "Signals ( / )" : "Events ( e )"}
+            onClick={() => onPart(p)}
+          >
+            {p === "signals" ? "Signals" : "Events"}
+          </button>
+        ))}
+      </div>
       <input
         ref={inputRef}
         type="search"
@@ -449,6 +479,7 @@ export function SignalExplorer({
           onPointerLeave={releaseCard}
         />
       )}
+      {part === "events" && children}
     </aside>
   );
 }

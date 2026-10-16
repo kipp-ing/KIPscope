@@ -1,5 +1,5 @@
-import type { Display, SeriesResult, Timestamp } from "@kipscope/shared";
-import { decodeTimes } from "@kipscope/shared";
+import type { DiagScaleRow, Display, SeriesResult, SignalInfo, Timestamp } from "@kipscope/shared";
+import { decodeTimes, stateLabel, valueLabels } from "@kipscope/shared";
 import { type AxisLayout, layoutAxes } from "./axes.ts";
 
 /** x/y arrays of one signal; x is the ns offset from the window origin. */
@@ -14,23 +14,89 @@ export interface SignalPoints {
 
 const offset = (t: Timestamp, origin: Timestamp) => Number(t - origin);
 
+/** The states a text signal is drawn by: a diag enum's rows (D-061); undefined for other signals. */
+export function stateLevels(info: SignalInfo | undefined): readonly DiagScaleRow[] | undefined {
+  return info?.states === "text" ? info.diag?.states : undefined;
+}
+
+/**
+ * Drawn y of a text signal's point: the decoder stores 0 for every diag enum state, so a state is
+ * drawn at its code (`low` of the row whose text is the row text); else at its stored value.
+ */
+export function stateLevel(
+  states: readonly DiagScaleRow[] | undefined,
+  v: number,
+  text: string | undefined,
+): number {
+  const row = text === undefined ? undefined : states?.find((s) => s.text === text);
+  return row ? row.low : v;
+}
+
+/**
+ * Span of a state signal's state levels (D-059): its VAL_ values, or a diag enum's codes;
+ * undefined for other signals.
+ */
+export function stateDomain(info: SignalInfo | undefined): [number, number] | undefined {
+  if (!info?.states) return undefined;
+  const levels =
+    info.states === "text"
+      ? (info.diag?.states ?? []).map((s) => s.low)
+      : valueLabels(info).map((l) => l.value);
+  return levels.length > 0 ? [Math.min(...levels), Math.max(...levels)] : undefined;
+}
+
+/** Whether a state signal's point has a state name (N2, readout rule); SNA (null) never. */
+const isNamed = (info: SignalInfo, v: number | null, text: string | undefined) =>
+  v !== null && (info.states === "text" ? !!text : stateLabel(info, v) !== undefined);
+
+/**
+ * Line mode across a raw range without points: next to a named edge neighbor the readout holds
+ * the state before the range (N3), so the line does too, at that level until just before the
+ * next point, instead of interpolating between two states outside the view.
+ */
+function holdAcrossRange(
+  points: SignalPoints,
+  result: SeriesResult,
+  info: SignalInfo | undefined,
+): SignalPoints {
+  if (!info?.states || result.kind !== "raw" || result.v.length > 0) return points;
+  const { before, after } = result;
+  if (!before || !after || before.v === null || after.v === null) return points;
+  if (!isNamed(info, before.v, before.label) && !isNamed(info, after.v, after.label)) return points;
+  const [x0, x1] = points.xs as [number, number];
+  const [y0, y1] = points.ys as [number, number];
+  return { xs: [x0, x1 - 1, x1], ys: [y0, y0, y1] };
+}
+
+const levelOf = (
+  states: readonly DiagScaleRow[] | undefined,
+  v: number | null,
+  text: string | undefined,
+) => (v === null ? null : stateLevel(states, v, text));
+
 /**
  * Turns a query result into drawable points. Raw: the edge neighbors outside the range are
  * included so lines and steps cross the window edges, but nothing is drawn beyond the first or
- * last measured point. Buckets: one point at each bucket's center. SNA stays null.
+ * last measured point; a text signal's points at their state level (`states`, stateLevel).
+ * Buckets: one point at each bucket's center. SNA stays null.
  */
-export function toPoints(result: SeriesResult, origin: Timestamp): SignalPoints {
+export function toPoints(
+  result: SeriesResult,
+  origin: Timestamp,
+  states?: readonly DiagScaleRow[],
+): SignalPoints {
   const times = decodeTimes(result.t);
   if (result.kind === "raw") {
     const xs = times.map((t) => offset(t, origin));
-    const ys = [...result.v];
+    const text = states && result.text;
+    const ys = text ? result.v.map((v, i) => levelOf(states, v, text[i])) : [...result.v];
     if (result.before) {
       xs.unshift(offset(BigInt(result.before.t), origin));
-      ys.unshift(result.before.v);
+      ys.unshift(levelOf(states, result.before.v, result.before.label));
     }
     if (result.after) {
       xs.push(offset(BigInt(result.after.t), origin));
-      ys.push(result.after.v);
+      ys.push(levelOf(states, result.after.v, result.after.label));
     }
     return { xs, ys };
   }
@@ -151,6 +217,11 @@ export interface SignalInput {
   unit?: string;
   color: string;
   result?: SeriesResult;
+  /** A text signal's diag states (stateLevels): its points are drawn at their state level. */
+  states?: readonly DiagScaleRow[];
+  /** A state signal's catalog entry (`states` set): holds its line across an empty range and
+      spans its flat axis over its states (holdAcrossRange, stateDomain). */
+  info?: SignalInfo;
 }
 
 /** One uPlot series, without uPlot runtime objects (paths are resolved by the component). */
@@ -179,6 +250,8 @@ export interface ChartModel {
   tables: (number | null)[][][];
   /** y scale of each table. */
   tableScales: string[];
+  /** State level span of each table's signal (stateDomain), undefined for other signals. */
+  tableDomains: ([number, number] | undefined)[];
   series: SeriesSpec[];
   /** Band bounds as uPlot series indices (1-based; 0 is x). */
   bands: [number, number][];
@@ -201,6 +274,7 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
   const model: ChartModel = {
     tables: [],
     tableScales: [],
+    tableDomains: [],
     series: [],
     bands: [],
     scales: new Map(),
@@ -211,8 +285,13 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     if (!input.result) continue;
     const raw = input.result.kind === "raw";
     const path: PathKind = raw ? display.mode : "line";
-    const points = toPoints(input.result, origin);
-    const pts = path === "step" ? holdBeforeSna(points) : points;
+    const points = toPoints(input.result, origin, input.states);
+    const pts =
+      path === "step"
+        ? holdBeforeSna(points)
+        : path === "line"
+          ? holdAcrossRange(points, input.result, input.info)
+          : points;
     const scale = layout.scaleOf.get(input.key) as string;
     if (!model.scales.has(scale)) {
       model.scales.set(scale, titles.get(scale) ?? (input.unit?.trim() || input.label));
@@ -246,6 +325,7 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     }
     model.tables.push(table);
     model.tableScales.push(scale);
+    model.tableDomains.push(stateDomain(input.info));
   }
   return model;
 }
@@ -265,6 +345,7 @@ function lowerBound(xs: number[], value: number): number {
 /**
  * y range of a scale for the visible x range: all points inside plus the nearest point outside
  * each edge, i.e. exactly the points that define the drawn segments. SNA (null) never counts.
+ * A flat range of a state signal spans its states (stateDomain), so its line sits at its level.
  * Undefined if none.
  */
 export function yRange(
@@ -275,8 +356,10 @@ export function yRange(
 ): [number, number] | undefined {
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
+  const domains: [number, number][] = [];
   model.tables.forEach((table, i) => {
     if (model.tableScales[i] !== scale) return;
+    let seen = false;
     const xs = table[0] as number[];
     const start = Math.max(0, lowerBound(xs, xMin) - 1);
     const end = Math.min(xs.length, lowerBound(xs, xMax) + 1);
@@ -286,10 +369,19 @@ export function yRange(
         if (v === null || v === undefined) continue;
         if (v < min) min = v;
         if (v > max) max = v;
+        seen = true;
       }
     }
+    const domain = model.tableDomains[i];
+    if (seen && domain) domains.push(domain);
   });
   if (min > max) return undefined;
+  if (min === max) {
+    for (const [low, high] of domains) {
+      min = Math.min(min, low);
+      max = Math.max(max, high);
+    }
+  }
   const pad = min === max ? Math.max(Math.abs(min) * 0.1, 1) : (max - min) * 0.05;
   return [min - pad, max + pad];
 }

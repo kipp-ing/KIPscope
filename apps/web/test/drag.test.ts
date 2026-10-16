@@ -1,9 +1,16 @@
-import type { TimeseriesWindow, ValuesWindow, WorkspaceWindow } from "@kipscope/shared";
+import {
+  EMPTY_WORKSPACE,
+  type SignalInfo,
+  type TimeseriesWindow,
+  type ValuesWindow,
+  type WorkspaceWindow,
+} from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   canAdd,
   canDrop,
   DRAG_THRESHOLD_PX,
+  DROP_EVENTS,
   DROP_NEW,
   DROP_NEW_BELOW,
   type DragSource,
@@ -11,6 +18,7 @@ import {
   dropCommand,
   dropStateFor,
   dropTargetOf,
+  eventsDrop,
   isCopy,
   isLegendSource,
 } from "../src/chart/drag.ts";
@@ -316,6 +324,29 @@ describe("drop below the windows", () => {
       kind: "new",
       place: "below",
     });
+    // The time strip is the events line (add-events V10).
+    expect(DROP_EVENTS).toBe("events");
+    expect(dropTargetOf(el({ "data-drop": "events" }))).toEqual({ kind: "events" });
+    const labels: SignalInfo = {
+      id: "testcar/Ign_A20h.MODE",
+      dataRef: "testcar",
+      name: "Ign_A20h.MODE",
+      states: "labels",
+    };
+    const plain: SignalInfo = {
+      id: "testcar/Fast_100h.SIG_A",
+      dataRef: "testcar",
+      name: "Fast_100h.SIG_A",
+    };
+    expect(eventsDrop(labels, EMPTY_WORKSPACE)).toEqual({ ok: true });
+    expect(eventsDrop(plain, EMPTY_WORKSPACE)).toEqual({ ok: false, reason: "no_states" });
+    expect(eventsDrop(undefined, EMPTY_WORKSPACE)).toEqual({ ok: false, reason: "no_states" });
+    expect(eventsDrop(labels, { ...EMPTY_WORKSPACE, eventSignals: [labels.id] })).toEqual({
+      ok: false,
+      reason: "already_listed",
+    });
+    // No window command comes of a drop on the events target.
+    expect(canAdd(labels.id, { kind: "events" }, [], unitOf)).toBe(false);
     expect(dropTargetOf(el({ "data-drop": "bogus" }))).toBe(undefined);
     expect(dropTargetOf(el({}))).toBe(undefined);
     expect(dropTargetOf(null)).toBe(undefined);

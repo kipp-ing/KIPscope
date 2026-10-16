@@ -1,8 +1,25 @@
 import { randomUUID } from "node:crypto";
-import { type ClickHouseClient, ClickHouseLogLevel, createClient } from "@clickhouse/client";
-import type { Timestamp } from "@kipscope/shared";
-import type { Config, TableMapping } from "./config.ts";
-import type { Bucket, DataSource, RawPoint, SeriesRef, SignalRef } from "./datasource.ts";
+import {
+  type ClickHouseClient,
+  ClickHouseError,
+  ClickHouseLogLevel,
+  createClient,
+} from "@clickhouse/client";
+import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
+import {
+  type Config,
+  DEFAULT_EVENT_MAPPING,
+  type EventMapping,
+  type TableMapping,
+} from "./config.ts";
+import type {
+  Bucket,
+  DataSource,
+  RawPoint,
+  SeriesRef,
+  SignalRef,
+  StateChangeRule,
+} from "./datasource.ts";
 
 /** Client logging is off: aborted queries would log as errors; the server reports failures itself. */
 export function createClickHouseClient(config: Config["clickhouse"]): ClickHouseClient {
@@ -16,6 +33,16 @@ export function createClickHouseClient(config: Config["clickhouse"]): ClickHouse
 
 type Params = Record<string, unknown>;
 
+/** ClickHouse error codes the adapter answers with "none" instead of failing (design E4). */
+const UNKNOWN_TABLE = "60";
+const MISSING_COLUMN = new Set(["16", "47"]); // NO_SUCH_COLUMN_IN_TABLE, UNKNOWN_IDENTIFIER
+
+const hasCode = (error: unknown, codes: ReadonlySet<string>) =>
+  error instanceof ClickHouseError && codes.has(error.code);
+
+/** Float64 NaN and infinities arrive as JSON null. */
+const num = (v: number | null) => v ?? Number.NaN;
+
 /**
  * ClickHouse adapter for a long-format table (design D5). Identifiers come from validated config;
  * all values go through query parameters. Every query excludes rows without a timestamp.
@@ -25,12 +52,21 @@ export class ClickHouseSource implements DataSource {
   private readonly table: string;
   private readonly c: TableMapping;
   private readonly timeoutSeconds: number;
+  private readonly e: EventMapping;
+  readonly eventsTable: string;
 
-  constructor(client: ClickHouseClient, mapping: TableMapping, timeoutSeconds: number) {
+  constructor(
+    client: ClickHouseClient,
+    mapping: TableMapping,
+    timeoutSeconds: number,
+    events: EventMapping = DEFAULT_EVENT_MAPPING,
+  ) {
     this.client = client;
     this.c = mapping;
     this.timeoutSeconds = timeoutSeconds;
     this.table = `${mapping.database}.${mapping.table}`;
+    this.e = events;
+    this.eventsTable = `${mapping.database}.${events.table}`;
   }
 
   private async rows<T extends unknown[]>(
@@ -79,17 +115,18 @@ export class ClickHouseSource implements DataSource {
     };
   }
 
-  /** Time and value of a point, the value NULL where it is SNA. */
+  /** Time and value of a point, the value NULL where it is SNA; then the text for a text signal. */
   private pointColumns(ref: SeriesRef): { columns: string; params: Params } {
-    const { time, value } = this.c;
+    const { time, value, text } = this.c;
     const sna = this.isSna(ref);
     return {
-      columns: `toString(toUnixTimestamp64Nano(${time})), if(${sna.expr}, NULL, ${value})`,
+      columns: `toString(toUnixTimestamp64Nano(${time})), if(${sna.expr}, NULL, ${value})${ref.text ? `, ${text}` : ""}`,
       params: sna.params,
     };
   }
 
-  private point = ([t, v]: [string, number | null]): RawPoint => ({ t: BigInt(t), v });
+  private point = ([t, v, text]: PointRow): RawPoint =>
+    text === undefined ? { t: BigInt(t), v } : { t: BigInt(t), v, text };
 
   async listSignals(abort?: AbortSignal): Promise<SignalRef[]> {
     const { dataRef, signal } = this.c;
@@ -128,7 +165,7 @@ export class ClickHouseSource implements DataSource {
   async raw(ref: SeriesRef, from: Timestamp, to: Timestamp, abort?: AbortSignal) {
     const { time } = this.c;
     const { columns, params } = this.pointColumns(ref);
-    const rows = await this.rows<[string, number | null]>(
+    const rows = await this.rows<PointRow>(
       `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")}
        ORDER BY ${time}`,
@@ -141,7 +178,7 @@ export class ClickHouseSource implements DataSource {
   async before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
     const { time } = this.c;
     const { columns, params } = this.pointColumns(ref);
-    const [row] = await this.rows<[string, number | null]>(
+    const [row] = await this.rows<PointRow>(
       `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} < ${this.ns("t")}
        ORDER BY ${time} DESC LIMIT 1`,
@@ -154,7 +191,7 @@ export class ClickHouseSource implements DataSource {
   async after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
     const { time } = this.c;
     const { columns, params } = this.pointColumns(ref);
-    const [row] = await this.rows<[string, number | null]>(
+    const [row] = await this.rows<PointRow>(
       `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} >= ${this.ns("t")}
        ORDER BY ${time} ASC LIMIT 1`,
@@ -225,4 +262,89 @@ export class ClickHouseSource implements DataSource {
     );
     return rows.map(([b, count]) => ({ start: BigInt(b), count: Number(count) }));
   }
+
+  async events(dataRef: string, limit: number, abort?: AbortSignal) {
+    const { dataRef: refColumn, time } = this.c;
+    const { source, kind, name, value, text, detail } = this.e;
+    try {
+      const rows = await this.rows<[string, string, string, string, number | null, string, string]>(
+        `SELECT toString(toUnixTimestamp64Nano(${time})), ${source}, ${kind}, ${name}, ${value},
+                ${text}, ${detail}
+         FROM ${this.eventsTable} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL
+         ORDER BY ${time}, ${kind}, ${source}, ${name} LIMIT {limit:UInt32}`,
+        { ref: dataRef, limit },
+        abort,
+      );
+      return rows.map(
+        ([t, src, k, n, v, x, d]): EventRow => ({
+          t,
+          source: src,
+          kind: k,
+          name: n,
+          value: num(v),
+          text: x,
+          detail: d,
+        }),
+      );
+    } catch (error) {
+      if (hasCode(error, new Set([UNKNOWN_TABLE]))) return undefined;
+      throw error;
+    }
+  }
+
+  async stateChanges(ref: SeriesRef, by: StateChangeRule, limit: number, abort?: AbortSignal) {
+    const { time, value, text } = this.c;
+    const sna = this.isSna(ref);
+    // A labels signal is named by its value, so it does not need the text column (design E7).
+    const textColumn = by.kind === "text" ? text : "''";
+    const changed =
+      by.kind === "text"
+        ? "x_ != ptext"
+        : `abs(v_ - pv) > {tol:Float64} AND (arrayExists(l -> abs(v_ - l) <= {tol:Float64}, {labels:Array(Float64)})
+             OR arrayExists(l -> abs(pv - l) <= {tol:Float64}, {labels:Array(Float64)}))`;
+    const ruleParams: Params = by.kind === "text" ? {} : { tol: by.tolerance, labels: by.values };
+    // The table is ordered by (data ref, signal, time), so one signal is read in time order and
+    // only the first row and the changed ones cross the wire.
+    const rows = await this.rows<
+      [string, number | null, string, string | null, number | null, string]
+    >(
+      `SELECT toString(toUnixTimestamp64Nano(t_)), v_, x_,
+              if(rn = 1, '', toString(toUnixTimestamp64Nano(pt))), pv, ptext
+       FROM (
+         SELECT ${time} AS t_, ${value} AS v_, ${textColumn} AS x_,
+                lagInFrame(t_) OVER w AS pt, lagInFrame(v_) OVER w AS pv,
+                lagInFrame(x_) OVER w AS ptext, row_number() OVER w AS rn
+         FROM ${this.table}
+         WHERE ${this.signalFilter} AND NOT ${sna.expr}
+         WINDOW w AS (ORDER BY t_ ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+       )
+       WHERE rn = 1 OR ${changed}
+       ORDER BY t_ LIMIT {limit:UInt32}`,
+      { ref: ref.dataRef, sig: ref.name, limit, ...sna.params, ...ruleParams },
+      abort,
+    );
+    return rows.map(([t, v, x, pt, pv, ptext]): StateRow => {
+      const row: StateRow = { t, value: num(v), text: x };
+      if (pt) row.prev = { t: pt, value: num(pv), text: ptext };
+      return row;
+    });
+  }
+
+  async textSignals(abort?: AbortSignal): Promise<SignalRef[]> {
+    const { dataRef, signal, text } = this.c;
+    try {
+      const rows = await this.rows<[string, string]>(
+        `SELECT DISTINCT ${dataRef}, ${signal} FROM ${this.table} WHERE ${text} != ''`,
+        {},
+        abort,
+      );
+      return rows.map(([ref, name]) => ({ dataRef: ref, name }));
+    } catch (error) {
+      if (hasCode(error, MISSING_COLUMN)) return [];
+      throw error;
+    }
+  }
 }
+
+/** Time (decimal ns), value (null: SNA) and, for a text signal, the text. */
+type PointRow = [string, number | null, string?];

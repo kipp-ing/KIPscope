@@ -2,10 +2,15 @@ import {
   type CommandInput,
   type CommandResult,
   type CursorName,
+  DEFAULT_EVENT_FILTER,
+  type DiagEvent,
   EMPTY_WORKSPACE,
+  type EventList,
   isTimeseries,
+  mergeEvents,
   navAnchor,
   panBy,
+  parseSignalId,
   type RenderError,
   resolveTimeNav,
   type SignalInfo,
@@ -31,6 +36,7 @@ import {
   dropCommand,
   dropStateFor,
   dropTargetOf,
+  eventsDrop,
   isCopy,
   isLegendSource,
 } from "./chart/drag.ts";
@@ -38,6 +44,8 @@ import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { liveCursor } from "./chart/live.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
+import { EventsPanel } from "./events/EventsPanel.tsx";
+import { shownEvents, useEvents } from "./events/eventsData.ts";
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { ignoreFileDrops } from "./filedrop.ts";
@@ -45,17 +53,27 @@ import { StatusBar } from "./footer/StatusBar.tsx";
 import { useMeta } from "./footer/useMeta.ts";
 import { isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
 import {
+  isEventsKey,
   isSidebarKey,
   loadSidebar,
+  loadSidebarPart,
   SIDEBAR_WIDTH_PX,
+  type SidebarPart,
   type SidebarState,
   saveSidebar,
+  saveSidebarPart,
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
 import { stripDataRef } from "./time/strip.ts";
-import { stepDrive } from "./time/stripGeometry.ts";
-import { loadedDensity, type StripNavigate, TimeStrip } from "./time/TimeStrip.tsx";
+import { centreRange, stepDrive } from "./time/stripGeometry.ts";
+import {
+  loadedDensity,
+  type StripDrop,
+  type StripEvents,
+  type StripNavigate,
+  TimeStrip,
+} from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 import { WindowBoundary } from "./WindowBoundary.tsx";
 
@@ -90,6 +108,8 @@ interface CursorPreview {
 
 /** Optional `dropState` prop; absent rather than undefined (exactOptionalPropertyTypes). */
 const dropProp = (state: DropState | undefined) => (state ? { dropState: state } : {});
+/** Optional `events` prop of a timeseries window, likewise. */
+const eventsProp = (events: readonly DiagEvent[] | undefined) => (events ? { events } : {});
 
 const toRange = (r: { from: string; to: string }): Range => ({
   from: BigInt(r.from),
@@ -121,6 +141,28 @@ interface PendingNav {
   range: Range;
   chain: Range[];
 }
+
+/** Loads the events of one data ref and its events-line signals (design V9) and reports the list to
+ * App, which keeps one per data ref; renders nothing. */
+function EventsLoader({
+  dataRef,
+  signalsKey,
+  onList,
+}: {
+  dataRef: string;
+  /** The data ref's events-line signals joined with ",". */
+  signalsKey: string;
+  onList: (dataRef: string, list: EventList | undefined) => void;
+}) {
+  const signals = useMemo(() => (signalsKey ? signalsKey.split(",") : []), [signalsKey]);
+  const list = useEvents(dataRef, signals);
+  useEffect(() => onList(dataRef, list), [dataRef, list, onList]);
+  useEffect(() => () => onList(dataRef, undefined), [dataRef, onList]);
+  return null;
+}
+
+/** Data ref of a signal ID, or undefined. */
+const dataRefOf = (signalId: string) => parseSignalId(signalId)?.dataRef;
 
 /** Zoom and pan steps of the navigation keys from a view (design N6); home and goTo are not steps. */
 function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undefined {
@@ -156,6 +198,16 @@ export function App() {
   );
   const openSidebar = useCallback(() => setSidebar("open"), []);
   const sidebarOpen = sidebar === "open";
+  // The part under the sidebar's switch (design V11): per browser like the sidebar itself.
+  const [part, setPart] = useState<SidebarPart>(() => loadSidebarPart(localStore()));
+  useEffect(() => saveSidebarPart(localStore(), part), [part]);
+  // Bumped to focus the events filter field (key `e`, the strip's count; spec "Switch and key e").
+  const [eventsFocus, setEventsFocus] = useState(0);
+  const openEvents = useCallback(() => {
+    setSidebar("open");
+    setPart("events");
+    setEventsFocus((n) => n + 1);
+  }, []);
 
   // Signal metadata seen in the explorer or looked up for signals already in the workspace.
   const infos = useRef(new Map<string, SignalInfo>());
@@ -177,6 +229,58 @@ export function App() {
   const meta = useMeta(live.connected);
   const windows = workspace?.windows ?? [];
   const linked = workspace?.linkTime ?? true;
+
+  // Events (design V9): one unfiltered list per data ref of the strip and the timeseries windows,
+  // filtered here once per revision with the workspace filter for strip, windows and panel.
+  const eventFilter = workspace?.eventFilter ?? DEFAULT_EVENT_FILTER;
+  const eventSignals = workspace?.eventSignals ?? [];
+  const stripRef = workspace ? stripDataRef(workspace) : undefined;
+  const windowRefs = new Map<string, string[]>();
+  for (const w of windows) {
+    if (!isTimeseries(w)) continue;
+    const refs = new Set(w.signals.flatMap((s) => dataRefOf(s.signalId) ?? []));
+    windowRefs.set(w.id, [...refs].sort());
+  }
+  const eventRefsKey = [
+    ...new Set([...(stripRef ? [stripRef] : []), ...[...windowRefs.values()].flat()]),
+  ]
+    .sort()
+    .join(",");
+  const windowRefsKey = [...windowRefs].map(([id, refs]) => `${id}:${refs.join("+")}`).join(",");
+  const [eventLists, setEventLists] = useState<ReadonlyMap<string, EventList>>(new Map());
+  const onEventList = useCallback((dataRef: string, list: EventList | undefined) => {
+    setEventLists((prev) => {
+      if (prev.get(dataRef) === list) return prev;
+      const next = new Map(prev);
+      if (list) next.set(dataRef, list);
+      else next.delete(dataRef);
+      return next;
+    });
+  }, []);
+  const shownByRef = useMemo(
+    () => new Map([...eventLists].map(([ref, list]) => [ref, shownEvents(list, eventFilter)])),
+    [eventLists, eventFilter],
+  );
+  // The union over a window's data refs; one data ref passes its array as is.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: windowRefsKey stands for windowRefs
+  const windowEvents = useMemo(() => {
+    const out = new Map<string, readonly DiagEvent[]>();
+    for (const [id, refs] of windowRefs) {
+      const parts = refs.flatMap((r) => {
+        const shown = shownByRef.get(r);
+        return shown ? [shown] : [];
+      });
+      const [first] = parts;
+      if (first) out.set(id, parts.length === 1 ? first : mergeEvents(...parts));
+    }
+    return out;
+  }, [shownByRef, windowRefsKey]);
+  const stripList = stripRef ? eventLists.get(stripRef) : undefined;
+  const stripShown = stripRef ? shownByRef.get(stripRef) : undefined;
+  const stripEvents = useMemo<StripEvents | undefined>(
+    () => (stripList && stripShown ? { shown: stripShown, total: stripList.total } : undefined),
+    [stripList, stripShown],
+  );
 
   // The marked window, the explorer's add target (design L5, L6): view state of this tab. A removed
   // window clears it; the render resolves it too, so a stale ID never reaches the explorer.
@@ -380,6 +484,13 @@ export function App() {
       return target && r ? navigate(target.id, r, push) : false;
     },
     [navView, navigate],
+  );
+  /** An events row click (V8): centre the bar target on the event, span kept, one history entry. */
+  const onCentre = useCallback(
+    (t: bigint) => {
+      stripNavigate((view) => centreRange(view, t), true);
+    },
+    [stripNavigate],
   );
   const onBack = useCallback(
     (windowId: string) => {
@@ -600,6 +711,12 @@ export function App() {
         if (!e.repeat) toggleSidebar();
         return;
       }
+      if (isEventsKey(e, document.activeElement)) {
+        if (dragRef.current) return;
+        e.preventDefault();
+        if (!e.repeat) openEvents();
+        return;
+      }
       if (e.key !== "Backspace") return onNavKey(e);
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTextField(document.activeElement)) return;
@@ -619,7 +736,7 @@ export function App() {
       document.removeEventListener("pointerout", onOut);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onBack, onReset, navView, navigate, toggleSidebar]);
+  }, [onBack, onReset, navView, navigate, toggleSidebar, openEvents]);
 
   // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
   const mainRef = useRef<HTMLElement>(null);
@@ -730,6 +847,13 @@ export function App() {
         const target = targetAt(e.clientX, e.clientY);
         const ws = liveRef.current.workspace;
         if (!target || !ws) return;
+        // Any signal dropped on the strip goes on the events line (V10); nothing moves.
+        if (target.kind === "events") {
+          const signalId = cur.source.signalId;
+          if (eventsDrop(infos.current.get(signalId), ws).ok)
+            void command({ type: "events.addSignal", signalId });
+          return;
+        }
         if (!isLegendSource(cur.source)) {
           const signal = infos.current.get(cur.source.signalId);
           if (!signal || !canAdd(signal.id, target, ws.windows, unitOf)) return;
@@ -793,11 +917,21 @@ export function App() {
   const dropStateOf = (windowId: string): DropState | undefined =>
     activeDrag && dropStateFor(activeDrag.source, windowId, windows, unitOf);
   const dropActionProp = activeDrag && !legendDrag ? { dropAction: "add" as const } : {};
+  // Over the strip: what a drop on the events line would do (V10).
+  const stripDrop: StripDrop | undefined =
+    activeDrag?.target?.kind === "events" && workspace
+      ? {
+          name: activeDrag.label,
+          ...eventsDrop(infos.current.get(activeDrag.source.signalId), workspace),
+        }
+      : undefined;
   const overValid =
     activeDrag?.target !== undefined &&
-    (isLegendSource(activeDrag.source)
-      ? canDrop(activeDrag.source, activeDrag.target, windows, unitOf)
-      : canAdd(activeDrag.source.signalId, activeDrag.target, windows, unitOf));
+    (stripDrop
+      ? stripDrop.ok
+      : isLegendSource(activeDrag.source)
+        ? canDrop(activeDrag.source, activeDrag.target, windows, unitOf)
+        : canAdd(activeDrag.source.signalId, activeDrag.target, windows, unitOf));
   const newTarget = activeDrag?.target?.kind === "new" ? activeDrag.target : undefined;
   const belowOver = newTarget?.place === "below";
   const stripOver = newTarget !== undefined && !belowOver;
@@ -847,6 +981,17 @@ export function App() {
       className={appClass}
       style={{ "--sidebar-width": `${SIDEBAR_WIDTH_PX}px` } as React.CSSProperties}
     >
+      {eventRefsKey
+        .split(",")
+        .filter(Boolean)
+        .map((ref) => (
+          <EventsLoader
+            key={ref}
+            dataRef={ref}
+            signalsKey={eventSignals.filter((id) => dataRefOf(id) === ref).join(",")}
+            onList={onEventList}
+          />
+        ))}
       <SignalExplorer
         windows={windows}
         onAdd={addSignal}
@@ -859,7 +1004,20 @@ export function App() {
         onTarget={onTarget}
         open={sidebarOpen}
         onOpen={openSidebar}
-      />
+        part={part}
+        onPart={setPart}
+      >
+        <EventsPanel
+          list={stripList}
+          filter={eventFilter}
+          signals={eventSignals}
+          info={info}
+          range={barWindow ? toRange(barWindow.range) : undefined}
+          onCommand={command}
+          onCentre={onCentre}
+          focus={eventsFocus}
+        />
+      </SignalExplorer>
       <div className="workspace">
         <main ref={mainRef}>
           {/* The top row (design L3) and the time strip (adopt-design-language T8), sticky together
@@ -894,6 +1052,9 @@ export function App() {
             <TimeStrip
               workspace={workspace ?? EMPTY_WORKSPACE}
               navigate={barWindow ? stripNavigate : undefined}
+              events={stripEvents}
+              onOpenEvents={openEvents}
+              drop={stripDrop}
             />
           </div>
           <div className="window-grid">
@@ -922,6 +1083,7 @@ export function App() {
                     marked={w.id === markedId}
                     onMark={onMark}
                     linked={linked}
+                    {...eventsProp(windowEvents.get(w.id))}
                     {...dropProp(dropStateOf(w.id))}
                     {...dropActionProp}
                   />
@@ -980,7 +1142,13 @@ export function App() {
           <span className="swatch" style={{ background: colorOf(activeDrag.source.signalId) }} />
           {activeDrag.label}
           <span className="drag-mode">
-            {overValid ? (!legendDrag ? " · add" : activeDrag.copy ? " · copy" : " · move") : ""}
+            {overValid
+              ? !legendDrag || stripDrop
+                ? " · add"
+                : activeDrag.copy
+                  ? " · copy"
+                  : " · move"
+              : ""}
           </span>
           {overShown && <span className="drag-note">· Already shown</span>}
         </div>

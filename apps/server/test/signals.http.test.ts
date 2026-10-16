@@ -15,7 +15,7 @@ describe("GET /api/signals", () => {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
@@ -95,7 +95,7 @@ describe("GET /api/signals", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     const total = (await app.inject({ url: "/api/signals?q=" })).json().total;
-    expect(total).toBe(1017);
+    expect(total).toBe(1021);
     expect(body.items).toHaveLength(total);
     expect(body.items.map((s: { id: string }) => s.id)).toContain("testcar/Many_700h.S0999");
     expect(Number.isNaN(Date.parse(body.loadedAt))).toBe(false);
@@ -106,19 +106,20 @@ describe("GET /api/signals", () => {
   it("refreshes the catalog", async () => {
     const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().size).toBe(1017);
+    expect(res.json().size).toBe(1021);
   });
 });
 
 describe("GET /api/signals without a reachable source", () => {
   const failing = {
+    textSignals: async () => [],
     listSignals: () => Promise.reject(new Error("connect ECONNREFUSED")),
   } as unknown as DataSource;
   const catalog = new Catalog(failing, async () => new Map());
   const app = buildApp({
     catalog,
     source: failing,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   afterAll(() => app.close());
 
@@ -146,7 +147,7 @@ describe("503 reason while the catalog is still loading", () => {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   afterAll(() => app.close());
 
@@ -167,7 +168,7 @@ describe("display names over HTTP (test project file)", () => {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
@@ -202,17 +203,20 @@ describe("collision warning on refresh (N5)", () => {
   let failing = false;
   const source = {
     ...real,
+    textSignals: async () => [],
     listSignals: () =>
       failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.listSignals(),
     // No rows, so the density prefetch after each load (design Q4) logs no warn line of its own.
     refExtent: async () => undefined,
+    // No events either, so the events prefetch logs no warn line of its own (add-events E3).
+    events: async () => [],
   } as unknown as DataSource;
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   // buildApp only takes a boolean logger, so the fake logger replaces app.log.warn.
   const warn = vi.spyOn(app.log, "warn").mockImplementation(() => undefined);
@@ -244,6 +248,7 @@ describe("collision warning on refresh (N5)", () => {
 
 describe("diag catalog over HTTP", () => {
   const source = {
+    textSignals: async () => [],
     listSignals: async () =>
       ["TBMS.cell_voltage.01", "TBMS.contactor", "TBMS.unknown", "Nodbc_500h.RAW"].map((name) => ({
         dataRef: "testcar",
@@ -261,7 +266,7 @@ describe("diag catalog over HTTP", () => {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());

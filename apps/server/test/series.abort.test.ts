@@ -19,6 +19,7 @@ function slowSource(delayMs: number) {
           reject(abort.reason);
         });
       }),
+    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "car", name: "S" }],
     raw: async () => [],
     before: async () => undefined,
@@ -33,7 +34,7 @@ describe("GET /api/series over a real connection", () => {
   const app = buildApp({
     catalog,
     source: slow.source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   let base = "";
   beforeAll(async () => {
@@ -66,6 +67,7 @@ describe("GET /api/series over a real connection", () => {
 describe("GET /api/extent over a real connection", () => {
   const seen: { aborted: boolean }[] = [];
   const source = {
+    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "car", name: "S" }],
     extent: (_ref: unknown, abort?: AbortSignal) =>
       new Promise((_resolve, reject) => {
@@ -81,7 +83,7 @@ describe("GET /api/extent over a real connection", () => {
   const app = buildApp({
     catalog,
     source,
-    workspace: new WorkspaceStore({ signalExists: () => true }),
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   let base = "";
   beforeAll(async () => {

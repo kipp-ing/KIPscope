@@ -2,6 +2,7 @@ import { type Density, type Drive, MIN_SPAN_NS } from "@kipscope/shared";
 import { DOUBLE_CLICK_MS } from "../chart/cursors.ts";
 import { DRAG_THRESHOLD_PX } from "../chart/drag.ts";
 import { extentRange, type Range } from "../chart/zoom.ts";
+import { PIN_LANE_PX } from "../events/marks.ts";
 import { formatRange } from "./axis.ts";
 import { formatSpan } from "./strip.ts";
 
@@ -131,29 +132,45 @@ export function markerX(tr: Track, t: bigint): number | undefined {
 }
 
 export type Zone =
+  | { kind: "pin"; index: number }
   | { kind: "drive"; index: number }
   | { kind: "edge"; side: "from" | "to" }
   | { kind: "body" }
   | { kind: "bars" };
 
-/** x, y relative to the track's top left. range: the bar target's range; undefined without a target. */
+/** Index of the rect whose x span holds x, nearest centre on overlap, the earlier on a tie; −1 when none. */
+function nearestHit(rects: readonly Rect[], x: number): number {
+  let index = -1;
+  let best = Number.POSITIVE_INFINITY;
+  rects.forEach((hit, i) => {
+    const dist = Math.abs(x - (hit.left + hit.right) / 2);
+    if (x >= hit.left && x <= hit.right && dist < best) {
+      index = i;
+      best = dist;
+    }
+  });
+  return index;
+}
+
+/** x, y relative to the track's top left. range: the bar target's range; undefined without a target.
+ *  pins: the hit rects of the event pins (add-events V3), checked first in the pin lane (y < PIN_LANE_PX). */
 export function hitZone(
   tr: Track,
   x: number,
   y: number,
   range: Range | undefined,
   drives: readonly Drive[],
+  pins: readonly Rect[] = [],
 ): Zone {
+  if (y < PIN_LANE_PX) {
+    const pin = nearestHit(pins, x);
+    if (pin >= 0) return { kind: "pin", index: pin };
+  }
   if (y >= BARS_PX) {
-    let index = -1;
-    let best = Number.POSITIVE_INFINITY;
-    driveRects(tr, drives).forEach(({ hit }, i) => {
-      const dist = Math.abs(x - (hit.left + hit.right) / 2);
-      if (x >= hit.left && x <= hit.right && dist < best) {
-        index = i;
-        best = dist;
-      }
-    });
+    const index = nearestHit(
+      driveRects(tr, drives).map((r) => r.hit),
+      x,
+    );
     return index >= 0 ? { kind: "drive", index } : { kind: "bars" };
   }
   const rects = range && windowRects(tr, range);
@@ -178,6 +195,7 @@ export function hitZone(
 export type StripAction =
   | { kind: "jump"; x: number }
   | { kind: "fit"; drive: number }
+  | { kind: "centre"; pin: number }
   | { kind: "whole" }
   | { kind: "brush"; x0: number; x1: number }
   | { kind: "pan"; dx: number }
@@ -226,6 +244,7 @@ export class StripGesture {
       return { kind: "whole" };
     }
     this.lastClick = { x, y, now };
+    if (p.zone.kind === "pin") return { kind: "centre", pin: p.zone.index };
     return p.zone.kind === "drive" ? { kind: "fit", drive: p.zone.index } : { kind: "jump", x };
   }
 
@@ -236,7 +255,7 @@ export class StripGesture {
   }
 }
 
-/** Drag kind from the press zone: edge → resize, body → pan, bars and drive → brush. */
+/** Drag kind from the press zone: edge → resize, body → pan, bars, drive and pin → brush. */
 function dragAction(zone: Zone, x0: number, x: number): StripAction {
   if (zone.kind === "edge") return { kind: "resize", side: zone.side, dx: x - x0 };
   if (zone.kind === "body") return { kind: "pan", dx: x - x0 };
@@ -249,6 +268,12 @@ export function jumpRange(tr: Track, x: number, view: Range): Range {
   const span = view.to - view.from;
   const from = centre - span / 2n;
   return { from, to: from + span };
+}
+
+/** from = t − span / 2, to = from + span (exact, no snapping; add-events V3). */
+export function centreRange(view: Range, t: bigint): Range {
+  const from = t - (view.to - view.from) / 2n;
+  return { from, to: from + (view.to - view.from) };
 }
 
 /** [snap(tOf(min)), snap(tOf(max))); undefined when |x1 − x0| < DRAG_THRESHOLD_PX or the ends coincide. */

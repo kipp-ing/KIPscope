@@ -1,7 +1,10 @@
 import { createServer, type Server } from "node:net";
+import { resolve } from "node:path";
+import type { EventRow, StateRow } from "@kipscope/shared";
 import { buildApp } from "../../server/src/app.ts";
 import { Catalog } from "../../server/src/catalog.ts";
 import type { DataSource, RawPoint, SignalRef } from "../../server/src/datasource.ts";
+import { loadDbcFiles } from "../../server/src/dbc.ts";
 import { WorkspaceStore } from "../../server/src/workspace.ts";
 import type { Io } from "../src/run.ts";
 import { run } from "../src/run.ts";
@@ -9,13 +12,73 @@ import { run } from "../src/run.ts";
 /** Seconds of 2026-10-01T02:00:00Z, the stub signals' time base, in ns. */
 export const T0 = 1790820000000000000n;
 
-/** Stub catalog: ids testcar/Sna_800h.RPM, testcar/Sna_800h.SPEED, testcar/Fast_100h.SIG_A, othercar/Fast_100h.SIG_A. */
+/**
+ * Stub catalog: ids testcar/Sna_800h.RPM, testcar/Sna_800h.SPEED, testcar/Fast_100h.SIG_A,
+ * othercar/Fast_100h.SIG_A, and the state signals of add-events: testcar/Ign_A20h.MODE (`VAL_` labels
+ * from the server's test DBC) and testcar/DIAG.door (rows with text).
+ */
 const SIGNALS: SignalRef[] = [
   { dataRef: "testcar", name: "Sna_800h.RPM" },
   { dataRef: "testcar", name: "Sna_800h.SPEED" },
   { dataRef: "testcar", name: "Fast_100h.SIG_A" },
   { dataRef: "othercar", name: "Fast_100h.SIG_A" },
+  { dataRef: "testcar", name: "Ign_A20h.MODE" },
+  { dataRef: "testcar", name: "DIAG.door" },
 ];
+
+/** 2026-10-01T00:00:00Z, base B of design T of add-events, in ns. */
+const B = 1790812800000000000n;
+const at = (h: number, m: number, s: number, ms = 0) =>
+  String(B + BigInt(((h * 60 + m) * 60 + s) * 1000 + ms) * 1_000_000n);
+
+/** The 18 testcar rows of design T (the row without a time is never returned), time order. */
+const EVENT_ROWS: EventRow[] = [
+  ["VCU", "state", "VCU.door", 0, "closed", "initial", at(1, 0, 0)],
+  ["VCU", "state", "VCU.door", 0, "closed", "initial", at(1, 1, 30)],
+  ["VCU", "state", "VCU.door", 0, "open", "from closed", at(1, 3, 0)],
+  ["VCU", "state", "VCU.door", 0, "open", "initial", at(1, 4, 30)],
+  ["VCU", "state", "DIAG.lock", 0, "locked", "initial", at(2, 0, 0)],
+  ["VCU", "state", "VCU.door", 0, "closed", "initial", at(2, 0, 0)],
+  ["BMS", "nrc", "SID 22", 49, "requestOutOfRange", "", at(3, 0, 0)],
+  ["BMS", "isotp", "incomplete", 132, "", "132 of 403 bytes, then a new message", at(3, 0, 1)],
+  ["VCU", "note", "boot", 0, "logger restarted", "", at(4, 0, 0)],
+  ["BMS", "dtc", "P0AA100", 64, "Positive contactor jammed closed", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P0C4600", 80, "Coolant temperature sensor sporadic", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P0C7800", 36, "Precharge too long", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P0CA700", 41, "Discharge current too high", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P0E1A00", 0, "Coolant pump B open circuit", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P0FFF00", 3.5, "Odd status", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P180D13", 105, "System shutoff. Circuit Open", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "P1CA100", 40, "Insulation fault, open contactors", "initial", at(5, 0, 0)],
+  ["BMS", "dtc", "U019B00", 128, "Communication with on-board charger", "initial", at(5, 0, 0)],
+].map(([source, kind, name, value, text, detail, t]) => ({
+  t: t as string,
+  source: source as string,
+  kind: kind as string,
+  name: name as string,
+  value: value as number,
+  text: text as string,
+  detail: detail as string,
+}));
+
+/** Ign_A20h.MODE: NONE from 01:00:00, KEYON from 01:10:00 (changed rows only, as the source returns them). */
+const MODE_CHANGES: StateRow[] = [
+  { t: at(1, 0, 0), value: 0, text: "" },
+  {
+    t: at(1, 10, 0),
+    value: 3,
+    text: "",
+    prev: { t: at(1, 9, 59, 900), value: 0, text: "" },
+  },
+];
+
+/** Only the labels of the state signals of the server's test DBC (units and SNA of the others stay out). */
+const loadStubDbc = async () => {
+  const all = await loadDbcFiles([
+    resolve(import.meta.dirname, "../../server/test/fixtures/test-a.dbc"),
+  ]);
+  return new Map([...all].filter(([name]) => name.startsWith("Ign_A20h.")));
+};
 
 const id = (r: SignalRef) => `${r.dataRef}/${r.name}`;
 
@@ -24,6 +87,14 @@ const id = (r: SignalRef) => `${r.dataRef}/${r.name}`;
  * that the tests read). Other signals have no points.
  */
 const POINTS = new Map<string, RawPoint[]>([
+  // MODE is KEYON (3) at 01:20:00 and 01:20:00.1.
+  [
+    "testcar/Ign_A20h.MODE",
+    [
+      { t: B + 4_800_000_000_000n, v: 3 },
+      { t: B + 4_800_100_000_000n, v: 3 },
+    ],
+  ],
   [
     "testcar/Sna_800h.SPEED",
     [
@@ -51,6 +122,9 @@ export function stubSource(): DataSource {
     buckets: unused,
     refExtent: unused,
     refBuckets: unused,
+    events: async (dataRef) => (dataRef === "testcar" ? EVENT_ROWS : []),
+    stateChanges: async (ref) => (ref.name === "Ign_A20h.MODE" ? MODE_CHANGES : []),
+    textSignals: async () => [{ dataRef: "testcar", name: "DIAG.door" }],
   };
 }
 
@@ -108,11 +182,12 @@ export interface Workspace {
  */
 export async function startServer(options: { loadCatalog?: boolean } = {}): Promise<Harness> {
   const source = stubSource();
-  const catalog = new Catalog(source, async () => new Map());
+  const catalog = new Catalog(source, loadStubDbc);
   if (options.loadCatalog !== false) await catalog.refresh();
   const store = new WorkspaceStore({
     signalExists: (signalId) => catalog.get(signalId) !== undefined,
     unitOf: (signalId) => catalog.get(signalId)?.unit,
+    hasStates: (signalId) => catalog.get(signalId)?.states !== undefined,
   });
   const app = buildApp({ catalog, source, workspace: store });
   const requests: string[] = [];

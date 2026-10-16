@@ -99,10 +99,12 @@ function ValueCell({
   state,
   unit,
   digits,
+  info,
 }: {
   state: ValueState | undefined;
   unit: string | undefined;
   digits: Digits;
+  info: SignalInfo | undefined;
 }) {
   if (state?.status === "error") {
     return (
@@ -112,7 +114,7 @@ function ValueCell({
     );
   }
   const r = state?.result;
-  const cell = formatCell(r?.value, r?.at, r?.next, unit, digits);
+  const cell = formatCell(r?.value, r?.at, r?.next, unit, digits, info);
   return <CellView cell={state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
@@ -126,19 +128,21 @@ function LiveValueCell({
   moving,
   unit,
   digits,
+  info,
 }: {
   state: ValueState | undefined;
   set: boolean;
   moving: boolean;
   unit: string | undefined;
   digits: Digits;
+  info: SignalInfo | undefined;
 }) {
   if (!set) return <td className="value" />;
   const r = state?.result;
   const cell: Cell =
     state?.status === "error"
       ? { text: NO_VALUE, title: `failed: ${state.error}` }
-      : formatCell(r?.value, r?.at, r?.next, unit, digits);
+      : formatCell(r?.value, r?.at, r?.next, unit, digits, info);
   return <CellView cell={moving || state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
@@ -325,7 +329,13 @@ export function ValuesWindow({
               const stateA = cellState(loader.get(keyA), requestOf.get(keyA));
               const stateB = cellState(loader.get(keyB), requestOf.get(keyB));
               const unit = meta?.unit;
-              const delta = deltaCell(stateA?.result?.value, stateB?.result?.value, unit, digits);
+              const delta = deltaCell(
+                stateA?.result?.value,
+                stateB?.result?.value,
+                unit,
+                digits,
+                meta,
+              );
               return (
                 <tr key={s.id} title={meta?.description}>
                   <td className="name">
@@ -347,8 +357,8 @@ export function ValuesWindow({
                       </span>
                     </span>
                   </td>
-                  <ValueCell state={stateA} unit={unit} digits={digits} />
-                  {showB && <ValueCell state={stateB} unit={unit} digits={digits} />}
+                  <ValueCell state={stateA} unit={unit} digits={digits} info={meta} />
+                  {showB && <ValueCell state={stateB} unit={unit} digits={digits} info={meta} />}
                   {diff && (
                     <CellView
                       cell={
@@ -364,6 +374,7 @@ export function ValuesWindow({
                     moving={liveT !== rested}
                     unit={unit}
                     digits={digits}
+                    info={meta}
                   />
                   <td>
                     <button

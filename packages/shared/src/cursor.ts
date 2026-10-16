@@ -4,12 +4,12 @@ import type { ValuesMode } from "./workspace.ts";
 export type NoValueReason = "no_data" | "before_first" | "after_last" | "next_sna";
 
 export type CursorValue =
-  /** A point lies exactly at t. */
-  | { kind: "raw"; value: number }
+  /** A point lies exactly at t; `label`: its state name, whole (design N3). */
+  | { kind: "raw"; value: number; label?: string }
   /** Line mode, between two valid points. */
   | { kind: "interpolated"; value: number }
-  /** Step mode, the earlier valid point's value. */
-  | { kind: "held"; value: number }
+  /** Step mode, or line mode next to a named point: the earlier valid point's value. */
+  | { kind: "held"; value: number; label?: string }
   /** SNA at t (D-010: never a number). */
   | { kind: "sna" }
   | { kind: "none"; reason: NoValueReason };
@@ -27,7 +27,8 @@ export interface CursorValueResult {
   value: CursorValue;
 }
 
-interface Point {
+/** A neighbour of evaluateAt: time (ns) and value (null = SNA). */
+export interface Point {
   t: bigint;
   v: number | null;
 }
@@ -35,19 +36,23 @@ interface Point {
 /**
  * Value of a signal at `t` from its neighbours `at` (time ≤ t) and `next` (time > t), by the
  * curve rules of timeseries-window (design C4): no invented values, SNA never a number, step
- * holds up to an SNA point, line mode draws no segment into SNA. Pure.
+ * holds up to an SNA point, line mode draws no segment into SNA. With `named` (has a state
+ * name), line mode holds when `at` or `next` is named: no interpolation into a state (D-059,
+ * design N3). Pure.
  */
 export function evaluateAt(
   t: bigint,
   mode: ValuesMode,
   at: Point | undefined,
   next: Point | undefined,
+  named?: (p: Point) => boolean,
 ): CursorValue {
   if (!at) return { kind: "none", reason: next ? "before_first" : "no_data" };
   if (at.t === t) return at.v === null ? { kind: "sna" } : { kind: "raw", value: at.v };
   if (!next) return { kind: "none", reason: "after_last" };
   if (at.v === null) return { kind: "sna" };
-  if (mode === "step") return { kind: "held", value: at.v };
+  if (mode === "step" || named?.(at) || (next.v !== null && named?.(next)))
+    return { kind: "held", value: at.v };
   if (next.v === null) return { kind: "none", reason: "next_sna" };
   // Bigint differences, Number only for the ratio: exact below 2^53 ns (104 days).
   const ratio = Number(t - at.t) / Number(next.t - at.t);

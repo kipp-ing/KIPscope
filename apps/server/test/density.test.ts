@@ -11,6 +11,7 @@ const MS = 1_000_000n;
 function fakeSource() {
   const calls = { extent: 0, buckets: 0, failNext: false };
   const source = {
+    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "testcar", name: "S" }],
     refExtent: async () => {
       calls.extent++;
@@ -143,7 +144,7 @@ describe("GET /api/density cache over HTTP", () => {
     const app = buildApp({
       catalog,
       source,
-      workspace: new WorkspaceStore({ signalExists: () => true }),
+      workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
     });
     try {
       const get = () => app.inject({ url: "/api/density", query: { dataRef: "testcar" } });

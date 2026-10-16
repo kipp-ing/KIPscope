@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  isEventsKey,
   isSidebarKey,
   loadSidebar,
+  loadSidebarPart,
+  SIDEBAR_PART_KEY,
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_PX,
   saveSidebar,
+  saveSidebarPart,
 } from "../src/layout/sidebar.ts";
 
 /** No DOM in the tests: plain objects shaped like the element properties isTextField reads. */
@@ -80,5 +84,60 @@ describe("isSidebarKey", () => {
     for (const other of ["a", "/", "t", "S2", "Escape"]) {
       expect(isSidebarKey(key(other), null)).toBe(false);
     }
+  });
+});
+
+describe("sidebar part", () => {
+  const storageOf = (data: Map<string, string>) => ({
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => void data.set(k, v),
+  });
+
+  it("loads and saves the sidebar part", () => {
+    expect(SIDEBAR_PART_KEY).toBe("kipscope.sidebarPart");
+    const data = new Map<string, string>();
+    const storage = storageOf(data);
+    // Nothing stored: the signals.
+    expect(loadSidebarPart(storage)).toBe("signals");
+    // Round trip under the documented key.
+    saveSidebarPart(storage, "events");
+    expect(data.get("kipscope.sidebarPart")).toBe("events");
+    expect(loadSidebarPart(storage)).toBe("events");
+    saveSidebarPart(storage, "signals");
+    expect(data.get("kipscope.sidebarPart")).toBe("signals");
+    expect(loadSidebarPart(storage)).toBe("signals");
+    // Unknown stored values and missing storage give the signals.
+    data.set("kipscope.sidebarPart", "nonsense");
+    expect(loadSidebarPart(storage)).toBe("signals");
+    expect(loadSidebarPart(undefined)).toBe("signals");
+    // Throwing storage: the signals, and saving never throws.
+    const throwing = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(loadSidebarPart(throwing)).toBe("signals");
+    expect(() => saveSidebarPart(throwing, "events")).not.toThrow();
+    expect(() => saveSidebarPart(undefined, "events")).not.toThrow();
+    // The part is independent of the open/collapsed state.
+    saveSidebarPart(storage, "events");
+    expect(loadSidebar(storage)).toBe("open");
+  });
+
+  it("opens the events with e outside text fields and selects", () => {
+    // Only the press on the body opens the events.
+    expect(isEventsKey(key("e"), el("BODY"))).toBe(true);
+    expect(isEventsKey(key("e"), null)).toBe(true);
+    expect(isEventsKey(key("e", { ctrlKey: true }), el("BODY"))).toBe(false);
+    expect(isEventsKey(key("e", { metaKey: true }), el("BODY"))).toBe(false);
+    expect(isEventsKey(key("e", { altKey: true }), el("BODY"))).toBe(false);
+    expect(isEventsKey(key("e"), el("INPUT", { type: "text" }))).toBe(false);
+    expect(isEventsKey(key("e"), el("TEXTAREA"))).toBe(false);
+    expect(isEventsKey(key("e"), el("SELECT"))).toBe(false);
+    expect(isEventsKey(key("E"), el("BODY"))).toBe(false);
+    expect(isEventsKey(key("s"), el("BODY"))).toBe(false);
   });
 });

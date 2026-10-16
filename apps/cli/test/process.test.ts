@@ -61,6 +61,18 @@ describe("separate process", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, outcome: "rejected" });
     expect(result.stderr.trimEnd().split("\n")).toHaveLength(1);
     expect(result.stderr).toContain("cursor_off");
+
+    // `--table` prints its lines on success only: a failure is the JSON line and the reason.
+    const table = await kipscope("--server", h.url, "events", "list", "--table", "--ref", "nope");
+    expect(table.code).toBe(1);
+    expect(table.stdout.trimEnd().split("\n")).toHaveLength(1);
+    expect(JSON.parse(table.stdout)).toMatchObject({
+      ok: false,
+      outcome: "rejected",
+      error: { code: "unknown_data_ref" },
+    });
+    expect(table.stderr.trimEnd().split("\n")).toHaveLength(1);
+    expect(table.stderr).toContain("unknown_data_ref");
   });
 
   it("exits 3 when the server is unreachable", async () => {

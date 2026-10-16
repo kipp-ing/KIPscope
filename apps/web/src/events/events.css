@@ -1,0 +1,297 @@
+/* Sidebar switch and events panel (add-events V8, V11). */
+
+/* While the events show, the explorer's own elements stay mounted but hidden, so query, scroll
+   position and the `/` listener survive the switch. */
+.explorer.part-events > :not(.sidebar-switch):not(.events-panel) {
+  display: none;
+}
+
+/* Segmented switch `Signals | Events` at the head of the sidebar, 26 px. */
+.sidebar-switch {
+  display: flex;
+  flex: none;
+  height: var(--control-h);
+  margin: 0 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.sidebar-switch button {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  border: none;
+  background: var(--panel);
+  color: var(--label);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sidebar-switch button + button {
+  border-left: 1px solid var(--control-border);
+}
+
+.sidebar-switch button[aria-selected="true"] {
+  background: var(--text);
+  color: #fff;
+}
+
+.sidebar-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.events-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.events-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 4px 6px;
+}
+
+.events-head h2 {
+  margin: 0;
+}
+
+.events-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.events-filter {
+  flex: none;
+  width: 100%;
+  height: var(--control-h);
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: var(--name-size);
+}
+
+.events-filter.invalid {
+  border-color: var(--error);
+  outline-color: var(--error);
+}
+
+.explorer .events-describe {
+  margin: 4px 4px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.explorer .events-describe.error {
+  color: var(--error);
+}
+
+.events-pills,
+.events-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 4px 6px;
+}
+
+.events-pill,
+.events-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--label);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.events-pill[aria-pressed="true"] {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
+}
+
+.events-chip[aria-pressed="false"] {
+  color: var(--muted);
+}
+
+.events-chip[aria-pressed="true"] {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* Full colour while the chip is on, faded while off. */
+.events-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.events-dot.source {
+  background: var(--muted);
+}
+
+.events-chip[aria-pressed="false"] .events-dot {
+  opacity: 0.35;
+}
+
+.events-chip-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.events-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 0 4px 6px;
+  font-size: 11px;
+}
+
+.events-line .section-label {
+  flex-basis: 100%;
+}
+
+.events-signal {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  font-family: var(--font-mono);
+  color: var(--name);
+}
+
+.events-signal.skipped {
+  color: var(--muted);
+}
+
+.events-skip {
+  font-family: var(--font-sans);
+  white-space: pre;
+}
+
+.events-remove {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.events-remove:hover {
+  color: var(--error);
+}
+
+/* The list scrolls on its own, like the explorer's results; its divider spans the sidebar. */
+.events-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -8px;
+  padding: 4px 8px 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.explorer .events-empty,
+.explorer .events-more {
+  margin: 6px 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Day band: the explorer's group header look. */
+.events-day {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  background: var(--band);
+  color: var(--label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.events-band + .events-band {
+  margin-top: 3px;
+}
+
+.events-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 2px 4px 2px 6px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.events-row:hover {
+  background: var(--bg);
+}
+
+.events-row.in-range {
+  border-left-color: var(--accent);
+}
+
+.events-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.events-glyph {
+  flex: none;
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+}
+
+.events-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--label);
+}
+
+.events-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--name-size);
+  color: var(--name);
+}
+
+.events-text {
+  display: block;
+  max-width: 100%;
+  padding-left: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}

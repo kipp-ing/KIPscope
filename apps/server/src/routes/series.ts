@@ -1,18 +1,21 @@
 import {
+  type CursorValue,
   type CursorValueResult,
-  type EdgePoint,
   type Extent,
   evaluateAt,
   parseSignalId,
+  type SignalInfo,
+  stateLabel,
   TimeInput,
   ValuesMode,
 } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
+import type { RawPoint, SeriesRef } from "../datasource.ts";
 import { DensityCache } from "../density.ts";
 import { apiError, parseInput } from "../http.ts";
-import { MAX_TARGET, MIN_TARGET, querySeries } from "../series.ts";
+import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -137,7 +140,7 @@ export const seriesRoutes =
       try {
         return await querySeries(
           source,
-          { ...ref, sna: catalog.snaRanges(query.signal) },
+          seriesRef(catalog.get(query.signal) as SignalInfo, catalog.snaRanges(query.signal)),
           query.signal,
           query.from,
           query.to,
@@ -168,8 +171,8 @@ export const seriesRoutes =
           details,
         );
       }
-      const ref = parseSignalId(query.signal);
-      if (!ref || !catalog.get(query.signal)) {
+      const info = catalog.get(query.signal);
+      if (!parseSignalId(query.signal) || !info) {
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -181,20 +184,37 @@ export const seriesRoutes =
       });
 
       try {
-        const seriesRef = { ...ref, sna: catalog.snaRanges(query.signal) };
+        const ref = seriesRef(info, catalog.snaRanges(query.signal));
+        const text = ref.text === true;
         // before(t + 1) is the last point at or before t, after(t + 1) the first point after t.
         const [at, next] = await Promise.all([
-          source.before(seriesRef, query.t + 1n, controller.signal),
-          source.after(seriesRef, query.t + 1n, controller.signal),
+          source.before(ref, query.t + 1n, controller.signal),
+          source.after(ref, query.t + 1n, controller.signal),
         ]);
+        // State names (add-events N2): the row text of a text signal, else the VAL_ label.
+        const labelOf = (p: RawPoint | undefined): string | undefined =>
+          !p || p.v === null ? undefined : text ? textLabel(p) : stateLabel(info, p.v);
+        const atLabel = labelOf(at);
+        const nextLabel = labelOf(next);
+        // Line mode next to a named point holds instead of interpolating (spec state-names).
+        let value: CursorValue = evaluateAt(
+          query.t,
+          query.mode,
+          at,
+          next,
+          (p) => (p === at ? atLabel : nextLabel) !== undefined,
+        );
+        // Raw and held values are at's.
+        if ((value.kind === "raw" || value.kind === "held") && atLabel !== undefined)
+          value = { ...value, label: atLabel };
         const body: CursorValueResult = {
           signalId: query.signal,
           t: query.t.toString(),
           mode: query.mode,
-          value: evaluateAt(query.t, query.mode, at, next),
+          value,
         };
-        if (at) body.at = edge(at);
-        if (next) body.next = edge(next);
+        if (at) body.at = edgePoint(at, text);
+        if (next) body.next = edgePoint(next, text);
         return body;
       } catch (error) {
         if (controller.signal.aborted) return reply;
@@ -204,4 +224,9 @@ export const seriesRoutes =
     });
   };
 
-const edge = (p: { t: bigint; v: number | null }): EdgePoint => ({ t: p.t.toString(), v: p.v });
+/** Value query ref of a catalog signal; text signals read their row text (add-events N3). */
+function seriesRef(info: SignalInfo, sna: SeriesRef["sna"]): SeriesRef {
+  const ref: SeriesRef = { dataRef: info.dataRef, name: info.name, sna };
+  if (info.states === "text") ref.text = true;
+  return ref;
+}

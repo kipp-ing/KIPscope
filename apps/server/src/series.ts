@@ -29,13 +29,24 @@ export function bucketWidth(from: Timestamp, to: Timestamp, target: number): big
   return width < MAX_BUCKET_WIDTH ? width : MAX_BUCKET_WIDTH;
 }
 
-const edge = (p: RawPoint | undefined): EdgePoint | undefined => p && { t: p.t.toString(), v: p.v };
+/** State name of a text signal's point (add-events N2): its row text; none for SNA or empty text. */
+export const textLabel = (p: RawPoint): string | undefined =>
+  p.v !== null && p.text ? p.text : undefined;
+
+/** Edge point; a text signal's carries the row text as `label` (add-events N3). */
+export function edgePoint(p: RawPoint, text: boolean): EdgePoint {
+  const point: EdgePoint = { t: p.t.toString(), v: p.v };
+  const label = text ? textLabel(p) : undefined;
+  if (label !== undefined) point.label = label;
+  return point;
+}
 
 /**
  * Fetches a signal for [from, to) at a resolution of about `target` values (design D4): raw points
  * with edge neighbors if the range holds at most `target` points, aggregated buckets otherwise.
  * SNA points (design S4) count towards `target`; they come back as null values and as per-bucket
- * `sna` counts, and never enter mean, min or max.
+ * `sna` counts, and never enter mean, min or max. Raw series of a text signal (`ref.text`) carry
+ * each point's text (add-events N3); buckets are unchanged.
  */
 export async function querySeries(
   source: DataSource,
@@ -62,10 +73,10 @@ export async function querySeries(
       t: encodeTimes(points.map((p) => p.t)),
       v: points.map((p) => p.v),
     };
-    const b = edge(before);
-    const a = edge(after);
-    if (b) result.before = b;
-    if (a) result.after = a;
+    const text = ref.text === true;
+    if (text) result.text = points.map((p) => p.text ?? "");
+    if (before) result.before = edgePoint(before, text);
+    if (after) result.after = edgePoint(after, text);
     return result;
   }
 

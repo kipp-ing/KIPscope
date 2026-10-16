@@ -4,12 +4,17 @@ import WebSocket from "ws";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
+import { loadDbcFiles } from "../src/dbc.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { testDbcFiles, testSource } from "./testdb.ts";
 
 const source = {} as DataSource;
 
 function setup() {
-  const workspace = new WorkspaceStore({ signalExists: (id) => id.startsWith("car/") });
+  const workspace = new WorkspaceStore({
+    signalExists: (id) => id.startsWith("car/"),
+    hasStates: () => false,
+  });
   const app = buildApp({ catalog: new Catalog(source, async () => new Map()), source, workspace });
   return { app, workspace };
 }
@@ -25,6 +30,7 @@ describe("window-workflow commands over HTTP", () => {
   };
   const workspace = new WorkspaceStore({
     signalExists: (id) => id.startsWith("car/"),
+    hasStates: () => false,
     unitOf: (id) => units[id],
   });
   const app = buildApp({ catalog: new Catalog(source, async () => new Map()), source, workspace });
@@ -316,7 +322,10 @@ describe("measurement start value (add-footer)", () => {
   };
 
   it("starts with the measurement from the project file", async () => {
-    const workspace = new WorkspaceStore({ signalExists: () => true }, { measurement });
+    const workspace = new WorkspaceStore(
+      { signalExists: () => true, hasStates: () => false },
+      { measurement },
+    );
     const app = buildApp({
       catalog: new Catalog(source, async () => new Map()),
       source,
@@ -446,7 +455,7 @@ describe("listeners and pushes (harden-robustness)", () => {
     const errors: unknown[] = [];
     const boom = new Error("push failed");
     const store = new WorkspaceStore(
-      { signalExists: () => true },
+      { signalExists: () => true, hasStates: () => false },
       { onListenerError: (error) => errors.push(error) },
     );
     const got: number[][] = [[], [], []];
@@ -482,5 +491,73 @@ describe("listeners and pushes (harden-robustness)", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("events commands over HTTP (add-events)", () => {
+  const real = testSource();
+  const catalog = new Catalog(real, () => loadDbcFiles(testDbcFiles));
+  const workspace = new WorkspaceStore(
+    {
+      signalExists: (id) => catalog.get(id) !== undefined,
+      hasStates: (id) => catalog.get(id)?.states !== undefined,
+    },
+    { eventSignals: ["testcar/Ign_A20h.MODE"] },
+  );
+  const app = buildApp({ catalog, source: real, workspace });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  const command = async (body: Record<string, unknown>) => {
+    const res = await app.inject({ method: "POST", url: "/api/commands", body });
+    return { status: res.statusCode, body: res.json() };
+  };
+  const state = async () => (await app.inject({ url: "/api/workspace" })).json();
+
+  it("applies the events commands over HTTP", async () => {
+    // The project file's signal is the start value, at revision 0.
+    const start = await state();
+    expect(start.revision).toBe(0);
+    expect(start.workspace.eventSignals).toEqual(["testcar/Ign_A20h.MODE"]);
+
+    const added = await command({ type: "events.addSignal", signalId: "testcar/DIAG.door" });
+    expect(added.status).toBe(200);
+    expect(added.body).toMatchObject({ ok: true, revision: 1 });
+    expect((await state()).workspace.eventSignals).toEqual([
+      "testcar/Ign_A20h.MODE",
+      "testcar/DIAG.door",
+    ]);
+
+    // Rejected: no states, listed twice, unknown, not listed.
+    expect(
+      (await command({ type: "events.addSignal", signalId: "testcar/Fast_100h.SIG_A" })).body,
+    ).toMatchObject({ ok: false, code: "not_state_signal" });
+    expect(
+      (await command({ type: "events.addSignal", signalId: "testcar/DIAG.door" })).body,
+    ).toMatchObject({ ok: false, code: "already_listed" });
+    expect(
+      (await command({ type: "events.addSignal", signalId: "testcar/Nope.X" })).body,
+    ).toMatchObject({ ok: false, code: "unknown_signal" });
+    expect(
+      (await command({ type: "events.removeSignal", signalId: "testcar/DIAG.lock" })).body,
+    ).toMatchObject({ ok: false, code: "not_listed" });
+    expect((await state()).revision).toBe(1);
+
+    // The filter, in normal form; the default removes the field.
+    const set = await command({ type: "events.setFilter", filter: "Faults  bms" });
+    expect(set.body).toMatchObject({ ok: true, revision: 2 });
+    expect((await state()).workspace.eventFilter).toBe("faults bms");
+    const bad = await command({ type: "events.setFilter", filter: "ecu:" });
+    expect(bad.body).toMatchObject({ ok: false, code: "invalid_filter" });
+    expect((await state()).revision).toBe(2);
+    await command({ type: "events.setFilter", filter: "active changes" });
+    expect((await state()).workspace).not.toHaveProperty("eventFilter");
+
+    const removed = await command({
+      type: "events.removeSignal",
+      signalId: "testcar/Ign_A20h.MODE",
+    });
+    expect(removed.body).toMatchObject({ ok: true });
+    expect((await state()).workspace.eventSignals).toEqual(["testcar/DIAG.door"]);
   });
 });

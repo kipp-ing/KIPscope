@@ -4,13 +4,14 @@ import {
   Command,
   type CommandInput,
   EMPTY_WORKSPACE,
+  MAX_EVENT_SIGNALS,
   SIGNAL_COLORS,
   type TimeseriesWindow,
   type Workspace,
   windowTitle,
 } from "../src/workspace.ts";
 
-const ctx = { signalExists: (id: string) => id.startsWith("car/") };
+const ctx = { signalExists: (id: string) => id.startsWith("car/"), hasStates: () => false };
 
 /** Units of the synthetic signals; N* have no unit (undefined, empty or blank). */
 const UNITS: Record<string, string | undefined> = {
@@ -974,5 +975,71 @@ describe("measurement info (add-footer)", () => {
     s = accepted(s, { type: "measurement.setMeta", key: "k3", value: "w" });
     s = accepted(s, { type: "measurement.setMeta", key: "k8", value: "" });
     expect((measurementOf(s) as { meta: unknown[] }).meta).toHaveLength(7);
+  });
+});
+
+describe("events commands", () => {
+  const eventCtx = {
+    signalExists: (id: string) => id !== "testcar/Nope.X",
+    hasStates: (id: string) => id === "testcar/Ign_A20h.MODE" || /^testcar\/State\d$/.test(id),
+  };
+  const attempt = (state: Workspace, input: CommandInput) =>
+    applyCommand(state, Command.parse(input), eventCtx);
+  const accept = (state: Workspace, input: CommandInput) => {
+    const r = attempt(state, input);
+    if (!r.ok) throw new Error(`${r.code}: ${r.message}`);
+    return r.workspace;
+  };
+
+  it("sets the event filter in normal form", () => {
+    const set = accept(EMPTY_WORKSPACE, { type: "events.setFilter", filter: "Faults  bms" });
+    expect(set.eventFilter).toBe("faults bms");
+    // The default removes the field.
+    const reset = accept(set, { type: "events.setFilter", filter: "active changes" });
+    expect(reset.eventFilter).toBeUndefined();
+    expect("eventFilter" in reset).toBe(false);
+    // An unparsable filter is rejected with the parser's message and the workspace stays.
+    const bad = attempt(set, { type: "events.setFilter", filter: "ecu:" });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) {
+      expect(bad.code).toBe("invalid_filter");
+      expect(bad.message).toContain("ecu");
+    }
+    // The empty filter is a filter (everything), not the default.
+    expect(accept(EMPTY_WORKSPACE, { type: "events.setFilter", filter: "" }).eventFilter).toBe("");
+    // At most 200 characters.
+    expect(() => Command.parse({ type: "events.setFilter", filter: "a".repeat(201) })).toThrow();
+  });
+
+  it("adds and removes events-line signals", () => {
+    const code = (r: ReturnType<typeof attempt>) => (r.ok ? "ok" : r.code);
+    const mode = "testcar/Ign_A20h.MODE";
+    let s = accept(EMPTY_WORKSPACE, { type: "events.addSignal", signalId: mode });
+    expect(s.eventSignals).toEqual([mode]);
+    expect(code(attempt(s, { type: "events.addSignal", signalId: mode }))).toBe("already_listed");
+    expect(
+      code(attempt(s, { type: "events.addSignal", signalId: "testcar/Fast_100h.SIG_A" })),
+    ).toBe("not_state_signal");
+    expect(code(attempt(s, { type: "events.addSignal", signalId: "testcar/Nope.X" }))).toBe(
+      "unknown_signal",
+    );
+    expect(code(attempt(s, { type: "events.removeSignal", signalId: "testcar/Nope.X" }))).toBe(
+      "not_listed",
+    );
+    s = accept(s, { type: "events.removeSignal", signalId: mode });
+    expect(s.eventSignals).toBeUndefined();
+    expect("eventSignals" in s).toBe(false);
+
+    // Eight is the limit; the order is the order of adding.
+    let full = EMPTY_WORKSPACE;
+    for (let i = 1; i <= 8; i++) {
+      full = accept(full, { type: "events.addSignal", signalId: `testcar/State${i}` });
+    }
+    expect(full.eventSignals).toHaveLength(8);
+    expect(full.eventSignals?.[0]).toBe("testcar/State1");
+    expect(code(attempt(full, { type: "events.addSignal", signalId: mode }))).toBe(
+      "event_signal_limit",
+    );
+    expect(MAX_EVENT_SIGNALS).toBe(8);
   });
 });

@@ -1,21 +1,24 @@
-import type { Density, Workspace } from "@kipscope/shared";
-import { useEffect, useRef, useState } from "react";
+import type { Density, DiagEvent, Workspace } from "@kipscope/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
 import { useLiveCursor } from "../chart/live.ts";
 import { clampRange, type Range } from "../chart/zoom.ts";
+import { groupMarks, type Mark, markColor, markTitle } from "../events/marks.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
 import { RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
 import {
   barTitle,
   brushRange,
+  centreRange,
   driveRects,
   driveTitle,
   hitZone,
   jumpRange,
   markerX,
   panRange,
+  type Rect,
   resizeRange,
   type StripAction,
   StripGesture,
@@ -23,6 +26,7 @@ import {
   trackOf,
   wholeRange,
   windowRects,
+  xOf,
   type Zone,
 } from "./stripGeometry.ts";
 import "./strip.css";
@@ -84,8 +88,42 @@ function useDensity(dataRef: string | undefined): Load | undefined {
   return dataRef !== undefined && load?.dataRef === dataRef ? load : undefined;
 }
 
+/** The shown events of the strip's data ref and their total before the filter (add-events V3, V5). */
+export interface StripEvents {
+  shown: readonly DiagEvent[];
+  total: number;
+}
+
+/** A signal dragged over the strip (add-events V10): eventsDrop's answer and the signal's name. */
+export type StripDrop = { name: string } & (
+  | { ok: true }
+  | { ok: false; reason: "no_states" | "already_listed" }
+);
+
+/** Head text of a drag over the strip (time-strip "Signal drop on the strip"). */
+export function stripDropText(d: StripDrop): string {
+  if (d.ok) return `Drop to mark state changes of ${d.name}`;
+  return d.reason === "no_states"
+    ? `${d.name} has no named states`
+    : `${d.name} is already on the events line`;
+}
+
+/** Tooltip spans of the pins: each hit rect cut at the midpoints to its overlapping neighbours, so
+ *  the tooltip under the pointer belongs to the pin a click hits (nearest centre, design V3). */
+function pinTipRects(marks: readonly Mark[]): Rect[] {
+  const centre = (r: Rect) => (r.left + r.right) / 2;
+  return marks.map(({ hit }, i) => {
+    const prev = marks[i - 1]?.hit;
+    const next = marks[i + 1]?.hit;
+    const left = prev ? Math.max(hit.left, (centre(prev) + centre(hit)) / 2) : hit.left;
+    const right = next ? Math.min(hit.right, (centre(hit) + centre(next)) / 2) : hit.right;
+    return { left, right: Math.max(left, right) };
+  });
+}
+
 /** Pointer shape per hit zone while no gesture runs (design S7). */
 const ZONE_CURSOR: Record<Zone["kind"], string> = {
+  pin: "pointer",
   bars: "pointer",
   drive: "pointer",
   body: "grab",
@@ -137,14 +175,25 @@ function LiveMarker({ tr }: { tr: Track }) {
  * Time strip below the option bar (design T8, S5–S10 of add-strip-navigation): the density of
  * the shown recording over its whole extent, the bar target's range as a window, the drives and
  * the cursor markers. With `navigate`, clicks jump, drags zoom, the window pans and resizes, a
- * double-click shows the whole recording and a click on a drive fits it.
+ * double-click shows the whole recording and a click on a drive fits it. Event pins (add-events V3)
+ * mark the shown events in a lane at the top of the bars; a click on one centres it. The head counts
+ * the events (V5) and, while a signal is dragged over the strip, says what a drop does (V10).
  */
 export function TimeStrip({
   workspace,
   navigate,
+  events,
+  onOpenEvents,
+  drop,
 }: {
   workspace: Workspace;
   navigate?: StripNavigate | undefined;
+  /** Absent while the events of the strip's data ref load. */
+  events?: StripEvents | undefined;
+  /** Opens the sidebar on the Events tab with the filter field focused (the head count's click). */
+  onOpenEvents?: (() => void) | undefined;
+  /** Set while a signal is dragged over the strip. */
+  drop?: StripDrop | undefined;
 }) {
   const dataRef = stripDataRef(workspace);
   const load = useDensity(dataRef);
@@ -186,6 +235,17 @@ export function TimeStrip({
 
   const tr = density && px > 0 ? trackOf(density, px) : undefined;
   const drives = density?.drives ?? [];
+  const shownEvents = events?.shown;
+  const marks = useMemo(() => {
+    if (!density || px <= 0 || !shownEvents) return [];
+    const t = trackOf(density, px);
+    return groupMarks(shownEvents, (ns) => xOf(t, ns), px);
+  }, [density, px, shownEvents]);
+  const pinHits = useMemo(() => marks.map((m) => m.hit), [marks]);
+  const pinTips = useMemo(
+    () => pinTipRects(marks).map((rect, i) => ({ rect, title: markTitle(marks[i] as Mark) })),
+    [marks],
+  );
   const interactive = navigate !== undefined && density !== undefined && tr !== undefined;
 
   // The server range moved away from the committed step's base: drop the step for good, so a
@@ -247,6 +307,13 @@ export function TimeStrip({
       case "jump":
         lastClickSent.current = commit((view) => jumpRange(t, a.x, view), true);
         break;
+      case "centre": {
+        const first = marks[a.pin]?.events[0];
+        lastClickSent.current = first
+          ? commit((view) => centreRange(view, BigInt(first.t)), true)
+          : false;
+        break;
+      }
       case "fit": {
         const drive = d.drives[a.drive];
         lastClickSent.current = drive
@@ -276,7 +343,7 @@ export function TimeStrip({
     e.preventDefault();
     endPress();
     const { x, y } = point(e);
-    gesture.down(x, y, hitZone(tr, x, y, shown, drives), e.timeStamp);
+    gesture.down(x, y, hitZone(tr, x, y, shown, drives, pinHits), e.timeStamp);
     e.currentTarget.setPointerCapture(e.pointerId);
     const onKey = (k: KeyboardEvent) => {
       if (k.key !== "Escape") return;
@@ -307,7 +374,7 @@ export function TimeStrip({
       }
       return;
     }
-    const zone = hitZone(tr, x, y, shown, drives);
+    const zone = hitZone(tr, x, y, shown, drives, pinHits);
     el.style.cursor = ZONE_CURSOR[zone.kind];
     setHoverDrive(zone.kind === "drive" ? zone.index : undefined);
   };
@@ -319,7 +386,7 @@ export function TimeStrip({
     const a = gesture.up(x, y, e.timeStamp);
     endPress();
     if (!interactive) return;
-    e.currentTarget.style.cursor = ZONE_CURSOR[hitZone(tr, x, y, shown, drives).kind];
+    e.currentTarget.style.cursor = ZONE_CURSOR[hitZone(tr, x, y, shown, drives, pinHits).kind];
     if (a) apply(a, tr, density);
   };
 
@@ -342,7 +409,8 @@ export function TimeStrip({
 
   return (
     <div
-      className="time-strip"
+      className={`time-strip${drop ? (drop.ok ? " drop-target" : " drop-refused") : ""}`}
+      data-drop="events"
       {...(density
         ? {
             title: `${density.dataRef} · ${formatRange(BigInt(density.first), BigInt(density.last))}`,
@@ -351,8 +419,23 @@ export function TimeStrip({
     >
       <div className="time-strip-head">
         <span className="section-label">TIME</span>
-        {labelRange && (
-          <span className="time-strip-range">{formatRange(labelRange.from, labelRange.to)}</span>
+        {drop ? (
+          <span className={`time-strip-drop${drop.ok ? "" : " refused"}`}>
+            {stripDropText(drop)}
+          </span>
+        ) : (
+          labelRange && (
+            <span className="time-strip-range">{formatRange(labelRange.from, labelRange.to)}</span>
+          )
+        )}
+        {events && events.total > 0 && (
+          <button
+            type="button"
+            className="time-strip-events"
+            {...(onOpenEvents ? { onClick: onOpenEvents } : {})}
+          >
+            {`${events.shown.length.toLocaleString("en-US")} of ${events.total.toLocaleString("en-US")} events`}
+          </button>
         )}
         <span
           className="time-strip-info"
@@ -388,6 +471,20 @@ export function TimeStrip({
               />
             ))}
         </div>
+        <div className="time-strip-pins" aria-hidden="true">
+          {marks.map((m, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: pins are positional in one grouping
+              key={i}
+              className="time-strip-pin"
+              style={{
+                left: m.drawn.left,
+                width: m.drawn.right - m.drawn.left,
+                background: markColor(m.category),
+              }}
+            />
+          ))}
+        </div>
         {win && (
           <div
             className="time-strip-window"
@@ -403,6 +500,16 @@ export function TimeStrip({
         {tr && xa !== undefined && <Marker name="a" x={xa} px={tr.px} />}
         {tr && xb !== undefined && <Marker name="b" x={xb} px={tr.px} />}
         {tr && <LiveMarker tr={tr} />}
+        <div className="time-strip-pin-hits">
+          {pinTips.map(({ rect, title }, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: pins are positional in one grouping
+              key={i}
+              style={{ left: rect.left, width: rect.right - rect.left }}
+              title={title}
+            />
+          ))}
+        </div>
         <div className="time-strip-drives">
           {density &&
             tr &&

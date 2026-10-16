@@ -166,3 +166,83 @@
 .time-strip-drive.hover > .time-strip-drive-bar {
   background: var(--text);
 }
+
+/* Event pins (add-events V3): a 6 px lane at the top of the bars, drawn after the bars and before
+   the window, so window, brush and markers lie on top; colour per pin from markColor. */
+.time-strip-pins {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  pointer-events: none;
+}
+
+.time-strip-pin {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 1px;
+  outline: 1px solid var(--panel);
+}
+
+/* Transparent tooltip spans over the pin lane (PIN_LANE_PX), like the drive hit spans; the bar
+   below keeps its tooltip elsewhere. */
+.time-strip-pin-hits {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  pointer-events: none;
+}
+
+.time-strip-pin-hits > span {
+  position: absolute;
+  top: 0;
+  height: 8px;
+  pointer-events: auto;
+}
+
+/* Events count after the range (add-events V5): never cut, range and info truncate first. */
+.time-strip-events {
+  flex: none;
+  box-sizing: border-box;
+  height: 16px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--band);
+  color: var(--muted);
+  font: 11px / 16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.time-strip-events:hover {
+  color: var(--text);
+}
+
+/* Signal drop on the strip (add-events V10): an outline drawn inside, so the strip stays 55 px. */
+.time-strip.drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.time-strip.drop-refused {
+  outline: 2px solid var(--error);
+  outline-offset: -2px;
+  cursor: not-allowed;
+}
+
+.time-strip-drop {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.time-strip-drop.refused {
+  color: var(--error);
+}

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import {
+  MAX_EVENT_SIGNALS,
   MAX_MEASUREMENT_KEY,
   MAX_MEASUREMENT_META,
   MAX_MEASUREMENT_TEXT,
@@ -7,6 +8,7 @@ import {
   MEASUREMENT_KEY,
   type Measurement,
   type MeasurementEntry,
+  parseSignalId,
 } from "@kipscope/shared";
 import { parseDocument } from "yaml";
 import { z } from "zod";
@@ -18,10 +20,11 @@ export class ProjectFileError extends Error {}
 
 const nonEmpty = z.string().min(1);
 
-/** A parsed project file: display rules and the start value of the measurement info (design F7). */
+/** A parsed project file: display rules and the start values of the measurement info (design F7) and events-line signals (add-events E9). */
 export interface ProjectFile {
   rules: DisplayRules;
   measurement?: Measurement;
+  events?: { signals: string[] };
 }
 
 /** File format of design N2 and F7; `null` (a key without value) counts as absent. */
@@ -50,6 +53,8 @@ const FileSchema = z
       .nullish(),
     // Checked by parseMeasurement for the problem texts of design F7.
     measurement: z.unknown().optional(),
+    // Checked by parseEvents (add-events E9).
+    events: z.unknown().optional(),
   })
   .strict();
 
@@ -252,6 +257,34 @@ function parseMeasurement(section: unknown, problems: string[]): Measurement | u
   return Object.keys(measurement).length ? measurement : undefined;
 }
 
+/** The `events` section (add-events E9): only `signals`, at most MAX_EVENT_SIGNALS signal IDs; problems go to `problems`. */
+function parseEvents(section: unknown, problems: string[]): { signals: string[] } | undefined {
+  if (section === null || section === undefined) return undefined;
+  if (!isMap(section)) {
+    problems.push("events: must be a map with signals");
+    return undefined;
+  }
+  for (const key of Object.keys(section))
+    if (key !== "signals") problems.push(`events: unknown key "${key}"`);
+  const list = section.signals;
+  if (list === null || list === undefined) return undefined;
+  if (!Array.isArray(list)) {
+    problems.push("events.signals: must be a list of signal IDs");
+    return undefined;
+  }
+  if (list.length > MAX_EVENT_SIGNALS)
+    problems.push(`events.signals: at most ${MAX_EVENT_SIGNALS} signals`);
+  const signals: string[] = [];
+  list.forEach((id: unknown, i) => {
+    const field = `events.signals[${i}]`;
+    if (typeof id !== "string" || !parseSignalId(id))
+      problems.push(`${field}: not a signal ID (<data ref>/<signal name>)`);
+    else if (signals.includes(id)) problems.push(`${field}: ${id} is listed twice`);
+    else signals.push(id);
+  });
+  return { signals };
+}
+
 /** Pure part, for tests: text → rules and measurement info. `path` only labels the messages. */
 export function parseProject(text: string, path: string): ProjectFile {
   // Stage 1: YAML syntax. parseDocument (not parse) to report every error, not only the first.
@@ -267,13 +300,11 @@ export function parseProject(text: string, path: string): ProjectFile {
     fail(path, [`yaml: ${(error as Error).message}`]);
   }
 
-  // Stage 2: structure; the measurement section is checked alongside, so one error lists both.
+  // Stage 2: structure; the measurement and events sections are checked alongside, so one error lists all.
   const result = FileSchema.safeParse(data ?? {});
-  const measurementProblems: string[] = [];
-  const measurement = parseMeasurement(
-    isMap(data) ? data.measurement : undefined,
-    measurementProblems,
-  );
+  const sectionProblems: string[] = [];
+  const measurement = parseMeasurement(isMap(data) ? data.measurement : undefined, sectionProblems);
+  const events = parseEvents(isMap(data) ? data.events : undefined, sectionProblems);
   if (!result.success) {
     const problems: string[] = [];
     for (const issue of result.error.issues) {
@@ -283,7 +314,7 @@ export function parseProject(text: string, path: string): ProjectFile {
         for (const key of issue.keys) problems.push(`${prefix}unknown key "${key}"`);
       else problems.push(`${prefix}${issue.message}`);
     }
-    fail(path, [...problems, ...measurementProblems]);
+    fail(path, [...problems, ...sectionProblems]);
   }
 
   // Stage 3: regexes and templates.
@@ -291,7 +322,7 @@ export function parseProject(text: string, path: string): ProjectFile {
   const problems: string[] = [];
   const rules = (display?.names ?? []).map((rule, i) => compileRule(rule, i, problems));
   const groups = (display?.groups ?? []).map((rule, i) => compileGroupRule(rule, i, problems));
-  problems.push(...measurementProblems);
+  problems.push(...sectionProblems);
   if (problems.length) fail(path, problems);
   const file: ProjectFile = {
     rules: {
@@ -301,6 +332,7 @@ export function parseProject(text: string, path: string): ProjectFile {
     },
   };
   if (measurement) file.measurement = measurement;
+  if (events) file.events = events;
   return file;
 }
 

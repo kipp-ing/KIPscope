@@ -4,8 +4,12 @@ import {
   type EdgePoint,
   formatCursorNumber,
   formatQuantity,
+  labelTolerance,
   type NoValueReason,
   parseTimestamp,
+  type SignalInfo,
+  shortLabel,
+  stateLabel,
 } from "@kipscope/shared";
 import { formatDate, formatFull } from "../time/axis.ts";
 
@@ -50,23 +54,46 @@ export const noValueCell = (reason: ValueReason): Cell => ({
   title: REASONS[reason],
 });
 
-const formatPoint = (p: EdgePoint) =>
-  `${formatFull(parseTimestamp(p.t))} → ${p.v === null ? "SNA" : formatCursorNumber(p.v)}`;
+/** The state name of a neighbour point: the row's text of a text signal, else the VAL_ label (N2). */
+function pointLabel(p: EdgePoint, info: SignalInfo | undefined): string | undefined {
+  if (p.v === null || !info?.states) return undefined;
+  return info.states === "text" ? p.label || undefined : stateLabel(info, p.v);
+}
 
-/** Tooltip naming the neighbour points a value came from (local time and value). */
-function neighbours(at?: EdgePoint, next?: EdgePoint): string | undefined {
-  const lines = [at && `at ${formatPoint(at)}`, next && `next ${formatPoint(next)}`].filter(
-    (line): line is string => line !== undefined,
-  );
+function formatPoint(p: EdgePoint, info: SignalInfo | undefined): string {
+  const label = pointLabel(p, info);
+  const value = p.v === null ? "SNA" : formatCursorNumber(p.v);
+  return `${formatFull(parseTimestamp(p.t))} → ${value}${label === undefined ? "" : ` ${label}`}`;
+}
+
+/** Tooltip naming the neighbour points a value came from (local time, value and state name). */
+function neighbours(at?: EdgePoint, next?: EdgePoint, info?: SignalInfo): string | undefined {
+  const lines = [
+    at && `at ${formatPoint(at, info)}`,
+    next && `next ${formatPoint(next, info)}`,
+  ].filter((line): line is string => line !== undefined);
   return lines.length > 0 ? lines.join("\n") : undefined;
 }
 
 const withTitle = (cell: Cell, title: string | undefined): Cell =>
   title === undefined ? cell : { ...cell, title };
 
+/** Tooltip of a state name (N3): `<label> · <number with unit>`, the number exact. */
+export function labelTitle(label: string, value: number, unit: string | undefined): string {
+  const u = unit?.trim();
+  return `${label} · ${formatCursorNumber(value)}${u ? ` ${u}` : ""}`;
+}
+
+/** A named value's cell (N3): the short label, the whole label and the number as tooltip. */
+function labelCell(label: string, value: number, unit: string | undefined, more?: string): Cell {
+  const title = labelTitle(label, value, unit);
+  return { text: shortLabel(label), title: more === undefined ? title : `${title}\n${more}` };
+}
+
 /**
- * A value at a cursor: "—" for none or no value yet, "SNA" in the SNA style, else the number with
- * its unit (number-format). The tooltip names the neighbours exactly (design N9).
+ * A value at a cursor: "—" for none or no value yet, "SNA" in the SNA style, a state name as its
+ * short label (N3), else the number with its unit (number-format). The tooltip names the
+ * neighbours exactly (design N9), with their state names when `info` is given.
  */
 export function formatCell(
   v: CursorValue | undefined,
@@ -74,19 +101,23 @@ export function formatCell(
   next: EdgePoint | undefined,
   unit: string | undefined,
   digits: Digits,
+  info?: SignalInfo,
 ): Cell {
   if (!v) return { text: NO_VALUE };
-  const title = neighbours(at, next);
+  const title = neighbours(at, next, info);
   switch (v.kind) {
     case "none":
       return noValueCell(v.reason);
     case "sna":
       return withTitle({ text: "SNA", sna: true }, title);
     case "raw":
+      if (v.label !== undefined) return labelCell(v.label, v.value, unit, title);
       return withTitle({ text: formatQuantity(v.value, unit, digits) }, title);
     case "interpolated":
       return withTitle({ text: formatQuantity(v.value, unit, digits), tag: "lin" }, title);
     case "held":
+      if (v.label !== undefined)
+        return { ...labelCell(v.label, v.value, unit, title), tag: "hold" };
       return withTitle({ text: formatQuantity(v.value, unit, digits), tag: "hold" }, title);
   }
 }
@@ -95,6 +126,20 @@ export function formatCell(
 export interface NumberValue {
   kind: "raw" | "interpolated" | "held" | "aggregated";
   value: number;
+  /** Its state name (N2), whole. */
+  label?: string;
+}
+
+/**
+ * Δ of two values of which at least one has a state name (N3): "=" when both name the same state
+ * (text signals: the same text; else also numbers within half a factor step, 0.5 without
+ * factor), else "≠".
+ */
+export function stateDelta(a: NumberValue, b: NumberValue, info: SignalInfo | undefined): Cell {
+  const same =
+    a.label === b.label &&
+    (info?.states === "text" || Math.abs(b.value - a.value) <= labelTolerance(info ?? {}));
+  return { text: same ? "=" : "≠" };
 }
 
 /** Δ = B − A of two numbers, tagged "avg" if either is aggregated, else "lin", else "hold". */
@@ -112,17 +157,25 @@ export function numberDelta(
   return { text };
 }
 
+/** The value has a state name (N3). */
+export const isNamed = (v: NumberValue): boolean => v.label !== undefined;
+
 const isNumber = (v: CursorValue | undefined): v is Extract<CursorValue, { value: number }> =>
   v?.kind === "raw" || v?.kind === "interpolated" || v?.kind === "held";
 
-/** Δ = B − A, only from two numbers; tagged "lin" if either is interpolated, else "hold" if either is held. */
+/**
+ * Δ = B − A, only from two numbers; tagged "lin" if either is interpolated, else "hold" if either
+ * is held. "=" / "≠" when either has a state name (stateDelta).
+ */
 export function deltaCell(
   a: CursorValue | undefined,
   b: CursorValue | undefined,
   unit: string | undefined,
   digits: Digits,
+  info?: SignalInfo,
 ): Cell {
   if (!isNumber(a) || !isNumber(b)) return { text: NO_VALUE };
+  if (isNamed(a) || isNamed(b)) return stateDelta(a, b, info);
   return numberDelta(a, b, unit, digits);
 }
 

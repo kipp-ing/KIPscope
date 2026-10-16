@@ -20,8 +20,11 @@ const build = readBuildInfo(REPO_ROOT);
 // Before listen: an invalid project file stops the server (design N6).
 let rules = NO_RULES;
 let measurement: Measurement | undefined;
+let eventSignals: string[] = [];
 try {
-  ({ rules, measurement } = loadProject(config.projectFile));
+  let events: { signals: string[] } | undefined;
+  ({ rules, measurement, events } = loadProject(config.projectFile));
+  eventSignals = events?.signals ?? [];
 } catch (error) {
   if (!(error instanceof ProjectFileError)) throw error;
   process.stderr.write(`kipscope: invalid project file\n${error.message}\n`);
@@ -60,10 +63,12 @@ const workspace = new WorkspaceStore(
   {
     signalExists: (id) => catalog.get(id) !== undefined,
     unitOf: (id) => catalog.get(id)?.unit,
+    hasStates: (id) => catalog.get(id)?.states !== undefined,
   },
   {
     onListenerError: (error) => app.log.error({ error: String(error) }, "live listener failed"),
     ...(measurement ? { measurement } : {}),
+    eventSignals,
   },
 );
 const app = buildApp(

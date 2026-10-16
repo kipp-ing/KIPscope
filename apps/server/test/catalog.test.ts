@@ -16,8 +16,33 @@ describe("Catalog (test DB)", () => {
   );
   beforeAll(() => catalog.refresh());
 
+  it("marks signals with states", () => {
+    expect(catalog.get("testcar/Ign_A20h.MODE")?.states).toBe("labels");
+    expect(catalog.get("testcar/Tmp_A21h.TEMP")?.states).toBe("labels");
+    // Rows with text (one query per load); not in the DBC.
+    expect(catalog.get("testcar/DIAG.door")?.states).toBe("text");
+    expect(catalog.get("testcar/DIAG.lock")?.states).toBe("text");
+    expect(catalog.get("testcar/Fast_100h.SIG_A")).not.toHaveProperty("states");
+    // A VAL_ table with only SNA-like names still counts when a code that is not SNA is named.
+    expect(catalog.get("testcar/Sna_800h.STATE")?.states).toBe("labels");
+    // Every VAL_ entry carries its physical value (D-012).
+    expect(catalog.get("testcar/Ign_A20h.MODE")?.dbc?.values).toEqual([
+      { raw: 0, label: "NONE", value: 0 },
+      { raw: 1, label: "CHARGE", value: 1 },
+      { raw: 3, label: "KEYON: Ignition on", value: 3 },
+      { raw: 15, label: "SNA", value: 15 },
+    ]);
+    expect(catalog.get("testcar/Tmp_A21h.TEMP")?.dbc?.values).toEqual([
+      { raw: 254, label: "SENSOR_DEF", value: 254 },
+      { raw: 255, label: "SNA", value: 255 },
+    ]);
+    // The SNA codes stay SNA: 15 is MODE's "SNA" code, 255 TEMP's.
+    expect(catalog.get("testcar/Ign_A20h.MODE")?.sna?.map((x) => x.raw)).toEqual([15]);
+    expect(catalog.get("testcar/Tmp_A21h.TEMP")?.sna?.map((x) => x.raw)).toEqual([255]);
+  });
+
   it("lists exactly the signals with data, per data reference", () => {
-    expect(catalog.size).toBe(1017);
+    expect(catalog.size).toBe(1021);
     expect(catalog.get("testcar/Fast_100h.SIG_A")).toBeDefined();
     expect(catalog.get("othercar/Fast_100h.SIG_A")).toBeDefined();
   });
@@ -126,7 +151,11 @@ describe("Catalog display names (test DB, test project file)", () => {
     expect(shown("testcar/Irr_200h.JITTER")).toBe("SPEED");
     expect(shown("testcar/Sna_800h.SPEED")).toBe("SPEED (Sna)");
     expect(shown("testcar/Sna_800h.RPM")).toBe("RPM");
-    expect(shown("testcar/Sna_800h.TEMP")).toBe("TEMP");
+    // The state signals of add-events share the short names MODE and TEMP with the SNA test signals.
+    expect(shown("testcar/Sna_800h.TEMP")).toBe("TEMP (Sna)");
+    expect(shown("testcar/Tmp_A21h.TEMP")).toBe("TEMP (Tmp)");
+    expect(shown("testcar/Sna_800h.MODE")).toBe("MODE (Sna)");
+    expect(shown("testcar/Ign_A20h.MODE")).toBe("MODE (Ign)");
     expect(shown("testcar/Many_700h.S0001")).toBe("S0001");
     expect(shown("testcar/Nodbc_500h.RAW")).toBe("RAW");
     expect(shown("testcar/Sparse_300h.SLOW")).toBe("SLOW");
@@ -147,7 +176,7 @@ describe("Catalog display names (test DB, test project file)", () => {
     ]);
     // Identity unchanged.
     expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
-    expect(catalog.size).toBe(1017);
+    expect(catalog.size).toBe(1021);
   });
 });
 
@@ -159,6 +188,7 @@ describe("Catalog background load and warnings (stubbed source)", () => {
     const starts: number[] = [];
     const t0 = Date.now();
     const source = {
+      textSignals: async () => [],
       listSignals: async () => {
         starts.push(Date.now() - t0);
         if (starts.length <= 4) throw new Error("connect ECONNREFUSED");
@@ -189,6 +219,7 @@ describe("Catalog background load and warnings (stubbed source)", () => {
       release = resolve;
     });
     const source = {
+      textSignals: async () => [],
       listSignals: async () => {
         calls++;
         await gate;
@@ -206,6 +237,7 @@ describe("Catalog background load and warnings (stubbed source)", () => {
 
   it("logs DBC warnings once per load", async () => {
     const source = {
+      textSignals: async () => [],
       listSignals: async () => [{ dataRef: "car", name: "S" }],
     } as unknown as DataSource;
     const warnings: string[] = [];
@@ -230,6 +262,7 @@ describe("Catalog background load and warnings (stubbed source)", () => {
 describe("Catalog diag catalogs (stubbed source)", () => {
   const stub = (...names: string[]) =>
     ({
+      textSignals: async () => [],
       listSignals: async () => names.map((name) => ({ dataRef: "car", name })),
     }) as unknown as DataSource;
   const fixtureDiag = (warn: (m: string) => void) => loadDiagCatalogs(testDiagCatalogs, warn);
@@ -305,5 +338,53 @@ describe("Catalog diag catalogs (stubbed source)", () => {
       "diag catalog: /nonexistent.manifest.json skipped: ENOENT",
       "diag catalog: /nonexistent.manifest.json skipped: ENOENT",
     ]);
+  });
+});
+
+describe("Catalog states (stubbed source)", () => {
+  const stub = (texts: string[], ...names: string[]) =>
+    ({
+      listSignals: async () => names.map((name) => ({ dataRef: "car", name })),
+      textSignals: async () => texts.map((name) => ({ dataRef: "car", name })),
+    }) as unknown as DataSource;
+  const diag = (warn: (m: string) => void) => loadDiagCatalogs(testDiagCatalogs, warn);
+
+  it("marks diag enums as text states and leaves diag text out", async () => {
+    const catalog = new Catalog(
+      stub(["TBMS.vin"], "TBMS.current", "TBMS.contactor", "TBMS.vin"),
+      async () => new Map(),
+      undefined,
+      undefined,
+      diag,
+    );
+    await catalog.refresh();
+    // An enum: the state is in the row text (D-061), even when no row carried text yet.
+    expect(catalog.get("car/TBMS.contactor")?.states).toBe("text");
+    // A number, and an ASCII field even though its rows carry text: no states.
+    expect(catalog.get("car/TBMS.current")).not.toHaveProperty("states");
+    expect(catalog.get("car/TBMS.vin")?.diag?.kind).toBe("text");
+    expect(catalog.get("car/TBMS.vin")).not.toHaveProperty("states");
+    // Diag invalid sentinels are never SNA codes.
+    expect(catalog.get("car/TBMS.contactor")).not.toHaveProperty("sna");
+  });
+
+  it("lets text win over labels", async () => {
+    const dbc = new Map<string, DbcSignal>([
+      [
+        "X.MODE",
+        {
+          file: "x.dbc",
+          message: "X",
+          messageId: 1,
+          values: new Map([[1, "ON"]]),
+        },
+      ],
+    ]);
+    const labels = new Catalog(stub([], "X.MODE"), async () => dbc);
+    await labels.refresh();
+    expect(labels.get("car/X.MODE")?.states).toBe("labels");
+    const text = new Catalog(stub(["X.MODE"], "X.MODE"), async () => dbc);
+    await text.refresh();
+    expect(text.get("car/X.MODE")?.states).toBe("text");
   });
 });

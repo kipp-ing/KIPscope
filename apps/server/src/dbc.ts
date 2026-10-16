@@ -25,8 +25,10 @@ export interface DbcSignal {
   max?: number;
   unit?: string;
   description?: string;
-  /** Value table (`VAL_`): raw value → label. Parsed now, used once state signals exist. */
+  /** Value table (`VAL_`): raw value (as written) → label. */
   values?: Map<number, string>;
+  /** Physical value of each `values` key (D-012, add-events N1); the raw value without a layout. */
+  physical?: Map<number, number>;
   /** Absent when the signal has no SNA code. */
   sna?: DbcSna;
 }
@@ -66,6 +68,20 @@ const NO_VALUE_LABELS = new Set(["--", "NO_TEMP_SENSOR", "RES"]);
  * SNA codes per design S1: the union of `GenSigSNA` (with the D-010/D-014/D-015 exemptions)
  * and `VAL_` labels `SNA`/`SNV`, converted to physical values (D-012).
  */
+/** Written raw value → unsigned raw code of the signal's bit length. */
+function unsignedOf(layout: Layout): (value: number) => bigint {
+  const span = 1n << BigInt(layout.length);
+  return (value) => ((BigInt(value) % span) + span) % span;
+}
+
+/** Unsigned raw code → physical value: two's complement if signed, then × factor + offset (D-012). */
+function physicalOf(layout: Layout): (raw: bigint) => number {
+  const span = 1n << BigInt(layout.length);
+  const half = span >> 1n;
+  return (raw) =>
+    Number(layout.signed && raw >= half ? raw - span : raw) * layout.factor + layout.offset;
+}
+
 function deriveSna(
   name: string,
   layout: Layout,
@@ -73,7 +89,7 @@ function deriveSna(
   values: Map<number, string> | undefined,
 ): DbcSna | undefined {
   const span = 1n << BigInt(layout.length);
-  const unsigned = (value: number) => ((BigInt(value) % span) + span) % span;
+  const unsigned = unsignedOf(layout);
   const labels = new Map<bigint, string>();
   for (const [value, label] of values ?? []) labels.set(unsigned(value), label.trim());
 
@@ -96,9 +112,7 @@ function deriveSna(
   }
   if (codes.size === 0) return undefined;
 
-  const half = span >> 1n;
-  const physical = (raw: bigint) =>
-    Number(layout.signed && raw >= half ? raw - span : raw) * layout.factor + layout.offset;
+  const physical = physicalOf(layout);
   const sorted = [...codes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return {
     values: sorted.map(([raw, sources]) => ({
@@ -190,6 +204,14 @@ export function parseDbc(text: string, file?: string): Map<string, DbcSignal> {
   }
   for (const [key, entry] of result) {
     const layout = layouts.get(key);
+    if (entry.values) {
+      const values = [...entry.values.keys()];
+      const toPhysical =
+        layout && layout.length >= 1
+          ? (v: number) => physicalOf(layout)(unsignedOf(layout)(v))
+          : (v: number) => v;
+      entry.physical = new Map(values.map((v) => [v, toPhysical(v)]));
+    }
     if (!layout || layout.length < 1) continue;
     const name = key.slice(key.indexOf(".") + 1);
     const sna = deriveSna(name, layout, attributes.get(key), entry.values);

@@ -5,6 +5,8 @@ export interface EdgePoint {
   t: string;
   /** null: the neighbor is an SNA point. */
   v: number | null;
+  /** Text signals: the point's row text (design N3). */
+  label?: string;
 }
 
 /** Unmodified raw points inside [from, to) plus the nearest points outside each edge. */
@@ -16,6 +18,8 @@ export interface RawSeries {
   t: EncodedTimes;
   /** One entry per timestamp in `t`; null where the point is SNA. */
   v: (number | null)[];
+  /** Text signals: the row text, one per point (design N3). */
+  text?: string[];
   before?: EdgePoint;
   after?: EdgePoint;
 }

@@ -24,6 +24,22 @@
  *                         [02:00:00, 02:01:00). Total 233,161 rows; expected drives [01:00, 01:30) with 177,180 rows,
  *                         [03:00, 03:05) with 30,030 and [03:06:30, 03:10) with 21,021 (WAKE is under 2 min)
  * - sdlog.signals_ns: Ns_600h.FINE  1,000 points from 2026-10-14T08:00:00.123456789Z, 1,001 ns apart
+ * - State signals (design T of add-events, testcar, chunk c11, 63,607 rows; both tables gain a `text` column):
+ *                         Ign_A20h.MODE  every 100 ms in [01:00, 02:30) and [02:45, 03:00) (63,000): 0 in [01:00, 01:10),
+ *                         3 in [01:10, 01:40), 15 (SNA) in [01:40:00, 01:40:01), 3 in [01:40:01, 02:00), 0 in [02:00, 02:30),
+ *                         3 in [02:45, 03:00); VAL_ in test-a.dbc
+ *                         Tmp_A21h.TEMP  every 1 s in [01:00:00, 01:10:00) (600): 20 + n % 10 for n < 300, 254 for
+ *                         300 <= n < 310, 25 after; 254 named SENSOR_DEF in test-a.dbc
+ *                         DIAG.door  5 rows (value 0, text closed, closed, open, open, closed) at 01:00:00, 01:01:30,
+ *                         01:03:00, 01:04:30, 02:00:00; DIAG.lock  2 rows (text locked) at 02:00:00, 02:01:30
+ *                         (not in the DBC: the state is in the row text). Catalog 1,017 -> 1,021 signals.
+ * - sdlog.events (carserver's schema; testcar, device test-diag, chunk e1): 19 rows, 18 with a time. 9 DTCs at 05:00:00
+ *                         (BMS: P0CA700 41, P180D13 105, P0C7800 36, P1CA100 40, U019B00 128, P0C4600 80, P0AA100 64,
+ *                         P0E1A00 0, P0FFF00 3.5), VCU.door states at 01:00:00, 01:01:30, 01:03:00 (`from closed`),
+ *                         01:04:30 and 02:00:00, DIAG.lock locked at 02:00:00, NRC SID 22 at 03:00:00, ISO-TP at 03:00:01,
+ *                         note boot at 04:00:00, and DTC P0NULL0 without a time (never returned).
+ *                         Categories: active 2, pending 1, stored 2, untested 2, passed 1, change 2, snapshot 4,
+ *                         refused 1, transport 1, other 2; BMS 11, VCU 7.
  *
  * Run: pnpm --filter @kipscope/server seed:test   (needs `docker compose up -d`)
  */
@@ -84,9 +100,65 @@ const schema = (table: string, precision: number) => `
     chunk String CODEC(ZSTD(3)),
     signal LowCardinality(String),
     utc Nullable(DateTime64(${precision}, 'UTC')) CODEC(DoubleDelta, ZSTD(3)),
-    value Float64 CODEC(Gorilla, ZSTD(3))
+    value Float64 CODEC(Gorilla, ZSTD(3)),
+    text LowCardinality(String) DEFAULT ''
   ) ENGINE = MergeTree PARTITION BY vehicle ORDER BY (vehicle, signal, utc)
   SETTINGS allow_nullable_key = 1`;
+
+const eventsSchema = `
+  CREATE TABLE sdlog.events (
+    vehicle LowCardinality(String),
+    device LowCardinality(String),
+    chunk String CODEC(ZSTD(3)),
+    utc Nullable(DateTime64(3, 'UTC')) CODEC(DoubleDelta, ZSTD(3)),
+    source LowCardinality(String),
+    kind LowCardinality(String),
+    name String,
+    value Float64,
+    text String,
+    detail String
+  ) ENGINE = MergeTree PARTITION BY vehicle ORDER BY (vehicle, kind, source, name, utc)
+  SETTINGS allow_nullable_key = 1`;
+
+/** Seconds after the base (2026-10-01T00:00:00Z) of h:m:s. */
+const hms = (h: number, m: number, s: number) => (h * 3600 + m * 60 + s) * 1000;
+
+/** The events of design T: [offset ms or null, source, kind, name, value, text, detail]. */
+const EVENT_ROWS: [number | null, string, string, string, number, string, string][] = [
+  [hms(5, 0, 0), "BMS", "dtc", "P0CA700", 41, "Discharge current too high", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P180D13", 105, "System shutoff. Circuit Open", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P0C7800", 36, "Precharge too long", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P1CA100", 40, "Insulation fault, open contactors", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "U019B00", 128, "Communication with on-board charger", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P0C4600", 80, "Coolant temperature sensor sporadic", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P0AA100", 64, "Positive contactor jammed closed", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P0E1A00", 0, "Coolant pump B open circuit", "initial"],
+  [hms(5, 0, 0), "BMS", "dtc", "P0FFF00", 3.5, "Odd status", "initial"],
+  [hms(1, 0, 0), "VCU", "state", "VCU.door", 0, "closed", "initial"],
+  [hms(1, 1, 30), "VCU", "state", "VCU.door", 0, "closed", "initial"],
+  [hms(1, 3, 0), "VCU", "state", "VCU.door", 0, "open", "from closed"],
+  [hms(1, 4, 30), "VCU", "state", "VCU.door", 0, "open", "initial"],
+  [hms(2, 0, 0), "VCU", "state", "VCU.door", 0, "closed", "initial"],
+  [hms(2, 0, 0), "VCU", "state", "DIAG.lock", 0, "locked", "initial"],
+  [hms(3, 0, 0), "BMS", "nrc", "SID 22", 49, "requestOutOfRange", ""],
+  [hms(3, 0, 1), "BMS", "isotp", "incomplete", 132, "", "132 of 403 bytes, then a new message"],
+  [hms(4, 0, 0), "VCU", "note", "boot", 0, "logger restarted", ""],
+  [null, "BMS", "dtc", "P0NULL0", 41, "", "initial"],
+];
+const quote = (text: string) => `'${text.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+const eventValues = EVENT_ROWS.map(
+  ([offset, source, kind, name, value, text, detail]) =>
+    `('testcar', 'test-diag', 'e1', ${offset === null ? "NULL" : `fromUnixTimestamp64Milli(toInt64(${BASE_MS + offset}), 'UTC')`}, ${quote(source)}, ${quote(kind)}, ${quote(name)}, ${value}, ${quote(text)}, ${quote(detail)})`,
+).join(", ");
+
+/** Rows of a text signal: [offset ms, text], value 0. */
+const textSignal = (name: string, rows: [number, string][]) =>
+  `INSERT INTO sdlog.signals (vehicle, device, chunk, signal, utc, value, text) VALUES ${rows
+    .map(
+      ([offset, text]) =>
+        `('testcar', 'test-dev', 'c11', ${quote(name)}, fromUnixTimestamp64Milli(toInt64(${BASE_MS + offset}), 'UTC'), 0, ${quote(text)})`,
+    )
+    .join(", ")}`;
 
 const insert = (table: string, select: string) =>
   `INSERT INTO sdlog.${table} (vehicle, device, chunk, signal, utc, value) ${select}`;
@@ -101,8 +173,10 @@ const statements = [
   "CREATE DATABASE IF NOT EXISTS sdlog",
   "DROP TABLE IF EXISTS sdlog.signals",
   "DROP TABLE IF EXISTS sdlog.signals_ns",
+  "DROP TABLE IF EXISTS sdlog.events",
   schema("signals", 3),
   schema("signals_ns", 9),
+  eventsSchema,
   ...["A", "B", "C"].map((s, i) =>
     insert(
       "signals",
@@ -197,6 +271,36 @@ const statements = [
     `SELECT 'drivecar', 'drive-dev', 'c10', 'Drv_A10h.WAKE', ${driveMs(`${7200 * 1000} + number * 20`)}, number % 100
      FROM numbers(3000)`,
   ),
+  // State signals (design T of add-events): MODE 0/3/15(SNA)/3/0 and 3 after a pause, TEMP with 254 = SENSOR_DEF.
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c11', 'Ign_A20h.MODE', ${ms("3600000 + number * 100")},
+       multiIf(number < 6000, 0, number < 24000, 3, number < 24010, 15, number < 36000, 3, 0)
+     FROM numbers(54000)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c11', 'Ign_A20h.MODE', ${ms("9900000 + number * 100")}, 3
+     FROM numbers(9000)`,
+  ),
+  insert(
+    "signals",
+    `SELECT 'testcar', 'test-dev', 'c11', 'Tmp_A21h.TEMP', ${ms("3600000 + number * 1000")},
+       multiIf(number < 300, 20 + number % 10, number < 310, 254, 25)
+     FROM numbers(600)`,
+  ),
+  textSignal("DIAG.door", [
+    [hms(1, 0, 0), "closed"],
+    [hms(1, 1, 30), "closed"],
+    [hms(1, 3, 0), "open"],
+    [hms(1, 4, 30), "open"],
+    [hms(2, 0, 0), "closed"],
+  ]),
+  textSignal("DIAG.lock", [
+    [hms(2, 0, 0), "locked"],
+    [hms(2, 1, 30), "locked"],
+  ]),
+  `INSERT INTO sdlog.events (vehicle, device, chunk, utc, source, kind, name, value, text, detail) VALUES ${eventValues}`,
   insert(
     "signals_ns",
     `SELECT 'testcar', 'test-dev', 'c7', 'Ns_600h.FINE',
@@ -207,10 +311,10 @@ const statements = [
 
 /** Spot checks: query → expected single value. */
 const checks: [string, string][] = [
-  ["SELECT count() FROM sdlog.signals", "21847023"],
+  ["SELECT count() FROM sdlog.signals", "21910630"],
   [
     "SELECT count() FROM (SELECT DISTINCT vehicle, signal FROM sdlog.signals WHERE utc IS NOT NULL)",
-    "1017",
+    "1021",
   ],
   [
     "SELECT max(value) FROM sdlog.signals WHERE signal = 'Fast_100h.SIG_A' AND vehicle = 'testcar' AND utc IS NOT NULL",
@@ -243,6 +347,22 @@ const checks: [string, string][] = [
     "2026-10-02 06:00:00.000",
   ],
   ["SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.signals_ns", NS_BASE.toString()],
+  ["SELECT count() FROM sdlog.events", "19"],
+  ["SELECT count() FROM sdlog.events WHERE utc IS NOT NULL", "18"],
+  [
+    "SELECT count() FROM sdlog.signals WHERE signal IN ('Ign_A20h.MODE', 'Tmp_A21h.TEMP', 'DIAG.door', 'DIAG.lock')",
+    "63607",
+  ],
+  ["SELECT count() FROM sdlog.signals WHERE signal = 'Ign_A20h.MODE' AND value = 15", "10"],
+  ["SELECT countIf(value = 254) FROM sdlog.signals WHERE signal = 'Tmp_A21h.TEMP'", "10"],
+  [
+    "SELECT arrayStringConcat(groupArray(text), ',') FROM (SELECT text FROM sdlog.signals WHERE signal = 'DIAG.door' ORDER BY utc)",
+    "closed,closed,open,open,closed",
+  ],
+  [
+    "SELECT arrayStringConcat(arraySort(groupArray(concat(kind, ':', toString(n)))), ',') FROM (SELECT kind, count() AS n FROM sdlog.events WHERE utc IS NOT NULL GROUP BY kind)",
+    "dtc:9,isotp:1,note:1,nrc:1,state:6",
+  ],
 ];
 
 const started = Date.now();

@@ -29,6 +29,15 @@ export type Invocation =
   | { kind: "extent"; signal: SignalArg }
   | { kind: "value"; signal: SignalArg; t: TimeArg; mode?: ValuesMode }
   | { kind: "wait"; revision?: number }
+  /** filter: the FILTER words joined by one space, absent when none (the workspace filter applies). */
+  | {
+      kind: "events";
+      filter?: string;
+      dataRef?: string;
+      from?: TimeArg;
+      to?: TimeArg;
+      table: boolean;
+    }
   /** raw: a `command JSON`, sent as parsed without resolving anything. */
   | { kind: "command"; template: CommandTemplate; raw?: true };
 
@@ -57,6 +66,9 @@ Commands (each sends one command to the open workspace):
   measurement object TEXT          (vehicle or device under test; "" clears it)
   measurement meta KEY VALUE       ("" removes the entry)
   measurement clear                (removes all measurement info)
+  events filter FILTER...          (filter of the events line and list; "" for no filter words)
+  events add SIGNAL                (state changes of SIGNAL on the events line)
+  events remove SIGNAL
   command JSON                     (one command of the shared command model, sent as is)
 
 Reads:
@@ -65,6 +77,9 @@ Reads:
   extent SIGNAL
   value SIGNAL TIME [--mode line|step]
   wait [REVISION]
+  events list [FILTER...] [--ref DATAREF] [--from TIME --to TIME] [--table]
+                                   (no FILTER: the workspace's; DATAREF: default that of the
+                                   first signal shown; --table prints lines instead of JSON)
 
 Options (anywhere on the line; "--" ends options):
   --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER})
@@ -80,6 +95,7 @@ TIME     decimal ns; YYYY-MM-DD[T| ]HH:MM[:SS[.f{1,9}]] with Z or +HH:MM, or wit
 DURATION [+|-]<decimal><unit>, unit ns|us|µs|ms|s|min|h (e.g. +500ms, -1.5s)
 SIGNAL   full ID (dataRef/name) or a unique bare name (V_ANZ)
 REF      assignment ID (a3) or a SIGNAL shown in window W
+FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes
 
 Output: one JSON line on stdout. Exit codes: 0 ok, 1 rejected, 2 usage, 3 unreachable,
 4 timeout, 5 render_error, 6 no_ui, 7 unavailable.
@@ -96,15 +112,19 @@ const VALUE_OPTIONS = new Set([
   "--mode",
   "--envelope",
   "--limit",
+  "--ref",
 ]);
-const FLAG_OPTIONS = new Set(["--wait", "--pretty", "--help", "--values", "--copy"]);
+const FLAG_OPTIONS = new Set(["--wait", "--pretty", "--help", "--values", "--copy", "--table"]);
 const GLOBAL_OPTIONS = new Set(["--server", "--timeout", "--wait", "--pretty", "--help"]);
 
 function usage(message: string): never {
   throw new CliError("usage", "usage", message);
 }
 
-/** Splits argv into options and positionals; `-<digit>` and `-.` tokens are values. */
+/**
+ * Splits argv into options and positionals. Options are `--long` (and `-h`); any other token of one
+ * `-` and a character other than `-` is positional (`-1.5s`, filter exclusions like `-snapshots`).
+ */
 function tokenize(argv: string[]): { opts: Map<string, string | true>; pos: string[] } {
   const opts = new Map<string, string | true>();
   const pos: string[] = [];
@@ -114,7 +134,7 @@ function tokenize(argv: string[]): { opts: Map<string, string | true>; pos: stri
       pos.push(...argv.slice(i + 1));
       break;
     }
-    if (!token.startsWith("-") || token === "-" || /^-[\d.]/.test(token)) {
+    if (!token.startsWith("-") || token === "-" || (/^-[^-]/.test(token) && token !== "-h")) {
       pos.push(token);
       continue;
     }
@@ -238,7 +258,7 @@ export function parseArgs(
 function invocation(pos: string[], opts: Map<string, string | true>): Invocation {
   const [first, second] = pos;
   if (first === undefined) usage("no command given (see --help)");
-  const group = ["window", "signal", "cursor", "measurement"].includes(first);
+  const group = ["window", "signal", "cursor", "measurement", "events"].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
 
@@ -401,6 +421,30 @@ function invocation(pos: string[], opts: Map<string, string | true>): Invocation
     case "measurement clear":
       take(0);
       return command({ type: "measurement.clear" });
+    case "events list": {
+      const opt = take([0, Number.POSITIVE_INFINITY], ["--ref", "--from", "--to", "--table"]);
+      const [dataRef, from, to] = ["--ref", "--from", "--to"].map(opt);
+      if ((from === undefined) !== (to === undefined))
+        usage("--from and --to must be given together");
+      if (dataRef === "") usage("--ref is empty");
+      return {
+        kind: "events",
+        ...(args.length > 0 && { filter: args.join(" ") }),
+        ...(dataRef !== undefined && { dataRef }),
+        ...(from !== undefined && { from: time(from, "--from") }),
+        ...(to !== undefined && { to: time(to, "--to") }),
+        table: opts.has("--table"),
+      };
+    }
+    case "events filter":
+      take([1, Number.POSITIVE_INFINITY]);
+      return command({ type: "events.setFilter", filter: args.join(" ") });
+    case "events add":
+      take(1);
+      return command({ type: "events.addSignal", signalId: signal(arg(0)) });
+    case "events remove":
+      take(1);
+      return command({ type: "events.removeSignal", signalId: signal(arg(0)) });
     case "command": {
       take(1);
       try {

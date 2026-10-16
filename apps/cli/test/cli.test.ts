@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseArgs } from "../src/args.ts";
+import type { EventListData } from "../src/output.ts";
+import { eventTable } from "../src/output.ts";
 import {
   type CliResult,
   cli,
@@ -97,6 +99,11 @@ describe("server address and usage", () => {
       "cursor move",
       "cursor remove",
       "diff",
+      "events list",
+      "events filter",
+      "events add",
+      "events remove",
+      "FILTER",
       "measurement name",
       "measurement object",
       "measurement meta",
@@ -633,6 +640,22 @@ describe("search, extent, state and value", () => {
     });
   });
 
+  it("value shows the state label of a state signal", async () => {
+    await withServer(async (s) => {
+      const r = await cli(
+        s,
+        "value",
+        "testcar/Ign_A20h.MODE",
+        "2026-10-01T01:20:00Z",
+        "--mode",
+        "step",
+      );
+      expect(r.code, r.stderr.join("")).toBe(0);
+      expect(r.out.data.value.label).toBe("KEYON: Ignition on");
+      expect(r.out.data.value.value).toBe(3);
+    });
+  });
+
   it("reads a value at a time and at a cursor", async () => {
     await withServer(async (s) => {
       await s.command({ type: "cursor.set", cursor: "a", t: "2026-10-01T02:00:01.05Z" });
@@ -654,6 +677,18 @@ describe("search, extent, state and value", () => {
       const local = await cli(s, "value", "speed", "2026-10-01 04:00:01.05");
       expect(local.code, local.stderr.join("")).toBe(0);
       expect(local.out.data.value).toEqual({ kind: "interpolated", value: 10.5 });
+
+      // A state name rides along: line mode next to a named point is held, `--mode step` as well.
+      const mode = "testcar/Ign_A20h.MODE";
+      const named = await cli(s, "value", mode, "2026-10-01T01:20:00.05Z", "--mode", "step");
+      expect(named.code, named.stderr.join("")).toBe(0);
+      expect(named.out.data.value).toEqual({
+        kind: "held",
+        value: 3,
+        label: "KEYON: Ignition on",
+      });
+      const heldInLine = await cli(s, "value", mode, "2026-10-01T01:20:00.05Z");
+      expect(heldInLine.out.data.value).toEqual(named.out.data.value);
 
       const unknown = await cli(s, "value", "testcar/NOPE.X", "0");
       expect(unknown.code).toBe(1);
@@ -778,6 +813,183 @@ describe("waiting for the open UI", () => {
       });
       // The command was applied once and is not repeated by the failed wait.
       expect(await revisionOf(s)).toBe(1);
+    });
+  });
+});
+
+describe("events", () => {
+  const MODE = "testcar/Ign_A20h.MODE";
+
+  /** A server whose window w1 shows testcar/Sna_800h.RPM, so `events list` finds the data ref. */
+  async function withWindow<T>(fn: (s: Harness) => Promise<T>): Promise<T> {
+    return withServer(async (s) => {
+      await s.command({ type: "window.create", from: "0", to: "1000" });
+      await s.command({ type: "window.addSignal", windowId: "w1", signalId: RPM });
+      return fn(s);
+    });
+  }
+
+  it("lists events with the workspace filter or the given one", async () => {
+    await withWindow(async (s) => {
+      const def = await cli(s, "events", "list");
+      expect(def.code, def.stderr.join("")).toBe(0);
+      // The workspace's default `active changes`: 2 active faults and 2 changes of 18.
+      expect(def.out.data.events).toHaveLength(4);
+      expect(def.out.data.filter).toBe("active changes");
+      expect(def.out.data.description).toBe("Active faults and state changes");
+      expect(def.out.data.total).toBe(18);
+      expect(def.out.local.t).toEqual([
+        "2026-10-01 03:03:00+02:00",
+        "2026-10-01 04:00:00+02:00",
+        "2026-10-01 07:00:00+02:00",
+        "2026-10-01 07:00:00+02:00",
+      ]);
+
+      const faults = await cli(s, "events", "list", "faults", "ecu:bms");
+      expect(faults.code).toBe(0);
+      expect(faults.out.data.events).toHaveLength(5);
+      expect(faults.out.data.filter).toBe("faults ecu:bms");
+
+      const ranged = await cli(
+        s,
+        "events",
+        "list",
+        "changes",
+        "-snapshots",
+        "--from",
+        "2026-10-01T00:00Z",
+        "--to",
+        "2026-10-01T03:00Z",
+      );
+      expect(ranged.code, ranged.stderr.join("")).toBe(0);
+      expect(ranged.out.data.events).toHaveLength(2);
+      expect(ranged.out.data.filter).toBe("changes -snapshots");
+
+      // A workspace filter applies when no words are given.
+      await s.command({ type: "events.setFilter", filter: "logger" });
+      const logger = await cli(s, "events", "list");
+      expect(logger.out.data.events).toHaveLength(2);
+      expect(logger.out.data.description).toBe("Logger errors");
+
+      const bad = await cli(s, "events", "list", "ecu:");
+      expect(bad.code).toBe(1);
+      expect(bad.out.error.code).toBe("invalid_filter");
+
+      // The data ref is that of the first signal, or --ref; without both it is rejected.
+      const other = await cli(s, "events", "list", "--ref", "othercar");
+      expect(other.code).toBe(0);
+      expect(other.out.data.total).toBe(0);
+      const unknown = await cli(s, "events", "list", "--ref", "nope");
+      expect(unknown.code).toBe(1);
+      expect(unknown.out.error.code).toBe("unknown_data_ref");
+    });
+    await withServer(async (s) => {
+      const none = await cli(s, "events", "list");
+      expect(none.code).toBe(1);
+      expect(none.out.error.code).toBe("no_data_ref");
+    });
+  });
+
+  it("puts the count line last when signals were skipped", () => {
+    const data = {
+      dataRef: "testcar",
+      total: 18,
+      filter: "changes",
+      description: "State changes",
+      events: [
+        {
+          t: "1790820180000000000",
+          category: "change",
+          kind: "state",
+          source: "VCU",
+          name: "VCU.door",
+          text: "open",
+          detail: "from closed",
+          value: 0,
+          from: { t: "1790820000000000000", value: 0, text: "closed" },
+        },
+      ],
+      skipped: [
+        { signalId: "testcar/Sna_800h.RPM", reason: "no_states" },
+        { signalId: "testcar/DIAG.door", reason: "in_events_table" },
+      ],
+    } as unknown as EventListData;
+    const lines = eventTable(data, ["2026-10-01 03:03:00+02:00"]).split("\n");
+    expect(lines).toEqual([
+      "2026-10-01 03:03:00.000+02:00  State change  VCU  VCU.door  closed → open",
+      "skipped: testcar/Sna_800h.RPM (no_states)",
+      "skipped: testcar/DIAG.door (in_events_table)",
+      "1 of 18 events · changes · State changes",
+    ]);
+  });
+
+  it("prints events as a table", async () => {
+    await withWindow(async (s) => {
+      const result = await cli(s, "events", "list", "changes", "--table");
+      expect(result.code, result.stderr.join("")).toBe(0);
+      expect(result.out).toBeUndefined(); // not JSON
+      const lines = result.stdout
+        .join("\n")
+        .split("\n")
+        .filter((l) => l.trim() !== "");
+      expect(lines).toEqual([
+        "2026-10-01 03:03:00.000+02:00  State change  VCU  VCU.door  closed → open",
+        "2026-10-01 04:00:00.000+02:00  State change  VCU  VCU.door  open → closed",
+        "2 of 18 events · changes · State changes",
+      ]);
+
+      // Skipped signals follow as lines of their own.
+      await s.command({ type: "window.addSignal", windowId: "w1", signalId: MODE });
+      await s.command({ type: "events.addSignal", signalId: MODE });
+      const withSignal = await cli(s, "events", "list", "changes", "ecu:Ign_A20h.MODE", "--table");
+      expect(withSignal.code).toBe(0);
+      const text = withSignal.stdout.join("\n");
+      expect(text).toContain("Ign_A20h.MODE");
+      expect(text).toContain("NONE → KEYON: Ignition on");
+    });
+  });
+
+  it("sets the event filter and events-line signals over HTTP", async () => {
+    await withWindow(async (s) => {
+      const start = await revisionOf(s);
+      const set = await cli(s, "events", "filter", "Faults", "bms");
+      expect(set.code, set.stderr.join("")).toBe(0);
+      expect(set.out).toMatchObject({ ok: true, revision: start + 1 });
+      const state = await cli(s, "state");
+      expect(state.out.data.workspace.eventFilter).toBe("faults bms");
+
+      const bad = await cli(s, "events", "filter", "ecu:");
+      expect(bad.code).toBe(1);
+      expect(bad.out.error.code).toBe("invalid_filter");
+      expect(await revisionOf(s)).toBe(start + 1);
+
+      // The empty filter is a filter of its own: everything.
+      const all = await cli(s, "events", "filter", "");
+      expect(all.code).toBe(0);
+      expect((await s.workspace()).workspace).toMatchObject({ eventFilter: "" });
+
+      // Events-line signals: add by full ID, refuse twice and without states, remove by bare name.
+      const add = await cli(s, "events", "add", MODE);
+      expect(add.code, add.stderr.join("")).toBe(0);
+      expect((await s.workspace()).workspace).toMatchObject({ eventSignals: [MODE] });
+      const twice = await cli(s, "events", "add", MODE);
+      expect(twice.out.error.code).toBe("already_listed");
+      const noStates = await cli(s, "events", "add", RPM);
+      expect(noStates.code).toBe(1);
+      expect(noStates.out.error.code).toBe("not_state_signal");
+
+      // The listed signal's changes join the list.
+      const list = await cli(s, "events", "list", "all");
+      expect(list.out.data.total).toBe(20);
+      expect(
+        list.out.data.events.filter((e: { kind: string }) => e.kind === "signal"),
+      ).toHaveLength(2);
+
+      const removed = await cli(s, "events", "remove", "MODE");
+      expect(removed.code, removed.stderr.join("")).toBe(0);
+      expect((await s.workspace()).workspace).not.toHaveProperty("eventSignals");
+      const gone = await cli(s, "events", "remove", MODE);
+      expect(gone.out.error.code).toBe("not_listed");
     });
   });
 });

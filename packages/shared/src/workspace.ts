@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_FILTER_LENGTH } from "./eventFilter.ts";
 import { fromIso, parseTimestamp, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 
 /** Maximum number of distinct signals across all windows (spec workspace-state). */
@@ -146,6 +147,9 @@ export interface Measurement {
   meta?: MeasurementEntry[];
 }
 
+/** Signals on the events line at most (design E8, D-059). */
+export const MAX_EVENT_SIGNALS = 8;
+
 export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
 
 export interface Workspace {
@@ -166,6 +170,10 @@ export interface Workspace {
   options: WorkspaceOptions;
   /** Measurement info (design F6); absent when empty. */
   measurement?: Measurement;
+  /** Event filter in normal form (D-058); absent = DEFAULT_EVENT_FILTER. */
+  eventFilter?: string;
+  /** Events-line signal IDs in order, at most MAX_EVENT_SIGNALS (D-059); absent when empty. */
+  eventSignals?: string[];
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -292,6 +300,9 @@ export const Command = z.discriminatedUnion("type", [
     value: MeasurementText(MAX_MEASUREMENT_VALUE),
   }),
   z.object({ type: z.literal("measurement.clear") }),
+  z.object({ type: z.literal("events.setFilter"), filter: z.string().max(MAX_FILTER_LENGTH) }),
+  z.object({ type: z.literal("events.addSignal"), signalId: Id }),
+  z.object({ type: z.literal("events.removeSignal"), signalId: Id }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -310,6 +321,11 @@ export type CommandErrorCode =
   | "cursor_off"
   | "window_limit"
   | "measurement_limit"
+  | "invalid_filter"
+  | "not_state_signal"
+  | "already_listed"
+  | "event_signal_limit"
+  | "not_listed"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */

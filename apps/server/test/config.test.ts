@@ -13,6 +13,7 @@ describe("loadConfig", () => {
       signal: "signal",
       time: "utc",
       value: "value",
+      text: "text",
     });
     expect(config.dbcFiles).toEqual([
       "/repo/CarController/vehicles/smart451/dbc/h-can.dbc",
@@ -48,6 +49,41 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, KIPSCOPE_TABLE: "x; DROP TABLE y" })).toThrow(/identifier/);
     expect(() => loadConfig({ ...base, KIPSCOPE_QUERY_CONCURRENCY: "0" })).toThrow(/positive/);
     expect(() => loadConfig({})).toThrow(/CLICKHOUSE_URL/);
+  });
+
+  it("reads the events mapping", () => {
+    expect(loadConfig(base, "/repo/kipscope").events).toEqual({
+      table: "events",
+      source: "source",
+      kind: "kind",
+      name: "name",
+      value: "value",
+      text: "text",
+      detail: "detail",
+    });
+    const custom = loadConfig(
+      {
+        ...base,
+        KIPSCOPE_EVENTS_TABLE: "diag_events",
+        KIPSCOPE_EVENT_COLUMN_TEXT: "label",
+        KIPSCOPE_COLUMN_TEXT: "state",
+      },
+      "/repo/kipscope",
+    );
+    expect(custom.events.table).toBe("diag_events");
+    expect(custom.events.text).toBe("label");
+    expect(custom.events.detail).toBe("detail");
+    expect(custom.mapping.text).toBe("state");
+    // Invalid identifiers name their variable.
+    expect(() => loadConfig({ ...base, KIPSCOPE_EVENTS_TABLE: "a-b" })).toThrow(
+      /KIPSCOPE_EVENTS_TABLE/,
+    );
+    expect(() => loadConfig({ ...base, KIPSCOPE_EVENT_COLUMN_KIND: "a-b" })).toThrow(
+      /KIPSCOPE_EVENT_COLUMN_KIND/,
+    );
+    expect(() => loadConfig({ ...base, KIPSCOPE_COLUMN_TEXT: "a b" })).toThrow(
+      /KIPSCOPE_COLUMN_TEXT/,
+    );
   });
 
   it("resolves the project file path", () => {

@@ -87,5 +87,10 @@ export function queuedSource(source: DataSource, queue: QueryQueue): DataSource 
     refExtent: (dataRef, abort) => queue.run((a) => source.refExtent(dataRef, a), abort),
     refBuckets: (dataRef, width, abort) =>
       queue.run((a) => source.refBuckets(dataRef, width, a), abort),
+    events: (dataRef, limit, abort) => queue.run((a) => source.events(dataRef, limit, a), abort),
+    stateChanges: (ref, by, limit, abort) =>
+      queue.run((a) => source.stateChanges(ref, by, limit, a), abort),
+    textSignals: (abort) => queue.run((a) => source.textSignals(a), abort),
+    ...(source.eventsTable === undefined ? {} : { eventsTable: source.eventsTable }),
   };
 }
