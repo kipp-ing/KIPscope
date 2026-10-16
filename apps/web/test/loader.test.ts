@@ -1,4 +1,11 @@
-import { decodeTimes, type Extent, type RawSeries, type SeriesResult } from "@letsview/shared";
+import {
+  decodeTimes,
+  type Extent,
+  encodeTimes,
+  type RawSeries,
+  type SeriesResult,
+  TIME_MAX,
+} from "@letsview/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
 import { SeriesCache } from "../src/chart/cache.ts";
@@ -6,10 +13,19 @@ import {
   LOAD_INTERVAL_MS,
   type LoaderOptions,
   type LoadRequest,
+  loadKey,
   loadStatusText,
   SeriesLoader,
 } from "../src/chart/loader.ts";
-import { densePoints, type FakeCall, type FakePoint, fakeFetch, flush } from "./fakeSeries.ts";
+import { levelFor, tileable, touchedTiles } from "../src/chart/tiles.ts";
+import {
+  densePoints,
+  type FakeCall,
+  type FakePoint,
+  fakeAnswer,
+  fakeFetch,
+  flush,
+} from "./fakeSeries.ts";
 
 const SIG = "c/s";
 const S10 = 262144n; // tile span of level 10 (width 1024 ns)
@@ -956,5 +972,156 @@ describe("SeriesLoader retries", () => {
     await answer(t.calls[1]);
     expect(loadStatusText(loader.get("a1"))).toBe("");
     loader.dispose();
+  });
+});
+
+describe("SeriesLoader with malformed answers", () => {
+  it("fails an exact view whose answer is malformed", async () => {
+    const { cache, calls } = setup();
+    const loader = new SeriesLoader(cache, () => {});
+    // A view that ends after TIME_MAX cannot be tiled and is fetched exactly.
+    const exact: LoadRequest = {
+      key: "a1",
+      signalId: SIG,
+      from: (TIME_MAX - 1000n).toString(),
+      to: (TIME_MAX + 1000n).toString(),
+      target: 257,
+    };
+    const level = levelFor(BigInt(exact.from), BigInt(exact.to), exact.target);
+    const { first, last } = touchedTiles(BigInt(exact.from), BigInt(exact.to), level);
+    expect(tileable(level, first, last)).toBe(false);
+    loader.update([exact]);
+    expect(calls).toHaveLength(1);
+    const bad = {
+      kind: "raw",
+      signalId: SIG,
+      from: exact.from,
+      to: exact.to,
+      t: encodeTimes([1n, 2n, 3n]),
+      v: [1, 2],
+    } as RawSeries;
+    calls[0]?.answer(bad);
+    await flush();
+    const state = loader.get("a1");
+    expect(state?.status).toBe("error");
+    expect(state?.error).toMatch(/malformed series result/);
+    expect(state?.result).toBeUndefined();
+    loader.dispose();
+  });
+
+  it("fails a tiled view whose answer is malformed", async () => {
+    const { cache, calls } = setup();
+    const loader = new SeriesLoader(cache, () => {});
+    loader.update([view(0n)]);
+    expect(calls).toHaveLength(1);
+    const good = JSON.parse(JSON.stringify(fakeAnswer(POINTS, calls[0]?.request as LoadRequest)));
+    good.t.dt[1] = "abc";
+    calls[0]?.answer(good);
+    await flush();
+    const state = loader.get("a1");
+    expect(state?.status).toBe("error");
+    expect(state?.error).toMatch(/invalid time offset|malformed series result/);
+    expect(state?.result).toBeUndefined();
+    expect(cache.peek(SIG, 10, 0n)).toBeUndefined();
+    expect(cache.peek(SIG, 10, 1n)).toBeUndefined();
+    loader.dispose();
+  });
+});
+
+describe("loadKey", () => {
+  it("load key ignores unrelated revisions", () => {
+    const signals = [{ id: "a1", signalId: "c/s" }];
+    const key = loadKey(signals, 0);
+    // A new array with equal content, as every pushed revision brings.
+    expect(
+      loadKey(
+        signals.map((s) => ({ ...s })),
+        0,
+      ),
+    ).toBe(key);
+    expect(loadKey([...signals, { id: "a2", signalId: "c/t" }], 0)).not.toBe(key);
+    expect(loadKey(signals, 1)).not.toBe(key);
+  });
+});
+
+describe("SeriesLoader pulls a failing signal forward once per run", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const DENSE = densePoints(4295, 1_000_000n, 500n);
+  const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
+
+  /** Signal A (view 0) always fails at once; every other request waits for a manual answer. */
+  function psetup() {
+    const server = fakeFetch(DENSE);
+    const aStarts: number[] = [];
+    const t0 = Date.now();
+    const cache = new SeriesCache(
+      (request, abort) => {
+        if (request.from === "0") {
+          aStarts.push(Date.now() - t0);
+          return Promise.reject(new ApiRequestError(502, "source_error", "down"));
+        }
+        return server.fetch(request, abort);
+      },
+      { now: NOW },
+    );
+    const make = () =>
+      new SeriesLoader(cache, () => {}, { loadIntervalMs: LOAD_INTERVAL_MS, retry: true });
+    const answered = new Set<FakeCall>();
+    /** Another window's request of the tab succeeds. */
+    const otherSucceeds = async (loader: SeriesLoader, j: bigint) => {
+      loader.update([view(j, "b1")]);
+      await tick();
+      for (const call of server.calls) {
+        if (answered.has(call)) continue;
+        answered.add(call);
+        call.answer();
+      }
+      await tick();
+    };
+    return { cache, aStarts, make, otherSucceeds };
+  }
+
+  it("pulls a failing signal forward once per run of failures", async () => {
+    const t = psetup();
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]); // F1 = 0 s
+    await tick(200);
+    await t.otherSucceeds(w2, 1n); // pulls A forward to F1 + 1 s
+    // A's pulled retry fails at F2 = 1 s; from then on other requests answer every 100 ms.
+    for (let j = 2n; j < 102n; j++) {
+      await tick(100);
+      await t.otherSucceeds(w2, j);
+    }
+    // F1 = 0, the pulled retry at 1 s, then only the backoff: F2 + 2 s, and 4 s after that.
+    expect(t.aStarts).toEqual([0, 1000, 3000, 7000]);
+    w1.dispose();
+    w2.dispose();
+  });
+
+  it("a live reconnect pulls a failing signal forward again", async () => {
+    const t = psetup();
+    const w1 = t.make();
+    const w2 = t.make();
+    w1.update([view(0n)]); // fails at 0 s
+    await tick(200);
+    await t.otherSucceeds(w2, 1n); // pulled once: A fetches at 1 s and fails
+    await tick(2800); // 3 s: the backoff retry fails again; the next one is due at 7 s
+    expect(t.aStarts).toEqual([0, 1000, 3000]);
+    await tick(1000);
+    await t.otherSucceeds(w2, 2n); // 4 s: a success does not pull A again
+    expect(t.aStarts).toHaveLength(3);
+    await tick(1000); // 5 s: the live channel opens, 2 s after A's last failure
+    t.cache.recover();
+    await tick();
+    expect(t.aStarts).toEqual([0, 1000, 3000, 5000]);
+    w1.dispose();
+    w2.dispose();
   });
 });

@@ -1,5 +1,6 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import { Catalog } from "../src/catalog.ts";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { Catalog, keepCatalogLoaded } from "../src/catalog.ts";
+import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { loadProjectFile } from "../src/project.ts";
 import { fixture, testDbcFiles, testSource } from "./testdb.ts";
@@ -9,7 +10,7 @@ describe("Catalog (test DB)", () => {
   beforeAll(() => catalog.refresh());
 
   it("lists exactly the signals with data, per data reference", () => {
-    expect(catalog.size).toBe(1013);
+    expect(catalog.size).toBe(1014);
     expect(catalog.get("testcar/Fast_100h.SIG_A")).toBeDefined();
     expect(catalog.get("othercar/Fast_100h.SIG_A")).toBeDefined();
   });
@@ -131,6 +132,82 @@ describe("Catalog display names (test DB, test project file)", () => {
     ]);
     // Identity unchanged.
     expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
-    expect(catalog.size).toBe(1013);
+    expect(catalog.size).toBe(1014);
+  });
+});
+
+describe("Catalog background load and warnings (stubbed source)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("keeps loading the catalog with backoff until it succeeds", async () => {
+    vi.useFakeTimers();
+    const starts: number[] = [];
+    const t0 = Date.now();
+    const source = {
+      listSignals: async () => {
+        starts.push(Date.now() - t0);
+        if (starts.length <= 4) throw new Error("connect ECONNREFUSED");
+        return [{ dataRef: "car", name: "S" }];
+      },
+    } as unknown as DataSource;
+    const catalog = new Catalog(source, async () => new Map());
+    const failed: number[] = [];
+    let loaded = 0;
+    const stop = keepCatalogLoaded(catalog, {
+      loaded: () => loaded++,
+      failed: (_error, retryInMs) => failed.push(retryInMs),
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(starts).toEqual([0, 1000, 3000, 7000, 15000]);
+    expect(failed).toEqual([1000, 2000, 4000, 8000]);
+    expect(loaded).toBe(1);
+    expect(catalog.loadedAt).toBeDefined();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(starts).toHaveLength(5);
+    stop();
+  });
+
+  it("shares one load between concurrent refreshes", async () => {
+    let calls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const source = {
+      listSignals: async () => {
+        calls++;
+        await gate;
+        return [{ dataRef: "car", name: "S" }];
+      },
+    } as unknown as DataSource;
+    const catalog = new Catalog(source, async () => new Map());
+    const first = catalog.refresh();
+    const second = catalog.refresh();
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toBe(1);
+    expect(catalog.size).toBe(1);
+  });
+
+  it("logs DBC warnings once per load", async () => {
+    const source = {
+      listSignals: async () => [{ dataRef: "car", name: "S" }],
+    } as unknown as DataSource;
+    const warnings: string[] = [];
+    const catalog = new Catalog(
+      source,
+      async (warn) => {
+        warn("bad.dbc: broken");
+        return new Map();
+      },
+      undefined,
+      { warn: (message) => warnings.push(message) },
+    );
+    await catalog.refresh();
+    await catalog.refresh();
+    expect(warnings).toEqual([
+      "DBC file skipped: bad.dbc: broken",
+      "DBC file skipped: bad.dbc: broken",
+    ]);
   });
 });

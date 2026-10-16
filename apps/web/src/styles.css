@@ -323,6 +323,18 @@ main {
   margin: 0;
 }
 
+/* A window that failed to draw (design H6): an error box in its place, Retry draws it again. */
+.window.window-failed {
+  border-color: var(--error);
+  color: var(--error);
+  font-size: 13px;
+  padding: 12px;
+}
+
+.window-failed button {
+  margin-left: 8px;
+}
+
 .plot {
   width: 100%;
 }

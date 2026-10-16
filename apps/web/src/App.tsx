@@ -15,6 +15,7 @@ import {
   zoomAround,
 } from "@letsview/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Acknowledger } from "./ack.ts";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar } from "./bar/OptionBar.tsx";
@@ -40,6 +41,7 @@ import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
+import { ignoreFileDrops } from "./filedrop.ts";
 import { isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
 import {
   isSidebarKey,
@@ -51,6 +53,7 @@ import {
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
+import { WindowBoundary } from "./WindowBoundary.tsx";
 
 /** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
 interface Drag {
@@ -772,34 +775,28 @@ export function App() {
       (w) => w.id === over && w.signals.some((s) => s.signalId === activeDrag.source.signalId),
     );
 
-  // Render acknowledgement: a revision counts as rendered once every window reported it.
-  const ready = useRef(new Map<string, { revision: number; errors: RenderError[] }>());
-  // Sent again for the same revision when its errors change (a retry succeeded or failed differently).
-  const lastSent = useRef("");
-  const acknowledge = useCallback(() => {
-    const { revision, workspace } = liveRef.current;
-    if (!workspace) return;
-    const reports = workspace.windows.map((w) => ready.current.get(w.id));
-    if (reports.some((r) => r?.revision !== revision)) return;
-    const errors = reports.flatMap((r) => r?.errors ?? []);
-    const key = JSON.stringify([revision, errors]);
-    if (key === lastSent.current) return;
-    lastSent.current = key;
-    send({ type: "rendered", revision, status: errors.length ? "error" : "complete", errors });
-  }, [send]);
+  // Render acknowledgement (design H6): one Acknowledger per tab; `send` is stable.
+  const ackRef = useRef<Acknowledger | undefined>(undefined);
+  ackRef.current ??= new Acknowledger(send);
+  const ack = ackRef.current;
   const onReady = useCallback(
-    (windowId: string, revision: number, errors: RenderError[]) => {
-      ready.current.set(windowId, { revision, errors });
-      acknowledge();
-    },
-    [acknowledge],
+    (windowId: string, revision: number, errors: RenderError[]) =>
+      ack.report(windowId, revision, errors),
+    [ack],
   );
   useEffect(() => {
-    if (live.revision >= 0) acknowledge();
-  }, [live.revision, acknowledge]);
+    if (workspace)
+      ack.setState(
+        live.revision,
+        workspace.windows.map((w) => w.id),
+      );
+  }, [live.revision, workspace, ack]);
   useEffect(() => {
-    if (!live.connected) lastSent.current = "";
-  }, [live.connected]);
+    if (live.connected) ack.reconnected();
+  }, [live.connected, ack]);
+
+  // A file dropped anywhere on the page would navigate the tab away (design H8).
+  useEffect(() => ignoreFileDrops(document), []);
 
   const appClass = [
     "app",
@@ -858,53 +855,54 @@ export function App() {
             )}
           </div>
           <div className="window-grid">
-            {windows.map((w) =>
-              isTimeseries(w) ? (
-                <TimeseriesWindow
-                  key={w.id}
-                  window={w}
-                  revision={live.revision}
-                  info={info}
-                  colorOf={colorOf}
-                  onCommand={command}
-                  onReady={onReady}
-                  onZoomed={onZoomed}
-                  onReset={onReset}
-                  onDragStart={onDragStart}
-                  insets={insets}
-                  onInsets={onInsets}
-                  cursors={cursors}
-                  committed={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
-                  digits={digits}
-                  diff={diff}
-                  onCursorPreview={onCursorPreview}
-                  onCursorCommit={onCursorCommit}
-                  marked={w.id === markedId}
-                  onMark={onMark}
-                  linked={linked}
-                  {...dropProp(dropStateOf(w.id))}
-                  {...dropActionProp}
-                />
-              ) : (
-                <ValuesWindow
-                  key={w.id}
-                  window={w}
-                  revision={live.revision}
-                  cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
-                  dragging={cursorPreview !== undefined}
-                  digits={digits}
-                  info={info}
-                  colorOf={colorOf}
-                  onCommand={command}
-                  onReady={onReady}
-                  onDragStart={onDragStart}
-                  marked={w.id === markedId}
-                  onMark={onMark}
-                  {...dropProp(dropStateOf(w.id))}
-                  {...dropActionProp}
-                />
-              ),
-            )}
+            {windows.map((w) => (
+              <WindowBoundary key={w.id} windowId={w.id} revision={live.revision} onReady={onReady}>
+                {isTimeseries(w) ? (
+                  <TimeseriesWindow
+                    window={w}
+                    revision={live.revision}
+                    rangeSets={live.rangeSets}
+                    info={info}
+                    colorOf={colorOf}
+                    onCommand={command}
+                    onReady={onReady}
+                    onZoomed={onZoomed}
+                    onReset={onReset}
+                    onDragStart={onDragStart}
+                    insets={insets}
+                    onInsets={onInsets}
+                    cursors={cursors}
+                    committed={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
+                    digits={digits}
+                    diff={diff}
+                    onCursorPreview={onCursorPreview}
+                    onCursorCommit={onCursorCommit}
+                    marked={w.id === markedId}
+                    onMark={onMark}
+                    linked={linked}
+                    {...dropProp(dropStateOf(w.id))}
+                    {...dropActionProp}
+                  />
+                ) : (
+                  <ValuesWindow
+                    window={w}
+                    revision={live.revision}
+                    cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
+                    dragging={cursorPreview !== undefined}
+                    digits={digits}
+                    info={info}
+                    colorOf={colorOf}
+                    onCommand={command}
+                    onReady={onReady}
+                    onDragStart={onDragStart}
+                    marked={w.id === markedId}
+                    onMark={onMark}
+                    {...dropProp(dropStateOf(w.id))}
+                    {...dropActionProp}
+                  />
+                )}
+              </WindowBoundary>
+            ))}
           </div>
           {workspace && windows.length === 0 && !activeDrag && (
             <p className="hint">No windows yet. Search a signal and add it to a new window.</p>

@@ -6,6 +6,7 @@ import {
   isTimeseries,
   MAX_SIGNALS,
   MAX_UNITS,
+  MAX_WINDOWS,
   SIGNAL_COLORS,
   type TimeRange,
   type TimeseriesWindow,
@@ -122,7 +123,10 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
 
   switch (command.type) {
     case "window.create": {
+      if (state.windows.length >= MAX_WINDOWS)
+        return fail("window_limit", `a workspace holds at most ${MAX_WINDOWS} windows`);
       const id = `w${state.nextId}`;
+      const title = command.title?.trim();
       if (command.kind === "values") {
         const window: ValuesWindow = {
           id,
@@ -130,7 +134,7 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
           mode: command.mode === "step" ? "step" : "line",
           signals: [],
         };
-        if (command.title !== undefined) window.title = command.title;
+        if (title) window.title = title;
         const workspace = {
           ...state,
           windows: [...state.windows, window],
@@ -159,7 +163,7 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
         },
         signals: [],
       };
-      if (command.title !== undefined) window.title = command.title;
+      if (title) window.title = title;
       const existing = hasRange && state.linkTime ? linkRange(state.windows, range) : state.windows;
       const workspace: Workspace = {
         ...state,

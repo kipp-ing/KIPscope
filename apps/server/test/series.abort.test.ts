@@ -62,3 +62,42 @@ describe("GET /api/series over a real connection", () => {
     expect(slow.seen.at(-1)?.aborted).toBe(true);
   });
 });
+
+describe("GET /api/extent over a real connection", () => {
+  const seen: { aborted: boolean }[] = [];
+  const source = {
+    listSignals: async () => [{ dataRef: "car", name: "S" }],
+    extent: (_ref: unknown, abort?: AbortSignal) =>
+      new Promise((_resolve, reject) => {
+        const entry = { aborted: false };
+        seen.push(entry);
+        abort?.addEventListener("abort", () => {
+          entry.aborted = true;
+          reject(abort.reason);
+        });
+      }),
+  } as unknown as DataSource;
+  const catalog = new Catalog(source, async () => new Map());
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  let base = "";
+  beforeAll(async () => {
+    await catalog.refresh();
+    base = await app.listen({ port: 0, host: "127.0.0.1" });
+  });
+  afterAll(() => app.close());
+
+  it("aborts the extent query when the client disconnects", async () => {
+    const controller = new AbortController();
+    const pending = fetch(`${base}/api/extent?signal=car/S`, { signal: controller.signal }).catch(
+      () => "aborted",
+    );
+    await expect.poll(() => seen.length).toBe(1);
+    controller.abort();
+    expect(await pending).toBe("aborted");
+    await expect.poll(() => seen[0]?.aborted).toBe(true);
+  });
+});

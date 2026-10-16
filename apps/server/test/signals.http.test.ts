@@ -91,7 +91,7 @@ describe("GET /api/signals", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     const total = (await app.inject({ url: "/api/signals?q=" })).json().total;
-    expect(total).toBe(1013);
+    expect(total).toBe(1014);
     expect(body.items).toHaveLength(total);
     expect(body.items.map((s: { id: string }) => s.id)).toContain("testcar/Many_700h.S0999");
     expect(Number.isNaN(Date.parse(body.loadedAt))).toBe(false);
@@ -102,7 +102,7 @@ describe("GET /api/signals", () => {
   it("refreshes the catalog", async () => {
     const res = await app.inject({ method: "POST", url: "/api/catalog/refresh" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().size).toBe(1013);
+    expect(res.json().size).toBe(1014);
   });
 });
 

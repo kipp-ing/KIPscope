@@ -80,11 +80,33 @@ export function fetchExtent(signalId: string): Promise<Extent> {
   return getJson(`/api/extent?${new URLSearchParams({ signal: signalId })}`);
 }
 
+/** True when `body` has the shape of a `CommandResult` (design H6). */
+function isCommandResult(body: unknown): body is CommandResult {
+  if (typeof body !== "object" || body === null) return false;
+  const b = body as Record<string, unknown>;
+  if (b.ok === true) return typeof b.revision === "number";
+  return b.ok === false && typeof b.code === "string" && typeof b.message === "string";
+}
+
+/**
+ * Posts a command. Never rejects (design H6): a failed fetch resolves to code `network`, an answer
+ * that is not a command result (a proxy page, a 5xx, a foreign body) to `bad_response`.
+ */
 export async function sendCommand(command: CommandInput): Promise<CommandResult> {
-  const res = await fetch("/api/commands", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(command),
-  });
-  return res.json() as Promise<CommandResult>;
+  let res: Response;
+  try {
+    res = await fetch("/api/commands", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, code: "network", message: message || "request failed" };
+  }
+  if (res.status === 200 || res.status === 400 || res.status === 422) {
+    const body: unknown = await res.json().catch(() => undefined);
+    if (isCommandResult(body)) return body;
+  }
+  return { ok: false, code: "bad_response", message: `HTTP ${res.status}: ${res.statusText}` };
 }

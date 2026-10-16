@@ -1,6 +1,11 @@
 import type { TimeseriesWindow } from "@letsview/shared";
 import { describe, expect, it } from "vitest";
-import { draggedHeight, heightCommand, startsHeightDrag } from "../src/chart/height.ts";
+import {
+  draggedHeight,
+  heightCommand,
+  startsHeightDrag,
+  trackHeightDrag,
+} from "../src/chart/height.ts";
 
 function win(height?: number): TimeseriesWindow {
   return {
@@ -51,5 +56,55 @@ describe("height drag", () => {
     expect(startsHeightDrag({ button: 2, ctrlKey: false })).toBe(false); // right click
     expect(startsHeightDrag({ button: 1, ctrlKey: false })).toBe(false); // middle click
     expect(startsHeightDrag({ button: 0, ctrlKey: true })).toBe(false); // macOS Ctrl-click
+  });
+});
+
+describe("trackHeightDrag", () => {
+  const pointer = (type: string, clientY = 0) => {
+    const event = new Event(type);
+    Object.defineProperty(event, "clientY", { value: clientY });
+    return event;
+  };
+  function drag() {
+    const handle = new EventTarget();
+    const calls = { move: [] as number[], end: 0, release: 0 };
+    const dispose = trackHeightDrag(handle, {
+      move: (y) => calls.move.push(y),
+      end: () => {
+        calls.end++;
+      },
+      release: () => {
+        calls.release++;
+      },
+    });
+    return { handle, calls, dispose };
+  }
+
+  it("ends a height drag on lost capture and on unmount", () => {
+    // Lost capture alone ends the drag.
+    const lost = drag();
+    lost.handle.dispatchEvent(pointer("pointermove", 5));
+    expect(lost.calls.move).toEqual([5]);
+    lost.handle.dispatchEvent(pointer("lostpointercapture"));
+    expect(lost.calls).toMatchObject({ end: 1, release: 1 });
+    lost.handle.dispatchEvent(pointer("pointermove", 9));
+    expect(lost.calls.move).toEqual([5]);
+
+    // pointerup, then the lostpointercapture that browsers fire after it: still once.
+    const up = drag();
+    up.handle.dispatchEvent(pointer("pointerup"));
+    up.handle.dispatchEvent(pointer("lostpointercapture"));
+    expect(up.calls).toMatchObject({ end: 1, release: 1 });
+
+    // Unmount before any pointer event releases without ending.
+    const unmounted = drag();
+    unmounted.dispose();
+    unmounted.handle.dispatchEvent(pointer("pointermove", 7));
+    unmounted.handle.dispatchEvent(pointer("pointerup"));
+    expect(unmounted.calls).toEqual({ move: [], end: 0, release: 1 });
+    // Disposing after an ended drag releases nothing more.
+    lost.dispose();
+    expect(lost.calls.release).toBe(1);
+    expect(lost.calls.end).toBe(1);
   });
 });

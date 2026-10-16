@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p .",
-    "test": "vitest run --passWithNoTests",
+    "test": "TZ=Europe/Berlin vitest run --passWithNoTests",
     "start": "node --env-file-if-exists=../../.env src/main.ts",
     "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
     "seed:test": "node --env-file-if-exists=../../.env scripts/seed-test-db.ts"
@@ -14,7 +14,7 @@
     "@fastify/websocket": "11.3.4",
     "@letsview/shared": "workspace:*",
     "fastify": "5.12.7",
-    "yaml": "2.8.1",
+    "yaml": "2.8.4",
     "zod": "4.6.7"
   },
   "devDependencies": {

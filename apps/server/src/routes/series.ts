@@ -45,8 +45,13 @@ export const seriesRoutes =
           signalId: query.signal,
         });
       }
+      const controller = new AbortController();
+      request.raw.on("close", () => {
+        if (!reply.raw.writableEnded) controller.abort();
+      });
+
       try {
-        const extent = await source.extent(ref);
+        const extent = await source.extent(ref, controller.signal);
         if (!extent) {
           return apiError(reply, 404, "no_data", `no data for signal: ${query.signal}`, {
             signalId: query.signal,
@@ -59,6 +64,7 @@ export const seriesRoutes =
         };
         return body;
       } catch (error) {
+        if (controller.signal.aborted) return reply;
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message, { signalId: query.signal });
       }
@@ -109,6 +115,9 @@ export const seriesRoutes =
       } catch (error) {
         if (controller.signal.aborted) return reply;
         const message = error instanceof Error ? error.message : String(error);
+        // The server's own computation failed on valid input: a retry would fail again (design H2).
+        if (error instanceof RangeError)
+          return apiError(reply, 400, "invalid_request", message, range);
         return apiError(reply, 502, "source_error", message, range);
       }
     });

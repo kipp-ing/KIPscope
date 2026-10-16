@@ -1,8 +1,9 @@
-import { decodeTimes, fromIso } from "@letsview/shared";
+import { decodeTimes, fromIso, TIME_MAX, TIME_MIN } from "@letsview/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
+import type { DataSource } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { testMapping, testSource } from "./testdb.ts";
 
@@ -219,5 +220,93 @@ describe("timestamp precision end to end", () => {
     expect(decodeTimes(body.t)).toEqual([t, t + 1001n]);
     expect(body.t.t0).toBe("1791964800123456789");
     await app.close();
+  });
+});
+
+describe("GET /api/series beyond 104 days and at the bounds (harden-robustness)", () => {
+  const { app, catalog } = appFor();
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("answers raw points more than 104 days apart exactly", async () => {
+    const res = await app.inject({
+      url: "/api/series",
+      query: {
+        signal: "spancar/Span_910h.FAR",
+        from: "1969-12-31T00:00:00Z",
+        to: "2026-12-01T00:00:00Z",
+        target: "2000",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.kind).toBe("raw");
+    const expected = [
+      "1969-12-31T23:59:58.5Z",
+      "1969-12-31T23:59:59.5Z",
+      "1970-01-01T00:00:00.5Z",
+      "2026-01-01T00:00:00Z",
+      "2026-10-01T00:00:00Z",
+    ].map(fromIso);
+    expect(decodeTimes(body.t)).toEqual(expected);
+    expect(body.v).toEqual([1, 2, 3, 4, 5]);
+    // Offsets beyond 2^53 ns travel as strings.
+    expect(typeof body.t.dt.at(-1)).toBe("string");
+    expect(typeof body.t.dt[1]).toBe("number");
+  });
+
+  it("answers the full time bounds", async () => {
+    const signal = "testcar/Fast_100h.SIG_A";
+    const res = await app.inject({
+      url: "/api/series",
+      query: { signal, from: TIME_MIN.toString(), to: TIME_MAX.toString(), target: "2" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.kind).toBe("buckets");
+    expect(body.width).toBe("4611686018427387904");
+    expect(body.count.length).toBeLessThanOrEqual(3);
+    const sum = (b: { count: number[]; sna: number[] }) =>
+      b.count.reduce((a, c) => a + c, 0) + b.sna.reduce((a, c) => a + c, 0);
+    // SIG_A has 7,200,000 timed rows; the 1,000 extra rows have no time.
+    expect(sum(body)).toBe(7_200_000);
+
+    const extent = (await app.inject({ url: "/api/extent", query: { signal } })).json();
+    const detailed = await app.inject({
+      url: "/api/series",
+      query: {
+        signal,
+        from: extent.first,
+        to: (BigInt(extent.last) + 1n).toString(),
+        target: "20000",
+      },
+    });
+    expect(sum(detailed.json())).toBe(sum(body));
+  });
+});
+
+describe("GET /api/series when the server cannot compute (harden-robustness)", () => {
+  const source = {
+    listSignals: async () => [{ dataRef: "car", name: "S" }],
+    count: async () => {
+      throw new RangeError("cannot compute");
+    },
+  } as unknown as DataSource;
+  const catalog = new Catalog(source, async () => new Map());
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("answers 400, not 502, when the server cannot compute a result", async () => {
+    const res = await app.inject({
+      url: "/api/series",
+      query: { signal: "car/S", from: "0", to: "1000" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("invalid_request");
   });
 });

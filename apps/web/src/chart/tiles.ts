@@ -29,9 +29,6 @@ export interface TileRange {
   last: bigint;
 }
 
-/** Largest span one result may cover: `encodeTimes` offsets are exact below 2^53 ns. */
-const MAX_SPAN = 2n ** 53n;
-
 /** One series request; LoadRequest (loader.ts) extends it with `key`. */
 export interface SeriesRequest {
   signalId: string;
@@ -83,12 +80,12 @@ export function touchedTiles(
   return { first: floorDiv(from, span), last: floorDiv(to - 1n, span) };
 }
 
-/** False → fallback to an exact, uncached request (time bounds or 2^53 ns span). */
+/** False → fallback to an exact, uncached request (tiles outside the time bounds, H1). */
 export function tileable(level: number, first: bigint, last: bigint): boolean {
   const span = tileSpan(level);
   const start = first * span;
   const end = (last + 1n) * span;
-  return start >= TIME_MIN && end <= TIME_MAX && end - start <= MAX_SPAN;
+  return start >= TIME_MIN && end <= TIME_MAX;
 }
 
 /** The request for one run (last − first + 1 ≤ MAX_RUN_TILES; the cache splits longer ones). */

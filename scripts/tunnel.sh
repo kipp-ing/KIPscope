@@ -15,10 +15,16 @@ DIR="${TMPDIR:-/tmp}"
 PIDFILE="$DIR/letsview-tunnel.pid"
 LOG="$DIR/letsview-tunnel.log"
 
+# Prints the keeper's PID. A PID file whose process is gone or is not the keeper
+# (the PID was reused after a reboot) is stale: removed, so stop never signals a stranger.
 keeper_pid() {
   [ -f "$PIDFILE" ] || return 1
   pid=$(cat "$PIDFILE")
-  kill -0 "$pid" 2>/dev/null && echo "$pid"
+  case "$pid" in '' | *[!0-9]*) rm -f "$PIDFILE"; return 1 ;; esac
+  case "$(ps -o command= -p "$pid" 2>/dev/null)" in
+    *"tunnel.sh run"*) echo "$pid" ;;
+    *) rm -f "$PIDFILE"; return 1 ;;
+  esac
 }
 
 run() {

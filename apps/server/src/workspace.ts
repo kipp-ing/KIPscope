@@ -4,13 +4,19 @@ import {
   type ClientRenderStatus,
   Command,
   type CommandResult,
+  type CommandType,
   EMPTY_WORKSPACE,
   type RenderedMessage,
   type RenderStatus,
   type Workspace,
 } from "@letsview/shared";
 
-type Listener = (revision: number, workspace: Workspace) => void;
+type Listener = (revision: number, workspace: Workspace, command: CommandType) => void;
+
+export interface WorkspaceStoreOptions {
+  /** Gets what a listener threw; default `console.error`. */
+  onListenerError?(error: unknown): void;
+}
 
 /**
  * The one open workspace (spec workspace-state), held in memory. Changes only through commands;
@@ -23,9 +29,11 @@ export class WorkspaceStore {
   private readonly listeners = new Set<Listener>();
   private readonly clients = new Map<string, ClientRenderStatus>();
   private nextClient = 1;
+  private readonly onListenerError: (error: unknown) => void;
 
-  constructor(ctx: ApplyContext) {
+  constructor(ctx: ApplyContext, options: WorkspaceStoreOptions = {}) {
     this.ctx = ctx;
+    this.onListenerError = options.onListenerError ?? ((error) => console.error(error));
   }
 
   get workspace(): Workspace {
@@ -49,7 +57,14 @@ export class WorkspaceStore {
     if (!result.ok) return result;
     this.state = result.workspace;
     this.rev++;
-    for (const listener of this.listeners) listener(this.rev, this.state);
+    // A listener that throws neither fails the accepted command nor starves later listeners.
+    for (const listener of this.listeners) {
+      try {
+        listener(this.rev, this.state, parsed.data.type);
+      } catch (error) {
+        this.onListenerError(error);
+      }
+    }
     const answer: CommandResult = { ok: true, revision: this.rev };
     if (result.created !== undefined) answer.created = result.created;
     if (result.createdWindow !== undefined) answer.createdWindow = result.createdWindow;

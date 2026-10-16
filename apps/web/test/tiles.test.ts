@@ -66,6 +66,19 @@ describe("picks the power-of-two width and the touched tiles", () => {
     expect(tileable(20, 0n, 3n)).toBe(true);
     expect(tileable(20, TIME_MAX / tileSpan(20), TIME_MAX / tileSpan(20))).toBe(false);
   });
+
+  it("views longer than 2^53 ns are tileable within the time bounds", () => {
+    const day = 86_400n * 1_000_000_000n;
+    const to = 200n * day;
+    expect(to).toBeGreaterThan(2n ** 53n);
+    const level = levelFor(0n, to, 2000);
+    const { first, last } = touchedTiles(0n, to, level);
+    expect(tileable(level, first, last)).toBe(true);
+    // A range whose last tile ends after TIME_MAX is not.
+    const out = touchedTiles(TIME_MAX - day, TIME_MAX, level);
+    expect(out.last * tileSpan(level) + tileSpan(level)).toBeGreaterThan(TIME_MAX);
+    expect(tileable(level, out.first, out.last)).toBe(false);
+  });
 });
 
 describe("stitches raw tiles like one request", () => {

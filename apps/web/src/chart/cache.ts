@@ -1,4 +1,4 @@
-import type { SeriesResult } from "@letsview/shared";
+import { assertSeries, type SeriesResult } from "@letsview/shared";
 import { fetchSeries } from "../api.ts";
 import {
   deriveRaw,
@@ -19,6 +19,9 @@ export const CACHE_LIMIT = 4_000_000; // weight units (C5)
 export const PREFETCH_IN_FLIGHT = 2; // prefetch runs fetched at once per tab (Z6)
 
 export type Priority = "visible" | "prefetch";
+
+/** Why the source may be reachable again: an answer through the cache, or the live channel opened (H9). */
+export type RecoverReason = "success" | "reconnect";
 
 export type FetchSeries = (request: SeriesRequest, abort: AbortSignal) => Promise<SeriesResult>;
 
@@ -66,13 +69,15 @@ export class SeriesCache {
   private readonly queue: Run[] = [];
   private prefetchRunning = 0;
   private weight = 0;
-  private readonly recoverListeners = new Set<() => void>();
+  private readonly recoverListeners = new Set<(reason: RecoverReason) => void>();
 
   constructor(fetch: FetchSeries, options: CacheOptions = {}) {
-    // Every successful answer through the cache tells the listeners the source is reachable (R7).
+    // Every well-formed answer through the cache tells the listeners the source is reachable (R7);
+    // a malformed one rejects like a failed request, stores no tile and is no recovery (H1).
     this.fetch = (request, abort) =>
       fetch(request, abort).then((result) => {
-        this.notify();
+        assertSeries(result);
+        this.notify("success");
         return result;
       });
     this.limit = options.limit ?? CACHE_LIMIT;
@@ -91,8 +96,11 @@ export class SeriesCache {
     return this.queue.length;
   }
 
-  /** Called after every successful answer through the cache and on `recover()`; returns unsubscribe (R7). */
-  onRecover(listener: () => void): () => void {
+  /**
+   * Called with "success" after every well-formed answer through the cache and with "reconnect" on
+   * `recover()`; returns unsubscribe (R7, H9).
+   */
+  onRecover(listener: (reason: RecoverReason) => void): () => void {
     this.recoverListeners.add(listener);
     return () => {
       this.recoverListeners.delete(listener);
@@ -101,13 +109,13 @@ export class SeriesCache {
 
   /** Tells listeners the source may be reachable again (live channel opened). */
   recover(): void {
-    this.notify();
+    this.notify("reconnect");
   }
 
   /** Calls the listeners once, in a microtask, outside the cache's own bookkeeping. */
-  private notify(): void {
+  private notify(reason: RecoverReason): void {
     queueMicrotask(() => {
-      for (const listener of [...this.recoverListeners]) listener();
+      for (const listener of [...this.recoverListeners]) listener(reason);
     });
   }
 

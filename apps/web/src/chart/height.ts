@@ -24,3 +24,35 @@ export function heightCommand(w: TimeseriesWindow, height: number): CommandInput
   if (height === (w.height ?? DEFAULT_PLOT_HEIGHT)) return undefined;
   return { type: "window.setHeight", windowId: w.id, height };
 }
+
+const ENDS = ["pointerup", "pointercancel", "lostpointercapture"] as const;
+
+/**
+ * Tracks a height drag on `handle` (H8): `pointermove` → `move`; the first of `pointerup`,
+ * `pointercancel` and `lostpointercapture` → `release()`, then `end()`, and the listeners go. The
+ * returned dispose (unmount) calls `release()` unless already done and removes the listeners; it
+ * never calls `end()`.
+ */
+export function trackHeightDrag(
+  handle: EventTarget,
+  h: { move(clientY: number): void; end(): void; release(): void },
+): () => void {
+  let released = false;
+  const move = (e: Event) => h.move((e as PointerEvent).clientY);
+  const stop = () => {
+    handle.removeEventListener("pointermove", move);
+    for (const type of ENDS) handle.removeEventListener(type, finish);
+    if (released) return false;
+    released = true;
+    h.release();
+    return true;
+  };
+  const finish = () => {
+    if (stop()) h.end();
+  };
+  handle.addEventListener("pointermove", move);
+  for (const type of ENDS) handle.addEventListener(type, finish);
+  return () => {
+    stop();
+  };
+}

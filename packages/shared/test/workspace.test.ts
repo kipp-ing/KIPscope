@@ -92,4 +92,13 @@ describe("Command schema", () => {
       RenderedMessage.safeParse({ type: "rendered", revision: 1, status: "done" }).success,
     ).toBe(false);
   });
+
+  it("bounds render acknowledgements", () => {
+    const message = (errors: { windowId: string; message: string }[]) =>
+      RenderedMessage.safeParse({ type: "rendered", revision: 1, status: "error", errors }).success;
+    const error = (text: string) => ({ windowId: "w1", message: text });
+    expect(message(Array.from({ length: 51 }, () => error("x")))).toBe(false);
+    expect(message([error("y".repeat(501))])).toBe(false);
+    expect(message(Array.from({ length: 50 }, () => error("z".repeat(500))))).toBe(true);
+  });
 });

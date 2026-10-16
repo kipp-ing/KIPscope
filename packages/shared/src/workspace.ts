@@ -7,6 +7,13 @@ export const MAX_SIGNALS = 50;
 /** At most four units per window (D-019). */
 export const MAX_UNITS = 4;
 
+/** Windows of both kinds together per workspace (design H4). */
+export const MAX_WINDOWS = 64;
+/** Errors per render acknowledgement (design H4). */
+export const MAX_RENDER_ERRORS = 50;
+/** Characters per render error message (design H4). */
+export const MAX_RENDER_ERROR_LENGTH = 500;
+
 export const DEFAULT_PLOT_HEIGHT = 280;
 export const MIN_PLOT_HEIGHT = 120;
 export const MAX_PLOT_HEIGHT = 1200;
@@ -239,6 +246,7 @@ export const Command = z.discriminatedUnion("type", [
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
 export type CommandInput = z.input<typeof Command>;
+export type CommandType = Command["type"];
 
 export type CommandErrorCode =
   | "invalid_command"
@@ -249,7 +257,12 @@ export type CommandErrorCode =
   | "invalid_range"
   | "already_in_window"
   | "too_many_units"
-  | "cursor_off";
+  | "cursor_off"
+  | "window_limit"
+  /** Client only: the request did not reach the server (never sent by the server). */
+  | "network"
+  /** Client only: the answer was not a command result (never sent by the server). */
+  | "bad_response";
 
 export type CommandResult =
   | {
@@ -264,12 +277,18 @@ export type CommandResult =
 /** Messages on `WS /api/live`. */
 export type LiveServerMessage =
   | { type: "hello"; clientId: string }
-  | { type: "state"; revision: number; workspace: Workspace };
+  | {
+      type: "state";
+      revision: number;
+      workspace: Workspace;
+      /** Type of the command that made this revision; absent on the state sent on connect. */
+      command?: CommandType;
+    };
 
 export const RenderError = z.object({
-  windowId: z.string().optional(),
-  signalId: z.string().optional(),
-  message: z.string(),
+  windowId: z.string().max(200).optional(),
+  signalId: z.string().max(200).optional(),
+  message: z.string().max(MAX_RENDER_ERROR_LENGTH),
 });
 export type RenderError = z.infer<typeof RenderError>;
 
@@ -277,7 +296,7 @@ export const RenderedMessage = z.object({
   type: z.literal("rendered"),
   revision: z.number().int().min(0),
   status: z.enum(["complete", "error"]),
-  errors: z.array(RenderError).optional(),
+  errors: z.array(RenderError).max(MAX_RENDER_ERRORS).optional(),
 });
 export type RenderedMessage = z.infer<typeof RenderedMessage>;
 

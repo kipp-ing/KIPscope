@@ -62,7 +62,7 @@ import {
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
-import { draggedHeight, heightCommand, startsHeightDrag } from "./height.ts";
+import { draggedHeight, heightCommand, startsHeightDrag, trackHeightDrag } from "./height.ts";
 import type { Insets } from "./insets.ts";
 import { linkedPreview, shownRange, useLinkedPreview } from "./linkedPreview.ts";
 import {
@@ -79,7 +79,7 @@ import {
   useLiveCursor,
   useLiveNear,
 } from "./live.ts";
-import { type LoadRequest, loadStatusText, SeriesLoader } from "./loader.ts";
+import { type LoadRequest, loadKey, loadStatusText, SeriesLoader } from "./loader.ts";
 import { WINDOW_LOADER_OPTIONS } from "./overview.ts";
 import {
   chartValueAt,
@@ -118,6 +118,8 @@ const HINT_REFUSED = `At most ${MAX_UNITS} units per window`;
 interface Props {
   window: WindowState;
   revision: number;
+  /** The tab's count of `window.setRange` pushes (live.rangeSets): a rise hands the requests to the loader again (H7). */
+  rangeSets: number;
   info: (signalId: string) => SignalInfo | undefined;
   /** From signalColor(workspace, id). */
   colorOf: (signalId: string) => string;
@@ -512,6 +514,7 @@ function LiveCell({
 export function TimeseriesWindow({
   window: w,
   revision,
+  rangeSets,
   info,
   colorOf,
   onCommand,
@@ -551,6 +554,9 @@ export function TimeseriesWindow({
   if (heightDrag && heightDrag.base !== w.height) setHeightDrag(undefined);
   const storedHeight = w.height ?? DEFAULT_PLOT_HEIGHT;
   const plotHeight = heightDrag && heightDrag.base === w.height ? heightDrag.height : storedHeight;
+  // The running height drag's dispose; called on unmount, which sends no command (H8).
+  const disposeHeightDrag = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => disposeHeightDrag.current?.(), []);
 
   const serverRange: Range = useMemo(
     () => ({ from: BigInt(w.range.from), to: BigInt(w.range.to) }),
@@ -647,17 +653,20 @@ export function TimeseriesWindow({
       ? []
       : w.signals.map((s) => ({ key: s.id, signalId: s.signalId, from, to, target }));
   // Loads follow the shown range during the gesture (Z1); the acknowledgement the committed one.
+  // Keyed on the signals' content and the range-command count, not the `signals` array, which is
+  // new on every revision: unrelated revisions do not retry a failed signal (H7).
   const viewFrom = view.from.toString();
   const viewTo = view.to.toString();
+  const signalsKey = loadKey(w.signals, 0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
   const requests = useMemo(
     () => loadRequests(viewFrom, viewTo),
-    [w.signals, viewFrom, viewTo, target, width],
+    [loadKey(w.signals, rangeSets), viewFrom, viewTo, target, width],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
   const committedRequests = useMemo(
     () => loadRequests(w.range.from, w.range.to),
-    [w.signals, w.range.from, w.range.to, target, width],
+    [signalsKey, w.range.from, w.range.to, target, width],
   );
   // Before paint, so a cached view is drawn in the frame that applied the step.
   useLayoutEffect(() => loader.update(requests), [loader, requests]);
@@ -1293,6 +1302,7 @@ export function TimeseriesWindow({
     if (!startsHeightDrag(e)) return;
     e.preventDefault();
     const handle = e.currentTarget;
+    disposeHeightDrag.current?.();
     handle.setPointerCapture(e.pointerId);
     handle.classList.add("active");
     const releaseSelect = holdNoSelect();
@@ -1301,28 +1311,28 @@ export function TimeseriesWindow({
     const startHeight = plotHeight;
     const base = w.height;
     let height = startHeight;
-    const move = (ev: PointerEvent) => {
-      height = draggedHeight(startHeight, ev.clientY - startY);
-      setHeightDrag({ ...(base !== undefined ? { base } : {}), height });
-    };
-    const end = async () => {
-      releaseSelect();
-      releaseLive();
-      handle.classList.remove("active");
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
-      const command = heightCommand(w, height);
-      if (!command) {
-        setHeightDrag(undefined);
-        return;
-      }
-      const result = await onCommand(command);
-      if (!result.ok) setHeightDrag(undefined);
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
+    // Ends on release, cancel or lost capture; unmount only releases (H8).
+    disposeHeightDrag.current = trackHeightDrag(handle, {
+      move: (clientY) => {
+        height = draggedHeight(startHeight, clientY - startY);
+        setHeightDrag({ ...(base !== undefined ? { base } : {}), height });
+      },
+      release: () => {
+        disposeHeightDrag.current = undefined;
+        releaseSelect();
+        releaseLive();
+        handle.classList.remove("active");
+      },
+      end: async () => {
+        const command = heightCommand(w, height);
+        if (!command) {
+          setHeightDrag(undefined);
+          return;
+        }
+        const result = await onCommand(command);
+        if (!result.ok) setHeightDrag(undefined);
+      },
+    });
   };
 
   const shown = view;

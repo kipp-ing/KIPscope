@@ -14,6 +14,9 @@
  *                         RPM 100 x 1 s (11 SNA, incl. 8191.500000001; 8191.0 stays valid), TEMP 10 (2 SNA),
  *                         COUNTER 16 (0 SNA), STATE 10 (4 SNA), MODE 10 (2 SNA)
  * - othercar / Fast_100h.SIG_A  10 points; same signal name, other vehicle
+ * - spancar / Span_910h.FAR  5 points far apart (span and epoch tests of harden-robustness): values 1..5 at
+ *                         1969-12-31T23:59:58.5Z, 23:59:59.5Z, 1970-01-01T00:00:00.5Z, 2026-01-01T00:00:00Z,
+ *                         2026-10-01T00:00:00Z
  * - sdlog.signals_ns: Ns_600h.FINE  1,000 points from 2026-10-14T08:00:00.123456789Z, 1,001 ns apart
  *
  * Run: pnpm --filter @letsview/server seed:test   (needs `docker compose up -d`)
@@ -22,8 +25,22 @@ import { createClient } from "@clickhouse/client";
 
 const url = process.env.TEST_CLICKHOUSE_URL;
 if (!url) throw new Error("TEST_CLICKHOUSE_URL is not set (see .env.example)");
-if (url === process.env.CLICKHOUSE_URL) {
-  throw new Error("TEST_CLICKHOUSE_URL equals CLICKHOUSE_URL; refusing to seed the real database");
+
+/** Same server: equal port and equal host, where localhost, 127.0.0.1 and [::1] are one host. */
+function sameServer(a: string, b: string): boolean {
+  const key = (text: string) => {
+    const u = new URL(text);
+    const host = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(u.hostname.toLowerCase())
+      ? "loopback"
+      : u.hostname.toLowerCase();
+    return `${host}:${u.port || (u.protocol === "https:" ? "443" : "80")}`;
+  };
+  return key(a) === key(b);
+}
+if (process.env.CLICKHOUSE_URL && sameServer(url, process.env.CLICKHOUSE_URL)) {
+  throw new Error(
+    "TEST_CLICKHOUSE_URL points at the same server as CLICKHOUSE_URL; refusing to seed the real database",
+  );
 }
 
 const client = createClient({
@@ -33,6 +50,14 @@ const client = createClient({
 });
 
 const BASE_MS = Date.UTC(2026, 9, 1);
+/** Span_910h.FAR: [epoch ms, value]; exercises times more than 104 days apart and around 1970. */
+const SPAN_POINTS: [number, number][] = [
+  [Date.UTC(1969, 11, 31, 23, 59, 58, 500), 1],
+  [Date.UTC(1969, 11, 31, 23, 59, 59, 500), 2],
+  [Date.UTC(1970, 0, 1, 0, 0, 0, 500), 3],
+  [Date.UTC(2026, 0, 1), 4],
+  [Date.UTC(2026, 9, 1), 5],
+];
 const NS_BASE = 1791964800123456789n; // 2026-10-14T08:00:00.123456789Z
 
 const schema = (table: string, precision: number) => `
@@ -134,6 +159,11 @@ const statements = [
      FROM numbers(10)`,
   ),
   insert(
+    "signals",
+    `SELECT 'spancar', 'span-dev', 'c9', 'Span_910h.FAR', fromUnixTimestamp64Milli(toInt64(t.1), 'UTC'), t.2
+     FROM (SELECT arrayJoin([${SPAN_POINTS.map(([ms, v]) => `(${ms}, ${v})`).join(", ")}]) AS t)`,
+  ),
+  insert(
     "signals_ns",
     `SELECT 'testcar', 'test-dev', 'c7', 'Ns_600h.FINE',
        fromUnixTimestamp64Nano(toInt64(${NS_BASE}) + toInt64(number * 1001), 'UTC'), number
@@ -143,10 +173,10 @@ const statements = [
 
 /** Spot checks: query → expected single value. */
 const checks: [string, string][] = [
-  ["SELECT count() FROM sdlog.signals", "21613857"],
+  ["SELECT count() FROM sdlog.signals", "21613862"],
   [
     "SELECT count() FROM (SELECT DISTINCT vehicle, signal FROM sdlog.signals WHERE utc IS NOT NULL)",
-    "1013",
+    "1014",
   ],
   [
     "SELECT max(value) FROM sdlog.signals WHERE signal = 'Fast_100h.SIG_A' AND vehicle = 'testcar' AND utc IS NOT NULL",
@@ -168,6 +198,10 @@ const checks: [string, string][] = [
   [
     "SELECT countIf(value = 511) FROM sdlog.signals WHERE signal = 'Sna_800h.SPEED' AND vehicle = 'testcar'",
     "203",
+  ],
+  [
+    "SELECT arrayStringConcat(arrayMap(x -> toString(toUnixTimestamp64Milli(x)), groupArray(utc)), ',') FROM (SELECT utc FROM sdlog.signals WHERE vehicle = 'spancar' ORDER BY utc)",
+    SPAN_POINTS.map(([ms]) => ms).join(","),
   ],
   ["SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.signals_ns", NS_BASE.toString()],
 ];

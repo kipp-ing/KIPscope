@@ -392,3 +392,47 @@ describe("WS /api/live and GET /api/render-status", () => {
       .toBe(false);
   });
 });
+
+describe("listeners and pushes (harden-robustness)", () => {
+  it("a throwing listener neither fails the command nor starves later listeners", () => {
+    const errors: unknown[] = [];
+    const boom = new Error("push failed");
+    const store = new WorkspaceStore(
+      { signalExists: () => true },
+      { onListenerError: (error) => errors.push(error) },
+    );
+    const got: number[][] = [[], [], []];
+    store.subscribe((revision) => got[0]?.push(revision));
+    store.subscribe(() => {
+      throw boom;
+    });
+    store.subscribe((revision) => got[2]?.push(revision));
+    const result = store.execute({ type: "window.create", from: "0", to: "10" });
+    expect(result).toMatchObject({ ok: true, revision: 1 });
+    expect(got[0]).toEqual([1]);
+    expect(got[2]).toEqual([1]);
+    expect(errors).toEqual([boom]);
+  });
+
+  it("names the command type in state pushes", async () => {
+    const { app, workspace } = setup();
+    workspace.execute({ type: "window.create", from: "0", to: "10" });
+    const base = await app.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const client = await connect(base);
+      const first = await client.next((m) => m.type === "state");
+      expect(first).not.toHaveProperty("command");
+      const res = await fetch(`${base}/api/commands`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "window.setRange", windowId: "w1", from: "0", to: "10" }),
+      });
+      const { revision } = (await res.json()) as { revision: number };
+      const pushed = await client.next((m) => m.type === "state" && m.revision === revision);
+      expect(pushed).toMatchObject({ type: "state", revision, command: "window.setRange" });
+      client.ws.close();
+    } finally {
+      await app.close();
+    }
+  });
+});

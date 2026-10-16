@@ -26,8 +26,8 @@ export const workspaceRoutes =
       const send = (message: LiveServerMessage) => socket.send(JSON.stringify(message));
       send({ type: "hello", clientId });
       send({ type: "state", revision: workspace.revision, workspace: workspace.workspace });
-      const unsubscribe = workspace.subscribe((revision, state) =>
-        send({ type: "state", revision, workspace: state }),
+      const unsubscribe = workspace.subscribe((revision, state, command) =>
+        send({ type: "state", revision, workspace: state, command }),
       );
 
       socket.on("message", (data: Buffer) => {

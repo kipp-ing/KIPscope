@@ -855,4 +855,33 @@ describe("user options (improve-navigation)", () => {
       ).toBe(false);
     }
   });
+
+  it("rejects a 65th window with window_limit", () => {
+    let state = EMPTY_WORKSPACE;
+    for (let i = 0; i < 64; i++) {
+      state = ok(state, i % 2 ? { type: "window.create", kind: "values" } : create).workspace;
+    }
+    expect(state.windows).toHaveLength(64);
+    for (const input of [create, { type: "window.create", kind: "values" } as const]) {
+      const r = run(state, input);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.code).toBe("window_limit");
+    }
+    expect(state.windows).toHaveLength(64);
+  });
+
+  it("trims the title on window.create", () => {
+    for (const kind of ["timeseries", "values"] as const) {
+      const extra = kind === "timeseries" ? { from: "0", to: "1000" } : {};
+      const blank = ok(EMPTY_WORKSPACE, { type: "window.create", kind, title: "  ", ...extra });
+      expect(blank.workspace.windows[0]).not.toHaveProperty("title");
+      const padded = ok(EMPTY_WORKSPACE, {
+        type: "window.create",
+        kind,
+        title: "  Speeds ",
+        ...extra,
+      });
+      expect(padded.workspace.windows[0]?.title).toBe("Speeds");
+    }
+  });
 });

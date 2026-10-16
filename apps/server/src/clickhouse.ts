@@ -174,11 +174,12 @@ export class ClickHouseSource implements DataSource {
     const { time, value } = this.c;
     const sna = this.isSna(ref);
     // An all-SNA bucket has no valid point, so the -IfOrNull aggregates return NULL for it.
+    // Starts lie on the floor grid k * w, also before 1970 (design H2).
     const rows = await this.rows<
       [string, string, string, number | null, number | null, number | null]
     >(
-      `WITH ${sna.expr} AS s
-       SELECT toString(intDiv(toUnixTimestamp64Nano(${time}), {w:Int64}) * {w:Int64}) AS b,
+      `WITH ${sna.expr} AS s, toUnixTimestamp64Nano(${time}) AS x
+       SELECT toString(x - positiveModulo(x, {w:Int64})) AS b,
               countIf(NOT s), countIf(s),
               avgIfOrNull(${value}, NOT s), minIfOrNull(${value}, NOT s), maxIfOrNull(${value}, NOT s)
        FROM ${this.table}

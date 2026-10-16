@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError, fetchSeries } from "../src/api.ts";
+import { ApiRequestError, fetchSeries, sendCommand } from "../src/api.ts";
 import { retryable } from "../src/chart/loader.ts";
 
 const REQUEST = { signalId: "c/s", from: "0", to: "1000", target: 257 };
@@ -52,5 +52,34 @@ describe("api errors", () => {
 
     // A network failure has no status and is retryable.
     expect(retryable(await failure(new TypeError("Failed to fetch")))).toBe(true);
+  });
+});
+
+describe("sendCommand", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const command = { type: "window.rename", windowId: "w1", title: "x" } as const;
+
+  it("sendCommand resolves every failure to a rejected result", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    const network = await sendCommand(command);
+    expect(network).toMatchObject({ ok: false, code: "network" });
+    expect(!network.ok && network.message).toContain("Failed to fetch");
+
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        new Response("<html>Bad Gateway</html>", { status: 502, statusText: "Bad Gateway" }),
+      ),
+    );
+    const proxy = await sendCommand(command);
+    expect(proxy).toMatchObject({ ok: false, code: "bad_response" });
+    expect(!proxy.ok && proxy.message).toContain("502");
+
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response('{"foo":1}', { status: 200 })));
+    const foreign = await sendCommand(command);
+    expect(foreign).toMatchObject({ ok: false, code: "bad_response" });
+    expect(!foreign.ok && foreign.message.length).toBeGreaterThan(0);
   });
 });

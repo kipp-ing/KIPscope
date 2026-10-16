@@ -48,7 +48,7 @@ docker compose up -d
 pnpm --filter @letsview/server seed:test
 ```
 
-The seed script refuses to run if `TEST_CLICKHOUSE_URL` equals `CLICKHOUSE_URL`.
+The seed script refuses to run if `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` name the same host and port (`localhost`, `127.0.0.1` and `[::1]` count as one host).
 
 ## Run
 
@@ -56,6 +56,10 @@ The seed script refuses to run if `TEST_CLICKHOUSE_URL` equals `CLICKHOUSE_URL`.
 pnpm --filter @letsview/server dev   # server
 pnpm --filter @letsview/web dev      # UI at http://localhost:5173, proxies /api to the server
 ```
+
+The UI's dev server proxies `/api` and the live channel to `LETSVIEW_SERVER_URL` (default `http://127.0.0.1:7310`).
+
+The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `LETSVIEW_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `LETSVIEW_HOST` logs a warning at start: there is no authentication.
 
 ## Using the app
 
@@ -110,8 +114,9 @@ display:
 ## Check
 
 ```sh
+pnpm check   # all three below; exits non-zero on the first failure
 pnpm build   # typecheck (+ web bundle)
-pnpm test
+pnpm test    # needs the seeded test database (see Data sources)
 pnpm lint    # pnpm format to fix
 ```
 

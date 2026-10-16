@@ -7,14 +7,28 @@ export interface LiveState {
   clientId?: string;
   revision: number;
   workspace?: Workspace;
+  /** State pushes caused by `window.setRange` since the tab opened (design H7). */
+  rangeSets: number;
+}
+
+/** The live state after one server message (design H7). */
+export function applyLiveMessage(state: LiveState, message: LiveServerMessage): LiveState {
+  if (message.type === "hello") return { ...state, clientId: message.clientId };
+  return {
+    ...state,
+    revision: message.revision,
+    workspace: message.workspace,
+    rangeSets: state.rangeSets + (message.command === "window.setRange" ? 1 : 0),
+  };
 }
 
 /**
  * Connection to `WS /api/live`: receives the workspace after every accepted command and sends
- * render acknowledgements. Reconnects after a second when the connection drops.
+ * render acknowledgements. Reconnects after a second when the connection drops. `send` returns
+ * whether the socket took the message (design H6).
  */
-export function useLive(): [LiveState, (message: RenderedMessage) => void] {
-  const [state, setState] = useState<LiveState>({ connected: false, revision: -1 });
+export function useLive(): [LiveState, (message: RenderedMessage) => boolean] {
+  const [state, setState] = useState<LiveState>({ connected: false, revision: -1, rangeSets: 0 });
   const socket = useRef<WebSocket | undefined>(undefined);
 
   useEffect(() => {
@@ -31,8 +45,7 @@ export function useLive(): [LiveState, (message: RenderedMessage) => void] {
       };
       ws.onmessage = (event) => {
         const message = JSON.parse(event.data) as LiveServerMessage;
-        if (message.type === "hello") setState((s) => ({ ...s, clientId: message.clientId }));
-        else setState((s) => ({ ...s, revision: message.revision, workspace: message.workspace }));
+        setState((s) => applyLiveMessage(s, message));
       };
       ws.onclose = () => {
         setState((s) => ({ ...s, connected: false }));
@@ -47,8 +60,15 @@ export function useLive(): [LiveState, (message: RenderedMessage) => void] {
     };
   }, []);
 
-  const send = useCallback((message: RenderedMessage) => {
-    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify(message));
+  const send = useCallback((message: RenderedMessage): boolean => {
+    const ws = socket.current;
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   return [state, send];

@@ -6,6 +6,8 @@ import {
   NS_PER_S,
   type RawSeries,
   type SeriesResult,
+  TIME_MAX,
+  TIME_MIN,
   toIso,
 } from "@letsview/shared";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -261,5 +263,23 @@ describe("aligned requests share buckets", () => {
     expect(b.mean).toEqual(tail(a.mean));
     expect(b.min).toEqual(tail(a.min));
     expect(b.max).toEqual(tail(a.max));
+  });
+});
+
+describe("bucket width and the floor grid (harden-robustness)", () => {
+  it("caps the bucket width at 2^62 ns", () => {
+    expect(bucketWidth(TIME_MIN, TIME_MAX, 2)).toBe(2n ** 62n);
+    expect(bucketWidth(0n, 10_000n, 2)).toBe(10_000n);
+  });
+
+  it("buckets before 1970 on the floor grid", async () => {
+    const buckets = await source.buckets(
+      ref("Span_910h.FAR", "spancar"),
+      iso("1969-12-31T23:59:57Z"),
+      iso("1970-01-01T00:00:01Z"),
+      NS_PER_S,
+    );
+    expect(buckets.map((b) => b.start)).toEqual([-2n * NS_PER_S, -NS_PER_S, 0n]);
+    expect(buckets.map((b) => b.count)).toEqual([1, 1, 1]);
   });
 });

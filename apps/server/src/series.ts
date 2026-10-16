@@ -14,12 +14,19 @@ export const MAX_TARGET = 20_000;
 const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
 
 /**
+ * Largest bucket width (design H2): it and every bucket start `t - pmod(t, w)` fit in int64 for
+ * any range within the time bounds, and such a range touches at most 3 buckets.
+ */
+export const MAX_BUCKET_WIDTH = 2n ** 62n;
+
+/**
  * Bucket width for [from, to) such that at most `target` grid buckets touch the range: a range of
  * length L meets at most ceil(L / w) + 1 buckets on the grid k * w, and w = ceil(L / (target - 1))
- * keeps that at `target`.
+ * keeps that at `target`. Capped at MAX_BUCKET_WIDTH.
  */
 export function bucketWidth(from: Timestamp, to: Timestamp, target: number): bigint {
-  return ceilDiv(to - from, BigInt(Math.max(target - 1, 1)));
+  const width = ceilDiv(to - from, BigInt(Math.max(target - 1, 1)));
+  return width < MAX_BUCKET_WIDTH ? width : MAX_BUCKET_WIDTH;
 }
 
 const edge = (p: RawPoint | undefined): EdgePoint | undefined => p && { t: p.t.toString(), v: p.v };

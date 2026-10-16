@@ -1,6 +1,6 @@
 import type { Extent, SeriesResult } from "@letsview/shared";
 import { ApiRequestError } from "../api.ts";
-import type { SeriesCache } from "./cache.ts";
+import type { RecoverReason, SeriesCache } from "./cache.ts";
 import {
   emptyTile,
   levelFor,
@@ -66,6 +66,17 @@ export function loadStatusText(state: LoadState | undefined): string {
   return state?.status === "complete" ? "" : "loading";
 }
 
+/**
+ * What a window's requests follow besides view, target and width (H7): its signal assignments and
+ * the tab's count of `window.setRange` commands. Equal for a new but equal `signals` array.
+ */
+export function loadKey(
+  signals: readonly { id: string; signalId: string }[],
+  rangeSets: number,
+): string {
+  return JSON.stringify([signals.map((s) => [s.id, s.signalId]), rangeSets]);
+}
+
 const requestId = (r: LoadRequest) => `${r.signalId}|${r.from}|${r.to}|${r.target}`;
 
 /** A request's tile grid; not `tileable` → fetched exactly and not cached (C1 fallback). */
@@ -103,6 +114,8 @@ interface Failures {
   /** `Date.now()` of the last failure. */
   at: number;
   retryable: boolean;
+  /** A success of another request already pulled this run forward (H9). */
+  pulled?: true;
 }
 
 let loaders = 0;
@@ -434,23 +447,38 @@ export class SeriesLoader {
       ...(shown?.placeholder ? { placeholder: true } : {}),
     });
     if (!this.options.retry) return;
-    const count = (this.failures.get(key)?.count ?? 0) + 1;
+    const previous = this.failures.get(key);
+    const count = (previous?.count ?? 0) + 1;
     const at = Date.now();
     const again = retryable(error);
-    this.failures.set(key, { count, at, retryable: again });
-    this.unsubscribe ??= this.cache.onRecover(() => this.recovered());
+    // `pulled` lasts for the whole run of failures; `complete` ends the run (H9).
+    this.failures.set(key, {
+      count,
+      at,
+      retryable: again,
+      ...(previous?.pulled ? { pulled: true } : {}),
+    });
+    this.unsubscribe ??= this.cache.onRecover((reason) => this.recovered(reason));
     if (!again) return;
     const delay = RETRY_DELAYS_MS[Math.min(count, RETRY_DELAYS_MS.length) - 1] as number;
     this.retryAt(key, at + delay);
   }
 
-  /** Something of the tab succeeded or the live channel opened: retry failed keys now (R3 a, b). */
-  private recovered(): void {
+  /**
+   * Something of the tab succeeded or the live channel opened: retry failed keys now (R3 a, b). A
+   * success pulls a key forward once per run of failures, a reconnect always (H9).
+   */
+  private recovered(reason: RecoverReason): void {
     const now = Date.now();
     const keys = [...this.states].filter(([, s]) => s.status === "error").map(([key]) => key);
     for (const key of keys) {
       const failures = this.failures.get(key);
-      if (failures?.retryable) this.retryAt(key, Math.max(now, failures.at + RETRY_FLOOR_MS));
+      if (!failures?.retryable) continue;
+      if (reason === "success") {
+        if (failures.pulled) continue;
+        failures.pulled = true;
+      }
+      this.retryAt(key, Math.max(now, failures.at + RETRY_FLOOR_MS));
     }
   }
 

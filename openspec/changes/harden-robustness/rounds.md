@@ -1,0 +1,2 @@
+Round 1: continue - 1.1, 2.1, 3.1-3.3, 4.2 fulfilled; open: refused upgrades leave half-open sockets in app.ts (guard runs before the websocket hook, app.close hangs) and a TS2345 in access.http.test.ts break build and test; 5.2 and pnpm check not run.
+Round 2: needs_jan - 2.2 fulfilled (refused upgrade no longer half-open, app.close returns, server suite 13/13); only lead-run checks remain: one pnpm check run (5.1, tester report contradicts itself), 5.2 tunnel.sh stale-PID verify (live keeper pid 44851), 4.1 stopped-ClickHouse verify (shared test DB), 6.1 manual checks.

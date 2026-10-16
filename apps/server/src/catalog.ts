@@ -23,6 +23,14 @@ export function warnDisplayFallbacks(log: { warn(message: string): void }, catal
     );
 }
 
+/** Where the catalog reports what it skipped while loading (design H5). */
+export interface CatalogLog {
+  warn(message: string): void;
+}
+
+/** Loads the DBC metadata; reports each skipped file through `warn`. */
+type LoadMetadata = (warn: (message: string) => void) => Promise<Map<string, DbcSignal>>;
+
 /**
  * In-memory signal catalog (design D5): the signals that have data in the source, merged with
  * DBC metadata by signal name. This is metadata only, not a data cache.
@@ -42,25 +50,41 @@ export class Catalog {
   displayFallbacks: readonly string[] = [];
 
   private readonly source: DataSource;
-  private readonly loadMetadata: () => Promise<Map<string, DbcSignal>>;
+  private readonly loadMetadata: LoadMetadata;
   private readonly rules: DisplayRules;
+  private readonly log: CatalogLog | undefined;
+  /** The load in progress; further refreshes share it (single flight). */
+  private running: Promise<void> | undefined;
 
   constructor(
     source: DataSource,
-    loadMetadata: () => Promise<Map<string, DbcSignal>>,
+    loadMetadata: LoadMetadata,
     rules: DisplayRules = NO_RULES,
+    log?: CatalogLog,
   ) {
     this.source = source;
     this.loadMetadata = loadMetadata;
     this.rules = rules;
+    this.log = log;
   }
 
-  /** Reloads signals and metadata. On failure the previous catalog stays in place. */
-  async refresh(): Promise<void> {
+  /**
+   * Reloads signals and metadata. On failure the previous catalog stays in place. While a load
+   * runs, further calls return the same promise instead of starting another load.
+   */
+  refresh(): Promise<void> {
+    this.running ??= this.load().finally(() => {
+      this.running = undefined;
+    });
+    return this.running;
+  }
+
+  private async load(): Promise<void> {
     let refs: Awaited<ReturnType<DataSource["listSignals"]>>;
     let metadata: Map<string, DbcSignal>;
+    const warn = (message: string) => this.log?.warn(`DBC file skipped: ${message}`);
     try {
-      [refs, metadata] = await Promise.all([this.source.listSignals(), this.loadMetadata()]);
+      [refs, metadata] = await Promise.all([this.source.listSignals(), this.loadMetadata(warn)]);
     } catch (error) {
       this.lastFailure = error;
       this.lastError = errorMessage(error);
@@ -145,6 +169,42 @@ export class Catalog {
     const items = matches.slice(offset, offset + size);
     return { items, total: matches.length, more: offset + items.length < matches.length };
   }
+}
+
+/** Delays between background catalog loads after failures in a row; the last one repeats. */
+export const CATALOG_RETRY_MS = [1000, 2000, 4000, 8000, 16000, 30000] as const;
+
+/**
+ * Refreshes now and after each failure (delays CATALOG_RETRY_MS) until the catalog has loaded
+ * once (design H5); returns stop(). A load that succeeded elsewhere meanwhile ends it too.
+ */
+export function keepCatalogLoaded(
+  catalog: Catalog,
+  events: { loaded(): void; failed(error: unknown, retryInMs: number): void },
+): () => void {
+  let stopped = false;
+  let failures = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const attempt = () => {
+    timer = undefined;
+    if (stopped || catalog.loadedAt) return;
+    catalog.refresh().then(
+      () => {
+        if (!stopped) events.loaded();
+      },
+      (error: unknown) => {
+        if (stopped) return;
+        const delay = CATALOG_RETRY_MS[Math.min(failures++, CATALOG_RETRY_MS.length - 1)] as number;
+        events.failed(error, delay);
+        timer = setTimeout(attempt, delay);
+      },
+    );
+  };
+  attempt();
+  return () => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+  };
 }
 
 const NETWORK_CODES =
