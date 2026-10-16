@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-061: Diagnostic catalog as metadata source (2026-10-16)
+
+- **Context:** Jan: „if you look now: each cell voltage has its axle". The `BMS.*` readings have no DBC entry, so no unit, and every unit-less signal gets its own y axis (max 4 per window). The decoder's catalog knows them: `CarController/vehicles/smart451/uds/bms-live.manifest.json` (fields with `unit` V, °C, %, A, As, kOhm, km, s; `scales` with factor/offset, `text`, `invalid` sentinels; 22 `enum` fields such as `PRES_Contactor_State` open / precharge / closed) and `bms-live.names.toml` (field → signal name `BMS.<name>`, arrays `.001`…).
+- **Decision (lead, on Jan's report):** KIPscope reads the diagnostic catalog (manifest + names) like the DBC files: unit, enum state names and invalid sentinels per `BMS.*` signal. Cell voltages then share one `V` axis. Supersedes "units for the BMS readings: not now" of D-058. The enum names feed D-059's state names.
+
 ## D-060: Strip navigation conventions (2026-10-16)
 
 From the archived change `add-strip-navigation`; details there.
