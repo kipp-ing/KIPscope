@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-057: Interactive time strip (2026-10-16)
+
+- **Context:** Jan: „we hav the "sky" where we have data. thats good. but not interactive. will you give it more reason? I no UI expert. but big chances". On smart451 the strip spans ~4.9 d at 1 bar = 1 h: a few drives (up to 50 M rows/h), a steady trickle (~160 k rows/h) between them, many empty hours; a 20 min view is less than one bar.
+- **Decision:** Supersedes "no click action" of D-056 and "Clicking does nothing" of `time-strip`. Jan chose three parts of the lead's proposal:
+  - **Navigate:** click a bar jumps there keeping the span; drag across the strip zooms to that range; the shown range is a grabbable window (slide = pan, edges = zoom), pixel-exact with a minimum width; double-click shows the whole recording.
+  - **Hover and markers:** a bar's tooltip gives its time range and rows; cursors A, B and the live cursor L are marked on the strip.
+  - **Drives:** the server finds drives; clicking a drive fits it; keys step to the previous/next drive. The trickle between drives is **not** a drive („only real bursts"); it still shows as bars.
+- **Lead's defaults:** the strip always shows the whole recording; strip actions act on the bar target, or on all windows when time is linked (as Go to). Signal coverage (where a hovered signal has data) is out of scope for now.
+
 ## D-056: Design language conventions (2026-10-16)
 
 From the archived change `adopt-design-language`; details there.
