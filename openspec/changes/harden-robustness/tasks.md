@@ -13,7 +13,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 - 5.1: `package.json`, `apps/server/package.json`, `pnpm-lock.yaml`, `README.md`
 - 5.2: `scripts/tunnel.sh`
 
-Task 3.2's H9 part waits for Jan's answer to design Q1; everything else does not.
+Jan agreed to Q1 (2026-10-16): task 3.2 includes H9.
 
 ## 1. packages/shared
 
@@ -51,8 +51,8 @@ Task 3.2's H9 part waits for Jan's answer to design Q1; everything else does not
 - [ ] 3.2 Loader and cache (H1, H6, H7, H9):
   - `tiles.ts`: `tileable` without `MAX_SPAN`.
   - `cache.ts`: wrapped fetch calls `assertSeries` before notifying; `onRecover` listeners get `"success"` or `"reconnect"`.
-  - `loader.ts`: `loadKey`. **After Jan's yes to Q1:** `pulled` per failure record; `"success"` pulls a key forward once per run, `"reconnect"` always.
-  - Verify: scenarios "A 200-day view is tileable", "Exact view with a malformed answer", "Tiled view with a malformed answer", "Load key"; after Q1: "A signal that keeps failing is pulled forward once", "Reconnect pulls forward again"; the existing "Another request succeeds", "Floor of 1 s" and "Live channel reconnects" tests stay green.
+  - `loader.ts`: `loadKey`. `pulled` per failure record; `"success"` pulls a key forward once per run, `"reconnect"` always.
+  - Verify: scenarios "A 200-day view is tileable", "Exact view with a malformed answer", "Tiled view with a malformed answer", "Load key"; "A signal that keeps failing is pulled forward once", "Reconnect pulls forward again"; the existing "Another request succeeds", "Floor of 1 s" and "Live channel reconnects" tests stay green.
 - [ ] 3.3 Window (H7, H8):
   - `height.ts`: `trackHeightDrag`; `TimeseriesWindow.tsx` uses it and disposes it on unmount.
   - `TimeseriesWindow.tsx`: prop `rangeSets`; `requests` memo on `loadKey(w.signals, rangeSets)` plus view, target, width; `committedRequests` on the signals part.
@@ -65,7 +65,7 @@ Task 3.2's H9 part waits for Jan's answer to design Q1; everything else does not
   - `seed-test-db.ts`: data reference `spancar`, signal `Span_910h.FAR` with points at 1969-12-31T23:59:58.5Z, 23:59:59.5Z, 1970-01-01T00:00:00.5Z, 2026-01-01T00:00:00Z, 2026-10-01T00:00:00Z; adjust any test that counts all signals. Seed guard: refuse when `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` have the same port and the same host, where `localhost`, `127.0.0.1` and `[::1]` count as one host.
   - `test/globalSetup.ts` + `vitest.config.ts` `globalSetup`: load `.env` like `setup.ts`, ping the test ClickHouse and check that `spancar/Span_910h.FAR` exists; otherwise fail once with: `test ClickHouse at <url> is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @letsview/server seed:test\``.
   - Verify: `pnpm --filter @letsview/shared test` and `pnpm --filter @letsview/server test` green after 1.1, 2.1, 2.2; with the test ClickHouse stopped, `pnpm --filter @letsview/server test` prints that message once and exits non-zero.
-- [ ] 4.2 Web tests: one test per evidence name in the delta specs for `apps/web/test` (new files `ack.test.ts`, `boundary.test.ts`, `filedrop.test.ts`, `livestate.test.ts`; additions to `api.test.ts`, `loader.test.ts`, `tiles.test.ts`, `height.test.ts`). The two Q1 tests are written but marked `it.skip` until Jan answers. Verify: `pnpm --filter @letsview/web test` green after 3.1–3.3.
+- [ ] 4.2 Web tests: one test per evidence name in the delta specs for `apps/web/test` (new files `ack.test.ts`, `boundary.test.ts`, `filedrop.test.ts`, `livestate.test.ts`; additions to `api.test.ts`, `loader.test.ts`, `tiles.test.ts`, `height.test.ts`). Include the two Q1 tests (no `it.skip`). Verify: `pnpm --filter @letsview/web test` green after 3.1–3.3.
 
 ## 5. Root tooling
 

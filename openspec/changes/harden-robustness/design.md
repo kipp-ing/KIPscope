@@ -131,7 +131,7 @@ export function keepCatalogLoaded(
 - **Title on create** (`apply.ts`): trim; empty → no `title`, both kinds.
 - **Extent abort** (`routes/series.ts`): same `AbortController` and `close` listener as `/api/series`, passed to `source.extent(ref, signal)`; an aborted request sends nothing.
 
-### H9: Recovery pulls forward once per run of failures (needs Jan, Q1)
+### H9: Recovery pulls forward once per run of failures (Jan agreed to Q1, 2026-10-16)
 
 - `cache.ts`: `onRecover(listener: (reason: "success" | "reconnect") => void)`; the wrapped fetch notifies `"success"`, `recover()` notifies `"reconnect"`.
 - `loader.ts`: the failure record gains `pulled?: true`. On `"success"`, a key with `pulled` is skipped; otherwise it is scheduled at `max(now, at + RETRY_FLOOR_MS)` as today and marked `pulled`. On `"reconnect"`, every retryable failed key is scheduled as today, `pulled` or not. `complete` deletes the record, so the next run starts fresh. Backoff, floor and the same-request trigger are unchanged.
@@ -161,8 +161,8 @@ No stored data changes. Deploy with the usual restart; reload open tabs. Rollbac
 
 - **D-045: Exact wire times and bucket bounds.** Series offsets travel as JSON numbers up to 2^53 − 1 ns and as decimal strings beyond (supersedes D-011 D3's "offsets as numbers"); bucket width at most 2^62 ns; buckets on the floor grid before 1970; own computation errors answer 400. (H1, H2)
 - **D-046: Local access only.** `Host` and, when present, `Origin` must name localhost, 127.0.0.1, [::1] or a non-loopback `LETSVIEW_HOST`; JSON bodies only; live frames ≤ 256 KiB; acknowledgements ≤ 50 errors of ≤ 500 characters; ≤ 64 windows; warning on a non-loopback host. (H3, H4)
-- **D-047: Robustness conventions.** Catalog reloads 1, 2, 4 … 30 s until its first success, one load at a time, DBC warnings per load; UI commands never reject (`network`, `bad_response`); an acknowledgement counts as sent only when the socket took it and is repeated after a reconnect; state pushes name their command type and only content changes or `window.setRange` re-hand requests to the loader; a window that fails to draw shows an error box and reports a render error. (H5–H8; H9 if Jan agrees to Q1)
+- **D-047: Robustness conventions.** Catalog reloads 1, 2, 4 … 30 s until its first success, one load at a time, DBC warnings per load; UI commands never reject (`network`, `bad_response`); an acknowledgement counts as sent only when the socket took it and is repeated after a reconnect; state pushes name their command type and only content changes or `window.setRange` re-hand requests to the loader; a window that fails to draw shows an error box and reports a render error. (H5–H9; H9 refines D-044 per Jan, 2026-10-16)
 
 ## Open Questions
 
-- **Q1 (Jan): May a success of another request pull a failing signal forward only once per run of failures?** D-044 says „A success of any series request in the tab … retries at once, never sooner than 1 s after the last failure", and the archived design R3 accepted that a signal that keeps failing is fetched about once a second while others succeed. The review counts that as a fault (finding 5). Recommended: once per run (H9); the outage case Jan described in D-042 behaves as before. If Jan says no, task 3.2 drops its H9 part and the spec keeps D-044's wording.
+- **Q1 (Jan) — answered 2026-10-16: yes, once per run (H9).** May a success of another request pull a failing signal forward only once per run of failures?** D-044 says „A success of any series request in the tab … retries at once, never sooner than 1 s after the last failure", and the archived design R3 accepted that a signal that keeps failing is fetched about once a second while others succeed. The review counts that as a fault (finding 5). Recommended: once per run (H9); the outage case Jan described in D-042 behaves as before. If Jan says no, task 3.2 drops its H9 part and the spec keeps D-044's wording.
