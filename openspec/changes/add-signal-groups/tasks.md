@@ -1,6 +1,6 @@
 # Tasks
 
-Every task has its own files; all build in one round against the interfaces pinned in design G1–G7. Group 1 lands types the others import; engineers of groups 2–3 may stub them until it is in. The tester writes group 4 test-first, in parallel. Group 5 is the lead's. Open question Q1 is built as recommended (a) unless Jan answers otherwise before the round.
+Every task has its own files; all build in one round against the interfaces pinned in design G1–G7. Group 1 lands types the others import; engineers of groups 2–3 may stub them until it is in. The tester writes group 4 test-first, in parallel. Group 5 is the lead's. Q1 is resolved (D-053: fallback rule shipped).
 
 - 1.1: `packages/shared/src/signals.ts`
 - 2.1: `apps/server/src/dbc.ts`, `groups.ts` (new), `names.ts`, `catalog.ts`
@@ -18,7 +18,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 ## 2. apps/server/src
 
 - [ ] 2.1 Sender and group per entry (G2, G3 types, G4, G5): `MESSAGE` with sender, `DbcSignal.sender`; new `groups.ts` (`GroupRule`, `GroupFields`, `assignGroup`); `DisplayRules.groups` and `NO_RULES.groups = []` in `names.ts`; `dbcInfo()` copies `sender`, `load()` sets `info.group`. Verify: scenarios "Senders from inline DBC text", "Senders from the real DBCs", "First non-blank rule wins", "Blank renders and Other", "No rules", "Test project file on the test DB", "Speed signal from the real DBC", "Details from the fixture DBCs", "No file, no field".
-- [ ] 2.2 `display.groups` in the project file (G3): schema key, compile `match`/`group` with the problems of G3 (reuse `parseTemplate`, regex compile and group listing), fill `rules.groups`; shipped `kipscope.yaml` gets `groups: [{ group: '{sender}' }]` under `display`; `kipscope.example.yaml` explains `groups`, `match`, `group`, `{sender}`, fall-through and `Other`. Verify: scenarios "Group rule errors", "Shipped files parse with groups", "Real data grouped by sender" (curl, after restart).
+- [ ] 2.2 `display.groups` in the project file (G3): schema key, compile `match`/`group` with the problems of G3 (reuse `parseTemplate`, regex compile and group listing), fill `rules.groups`; shipped `kipscope.yaml` gets `display.groups`: `{ group: '{sender}' }`, then `{ match: '^(?<ecu>CPC|PNHV)_', group: '{ecu}' }` (D-053 Q1), same two rules in the example; `kipscope.example.yaml` explains `groups`, `match`, `group`, `{sender}`, fall-through and `Other`. Verify: scenarios "Group rule errors", "Shipped files parse with groups", "Real data grouped by sender" (curl, after restart).
 
 ## 3. apps/web/src
 

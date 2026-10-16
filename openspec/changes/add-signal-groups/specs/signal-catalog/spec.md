@@ -29,7 +29,7 @@ The explorer SHALL make every match reachable: it shows the total match count an
 #### Scenario: Show more beyond one chunk
 - **WHEN** a search matches more signals than one render chunk (test catalog, empty query, 1,013 signals)
 - **THEN** a "Show N more" control appears, and using it until it disappears renders all items
-- **Evidence:** `apps/web/test/explorer.test.ts` › "renders matches in chunks until all are visible" (pure chunking helper, applied to the item count). On real data (at most 440 items < 500) the control never appears, so the helper test is the only evidence; the UI user does not check it.
+- **Evidence:** `apps/web/test/explorer.test.ts` › "renders matches in chunks until all are visible" (pure chunking helper, applied to the item count). On real data (at most 442 items < 500) the control never appears, so the helper test is the only evidence; the UI user does not check it.
 
 ### Requirement: Explorer keys
 The explorer SHALL support: `/` focuses the search field when focus is not in a text field (the `/` is not typed); Esc in the search field clears the query and closes the card; ArrowDown/ArrowUp move the active item (clamped at the ends) and keep it in view; Enter adds the active row exactly as its add button does. With groups (capability `signal-groups`) the items include the group headers: Enter on a header opens or closes its group and keeps it active. After each query change the active item SHALL be the first signal row shown, or the first item when no row is shown. Origin: D-020 ("The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears."); headers: D-053 with design G6.
@@ -41,7 +41,7 @@ The explorer SHALL support: `/` focuses the search field when focus is not in a 
 
 #### Scenario: Arrows choose another hit
 - **WHEN** with the shipped `kipscope.yaml` the user types `temp`, presses ArrowDown twice and Enter; then ArrowDown twice more, Enter, ArrowDown once
-- **THEN** `MS_608h.T_LUFT` (third row under `Engine 4`) is added, the active item was visibly marked while moving; then the header `AC 1` is active and Enter hides its row `T_SOLL`, and the next ArrowDown makes the header `CGW 2` active
+- **THEN** `MS_608h.T_LUFT` (third row under `Engine 4`) is added, the active item was visibly marked while moving; then the header `CPC 5` is active and Enter hides its five rows, and the next ArrowDown makes the header `PNHV 1` active
 - **Evidence:** UI check (screenshot); `apps/web/test/explorer.test.ts` › "groups matches by best hit, Other last, collapsed on an empty query" (item order)
 
 #### Scenario: Esc clears

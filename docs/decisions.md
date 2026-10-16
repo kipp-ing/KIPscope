@@ -11,6 +11,8 @@ Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
   - Groups are defined by rules in `kipscope.yaml` (like the display-name rules of D-035); the shipped file groups by sending ECU. Restart to change.
   - Empty search: all groups, collapsed. While searching: only groups with a hit, all open, ordered by their best hit; the ranking stays inside each group.
   - Signals without a group (no DBC entry, sender `Vector__XXX`) go to one group `Other`, always last.
+  - Design Q1: the shipped file adds a fallback rule `^(?<ecu>CPC|PNHV)_` → `{ecu}` after `{sender}`, since h-can.dbc names no sender for those messages (Other would hold 117 of 428 signals).
+  - `Other` stays last while searching too; Enter adds the first row shown, even if a better hit sits in `Other`.
 
 ## D-052: Near-curve distance 16 px (2026-10-16)
 
