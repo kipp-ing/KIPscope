@@ -15,5 +15,8 @@ display:
     # CPC_448h.PTC_HV_Volt -> CPC; h-can.dbc names no sender for these (D-053 Q1)
     - match: '^(?<ecu>CPC|PNHV)_'
       group: '{ecu}'
+    # BMS.soc, BMS.cell_voltage.001 -> BMS (diag); decoded diagnostic readings, no DBC (D-058)
+    - match: '^(?<ecu>[A-Z][A-Z0-9]*)\.[a-z]'
+      group: '{ecu} (diag)'
 measurement:
   object: smart451

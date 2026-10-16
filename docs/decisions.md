@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-058: Diagnostic data: BMS group and filtered events (2026-10-16)
+
+- **Context:** Jan: „clickhouse supplies now decoded diagnostic data. how can we see it?" carserver now has (device `smart451-diag`): 125 numeric `BMS.*` readings in `sdlog.signals` (no DBC, so group `Other`, no units; already plottable) and a new table `sdlog.events` (`kind` dtc / state / nrc / isotp, `source`, `name`, `value`, `text`, `detail`): 55 DTCs at one time (value = UDS status byte: 41/105 active, 40 stored, 64/80 "test not completed"), 315 state snapshots every ~90 s plus 11 transitions (`detail` „from …"), 2 NRCs, 2 ISO-TP errors.
+- **Decision:** Jan chose:
+  - The `BMS.*` readings get their own explorer group (config rule, `BMS (diag)`).
+  - Events as marks on the time strip and in the chart windows. Jan: „the events line is great. however we need a filter. it can get super overwhelming. the filter also needs cli. it needs human way of thinking too. give this to a proper agent". The filter works in the UI and the CLI and speaks in terms a person uses (e.g. active faults, changes only, by ECU), not raw columns.
+- **Not now:** text states as labelled bands (they still plot as a flat 0), units for the BMS readings.
+
 ## D-057: Interactive time strip (2026-10-16)
 
 - **Context:** Jan: „we hav the "sky" where we have data. thats good. but not interactive. will you give it more reason? I no UI expert. but big chances". On smart451 the strip spans ~4.9 d at 1 bar = 1 h: a few drives (up to 50 M rows/h), a steady trickle (~160 k rows/h) between them, many empty hours; a 20 min view is less than one bar.
