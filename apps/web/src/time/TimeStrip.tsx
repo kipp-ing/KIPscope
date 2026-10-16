@@ -1,13 +1,42 @@
 import type { Density, Workspace } from "@kipscope/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
+import { useLiveCursor } from "../chart/live.ts";
+import type { Range } from "../chart/zoom.ts";
+import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
 import { RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
+import {
+  barTitle,
+  brushRange,
+  driveRects,
+  driveTitle,
+  hitZone,
+  jumpRange,
+  markerX,
+  panRange,
+  resizeRange,
+  type StripAction,
+  StripGesture,
+  type Track,
+  trackOf,
+  wholeRange,
+  windowRects,
+  type Zone,
+} from "./stripGeometry.ts";
 import "./strip.css";
+
+/** App → TimeStrip (S9): runs one strip step on the bar target; `next` maps its current view (pending or server) to the new range. Returns whether a command was sent. */
+export type StripNavigate = (next: (view: Range) => Range | undefined, push: boolean) => boolean;
 
 /** Densities loaded so far, per data ref, for the page's life (design T8): one fetch per data ref. */
 const densities = new Map<string, Density>();
+
+/** The density of `dataRef` if the strip loaded it (design S9: the drive keys read it). */
+export function loadedDensity(dataRef: string): Density | undefined {
+  return densities.get(dataRef);
+}
 
 type Load =
   | { dataRef: string; state: "loading" }
@@ -55,22 +84,260 @@ function useDensity(dataRef: string | undefined): Load | undefined {
   return dataRef !== undefined && load?.dataRef === dataRef ? load : undefined;
 }
 
+/** Pointer shape per hit zone while no gesture runs (design S7). */
+const ZONE_CURSOR: Record<Zone["kind"], string> = {
+  bars: "pointer",
+  drive: "pointer",
+  body: "grab",
+  edge: "ew-resize",
+};
+
+/** Pointer shape per running drag (design S7). */
+const DRAG_CURSOR = { brush: "crosshair", pan: "grabbing", resize: "ew-resize" } as const;
+
+/** Preview of a running drag: the brushed pixels, or the panned or resized range. */
+type DragPreview = { kind: "brush"; x0: number; x1: number } | { kind: "range"; range: Range };
+
+/** One press on the track, from pointerdown to release, Escape or cancel. */
+interface Press {
+  pointerId: number;
+  /** Range shown at the press: pan and resize previews compute from it (design S8). */
+  base: Range | undefined;
+  onKey: (e: KeyboardEvent) => void;
+  releaseSelect?: () => void;
+}
+
+/** A range the strip sent, shown until the bar target's server range leaves `base` (design S8). */
+interface Committed {
+  range: Range;
+  base: string;
+}
+
+/** A vertical marker over the bars (design S10): A and B with a flag, L without. */
+function Marker({ name, x, px }: { name: "a" | "b" | "l"; x: number; px: number }) {
+  return (
+    <div className={`time-strip-marker ${name}`} style={{ left: x }}>
+      {name !== "l" && (
+        <span className={x + 10 > px ? "time-strip-flag flip" : "time-strip-flag"}>
+          {name.toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** L's marker in its own component, so the frame-rate updates of L do not re-render the bars. */
+function LiveMarker({ tr }: { tr: Track }) {
+  const t = useLiveCursor()?.t;
+  const x = t === undefined ? undefined : markerX(tr, t);
+  return x === undefined ? null : <Marker name="l" x={x} px={tr.px} />;
+}
+
 /**
- * Time strip below the option bar (design T8): the density of the shown recording over its whole
- * extent, the bar target's range marked in the accent. Display only, no click handlers.
+ * Time strip below the option bar (design T8, S5–S10 of add-strip-navigation): the density of
+ * the shown recording over its whole extent, the bar target's range as a window, the drives and
+ * the cursor markers. With `navigate`, clicks jump, drags zoom, the window pans and resizes, a
+ * double-click shows the whole recording and a click on a drive fits it.
  */
-export function TimeStrip({ workspace }: { workspace: Workspace }) {
+export function TimeStrip({
+  workspace,
+  navigate,
+}: {
+  workspace: Workspace;
+  navigate?: StripNavigate | undefined;
+}) {
   const dataRef = stripDataRef(workspace);
   const load = useDensity(dataRef);
-  const target = barTarget(workspace)?.range;
+  const targetWindow = barTarget(workspace);
+  const target = targetWindow?.range;
   const range = target ? { from: BigInt(target.from), to: BigInt(target.to) } : undefined;
+  const targetKey = target ? `${targetWindow?.id} ${target.from} ${target.to}` : "";
   const density = load?.state === "loaded" ? load.density : undefined;
+
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [px, setPx] = useState(0);
+  const [gesture] = useState(() => new StripGesture());
+  const pressRef = useRef<Press>(undefined);
+  // What navigate returned for the last click: a double-click replaces that step (design S8).
+  const lastClickSent = useRef(false);
+  const [drag, setDrag] = useState<DragPreview>();
+  const [committed, setCommitted] = useState<Committed>();
+  const [hoverDrive, setHoverDrive] = useState<number>();
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setPx(el.clientWidth));
+    observer.observe(el);
+    setPx(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
+  // Unmount ends a running press without sending.
+  useEffect(
+    () => () => {
+      const p = pressRef.current;
+      pressRef.current = undefined;
+      p?.releaseSelect?.();
+      if (p) window.removeEventListener("keydown", p.onKey, true);
+    },
+    [],
+  );
+
+  const tr = density && px > 0 ? trackOf(density, px) : undefined;
+  const drives = density?.drives ?? [];
+  const interactive = navigate !== undefined && density !== undefined && tr !== undefined;
+
+  // The server range moved away from the committed step's base: drop the step for good, so a
+  // later "Back" to that base shows the server range, not the step again (design S8).
+  if (committed && committed.base !== targetKey) setCommitted(undefined);
+  const shown =
+    drag?.kind === "range"
+      ? drag.range
+      : committed && committed.base === targetKey
+        ? committed.range
+        : range;
+  const labelRange =
+    drag?.kind === "brush" && tr ? (brushRange(tr, drag.x0, drag.x1) ?? shown) : shown;
 
   let info: string;
   if (dataRef === undefined) info = "No signal shown";
-  else if (density) info = stripLabel(density, range);
+  else if (density) info = stripLabel(density, labelRange);
   else if (load?.state === "failed") info = "Recording unavailable";
   else info = "Loading recording…";
+
+  /** Ends the press: releases capture, text selection and the Escape listener; drops the drag preview. */
+  const endPress = () => {
+    const p = pressRef.current;
+    if (!p) return;
+    pressRef.current = undefined;
+    p.releaseSelect?.();
+    window.removeEventListener("keydown", p.onKey, true);
+    const el = trackRef.current;
+    if (el?.hasPointerCapture(p.pointerId)) el.releasePointerCapture(p.pointerId);
+    setDrag(undefined);
+  };
+
+  /** Escape or pointercancel: the running gesture sends nothing (design S8). */
+  const cancelPress = () => {
+    gesture.cancel();
+    endPress();
+  };
+
+  const point = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  /** Sends one strip step; shows the sent range until the target's server range changes. */
+  const commit = (next: (view: Range) => Range | undefined, push: boolean): boolean => {
+    if (!navigate) return false;
+    const out: { range: Range | undefined } = { range: undefined };
+    const sent = navigate((view) => {
+      out.range = next(view);
+      return out.range;
+    }, push);
+    setCommitted(sent && out.range ? { range: out.range, base: targetKey } : undefined);
+    return sent;
+  };
+
+  const apply = (a: StripAction, t: Track, d: Density) => {
+    switch (a.kind) {
+      case "jump":
+        lastClickSent.current = commit((view) => jumpRange(t, a.x, view), true);
+        break;
+      case "fit": {
+        const drive = d.drives[a.drive];
+        lastClickSent.current = drive
+          ? commit(() => ({ from: BigInt(drive.from), to: BigInt(drive.to) }), true)
+          : false;
+        break;
+      }
+      case "whole":
+        // Replaces the first click's step: no second history entry if that click sent one.
+        commit(() => wholeRange(d), !lastClickSent.current);
+        lastClickSent.current = false;
+        break;
+      case "brush":
+        commit(() => brushRange(t, a.x0, a.x1), true);
+        break;
+      case "pan":
+        commit((view) => panRange(t, view, a.dx), true);
+        break;
+      case "resize":
+        commit((view) => resizeRange(t, view, a.side, a.dx), true);
+        break;
+    }
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!interactive || e.button !== 0) return;
+    e.preventDefault();
+    endPress();
+    const { x, y } = point(e);
+    gesture.down(x, y, hitZone(tr, x, y, shown, drives), e.timeStamp);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const onKey = (k: KeyboardEvent) => {
+      if (k.key !== "Escape") return;
+      k.preventDefault();
+      k.stopPropagation();
+      cancelPress();
+    };
+    window.addEventListener("keydown", onKey, true);
+    pressRef.current = { pointerId: e.pointerId, base: shown, onKey };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!interactive) return;
+    const el = e.currentTarget;
+    const { x, y } = point(e);
+    const p = pressRef.current;
+    if (p) {
+      if (p.pointerId !== e.pointerId) return;
+      const a = gesture.move(x, y);
+      if (!a || (a.kind !== "brush" && a.kind !== "pan" && a.kind !== "resize")) return;
+      p.releaseSelect ??= holdNoSelect();
+      el.style.cursor = DRAG_CURSOR[a.kind];
+      if (a.kind === "brush") setDrag({ kind: "brush", x0: a.x0, x1: a.x1 });
+      else if (p.base) {
+        const moved =
+          a.kind === "pan" ? panRange(tr, p.base, a.dx) : resizeRange(tr, p.base, a.side, a.dx);
+        setDrag({ kind: "range", range: moved });
+      }
+      return;
+    }
+    const zone = hitZone(tr, x, y, shown, drives);
+    el.style.cursor = ZONE_CURSOR[zone.kind];
+    setHoverDrive(zone.kind === "drive" ? zone.index : undefined);
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pressRef.current;
+    if (!p || p.pointerId !== e.pointerId) return;
+    const { x, y } = point(e);
+    const a = gesture.up(x, y, e.timeStamp);
+    endPress();
+    if (!interactive) return;
+    e.currentTarget.style.cursor = ZONE_CURSOR[hitZone(tr, x, y, shown, drives).kind];
+    if (a) apply(a, tr, density);
+  };
+
+  const onPointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pressRef.current?.pointerId === e.pointerId) cancelPress();
+  };
+
+  const win = tr && shown ? windowRects(tr, shown)?.drawn : undefined;
+  const brush =
+    drag?.kind === "brush" && tr
+      ? {
+          left: Math.max(0, Math.min(drag.x0, drag.x1)),
+          right: Math.min(tr.px, Math.max(drag.x0, drag.x1)),
+        }
+      : undefined;
+  const cursorX = (t: string | undefined) =>
+    tr && t !== undefined ? markerX(tr, BigInt(t)) : undefined;
+  const xa = cursorX(workspace.cursors.a);
+  const xb = cursorX(workspace.cursors.b);
 
   return (
     <div
@@ -83,7 +350,9 @@ export function TimeStrip({ workspace }: { workspace: Workspace }) {
     >
       <div className="time-strip-head">
         <span className="section-label">TIME</span>
-        {range && <span className="time-strip-range">{formatRange(range.from, range.to)}</span>}
+        {labelRange && (
+          <span className="time-strip-range">{formatRange(labelRange.from, labelRange.to)}</span>
+        )}
         <span
           className="time-strip-info"
           {...(load?.state === "failed" ? { title: load.message } : {})}
@@ -91,16 +360,66 @@ export function TimeStrip({ workspace }: { workspace: Workspace }) {
           {info}
         </span>
       </div>
-      <div className="time-strip-bars" aria-hidden="true">
-        {density &&
-          stripBars(density, range).map((bar, i) => (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional buckets of one density
-              key={i}
-              className={bar.shown ? "shown" : undefined}
-              style={{ height: bar.height }}
-            />
-          ))}
+      <div
+        ref={trackRef}
+        className="time-strip-track"
+        style={interactive ? undefined : { cursor: "default" }}
+        {...(interactive
+          ? {
+              onPointerDown,
+              onPointerMove,
+              onPointerUp,
+              onPointerCancel,
+              onLostPointerCapture: onPointerCancel,
+              onPointerLeave: () => setHoverDrive(undefined),
+            }
+          : {})}
+      >
+        <div className="time-strip-bars" aria-hidden="true">
+          {density &&
+            stripBars(density, shown).map((bar, i) => (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional buckets of one density
+                key={i}
+                className={bar.shown ? "shown" : undefined}
+                style={{ height: bar.height }}
+                title={barTitle(density, i)}
+              />
+            ))}
+        </div>
+        {win && (
+          <div
+            className="time-strip-window"
+            style={{ left: win.left, width: win.right - win.left }}
+          />
+        )}
+        {brush && (
+          <div
+            className="time-strip-brush"
+            style={{ left: brush.left, width: brush.right - brush.left }}
+          />
+        )}
+        {tr && xa !== undefined && <Marker name="a" x={xa} px={tr.px} />}
+        {tr && xb !== undefined && <Marker name="b" x={xb} px={tr.px} />}
+        {tr && <LiveMarker tr={tr} />}
+        <div className="time-strip-drives">
+          {density &&
+            tr &&
+            driveRects(tr, drives).map(({ drawn, hit }, i) => (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: drives are positional in one density
+                key={i}
+                className={hoverDrive === i ? "time-strip-drive hover" : "time-strip-drive"}
+                style={{ left: hit.left, width: hit.right - hit.left }}
+                title={driveTitle(density, i)}
+              >
+                <span
+                  className="time-strip-drive-bar"
+                  style={{ left: drawn.left - hit.left, width: drawn.right - drawn.left }}
+                />
+              </span>
+            ))}
+        </div>
       </div>
     </div>
   );

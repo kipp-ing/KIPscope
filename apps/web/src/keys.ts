@@ -29,8 +29,18 @@ export function isSearchKey(e: KeyLike, focused: Element | null): boolean {
   return !isTextField(focused) || focused?.tagName.toUpperCase() === "SELECT";
 }
 
-/** Navigation keys (design N6): zoom, pan, page, reset and "Go to". */
-export type NavKey = "in" | "out" | "left" | "right" | "pageLeft" | "pageRight" | "home" | "goTo";
+/** Navigation keys (design N6): zoom, pan, page, reset, "Go to" and the strip's drives (S9). */
+export type NavKey =
+  | "in"
+  | "out"
+  | "left"
+  | "right"
+  | "pageLeft"
+  | "pageRight"
+  | "home"
+  | "goTo"
+  | "prevDrive"
+  | "nextDrive";
 
 /**
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
@@ -56,6 +66,10 @@ export function navKey(
       return "home";
     case "t":
       return "goTo";
+    case ",":
+      return "prevDrive";
+    case ".":
+      return "nextDrive";
     default:
       return undefined;
   }

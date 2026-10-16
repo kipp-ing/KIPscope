@@ -4,7 +4,7 @@ import { REPO_ROOT } from "../src/config.ts";
 
 /**
  * Runs once before all test files: checks that the test ClickHouse answers and holds the seed
- * (`spancar/Span_910h.FAR`), so a stopped or stale database fails with one message, not per test.
+ * (`drivecar/Drv_A10h.WAKE`, the newest seed data), so a stopped or stale database fails with one message, not per test.
  */
 export default async function setup() {
   try {
@@ -22,7 +22,7 @@ export default async function setup() {
   try {
     const result = await client.query({
       query:
-        "SELECT count() FROM sdlog.signals WHERE vehicle = 'spancar' AND signal = 'Span_910h.FAR'",
+        "SELECT count() FROM sdlog.signals WHERE vehicle = 'drivecar' AND signal = 'Drv_A10h.WAKE'",
       format: "TabSeparated",
     });
     if (Number((await result.text()).trim()) < 1) throw new Error("not seeded");

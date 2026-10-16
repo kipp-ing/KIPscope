@@ -1,5 +1,6 @@
 export * from "./apply.ts";
 export * from "./cursor.ts";
+export * from "./drives.ts";
 export * from "./encoding.ts";
 export * from "./localtime.ts";
 export * from "./meta.ts";

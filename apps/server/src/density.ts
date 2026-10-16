@@ -1,4 +1,11 @@
-import { type Density, densityWidth, floorDiv } from "@kipscope/shared";
+import {
+  type Density,
+  densityWidth,
+  driveGrid,
+  findDrives,
+  floorDiv,
+  type GridBucket,
+} from "@kipscope/shared";
 import type { DataSource } from "./datasource.ts";
 
 interface Entry {
@@ -60,12 +67,23 @@ export class DensityCache {
     const width = densityWidth(extent.first, extent.last);
     const start = floorDiv(extent.first, width) * width;
     const length = Number(floorDiv(extent.last, width) - floorDiv(extent.first, width) + 1n);
+    const end = start + BigInt(length) * width;
+    // One query on the drive grid gives both the bars and the drives (design S3 of add-strip-navigation).
+    const grid = driveGrid(width);
     const counts = new Array<number>(length).fill(0);
-    for (const bucket of await this.source.refBuckets(dataRef, width)) {
-      const i = Number((bucket.start - start) / width);
+    const kept: GridBucket[] = [];
+    for (const bucket of await this.source.refBuckets(dataRef, grid)) {
       // Rows written between the two queries may fall outside the extent; they are left out.
-      if (i >= 0 && i < length) counts[i] = (counts[i] ?? 0) + bucket.count;
+      if (bucket.start < start || bucket.start >= end) continue;
+      kept.push(bucket);
+      const i = Number((bucket.start - start) / width);
+      counts[i] = (counts[i] ?? 0) + bucket.count;
     }
+    const drives = findDrives(kept, grid).map((d) => ({
+      from: d.from.toString(),
+      to: d.to.toString(),
+      rows: d.rows,
+    }));
     return {
       dataRef,
       first: extent.first.toString(),
@@ -73,6 +91,8 @@ export class DensityCache {
       width: width.toString(),
       start: start.toString(),
       counts,
+      grid: grid.toString(),
+      drives,
     };
   }
 }

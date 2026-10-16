@@ -8,12 +8,13 @@
   margin: 0 -16px 8px;
 }
 
-/* Time strip (design T8): 6 + 16 + 4 + 24 + 4 + 1 = 55 px in every state. */
+/* Time strip (design T8, S5 of add-strip-navigation): 4 + 16 + 3 + 31 + 0 + 1 = 55 px in every
+   state; the track keeps its height while empty. */
 .time-strip {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 16px 4px;
+  gap: 3px;
+  padding: 4px 16px 0;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -40,6 +41,15 @@
   color: var(--muted);
 }
 
+/* Bars (24 px) and drive row (7 px); the cursor is set per hit zone (TimeStrip.tsx, design S7). */
+.time-strip-track {
+  position: relative;
+  flex: none;
+  height: 31px;
+  touch-action: none;
+  user-select: none;
+}
+
 .time-strip-bars {
   height: 24px;
   display: flex;
@@ -48,12 +58,111 @@
 }
 
 .time-strip-bars > span {
+  position: relative;
   flex: 1 1 0;
   min-width: 1px;
   border-radius: 1px 1px 0 0;
   background: var(--control-border);
 }
 
+/* Hit area over the bar's whole column, so short and empty bars show their tooltip too
+   (time-strip "Strip tooltips"). */
+.time-strip-bars > span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 24px;
+}
+
 .time-strip-bars > span.shown {
   background: var(--accent);
+}
+
+/* Over the bars, in this order: window, brush, markers; none takes pointer input, so the bar
+   under them keeps its tooltip (design S5, S10). */
+.time-strip-window,
+.time-strip-brush,
+.time-strip-marker {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  pointer-events: none;
+}
+
+.time-strip-window {
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.time-strip-brush {
+  box-sizing: border-box;
+  border-left: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.time-strip-marker {
+  width: 0;
+  border-left: 1px solid var(--text);
+}
+
+.time-strip-marker.l {
+  border-left-color: var(--muted);
+}
+
+.time-strip-flag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 10px;
+  min-width: 10px;
+  box-sizing: border-box;
+  border-radius: 2px;
+  font: 600 9px / 10px var(--font-sans);
+  text-align: center;
+}
+
+/* Flag turned inward at the track's right end. */
+.time-strip-flag.flip {
+  left: auto;
+  right: 0;
+}
+
+.time-strip-marker.a .time-strip-flag {
+  background: var(--text);
+  color: #fff;
+}
+
+.time-strip-marker.b .time-strip-flag {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--text);
+}
+
+/* Drive row under the bars: transparent hit spans, drawn segments inside (design S5, S6). */
+.time-strip-drives {
+  position: relative;
+  height: 7px;
+}
+
+.time-strip-drive {
+  position: absolute;
+  top: 0;
+  height: 7px;
+}
+
+.time-strip-drive-bar {
+  position: absolute;
+  top: 1px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--soft-ink);
+}
+
+.time-strip-drive.hover > .time-strip-drive-bar {
+  background: var(--text);
 }

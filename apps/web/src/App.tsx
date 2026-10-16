@@ -53,7 +53,9 @@ import {
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
-import { TimeStrip } from "./time/TimeStrip.tsx";
+import { stripDataRef } from "./time/strip.ts";
+import { stepDrive } from "./time/stripGeometry.ts";
+import { loadedDensity, type StripNavigate, TimeStrip } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 import { WindowBoundary } from "./WindowBoundary.tsx";
 
@@ -333,16 +335,19 @@ export function App() {
       toRange(w.range)
     );
   }, []);
-  /** One navigation step (design S5): clamps, pushes the view it leaves when `push`, sends one setRange. */
+  /**
+   * One navigation step (design S5): clamps, pushes the view it leaves when `push`, sends one
+   * setRange. Returns whether it sent one (add-strip-navigation S9).
+   */
   const navigate = useCallback(
-    (windowId: string, r: Range, push: boolean) => {
+    (windowId: string, r: Range, push: boolean): boolean => {
       const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
-      if (!w || !isTimeseries(w)) return;
+      if (!w || !isTimeseries(w)) return false;
       const key = navKeyOf(liveRef.current.workspace, windowId);
       const pending = pendingNav.current.get(key);
       const view = pending?.range ?? toRange(w.range);
       const next = clampRange(r);
-      if (sameRange(next, view)) return;
+      if (sameRange(next, view)) return false;
       if (push) {
         historyOf(key).push(view);
         setHistoryVersion((v) => v + 1);
@@ -361,8 +366,20 @@ export function App() {
           setMessage(e instanceof Error ? e.message : String(e));
         },
       );
+      return true;
     },
     [historyOf, setRange],
+  );
+  /** One strip step on the bar target (S9): `next` maps its current view to the new range. */
+  const stripNavigate = useCallback<StripNavigate>(
+    (next, push) => {
+      const ws = liveRef.current.workspace;
+      const target = ws && barTarget(ws);
+      const view = target && navView(target.id);
+      const r = view && next(view);
+      return target && r ? navigate(target.id, r, push) : false;
+    },
+    [navView, navigate],
   );
   const onBack = useCallback(
     (windowId: string) => {
@@ -544,6 +561,20 @@ export function App() {
       }
       const ws = liveRef.current.workspace;
       if (!ws) return;
+      if (key === "prevDrive" || key === "nextDrive") {
+        // The drives belong to the strip, which shows the bar target, not the hovered window (S9).
+        const target = barTarget(ws);
+        if (!target) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        const dataRef = stripDataRef(ws);
+        const density = dataRef ? loadedDensity(dataRef) : undefined;
+        const drives = density?.drives;
+        const view = navView(target.id);
+        const drive = drives && view && stepDrive(drives, view, key === "nextDrive" ? 1 : -1);
+        if (drive) navigate(target.id, { from: BigInt(drive.from), to: BigInt(drive.to) }, true);
+        return;
+      }
       const hoveredId = ws.windows.some((w) => w.id === hovered.current && isTimeseries(w))
         ? hovered.current
         : undefined;
@@ -860,7 +891,10 @@ export function App() {
                 />
               )}
             </div>
-            <TimeStrip workspace={workspace ?? EMPTY_WORKSPACE} />
+            <TimeStrip
+              workspace={workspace ?? EMPTY_WORKSPACE}
+              navigate={barWindow ? stripNavigate : undefined}
+            />
           </div>
           <div className="window-grid">
             {windows.map((w) => (

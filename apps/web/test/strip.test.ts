@@ -27,6 +27,8 @@ const density = (over: Partial<Density> = {}): Density => ({
   width: (10n * S).toString(),
   start: "0",
   counts: [0, 10, 5, 0, 1],
+  grid: ((10n * S) / 400n).toString(),
+  drives: [],
   ...over,
 });
 

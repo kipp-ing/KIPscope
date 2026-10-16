@@ -17,6 +17,12 @@
  * - spancar / Span_910h.FAR  5 points far apart (span and epoch tests of harden-robustness): values 1..5 at
  *                         1969-12-31T23:59:58.5Z, 23:59:59.5Z, 1970-01-01T00:00:00.5Z, 2026-01-01T00:00:00Z,
  *                         2026-10-01T00:00:00Z
+ * - drivecar / Drv_A10h.TRICKLE|FAST|WAKE  drives for the time strip (design S4 of add-strip-navigation), base
+ *                         2026-10-02T00:00:00Z: TRICKLE 2,161 points 10 s apart over 6 h; FAST every 10 ms in
+ *                         [01:00:00, 01:20:00), [01:20:30, 01:30:00), [03:00:00, 03:05:00), [03:06:30, 03:10:00)
+ *                         (120,000 + 57,000 + 30,000 + 21,000 rows); WAKE 3,000 points 20 ms apart in
+ *                         [02:00:00, 02:01:00). Total 233,161 rows; expected drives [01:00, 01:30) with 177,180 rows,
+ *                         [03:00, 03:05) with 30,030 and [03:06:30, 03:10) with 21,021 (WAKE is under 2 min)
  * - sdlog.signals_ns: Ns_600h.FINE  1,000 points from 2026-10-14T08:00:00.123456789Z, 1,001 ns apart
  *
  * Run: pnpm --filter @kipscope/server seed:test   (needs `docker compose up -d`)
@@ -57,6 +63,17 @@ const SPAN_POINTS: [number, number][] = [
   [Date.UTC(1970, 0, 1, 0, 0, 0, 500), 3],
   [Date.UTC(2026, 0, 1), 4],
   [Date.UTC(2026, 9, 1), 5],
+];
+/** drivecar starts one day after testcar: 2026-10-02T00:00:00Z. */
+const DRIVE_BASE_MS = Date.UTC(2026, 9, 2);
+const driveMs = (offsetExpr: string) =>
+  `fromUnixTimestamp64Milli(toInt64(${DRIVE_BASE_MS} + ${offsetExpr}), 'UTC')`;
+/** FAST bursts of drivecar: [start s, end s) after the base, one row every 10 ms. */
+const DRIVE_BURSTS: [number, number][] = [
+  [3600, 4800],
+  [4830, 5400],
+  [10800, 11100],
+  [11190, 11400],
 ];
 const NS_BASE = 1791964800123456789n; // 2026-10-14T08:00:00.123456789Z
 
@@ -164,6 +181,23 @@ const statements = [
      FROM (SELECT arrayJoin([${SPAN_POINTS.map(([ms, v]) => `(${ms}, ${v})`).join(", ")}]) AS t)`,
   ),
   insert(
+    "signals",
+    `SELECT 'drivecar', 'drive-dev', 'c10', 'Drv_A10h.TRICKLE', ${driveMs("number * 10000")}, number % 100
+     FROM numbers(2161)`,
+  ),
+  ...DRIVE_BURSTS.map(([from, to]) =>
+    insert(
+      "signals",
+      `SELECT 'drivecar', 'drive-dev', 'c10', 'Drv_A10h.FAST', ${driveMs(`${from * 1000} + number * 10`)}, number % 100
+       FROM numbers(${(to - from) * 100})`,
+    ),
+  ),
+  insert(
+    "signals",
+    `SELECT 'drivecar', 'drive-dev', 'c10', 'Drv_A10h.WAKE', ${driveMs(`${7200 * 1000} + number * 20`)}, number % 100
+     FROM numbers(3000)`,
+  ),
+  insert(
     "signals_ns",
     `SELECT 'testcar', 'test-dev', 'c7', 'Ns_600h.FINE',
        fromUnixTimestamp64Nano(toInt64(${NS_BASE}) + toInt64(number * 1001), 'UTC'), number
@@ -173,10 +207,10 @@ const statements = [
 
 /** Spot checks: query → expected single value. */
 const checks: [string, string][] = [
-  ["SELECT count() FROM sdlog.signals", "21613862"],
+  ["SELECT count() FROM sdlog.signals", "21847023"],
   [
     "SELECT count() FROM (SELECT DISTINCT vehicle, signal FROM sdlog.signals WHERE utc IS NOT NULL)",
-    "1014",
+    "1017",
   ],
   [
     "SELECT max(value) FROM sdlog.signals WHERE signal = 'Fast_100h.SIG_A' AND vehicle = 'testcar' AND utc IS NOT NULL",
@@ -202,6 +236,11 @@ const checks: [string, string][] = [
   [
     "SELECT arrayStringConcat(arrayMap(x -> toString(toUnixTimestamp64Milli(x)), groupArray(utc)), ',') FROM (SELECT utc FROM sdlog.signals WHERE vehicle = 'spancar' ORDER BY utc)",
     SPAN_POINTS.map(([ms]) => ms).join(","),
+  ],
+  ["SELECT count() FROM sdlog.signals WHERE vehicle = 'drivecar'", "233161"],
+  [
+    "SELECT toString(max(utc)) FROM sdlog.signals WHERE vehicle = 'drivecar'",
+    "2026-10-02 06:00:00.000",
   ],
   ["SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.signals_ns", NS_BASE.toString()],
 ];

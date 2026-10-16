@@ -50,6 +50,14 @@ export interface Extent {
   last: string;
 }
 
+/** One drive of a recording (spec time-strip "Drives of a recording"). Decimal ns. */
+export interface Drive {
+  from: string;
+  to: string;
+  /** All rows of the data ref in [from, to), active grid buckets or not. */
+  rows: number;
+}
+
 /** Rows per bucket of one data ref over its whole extent (spec time-strip). Decimal ns strings. */
 export interface Density {
   dataRef: string;
@@ -61,6 +69,10 @@ export interface Density {
   start: string;
   /** counts[i]: rows in [start + i*width, start + (i+1)*width); length floor(last/w) − floor(first/w) + 1 ≤ MAX_DENSITY_BARS. */
   counts: number[];
+  /** Drive grid in ns: width / DRIVE_GRID_PER_BAR (design S2 of add-strip-navigation). */
+  grid: string;
+  /** In time order, not overlapping; [] when none. */
+  drives: Drive[];
 }
 
 export interface ApiError {

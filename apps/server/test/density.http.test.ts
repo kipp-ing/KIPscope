@@ -66,6 +66,7 @@ describe("GET /api/density", () => {
     expect(body.first).toBe(first.toString());
     expect(body.last).toBe((first + 36_000_000_000_000n).toString()); // 10:00:00Z
     expect(body.width).toBe("600000000000"); // 10 min; 5 min would need 121 buckets
+    expect(body.grid).toBe("1500000000"); // width / 400 = 1.5 s
     expect(body.start).toBe(body.first);
     expect(body.counts).toHaveLength(61);
     const sum = (body.counts as number[]).reduce((a, b) => a + b, 0);
@@ -78,6 +79,7 @@ describe("GET /api/density", () => {
   it("picks the width for short and pre-1970 extents", async () => {
     const short = (await density("othercar")).json();
     expect(short.width).toBe("1000000"); // 1 ms
+    expect(short.grid).toBe("2500"); // 1 ms / 400
     expect(short.counts).toHaveLength(46);
     const expected = Array.from({ length: 46 }, (_, i) => (i % 5 === 0 ? 1 : 0));
     expect(short.counts).toEqual(expected);
@@ -85,6 +87,7 @@ describe("GET /api/density", () => {
     const far = (await density("spancar")).json();
     const widthNs = 180n * 86_400n * 1_000_000_000n;
     expect(far.width).toBe(widthNs.toString());
+    expect(far.grid).toBe("38880000000000"); // 180 d / 400 = 10.8 h
     expect(far.start).toBe("-15552000000000000");
     expect(far.counts).toHaveLength(117);
     const want = new Array<number>(117).fill(0);
@@ -93,6 +96,43 @@ describe("GET /api/density", () => {
     want[114] = 1;
     want[116] = 1;
     expect(far.counts).toEqual(want);
+  });
+
+  it("finds the drives of drivecar", async () => {
+    const res = await density("drivecar");
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.width).toBe("300000000000"); // 5 min; 73 bars over 6 h
+    expect(body.grid).toBe("750000000"); // 750 ms
+    expect(body.counts).toHaveLength(73);
+    expect((body.counts as number[]).reduce((a, b) => a + b, 0)).toBe(233_161);
+    // The 30 s pause (01:20:00-01:20:30) merges, the 90 s pause (03:05-03:06:30) splits; the 60 s
+    // WAKE burst is active but not longer than 2 min; trickle buckets (1 row) are not active.
+    expect(body.drives).toEqual([
+      { from: "1790902800000000000", to: "1790904600000000000", rows: 177_180 },
+      { from: "1790910000000000000", to: "1790910300000000000", rows: 30_030 },
+      { from: "1790910390000000000", to: "1790910600000000000", rows: 21_021 },
+    ]);
+  });
+
+  it("finds one drive in testcar, none in othercar, grid-wide ones in spancar", async () => {
+    const test = (await density("testcar")).json();
+    // One drive over the whole recording; the bucket with only the 10:00:00 SLOW point is below a tenth.
+    expect(test.drives).toHaveLength(1);
+    expect(test.drives[0].from).toBe(test.first);
+    expect(test.drives[0].to).toBe(test.last);
+    const sum = (test.counts as number[]).reduce((a, b) => a + b, 0);
+    expect(test.drives[0].rows).toBe(sum - 1);
+
+    expect((await density("othercar")).json().drives).toEqual([]); // one 45 ms run
+
+    const S = 1_000_000_000n;
+    const ns = (s: number) => (BigInt(s) * S).toString();
+    expect((await density("spancar")).json().drives).toEqual([
+      { from: ns(-38_880), to: ns(38_880), rows: 3 },
+      { from: ns(1_767_212_640), to: ns(1_767_251_520), rows: 1 },
+      { from: ns(1_790_812_800), to: ns(1_790_851_680), rows: 1 },
+    ]);
   });
 
   it("answers 400, 404 and 502", async () => {

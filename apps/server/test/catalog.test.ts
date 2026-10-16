@@ -10,7 +10,7 @@ describe("Catalog (test DB)", () => {
   beforeAll(() => catalog.refresh());
 
   it("lists exactly the signals with data, per data reference", () => {
-    expect(catalog.size).toBe(1014);
+    expect(catalog.size).toBe(1017);
     expect(catalog.get("testcar/Fast_100h.SIG_A")).toBeDefined();
     expect(catalog.get("othercar/Fast_100h.SIG_A")).toBeDefined();
   });
@@ -140,7 +140,7 @@ describe("Catalog display names (test DB, test project file)", () => {
     ]);
     // Identity unchanged.
     expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
-    expect(catalog.size).toBe(1014);
+    expect(catalog.size).toBe(1017);
   });
 });
 

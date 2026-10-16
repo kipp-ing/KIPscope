@@ -34,6 +34,40 @@ function fakeSource() {
 
 const queries = (c: { extent: number; buckets: number }) => c.extent + c.buckets;
 
+describe("DensityCache grid", () => {
+  it("groups on the grid and sums the bars", async () => {
+    const widths: bigint[] = [];
+    const MIN = 60n * 1_000_000_000n;
+    const first = 1_790_812_800_000_000_000n; // 2026-10-01T00:00:00Z
+    const last = first + 600n * MIN; // 10 h later
+    const source = {
+      refExtent: async () => ({ count: 6, first, last }),
+      // Grid buckets of 1.5 s: three in the first 10 min bar, one in the second, one after the
+      // extent's last bar (left out), one before the first bar (left out).
+      refBuckets: async (_ref: string, width: bigint) => {
+        widths.push(width);
+        return [
+          { start: first, count: 1 },
+          { start: first + 1_500_000_000n, count: 2 },
+          { start: first + 9n * MIN, count: 4 },
+          { start: first + 10n * MIN, count: 8 },
+          { start: last + 10n * MIN, count: 16 },
+          { start: first - 10n * MIN, count: 32 },
+        ];
+      },
+    } as unknown as DataSource;
+    const cache = new DensityCache(source, () => new Date(1));
+    const d = await cache.get("testcar");
+    expect(widths).toEqual([1_500_000_000n]); // the grid, not the 10 min bars
+    expect(d?.width).toBe("600000000000");
+    expect(d?.grid).toBe("1500000000");
+    expect(d?.counts).toHaveLength(61);
+    expect(d?.counts[0]).toBe(7); // 1 + 2 + 4
+    expect(d?.counts[1]).toBe(8);
+    expect(d?.counts.reduce((a, b) => a + b, 0)).toBe(15); // the two outside buckets are left out
+  });
+});
+
 describe("DensityCache", () => {
   it("computes once per catalog load, shares and does not cache failures", async () => {
     const { source, calls } = fakeSource();
@@ -58,6 +92,8 @@ describe("DensityCache", () => {
       width: "1000000",
       start: "0",
       counts: [1, 0, 0, 0, 0, 2],
+      grid: "2500", // 1 ms / 400
+      drives: [], // two runs of one 2.5 us bucket
     });
 
     // A catalog reload computes again, once.

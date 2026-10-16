@@ -103,6 +103,39 @@ describe("navKey", () => {
   });
 });
 
+describe("drive keys", () => {
+  const key = (
+    k: string,
+    mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {},
+  ) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+
+  it("maps the drive keys outside text fields", () => {
+    for (const focused of [null, el("BUTTON"), el("DIV"), el("INPUT", { type: "checkbox" })]) {
+      expect(navKey(key(","), focused)).toBe("prevDrive");
+      expect(navKey(key("."), focused)).toBe("nextDrive");
+    }
+    // Nothing in fields that take typed text, and nothing in selects.
+    for (const field of [
+      el("INPUT", { type: "text" }),
+      el("INPUT", { type: "search" }),
+      el("TEXTAREA"),
+      el("SELECT"),
+      el("DIV", { isContentEditable: true }),
+    ]) {
+      expect(navKey(key(","), field), field.tagName).toBeUndefined();
+      expect(navKey(key("."), field), field.tagName).toBeUndefined();
+    }
+    // Ctrl, Meta or Alt make them shortcuts of the browser or system.
+    for (const mods of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(navKey(key(",", mods), null)).toBeUndefined();
+      expect(navKey(key(".", mods), null)).toBeUndefined();
+    }
+    // The shifted characters of these keys on US layouts are other keys.
+    expect(navKey(key("<", { shiftKey: true }), null)).toBeUndefined();
+    expect(navKey(key(">", { shiftKey: true }), null)).toBeUndefined();
+  });
+});
+
 describe("NavRepeat", () => {
   it("joins auto-repeat steps to one history entry", () => {
     const r = new NavRepeat();
