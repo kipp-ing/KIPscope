@@ -113,6 +113,28 @@ display:
 - `KIPSCOPE_PROJECT_FILE` points to another file (relative to the repo root); it must then exist. Without it a missing `kipscope.yaml` means full names.
 - Restart the server after editing the file. An invalid file (YAML syntax, unknown key, bad regex, unknown group in a template) stops the server with one line per problem.
 
+### Signal groups
+
+`display.groups` sorts the explorer into collapsible groups. The shipped rules group by sending ECU, the transmitter of the signal's `BO_` line in the DBC; h-can.dbc names no sender for the CPC and PNHV messages, so a fallback takes the prefix:
+
+```yaml
+display:
+  groups:
+    - group: '{sender}'               # BO_ 1042 COMBI_412h: 8 CGW -> CGW
+    - match: '^(?<ecu>CPC|PNHV)_'     # CPC_448h.PTC_HV_Volt -> CPC
+      group: '{ecu}'
+```
+
+| Key | Meaning |
+|---|---|
+| `match` | Optional JavaScript RegExp (no flags) on the full source name; its named groups feed `group`. Absent → the rule applies to every signal |
+| `group` | Group name; `{sender}` inserts the DBC sender (blank for `Vector__XXX` or without DBC entry), `{ecu}` a named group of `match` (none may be called `sender`) |
+
+- Rules run in order; the first rule that matches and renders non-blank wins. Unlike `names`, a blank render (no sender) falls through to the next rule.
+- Signals no rule names go to `Other`, always last.
+- Empty search: all groups collapsed, alphabetical. While searching: only groups with a hit, open, ordered by their best hit (`Other` still last); click a header or press Enter on it to toggle. Enter in the search adds the first row shown.
+- Without `groups` the list is flat. Restart the server after editing the file.
+
 ### Measurement info
 
 The optional `measurement` section of the same file gives the measurement info the footer shows at start (revision 0). The shipped file sets only the object:

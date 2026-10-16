@@ -32,7 +32,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 
 ## 5. Docs (lead)
 
-- [ ] 5.1 README section "Signal groups" (scenario "README"). Verify: `grep -n "Signal groups\|{sender}" README.md`.
+- [x] 5.1 README section "Signal groups" (scenario "README"). Verify: `grep -n "Signal groups\|{sender}" README.md`.
 
 ## Workflow follow-up
 
