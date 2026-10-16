@@ -142,19 +142,6 @@ function LiveValueCell({
   return <CellView cell={moving || state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
 
-/** A signal name with a line break opportunity after its message, `MS_212h.<wbr>M_FEV` (design L7). */
-function breakable(name: string) {
-  const dot = name.indexOf(".") + 1;
-  if (dot === 0) return name;
-  return (
-    <>
-      {name.slice(0, dot)}
-      <wbr />
-      {name.slice(dot)}
-    </>
-  );
-}
-
 function CellView({ cell }: { cell: Cell }) {
   return (
     <td
@@ -350,11 +337,13 @@ export function ValuesWindow({
                       }
                     >
                       <span className="swatch" style={{ background: colorOf(s.signalId) }} />
+                      {/* One line, cut with an ellipsis when narrow (values.css): the tooltip
+                          has the whole name. */}
                       <span
                         className="sig"
-                        title={meta?.displayName !== undefined ? meta.name : undefined}
+                        title={meta?.displayName !== undefined ? `${name}\n${meta.name}` : name}
                       >
-                        {breakable(name)}
+                        {name}
                       </span>
                     </span>
                   </td>

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { CursorValue, CursorValueResult } from "@kipscope/shared";
 import { fromIso } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -492,5 +493,26 @@ describe("L lookups", () => {
     expect(abLoader.settled(abRequests)).toBe(true);
     // The A/B loader never saw an L key, so the L state cannot leak into its errors.
     expect(valueErrors("w1", abRequests, lLoader)).toEqual([]);
+  });
+});
+
+// No layout engine here, so this reads values.css: a name never wraps (the lead's 480 px check
+// showed `V_ / AN / Z`); the grid track lets its column shrink, cut with an ellipsis.
+describe("values window name column", () => {
+  const css = readFileSync(new URL("../src/values/values.css", import.meta.url), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({
+    selector: (m[1] as string).trim(),
+    body: m[2] as string,
+  }));
+  const body = (selector: string) => rules.find((r) => r.selector === selector)?.body ?? "";
+
+  it("keeps a name on one line and cuts it with an ellipsis", () => {
+    const nameRules = rules.filter((r) => /td\.name|\.sig|\.grip/.test(r.selector));
+    for (const r of nameRules) expect(r.body).not.toMatch(/overflow-wrap|white-space:\s*normal/);
+    expect(body(".values-window td.name .sig")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(body(".values-window .grip")).toMatch(/minmax\(0, max-content\)/);
   });
 });

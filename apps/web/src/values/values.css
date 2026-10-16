@@ -24,12 +24,6 @@
   padding-right: 0;
 }
 
-/* The name column gives way first: the name breaks after its message (the <wbr> in
-   ValuesWindow), then anywhere, so the table never needs more than the value columns. */
-.values-window table.values td.name {
-  white-space: normal;
-}
-
 .values-window td.name .swatch {
   width: 12px;
   height: 3px;
@@ -38,7 +32,8 @@
 
 .values-window td.name .sig {
   font-size: 11px;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .values-window .value {
@@ -106,9 +101,13 @@
   }
 }
 
+/* The name column gives way first: a name stays on one line and is cut with an ellipsis (the
+   tooltip has it whole), so the table never needs more than the value columns. A grid, because
+   its `minmax(0, max-content)` track lets the column shrink to the swatch while it still asks for
+   the whole name when there is room; a nowrap name alone would hold the column at its width. */
 .values-window .grip {
-  /* Block-level, so the name inside can wrap (td.name). */
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, max-content);
   gap: 6px;
   align-items: center;
   cursor: grab;

@@ -81,7 +81,7 @@ Base 12 px sans; section label class `.section-label` (11 px, 600, uppercase, `l
 - **Marked window:** the `::before` accent bar and the accent title colour go; `.window.marked` → `border-color: var(--accent-ring)`; a `span.mark-pill` "Add to" (background `--accent-soft`, colour `--accent-ink`, 11 px, weight 500, radius 4, `padding: 0 6px`, `flex: none`, never ellipsized) right after the title, in both window kinds. It must not change the controls' cell or the truncation order; in the values header its width counts in the room `ValuesWindow` measures for the cursor times (so the dates drop rather than the pill or Δt being cut).
 - **Cursors and live:** `--cursor-color: var(--text)`; `.cursor-a .cursor-flag` filled `--text` with white text, `.cursor-b .cursor-flag` background `--panel`, colour and 1 px border `--text`. `.live-line`: `border-left: 1px solid var(--muted)` (D-055 Q3; an L column header, if one is ever added, may stay in the accent). `.live-label`: background `--panel`, 1 px border `currentColor` (the signal colour, as today), radius 4, weight 600, `--font-sans`, `box-shadow: 0 1px 2px rgb(15 23 42 / 0.08)`. Zoom-selection fill unchanged. uPlot: `grid: { stroke: "#e2e8f0" }` (the `--border` value; uPlot draws on canvas, so the literal is allowed in `TimeseriesWindow.tsx` as `GRID_STROKE`), neutral axis `stroke` `#64748b` (`AXIS_STROKE`); single-signal axes keep the signal colour.
 - **Legend:** `.swatch` 12 × 3 px, radius 2 (values window swatch too); `.sig` mono `--name-size`, colour `--name`, weight 500. Status cell: `.status.loading` and `.status.error` become pills (`padding: 0 6px`, radius 4, 11 px; loading `--band`/`--soft-ink`; error `--error-fill`/`--error`); `.status.complete` stays an empty cell. `.signals .sna` non-empty → pill `--sna-fill`/`--sna-ink`. SNA value text (`.sna-value`) → `--sna-ink`. The grid template and column order stay; pills add width only inside their own `auto` columns, which the L column does not share.
-- **Footer** (`styles.css` `.status-strip`): `margin: 0`, `padding: 2px 16px`, `background: var(--panel)`, `border: 2px solid transparent`, `border-radius: 0`, idle divider `box-shadow: inset 0 1px 0 var(--border)` (a shadow, so the 2 px box is the same idle and during a drag); `min-height: 28px` as today. `.conn.ok`: colour `--ok`, weight 500, `::before` a 7 px `--ok-dot` circle with 5 px gap. The fit measures `.conn` with the dot (the measuring copy uses the same class). Items 12 px, attribution 11 px `--muted` (unchanged rules).
+- **Footer** (`styles.css` `.status-strip`): `margin: 0`, `padding: 3px 16px 2px`, `background: var(--panel)`, `border: 2px solid transparent` with idle divider `border-top: 1px solid var(--border)` (no box-shadow), `border-radius: 0`; `.status-strip.drop` sets `padding-top: 2px` and `border: 2px dashed var(--accent)`, so the top edge is 1 + 3 = 2 + 2 = 4 px and the box is the same idle and during a drag; `min-height: 28px` as today. `.conn.ok`: colour `--ok`, weight 500, `::before` a 7 px `--ok-dot` circle with 5 px gap. The fit measures `.conn` with the dot (the measuring copy uses the same class). Items 12 px, attribution 11 px `--muted` (unchanged rules).
 
 ### T5: Series palette (pinned, `packages/shared/src/workspace.ts`)
 
@@ -196,7 +196,7 @@ export function formatSpan(ns: bigint): string;
 
 - **Accent vs. series blue:** the accent `#0284c7` is close to series 0 `#0072B2` (ΔE 7); it is used for focus, the strip's shown bars and the marked frame, never for a curve; the L line is slate-500 for that reason (D-055 Q3).
 - **Okabe-Ito orange and sky** have about 2.3:1 on white; accepted with the palette (D-055).
-- **Density cost** grows with the data ref's row count: two scans of the time column per catalog load. The test DB's 21.6 M `testcar` rows bound the test runtime; carserver's real count is measured in "Cost on carserver". If it is too slow, a coarser path (counting from `system.parts` or a sampled read) is a follow-up, not this change.
+- **Density cost** grows with the data ref's row count: two scans of the time column per catalog load. The test DB's 21.6 M `testcar` rows bound the test runtime; carserver's real count is measured in "Cost on carserver": 9.22 s uncached (goal ≤ 5 s missed), 1 ms cached; see Open Questions Q4. A cheaper path is a follow-up, not this change.
 - **UTC bucket grid:** day and week bars start at 00:00 UTC, not local midnight; the label only names the width.
 - **Hidden checkbox pills** keep keyboard and tests intact; the visible state is CSS `:has()`, which Chrome supports.
 
@@ -214,7 +214,13 @@ None. Palette indices stay valid; the new endpoint is additive; restart the serv
 
 ## Open Questions
 
-None. Resolved by Jan (D-055):
+- **Q4 (Jan's question): density cost goal missed.** Goal (not a must): first uncached `/api/density?dataRef=smart451` on carserver ≤ 5 s. Measured 2026-10-16: 9.22 s, then 0.0012 s cached (rounds.md, "Cost on carserver"); factor 1.8 over the goal. No requirement changes. Options:
+  - (a) Accept: it runs once per data ref and catalog load; the strip shows `Loading recording…` meanwhile and nothing else waits on it.
+  - (b) Warm the cache: the server starts the density query right after the catalog load, so the first strip usually finds it cached; costs one carserver scan per catalog load even when no strip is shown.
+  - (c) Cheaper query: one query instead of extent + buckets, or bucketing on a coarser pre-computed column; needs a new measurement on carserver and may change `DataSource`.
+  - Recommendation: (b), with (a) as the fallback. It hides the 9 s without a new query path and keeps T6/T7 interfaces unchanged (a small follow-up in `density.ts` / the plugin); (c) only if the warm-up itself proves too heavy for carserver.
+
+Resolved by Jan (D-055):
 
 - **Q1:** no dark "Add <signal> to <window>" button in the explorer (illustration).
 - **Q2:** marked window = accent ring frame + "Add to" pill; the accent top bar and accent title go.
