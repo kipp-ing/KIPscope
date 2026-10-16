@@ -70,6 +70,7 @@ select {
 
 body {
   margin: 0;
+  background: var(--bg);
 }
 
 /* Sidebar open at --sidebar-width (App sets it from SIDEBAR_WIDTH_PX, design L1) or collapsed. The
@@ -631,11 +632,13 @@ button.link {
 
 /* Below <main>, at the viewport bottom (design C7, L3): status, message and the footer (add-footer
    F5) outside a drag; the "+ New window" zone during one, so it covers no window and a drop goes to
-   what is under the pointer. Same box in both states (2 px border, transparent when idle), so <main>
-   keeps its height when a drag starts or ends. Without data-drop the idle strip is no target. A
-   white band across the column; the idle top divider is a shadow, so the box is the same in both
-   states (T4). One line is 28 px; when status and attribution do not fit one line (StatusBar adds
-   .wrap) the attribution moves to a second line, at most 48 px in all. */
+   what is under the pointer. Same box in both states, so <main> keeps its height when a drag starts
+   or ends: idle, the top border is 1 px slate-200 (the divider) over 3 px padding and the other
+   sides 2 px transparent; during a drag all sides are 2 px dashed over 2 px top padding, so border
+   plus top padding are 4 px in both states (T4). Without data-drop the idle strip is no target. A
+   white band across the column. One line is 28 px;
+   when status and attribution do not fit one line (StatusBar adds .wrap) the attribution moves to
+   a second line, at most 48 px in all. */
 .status-strip {
   flex: none;
   position: relative;
@@ -645,12 +648,12 @@ button.link {
   align-items: center;
   min-height: 28px;
   margin: 0;
-  padding: 2px 16px;
+  padding: 3px 16px 2px;
   overflow: hidden;
   border: 2px solid transparent;
+  border-top: 1px solid var(--border);
   border-radius: 0;
   background: var(--panel);
-  box-shadow: inset 0 1px 0 var(--border);
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
@@ -762,8 +765,8 @@ button.link {
 }
 
 .status-strip.drop {
+  padding-top: 2px;
   border: 2px dashed var(--accent);
-  box-shadow: none;
   background: color-mix(in srgb, var(--accent) 4%, var(--panel));
 }
 
