@@ -61,6 +61,8 @@ The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL`
 
 The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `KIPSCOPE_HOST` logs a warning at start: there is no authentication.
 
+Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the ClickHouse address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
+
 ## Using the app
 
 **Signals.** The sidebar searches the catalog (`/` focuses it, `s` toggles the sidebar). Arrow keys and Enter, or a row's `+` button, add a signal to the marked window (click a window header to mark it), or to a new one. Drag a signal from the sidebar or a legend row onto a window to add or move it; hold Alt or Ctrl to copy. A window takes up to four units, one y axis each. A window emptied by a move disappears. Hover a legend row and click its `×` to remove the signal.
@@ -111,6 +113,20 @@ display:
 - `KIPSCOPE_PROJECT_FILE` points to another file (relative to the repo root); it must then exist. Without it a missing `kipscope.yaml` means full names.
 - Restart the server after editing the file. An invalid file (YAML syntax, unknown key, bad regex, unknown group in a template) stops the server with one line per problem.
 
+### Measurement info
+
+The optional `measurement` section of the same file gives the measurement info the footer shows at start (revision 0). The shipped file sets only the object:
+
+```yaml
+measurement:
+  name: Testfahrt A9      # ≤ 120 characters
+  object: smart451        # ≤ 120 characters, the vehicle or device under test
+  meta:                   # ≤ 8 entries, in file order
+    driver: Jan           # key ≤ 40 characters, starts with a letter; value ≤ 200 characters
+```
+
+CLI commands (`measurement …`, see [CLI](#cli)) change it while the server runs and win until the next restart; nothing writes the file back.
+
 ## Check
 
 ```sh
@@ -149,6 +165,10 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `cursor move C DURATION` | `cursor.move` |
 | `cursor remove C` | `cursor.remove` |
 | `diff on\|off` | `cursor.setDiff` |
+| `measurement name TEXT` | `measurement.set` name (`""` clears) |
+| `measurement object TEXT` | `measurement.set` object (`""` clears) |
+| `measurement meta KEY VALUE` | `measurement.setMeta` (`""` removes the entry) |
+| `measurement clear` | `measurement.clear` |
 | `command JSON` | the JSON as is (no anchors, names or REFs resolved) |
 
 Reads: `state`, `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]`, `wait [REVISION]`.
@@ -175,4 +195,4 @@ node apps/cli/src/main.ts state | jq -r .local.cursors.a   # 2026-10-13 15:08:01
 
 ## License
 
-[Attribution Assurance License](LICENSE) (SPDX `AAL`). © 2026 Jan Kipping, Agentic engineer · [kipp.ing](https://kipp.ing). The GPG-signed license text is [LICENSE.asc](LICENSE.asc); verify with `gpg --import KEYS.asc && gpg --verify LICENSE.asc` (key `1E3BF6DE3CC6227749622E8EA53393CE9B74E4F7`).
+[Attribution Assurance License](LICENSE) (SPDX `AAL`). © 2026 Jan Kipping, Agentic engineer · [kipp.ing](https://kipp.ing). The app shows this attribution in its footer and at the end of `kipscope --help`. The GPG-signed license text is [LICENSE.asc](LICENSE.asc); verify with `gpg --import KEYS.asc && gpg --verify LICENSE.asc` (key `1E3BF6DE3CC6227749622E8EA53393CE9B74E4F7`).
