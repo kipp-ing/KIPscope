@@ -60,7 +60,7 @@ Jan agreed to Q1 (2026-10-16): task 3.2 includes H9.
 
 ## 4. Tests
 
-- [ ] 4.1 Shared and server tests, seed, test setup:
+- [x] 4.1 Shared and server tests, seed, test setup:
   - One test per evidence name in the delta specs for `packages/shared/test` and `apps/server/test`; replace `encoding.test.ts` "rejects offsets beyond 2^53 ns" with the two new encoding tests.
   - `seed-test-db.ts`: data reference `spancar`, signal `Span_910h.FAR` with points at 1969-12-31T23:59:58.5Z, 23:59:59.5Z, 1970-01-01T00:00:00.5Z, 2026-01-01T00:00:00Z, 2026-10-01T00:00:00Z; adjust any test that counts all signals. Seed guard: refuse when `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` have the same port and the same host, where `localhost`, `127.0.0.1` and `[::1]` count as one host.
   - `test/globalSetup.ts` + `vitest.config.ts` `globalSetup`: load `.env` like `setup.ts`, ping the test ClickHouse and check that `spancar/Span_910h.FAR` exists; otherwise fail once with: `test ClickHouse at <url> is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @letsview/server seed:test\``.
@@ -69,9 +69,9 @@ Jan agreed to Q1 (2026-10-16): task 3.2 includes H9.
 
 ## 5. Root tooling
 
-- [ ] 5.1 `apps/server/package.json`: `yaml` to 2.8.3 or later, test script `TZ=Europe/Berlin vitest run --passWithNoTests`; `pnpm install` updates the lockfile; root `package.json` script `check`: `pnpm build && pnpm lint && pnpm test`; README: `pnpm check`, and `LETSVIEW_SERVER_URL` (Vite proxy target, default `http://127.0.0.1:7310`). Verify: `grep -c "yaml@2.8.1" pnpm-lock.yaml` prints 0; `pnpm check` exits 0.
-- [ ] 5.2 `scripts/tunnel.sh`: `keeper_pid` accepts the PID file only when `ps -o command= -p <pid>` contains `tunnel.sh run`; otherwise it removes the stale PID file and reports `not running`. Verify (only while no keeper runs): `sleep 300 & echo $! > "$TMPDIR/letsview-tunnel.pid"; scripts/tunnel.sh stop; kill -0 $!` prints `not running` and the `sleep` is still alive (`kill -0` exits 0); `scripts/tunnel.sh status` then prints `keeper not running`.
+- [x] 5.1 `apps/server/package.json`: `yaml` to 2.8.3 or later, test script `TZ=Europe/Berlin vitest run --passWithNoTests`; `pnpm install` updates the lockfile; root `package.json` script `check`: `pnpm build && pnpm lint && pnpm test`; README: `pnpm check`, and `LETSVIEW_SERVER_URL` (Vite proxy target, default `http://127.0.0.1:7310`). Verify: `grep -c "yaml@2.8.1" pnpm-lock.yaml` prints 0; `pnpm check` exits 0.
+- [x] 5.2 `scripts/tunnel.sh`: `keeper_pid` accepts the PID file only when `ps -o command= -p <pid>` contains `tunnel.sh run`; otherwise it removes the stale PID file and reports `not running`. Verify (only while no keeper runs): `sleep 300 & echo $! > "$TMPDIR/letsview-tunnel.pid"; scripts/tunnel.sh stop; kill -0 $!` prints `not running` and the `sleep` is still alive (`kill -0` exits 0); `scripts/tunnel.sh status` then prints `keeper not running`.
 
 ## 6. Lead
 
-- [ ] 6.1 Manual checks of design "Manual checks (lead)": "Restart with the tunnel down", "Wait after a server restart on real data", "Server down in the UI".
+- [x] 6.1 Manual checks of design "Manual checks (lead)": "Restart with the tunnel down", "Wait after a server restart on real data", "Server down in the UI".
