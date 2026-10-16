@@ -54,3 +54,12 @@ A, B and L readout cells in legends and in the values window SHALL show the shor
 - **WHEN** readout cells are formatted for value 3 with label `KEYON: Ignition on`, for value 254 with label `SENSOR_DEF`, for 20.5 without label, and Diff cells for A `KEYON` / B `KEYON` and A `KEYON` / B 0 (`NONE`)
 - **THEN** `KEYON` (title `KEYON: Ignition on · 3`), `SENSOR_DEF` (title `SENSOR_DEF · 254`), `20.5`; `=` and `≠`
 - **Evidence:** `apps/web/test/readout.test.ts` › "shows state names in readout cells"
+
+### Requirement: State signals drawn as steps
+A signal with named states SHALL be drawn as steps: each point's level holds until the next point, with no sloped segment through intermediate levels; a view without a point holds the edge point's level across it. Only diag enums and text states SHALL widen a flat y range. Until `add-gap-display` lands, holds may cross logger gaps (D-062). Origin: D-059 and "No interpolation into a state" (line and readout never disagree); lead's decision, design N3.
+
+#### Scenario: Steps, edge hold and y range
+- **WHEN** chart points are built for (a) a contactor-like diag enum polled 30 s apart that goes from open to closed inside the view, (b) an IgnCurMode-like `VAL_` signal without a point in the range whose edge point before it is 3 (`KEYON`), and the y domain is computed for (c) a flat diag enum and a flat numeric signal with `VAL_ 0 "Stop"` at 50 km/h
+- **THEN** (a) the drawn points form a step: the open level holds until the closed point, and no drawn point lies at a level between the two; (b) the line is at 3 across the whole range; (c) the diag enum's domain is widened by its states, the numeric signal's is the normal domain centred on 50
+- **Evidence:** `apps/web/test/build.test.ts` › "draws state signals as steps", "holds the edge level across a range without points", "widens a flat y range only for code-valued states"
+
