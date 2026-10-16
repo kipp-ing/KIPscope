@@ -162,20 +162,29 @@ function parseMeasurement(section: unknown, problems: string[]): Measurement | u
   if (meta !== null && meta !== undefined) {
     if (!isMap(meta)) problems.push("measurement.meta: must be a map of key: value");
     else {
-      const keys = Object.keys(meta);
-      if (keys.length > MAX_MEASUREMENT_META)
+      // Keys are trimmed like the measurement.setMeta command's, so `"driver "` here and `driver`
+      // from the CLI are one entry; keys equal after trimming apply in file order like the command.
+      const raw = Object.keys(meta);
+      if (new Set(raw.map((k) => k.trim())).size > MAX_MEASUREMENT_META)
         problems.push(`measurement.meta: at most ${MAX_MEASUREMENT_META} entries`);
-      const entries: MeasurementEntry[] = [];
-      for (const key of keys) {
+      let entries: MeasurementEntry[] = [];
+      for (const rawKey of raw) {
+        const key = rawKey.trim();
         const field = `measurement.meta.${key}`;
         if (!/^\p{L}/u.test(key)) problems.push(`${field}: key must start with a letter`);
         else if (!MEASUREMENT_KEY.test(key))
           problems.push(`${field}: key may hold only letters, digits, space, _ . -`);
         else if (key.length > MAX_MEASUREMENT_KEY)
           problems.push(`${field}: at most ${MAX_MEASUREMENT_KEY} characters`);
-        const parsed = scalarText(meta[key], MAX_MEASUREMENT_VALUE);
-        if (typeof parsed === "string") problems.push(`${field}: ${parsed}`);
-        else if (parsed.text !== undefined) entries.push({ key, value: parsed.text });
+        const parsed = scalarText(meta[rawKey], MAX_MEASUREMENT_VALUE);
+        if (typeof parsed === "string") {
+          problems.push(`${field}: ${parsed}`);
+          continue;
+        }
+        const index = entries.findIndex((e) => e.key === key);
+        if (parsed.text === undefined) entries = entries.filter((e) => e.key !== key);
+        else if (index >= 0) entries = entries.with(index, { key, value: parsed.text });
+        else entries.push({ key, value: parsed.text });
       }
       if (entries.length) measurement.meta = entries;
     }

@@ -78,8 +78,9 @@ const app = buildApp(
         table: config.mapping.table,
       },
       // Outside the query queue, so a busy queue does not read as an unreachable source.
-      ping: async () => {
-        const result = await client.ping();
+      // Aborted on the 2 s timeout, so a hung tunnel does not hold a socket per poll.
+      ping: async (signal) => {
+        const result = await client.ping({ select: false, abort_signal: signal });
         if (!result.success) throw result.error;
       },
     },

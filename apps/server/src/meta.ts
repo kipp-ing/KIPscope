@@ -40,8 +40,9 @@ export interface MetaDeps {
   build: BuildInfo;
   /** Labels only; the source URL and credentials never enter here. */
   source: { kind: "clickhouse"; database: string; table: string };
-  /** Resolves when the source answers; rejects with the reason. Must not use the query queue. */
-  ping: () => Promise<void>;
+  /** Resolves when the source answers; rejects with the reason. Must not use the query queue.
+   *  `signal` aborts on the timeout, so a hung source does not keep the request (and its socket) open. */
+  ping: (signal: AbortSignal) => Promise<void>;
 }
 
 type PingResult = Pick<ServerMeta["source"], "reachable" | "checkedAt" | "error">;
@@ -52,17 +53,19 @@ function pingError(error: unknown): string {
   return (message || "unknown error").replace(/\/\/[^/@\s]*@/g, "//");
 }
 
-/** One ping raced against PING_TIMEOUT_MS; never rejects. */
-async function pingOnce(ping: () => Promise<void>): Promise<PingResult> {
+/** One ping raced against PING_TIMEOUT_MS, aborted when the time is up; never rejects. */
+async function pingOnce(ping: MetaDeps["ping"]): Promise<PingResult> {
+  const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`no answer within ${PING_TIMEOUT_MS / 1000} s`)),
-      PING_TIMEOUT_MS,
-    );
+    timer = setTimeout(() => {
+      reject(new Error(`no answer within ${PING_TIMEOUT_MS / 1000} s`));
+      controller.abort();
+    }, PING_TIMEOUT_MS);
   });
   try {
-    await Promise.race([ping(), timeout]);
+    // The race still ends at the timeout when a ping ignores the signal.
+    await Promise.race([ping(controller.signal), timeout]);
     return { reachable: true, checkedAt: new Date().toISOString() };
   } catch (error) {
     return { reachable: false, checkedAt: new Date().toISOString(), error: pingError(error) };
@@ -87,7 +90,7 @@ export function metaRoutes(deps: {
   const { meta, catalog, licenseText } = deps;
   /** The ping in progress; concurrent requests share it (single flight), no cache beyond it. */
   let running: Promise<PingResult> | undefined;
-  const check = (ping: () => Promise<void>) => {
+  const check = (ping: MetaDeps["ping"]) => {
     running ??= pingOnce(ping).finally(() => {
       running = undefined;
     });

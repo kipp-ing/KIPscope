@@ -157,6 +157,35 @@ describe("project file measurement section (add-footer)", () => {
     expect([...shown.values()]).toEqual(["V_ANZ", "T_SOLL"]);
   });
 
+  it("trims meta keys like the measurement.setMeta command", () => {
+    const text = [
+      "measurement:",
+      "  meta:",
+      '    "driver ": Jan',
+      '    " run": 3',
+      '    "driver": Eva',
+      '    "  wet  ": true',
+      "",
+    ].join("\n");
+    expect(parseProject(text, "p.yaml").measurement?.meta).toEqual([
+      { key: "driver", value: "Eva" },
+      { key: "run", value: "3" },
+      { key: "wet", value: "true" },
+    ]);
+    // Checked after trimming: a key that only a leading space kept from starting with a letter.
+    expect(problems('measurement:\n  meta:\n    " 1st": v\n')).toContain(
+      "p.yaml: measurement.meta.1st: key must start with a letter",
+    );
+    expect(
+      parseProject(`measurement:\n  meta:\n    "${"k".repeat(40)} ": v\n`, "p.yaml").measurement,
+    ).toEqual({ meta: [{ key: "k".repeat(40), value: "v" }] });
+    // The entry limit counts keys after trimming.
+    const eight = Array.from({ length: 8 }, (_, i) => `    k${i + 1}: v`).join("\n");
+    expect(
+      parseProject(`measurement:\n  meta:\n${eight}\n    "k1 ": w\n`, "p.yaml").measurement?.meta,
+    ).toHaveLength(8);
+  });
+
   it("refuses an invalid measurement section", () => {
     const meta9 = Array.from({ length: 9 }, (_, i) => `    k${i + 1}: v`).join("\n");
     const out = problems(

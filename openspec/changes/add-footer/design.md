@@ -85,7 +85,7 @@ export interface MetaDeps {
   build: BuildInfo;
   source: { kind: "clickhouse"; database: string; table: string };
   /** Resolves when the source answers; rejects with the reason. Must not use the query queue. */
-  ping: () => Promise<void>;
+  ping: (signal: AbortSignal) => Promise<void>;   // aborted at the 2 s timeout (round 2)
 }
 export function metaRoutes(deps: { meta?: MetaDeps; catalog: Catalog; licenseText?: string }): FastifyPluginAsync;
 ```
@@ -93,7 +93,7 @@ export function metaRoutes(deps: { meta?: MetaDeps; catalog: Catalog; licenseTex
 - `AppDeps` gains optional `meta?: MetaDeps` and `licenseText?: string`; `buildApp` registers `metaRoutes` always. `/api/meta` without `meta` deps answers 404 `not_configured` (only tests omit it); `/api/license` without text answers 404 `license_missing`.
 - Ping: single flight (a running promise is shared), raced against `PING_TIMEOUT_MS` (failure message `no answer within 2 s`). No result cache beyond the in-flight promise.
 - Catalog state: `loadedAt` set → `loaded`; else `lastError` set → `failed`; else `loading`. `reason` = `unavailableReason` when not loaded.
-- `main.ts`: keeps the ClickHouse client in a variable and passes `ping: async () => { const r = await client.ping(); if (!r.success) throw r.error; }`; source label from `config.mapping.database`/`table`; `readBuildInfo(REPO_ROOT)` once at start; `LICENSE` read with `readFileSync(resolve(REPO_ROOT, "LICENSE"), "utf8")`, ENOENT → `app.log.warn("LICENSE not found; /api/license answers 404")`; `app.log.info(attributionText())` before `listen` (Q4). The URL, user and password never enter `MetaDeps`.
+- `main.ts`: keeps the ClickHouse client in a variable and passes `ping: async (signal) => { const r = await client.ping({ select: false, abort_signal: signal }); if (!r.success) throw r.error; }`; source label from `config.mapping.database`/`table`; `readBuildInfo(REPO_ROOT)` once at start; `LICENSE` read with `readFileSync(resolve(REPO_ROOT, "LICENSE"), "utf8")`, ENOENT → `app.log.warn("LICENSE not found; /api/license answers 404")`; `app.log.info(attributionText())` before `listen` (Q4). The URL, user and password never enter `MetaDeps`.
 - `apps/web/src/api.ts`: `fetchMeta(abort?: AbortSignal): Promise<ServerMeta>` (throws `ApiRequestError` on non-2xx).
 
 **Why the server's commit, not a web build constant:** one value, no Vite `define`; in dev the web code is always current through HMR while the server is the part that can lag (watch restarts only on its own files). Alternative: a semver `version` (none exists, Q3).

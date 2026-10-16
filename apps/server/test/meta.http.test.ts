@@ -12,7 +12,7 @@ import { testDbcFiles, testSource } from "./testdb.ts";
 const LICENSE = readFileSync(resolve(import.meta.dirname, "../../../LICENSE"), "utf8");
 const STARTED = new Date("2026-10-16T13:07:10.000Z");
 
-function metaDeps(ping: () => Promise<void>, build?: Partial<BuildInfo>): MetaDeps {
+function metaDeps(ping: MetaDeps["ping"], build?: Partial<BuildInfo>): MetaDeps {
   return {
     build: { commit: "7c1e2a9", dirty: true, startedAt: STARTED, ...build },
     source: { kind: "clickhouse", database: "sdlog", table: "signals" },
@@ -234,6 +234,53 @@ describe("source ping", () => {
       });
       expect(took).toBeGreaterThanOrEqual(1900);
       expect(took).toBeLessThan(3000);
+    } finally {
+      await app.close();
+    }
+  }, 10_000);
+
+  it("aborts the hung ping at the timeout", async () => {
+    let seen: AbortSignal | undefined;
+    let settled = false;
+    const app = buildApp({
+      catalog: idleCatalog(),
+      source: never,
+      workspace: workspace(),
+      meta: metaDeps(
+        (signal) =>
+          new Promise<void>((_, reject) => {
+            seen = signal;
+            signal.addEventListener("abort", () => {
+              settled = true;
+              reject(signal.reason);
+            });
+          }),
+      ),
+    });
+    try {
+      const res = await app.inject({ url: "/api/meta" });
+      expect(res.json().source.error).toBe("no answer within 2 s");
+      expect(seen?.aborted).toBe(true);
+      expect(settled).toBe(true);
+    } finally {
+      await app.close();
+    }
+  }, 10_000);
+
+  it("does not abort a ping that answered", async () => {
+    let seen: AbortSignal | undefined;
+    const app = buildApp({
+      catalog: idleCatalog(),
+      source: never,
+      workspace: workspace(),
+      meta: metaDeps(async (signal) => {
+        seen = signal;
+      }),
+    });
+    try {
+      expect((await app.inject({ url: "/api/meta" })).json().source.reachable).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, PING_TIMEOUT_MS + 100));
+      expect(seen?.aborted).toBe(false);
     } finally {
       await app.close();
     }

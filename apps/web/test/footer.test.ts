@@ -4,7 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { fitFooter } from "../src/footer/fit.ts";
 import { footerItems, measurementItems } from "../src/footer/items.ts";
-import { StatusBar } from "../src/footer/StatusBar.tsx";
+import { contentWidth, StatusBar } from "../src/footer/StatusBar.tsx";
+import { metaLoader } from "../src/footer/useMeta.ts";
 
 // Static markup has no layout, so the bar never hides anything on its own; the tooltip test below
 // scripts the fit's answer. Everything else runs the real fitFooter.
@@ -297,5 +298,108 @@ describe("status bar markup (app-footer)", () => {
     const content = html.replace(/<div[^>]*status-measure[^>]*>.*?<\/div>/s, "");
     expect(content).not.toContain("7c1e2a9*</span>");
     expect(content).toContain("1234 signals");
+  });
+});
+
+describe("meta loader (app-footer)", () => {
+  type State = { meta?: ServerMeta; stale: boolean };
+  /** A loader over scripted fetches; `settle(i)` resolves or rejects the i-th fetch. */
+  function harness(abort = new AbortController()) {
+    const pending: { resolve: (m: ServerMeta) => void; reject: (e: unknown) => void }[] = [];
+    let state: State = { stale: false };
+    const load = metaLoader(
+      () =>
+        new Promise<ServerMeta>((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+      (update) => {
+        state = update(state);
+      },
+      abort.signal,
+    );
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    return { load, pending, flush, state: () => state, abort };
+  }
+  const older = metaOf({
+    build: { commit: "1111111", dirty: false, startedAt: "2026-10-16T13:00:00.000Z" },
+  });
+  const newer = metaOf({
+    build: { commit: "2222222", dirty: false, startedAt: "2026-10-16T14:00:00.000Z" },
+  });
+
+  it("drops an older answer that arrives after a newer one", async () => {
+    const h = harness();
+    h.load();
+    h.load();
+    h.pending[1]?.resolve(newer);
+    await h.flush();
+    h.pending[0]?.resolve(older);
+    await h.flush();
+    expect(h.state()).toEqual({ meta: newer, stale: false });
+  });
+
+  it("drops an older failure, so a newer success is not marked stale", async () => {
+    const h = harness();
+    h.load();
+    h.load();
+    h.pending[1]?.resolve(newer);
+    await h.flush();
+    h.pending[0]?.reject(new Error("timeout"));
+    await h.flush();
+    expect(h.state()).toEqual({ meta: newer, stale: false });
+  });
+
+  it("keeps a newer failure over an older success that arrives later", async () => {
+    const h = harness();
+    h.load();
+    h.pending[0]?.resolve(older);
+    await h.flush();
+    h.load();
+    h.load();
+    h.pending[2]?.reject(new Error("offline"));
+    await h.flush();
+    h.pending[1]?.resolve(newer);
+    await h.flush();
+    expect(h.state()).toEqual({ meta: older, stale: true });
+  });
+
+  it("ignores answers after the abort", async () => {
+    const h = harness();
+    h.load();
+    h.abort.abort();
+    h.pending[0]?.reject(new DOMException("aborted", "AbortError"));
+    await h.flush();
+    expect(h.state()).toEqual({ stale: false });
+  });
+});
+
+describe("bar content width (app-footer)", () => {
+  const style = {
+    borderLeftWidth: "2px",
+    borderRightWidth: "2px",
+    paddingLeft: "8px",
+    paddingRight: "8px",
+  };
+
+  it("keeps the sub-pixel part of the bar's width", () => {
+    expect(contentWidth(1407.6, style)).toBeCloseTo(1387.6, 6);
+    expect(contentWidth(100, { ...style, borderLeftWidth: "", paddingRight: "auto" })).toBe(90);
+  });
+
+  it("does not clip the last item of a sub-pixel fit", () => {
+    // Status, attribution and items need 1387.25 px; the bar's content box is 1387.4 px, while the
+    // integer clientWidth (1403.4 rounded down, minus padding) would give 1387 and hide the build.
+    const parts = {
+      status: 150.25,
+      attribution: 200,
+      gap: 12,
+      items: [
+        { key: "name", width: 500, rank: 22 },
+        { key: "build", width: 501, rank: 1 },
+      ],
+    };
+    const available = contentWidth(1407.4, style);
+    expect(fitFooter({ available, ...parts })).toEqual({ shown: ["name", "build"], wrap: false });
+    expect(fitFooter({ available: 1403 - 16, ...parts }).shown).toEqual(["name"]);
   });
 });

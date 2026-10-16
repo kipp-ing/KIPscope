@@ -57,6 +57,25 @@ function px(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+type BoxStyle = Pick<
+  CSSStyleDeclaration,
+  "borderLeftWidth" | "borderRightWidth" | "paddingLeft" | "paddingRight"
+>;
+
+/**
+ * Content width of the bar from its fractional border-box width. Not `clientWidth`: it rounds to
+ * whole px while the item widths are fractional, so a sub-pixel fit could clip the last item.
+ */
+export function contentWidth(borderBox: number, style: BoxStyle): number {
+  return (
+    borderBox -
+    px(style.borderLeftWidth) -
+    px(style.borderRightWidth) -
+    px(style.paddingLeft) -
+    px(style.paddingRight)
+  );
+}
+
 function Item({ item, title }: { item: FooterItem; title: string }) {
   return (
     <span className={`footer-item tone-${item.tone}`} title={title}>
@@ -118,7 +137,7 @@ export function StatusBar(props: StatusBarProps) {
       items[el.dataset.key ?? ""] = el.getBoundingClientRect().width;
     }
     const next: Widths = {
-      available: bar.clientWidth - px(style.paddingLeft) - px(style.paddingRight),
+      available: contentWidth(bar.getBoundingClientRect().width, style),
       status: statusRef.current.getBoundingClientRect().width,
       attribution: attributionRef.current.getBoundingClientRect().width,
       gap: px(getComputedStyle(leftRef.current).columnGap),
