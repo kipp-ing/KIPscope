@@ -382,6 +382,25 @@ describe("strip geometry", () => {
     expect(hitZone(t2, 700, 10, inner, [])).toEqual({ kind: "body" });
   });
 
+  it("brushes from a whole-recording window short of first/last by sub-pixel gaps (smart451)", () => {
+    // 118 bars of 1 h at 1,162 px; first 34:24.811 into bar 0, last 52:26.850 into bar 117.
+    const MS = 1_000_000n;
+    const first = 34n * MIN + 24_811n * MS;
+    const last = 117n * H + 52n * MIN + 26_850n * MS;
+    const d = density({
+      first: first.toString(),
+      last: last.toString(),
+      counts: new Array<number>(118).fill(1),
+    });
+    const t2 = trackOf(d, 1162);
+    // The loaded signals' extent: 13 ms after first, 5.6 s before last.
+    const whole = r(first + 13n * MS, last - 5_639n * MS);
+    expect(hitZone(t2, 580, 10, whole, [])).toEqual({ kind: "bars" });
+    // A window starting one bar after first is a sub-range: its body pans.
+    const later = r(first + H, last - 5_639n * MS);
+    expect(hitZone(t2, 580, 10, later, [])).toEqual({ kind: "body" });
+  });
+
   it("ends the tooltip of a count-0 bar with 'no rows' (Bar with no rows)", () => {
     const d = density({ counts: [0, 5, ...new Array<number>(118).fill(0)] });
     expect(barTitle(d, 0).endsWith(" · no rows")).toBe(true);

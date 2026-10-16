@@ -166,12 +166,11 @@ export function hitZone(
       return { kind: "edge", side: dFrom <= dTo ? "from" : "to" };
     }
   }
-  // A full window brushes from its body (design S7): drawn to within EDGE_PX of both track ends, or
-  // covering the recording's first to last row (the whole-recording view starts a few px inside
-  // the track, since the first bar starts before `first`).
+  // A full window brushes from its body (design S7): drawn to within EDGE_PX of the recorded data
+  // at both ends (xOf first and last), so sub-pixel gaps between the loaded signals' extent and the
+  // density's first/last row do not matter. A window starting in a later drive still pans.
   const full =
-    (drawn.left <= EDGE_PX && drawn.right >= tr.px - EDGE_PX) ||
-    (range.from <= tr.first && range.to > tr.last);
+    drawn.left <= xOf(tr, tr.first) + EDGE_PX && drawn.right >= xOf(tr, tr.last) - EDGE_PX;
   if (!full && x >= grab.left && x <= grab.right) return { kind: "body" };
   return { kind: "bars" };
 }

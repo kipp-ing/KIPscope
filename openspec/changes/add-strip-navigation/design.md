@@ -162,10 +162,10 @@ export const MIN_DRIVE_PX = 4;    // drawn drive
 export const DRIVE_HIT_PX = 8;    // drive hit width
 export const MIN_SPAN = 100n;     // ns, timeseries-window "Minimum zoom span"
 
-export interface Track { start: bigint; width: bigint; n: number; px: number }
+export interface Track { start: bigint; width: bigint; n: number; px: number; first: bigint; last: bigint }
 export interface Rect { left: number; right: number }
 
-/** start, width, n = counts.length from the density; px = the track's clientWidth. */
+/** start, width, n = counts.length, first, last (the recording's first and last row) from the density; px = the track's clientWidth. */
 export function trackOf(d: Density, px: number): Track;
 /** pitch = (px + GAP_PX) / n; x = Number(t − start) / Number(width) × pitch (not clamped). Bar i covers [i·pitch, i·pitch + pitch − GAP_PX]. */
 export function xOf(tr: Track, t: bigint): number;
@@ -198,7 +198,7 @@ export type Zone =
 export function hitZone(tr: Track, x: number, y: number, range: Range | undefined, drives: readonly Drive[]): Zone;
 ```
 
-Order: (1) `y ≥ BARS_PX`: the drive whose hit rect holds x, nearest centre on overlap → `drive`, else `bars`. (2) With `windowRects`: if `drawn` is at least `EDGES_MIN_PX` wide, `|x − drawn.left| ≤ EDGE_PX` → edge `from`, `|x − drawn.right| ≤ EDGE_PX` → edge `to` (the nearer one if both). (3) x in `grab` and the window is not full (`drawn.left ≤ EDGE_PX && drawn.right ≥ px − EDGE_PX` is full) → `body`. (4) Else `bars`. A full window brushes from its body, since panning a window that spans the track moves nothing useful, while a drag across the strip from the whole-recording view is the most common first zoom.
+Order: (1) `y ≥ BARS_PX`: the drive whose hit rect holds x, nearest centre on overlap → `drive`, else `bars`. (2) With `windowRects`: if `drawn` is at least `EDGES_MIN_PX` wide, `|x − drawn.left| ≤ EDGE_PX` → edge `from`, `|x − drawn.right| ≤ EDGE_PX` → edge `to` (the nearer one if both). (3) x in `grab` and the window is not full (`drawn.left ≤ xOf(first) + EDGE_PX && drawn.right ≥ xOf(last) − EDGE_PX` is full) → `body`. (4) Else `bars`. A full window brushes from its body, since panning a window that spans the track moves nothing useful, while a drag across the strip from the whole-recording view is the most common first zoom. Full means covering the recorded data to within `EDGE_PX` at both ends, in pixels and not exact times: the whole-recording view is the loaded signals' extent, which differs from the density's `first`/`last` (smart451: 13 ms after `first`, 5.6 s before `last`, at ~5 min/px), and a signal starting in a later drive is a real sub-range and still pans; off by a factor of two, 2 px calls a whole view with a few seconds of slack not full, 8 px calls a view missing 40 min of the recording full.
 
 Pointer (`style.cursor` on the track, set on pointer move when no gesture runs): `bars` and `drive` → `pointer`, `body` → `grab`, `edge` → `ew-resize`; during a gesture: pan `grabbing`, resize `ew-resize`, brush `crosshair`. Without a target (`navigate` prop absent) or without a density: `default`, no handlers.
 

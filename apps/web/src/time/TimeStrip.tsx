@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
 import { useLiveCursor } from "../chart/live.ts";
-import type { Range } from "../chart/zoom.ts";
+import { clampRange, type Range } from "../chart/zoom.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
 import { RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
@@ -237,7 +237,8 @@ export function TimeStrip({
       out.range = next(view);
       return out.range;
     }, push);
-    setCommitted(sent && out.range ? { range: out.range, base: targetKey } : undefined);
+    // App's navigate sends the clamped range; show exactly that.
+    setCommitted(sent && out.range ? { range: clampRange(out.range), base: targetKey } : undefined);
     return sent;
   };
 

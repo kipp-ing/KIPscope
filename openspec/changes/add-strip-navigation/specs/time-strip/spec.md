@@ -99,7 +99,7 @@ The strip SHALL draw the bar target's range as a window over the bars, at its ex
 - **Evidence:** UI check on smart451 at 1440×900 (the measured widths and lefts, one screenshot)
 
 ### Requirement: Strip hit zones and pointer
-A press on the strip SHALL hit, in this order: a drive (drive row), a window edge (±4 px of a drawn edge, only on windows drawn at least 16 px wide), the window body (its grab area, unless the window spans the whole track), else the bars. The pointer SHALL show `ew-resize` on edges, `grab` on the body (`grabbing` while panning), `pointer` on bars and drives, `crosshair` while dragging a range. Origin: D-057 („slide = pan, edges = zoom"); zones: design S7.
+A press on the strip SHALL hit, in this order: a drive (drive row), a window edge (±4 px of a drawn edge, only on windows drawn at least 16 px wide), the window body (its grab area, unless the window covers the recorded data from `first` to `last` to within 4 px), else the bars. The pointer SHALL show `ew-resize` on edges, `grab` on the body (`grabbing` while panning), `pointer` on bars and drives, `crosshair` while dragging a range. Origin: D-057 („slide = pan, edges = zoom"); zones: design S7.
 
 #### Scenario: Zones
 - **WHEN** on the track of "Geometry" the window is [5 h, 5 h 20 min) and the pointer is at x 62, 57 and 55 in the bars area and at x 62 in the drive row without drives; then the window is [5 h, 10 h) and x is 57, 64, 65, 123 and 125; then the window is [0, 120 h) and x is 700, 2 and 1436
@@ -125,7 +125,7 @@ A click (press and release less than 4 px apart) on the bars, the window body or
 - **Evidence:** UI check on smart451 at 1440×900 (header and revision before and after, screenshot)
 
 ### Requirement: Drag zooms to the range
-A press on the bars (or on a drive, or on the body of a window spanning the whole track) moved at least 4 px SHALL draw an accent range and, on release, set the range between press and release, both ends rounded to the strip unit; a release less than 4 px left or right of the press SHALL send nothing. Origin: D-057 („drag across the strip zooms to that range").
+A press on the bars (or on a drive, or on the body of a window covering the recorded data to within 4 px) moved at least 4 px SHALL draw an accent range and, on release, set the range between press and release, both ends rounded to the strip unit; a release less than 4 px left or right of the press SHALL send nothing. Origin: D-057 („drag across the strip zooms to that range").
 
 #### Scenario: Brush math
 - **WHEN** on the track of "Geometry" a range is dragged from x 60 to x 120, from 120 to 60, and from 60 to 62 (with 10 px vertical movement)
