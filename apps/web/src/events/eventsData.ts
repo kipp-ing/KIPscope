@@ -2,6 +2,7 @@ import {
   compileEventFilter,
   DEFAULT_EVENT_FILTER,
   type DiagEvent,
+  type EventFilter,
   type EventList,
   parseEventFilter,
 } from "@kipscope/shared";
@@ -74,10 +75,28 @@ export function useEvents(
   return loaded?.key === key ? loaded.list : lists.get(key);
 }
 
-/** The shown events: compileEventFilter(parse(ws.eventFilter ?? DEFAULT)) over list.events; an invalid filter counts as the default. */
+/**
+ * The workspace filter is what presets, chips, strip and windows use (F5); an unparsable one counts
+ * as the default.
+ */
+export function appliedFilter(filter: string): EventFilter {
+  const p = parseEventFilter(filter);
+  if (p.ok) return p.filter;
+  const d = parseEventFilter(DEFAULT_EVENT_FILTER);
+  return d.ok ? d.filter : { terms: [] };
+}
+
+/**
+ * The filter heading and list use for the typed `text` over the workspace `filter`: a typed filter
+ * that parses replaces it; while it does not, they keep the workspace filter's, as strip and windows
+ * do (F5), not the previous keystroke's (a half-typed word such as `Contactorfaults` matches nothing).
+ */
+export function previewedFilter(text: string, filter: string): EventFilter {
+  const parsed = parseEventFilter(text);
+  return parsed.ok ? parsed.filter : appliedFilter(filter);
+}
+
+/** The shown events: appliedFilter(ws.eventFilter ?? DEFAULT) over list.events, one rule for strip, windows and panel. */
 export function shownEvents(list: EventList | undefined, filter: string): DiagEvent[] {
-  if (!list) return [];
-  let parsed = parseEventFilter(filter);
-  if (!parsed.ok) parsed = parseEventFilter(DEFAULT_EVENT_FILTER);
-  return parsed.ok ? list.events.filter(compileEventFilter(parsed.filter)) : [];
+  return list ? list.events.filter(compileEventFilter(appliedFilter(filter))) : [];
 }

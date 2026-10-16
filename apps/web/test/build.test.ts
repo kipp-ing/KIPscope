@@ -491,3 +491,127 @@ describe("state levels of a diag enum (open=0, precharge=1, closed=2)", () => {
     expect(yRange(m, scale, 0, 100)).toEqual([1, 3]);
   });
 });
+
+describe("state signals drawn as steps (N3)", () => {
+  const rows = [
+    { low: 0, high: 0, text: "open" },
+    { low: 1, high: 1, text: "precharge" },
+    { low: 2, high: 2, text: "closed" },
+  ];
+  const diagInfo = { states: "text", diag: { states: rows } } as unknown as SignalInfo;
+  const line = { mode: "line", envelope: false } as const;
+
+  /** Level of a drawn point list at x: the y of the last point at or before x (step reading). */
+  const levelAt = (xs: number[], ys: (number | null)[], x: number) => {
+    let level: number | null | undefined;
+    xs.forEach((px, i) => {
+      if (px <= x) level = ys[i];
+    });
+    return level;
+  };
+
+  it("draws state signals as steps", () => {
+    // Contactor polled 30 s apart: open at 0 s, closed at 30 s, both inside the view.
+    const s30 = 30_000_000_000n;
+    const r = raw([origin, origin + s30], [0, 0], { text: ["open", "closed"] });
+    const m = buildModel(
+      [{ key: "a", label: "contactor", color: "#000", result: r, states: rows, info: diagInfo }],
+      origin,
+      line,
+    );
+    const xs = m.tables[0]?.[0] as number[];
+    const ys = m.tables[0]?.[1] as (number | null)[];
+    // Every drawn point is at open (0) or closed (2); none at precharge (1) between them.
+    expect(ys.every((y) => y === 0 || y === 2)).toBe(true);
+    expect([...xs]).toEqual([...xs].sort((a, b) => a - b));
+    // The open level holds until just before the closed point, then the level is closed.
+    expect(levelAt(xs, ys, 29_999_999_999)).toBe(0);
+    // A drawn point holds open up to the closed point (a bare two-point line would slope).
+    const lastOpenX = Math.max(...xs.filter((_, i) => ys[i] === 0));
+    expect(lastOpenX).toBeGreaterThanOrEqual(29_999_999_999);
+    expect(lastOpenX).toBeLessThan(30_000_000_000);
+    expect(levelAt(xs, ys, 15_000_000_000)).toBe(0);
+    expect(levelAt(xs, ys, 30_000_000_000)).toBe(2);
+  });
+
+  it("holds the edge level across a range without points", () => {
+    // IgnCurMode-like VAL_ signal: no point in the view [0, 1000], edge point before is 3 (KEYON),
+    // the next point (OFF = 0) lies after the view.
+    const info = {
+      states: "labels",
+      dbc: {
+        values: [
+          { raw: 0, value: 0, label: "OFF" },
+          { raw: 3, value: 3, label: "KEYON" },
+        ],
+      },
+    } as unknown as SignalInfo;
+    const r = raw([], [], {
+      before: { t: (origin - 500n).toString(), v: 3, label: "KEYON" },
+      after: { t: (origin + 2000n).toString(), v: 0, label: "OFF" },
+    });
+    const m = buildModel(
+      [{ key: "a", label: "IgnCurMode", color: "#000", result: r, info }],
+      origin,
+      line,
+    );
+    const xs = m.tables[0]?.[0] as number[];
+    const ys = m.tables[0]?.[1] as (number | null)[];
+    for (const x of [0, 1, 500, 999, 1000]) expect(levelAt(xs, ys, x)).toBe(3);
+    // A drawn point at 3 reaches past the view end (a bare before/after pair would slope).
+    expect(Math.max(...xs.filter((_, i) => ys[i] === 3))).toBeGreaterThanOrEqual(1000);
+    // Nothing is drawn at a level between 3 and 0 inside the view.
+    expect(ys.filter((y, i) => y !== null && (xs[i] as number) <= 1000).every((y) => y === 3)).toBe(
+      true,
+    );
+  });
+
+  it("widens a flat y range only for code-valued states", () => {
+    // (c1) flat diag enum at precharge: widened to its states' span 0..2 (plus 5 % padding).
+    const flatEnum = raw([origin + 10n, origin + 20n], [0, 0], {
+      text: ["precharge", "precharge"],
+    });
+    const me = buildModel(
+      [
+        {
+          key: "a",
+          label: "contactor",
+          color: "#000",
+          result: flatEnum,
+          states: rows,
+          info: diagInfo,
+        },
+      ],
+      origin,
+      line,
+    );
+    const [lo, hi] = yRange(me, me.tableScales[0] as string, 0, 100) as [number, number];
+    expect(lo).toBeCloseTo(-0.1, 9);
+    expect(hi).toBeCloseTo(2.1, 9);
+
+    // (c2) numeric signal at 50 km/h with VAL_ 0 "Stop": normal axis centred on 50, not widened to 0.
+    const speedInfo = {
+      states: "labels",
+      unit: "km/h",
+      dbc: { values: [{ raw: 0, value: 0, label: "Stop" }] },
+    } as unknown as SignalInfo;
+    const flatSpeed = raw([origin + 10n, origin + 20n], [50, 50]);
+    const ms = buildModel(
+      [
+        {
+          key: "b",
+          label: "speed",
+          unit: "km/h",
+          color: "#000",
+          result: flatSpeed,
+          info: speedInfo,
+        },
+      ],
+      origin,
+      line,
+    );
+    const [slo, shi] = yRange(ms, ms.tableScales[0] as string, 0, 100) as [number, number];
+    expect(slo).toBeCloseTo(45, 9);
+    expect(shi).toBeCloseTo(55, 9);
+  });
+});

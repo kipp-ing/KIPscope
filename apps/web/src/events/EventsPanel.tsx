@@ -4,7 +4,6 @@ import {
   type CommandResult,
   categoriesOf,
   compileEventFilter,
-  DEFAULT_EVENT_FILTER,
   type DiagEvent,
   describeEventFilter,
   EVENT_CATEGORIES,
@@ -24,9 +23,12 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Range } from "../chart/zoom.ts";
 import { formatTime } from "../time/axis.ts";
+import { appliedFilter, previewedFilter } from "./eventsData.ts";
 import { dayBands, listRows } from "./list.ts";
 import { markColor } from "./marks.ts";
 import "./events.css";
+
+export { appliedFilter, previewedFilter };
 
 interface Props {
   /** All events of the strip's data ref with its events-line signals, no filter (design V9); undefined while loading. */
@@ -93,25 +95,6 @@ function rowText(e: DiagEvent): string {
 }
 
 /**
- * The workspace filter is what presets and chips edit; an unparsable one counts as the default.
- * A typed filter that parses replaces it in heading and list (previewedFilter); while it does not,
- * they keep the workspace filter's, as strip and windows do (F5), not the previous keystroke's
- * (a half-typed word such as `Contactorfaults` matches nothing).
- */
-export function appliedFilter(filter: string): EventFilter {
-  const p = parseEventFilter(filter);
-  if (p.ok) return p.filter;
-  const d = parseEventFilter(DEFAULT_EVENT_FILTER);
-  return d.ok ? d.filter : { terms: [] };
-}
-
-/** The filter heading and list use for the typed `text` over the workspace `filter`. */
-export function previewedFilter(text: string, filter: string): EventFilter {
-  const parsed = parseEventFilter(text);
-  return parsed.ok ? parsed.filter : appliedFilter(filter);
-}
-
-/**
  * The Events part of the sidebar (spec events "Events panel", design V8, F5): heading with the count,
  * the filter field with its preview, presets, chips, the events-line signals and the day-banded list.
  */
@@ -139,7 +122,7 @@ export function EventsPanel({
   const text = draft ?? filter;
   const parsed = useMemo(() => parseEventFilter(text), [text]);
   const applied = useMemo(() => appliedFilter(filter), [filter]);
-  const previewed = parsed.ok ? parsed.filter : applied;
+  const previewed = useMemo(() => previewedFilter(text, filter), [text, filter]);
 
   const shown = useMemo(
     () => (list ? list.events.filter(compileEventFilter(previewed)) : []),

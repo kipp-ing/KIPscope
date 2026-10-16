@@ -1,5 +1,5 @@
 import type { DiagScaleRow, Display, SeriesResult, SignalInfo, Timestamp } from "@kipscope/shared";
-import { decodeTimes, stateLabel, valueLabels } from "@kipscope/shared";
+import { decodeTimes } from "@kipscope/shared";
 import { type AxisLayout, layoutAxes } from "./axes.ts";
 
 /** x/y arrays of one signal; x is the ns offset from the window origin. */
@@ -33,39 +33,35 @@ export function stateLevel(
 }
 
 /**
- * Span of a state signal's state levels (D-059): its VAL_ values, or a diag enum's codes;
- * undefined for other signals.
+ * Span of a code-valued state signal's states (D-059, N3): a diag enum's or text state's codes;
+ * undefined for other signals. A numeric signal with VAL_ labels keeps its normal axis.
  */
 export function stateDomain(info: SignalInfo | undefined): [number, number] | undefined {
-  if (!info?.states) return undefined;
-  const levels =
-    info.states === "text"
-      ? (info.diag?.states ?? []).map((s) => s.low)
-      : valueLabels(info).map((l) => l.value);
+  if (info?.states !== "text") return undefined;
+  const levels = (info.diag?.states ?? []).map((s) => s.low);
   return levels.length > 0 ? [Math.min(...levels), Math.max(...levels)] : undefined;
 }
 
-/** Whether a state signal's point has a state name (N2, readout rule); SNA (null) never. */
-const isNamed = (info: SignalInfo, v: number | null, text: string | undefined) =>
-  v !== null && (info.states === "text" ? !!text : stateLabel(info, v) !== undefined);
-
 /**
- * Line mode across a raw range without points: next to a named edge neighbor the readout holds
- * the state before the range (N3), so the line does too, at that level until just before the
- * next point, instead of interpolating between two states outside the view.
+ * Draws a state signal as steps (N3): each valid point's level holds until 1 ns before the next
+ * point, envelope edges likewise, so no segment slopes through intermediate states. A range
+ * without points thus holds the edge point's level across the view.
  */
-function holdAcrossRange(
-  points: SignalPoints,
-  result: SeriesResult,
-  info: SignalInfo | undefined,
-): SignalPoints {
-  if (!info?.states || result.kind !== "raw" || result.v.length > 0) return points;
-  const { before, after } = result;
-  if (!before || !after || before.v === null || after.v === null) return points;
-  if (!isNamed(info, before.v, before.label) && !isNamed(info, after.v, after.label)) return points;
-  const [x0, x1] = points.xs as [number, number];
-  const [y0, y1] = points.ys as [number, number];
-  return { xs: [x0, x1 - 1, x1], ys: [y0, y0, y1] };
+function holdStates(points: SignalPoints): SignalPoints {
+  // Source indices of the drawn points: each point, plus a hold point before the next one.
+  const at: number[] = [];
+  const xs: number[] = [];
+  points.xs.forEach((x, i) => {
+    at.push(i);
+    xs.push(x);
+    const next = points.xs[i + 1];
+    if (next === undefined || next <= x + 1 || points.ys[i] === null) return;
+    at.push(i);
+    xs.push(next - 1);
+  });
+  const pick = (column: (number | null)[]) => at.map((i) => column[i] ?? null);
+  const { min, max } = points;
+  return { xs, ys: pick(points.ys), ...(min && max ? { min: pick(min), max: pick(max) } : {}) };
 }
 
 const levelOf = (
@@ -219,8 +215,8 @@ export interface SignalInput {
   result?: SeriesResult;
   /** A text signal's diag states (stateLevels): its points are drawn at their state level. */
   states?: readonly DiagScaleRow[];
-  /** A state signal's catalog entry (`states` set): holds its line across an empty range and
-      spans its flat axis over its states (holdAcrossRange, stateDomain). */
+  /** A state signal's catalog entry (`states` set): its line is drawn as steps (holdStates);
+      a code-valued one spans its flat axis over its states (stateDomain). */
   info?: SignalInfo;
 }
 
@@ -289,8 +285,8 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     const pts =
       path === "step"
         ? holdBeforeSna(points)
-        : path === "line"
-          ? holdAcrossRange(points, input.result, input.info)
+        : path === "line" && input.info?.states
+          ? holdStates(points)
           : points;
     const scale = layout.scaleOf.get(input.key) as string;
     if (!model.scales.has(scale)) {
@@ -345,7 +341,8 @@ function lowerBound(xs: number[], value: number): number {
 /**
  * y range of a scale for the visible x range: all points inside plus the nearest point outside
  * each edge, i.e. exactly the points that define the drawn segments. SNA (null) never counts.
- * A flat range of a state signal spans its states (stateDomain), so its line sits at its level.
+ * A flat range of a code-valued state signal spans its states (stateDomain), so its line sits
+ * at its level.
  * Undefined if none.
  */
 export function yRange(
