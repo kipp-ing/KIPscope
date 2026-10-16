@@ -108,8 +108,8 @@ The server SHALL compute every signal's shown name once per catalog load and del
 
 #### Scenario: No file, no field
 - **WHEN** the catalog is built without a project file (test DB)
-- **THEN** no entry has `displayName` and every existing catalog `toEqual` test passes unchanged
-- **Evidence:** `apps/server/test/catalog.test.ts` › "lists a signal without DBC entry with its name only" (unchanged)
+- **THEN** no entry has `displayName` (nor `group`, capability `signal-groups`) and every existing catalog `toEqual` test passes with no change other than `sender: "TEST"` in its `dbc` object (D-053)
+- **Evidence:** `apps/server/test/catalog.test.ts` › "lists a signal without DBC entry with its name only" (unchanged) and › "merges DBC unit and comment as description" (only `sender` added)
 
 ### Requirement: Shown name in the UI
 Explorer rows, chart legend rows, values window rows, the drag ghost and the title of a unit-less signal's y axis SHALL show the signal's shown name. The hover card SHALL keep the full source name, and where the shown name differs from it, the shown name's tooltip in explorer rows, legend rows and values rows SHALL be the full source name. Origin: D-035 („The full source name stays in the hover card and tooltips").

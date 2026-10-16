@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-054: Signal group conventions (2026-10-16)
+
+From the archived change `add-signal-groups`; details there.
+
+- **Decision:** `display.groups` rules (`match` optional, `group` template over named groups and `{sender}`); a blank render falls through to the next rule; computed on the server as optional `SignalInfo.group` (absent = `Other`); the web groups only. Shipped rules: `{sender}`, then `^(?<ecu>CPC|PNHV)_` → `{ecu}`. Empty search: groups by name, `Other` last, also while searching; Enter adds the first row shown; arrows include headers, Enter on a header toggles; collapse state is not remembered. `DbcInfo.sender` absent for `Vector__XXX`.
+
 ## D-053: Signal groups in the explorer (2026-10-16)
 
 - **Context:** Jan: „signals shall be grouped on left bar. user defined. here as example we use sending ECU". The DBCs name a sender per `BO_` (h-can: Engine, CGW, ESP, …; hybrid-can: CPC, BMS, EM2, …); `Vector__XXX` means no sender.

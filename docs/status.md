@@ -1,12 +1,13 @@
 # Status
 
-As of 2026-10-16, session 6. No change in flight; all sixteen changes are archived and the main specs describe the running app.
+As of 2026-10-16, session 6. No change in flight; all seventeen changes are archived and the main specs describe the running app.
 
 ## What runs
 
 | Capability | Spec | In short |
 |---|---|---|
 | Signal catalog | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Signals with DBC metadata and SNA rules; ranked search, hover card, keyboard and drag in the explorer |
+| Signal groups | [signal-groups](../openspec/specs/signal-groups/spec.md) | `display.groups` rules in `kipscope.yaml` group the explorer by sending ECU (DBC `BO_` sender, CPC/PNHV fallback); collapsible headers, groups with hits open while searching, `Other` last |
 | Display names | [display-names](../openspec/specs/display-names/spec.md) | `kipscope.yaml` rules and renames give short names (`V_ANZ`) in the UI; full name in card and tooltips; search on both |
 | Series cache | [series-cache](../openspec/specs/series-cache/spec.md) | Power-of-two tiles kept in tab memory (LRU, 4 M values); zoom/pan back without a request |
 | Series queries | [series-query](../openspec/specs/series-query/spec.md) | Raw points or min/mean/max buckets by zoom level; SNA as `null`; verified on 10 h at 5 ms |
@@ -14,7 +15,7 @@ As of 2026-10-16, session 6. No change in flight; all sixteen changes are archiv
 | Chart windows | [timeseries-window](../openspec/specs/timeseries-window/spec.md) | uPlot windows, one axis per unit (max 4), linked zoom, history, drag and drop, wheel and keys |
 | Time navigation | [time-navigation](../openspec/specs/time-navigation/spec.md) | "Go to" with times, ranges and durations; span presets; zoom and pan keys |
 | Cursors | [cursors](../openspec/specs/cursors/spec.md) | A and B in every window; exact values, Δ and Δt in the legend |
-| Live cursor | [live-cursor](../openspec/specs/live-cursor/spec.md) | L follows the mouse in every window: L column in legends and values window, nearest curve highlighted with a value label |
+| Live cursor | [live-cursor](../openspec/specs/live-cursor/spec.md) | L follows the mouse in every window: L column in legends and values window, nearest curve within 16 px highlighted with a value label |
 | Values window | [values-window](../openspec/specs/values-window/spec.md) | Many signals at the cursors, no plot |
 | Number format | [number-format](../openspec/specs/number-format/spec.md) | 3 (or 4) significant digits with SI prefixes everywhere people read numbers |
 | Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
@@ -23,7 +24,7 @@ As of 2026-10-16, session 6. No change in flight; all sixteen changes are archiv
 | Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer). Decisions D-001 … D-051: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups). Decisions D-001 … D-054: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -48,6 +49,8 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - License: Attribution Assurance License, GPG-signed (D-049).
 - Built and archived `add-footer` (D-050, D-051) in two rounds plus a wording change; Jan: „looks great". The bar shows `KIPscope · kipp.ing · AAL`; name and profession sit in the `kipp.ing` tooltip, the full attribution in `kipscope --help` and the start log.
 
+- Built and archived `add-signal-groups` (D-052 … D-054) in two rounds plus the lead's keyboard check: explorer grouped by sending ECU, near-curve distance 16 px. Jan: „good".
+
 ## Next
 
 1. Persistence: save and load, snapshots, templates, undo (concept §8). The workspace still lives in server memory.
@@ -65,7 +68,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Hidden browser tabs stay connected but never acknowledge renders; `--wait` takes the first UI that does, and times out when only hidden tabs are open.
 - Tabs opened before a web change may need a reload: hot reload swaps modules but keeps old state (seen once: a tab kept reporting render errors until reloaded).
 - `/api/value` is not retried after an outage: readouts and the values window stay failed until cursor or range change.
-- Not checked by hand: L hidden while a cursor line is dragged (unit test only; the browser tool cannot hold a drag); CLI `--wait` with no tab open (exit 6, covered by tests); mouse wheel steps on mice other than Jan's.
+- Not checked by hand: the 16 px near distance (unit test only); the flat explorer list without `display.groups` (unit test only); L hidden while a cursor line is dragged (unit test only; the browser tool cannot hold a drag); CLI `--wait` with no tab open (exit 6, covered by tests); mouse wheel steps on mice other than Jan's.
 
 ## Run
 
