@@ -1,12 +1,19 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Catalog, keepCatalogLoaded } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
-import { loadDbcFiles } from "../src/dbc.ts";
+import { type DbcSignal, loadDbcFiles } from "../src/dbc.ts";
+import { loadDiagCatalogs } from "../src/diag.ts";
 import { loadProjectFile } from "../src/project.ts";
-import { fixture, testDbcFiles, testSource } from "./testdb.ts";
+import { fixture, testDbcFiles, testDiagCatalogs, testSource } from "./testdb.ts";
 
 describe("Catalog (test DB)", () => {
-  const catalog = new Catalog(testSource(), () => loadDbcFiles(testDbcFiles));
+  const catalog = new Catalog(
+    testSource(),
+    () => loadDbcFiles(testDbcFiles),
+    undefined,
+    undefined,
+    (warn) => loadDiagCatalogs(testDiagCatalogs, warn),
+  );
   beforeAll(() => catalog.refresh());
 
   it("lists exactly the signals with data, per data reference", () => {
@@ -216,6 +223,87 @@ describe("Catalog background load and warnings (stubbed source)", () => {
     expect(warnings).toEqual([
       "DBC file skipped: bad.dbc: broken",
       "DBC file skipped: bad.dbc: broken",
+    ]);
+  });
+});
+
+describe("Catalog diag catalogs (stubbed source)", () => {
+  const stub = (...names: string[]) =>
+    ({
+      listSignals: async () => names.map((name) => ({ dataRef: "car", name })),
+    }) as unknown as DataSource;
+  const fixtureDiag = (warn: (m: string) => void) => loadDiagCatalogs(testDiagCatalogs, warn);
+
+  it("merges diag catalog metadata", async () => {
+    const catalog = new Catalog(
+      stub("TBMS.current", "TBMS.contactor"),
+      async () => new Map(),
+      undefined,
+      undefined,
+      fixtureDiag,
+    );
+    await catalog.refresh();
+    expect(catalog.get("car/TBMS.current")).toEqual({
+      id: "car/TBMS.current",
+      dataRef: "car",
+      name: "TBMS.current",
+      unit: "A",
+      diag: {
+        file: "test-diag.manifest.json",
+        ecu: "TBMS",
+        group: "DT_Pack",
+        did: 516,
+        field: "DT_Pack_Current",
+        kind: "number",
+        invalid: [{ low: -32768, high: -32768, text: "SNA" }],
+      },
+    });
+    expect(catalog.snaRanges("car/TBMS.current")).toEqual([]);
+    expect(catalog.get("car/TBMS.contactor")).not.toHaveProperty("unit");
+    expect(catalog.get("car/TBMS.contactor")?.diag?.kind).toBe("enum");
+  });
+
+  it("DBC wins over a diag catalog and warns once per load", async () => {
+    const warnings: string[] = [];
+    const dbc = new Map<string, DbcSignal>([
+      ["TBMS.current", { file: "x.dbc", message: "TBMS", messageId: 1, unit: "mA" }],
+    ]);
+    const catalog = new Catalog(
+      stub("TBMS.current"),
+      async () => dbc,
+      undefined,
+      { warn: (m) => warnings.push(m) },
+      fixtureDiag,
+    );
+    await catalog.refresh();
+    await catalog.refresh();
+    const entry = catalog.get("car/TBMS.current");
+    expect(entry?.unit).toBe("mA");
+    expect(entry?.dbc).toBeDefined();
+    expect(entry).not.toHaveProperty("diag");
+    expect(warnings).toEqual([
+      "diag catalog: 1 signals also in a DBC, the DBC wins: TBMS.current",
+      "diag catalog: 1 signals also in a DBC, the DBC wins: TBMS.current",
+    ]);
+  });
+
+  it("logs diag catalog warnings once per load", async () => {
+    const warnings: string[] = [];
+    const catalog = new Catalog(
+      stub("S"),
+      async () => new Map(),
+      undefined,
+      { warn: (m) => warnings.push(m) },
+      async (warn) => {
+        warn("/nonexistent.manifest.json skipped: ENOENT");
+        return new Map();
+      },
+    );
+    await catalog.refresh();
+    await catalog.refresh();
+    expect(warnings).toEqual([
+      "diag catalog: /nonexistent.manifest.json skipped: ENOENT",
+      "diag catalog: /nonexistent.manifest.json skipped: ENOENT",
     ]);
   });
 });

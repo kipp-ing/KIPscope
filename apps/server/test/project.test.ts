@@ -90,12 +90,13 @@ describe("project file", () => {
         file,
       ).toEqual(["V_ANZ", "LWS_CHKSUM", "PTC_HV_Volt", "T_SOLL", "D_RS_AC"]);
       expect(fellBack).toEqual([]);
-      // Two group rules (D-053 Q1): {sender}, then the CPC/PNHV fallback.
-      expect(rules.groups, file).toHaveLength(2);
+      // Three group rules: {sender}, the CPC/PNHV fallback (D-053 Q1), then diagnostic readings (D-058).
+      expect(rules.groups, file).toHaveLength(3);
       expect(rules.groups[0]?.match, file).toBeUndefined();
       expect(rules.groups[0]?.group, file).toEqual([{ group: "sender" }]);
       expect(rules.groups[1]?.match?.source, file).toBe("^(?<ecu>CPC|PNHV)_");
       expect(rules.groups[1]?.group, file).toEqual([{ group: "ecu" }]);
+      expect(rules.groups[2]?.match?.source, file).toBe("^(?<ecu>[A-Z][A-Z0-9]*)\\.[a-z]");
     }
   });
 

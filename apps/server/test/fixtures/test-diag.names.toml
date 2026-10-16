@@ -1,0 +1,5 @@
+[fields]
+"0x0208/PRES_Cell_2Byte" = "cell_voltage"
+DT_Pack_Current = "current"
+PRES_Contactor_State = "contactor"
+"0xf190/PRES_VIN_17Byte" = "vin"   # lower-case hex DID

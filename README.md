@@ -113,6 +113,10 @@ display:
 - `KIPSCOPE_PROJECT_FILE` points to another file (relative to the repo root); it must then exist. Without it a missing `kipscope.yaml` means full names.
 - Restart the server after editing the file. An invalid file (YAML syntax, unknown key, bad regex, unknown group in a template) stops the server with one line per problem.
 
+### Diagnostic catalogs
+
+Decoded diagnostic readings (`BMS.soc`, `BMS.cell_voltage.001`, …) have no DBC entry. `KIPSCOPE_DIAG_CATALOGS` lists the decoder's `.manifest.json` files (comma-separated, relative to the repo root; default smart451's `bms-live.manifest.json`); the names file `<name>.names.toml` next to each manifest maps fields to signal names as the decoder does. Each matching signal gets its unit, kind and state names from the catalog, so readings with one unit share an axis. A DBC entry wins over a catalog, an earlier catalog over a later one (one warning per load). A broken manifest is skipped and a missing names file falls back to catalog names, each with a warning; the server always starts. Both files are read on every catalog load. Invalid sentinels are carried but never treated as SNA (D-061).
+
 ### Signal groups
 
 `display.groups` sorts the explorer into collapsible groups. The shipped rules group by sending ECU, the transmitter of the signal's `BO_` line in the DBC; h-can.dbc names no sender for the CPC and PNHV messages, so a fallback takes the prefix:

@@ -37,6 +37,37 @@ export interface DbcInfo {
   values?: DbcValueLabel[];
 }
 
+/** One scale row of a diagnostic catalog field (raw bounds inclusive), D-061. */
+export interface DiagScaleRow {
+  low: number;
+  high: number;
+  text: string;
+}
+
+/** Diagnostic catalog metadata of a signal (D-061, design M1). */
+export interface DiagInfo {
+  /** Basename of the manifest, e.g. `bms-live.manifest.json`. */
+  file: string;
+  /** `ecu.name`, the signal's prefix, e.g. `BMS`. */
+  ecu: string;
+  /** Group (canonical name) and its DID, e.g. `DT_Contactor_Contactor_State`, 53248. */
+  group: string;
+  did: number;
+  /** Field name in the catalog, e.g. `PRES_Contactor_State`. */
+  field: string;
+  /** Array fields only: 1-based element, as in the name suffix. */
+  element?: number;
+  /** `enum` field; `text` for ASCII or hexdump (value NaN, text in the row); else `number`. */
+  kind: "number" | "enum" | "text";
+  /**
+   * Enum fields: the valid rows with a text, table order; absent when none. The decoder stores
+   * value 0 for these rows (factor 0) and the state in the row's text: match by text, not value.
+   */
+  states?: DiagScaleRow[];
+  /** Rows marked invalid, table order; absent when none. Never stored (the decoder drops them), not SNA codes. */
+  invalid?: DiagScaleRow[];
+}
+
 /** A signal in the catalog. Optional fields are absent (not empty) when the metadata is unknown. */
 export interface SignalInfo {
   /** Stable ID: `<dataRef>/<name>`, e.g. `smart451/MS_312h.DNMOT`. */
@@ -52,6 +83,8 @@ export interface SignalInfo {
   sna?: SnaValue[];
   /** Absent when the signal has no DBC entry. */
   dbc?: DbcInfo;
+  /** Absent when the signal has no diagnostic catalog field, or a DBC entry won (design M5). */
+  diag?: DiagInfo;
   /** Name the UI shows (D-035); absent when it equals `name`. Never used as identity. */
   displayName?: string;
   /** Explorer group from `display.groups` (D-053); absent means OTHER_GROUP. Never "Other", never blank. */

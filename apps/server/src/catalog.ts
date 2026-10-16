@@ -9,6 +9,7 @@ import {
 } from "@kipscope/shared";
 import type { DataSource, SnaRange } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
+import type { DiagSignal } from "./diag.ts";
 import { assignGroup } from "./groups.ts";
 import { assignDisplayNames, type DisplayRules, NO_RULES } from "./names.ts";
 
@@ -32,9 +33,13 @@ export interface CatalogLog {
 /** Loads the DBC metadata; reports each skipped file through `warn`. */
 type LoadMetadata = (warn: (message: string) => void) => Promise<Map<string, DbcSignal>>;
 
+/** Loads the diagnostic catalogs (design M4); reports each problem through `warn`. */
+type LoadDiag = (warn: (message: string) => void) => Promise<Map<string, DiagSignal>>;
+
 /**
  * In-memory signal catalog (design D5): the signals that have data in the source, merged with
- * DBC metadata by signal name. This is metadata only, not a data cache.
+ * DBC metadata, else diagnostic catalog metadata, by signal name (design M5). This is metadata
+ * only, not a data cache.
  */
 export class Catalog {
   private entries: SignalInfo[] = [];
@@ -52,6 +57,7 @@ export class Catalog {
 
   private readonly source: DataSource;
   private readonly loadMetadata: LoadMetadata;
+  private readonly loadDiag: LoadDiag;
   private readonly rules: DisplayRules;
   private readonly log: CatalogLog | undefined;
   /** The load in progress; further refreshes share it (single flight). */
@@ -64,9 +70,11 @@ export class Catalog {
     loadMetadata: LoadMetadata,
     rules: DisplayRules = NO_RULES,
     log?: CatalogLog,
+    loadDiag: LoadDiag = async () => new Map(),
   ) {
     this.source = source;
     this.loadMetadata = loadMetadata;
+    this.loadDiag = loadDiag;
     this.rules = rules;
     this.log = log;
   }
@@ -85,22 +93,38 @@ export class Catalog {
   private async load(): Promise<void> {
     let refs: Awaited<ReturnType<DataSource["listSignals"]>>;
     let metadata: Map<string, DbcSignal>;
+    let diag: Map<string, DiagSignal>;
     const warn = (message: string) => this.log?.warn(`DBC file skipped: ${message}`);
+    const warnDiag = (message: string) => this.log?.warn(`diag catalog: ${message}`);
     try {
-      [refs, metadata] = await Promise.all([this.source.listSignals(), this.loadMetadata(warn)]);
+      [refs, metadata, diag] = await Promise.all([
+        this.source.listSignals(),
+        this.loadMetadata(warn),
+        this.loadDiag(warnDiag),
+      ]);
     } catch (error) {
       this.lastFailure = error;
       this.lastError = errorMessage(error);
       throw error;
     }
     const ranges = new Map<string, SnaRange[]>();
+    // Names with data that a DBC and a diagnostic catalog both define; the DBC wins (design M5).
+    const both = new Set<string>();
     const entries = refs.map(({ dataRef, name }) => {
       const info: SignalInfo = { id: signalId(dataRef, name), dataRef, name };
       const meta = metadata.get(name);
-      if (meta?.description) info.description = meta.description;
-      if (meta?.unit) info.unit = meta.unit;
-      if (meta) info.dbc = dbcInfo(meta);
-      if (meta?.sna) {
+      if (!meta) {
+        const d = diag.get(name);
+        // No description, no SNA: invalid rows are never stored (design M1).
+        if (d?.unit) info.unit = d.unit;
+        if (d) info.diag = d.diag;
+        return info;
+      }
+      if (diag.has(name)) both.add(name);
+      if (meta.description) info.description = meta.description;
+      if (meta.unit) info.unit = meta.unit;
+      info.dbc = dbcInfo(meta);
+      if (meta.sna) {
         const { values, tolerance } = meta.sna;
         info.sna = values;
         ranges.set(
@@ -110,6 +134,10 @@ export class Catalog {
       }
       return info;
     });
+    if (both.size > 0)
+      warnDiag(
+        `${both.size} signals also in a DBC, the DBC wins: ${[...both].sort().slice(0, 10).join(", ")}`,
+      );
     // Display names (design N7): over distinct source names, across all data references.
     const { shown, fellBack } = assignDisplayNames(
       [...new Set(refs.map((r) => r.name))],

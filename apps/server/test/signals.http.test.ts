@@ -1,11 +1,13 @@
+import type { SignalInfo } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
+import { loadDiagCatalogs } from "../src/diag.ts";
 import { loadProjectFile } from "../src/project.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { fixture, testDbcFiles, testSource } from "./testdb.ts";
+import { fixture, testDbcFiles, testDiagCatalogs, testSource } from "./testdb.ts";
 
 describe("GET /api/signals", () => {
   const source = testSource();
@@ -237,5 +239,52 @@ describe("collision warning on refresh (N5)", () => {
       failing = false;
     }
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("diag catalog over HTTP", () => {
+  const source = {
+    listSignals: async () =>
+      ["TBMS.cell_voltage.01", "TBMS.contactor", "TBMS.unknown", "Nodbc_500h.RAW"].map((name) => ({
+        dataRef: "testcar",
+        name,
+      })),
+    refExtent: async () => undefined,
+  } as unknown as DataSource;
+  const catalog = new Catalog(
+    source,
+    () => loadDbcFiles(testDbcFiles),
+    undefined,
+    undefined,
+    (warn) => loadDiagCatalogs(testDiagCatalogs, warn),
+  );
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true }),
+  });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  it("returns diag metadata", async () => {
+    const res = await app.inject({ url: "/api/signals?q=TBMS" });
+    expect(res.statusCode).toBe(200);
+    const items = res.json().items as SignalInfo[];
+    const byName = (n: string) => items.find((s) => s.name === n);
+    const cell = byName("TBMS.cell_voltage.01");
+    expect(cell?.unit).toBe("V");
+    expect(cell?.diag?.element).toBe(1);
+    expect(cell).not.toHaveProperty("sna");
+    expect(cell).not.toHaveProperty("dbc");
+    const contactor = byName("TBMS.contactor");
+    expect(contactor?.diag?.kind).toBe("enum");
+    expect(contactor?.diag?.states).toHaveLength(3);
+    expect(contactor).not.toHaveProperty("sna");
+    expect(contactor).not.toHaveProperty("dbc");
+    expect(byName("TBMS.unknown")).toEqual({
+      id: "testcar/TBMS.unknown",
+      dataRef: "testcar",
+      name: "TBMS.unknown",
+    });
   });
 });

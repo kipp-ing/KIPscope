@@ -36,6 +36,9 @@ display:
     # CPC_448h.PTC_HV_Volt -> CPC: fallback for messages h-can.dbc gives no sender (D-053 Q1)
     - match: '^(?<ecu>CPC|PNHV)_'
       group: '{ecu}'
+    # BMS.soc, BMS.cell_voltage.001 -> BMS (diag): decoded diagnostic readings, no DBC (D-058)
+    - match: '^(?<ecu>[A-Z][A-Z0-9]*)\.[a-z]'
+      group: '{ecu} (diag)'
 
 # Optional: measurement info, shown in the footer and held in the workspace (`kipscope state`).
 # This is only the start value: `kipscope measurement name|object|meta|clear` changes it, and

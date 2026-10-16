@@ -1,0 +1,74 @@
+{
+  "format": "uds-catalog-manifest/1",
+  "ecu": { "name": "TBMS" },
+  "groups": [
+    {
+      "name": "DT_Cell",
+      "did": 520,
+      "services": ["DT_Cell_Voltage_Cell"],
+      "fields": [
+        {
+          "name": "PRES_Cell_2Byte",
+          "unit": "V",
+          "element_count": 12,
+          "scales": [
+            { "low": 0, "high": 65534, "factor": 0.001, "offset": 0 },
+            { "low": 65535, "high": 65535, "text": "Signal not available", "invalid": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DT_Pack",
+      "did": 516,
+      "fields": [
+        {
+          "name": "DT_Pack_Current",
+          "unit": "A",
+          "scales": [
+            { "low": -19200, "high": 19200, "factor": 0.1, "offset": 0 },
+            { "low": -32768, "high": -32768, "text": "SNA", "invalid": true }
+          ]
+        },
+        {
+          "name": "PRES_Temp_2Byte",
+          "unit": " °C ",
+          "scales": [{ "low": -2560, "high": 5760, "factor": 0.1, "offset": 0 }]
+        },
+        {
+          "name": "PRES_Flag",
+          "unit": "",
+          "scales": [{ "low": 0, "high": 1, "factor": 1, "offset": 0 }]
+        }
+      ]
+    },
+    {
+      "name": "DT_Contactor",
+      "did": 53248,
+      "fields": [
+        {
+          "name": "PRES_Contactor_State",
+          "unit": "",
+          "enum": true,
+          "scales": [
+            { "low": 0, "high": 0, "text": "open" },
+            { "low": 1, "high": 1, "text": "precharge" },
+            { "low": 2, "high": 2, "text": "closed" },
+            { "low": 3, "high": 3, "text": "signal not available", "invalid": true },
+            { "low": 255, "high": 255, "text": "Signal not available", "invalid": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DT_Ident_A",
+      "did": 61840,
+      "fields": [{ "name": "PRES_VIN_17Byte", "unit": "", "ascii": true }]
+    },
+    {
+      "name": "DT_Ident_B",
+      "did": 61856,
+      "fields": [{ "name": "PRES_VIN_17Byte", "unit": "", "ascii": true }]
+    }
+  ]
+}

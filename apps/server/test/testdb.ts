@@ -26,3 +26,4 @@ export function testSource(table = "signals") {
 
 export const fixture = (name: string) => resolve(import.meta.dirname, "fixtures", name);
 export const testDbcFiles = [fixture("test-a.dbc"), fixture("test-b.dbc")];
+export const testDiagCatalogs = [fixture("test-diag.manifest.json")];

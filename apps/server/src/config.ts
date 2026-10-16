@@ -17,6 +17,8 @@ export interface Config {
   mapping: TableMapping;
   /** Absolute paths, in priority order (first file wins). */
   dbcFiles: string[];
+  /** Diagnostic catalog manifests, absolute paths in priority order (design M2); names file next to each. */
+  diagCatalogs: string[];
   queryConcurrency: number;
   queryTimeoutSeconds: number;
   /** Project file (D-035). Default `<repo root>/kipscope.yaml`, optional; `KIPSCOPE_PROJECT_FILE` overrides it and must exist. */
@@ -32,7 +34,20 @@ const DEFAULT_DBC_FILES = [
   "../CarController/vehicles/smart451/dbc/hybrid-can.dbc",
 ];
 
+export const DEFAULT_DIAG_CATALOGS = [
+  "../CarController/vehicles/smart451/uds/bms-live.manifest.json",
+];
+
 type Env = Record<string, string | undefined>;
+
+/** Comma list of paths, trimmed, blanks dropped, relative ones against `root`; unset or empty → fallback. */
+function pathList(env: Env, key: string, fallback: string[], root: string): string[] {
+  const raw = env[key];
+  return (raw ? raw.split(",") : fallback)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => (isAbsolute(p) ? p : resolve(root, p)));
+}
 
 function identifier(env: Env, key: string, fallback: string): string {
   const value = env[key] || fallback;
@@ -54,7 +69,6 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
   const url = env.CLICKHOUSE_URL;
   if (!url) throw new Error("CLICKHOUSE_URL is not set (see .env.example)");
   const project = env.KIPSCOPE_PROJECT_FILE;
-  const dbc = env.KIPSCOPE_DBC_FILES ? env.KIPSCOPE_DBC_FILES.split(",") : DEFAULT_DBC_FILES;
   return {
     host: env.KIPSCOPE_HOST || "127.0.0.1",
     port: positiveInt(env, "KIPSCOPE_PORT", 7310),
@@ -71,10 +85,8 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       time: identifier(env, "KIPSCOPE_COLUMN_TIME", "utc"),
       value: identifier(env, "KIPSCOPE_COLUMN_VALUE", "value"),
     },
-    dbcFiles: dbc
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .map((p) => (isAbsolute(p) ? p : resolve(root, p))),
+    dbcFiles: pathList(env, "KIPSCOPE_DBC_FILES", DEFAULT_DBC_FILES, root),
+    diagCatalogs: pathList(env, "KIPSCOPE_DIAG_CATALOGS", DEFAULT_DIAG_CATALOGS, root),
     queryConcurrency: positiveInt(env, "KIPSCOPE_QUERY_CONCURRENCY", 4),
     queryTimeoutSeconds: positiveInt(env, "KIPSCOPE_QUERY_TIMEOUT_S", 30),
     projectFile: project

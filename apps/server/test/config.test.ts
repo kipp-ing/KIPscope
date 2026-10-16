@@ -18,6 +18,9 @@ describe("loadConfig", () => {
       "/repo/CarController/vehicles/smart451/dbc/h-can.dbc",
       "/repo/CarController/vehicles/smart451/dbc/hybrid-can.dbc",
     ]);
+    expect(config.diagCatalogs).toEqual([
+      "/repo/CarController/vehicles/smart451/uds/bms-live.manifest.json",
+    ]);
     expect(config.queryConcurrency).toBe(4);
     expect(config.port).toBe(7310);
   });
@@ -29,6 +32,7 @@ describe("loadConfig", () => {
         KIPSCOPE_TABLE: "signals_ns",
         KIPSCOPE_COLUMN_TIME: "ts",
         KIPSCOPE_DBC_FILES: "/abs/a.dbc, rel/b.dbc",
+        KIPSCOPE_DIAG_CATALOGS: "a.manifest.json, /abs/b.manifest.json",
         KIPSCOPE_QUERY_CONCURRENCY: "2",
       },
       "/repo/kipscope",
@@ -36,6 +40,7 @@ describe("loadConfig", () => {
     expect(config.mapping.table).toBe("signals_ns");
     expect(config.mapping.time).toBe("ts");
     expect(config.dbcFiles).toEqual(["/abs/a.dbc", "/repo/kipscope/rel/b.dbc"]);
+    expect(config.diagCatalogs).toEqual(["/repo/kipscope/a.manifest.json", "/abs/b.manifest.json"]);
     expect(config.queryConcurrency).toBe(2);
   });
 

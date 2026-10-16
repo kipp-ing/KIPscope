@@ -7,6 +7,7 @@ import { Catalog, keepCatalogLoaded, warnDisplayFallbacks } from "./catalog.ts";
 import { ClickHouseSource, createClickHouseClient } from "./clickhouse.ts";
 import { loadConfig, REPO_ROOT } from "./config.ts";
 import { loadDbcFiles } from "./dbc.ts";
+import { loadDiagCatalogs } from "./diag.ts";
 import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
@@ -53,6 +54,7 @@ const catalog = new Catalog(
   (warn) => loadDbcFiles(config.dbcFiles, (path, error) => warn(`${path}: ${error}`)),
   rules,
   { warn: (message) => app.log.warn(message) },
+  (warn) => loadDiagCatalogs(config.diagCatalogs, warn),
 );
 const workspace = new WorkspaceStore(
   {
