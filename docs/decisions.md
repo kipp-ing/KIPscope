@@ -30,6 +30,7 @@ From the archived change `add-strip-navigation`; details there.
   - The `BMS.*` readings get their own explorer group (config rule, `BMS (diag)`).
   - Events as marks on the time strip and in the chart windows. Jan: „the events line is great. however we need a filter. it can get super overwhelming. the filter also needs cli. it needs human way of thinking too. give this to a proper agent". The filter works in the UI and the CLI and speaks in terms a person uses (e.g. active faults, changes only, by ECU), not raw columns.
 - **Not now:** text states as labelled bands (they still plot as a flat 0), units for the BMS readings.
+- **Jan's answers on the `add-events` spec (also for D-059):** Q1 default filter `active changes` (not the recommended `faults changes`); Q2 the events list is a sidebar tab; Q4 ignition is `CPC_168h.IgnCurMode`; Q5 the contactor entry is `BMS.contactor`, used now. Lead took the recommended defaults for Q3 (one search-style filter string in UI, CLI and workspace) and Q6 (a snapshot that differs from the previous state counts as a change, marked "seen after a gap").
 
 ## D-057: Interactive time strip (2026-10-16)
 
