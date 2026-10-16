@@ -30,12 +30,17 @@ The bucket width SHALL be the smallest of 1, 2, 5, 10, 20, 50, 100, 200, 500 ms;
 - **Evidence:** `packages/shared/test/time.test.ts` › "picks the smallest round density width for at most 120 buckets"
 
 ### Requirement: Density cached
-The server SHALL compute a data ref's density at most once per catalog load: concurrent requests share one computation, a failed one is not cached, and a catalog reload makes the next request compute it again. Origin: necessary consequence of carserver's 2 GB RAM (D-007) and of a strip shown on every page load.
+The server SHALL compute a data ref's density at most once per catalog load: concurrent requests share one computation, a failed one is not cached, and a catalog reload makes the next request compute it again. After each successful catalog load the server SHALL start the computation for every data ref of the catalog without a request, one ref after another. Origin: necessary consequence of carserver's 2 GB RAM (D-007) and of a strip shown on every page load; prefetch: D-055 Q4.
 
 #### Scenario: Cache
 - **WHEN** a test source counts its queries, three `/api/density?dataRef=testcar` requests arrive at once, then one more, then the catalog is refreshed and one more arrives; separately the first computation fails and a second request follows
 - **THEN** the first four requests cause two source queries in all and get the same body; after the refresh two more; after the failure the second request queries again
 - **Evidence:** `apps/server/test/density.test.ts` › "computes once per catalog load, shares and does not cache failures"
+
+#### Scenario: Prefetch
+- **WHEN** a test source counts its queries and records their data refs, the catalog loads with data refs `testcar` and `othercar` and no request is sent; then `/api/density?dataRef=testcar` is sent; separately the prefetch of `testcar` fails and a request for `testcar` follows
+- **THEN** after the load the source gets the density queries of both refs without a request, the second ref's only after the first ref's finished; the later request causes no further source query and gets the prefetched body; after the failed prefetch the request queries again
+- **Evidence:** `apps/server/test/density.http.test.ts` › "computes after the catalog load without a request, and a request does not recompute"
 
 ### Requirement: Density queries cheap
 A density computation SHALL run through the query queue as two queries that read only the data-ref and time columns, the second grouping into at most 120 buckets, with nothing sorted per row (design T7). Origin: necessary consequence of carserver's 2 GB RAM (D-007); queue: `series-query` concurrency.

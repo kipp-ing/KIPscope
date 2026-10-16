@@ -56,6 +56,8 @@ export class Catalog {
   private readonly log: CatalogLog | undefined;
   /** The load in progress; further refreshes share it (single flight). */
   private running: Promise<void> | undefined;
+  /** Called after each successful load (density prefetch, design Q4). */
+  private readonly loadListeners = new Set<() => void>();
 
   constructor(
     source: DataSource,
@@ -134,6 +136,13 @@ export class Catalog {
     this.loadedAt = new Date();
     this.lastError = undefined;
     this.lastFailure = undefined;
+    for (const listener of this.loadListeners) listener();
+  }
+
+  /** Calls `listener` after each successful load; returns a function that removes it. */
+  onLoaded(listener: () => void): () => void {
+    this.loadListeners.add(listener);
+    return () => this.loadListeners.delete(listener);
   }
 
   /**

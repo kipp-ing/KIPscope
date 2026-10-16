@@ -202,6 +202,8 @@ describe("collision warning on refresh (N5)", () => {
     ...real,
     listSignals: () =>
       failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.listSignals(),
+    // No rows, so the density prefetch after each load (design Q4) logs no warn line of its own.
+    refExtent: async () => undefined,
   } as unknown as DataSource;
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);

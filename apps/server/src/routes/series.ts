@@ -39,6 +39,14 @@ export const seriesRoutes =
   ({ catalog, source }: AppDeps): FastifyPluginAsync =>
   async (app) => {
     const density = new DensityCache(source, () => catalog.loadedAt);
+    // Warm the cache after each catalog load (design Q4 (b)); the load does not wait for it.
+    const stopPrefetch = catalog.onLoaded(() => {
+      const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
+      void density.prefetch(dataRefs, (message) => app.log.warn(message));
+    });
+    app.addHook("onClose", async () => {
+      stopPrefetch();
+    });
 
     /** Rows per bucket of a data ref over its whole extent (spec time-strip). */
     app.get("/api/density", async (request, reply) => {

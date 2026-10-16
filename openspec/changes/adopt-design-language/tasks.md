@@ -22,7 +22,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 ## 2. apps/server/src
 
 - [x] 2.1 Data-ref queries (T7): `refExtent`, `refBuckets` on `DataSource`, the two SQL queries in `ClickHouseSource`, both wrapped in `queuedSource`. Verify: scenarios "Ten hours of test data", "Short and pre-1970 recordings".
-- [ ] 2.2 Cache and route (T7): `DensityCache` in new `density.ts` (per data ref and `catalog.loadedAt`, shared promise, failures dropped, zero-filled counts from `densityWidth`); `GET /api/density` in `routes/series.ts` with 400 / 404 `unknown_data_ref` / 404 `no_data` / 502. Verify: scenarios "Errors", "Cache", "Cost on carserver" (after the lead restarts the server).
+- [ ] 2.2 Cache and route (T7): `DensityCache` in new `density.ts` (per data ref and `catalog.loadedAt`, shared promise, failures dropped, zero-filled counts from `densityWidth`, `prefetch` called after each successful catalog load); `GET /api/density` in `routes/series.ts` with 400 / 404 `unknown_data_ref` / 404 `no_data` / 502. Verify: scenarios "Errors", "Cache", "Prefetch", "Cost on carserver" (after the lead restarts the server).
 
 ## 3. apps/web/src
 

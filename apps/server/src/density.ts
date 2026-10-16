@@ -36,6 +36,24 @@ export class DensityCache {
     return entry.promise;
   }
 
+  /**
+   * Computes the density of each data ref in turn, not in parallel (design Q4 (b)), so the first
+   * request finds it cached or in flight. A failure is reported through `warn` and, like in `get`,
+   * not cached; a newer catalog load stops this run, since its own prefetch takes over.
+   */
+  async prefetch(dataRefs: Iterable<string>, warn: (message: string) => void): Promise<void> {
+    const loadedAt = this.loadedAt();
+    for (const dataRef of dataRefs) {
+      if (this.loadedAt() !== loadedAt) return;
+      try {
+        await this.get(dataRef);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        warn(`density prefetch for ${dataRef} failed: ${message}`);
+      }
+    }
+  }
+
   private async compute(dataRef: string): Promise<Density | undefined> {
     const extent = await this.source.refExtent(dataRef);
     if (!extent) return undefined;

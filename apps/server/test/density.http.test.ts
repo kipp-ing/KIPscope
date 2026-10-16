@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
@@ -7,11 +7,15 @@ import { testClient, testSource } from "./testdb.ts";
 
 const real = testSource();
 let failing = false;
+/** Data refs of every `refExtent` call, in order: one per density computation. */
+const extentCalls: string[] = [];
 /** The test source, whose density queries fail on demand ("source unreachable"). */
 const source = {
   listSignals: (abort?: AbortSignal) => real.listSignals(abort),
-  refExtent: (...args: Parameters<typeof real.refExtent>) =>
-    failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refExtent(...args),
+  refExtent: (...args: Parameters<typeof real.refExtent>) => {
+    extentCalls.push(args[0]);
+    return failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refExtent(...args);
+  },
   refBuckets: (...args: Parameters<typeof real.refBuckets>) =>
     failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refBuckets(...args),
 } as unknown as DataSource;
@@ -38,8 +42,20 @@ async function dbCount(from?: string, to?: string): Promise<number> {
 }
 
 describe("GET /api/density", () => {
-  beforeAll(() => catalog.refresh());
+  // Ready first, so the series plugin listens for the load and prefetches (design Q4).
+  beforeAll(async () => {
+    await app.ready();
+    await catalog.refresh();
+  });
   afterAll(() => app.close());
+
+  it("computes after the catalog load without a request, and a request does not recompute", async () => {
+    // beforeAll only refreshed the catalog; no density request has been made yet.
+    await vi.waitFor(() => expect(extentCalls).toContain("testcar"), { timeout: 20_000 });
+    const res = await density("testcar");
+    expect(res.statusCode).toBe(200);
+    expect(extentCalls.filter((ref) => ref === "testcar")).toHaveLength(1);
+  });
 
   it("counts testcar rows in 10 min buckets", async () => {
     const res = await density("testcar");

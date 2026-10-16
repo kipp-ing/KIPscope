@@ -144,6 +144,7 @@ refBuckets(dataRef: string, width: bigint, abort?: AbortSignal): Promise<{ start
   Both read the data-ref column (partition key and first sort key, so other refs are pruned) and the time column only; query 2 holds ≤ 120 groups. No `ORDER BY`, no per-row sort, no join.
 - New `density.ts`: `class DensityCache { constructor(source: Pick<DataSource, "refExtent" | "refBuckets">, loadedAt: () => Date | undefined); get(dataRef: string): Promise<Density | undefined> }`. One entry per data ref `{ loadedAt, promise }`; a request whose `loadedAt()` differs from the entry's recomputes; concurrent requests share the promise; a rejected promise is removed; `undefined` (no rows) is cached like a result. The computation is not aborted by a client close (it is shared and cached). It builds `counts` zero-filled from `start` by `(bucket − start) / width`.
 - Route in `routes/series.ts`: `GET /api/density`, zod `{ dataRef: z.string().min(1) }` (400 `invalid_request` via `parseInput`); `catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)` → 404 `unknown_data_ref`; `undefined` → 404 `no_data`; a thrown error → 502 `source_error` with the message. The cache instance is created once in the plugin from `source` and `() => catalog.loadedAt`.
+- Prefetch (D-055 Q4): `DensityCache.prefetch(dataRefs: readonly string[]): Promise<void>` calls `get` for each ref one after another (awaiting each; a rejection is swallowed and, as in `get`, not cached); the plugin calls it, not awaited, after every successful catalog load with the distinct `dataRef`s of `catalog.all()`, so a later request finds the entry or shares its running promise.
 
 ### T8: Time strip in the web (pinned, `apps/web/src/time/`)
 
@@ -196,7 +197,7 @@ export function formatSpan(ns: bigint): string;
 
 - **Accent vs. series blue:** the accent `#0284c7` is close to series 0 `#0072B2` (ΔE 7); it is used for focus, the strip's shown bars and the marked frame, never for a curve; the L line is slate-500 for that reason (D-055 Q3).
 - **Okabe-Ito orange and sky** have about 2.3:1 on white; accepted with the palette (D-055).
-- **Density cost** grows with the data ref's row count: two scans of the time column per catalog load. The test DB's 21.6 M `testcar` rows bound the test runtime; carserver's real count is measured in "Cost on carserver": 9.22 s uncached (goal ≤ 5 s missed), 1 ms cached; see Open Questions Q4. A cheaper path is a follow-up, not this change.
+- **Density cost** grows with the data ref's row count: two scans of the time column per catalog load. The test DB's 21.6 M `testcar` rows bound the test runtime; carserver's real count is measured in "Cost on carserver": 9.22 s uncached (goal ≤ 5 s missed), 1 ms cached; Jan chose the prefetch after each catalog load (D-055 Q4, T7), so the first strip usually finds it cached. A cheaper query is a follow-up, not this change.
 - **UTC bucket grid:** day and week bars start at 00:00 UTC, not local midnight; the label only names the width.
 - **Hidden checkbox pills** keep keyboard and tests intact; the visible state is CSS `:has()`, which Chrome supports.
 
@@ -210,18 +211,13 @@ None. Palette indices stay valid; the new endpoint is additive; restart the serv
 
 ## Ledger entries on archive (proposed for `docs/decisions.md`)
 
-- D-0xx Design language conventions: tokens of T1, pills via hidden checkboxes, marked window = ring frame + "Add to" pill, palette T5 (Okabe-Ito + `#332288 #882255 #999933 #8C564B`), density endpoint `/api/density` with widths T6 and the server cache per data ref and catalog load, strip 24 px bars / 56 px, no click.
+- D-0xx Design language conventions: tokens of T1, pills via hidden checkboxes, marked window = ring frame + "Add to" pill, palette T5 (Okabe-Ito + `#332288 #882255 #999933 #8C564B`), density endpoint `/api/density` with widths T6 and the server cache per data ref and catalog load with a prefetch after each load (Q4), strip 24 px bars / 56 px, no click.
 
 ## Open Questions
 
-- **Q4 (Jan's question): density cost goal missed.** Goal (not a must): first uncached `/api/density?dataRef=smart451` on carserver ≤ 5 s. Measured 2026-10-16: 9.22 s, then 0.0012 s cached (rounds.md, "Cost on carserver"); factor 1.8 over the goal. No requirement changes. Options:
-  - (a) Accept: it runs once per data ref and catalog load; the strip shows `Loading recording…` meanwhile and nothing else waits on it.
-  - (b) Warm the cache: the server starts the density query right after the catalog load, so the first strip usually finds it cached; costs one carserver scan per catalog load even when no strip is shown.
-  - (c) Cheaper query: one query instead of extent + buckets, or bucketing on a coarser pre-computed column; needs a new measurement on carserver and may change `DataSource`.
-  - Recommendation: (b), with (a) as the fallback. It hides the 9 s without a new query path and keeps T6/T7 interfaces unchanged (a small follow-up in `density.ts` / the plugin); (c) only if the warm-up itself proves too heavy for carserver.
-
-Resolved by Jan (D-055):
+None. Resolved by Jan (D-055):
 
 - **Q1:** no dark "Add <signal> to <window>" button in the explorer (illustration).
 - **Q2:** marked window = accent ring frame + "Add to" pill; the accent top bar and accent title go.
 - **Q3:** the L line is slate-500 `#64748b`, not the accent; an L column header may stay sky.
+- **Q4:** the density cost goal (first uncached `/api/density?dataRef=smart451` ≤ 5 s) measured 9.22 s on carserver, 1 ms cached. Of (a) accept, (b) prefetch after the catalog load, (c) a cheaper query, Jan chose (b): the server starts the density query for every data ref right after each successful catalog load, one ref after another, errors not cached (T7 "Prefetch"; `time-strip` "Prefetch").
