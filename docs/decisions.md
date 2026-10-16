@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-062: Lines break where there is no data (2026-10-16)
+
+- **Context:** Jan: „in the chart windows. lines are drawn throgh times with no data. what can we do, how can we do? better display nothing than smthn wrong". DBC `GenMsgCycleTime` is set for 138 of 327 messages (h-can 47/164, hybrid-can 91/163; often 20 ms); the diagnostic manifest gives each group an `interval` (e.g. 30 s); event-triggered messages have no period.
+- **Decision:** Supersedes D-009. Jan chose:
+  - A line breaks where the logger recorded nothing at all (every signal), and where a cyclic signal skips more than 3 of its periods (period from the DBC, the diagnostic catalog, else measured). Signals without a known or measurable period break only at logger gaps. The same holds for buckets when zoomed out.
+  - Gaps stay blank; logger gaps also get a faint grey band so "no data" reads as intended.
+  - A cursor (A, B, L) inside a gap shows „no data", never a value interpolated across it.
+
 ## D-061: Diagnostic catalog as metadata source (2026-10-16)
 
 - **Context:** Jan: „if you look now: each cell voltage has its axle". The `BMS.*` readings have no DBC entry, so no unit, and every unit-less signal gets its own y axis (max 4 per window). The decoder's catalog knows them: `CarController/vehicles/smart451/uds/bms-live.manifest.json` (fields with `unit` V, °C, %, A, As, kOhm, km, s; `scales` with factor/offset, `text`, `invalid` sentinels; 22 `enum` fields such as `PRES_Contactor_State` open / precharge / closed) and `bms-live.names.toml` (field → signal name `BMS.<name>`, arrays `.001`…).
