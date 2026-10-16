@@ -16,6 +16,24 @@ Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 - **Exception:** the read-only ClickHouse user on carserver stays `letsview`. It is deployed through serverzoo and is not part of this repo.
 - **Consequences:** a local `.env` with `LETSVIEW_*` keys needs them renamed; the test DB is compose project `kipscope` (reseed after the switch); the sidebar state in the browser starts fresh under `kipscope.sidebar`.
 
+## D-047: Robustness conventions (2026-10-16)
+
+From the archived change `harden-robustness`; details there.
+
+- **Decision:** Catalog reloads 1, 2, 4 … 30 s until its first success, one load at a time, DBC warnings per load; UI commands never reject (`network`, `bad_response`); an acknowledgement counts as sent only when the socket took it and is repeated after a reconnect; state pushes name their command type and only content changes or `window.setRange` re-hand requests to the loader; a window that fails to draw shows an error box and reports a render error. (H5–H9; H9 refines D-044 per Jan, 2026-10-16)
+
+## D-046: Local access only (2026-10-16)
+
+From the archived change `harden-robustness`; details there.
+
+- **Decision:** `Host` and, when present, `Origin` must name localhost, 127.0.0.1, [::1] or a non-loopback `KIPSCOPE_HOST`; JSON bodies only; live frames ≤ 256 KiB; acknowledgements ≤ 50 errors of ≤ 500 characters; ≤ 64 windows; warning on a non-loopback host. (H3, H4)
+
+## D-045: Exact wire times and bucket bounds (2026-10-16)
+
+From the archived change `harden-robustness`; details there.
+
+- **Decision:** Series offsets travel as JSON numbers up to 2^53 − 1 ns and as decimal strings beyond (supersedes D-011 D3's "offsets as numbers"); bucket width at most 2^62 ns; buckets on the floor grid before 1970; own computation errors answer 400. (H1, H2)
+
 ## D-044: Load recovery conventions (2026-10-15)
 
 From the archived change `improve-load-recovery` (R1–R7, Q1–Q4 as recommended); details there.

@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-15, end of session 5. No change in flight; all fourteen changes are archived and the main specs describe the running app.
+As of 2026-10-16, session 6. In flight: `add-footer` (permanent footer with attribution, meta items and measurement info). The fifteen other changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -19,8 +19,9 @@ As of 2026-10-15, end of session 5. No change in flight; all fourteen changes ar
 | Number format | [number-format](../openspec/specs/number-format/spec.md) | 3 (or 4) significant digits with SI prefixes everywhere people read numbers |
 | Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
+| Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery). Decisions D-001 … D-044: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness). Decisions D-001 … D-049: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -37,6 +38,13 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Built and archived `improve-window-handling` (corner grip, drop below the windows) and `add-series-cache` (D-037 … D-039); Jan: „looks good". By hand still: the grip with a real mouse drag.
 - Built and archived `improve-zoom-speed` (D-040, D-041, D-043): load during the gesture, overview placeholder, idle prefetch, linked windows follow live. Measured: cached zoom 8–13 ms (was 359 ms), uncached sharp ~65 ms after the gesture (was 400–455 ms). Jan: „Butter smooth".
 - carserver reboots daily at 23:00 local and killed the tunnel (470 × 502); built and archived `improve-load-recovery` (D-042, D-044): retry with backoff and on recovery, curve kept on error; `scripts/tunnel.sh` reconnects within ~5 s. Lead's tunnel-drop check: recovered ~3 s after the tunnel came back.
+
+## Session 6 in brief
+
+- Archived `harden-robustness` (D-045 … D-047).
+- Renamed letsview to KIPscope (D-048); new home https://github.com/kipp-ing/KIPscope, local folder `~/dev/repos/KIPscope`. The carserver ClickHouse user stays `letsview`.
+- License: Attribution Assurance License, GPG-signed (D-049).
+- Wrote `add-footer` with Jan's answers (Q1–Q9).
 
 ## Next
 
