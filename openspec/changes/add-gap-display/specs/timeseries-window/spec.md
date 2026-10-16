@@ -79,6 +79,11 @@ In a raw view the window SHALL draw no line between two split points (data-gaps)
 - **THEN** both curves stop at about 11:34:36.2 and resume at about 11:34:37.0, nothing is drawn in between, and no grey band shows there (the logger was not silent for 2 s)
 - **Evidence:** UI check (screenshot)
 
+#### Scenario: State signal holds stop at gaps
+- **WHEN** a signal with named states and period 100 ms is drawn (as steps) from raw points at 0, 100, 200 ms and 10 s with a logger gap 250 ms–9.9 s; and a view 1 s–9 s of it contains no point, with edge neighbours at 200 ms and 10 s
+- **THEN** the step of the 200 ms value ends at 250 ms (the logger gap's start, before 300 ms) and nothing is drawn until 10 s; in the empty view no synthetic edge hold is drawn and the view stays blank
+- **Evidence:** `apps/web/test/build.test.ts` › "ends state signal holds at gaps"
+
 ### Requirement: Gaps in aggregated views
 In an aggregated view the mean curve and the min/max envelope SHALL break between two split buckets (data-gaps "Split between two buckets") and stay joined across other empty buckets. Origin: D-062 („The same holds for buckets when zoomed out").
 
