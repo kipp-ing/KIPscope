@@ -67,7 +67,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 
 ## 6. Docs (lead)
 
-- [ ] 6.1 `README.md`: the four `measurement` CLI forms in the CLI table, the `measurement` section under "Display names" (or a new "Project file" heading), `/api/meta` and `/api/license` in "Run", and one sentence under "License" that the app shows the attribution in its footer. Verify: scenario "Documented" (`grep -n "measurement" kipscope.example.yaml README.md`).
+- [x] 6.1 `README.md`: the four `measurement` CLI forms in the CLI table, the `measurement` section under "Display names" (or a new "Project file" heading), `/api/meta` and `/api/license` in "Run", and one sentence under "License" that the app shows the attribution in its footer. Verify: scenario "Documented" (`grep -n "measurement" kipscope.example.yaml README.md`).
 
 ## Workflow follow-up
 
