@@ -277,17 +277,17 @@ Chips: one per category with `counts[c] > 0` or named in the filter, in `EVENT_C
 /** Physical value: raw (two's complement if the signal is signed) × factor + offset, as SnaValue.value (D-012). */
 value: number;
 // SignalInfo gains:
-/** "labels": a named value that is not SNA (VAL_ or diag enum, D-061); "text": rows carry text (D-059). Absent: no states. */
+/** "labels": a VAL_ name on a code that is not SNA; "text": the state is in the row text (rows carry text, or diag.kind "enum", D-061; not diag.kind "text"). Absent: no states. */
 states?: "labels" | "text";
 ```
 
-The catalog load runs `textSignals()` after `listSignals()` (one query, ~0.8 s on carserver, once per load); `states = "text"` wins over `"labels"`. **Diag enums (D-061):** `add-diag-metadata` carries the diagnostic catalog's enum names and invalid sentinels on `SignalInfo` (field names pinned there, not here). This change only reads them: `valueLabels(info)` (N2) merges the `VAL_` entries and the diag enum entries into one list of `{ value, label }` (physical values), and the invalid sentinels are SNA codes as that change defines. How they are loaded is out of this change. Catalog order and search are unchanged.
+The catalog load runs `textSignals()` after `listSignals()` (one query, ~0.8 s on carserver, once per load); `states = "text"` wins over `"labels"`. **Diag metadata (D-061, `add-diag-metadata` M1):** `states = "text"` also when `diag.kind === "enum"` (the decoder stores value 0 and the state in the row's text, so the name comes from the row text and change detection uses the text rule of E7; `diag.states` only lists the possible names, e.g. for a later legend); never for `diag.kind === "text"` (ASCII/hexdump such as a VIN, not a state). Diag enums are never merged into the `VAL_` value → name list. `diag.invalid` sentinels are never SNA codes (the decoder drops them; a sentinel 0 would hide valid 0 A rows). Loading is specified in `add-diag-metadata`.
 
 ### N2: State names (pinned, new `packages/shared/src/states.ts`)
 
 ```ts
 /** The label (whole) from valueLabels of a valid value: |value − label.value| ≤ |factor| / 2 (0.5 without factor), labels on SNA codes skipped; undefined when none. Pure. */
-/** VAL_ entries (physical value) and add-diag-metadata's enum entries of a signal as one list; pure. */
+/** The signal's non-SNA VAL_ entries as { value (physical), label }; diag enums are not included (they are named by row text); pure. */
 export function valueLabels(info: SignalInfo): { value: number; label: string }[];
 export function stateLabel(info: SignalInfo, value: number): string | undefined;
 /** "CODE: words" → "CODE" when CODE matches ^[A-Z0-9_]+$; else the label. */

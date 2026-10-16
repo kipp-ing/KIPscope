@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Signals with states
-The catalog SHALL mark a signal `states: "labels"` when it has a named value that is not SNA (its `VAL_` table, or its diagnostic-catalog enum from `add-diag-metadata`) and `states: "text"` when its rows carry text (found by one query per catalog load), and SHALL give each `VAL_` entry its physical value as for SNA codes (D-012). Origin: D-059 („many signals are state"); D-061 (diag enums feed the state names); design N1.
+The catalog SHALL mark a signal `states: "labels"` when its `VAL_` table names a code that is not SNA, and `states: "text"` when its rows carry text (one query per catalog load) or its `diag.kind` is `enum`, but not when `diag.kind` is `text`; each `VAL_` entry SHALL carry its physical value (D-012). Diag invalid sentinels SHALL NOT become SNA. Origin: D-059 („many signals are state"); D-061 and `add-diag-metadata` M1; design N1.
 
 #### Scenario: States in the test catalog
 - **WHEN** the server runs on the test DB and `GET /api/catalog` is read
@@ -10,11 +10,11 @@ The catalog SHALL mark a signal `states: "labels"` when it has a named value tha
 
 #### Scenario: States on smart451
 - **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.states) | .states] | group_by(.) | map({(.[0]): length})'` runs against carserver
-- **THEN** `text` is 9 and `labels` is reported (at most 74 from `VAL_` plus the diag enum signals of `add-diag-metadata`); `CPC_168h.IgnCurMode` has `"labels"`, `BMS.contactor` `"text"`, `SAM_423h.KL_15` none
+- **THEN** `labels` is at most 74 and `text` at most 9 (the text signals minus those whose `diag.kind` is `text`, e.g. a VIN), both reported; `CPC_168h.IgnCurMode` has `"labels"`, `BMS.contactor` `"text"`, `SAM_423h.KL_15` none
 - **Evidence:** the command
 
 ### Requirement: State name of a value
-The state name of a valid value SHALL be the named value (`VAL_` or diag enum) within half a factor step of it (|factor| / 2, 0.5 without factor) or, for a text signal, the row's text; an SNA value SHALL have none (D-010). The UI SHALL show a label `CODE: words` as `CODE` with the whole label in the tooltip. Origin: D-059 („the coursers shall show the statename. like OFF"); D-010, D-015; short form: design N2.
+The state name of a valid value SHALL be the `VAL_` label within half a factor step of it (|factor| / 2, 0.5 without factor) or, for a text signal, the row's text; an SNA value SHALL have none (D-010). The UI SHALL show a label `CODE: words` as `CODE` with the whole label in the tooltip. Origin: D-059 („the coursers shall show the statename. like OFF"); D-010, D-015; short form: design N2.
 
 #### Scenario: Names from values
 - **WHEN** the names of `Ign_A20h.MODE` values 3, 3.4, 0, 2 and 15 (SNA) and of a signal with factor 0.1 and label 25 → `HOT` at value 2.54 and 2.56 are looked up, and the short forms of `KEYON: Ignition on`, `CLS: Close`, `NO_TEMP_SENSOR` and `Contactor open` are formed
