@@ -68,10 +68,11 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 
 ## Next
 
-1. Build `add-gap-display`; Jan tests events and diag data on 2026-10-17.
+1. Build `add-gap-display` (running 2026-10-17); spec `improve-events`, `add-guidance`, `add-saved-views` in parallel (persona test).
 2. Persistence: save and load, snapshots, templates, undo (concept §8). The workspace still lives in server memory.
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
 4. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
+5. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): split the data stream into sessions (charging, driving, idling; Jan: „later"); expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
 ## Known limitations
 
