@@ -8,6 +8,7 @@ Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
 - **Context:** Jan: „if you look now: each cell voltage has its axle". The `BMS.*` readings have no DBC entry, so no unit, and every unit-less signal gets its own y axis (max 4 per window). The decoder's catalog knows them: `CarController/vehicles/smart451/uds/bms-live.manifest.json` (fields with `unit` V, °C, %, A, As, kOhm, km, s; `scales` with factor/offset, `text`, `invalid` sentinels; 22 `enum` fields such as `PRES_Contactor_State` open / precharge / closed) and `bms-live.names.toml` (field → signal name `BMS.<name>`, arrays `.001`…).
 - **Decision (lead, on Jan's report):** KIPscope reads the diagnostic catalog (manifest + names) like the DBC files: unit, enum state names and invalid sentinels per `BMS.*` signal. Cell voltages then share one `V` axis. Supersedes "units for the BMS readings: not now" of D-058. The enum names feed D-059's state names.
+- **Lead, on the spec:** invalid sentinels of the diagnostic catalog are carried as metadata but never become SNA codes: the decoder already drops invalid answers (0 of 494,084 `BMS.*` rows carry one), and a sentinel's physical value is 0, which would hide valid 0 A rows of `BMS.current`.
 
 ## D-060: Strip navigation conventions (2026-10-16)
 
