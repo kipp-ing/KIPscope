@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Attribution in the help
-The last line of the `--help` text SHALL be `attributionText()` (`app-footer` design F1): `KIPscope © 2026 Jan Kipping, Agentic engineer, https://kipp.ing · Attribution Assurance License (AAL)`. Command results SHALL NOT carry it. Origin: AAL clause 2 (attribution when the program is launched), per D-049; "One JSON result per call" keeps it out of results; pending Jan's call Q4.
+The last line of the `--help` text SHALL be `attributionText()` (`app-footer` design F1): `KIPscope © 2026 Jan Kipping, Agentic engineer, https://kipp.ing · Attribution Assurance License (AAL)`. Command results SHALL NOT carry it. Origin: AAL clause 2 (attribution when the program is launched), per D-049; "One JSON result per call" keeps it out of results;.
 
 #### Scenario: Help ends with the attribution
 - **WHEN** `kipscope --help` runs

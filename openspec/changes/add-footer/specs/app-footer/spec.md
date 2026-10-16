@@ -202,7 +202,7 @@ When status and attribution alone do not fit one line, the attribution SHALL mov
 - **Evidence:** `apps/web/test/footer.test.ts` › "lists hidden items in the KIPscope tooltip"
 
 ### Requirement: Attribution at server start
-On start the server SHALL log one info line with the text of `attributionText()` (design F1): `KIPscope © 2026 Jan Kipping, Agentic engineer, https://kipp.ing · Attribution Assurance License (AAL)`. Origin: AAL clause 2 („each time the resulting executable program … is launched, a prominent display"), per D-049; pending Jan's call Q4.
+On start the server SHALL log one info line with the text of `attributionText()` (design F1): `KIPscope © 2026 Jan Kipping, Agentic engineer, https://kipp.ing · Attribution Assurance License (AAL)`. Origin: AAL clause 2 („each time the resulting executable program … is launched, a prominent display"), per D-049;.
 
 #### Scenario: Start log
 - **WHEN** the dev server starts (`pnpm --filter @kipscope/server dev`)
