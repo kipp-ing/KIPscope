@@ -28,8 +28,6 @@ import { dayBands, listRows } from "./list.ts";
 import { markColor } from "./marks.ts";
 import "./events.css";
 
-export { appliedFilter, previewedFilter };
-
 interface Props {
   /** All events of the strip's data ref with its events-line signals, no filter (design V9); undefined while loading. */
   list: EventList | undefined;

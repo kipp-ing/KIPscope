@@ -64,8 +64,14 @@ export function formatMessageId(id: number): string {
   return hex(id);
 }
 
-/** `<dataRef> · <file>`, `<dataRef> · DBC` without file, `<dataRef> · no DBC entry` without DBC. */
+/**
+ * `<dataRef> · <file>`, `<dataRef> · DBC` without file, a diag signal's catalog as
+ * `<dataRef> · <manifest> (<ecu> diag)` (D-061), `<dataRef> · no DBC entry` without either.
+ */
 export function formatSource(signal: SignalInfo): string {
+  const diag = signal.diag;
+  if (!signal.dbc && diag)
+    return `${signal.dataRef} · ${diag.file.replace(/\.manifest\.json$/, "")} (${diag.ecu} diag)`;
   if (!signal.dbc) return `${signal.dataRef} · no DBC entry`;
   return `${signal.dataRef} · ${signal.dbc.file ?? "DBC"}`;
 }

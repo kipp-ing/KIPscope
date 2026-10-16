@@ -632,7 +632,9 @@ function LiveCell({
 }) {
   const live = useLiveCursor();
   const v = live && chartValueAt(result, live.t, mode, info);
-  return <ReadoutCell cell={liveCell(v, live !== undefined, unit, digits)} className="live" />;
+  return (
+    <ReadoutCell cell={liveCell(v, live !== undefined, unit, digits, info)} className="live" />
+  );
 }
 
 export function TimeseriesWindow({
@@ -1649,7 +1651,7 @@ export function TimeseriesWindow({
           const cellAt = (name: CursorName, source: ReadoutSource) =>
             cursors[name] === undefined
               ? { text: NO_VALUE, title: "cursor off" }
-              : sourceCell(source, meta?.unit, digits);
+              : sourceCell(source, meta?.unit, digits, meta);
           return (
             <li
               key={s.id}

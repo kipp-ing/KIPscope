@@ -78,15 +78,30 @@ function neighbours(at?: EdgePoint, next?: EdgePoint, info?: SignalInfo): string
 const withTitle = (cell: Cell, title: string | undefined): Cell =>
   title === undefined ? cell : { ...cell, title };
 
-/** Tooltip of a state name (N3): `<label> · <number with unit>`, the number exact. */
-export function labelTitle(label: string, value: number, unit: string | undefined): string {
+/**
+ * Tooltip of a state name (N3): `<label> · <number with unit>`, the number exact; the label only
+ * for a text state (diag enum, text signal), whose number is a code.
+ */
+export function labelTitle(
+  label: string,
+  value: number,
+  unit: string | undefined,
+  info?: SignalInfo,
+): string {
+  if (info?.states === "text") return label;
   const u = unit?.trim();
   return `${label} · ${formatCursorNumber(value)}${u ? ` ${u}` : ""}`;
 }
 
 /** A named value's cell (N3): the short label, the whole label and the number as tooltip. */
-function labelCell(label: string, value: number, unit: string | undefined, more?: string): Cell {
-  const title = labelTitle(label, value, unit);
+function labelCell(
+  label: string,
+  value: number,
+  unit: string | undefined,
+  more: string | undefined,
+  info: SignalInfo | undefined,
+): Cell {
+  const title = labelTitle(label, value, unit, info);
   return { text: shortLabel(label), title: more === undefined ? title : `${title}\n${more}` };
 }
 
@@ -111,13 +126,13 @@ export function formatCell(
     case "sna":
       return withTitle({ text: "SNA", sna: true }, title);
     case "raw":
-      if (v.label !== undefined) return labelCell(v.label, v.value, unit, title);
+      if (v.label !== undefined) return labelCell(v.label, v.value, unit, title, info);
       return withTitle({ text: formatQuantity(v.value, unit, digits) }, title);
     case "interpolated":
       return withTitle({ text: formatQuantity(v.value, unit, digits), tag: "lin" }, title);
     case "held":
       if (v.label !== undefined)
-        return { ...labelCell(v.label, v.value, unit, title), tag: "hold" };
+        return { ...labelCell(v.label, v.value, unit, title, info), tag: "hold" };
       return withTitle({ text: formatQuantity(v.value, unit, digits), tag: "hold" }, title);
   }
 }

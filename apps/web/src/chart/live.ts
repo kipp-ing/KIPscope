@@ -1,4 +1,4 @@
-import { type Digits, formatQuantity } from "@kipscope/shared";
+import { type Digits, formatQuantity, type SignalInfo } from "@kipscope/shared";
 import { useSyncExternalStore } from "react";
 import type { Cell } from "../values/format.ts";
 import { snapCursorTime } from "./cursors.ts";
@@ -135,8 +135,9 @@ export function liveCell(
   set: boolean,
   unit: string | undefined,
   digits: Digits,
+  info?: SignalInfo,
 ): Cell {
-  return set ? readoutCell(v, unit, digits) : { text: "" };
+  return set ? readoutCell(v, unit, digits, info) : { text: "" };
 }
 
 /**

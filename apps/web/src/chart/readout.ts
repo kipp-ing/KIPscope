@@ -12,7 +12,6 @@ import {
   type SeriesResult,
   type SignalInfo,
   shortLabel,
-  stateLabel,
 } from "@kipscope/shared";
 import {
   type Cell,
@@ -27,7 +26,7 @@ import {
   type ValueReason,
 } from "../values/format.ts";
 import type { ValueState } from "../values/loader.ts";
-import { stateLevel } from "./build.ts";
+import { stateLevel, stateName } from "./build.ts";
 
 /** A value of the chart readout: the values window's kinds plus a bucket mean (design N4). */
 export type ReadoutValue =
@@ -66,22 +65,12 @@ interface NamedPoint {
   label?: string;
 }
 
-/** The state name of a valid value: the row's text of a text signal, else the VAL_ label. */
-function nameOf(
-  info: SignalInfo | undefined,
-  v: number | null,
-  text: string | undefined,
-): string | undefined {
-  if (v === null || !info?.states) return undefined;
-  return info.states === "text" ? text || undefined : stateLabel(info, v);
-}
-
 function named(t: bigint, v: number | null, label: string | undefined): NamedPoint {
   return label === undefined ? { t, v } : { t, v, label };
 }
 
 const edge = (p: EdgePoint | undefined, info: SignalInfo | undefined) =>
-  p && named(parseTimestamp(p.t), p.v, nameOf(info, p.v, p.label));
+  p && named(parseTimestamp(p.t), p.v, stateName(info, p.v, p.label));
 
 /** Raw value at t (line mode holds next to a named point, N3), named after the point it came from. */
 function rawValueAt(
@@ -94,7 +83,7 @@ function rawValueAt(
 ): ReadoutValue {
   const point = (k: number) => {
     const v = result.v[k] ?? null;
-    return named(times[k] as bigint, v, nameOf(info, v, result.text?.[k]));
+    return named(times[k] as bigint, v, stateName(info, v, result.text?.[k]));
   };
   const at = i >= 0 ? point(i) : edge(result.before, info);
   const next = i + 1 < times.length ? point(i + 1) : edge(result.after, info);
@@ -134,8 +123,8 @@ export function chartValueAt(
   if (mean === null || mean === undefined) return { kind: "sna" };
   // Buckets carry no text: only VAL_ labels name a bucket.
   const low =
-    info?.states === "labels" ? nameOf(info, result.min[i] ?? null, undefined) : undefined;
-  const high = low && nameOf(info, result.max[i] ?? null, undefined);
+    info?.states === "labels" ? stateName(info, result.min[i] ?? null, undefined) : undefined;
+  const high = low && stateName(info, result.max[i] ?? null, undefined);
   return low !== undefined && low === high
     ? { kind: "aggregated", value: mean, label: low }
     : { kind: "aggregated", value: mean };
@@ -170,17 +159,18 @@ function bare(tag: Cell["tag"], value: number, unit: string | undefined, digits:
 }
 
 /**
- * A readout cell: SNA, "—" with the reason, a state name as its short label (N3), or the bare
- * number; undefined is the loading state.
+ * A readout cell: SNA, "—" with the reason, a state name as its short label (N3, tooltip by
+ * labelTitle with `info`), or the bare number; undefined is the loading state.
  */
 export function readoutCell(
   v: ReadoutValue | undefined,
   unit: string | undefined,
   digits: Digits,
+  info?: SignalInfo,
 ): Cell {
   if (!v) return LOADING_CELL;
   if ("label" in v && v.label !== undefined)
-    return { text: shortLabel(v.label), title: labelTitle(v.label, v.value, unit) };
+    return { text: shortLabel(v.label), title: labelTitle(v.label, v.value, unit, info) };
   switch (v.kind) {
     case "none":
       return noValueCell(v.reason);
@@ -246,9 +236,14 @@ export function readoutSource(
 }
 
 /** The cell of one readout source. */
-export function sourceCell(source: ReadoutSource, unit: string | undefined, digits: Digits): Cell {
+export function sourceCell(
+  source: ReadoutSource,
+  unit: string | undefined,
+  digits: Digits,
+  info?: SignalInfo,
+): Cell {
   if (source.error !== undefined) return { text: NO_VALUE, title: `failed: ${source.error}` };
-  const cell = readoutCell(source.value, unit, digits);
+  const cell = readoutCell(source.value, unit, digits, info);
   return source.loading ? loadingCell(cell) : cell;
 }
 

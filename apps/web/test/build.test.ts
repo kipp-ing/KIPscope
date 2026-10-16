@@ -566,6 +566,56 @@ describe("state signals drawn as steps (N3)", () => {
     );
   });
 
+  it('holds only segments with a named end, as the readout (50 km/h, VAL_ 0 "Stop")', () => {
+    const speedInfo = {
+      states: "labels",
+      unit: "km/h",
+      dbc: { values: [{ raw: 0, value: 0, label: "Stop" }] },
+    } as unknown as SignalInfo;
+    const r = raw([origin, origin + 1000n, origin + 2000n], [40, 50, 0]);
+    const m = buildModel(
+      [{ key: "a", label: "speed", unit: "km/h", color: "#000", result: r, info: speedInfo }],
+      origin,
+      line,
+    );
+    // 40 → 50 (both unnamed) slopes: no hold point; 50 → 0 ("Stop") holds 50 until 1 ns before.
+    expect(m.tables[0]?.[0]).toEqual([0, 1000, 1999, 2000]);
+    expect(m.tables[0]?.[1]).toEqual([40, 50, 50, 0]);
+  });
+
+  it("holds bucket segments with a named end, min/max aligned with xs", () => {
+    const speedInfo = {
+      states: "labels",
+      unit: "km/h",
+      dbc: { values: [{ raw: 0, value: 0, label: "Stop" }] },
+    } as unknown as SignalInfo;
+    // Bucket 1 is all "Stop" (min = max = 0, named); bucket 4 is all SNA.
+    const b: BucketSeries = {
+      kind: "buckets",
+      signalId: "c/s",
+      from: "0",
+      to: "1",
+      width: "1000",
+      t: encodeTimes([0n, 1000n, 2000n, 3000n, 4000n].map((d) => origin + d)),
+      count: [3, 3, 3, 3, 0],
+      sna: [0, 0, 0, 0, 3],
+      mean: [45, 0, 40, 50, null],
+      min: [40, 0, 30, 40, null],
+      max: [50, 0, 50, 60, null],
+    };
+    const m = buildModel(
+      [{ key: "a", label: "speed", unit: "km/h", color: "#000", result: b, info: speedInfo }],
+      origin,
+      { mode: "line", envelope: true },
+    );
+    const [xs, ys, max, min] = m.tables[0] as (number | null)[][];
+    // 0 → 1 and 1 → 2 hold (an end is "Stop"); 2 → 3 slopes; nothing is held into the SNA bucket.
+    expect(xs).toEqual([500, 1499, 1500, 2499, 2500, 3500, 4500]);
+    expect(ys).toEqual([45, 45, 0, 0, 40, 50, null]);
+    expect(max).toEqual([50, 50, 0, 0, 50, 60, null]);
+    expect(min).toEqual([40, 40, 0, 0, 30, 40, null]);
+  });
+
   it("widens a flat y range only for code-valued states", () => {
     // (c1) flat diag enum at precharge: widened to its states' span 0..2 (plus 5 % padding).
     const flatEnum = raw([origin + 10n, origin + 20n], [0, 0], {

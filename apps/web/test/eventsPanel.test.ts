@@ -9,7 +9,8 @@ import {
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { appliedFilter, EventsPanel, previewedFilter } from "../src/events/EventsPanel.tsx";
+import { EventsPanel } from "../src/events/EventsPanel.tsx";
+import { appliedFilter, previewedFilter } from "../src/events/eventsData.ts";
 import { dayBands, listRows, MAX_LIST_ROWS } from "../src/events/list.ts";
 import { atB, fakeEvent } from "./fakeEvents.ts";
 

@@ -1,5 +1,12 @@
-import type { DiagScaleRow, Display, SeriesResult, SignalInfo, Timestamp } from "@kipscope/shared";
-import { decodeTimes } from "@kipscope/shared";
+import type {
+  DiagScaleRow,
+  Display,
+  EdgePoint,
+  SeriesResult,
+  SignalInfo,
+  Timestamp,
+} from "@kipscope/shared";
+import { decodeTimes, stateLabel } from "@kipscope/shared";
 import { type AxisLayout, layoutAxes } from "./axes.ts";
 
 /** x/y arrays of one signal; x is the ns offset from the window origin. */
@@ -42,12 +49,43 @@ export function stateDomain(info: SignalInfo | undefined): [number, number] | un
   return levels.length > 0 ? [Math.min(...levels), Math.max(...levels)] : undefined;
 }
 
+/** The state name of a valid value: the row's text of a text signal, else the VAL_ label (N3). */
+export function stateName(
+  info: SignalInfo | undefined,
+  v: number | null,
+  text: string | undefined,
+): string | undefined {
+  if (v === null || !info?.states) return undefined;
+  return info.states === "text" ? text || undefined : stateLabel(info, v);
+}
+
 /**
- * Draws a state signal as steps (N3): each valid point's level holds until 1 ns before the next
- * point, envelope edges likewise, so no segment slopes through intermediate states. A range
- * without points thus holds the edge point's level across the view.
+ * Whether each point of toPoints has a state name (the readout's `named`, N3). Raw: by
+ * stateName, edge neighbours included. Buckets: every valid one of a text state signal (its
+ * points are all named); of a VAL_ signal when min and max share a name, as the readout.
  */
-function holdStates(points: SignalPoints): SignalPoints {
+function namedPoints(result: SeriesResult, info: SignalInfo): boolean[] {
+  if (result.kind === "raw") {
+    const named = result.v.map((v, i) => stateName(info, v, result.text?.[i]) !== undefined);
+    const edge = (p: EdgePoint | undefined) =>
+      p ? [stateName(info, p.v, p.label) !== undefined] : [];
+    return [...edge(result.before), ...named, ...edge(result.after)];
+  }
+  return result.mean.map((mean, i) => {
+    if (mean === null) return false;
+    if (info.states === "text") return true;
+    const low = stateName(info, result.min[i] ?? null, undefined);
+    return low !== undefined && low === stateName(info, result.max[i] ?? null, undefined);
+  });
+}
+
+/**
+ * Draws a state signal's segments as steps where the readout holds (N3): a segment with a named
+ * end holds the earlier valid point's level until 1 ns before the next point, envelope edges
+ * likewise, so it never slopes into or out of a state; a segment between two unnamed values
+ * stays a line. A range without points thus holds a named edge point's level across the view.
+ */
+function holdStates(points: SignalPoints, named: readonly boolean[]): SignalPoints {
   // Source indices of the drawn points: each point, plus a hold point before the next one.
   const at: number[] = [];
   const xs: number[] = [];
@@ -56,6 +94,7 @@ function holdStates(points: SignalPoints): SignalPoints {
     xs.push(x);
     const next = points.xs[i + 1];
     if (next === undefined || next <= x + 1 || points.ys[i] === null) return;
+    if (!named[i] && !named[i + 1]) return;
     at.push(i);
     xs.push(next - 1);
   });
@@ -286,7 +325,7 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
       path === "step"
         ? holdBeforeSna(points)
         : path === "line" && input.info?.states
-          ? holdStates(points)
+          ? holdStates(points, namedPoints(input.result, input.info))
           : points;
     const scale = layout.scaleOf.get(input.key) as string;
     if (!model.scales.has(scale)) {
