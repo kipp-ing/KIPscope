@@ -124,7 +124,7 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, measured heights)
 
 ### Requirement: Compact window header
-Every window's header, of every kind, SHALL be one line at most 24 px tall: title, then the resolution badge (timeseries) or the cursor times (values), then the range (timeseries), then the window's controls and the "⋯" menu at the right end. The controls' positions SHALL depend only on the window's width and which controls it has, never on title, badge, range or load state. Origin: D-026 („kompakte Fensterköpfe"); header reflow finding (efficiency test, designer).
+Every window's header, of every kind, SHALL be one line at most 24 px tall: title, then the resolution badge (timeseries) or the cursor times (values), then the range (timeseries), then the window's controls and the "⋯" menu at the right end. The controls' positions SHALL depend only on the window's width and which controls it has, never on title, badge, range or load state. Origin: D-026 („kompakte Fensterköpfe"); header reflow finding (efficiency test, designer); badge look: D-055 (mock: slate-100 badge).
 
 #### Scenario: Header height
 - **WHEN** the six-window setup and one values window are shown at 1440×900
@@ -138,7 +138,7 @@ Every window's header, of every kind, SHALL be one line at most 24 px tall: titl
 
 #### Scenario: Short badge
 - **WHEN** the loaded series of a window are all aggregated with a widest bucket of 2 min, partly aggregated, or all raw
-- **THEN** the badge reads `agg · 2 min`, `part · 2 min` or `raw`, with tooltips `aggregated · 2 min per point`, `partly aggregated · 2 min per point` and `raw`; goal: the badge has no fill colour (designer finding: status colours compete with signal colours)
+- **THEN** the badge reads `agg · 2 min`, `part · 2 min` or `raw`, with tooltips `aggregated · 2 min per point`, `partly aggregated · 2 min per point` and `raw`; goal: the badge has the neutral band fill `#f1f5f9` and no status colour (D-055 mock; designer finding: status colours compete with signal colours)
 - **Evidence:** `apps/web/test/build.test.ts` › "gives a short badge and the full resolution as tooltip"; UI check (screenshot of a badge with its tooltip)
 
 ### Requirement: Header truncation
@@ -176,17 +176,17 @@ Each window's header SHALL end with a "⋯" button that opens a menu with "Renam
 - **Evidence:** UI check (revision before and after)
 
 ### Requirement: Marked window
-The user SHALL mark a window by a click on its header outside its controls, title included, or by choosing it in the explorer's "Add to" select; at most one window is marked. The marked window SHALL show an accent bar on its top edge and its title in the accent colour. Explorer adds by Enter or a row's add button SHALL go to it, or to a new window while none is marked. Origin: D-027 („the user marks a window, and adds go there").
+The user SHALL mark a window by a click on its header outside its controls, title included, or by choosing it in the explorer's "Add to" select; at most one window is marked. The marked window SHALL show its frame in the accent ring colour and an "Add to" pill (accent soft fill, accent ink) after its title; the pill SHALL NOT be truncated, SHALL NOT move the header's controls, and the header's truncation order stays (range first, then the title). Explorer adds by Enter or a row's add button SHALL go to it, or to a new window while none is marked. Origin: D-027 („the user marks a window, and adds go there"); look: D-055 (mock: target window framed `#7dd3fc` with an "Add to" pill in `#e0f2fe` / `#075985`), which replaces the accent bar and accent title.
 
 #### Scenario: Mark and add
 - **WHEN** the six-window setup is shown, the user clicks the empty part of window 4's header, then presses `/`, types `T_SOLL` and presses Enter
-- **THEN** window 4 shows the accent bar and accent title, `AC_A1.T_SOLL` appears in window 4, and the number of windows is still six
-- **Evidence:** UI check on smart451 at 1440×900 (screenshot after the click and after Enter)
+- **THEN** window 4's border colour is `rgb(125, 211, 252)` and its header shows the "Add to" pill with background `rgb(224, 242, 254)` after the title, no other window shows either, `AC_A1.T_SOLL` appears in window 4, and the number of windows is still six
+- **Evidence:** UI check on smart451 at 1440×900 (screenshot after the click and after Enter, computed values)
 
 #### Scenario: Values window marked
 - **WHEN** the user clicks the title of a values window once and adds `COMBI_412h.V_ANZ` with the row's add button
-- **THEN** the values window is marked and lists V_ANZ
-- **Evidence:** UI check on smart451 (screenshot)
+- **THEN** the values window is marked (ring frame and "Add to" pill) and lists V_ANZ; with A, B and Diff on in a 480 px values window with a 40-character title, the cursor times still follow "Cursor times drop their date" and Δt stays visible
+- **Evidence:** UI check on smart451 (screenshot of both states)
 
 #### Scenario: No mark, new windows
 - **WHEN** no window is marked and the user adds `BS_200h.DVL` and then `MS_608h.T_MOT` with Enter

@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-056: Design language conventions (2026-10-16)
+
+From the archived change `adopt-design-language`; details there.
+
+- **Decision:** tokens of T1 on `:root` (slate neutrals, sky accent `#0284c7`, 12 px base, 11 px caps labels, mono signal names, tabular numbers, 4 px radius, 26 px controls); A/B/Diff are pills over hidden checkboxes; the marked window is a ring frame plus an "Add to" pill; series palette Okabe-Ito then `#332288 #882255 #999933 #8C564B`; `GET /api/density?dataRef=` with widths of T6 (≤ 120 bars), cached per data ref and catalog load and prefetched after each load (Q4); strip bars 24 px, strip ≤ 56 px, no click action.
+
 ## D-055: KI.ping design language (2026-10-16)
 
 - **Context:** Jan: „KI.ping has a ui too. i want to take over the design language". Reference: KI.ping `ui/proto-v1` (Tailwind slate, sky accent, dense 12 px, caps section labels, grey group bands, one dark primary per surface, status pills, Okabe-Ito series). Mock: https://claude.ai/artifact/V6naWfZvN9od7JpM482nta (artboards "Workspace" and "Tokens and parts"), source in [docs/design/](design/) (`Main.dc.html`, `Tokens.dc.html`).
