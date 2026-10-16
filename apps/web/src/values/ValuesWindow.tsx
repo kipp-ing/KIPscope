@@ -48,7 +48,10 @@ function textWidth(text: string, font: string): number {
   return canvas.measureText(text).width;
 }
 
-/** Room for the cursor times: the header without the controls, the 6ch title minimum and the gaps (L4). */
+/**
+ * Room for the cursor times: the header without the controls, the 6ch title minimum, the "Add to"
+ * pill of a marked window and the gaps (L4, design T4).
+ */
 interface TimesRoom {
   width: number;
   font: string;
@@ -61,7 +64,9 @@ function measureRoom(header: HTMLElement): TimesRoom {
   const font = times ? getComputedStyle(times).font : style.font;
   const gap = Number.parseFloat(style.columnGap) || 0;
   const titleMin = textWidth("000000", style.font);
-  return { width: header.clientWidth - controls - titleMin - 3 * gap, font };
+  const pill = header.querySelector(".mark-pill")?.getBoundingClientRect().width;
+  const pillRoom = pill === undefined ? 0 : pill + gap;
+  return { width: header.clientWidth - controls - titleMin - 3 * gap - pillRoom, font };
 }
 
 interface Props {
@@ -190,8 +195,12 @@ export function ValuesWindow({
     observer.observe(header);
     // The controls change width without the header ("Between points" hides with Diff on).
     observer.observe(controls);
+    // Marking adds the pill and unmarking removes it, both without resizing the header.
+    const pill = marked ? header.querySelector(".mark-pill") : null;
+    if (pill) observer.observe(pill);
+    else setRoom(measureRoom(header));
     return () => observer.disconnect();
-  }, []);
+  }, [marked]);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const loader = useMemo(() => new ValueLoader(fetchValue, rerender), []);
   useEffect(() => () => loader.dispose(), [loader]);
@@ -267,6 +276,7 @@ export function ValuesWindow({
           onEditing={setRenaming}
           onCommand={onCommand}
         />
+        {marked && <span className="mark-pill">Add to</span>}
         <span className="cursor-times">
           {times.map((t) => (
             <span key={t.text.slice(0, 2)} className="cursor-time" title={t.title}>

@@ -1,0 +1,59 @@
+/* Sticky wrapper of the top row and the time strip (design T8); the auto-scroll edge counts from
+   its bottom (App.tsx barRef). */
+.top-area {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -16px 8px;
+}
+
+/* Time strip (design T8): 6 + 16 + 4 + 24 + 4 + 1 = 55 px in every state. */
+.time-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px 4px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.time-strip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  height: 16px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.time-strip-range {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.time-strip-info {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.time-strip-bars {
+  height: 24px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.time-strip-bars > span {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 1px 1px 0 0;
+  background: var(--control-border);
+}
+
+.time-strip-bars > span.shown {
+  background: var(--accent);
+}

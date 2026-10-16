@@ -18,18 +18,18 @@ export const DEFAULT_PLOT_HEIGHT = 280;
 export const MIN_PLOT_HEIGHT = 120;
 export const MAX_PLOT_HEIGHT = 1200;
 
-/** Signal palette; Workspace.colors holds indices into it. */
+/** Signal palette (D-055): Okabe-Ito, then four colours ≥ 3:1 on white; Workspace.colors holds indices. */
 export const SIGNAL_COLORS = [
-  "#2563eb",
-  "#dc2626",
-  "#16a34a",
-  "#9333ea",
-  "#ea580c",
-  "#0891b2",
-  "#be185d",
-  "#4d7c0f",
-  "#ca8a04",
-  "#475569",
+  "#0072B2",
+  "#E69F00",
+  "#009E73",
+  "#D55E00",
+  "#CC79A7",
+  "#56B4E9",
+  "#332288",
+  "#882255",
+  "#999933",
+  "#8C564B",
 ] as const;
 
 /**

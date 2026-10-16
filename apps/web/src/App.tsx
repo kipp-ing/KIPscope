@@ -53,6 +53,7 @@ import {
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
+import { TimeStrip } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 import { WindowBoundary } from "./WindowBoundary.tsx";
 
@@ -830,32 +831,36 @@ export function App() {
       />
       <div className="workspace">
         <main ref={mainRef}>
-          {/* The top row (design L3): sidebar toggle and option bar, sticky while the list scrolls. */}
-          <div className="option-bar-slot" ref={barRef}>
-            <button
-              type="button"
-              className="sidebar-toggle"
-              aria-expanded={sidebarOpen}
-              title={sidebarOpen ? "Hide signals (s)" : "Show signals (s)"}
-              onClick={toggleSidebar}
-            >
-              Signals
-            </button>
-            {workspace && (
-              <OptionBar
-                workspace={workspace}
-                target={barWindow}
-                canGoBack={canGoBack(barWindow?.id)}
-                onCommand={barCommand}
-                onBack={onBack}
-                onGoTo={onGoTo}
-                onGoToClear={onGoToClear}
-                onSpan={onSpan}
-                onReset={() => {
-                  if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
-                }}
-              />
-            )}
+          {/* The top row (design L3) and the time strip (adopt-design-language T8), sticky together
+              while the list scrolls. */}
+          <div className="top-area" ref={barRef}>
+            <div className="option-bar-slot">
+              <button
+                type="button"
+                className="sidebar-toggle"
+                aria-expanded={sidebarOpen}
+                title={sidebarOpen ? "Hide signals (s)" : "Show signals (s)"}
+                onClick={toggleSidebar}
+              >
+                Signals
+              </button>
+              {workspace && (
+                <OptionBar
+                  workspace={workspace}
+                  target={barWindow}
+                  canGoBack={canGoBack(barWindow?.id)}
+                  onCommand={barCommand}
+                  onBack={onBack}
+                  onGoTo={onGoTo}
+                  onGoToClear={onGoToClear}
+                  onSpan={onSpan}
+                  onReset={() => {
+                    if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
+                  }}
+                />
+              )}
+            </div>
+            <TimeStrip workspace={workspace ?? EMPTY_WORKSPACE} />
           </div>
           <div className="window-grid">
             {windows.map((w) => (

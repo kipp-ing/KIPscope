@@ -1,17 +1,67 @@
+/* Design tokens (D-055, adopt-design-language T1); colours outside :root use these or color-mix. */
 :root {
-  --bg: #f8fafc;
-  --panel: #ffffff;
-  --text: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --error: #dc2626;
-  --ok: #16a34a;
+  /* slate */
+  --bg: #f8fafc; /* slate-50, page */
+  --panel: #ffffff; /* panels */
+  --band: #f1f5f9; /* slate-100, group band, badge, header divider */
+  --border: #e2e8f0; /* slate-200, dividers, disabled border */
+  --control-border: #cbd5e1; /* slate-300, control border, data bars */
+  --disabled: #94a3b8; /* slate-400 */
+  --muted: #64748b; /* slate-500, muted text (app-footer pins rgb(100,116,139)) */
+  --soft-ink: #475569; /* slate-600, badge and loading pill text */
+  --label: #334155; /* slate-700 */
+  --name: #1e293b; /* slate-800, signal names, titles */
+  --text: #0f172a; /* slate-900, text, primary, cursors */
+  /* accent sky (D-055) */
+  --accent: #0284c7;
+  --accent-soft: #e0f2fe;
+  --accent-ink: #075985;
+  --accent-ring: #7dd3fc;
+  /* status */
+  --ok: #047857;
+  --ok-fill: #ecfdf5;
+  --ok-dot: #10b981;
   --sna: #f59e0b;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 14px;
+  --sna-fill: #fffbeb;
+  --sna-ink: #92400e;
+  --error: #be123c;
+  --error-fill: #fff1f2;
+  --mark: #fde68a; /* search hit, unchanged */
+  /* shape and type */
+  --radius: 4px;
+  --control-h: 26px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --name-size: 11.5px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--bg);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Section label (T2): the explorer heading, the time strip's TIME. */
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* Defined for future use only; no surface has one in this change (D-055 Q1). */
+.primary {
+  border: none;
+  background: var(--text);
+  color: #fff;
+  font-weight: 500;
 }
 
 * {
@@ -40,7 +90,7 @@ body {
   min-height: 0;
   border-right: 1px solid var(--border);
   background: var(--panel);
-  padding: 12px 0 0;
+  padding: 10px 8px 8px;
 }
 
 .app.sidebar-collapsed .explorer {
@@ -48,16 +98,17 @@ body {
 }
 
 .explorer h2 {
-  margin: 0 12px 8px;
-  font-size: 16px;
+  margin: 0 4px 8px;
 }
 
 .explorer input[type="search"] {
-  width: calc(100% - 24px);
-  margin: 0 12px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
 }
 
 /* A long window title must not widen the select past the sidebar: it shrinks and ellipsizes. */
@@ -65,8 +116,9 @@ body {
   display: flex;
   gap: 4px;
   align-items: center;
-  margin: 8px 12px;
+  margin: 8px 4px;
   white-space: nowrap;
+  color: var(--label);
 }
 
 .explorer .target select {
@@ -74,30 +126,39 @@ body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  height: var(--control-h);
+  padding: 0 4px;
   overflow: hidden;
   text-overflow: ellipsis;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
 }
 
 .explorer p {
-  margin: 0 12px 4px;
+  margin: 0 4px 4px;
 }
 
-/* The list scrolls on its own so search, target and count stay in view. */
+/* The list scrolls on its own so search, target and count stay in view; its divider spans the
+   sidebar, its rows keep the explorer's 8 px inset. */
 .explorer .results {
   flex: 1;
   min-height: 0;
-  margin: 0;
+  margin: 0 -8px;
+  padding: 4px 8px 0;
   overflow-y: auto;
   border-top: 1px solid var(--border);
 }
 
-/* One line per signal (design E5): [dot] name … unit [+], at most 24 px high. */
+/* One line per signal (design E5): [dot] name … unit [+], at most 24 px high, indented under its
+   group header. */
 .explorer .row {
   display: flex;
   gap: 6px;
   align-items: center;
   height: 22px;
-  padding: 0 4px 0 12px;
+  padding: 0 2px 0 18px;
+  border-radius: var(--radius);
   white-space: nowrap;
 }
 
@@ -106,8 +167,7 @@ body {
 }
 
 .explorer .row.active {
-  background: rgb(37 99 235 / 0.1);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-soft);
 }
 
 .explorer .sna-dot {
@@ -127,8 +187,13 @@ body {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--name-size);
+  color: var(--name);
+}
+
+.explorer .row.active .name {
+  color: var(--accent-ink);
 }
 
 .explorer .row .name.draggable {
@@ -140,51 +205,55 @@ body {
   max-width: 35%;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
+  color: var(--muted);
 }
 
 .explorer .row .add {
   flex-shrink: 0;
-  width: 20px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: none;
-  color: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--disabled);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
 
-.explorer .row:hover .add,
-.explorer .row.active .add,
-.explorer .row .add:focus-visible {
-  border-color: var(--border);
-  background: var(--panel);
+.explorer .row .add:hover {
+  color: var(--accent);
 }
 
-/* Group header (signal-groups, design G6): [chevron] name … count, one line like a row. */
+/* Group header (signal-groups, design G6): [chevron] name … count, one line like a row, on a
+   band 3 px below the group above (the margin is outside the 24 px box). */
 .explorer .group-head {
   display: flex;
   gap: 6px;
   align-items: center;
-  height: 22px;
-  padding: 0 8px 0 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  background: var(--band);
+  color: var(--label);
   white-space: nowrap;
-  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   user-select: none;
 }
 
+.explorer .group-head:not(:first-child) {
+  margin-top: 3px;
+}
+
 .explorer .group-head:hover {
-  background: var(--bg);
+  background: var(--border);
 }
 
 .explorer .group-head.active {
-  background: rgb(37 99 235 / 0.1);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 
 .explorer .group-head .chevron {
@@ -213,7 +282,7 @@ body {
 
 .explorer mark,
 .signal-card mark {
-  background: #fde68a;
+  background: var(--mark);
   color: inherit;
   border-radius: 2px;
 }
@@ -243,7 +312,7 @@ body {
 }
 
 .signal-card-name {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -339,6 +408,19 @@ main {
 
 .conn.ok {
   color: var(--ok);
+  font-weight: 500;
+}
+
+/* The dot is part of .conn, so the footer fit measures it with the text (T4). */
+.conn.ok::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--ok-dot);
+  vertical-align: 0;
 }
 
 .conn.down,
@@ -350,8 +432,8 @@ main {
 .message {
   border: 1px solid var(--error);
   color: var(--error);
-  background: #fef2f2;
-  border-radius: 4px;
+  background: var(--error-fill);
+  border-radius: var(--radius);
 }
 
 /* Tile box only; everything inside a window lives in chart/window.css (design S3). Chrome above
@@ -406,13 +488,16 @@ main {
 
 .swatch {
   flex-shrink: 0;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 3px;
   border-radius: 2px;
 }
 
 .sig {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
+  font-size: var(--name-size);
+  font-weight: 500;
+  color: var(--name);
 }
 
 .unit,
@@ -446,21 +531,18 @@ button.link {
   padding: 0;
 }
 
-/* Top row (design C5, L3): "Signals" toggle and option bar, at the top of the window list while it
-   scrolls. Opaque, so windows pass under it; above uPlot's overlays. A size container, so the bar
-   collapses lower-priority labels by the row's width (bar.css). */
+/* Top row (design C5, L3): "Signals" toggle and option bar, at the top of the window list. The
+   sticky wrapper .top-area (time/strip.css, T8) holds it and the time strip; opaque, so windows pass
+   under it. A size container, so the bar collapses lower-priority labels by the row's width
+   (bar.css). 26 px controls + 2 × 4 px padding + 1 px border = 35 px (goal ≤ 36, T3). */
 .option-bar-slot {
   flex: none;
-  position: sticky;
-  top: 0;
-  z-index: 5;
   container: top-row / inline-size;
   display: flex;
   gap: 8px;
   align-items: center;
-  margin: 0 -16px 8px;
-  padding: 6px 16px;
-  background: var(--bg);
+  padding: 4px 16px;
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
@@ -469,13 +551,43 @@ button.link {
   min-width: 0;
 }
 
+/* Top-row control boxes (T3); the A, B and Diff pills are labels (bar.css). */
+.option-bar-slot button,
+.option-bar-slot .option-bar select,
+.option-bar-slot input[type="text"] {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.option-bar-slot .option-bar select {
+  padding: 0 4px;
+}
+
+.option-bar-slot button:disabled,
+.option-bar-slot select:disabled,
+.option-bar-slot input[type="text"]:disabled {
+  border-color: var(--border);
+  color: var(--disabled);
+}
+
+/* Below the invalid "Go to" (bar.css), which keeps its error outline. */
+.option-bar-slot :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .sidebar-toggle {
   flex: none;
 }
 
-.sidebar-toggle[aria-expanded="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
+/* Pressed while the sidebar is open; a pressed toggle, not a primary button. */
+.option-bar-slot .sidebar-toggle[aria-expanded="true"] {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
 }
 
 /* Legend-row drag (design D5); window highlights live in chart/window.css. */
@@ -502,27 +614,28 @@ button.link {
   border-radius: 4px;
   background: var(--panel);
   box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .drag-ghost .drag-mode {
   color: var(--muted);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 
 .drag-ghost .drag-note {
   color: var(--error);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Below <main>, at the viewport bottom (design C7, L3): status, message and the footer (add-footer
    F5) outside a drag; the "+ New window" zone during one, so it covers no window and a drop goes to
    what is under the pointer. Same box in both states (2 px border, transparent when idle), so <main>
-   keeps its height when a drag starts or ends. Without data-drop the idle strip is no target. One
-   line is 28 px; when status and attribution do not fit one line (StatusBar adds .wrap) the
-   attribution moves to a second line, at most 48 px in all. */
+   keeps its height when a drag starts or ends. Without data-drop the idle strip is no target. A
+   white band across the column; the idle top divider is a shadow, so the box is the same in both
+   states (T4). One line is 28 px; when status and attribution do not fit one line (StatusBar adds
+   .wrap) the attribution moves to a second line, at most 48 px in all. */
 .status-strip {
   flex: none;
   position: relative;
@@ -531,11 +644,13 @@ button.link {
   gap: 2px 12px;
   align-items: center;
   min-height: 28px;
-  margin: 4px 16px;
-  padding: 2px 8px;
+  margin: 0;
+  padding: 2px 16px;
   overflow: hidden;
   border: 2px solid transparent;
-  border-radius: 6px;
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: inset 0 1px 0 var(--border);
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
@@ -648,11 +763,12 @@ button.link {
 
 .status-strip.drop {
   border: 2px dashed var(--accent);
-  background: linear-gradient(rgb(37 99 235 / 0.04), rgb(37 99 235 / 0.04)), var(--bg);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel));
 }
 
 .status-strip.drop.over {
-  background: linear-gradient(rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.12)), var(--bg);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
 }
 
 /* During a drag the left part keeps its boxes (nothing moves) and "+ New window" covers it. */
@@ -688,7 +804,7 @@ button.link {
 
 .drop-below.drop {
   color: var(--accent);
-  background: linear-gradient(rgb(37 99 235 / 0.04), rgb(37 99 235 / 0.04)), var(--bg);
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg));
 }
 
 .drop-below.drop::before {
@@ -700,5 +816,5 @@ button.link {
 }
 
 .drop-below.drop.over {
-  background: linear-gradient(rgb(37 99 235 / 0.12), rgb(37 99 235 / 0.12)), var(--bg);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
 }

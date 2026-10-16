@@ -95,8 +95,12 @@ const MIN_SPAN_NS = 100n;
 /** Re-anchor the origin before offsets lose float precision (2^53 ns ≈ 104 days). */
 const MAX_ORIGIN_DISTANCE = 2n ** 50n;
 
-/** Axis tick font; measured to size each y axis to its widest tick label. */
-const AXIS_FONT = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
+/** Axis tick font (design T2, the --font-sans stack); measured to size each y axis to its widest tick label. */
+const AXIS_FONT = '11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+/** Grid lines, the --border value (design T4); uPlot draws on canvas, so no CSS variable. */
+const GRID_STROKE = "#e2e8f0";
+/** Ticks and labels of an axis without its own signal colour, the --muted value (design T4). */
+const AXIS_STROKE = "#64748b";
 /** y axis size beyond the widest tick label: tick (4) + gap (5) + spare (3). */
 const AXIS_PAD = 12;
 /** An axis is at least as wide as its title (+ 4 px), up to this many CSS px. */
@@ -805,6 +809,9 @@ export function TimeseriesWindow({
       {
         space: 100,
         size: 48,
+        font: AXIS_FONT,
+        stroke: AXIS_STROKE,
+        grid: { stroke: GRID_STROKE },
         splits: (u) => {
           const min = u.scales.x?.min ?? 0;
           const max = u.scales.x?.max ?? 1;
@@ -862,8 +869,8 @@ export function TimeseriesWindow({
         // An axis still loading keeps its place and title but shows no ticks or values.
         ticks: { show: loaded, size: AXIS_TICK },
         values: loaded ? tickValues : (_u: uPlot, splits: number[]) => splits.map(() => ""),
-        ...(axis.color ? { stroke: axis.color } : {}),
-        grid: { show: j === gridAxis },
+        stroke: axis.color ?? AXIS_STROKE,
+        grid: { show: j === gridAxis, stroke: GRID_STROKE },
         size: (_u, values, _i, cycle) => {
           const last = sizes[j];
           if (cycle > 1 && last !== undefined) return last;
@@ -1374,6 +1381,7 @@ export function TimeseriesWindow({
           onEditing={setRenaming}
           onCommand={onCommand}
         />
+        {marked && <span className="mark-pill">Add to</span>}
         {badge && (
           <span className="badge" title={badge.full}>
             {badge.short}

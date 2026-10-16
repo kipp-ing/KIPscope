@@ -49,6 +49,8 @@ export function stubSource(): DataSource {
     count: unused,
     raw: unused,
     buckets: unused,
+    refExtent: unused,
+    refBuckets: unused,
   };
 }
 

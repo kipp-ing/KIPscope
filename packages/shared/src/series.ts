@@ -50,6 +50,19 @@ export interface Extent {
   last: string;
 }
 
+/** Rows per bucket of one data ref over its whole extent (spec time-strip). Decimal ns strings. */
+export interface Density {
+  dataRef: string;
+  first: string;
+  last: string;
+  /** One of DENSITY_WIDTHS. */
+  width: string;
+  /** floor(first / width) * width. */
+  start: string;
+  /** counts[i]: rows in [start + i*width, start + (i+1)*width); length floor(last/w) − floor(first/w) + 1 ≤ MAX_DENSITY_BARS. */
+  counts: number[];
+}
+
 export interface ApiError {
   error: {
     code: string;

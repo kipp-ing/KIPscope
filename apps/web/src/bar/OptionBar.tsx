@@ -88,7 +88,7 @@ export function OptionBar({
   };
   const cursorToggle = (cursor: CursorName) => (
     <label
-      className="toggle"
+      className="toggle pill"
       title={
         target
           ? `Cursor ${cursor.toUpperCase()} · ${cursor === "a" ? "click" : "Shift+click"} in a plot to place it`
@@ -112,7 +112,7 @@ export function OptionBar({
     <div className="option-bar">
       {cursorToggle("a")}
       {cursorToggle("b")}
-      <label className="toggle" title="Show the differences B − A (Δ and Δt)">
+      <label className="toggle pill" title="Show the differences B − A (Δ and Δt)">
         <input
           type="checkbox"
           checked={cursors.diff}
@@ -227,6 +227,7 @@ export function OptionBar({
       </select>
       <button
         type="button"
+        className="new-values"
         aria-label="New values window"
         title="New values window"
         onClick={() => void onCommand({ type: "window.create", kind: "values" })}

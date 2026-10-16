@@ -10,6 +10,7 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
+import { DensityCache } from "../density.ts";
 import { apiError, parseInput } from "../http.ts";
 import { MAX_TARGET, MIN_TARGET, querySeries } from "../series.ts";
 
@@ -26,6 +27,8 @@ const SeriesQuery = z
 
 const ExtentQuery = z.object({ signal: z.string().min(1) });
 
+const DensityQuery = z.object({ dataRef: z.string().min(1) });
+
 const ValueQuery = z.object({
   signal: z.string().min(1),
   t: Time,
@@ -35,6 +38,27 @@ const ValueQuery = z.object({
 export const seriesRoutes =
   ({ catalog, source }: AppDeps): FastifyPluginAsync =>
   async (app) => {
+    const density = new DensityCache(source, () => catalog.loadedAt);
+
+    /** Rows per bucket of a data ref over its whole extent (spec time-strip). */
+    app.get("/api/density", async (request, reply) => {
+      const query = parseInput(DensityQuery, request.query, reply);
+      if (!query) return reply;
+      const { dataRef } = query;
+      if (catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)) {
+        return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
+      }
+      try {
+        // Shared and cached, so a client close does not abort it (design T7).
+        const body = await density.get(dataRef);
+        if (!body) return apiError(reply, 404, "no_data", `no data for data ref: ${dataRef}`);
+        return body;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return apiError(reply, 502, "source_error", message);
+      }
+    });
+
     /** First and last timestamp of a signal (spec series-query, signal extent). */
     app.get("/api/extent", async (request, reply) => {
       const query = parseInput(ExtentQuery, request.query, reply);

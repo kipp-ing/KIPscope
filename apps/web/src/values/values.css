@@ -30,6 +30,12 @@
   white-space: normal;
 }
 
+.values-window td.name .swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
 .values-window td.name .sig {
   font-size: 11px;
   overflow-wrap: anywhere;
@@ -50,12 +56,12 @@
 .values-window .value .tag {
   margin-left: 4px;
   color: var(--muted);
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 10px;
 }
 
 .values-window .value.sna-value {
-  color: var(--sna);
+  color: var(--sna-ink);
   font-weight: 600;
 }
 
@@ -73,7 +79,8 @@
 
 /* Header (design L4), the grid of window.css: the cursor times sit in its `auto` cell, so the
    title gives way first, down to 6ch, and the times are never cut. Where they would not fit even
-   then, A and B drop their dates (ValuesWindow measures the room). "Between points" drops its word
+   then, A and B drop their dates (ValuesWindow measures the room, the "Add to" pill of a marked
+   window included). "Between points" drops its word
    where it would crowd the times. */
 .window.values-window .window-header {
   container: values-header / inline-size;

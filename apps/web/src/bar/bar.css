@@ -1,5 +1,5 @@
-/* Option bar controls (D-023). Sticking, padding and background belong to App's
-   .option-bar-slot (styles.css). */
+/* Option bar controls (D-023). Padding, background and the button, select and field boxes belong
+   to App's .option-bar-slot (styles.css); sticking to the .top-area wrapper (time/strip.css). */
 
 .option-bar {
   display: flex;
@@ -13,6 +13,7 @@
   display: flex;
   gap: 4px;
   align-items: center;
+  height: var(--control-h);
   cursor: pointer;
   user-select: none;
 }
@@ -22,9 +23,56 @@
   cursor: not-allowed;
 }
 
+/* "Link time axes" keeps its visible checkbox, ticked in the accent. */
+.option-bar .toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* A, B and Diff as pills (T3): the checkbox inside stays the control (keys, tooltip, onChange) and
+   is only hidden; the pill draws its state. */
+.option-bar .pill {
+  position: relative;
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--panel);
+  font-weight: 500;
+}
+
+.option-bar .pill input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.option-bar .pill:has(input:checked) {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
+}
+
+.option-bar .pill:has(input:disabled) {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--disabled);
+}
+
+.option-bar .pill:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.option-bar .new-values {
+  font-weight: 500;
+}
+
 .option-bar .separator {
   width: 1px;
-  align-self: stretch;
+  height: 18px;
   background: var(--border);
 }
 
@@ -48,5 +96,5 @@
 .option-bar .go-to.invalid {
   border-color: var(--error);
   outline-color: var(--error);
-  background: color-mix(in srgb, var(--error) 8%, transparent);
+  background: var(--error-fill);
 }

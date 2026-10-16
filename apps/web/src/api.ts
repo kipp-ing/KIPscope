@@ -4,6 +4,7 @@ import type {
   CommandInput,
   CommandResult,
   CursorValueResult,
+  Density,
   Extent,
   SeriesResult,
   ServerMeta,
@@ -79,6 +80,11 @@ export function fetchCursorValue(
 
 export function fetchExtent(signalId: string): Promise<Extent> {
   return getJson(`/api/extent?${new URLSearchParams({ signal: signalId })}`);
+}
+
+/** Rows per bucket of one data ref over its whole recording, for the time strip (design T8). */
+export function fetchDensity(dataRef: string, signal?: AbortSignal): Promise<Density> {
+  return getJson(`/api/density?${new URLSearchParams({ dataRef })}`, signal);
 }
 
 /** Build, source and catalog state of the running server for the footer (design F2). */

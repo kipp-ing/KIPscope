@@ -197,4 +197,32 @@ export class ClickHouseSource implements DataSource {
       max,
     }));
   }
+
+  // The two density queries read only the data-ref column (partition and first sort key, so other
+  // refs are pruned) and the time column; no per-row sort (design T7, D-007).
+  async refExtent(dataRef: string, abort?: AbortSignal) {
+    const { dataRef: refColumn, time } = this.c;
+    const [row] = await this.rows<[string, string, string]>(
+      `SELECT count(), toString(toUnixTimestamp64Nano(min(${time}))),
+              toString(toUnixTimestamp64Nano(max(${time})))
+       FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL`,
+      { ref: dataRef },
+      abort,
+    );
+    if (!row || Number(row[0]) === 0) return undefined;
+    return { count: Number(row[0]), first: BigInt(row[1]), last: BigInt(row[2]) };
+  }
+
+  async refBuckets(dataRef: string, width: bigint, abort?: AbortSignal) {
+    const { dataRef: refColumn, time } = this.c;
+    const rows = await this.rows<[string, string]>(
+      `WITH toUnixTimestamp64Nano(${time}) AS x
+       SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count()
+       FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL
+       GROUP BY b`,
+      { ref: dataRef, w: width },
+      abort,
+    );
+    return rows.map(([b, count]) => ({ start: BigInt(b), count: Number(count) }));
+  }
 }

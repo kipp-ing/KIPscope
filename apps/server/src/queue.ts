@@ -84,5 +84,8 @@ export function queuedSource(source: DataSource, queue: QueryQueue): DataSource 
     after: (ref, t, abort) => queue.run((a) => source.after(ref, t, a), abort),
     buckets: (ref, from, to, width, abort) =>
       queue.run((a) => source.buckets(ref, from, to, width, a), abort),
+    refExtent: (dataRef, abort) => queue.run((a) => source.refExtent(dataRef, a), abort),
+    refBuckets: (dataRef, width, abort) =>
+      queue.run((a) => source.refBuckets(dataRef, width, a), abort),
   };
 }

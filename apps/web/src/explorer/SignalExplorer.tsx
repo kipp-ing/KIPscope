@@ -298,7 +298,7 @@ export function SignalExplorer({
 
   return (
     <aside className="explorer">
-      <h2>Signals</h2>
+      <h2 className="section-label">Signals</h2>
       <input
         ref={inputRef}
         type="search"

@@ -61,4 +61,15 @@ export interface DataSource {
     width: bigint,
     abort?: AbortSignal,
   ): Promise<Bucket[]>;
+  /** Rows of the data ref with a timestamp: count, first and last; undefined if none. */
+  refExtent(
+    dataRef: string,
+    abort?: AbortSignal,
+  ): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
+  /** Non-empty buckets of all the data ref's rows on the grid k * width, any order. */
+  refBuckets(
+    dataRef: string,
+    width: bigint,
+    abort?: AbortSignal,
+  ): Promise<{ start: Timestamp; count: number }[]>;
 }

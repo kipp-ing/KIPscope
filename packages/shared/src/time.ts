@@ -22,6 +22,33 @@ export function floorDiv(a: bigint, b: bigint): bigint {
   return a % b !== 0n && a < 0n !== b < 0n ? q - 1n : q;
 }
 
+export const MAX_DENSITY_BARS = 120;
+
+const NS_PER_MIN = 60n * NS_PER_S;
+const NS_PER_H = 60n * NS_PER_MIN;
+const NS_PER_D = 24n * NS_PER_H;
+const NS_PER_Y = 365n * NS_PER_D;
+
+/** ns, ascending: 1 2 5 10 20 50 100 200 500 ms; 1 2 5 10 15 30 s; 1 2 5 10 15 30 min; 1 2 3 6 12 h; 1 2 7 14 30 90 180 d; 1 2 5 10 20 50 100 × 365 d. */
+export const DENSITY_WIDTHS: readonly bigint[] = [
+  ...[1n, 2n, 5n, 10n, 20n, 50n, 100n, 200n, 500n].map((n) => n * NS_PER_MS),
+  ...[1n, 2n, 5n, 10n, 15n, 30n].map((n) => n * NS_PER_S),
+  ...[1n, 2n, 5n, 10n, 15n, 30n].map((n) => n * NS_PER_MIN),
+  ...[1n, 2n, 3n, 6n, 12n].map((n) => n * NS_PER_H),
+  ...[1n, 2n, 7n, 14n, 30n, 90n, 180n].map((n) => n * NS_PER_D),
+  ...[1n, 2n, 5n, 10n, 20n, 50n, 100n].map((n) => n * NS_PER_Y),
+];
+
+/** Smallest width with floor(last/w) − floor(first/w) + 1 ≤ MAX_DENSITY_BARS (floor toward −∞). */
+export function densityWidth(first: bigint, last: bigint): bigint {
+  const max = BigInt(MAX_DENSITY_BARS);
+  for (const w of DENSITY_WIDTHS) {
+    if (floorDiv(last, w) - floorDiv(first, w) + 1n <= max) return w;
+  }
+  // Unreachable within [TIME_MIN, TIME_MAX]: 100 × 365 d covers it in 4 buckets.
+  return DENSITY_WIDTHS[DENSITY_WIDTHS.length - 1] as bigint;
+}
+
 export function parseTimestamp(text: string): Timestamp {
   if (!DECIMAL.test(text)) throw new RangeError(`not a decimal nanosecond timestamp: ${text}`);
   return BigInt(text);
