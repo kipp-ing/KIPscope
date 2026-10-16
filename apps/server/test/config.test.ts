@@ -5,7 +5,7 @@ const base = { CLICKHOUSE_URL: "http://localhost:18123" };
 
 describe("loadConfig", () => {
   it("defaults to the carserver sdlog mapping", () => {
-    const config = loadConfig(base, "/repo/letsview");
+    const config = loadConfig(base, "/repo/kipscope");
     expect(config.mapping).toEqual({
       database: "sdlog",
       table: "signals",
@@ -26,38 +26,38 @@ describe("loadConfig", () => {
     const config = loadConfig(
       {
         ...base,
-        LETSVIEW_TABLE: "signals_ns",
-        LETSVIEW_COLUMN_TIME: "ts",
-        LETSVIEW_DBC_FILES: "/abs/a.dbc, rel/b.dbc",
-        LETSVIEW_QUERY_CONCURRENCY: "2",
+        KIPSCOPE_TABLE: "signals_ns",
+        KIPSCOPE_COLUMN_TIME: "ts",
+        KIPSCOPE_DBC_FILES: "/abs/a.dbc, rel/b.dbc",
+        KIPSCOPE_QUERY_CONCURRENCY: "2",
       },
-      "/repo/letsview",
+      "/repo/kipscope",
     );
     expect(config.mapping.table).toBe("signals_ns");
     expect(config.mapping.time).toBe("ts");
-    expect(config.dbcFiles).toEqual(["/abs/a.dbc", "/repo/letsview/rel/b.dbc"]);
+    expect(config.dbcFiles).toEqual(["/abs/a.dbc", "/repo/kipscope/rel/b.dbc"]);
     expect(config.queryConcurrency).toBe(2);
   });
 
   it("rejects unsafe identifiers and bad numbers", () => {
-    expect(() => loadConfig({ ...base, LETSVIEW_TABLE: "x; DROP TABLE y" })).toThrow(/identifier/);
-    expect(() => loadConfig({ ...base, LETSVIEW_QUERY_CONCURRENCY: "0" })).toThrow(/positive/);
+    expect(() => loadConfig({ ...base, KIPSCOPE_TABLE: "x; DROP TABLE y" })).toThrow(/identifier/);
+    expect(() => loadConfig({ ...base, KIPSCOPE_QUERY_CONCURRENCY: "0" })).toThrow(/positive/);
     expect(() => loadConfig({})).toThrow(/CLICKHOUSE_URL/);
   });
 
   it("resolves the project file path", () => {
-    expect(loadConfig(base, "/repo/letsview").projectFile).toEqual({
-      path: "/repo/letsview/letsview.yaml",
+    expect(loadConfig(base, "/repo/kipscope").projectFile).toEqual({
+      path: "/repo/kipscope/kipscope.yaml",
       required: false,
     });
     expect(
-      loadConfig({ ...base, LETSVIEW_PROJECT_FILE: "conf/p.yaml" }, "/repo/letsview").projectFile,
-    ).toEqual({ path: "/repo/letsview/conf/p.yaml", required: true });
+      loadConfig({ ...base, KIPSCOPE_PROJECT_FILE: "conf/p.yaml" }, "/repo/kipscope").projectFile,
+    ).toEqual({ path: "/repo/kipscope/conf/p.yaml", required: true });
     expect(
-      loadConfig({ ...base, LETSVIEW_PROJECT_FILE: "/abs/p.yaml" }, "/repo/letsview").projectFile,
+      loadConfig({ ...base, KIPSCOPE_PROJECT_FILE: "/abs/p.yaml" }, "/repo/kipscope").projectFile,
     ).toEqual({ path: "/abs/p.yaml", required: true });
     expect(
-      loadConfig({ ...base, LETSVIEW_PROJECT_FILE: "" }, "/repo/letsview").projectFile,
-    ).toEqual({ path: "/repo/letsview/letsview.yaml", required: false });
+      loadConfig({ ...base, KIPSCOPE_PROJECT_FILE: "" }, "/repo/kipscope").projectFile,
+    ).toEqual({ path: "/repo/kipscope/kipscope.yaml", required: false });
   });
 });

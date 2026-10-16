@@ -1,4 +1,4 @@
-import type { Timestamp } from "@letsview/shared";
+import type { Timestamp } from "@kipscope/shared";
 
 /** A signal as the source knows it, without metadata. */
 export interface SignalRef {

@@ -1,6 +1,6 @@
 export const meta = {
   name: 'change-round',
-  description: 'letsview: build rounds for an OpenSpec change (build, test, UI check, review, spec check) until done',
+  description: 'KIPscope: build rounds for an OpenSpec change (build, test, UI check, review, spec check) until done',
   whenToUse: 'args: {change: "add-sna-handling", date: "YYYY-MM-DD", maxRounds?: 3, hint?: "..."}. Spec, design and tasks of the change must exist.',
   phases: [{ title: 'Plan' }, { title: 'Build' }, { title: 'Check' }, { title: 'Judge' }, { title: 'Pace', detail: 'spec check and decision' }],
 }
@@ -11,7 +11,7 @@ const DATE = (args && args.date) || 'unknown'
 const MAX = (args && args.maxRounds) || 3
 const HINT = args && args.hint ? `\nHint from the lead: ${args.hint}` : ''
 const ROLE = r =>
-  `Work in the role defined in .claude/agents/lv-${r}.md (read it first) and follow docs/team.md. Change: openspec/changes/${CHANGE}/. Date ${DATE}.${HINT}`
+  `Work in the role defined in .claude/agents/ks-${r}.md (read it first) and follow docs/team.md. Change: openspec/changes/${CHANGE}/. Date ${DATE}.${HINT}`
 // Token budget (docs/team.md): opus only for short complex work, sonnet for the rest.
 const SONNET = { model: 'sonnet', agentType: 'general-purpose' }
 const OPUS = { model: 'opus', agentType: 'general-purpose' }

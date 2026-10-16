@@ -9,7 +9,7 @@ import type {
   SignalInfo,
   SignalPage,
   ValuesMode,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type { SeriesRequest } from "./chart/tiles.ts";
 
 /** A response that is not ok, with its HTTP status and error code (design R4). */

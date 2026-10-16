@@ -6,7 +6,7 @@ import {
   parseSignalId,
   TimeInput,
   ValuesMode,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";

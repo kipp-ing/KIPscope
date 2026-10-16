@@ -74,7 +74,7 @@ A small purpose-built parser instead of a library: only three line types are nee
 
 ### D7: Bounded query concurrency
 
-The server runs data-source queries through a queue with a configured concurrency limit (default 4, half of carserver's server-wide 8, leaving room for the decoder). A query whose client request was aborted is dropped from the queue before it runs. A running one gets the abort signal, which closes its HTTP request; with `cancel_http_readonly_queries_on_client_close` plus progress headers every 100 ms (`send_progress_in_http_headers`) ClickHouse notices the closed connection and cancels the query (verified: without progress headers it kept running). `KILL QUERY` by ID was rejected: it needs `SELECT` on `system.processes` for the read-only user. Query IDs carry a `letsview-` prefix for tracing. Queries set `max_execution_time` to fail fast instead of piling up.
+The server runs data-source queries through a queue with a configured concurrency limit (default 4, half of carserver's server-wide 8, leaving room for the decoder). A query whose client request was aborted is dropped from the queue before it runs. A running one gets the abort signal, which closes its HTTP request; with `cancel_http_readonly_queries_on_client_close` plus progress headers every 100 ms (`send_progress_in_http_headers`) ClickHouse notices the closed connection and cancels the query (verified: without progress headers it kept running). `KILL QUERY` by ID was rejected: it needs `SELECT` on `system.processes` for the read-only user. Query IDs carry a `kipscope-` prefix for tracing. Queries set `max_execution_time` to fail fast instead of piling up.
 
 ### D8: Commands over HTTP, state over WebSocket
 

@@ -1,4 +1,4 @@
-import { EMPTY_WORKSPACE, type LiveServerMessage } from "@letsview/shared";
+import { EMPTY_WORKSPACE, type LiveServerMessage } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { applyLiveMessage, type LiveState } from "../src/live.ts";
 

@@ -1,4 +1,4 @@
-import { decodeTimes, fromIso, TIME_MAX, TIME_MIN } from "@letsview/shared";
+import { decodeTimes, fromIso, TIME_MAX, TIME_MIN } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";

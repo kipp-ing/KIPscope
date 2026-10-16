@@ -1,4 +1,4 @@
-import { assertSeries, type SeriesResult } from "@letsview/shared";
+import { assertSeries, type SeriesResult } from "@kipscope/shared";
 import { fetchSeries } from "../api.ts";
 import {
   deriveRaw,

@@ -1,4 +1,4 @@
-import type { CommandInput, RenderError } from "@letsview/shared";
+import type { CommandInput, RenderError } from "@kipscope/shared";
 import type { Io } from "./run.ts";
 
 /** Exit code per outcome (design L3). */
@@ -71,13 +71,13 @@ export class CliError extends Error {
   }
 }
 
-/** One JSON line on stdout; on failure also `letsview: <outcome>: <code>: <message>` on stderr. */
+/** One JSON line on stdout; on failure also `kipscope: <outcome>: <code>: <message>` on stderr. */
 export function printOutput(out: CliOutput, io: Io, pretty: boolean): void {
   io.stdout(pretty ? JSON.stringify(out, null, 2) : JSON.stringify(out));
   if (out.ok) return;
   const code = out.error?.code ?? out.outcome;
   const message = out.error?.message ?? renderMessage(out.render) ?? out.outcome;
-  io.stderr(`letsview: ${out.outcome}: ${code}: ${message}`);
+  io.stderr(`kipscope: ${out.outcome}: ${code}: ${message}`);
 }
 
 function renderMessage(render: RenderWait | undefined): string | undefined {

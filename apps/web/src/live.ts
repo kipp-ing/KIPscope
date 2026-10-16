@@ -1,4 +1,4 @@
-import type { LiveServerMessage, RenderedMessage, Workspace } from "@letsview/shared";
+import type { LiveServerMessage, RenderedMessage, Workspace } from "@kipscope/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tabSeriesCache } from "./chart/cache.ts";
 

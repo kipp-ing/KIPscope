@@ -1,4 +1,4 @@
-import type { RenderError } from "@letsview/shared";
+import type { RenderError } from "@kipscope/shared";
 import { Component, type ReactNode } from "react";
 
 export interface WindowBoundaryProps {

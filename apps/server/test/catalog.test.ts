@@ -98,7 +98,7 @@ describe("Catalog (test DB)", () => {
 });
 
 describe("Catalog display names (test DB, test project file)", () => {
-  const rules = loadProjectFile({ path: fixture("letsview.test.yaml"), required: true });
+  const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(testSource(), () => loadDbcFiles(testDbcFiles), rules);
   beforeAll(() => catalog.refresh());
 

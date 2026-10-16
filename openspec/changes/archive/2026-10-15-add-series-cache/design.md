@@ -33,7 +33,7 @@ See proposal.md (Why, D-037 (3) quoted). Current state that shapes the approach:
 - **Fallback**: when a view's touched span `[first × S, (last + 1) × S)` leaves `TIME_MIN`…`TIME_MAX` or exceeds 2^53 ns, the view is fetched exactly as today (`{signalId, from, to, target}` of the view), not cached.
 
 ```ts
-import type { SeriesResult } from "@letsview/shared";
+import type { SeriesResult } from "@kipscope/shared";
 
 export const TILE_BUCKETS = 256;
 export const MAX_RUN_TILES = 64;
@@ -88,7 +88,7 @@ export function tileWeight(tile: Tile): number;
 One `SeriesCache` per tab holds stored tiles (a `Map` in least-recently-used order) and the runs in flight.
 
 ```ts
-import type { SeriesResult } from "@letsview/shared";
+import type { SeriesResult } from "@kipscope/shared";
 import type { SeriesRequest, Tile } from "./tiles.ts";
 
 export const CACHE_LIMIT = 4_000_000; // weight units (C5)

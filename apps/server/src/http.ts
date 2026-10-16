@@ -1,4 +1,4 @@
-import type { ApiError } from "@letsview/shared";
+import type { ApiError } from "@kipscope/shared";
 import type { FastifyReply } from "fastify";
 import type { z } from "zod";
 

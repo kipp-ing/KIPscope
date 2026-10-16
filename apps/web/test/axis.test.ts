@@ -1,4 +1,4 @@
-import { formatLocal, fromIso, NS_PER_MS, NS_PER_S } from "@letsview/shared";
+import { formatLocal, fromIso, NS_PER_MS, NS_PER_S } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   formatFull,

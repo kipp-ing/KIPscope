@@ -17,7 +17,7 @@ try {
   rules = loadProjectFile(config.projectFile);
 } catch (error) {
   if (!(error instanceof ProjectFileError)) throw error;
-  process.stderr.write(`letsview: invalid project file\n${error.message}\n`);
+  process.stderr.write(`kipscope: invalid project file\n${error.message}\n`);
   process.exit(1);
 }
 
@@ -58,7 +58,7 @@ if (rules === NO_RULES)
   app.log.info(`project file ${config.projectFile.path} not found; signals show their full names`);
 if (!loopback)
   app.log.warn(
-    `LETSVIEW_HOST ${config.host} is not loopback: every machine that reaches it can read signals and change the workspace` +
+    `KIPSCOPE_HOST ${config.host} is not loopback: every machine that reaches it can read signals and change the workspace` +
       (wildcard ? "; only loopback names pass the Host check" : ""),
   );
 

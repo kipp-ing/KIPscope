@@ -19,7 +19,7 @@
  *                         2026-10-01T00:00:00Z
  * - sdlog.signals_ns: Ns_600h.FINE  1,000 points from 2026-10-14T08:00:00.123456789Z, 1,001 ns apart
  *
- * Run: pnpm --filter @letsview/server seed:test   (needs `docker compose up -d`)
+ * Run: pnpm --filter @kipscope/server seed:test   (needs `docker compose up -d`)
  */
 import { createClient } from "@clickhouse/client";
 
@@ -45,7 +45,7 @@ if (process.env.CLICKHOUSE_URL && sameServer(url, process.env.CLICKHOUSE_URL)) {
 
 const client = createClient({
   url,
-  username: process.env.TEST_CLICKHOUSE_USER ?? "letsview",
+  username: process.env.TEST_CLICKHOUSE_USER ?? "kipscope",
   password: process.env.TEST_CLICKHOUSE_PASSWORD ?? "",
 });
 

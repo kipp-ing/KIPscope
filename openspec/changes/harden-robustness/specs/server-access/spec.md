@@ -1,11 +1,11 @@
 ## Purpose
 
-Who may talk to the letsview server: the HTTP API and the live channel answer only requests addressed to the local machine and coming from local pages or from clients without a browser origin, so a foreign web page can neither read signals nor steer the open workspace.
+Who may talk to the KIPscope server: the HTTP API and the live channel answer only requests addressed to the local machine and coming from local pages or from clients without a browser origin, so a foreign web page can neither read signals nor steer the open workspace.
 
 ## ADDED Requirements
 
 ### Requirement: Local Host header only
-The server SHALL answer a request (HTTP or the live channel's upgrade) only when its `Host` names `localhost`, `127.0.0.1` or `[::1]` with any port or none, case-insensitive, or the configured `LETSVIEW_HOST` when that is not a loopback or wildcard address. Any other `Host`, or none, SHALL get 403 with code `forbidden_host`. Origin: necessary consequence of D-005 (the server holds the workspace and the source access); a DNS-rebinding page reaches 127.0.0.1 under a foreign `Host`. Design H3.
+The server SHALL answer a request (HTTP or the live channel's upgrade) only when its `Host` names `localhost`, `127.0.0.1` or `[::1]` with any port or none, case-insensitive, or the configured `KIPSCOPE_HOST` when that is not a loopback or wildcard address. Any other `Host`, or none, SHALL get 403 with code `forbidden_host`. Origin: necessary consequence of D-005 (the server holds the workspace and the source access); a DNS-rebinding page reaches 127.0.0.1 under a foreign `Host`. Design H3.
 
 #### Scenario: Loopback names pass
 - **WHEN** `GET /api/workspace` is sent with `Host` `localhost:7310`, `127.0.0.1:7310`, `[::1]:7310`, `LOCALHOST` and `localhost:5173`
@@ -18,7 +18,7 @@ The server SHALL answer a request (HTTP or the live channel's upgrade) only when
 - **Evidence:** `apps/server/test/access.http.test.ts` › "refuses a foreign Host on HTTP and on the live channel"
 
 #### Scenario: Configured LAN host
-- **WHEN** the app is built with `LETSVIEW_HOST` `192.168.42.10` and a request carries `Host` `192.168.42.10:7310`, and another `Host` `192.168.42.11:7310`
+- **WHEN** the app is built with `KIPSCOPE_HOST` `192.168.42.10` and a request carries `Host` `192.168.42.10:7310`, and another `Host` `192.168.42.11:7310`
 - **THEN** the first answers 200 and the second 403 `forbidden_host`
 - **Evidence:** `apps/server/test/access.http.test.ts` › "accepts the configured non-loopback host"
 
@@ -36,7 +36,7 @@ A request with an `Origin` SHALL be answered only when the origin is `http` or `
 - **Evidence:** `apps/server/test/access.http.test.ts` › "accepts local origins and requests without origin"
 
 #### Scenario: Through the dev proxy on real data
-- **WHEN** the UI is opened at `http://localhost:5173` with the dev server proxying to the letsview server
+- **WHEN** the UI is opened at `http://localhost:5173` with the dev server proxying to the KIPscope server
 - **THEN** the explorer lists signals, a window draws data, and the header shows the live connection as connected
 - **Evidence:** UI check (one screenshot)
 
@@ -62,7 +62,7 @@ The live channel SHALL close a connection that sends a single message larger tha
 - **Evidence:** `apps/server/test/access.http.test.ts` › "closes a live connection on a frame over 256 KiB"
 
 ### Requirement: Warning on a network-facing host
-When `LETSVIEW_HOST` is not a loopback address, the server SHALL log a warning at start that names the host and says that every machine that reaches it can read signals and change the workspace. Origin: necessary consequence of D-005 (no authentication). Design H3.
+When `KIPSCOPE_HOST` is not a loopback address, the server SHALL log a warning at start that names the host and says that every machine that reaches it can read signals and change the workspace. Origin: necessary consequence of D-005 (no authentication). Design H3.
 
 #### Scenario: Loopback test
 - **WHEN** `isLoopbackHost` is given `127.0.0.1`, `localhost`, `::1`, `0.0.0.0`, `::` and `192.168.42.10`

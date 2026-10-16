@@ -1,4 +1,4 @@
-import { NS_PER_MS, TIME_MAX, TIME_MIN } from "@letsview/shared";
+import { NS_PER_MS, TIME_MAX, TIME_MIN } from "@kipscope/shared";
 
 export interface Range {
   from: bigint;

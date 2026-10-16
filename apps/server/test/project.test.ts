@@ -36,7 +36,7 @@ describe("project file", () => {
   });
 
   it("reports every problem with file, field and reason", () => {
-    const bad = fixture("letsview.bad.yaml");
+    const bad = fixture("kipscope.bad.yaml");
     const out = lines(readFileSync(bad, "utf8"), bad);
     expect(out).toHaveLength(3);
     expect(out[0]).toMatch(
@@ -68,7 +68,7 @@ describe("project file", () => {
     expect(dup[0]).toMatch(/^p\.yaml: yaml: .*line 4/i);
   });
 
-  it("parses the shipped letsview.yaml and letsview.example.yaml", () => {
+  it("parses the shipped kipscope.yaml and kipscope.example.yaml", () => {
     const names = [
       "COMBI_412h.V_ANZ",
       "SAS_0C2h.LWS_CHKSUM",
@@ -76,7 +76,7 @@ describe("project file", () => {
       "AC_A1.T_SOLL",
       "D_RS_AC.D_RS_AC",
     ];
-    for (const file of ["letsview.yaml", "letsview.example.yaml"]) {
+    for (const file of ["kipscope.yaml", "kipscope.example.yaml"]) {
       const rules = loadProjectFile({ path: resolve(repoRoot, file), required: true });
       const { shown, fellBack } = assignDisplayNames(names, rules);
       expect(

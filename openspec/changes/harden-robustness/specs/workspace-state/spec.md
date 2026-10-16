@@ -59,7 +59,7 @@ The UI SHALL treat an acknowledgement as sent only when the live channel took it
 - **Evidence:** `apps/web/test/ack.test.ts` › "sends one acknowledgement per revision and error list"
 
 #### Scenario: Wait after a server restart on real data
-- **WHEN** the UI is open, the lead restarts the server with `scripts/restart-server.sh`, rebuilds a window with the CLI, and runs `letsview --wait link off`
+- **WHEN** the UI is open, the lead restarts the server with `scripts/restart-server.sh`, rebuilds a window with the CLI, and runs `kipscope --wait link off`
 - **THEN** the CLI exits 0 with `render.status` `complete`
 - **Evidence:** lead's manual check (CLI output; restarts are the lead's job)
 
@@ -72,6 +72,6 @@ A command the UI sends SHALL never leave an unhandled failure: a network failure
 - **Evidence:** `apps/web/test/api.test.ts` › "sendCommand resolves every failure to a rejected result"
 
 #### Scenario: Server down in the UI
-- **WHEN** the lead stops the letsview server while the UI is open and renames a window
+- **WHEN** the lead stops the KIPscope server while the UI is open and renames a window
 - **THEN** the message line shows a `network` or `bad_response` error, the browser console shows no unhandled rejection, and the page keeps working after the server is back
 - **Evidence:** lead's manual check (screenshot of the message line)

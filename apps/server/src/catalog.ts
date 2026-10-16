@@ -6,7 +6,7 @@ import {
   type SignalPage,
   searchSignals,
   signalId,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type { DataSource, SnaRange } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
 import { assignDisplayNames, type DisplayRules, NO_RULES } from "./names.ts";

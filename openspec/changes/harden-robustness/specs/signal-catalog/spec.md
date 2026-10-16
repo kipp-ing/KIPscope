@@ -9,7 +9,7 @@ While the catalog has never loaded, the server SHALL load it again by itself 1, 
 - **Evidence:** `apps/server/test/catalog.test.ts` › "keeps loading the catalog with backoff until it succeeds"
 
 #### Scenario: Restart with the tunnel down
-- **WHEN** the lead stops the carserver tunnel, restarts the letsview server, and starts the tunnel again 20 s later
+- **WHEN** the lead stops the carserver tunnel, restarts the KIPscope server, and starts the tunnel again 20 s later
 - **THEN** within 35 s of the tunnel coming back, `curl -s localhost:7310/api/catalog | jq '.items | length'` prints the signal count, without a manual refresh
 - **Evidence:** lead's manual check (command output)
 

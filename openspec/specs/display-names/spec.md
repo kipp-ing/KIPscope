@@ -6,11 +6,11 @@ Lets each project define, in a YAML file, the short names the UI shows for its s
 ## Requirements
 
 ### Requirement: Project file location
-The server SHALL read the project file once at start: `letsview.yaml` in the repo root, or the file named by `LETSVIEW_PROJECT_FILE` (relative to the repo root). Without the default file every signal SHALL show its full source name; a missing file named by the variable SHALL stop the server. Edits SHALL take effect on restart only; a catalog refresh SHALL NOT reread the file. Origin: D-035 (lead's defaults); missing named file, restart only: design N1.
+The server SHALL read the project file once at start: `kipscope.yaml` in the repo root, or the file named by `KIPSCOPE_PROJECT_FILE` (relative to the repo root). Without the default file every signal SHALL show its full source name; a missing file named by the variable SHALL stop the server. Edits SHALL take effect on restart only; a catalog refresh SHALL NOT reread the file. Origin: D-035 (lead's defaults); missing named file, restart only: design N1.
 
 #### Scenario: Default and overridden path
-- **WHEN** the config is loaded with root `/repo/letsview`, once without `LETSVIEW_PROJECT_FILE`, once with `LETSVIEW_PROJECT_FILE=conf/p.yaml`, once with `/abs/p.yaml`
-- **THEN** the project file is `/repo/letsview/letsview.yaml` (optional), then `/repo/letsview/conf/p.yaml` (required), then `/abs/p.yaml` (required)
+- **WHEN** the config is loaded with root `/repo/kipscope`, once without `KIPSCOPE_PROJECT_FILE`, once with `KIPSCOPE_PROJECT_FILE=conf/p.yaml`, once with `/abs/p.yaml`
+- **THEN** the project file is `/repo/kipscope/kipscope.yaml` (optional), then `/repo/kipscope/conf/p.yaml` (required), then `/abs/p.yaml` (required)
 - **Evidence:** `apps/server/test/config.test.ts` › "resolves the project file path"
 
 #### Scenario: No file
@@ -19,7 +19,7 @@ The server SHALL read the project file once at start: `letsview.yaml` in the rep
 - **Evidence:** `apps/server/test/project.test.ts` › "returns no rules for a missing optional file and fails for a missing required one"
 
 #### Scenario: Named file missing
-- **WHEN** `LETSVIEW_PROJECT_FILE` names a file that does not exist
+- **WHEN** `KIPSCOPE_PROJECT_FILE` names a file that does not exist
 - **THEN** loading fails with `<path>: file not found`
 - **Evidence:** `apps/server/test/project.test.ts` › "returns no rules for a missing optional file and fails for a missing required one"
 
@@ -74,7 +74,7 @@ When shown names still collide after the collision templates, every signal shari
 A project file with a YAML syntax error, a duplicate or unknown key, a missing or empty `match` or `show`, an invalid regular expression, a placeholder naming no group of its rule, a stray `{` or `}`, or an empty rename value SHALL stop the server before it listens, with exit code 1 and one line per problem on stderr in the form `<path>: <field>: <problem>`. Origin: necessary consequence of D-035 (a typo would otherwise silently show wrong names); refuse versus warn: design Q1.
 
 #### Scenario: Regex and template errors
-- **WHEN** `apps/server/test/fixtures/letsview.bad.yaml` holds rule 0 with `match: '^(?<message>[A-Z+)\.(?<signal>.+)$'`, rule 1 with `match: '^(?<message>[^.]+)\.(?<signal>.+)$'` and `show: '{sig}'`, and rule 2 with the same match and `show: '{signal'`
+- **WHEN** `apps/server/test/fixtures/kipscope.bad.yaml` holds rule 0 with `match: '^(?<message>[A-Z+)\.(?<signal>.+)$'`, rule 1 with `match: '^(?<message>[^.]+)\.(?<signal>.+)$'` and `show: '{sig}'`, and rule 2 with the same match and `show: '{signal'`
 - **THEN** parsing fails with exactly three lines: `display.names[0].match: invalid regex: …Unterminated character class`, `display.names[1].show: unknown group "sig" (groups: message, signal)`, `display.names[2].show: stray "{" at column 1`, each prefixed by the path
 - **Evidence:** `apps/server/test/project.test.ts` › "reports every problem with file, field and reason"
 
@@ -84,20 +84,20 @@ A project file with a YAML syntax error, a duplicate or unknown key, a missing o
 - **Evidence:** `apps/server/test/project.test.ts` › "reports every problem with file, field and reason"
 
 #### Scenario: Server refuses to start
-- **WHEN** the server is started with `LETSVIEW_PROJECT_FILE=apps/server/test/fixtures/letsview.bad.yaml`
-- **THEN** it prints `letsview: invalid project file` and the three lines of "Regex and template errors" on stderr, exits with code 1, and port 7310 was never opened
-- **Evidence:** command `cd apps/server && LETSVIEW_PROJECT_FILE=apps/server/test/fixtures/letsview.bad.yaml LETSVIEW_PORT=7399 node --env-file-if-exists=../../.env src/main.ts; echo "exit $?"` prints those lines and `exit 1`
+- **WHEN** the server is started with `KIPSCOPE_PROJECT_FILE=apps/server/test/fixtures/kipscope.bad.yaml`
+- **THEN** it prints `kipscope: invalid project file` and the three lines of "Regex and template errors" on stderr, exits with code 1, and port 7310 was never opened
+- **Evidence:** command `cd apps/server && KIPSCOPE_PROJECT_FILE=apps/server/test/fixtures/kipscope.bad.yaml KIPSCOPE_PORT=7399 node --env-file-if-exists=../../.env src/main.ts; echo "exit $?"` prints those lines and `exit 1`
 
 ### Requirement: Display names come from the server
 The server SHALL compute every signal's shown name once per catalog load and deliver it in each catalog entry as `displayName`, absent when it equals `name`. Signal IDs, `name`, workspace state, commands and the CLI's arguments and output SHALL stay on the full source names. Origin: D-035 („CLI and API keep the stable full IDs"); server-side computation: necessary consequence of one source of truth for UI and API search (design N7).
 
 #### Scenario: Catalog entry with a display name
-- **WHEN** the server runs on real data with the shipped `letsview.yaml`
+- **WHEN** the server runs on real data with the shipped `kipscope.yaml`
 - **THEN** `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -c '.items[0] | {id, name, displayName}'` prints `{"id":"smart451/COMBI_412h.V_ANZ","name":"COMBI_412h.V_ANZ","displayName":"V_ANZ"}`
 - **Evidence:** the curl command; `apps/server/test/signals.http.test.ts` › "returns displayName in search and full catalog and keeps IDs" (test DB with the test project file: `testcar/Sna_800h.RPM` has `displayName` `RPM`, `testcar/Fast_100h.SIG_A` has none)
 
 #### Scenario: All real signals shortened, none alike
-- **WHEN** the server runs on real data with the shipped `letsview.yaml`
+- **WHEN** the server runs on real data with the shipped `kipscope.yaml`
 - **THEN** `curl -s localhost:7310/api/catalog | jq '[.items[] | select(.displayName)] | length'` prints `428` and `curl -s localhost:7310/api/catalog | jq '[.items[].displayName] | unique | length'` prints `428`, and the server log has no display-name collision warning
 - **Evidence:** the two curl commands; server log excerpt
 
@@ -115,7 +115,7 @@ The server SHALL compute every signal's shown name once per catalog load and del
 Explorer rows, chart legend rows, values window rows, the drag ghost and the title of a unit-less signal's y axis SHALL show the signal's shown name. The hover card SHALL keep the full source name, and where the shown name differs from it, the shown name's tooltip in explorer rows, legend rows and values rows SHALL be the full source name. Origin: D-035 („The full source name stays in the hover card and tooltips").
 
 #### Scenario: Short names on real data
-- **WHEN** with the shipped `letsview.yaml` the user searches `V_ANZ`, adds `COMBI_412h.V_ANZ` and `BS_200h.DVL` to a timeseries window and to a values window
+- **WHEN** with the shipped `kipscope.yaml` the user searches `V_ANZ`, adds `COMBI_412h.V_ANZ` and `BS_200h.DVL` to a timeseries window and to a values window
 - **THEN** the explorer row reads `V_ANZ`, the legend rows read `V_ANZ` and `DVL`, the values rows read `V_ANZ` and `DVL`, and no row shows `COMBI_412h` or `412h`
 - **Evidence:** UI check (one screenshot with explorer, chart and values window)
 
@@ -130,14 +130,14 @@ Explorer rows, chart legend rows, values window rows, the drag ghost and the tit
 - **Evidence:** UI check (screenshot during the drag)
 
 ### Requirement: smart451 project file shipped
-The repository SHALL ship `letsview.yaml` with rules that shorten every smart451 signal to its part after the message (with or without hex ID) and suffix collisions with the message name, plus `letsview.example.yaml` explaining every key; README SHALL describe the file, its keys, `LETSVIEW_PROJECT_FILE` and that edits need a restart. Origin: D-035 („so it will be just V_ANZ in this case"); 55 names without hex ID: design Q4.
+The repository SHALL ship `kipscope.yaml` with rules that shorten every smart451 signal to its part after the message (with or without hex ID) and suffix collisions with the message name, plus `kipscope.example.yaml` explaining every key; README SHALL describe the file, its keys, `KIPSCOPE_PROJECT_FILE` and that edits need a restart. Origin: D-035 („so it will be just V_ANZ in this case"); 55 names without hex ID: design Q4.
 
 #### Scenario: Shipped files parse
-- **WHEN** the shipped `letsview.yaml` and `letsview.example.yaml` are parsed and applied to `COMBI_412h.V_ANZ`, `SAS_0C2h.LWS_CHKSUM`, `CPC_448h.PTC_HV_Volt`, `AC_A1.T_SOLL` and `D_RS_AC.D_RS_AC`
+- **WHEN** the shipped `kipscope.yaml` and `kipscope.example.yaml` are parsed and applied to `COMBI_412h.V_ANZ`, `SAS_0C2h.LWS_CHKSUM`, `CPC_448h.PTC_HV_Volt`, `AC_A1.T_SOLL` and `D_RS_AC.D_RS_AC`
 - **THEN** both parse without error and the first yields `V_ANZ`, `LWS_CHKSUM`, `PTC_HV_Volt`, `T_SOLL`, `D_RS_AC`
-- **Evidence:** `apps/server/test/project.test.ts` › "parses the shipped letsview.yaml and letsview.example.yaml"
+- **Evidence:** `apps/server/test/project.test.ts` › "parses the shipped kipscope.yaml and kipscope.example.yaml"
 
 #### Scenario: README
 - **WHEN** a reader opens README.md
-- **THEN** a section "Display names" shows the smart451 rules, explains `match`, `show`, `collision`, `rename`, the first-match and rename-beats-rules order, the collision fallback, `LETSVIEW_PROJECT_FILE` and "restart the server after editing"
-- **Evidence:** `grep -n "Display names\|LETSVIEW_PROJECT_FILE" README.md`
+- **THEN** a section "Display names" shows the smart451 rules, explains `match`, `show`, `collision`, `rename`, the first-match and rename-beats-rules order, the collision fallback, `KIPSCOPE_PROJECT_FILE` and "restart the server after editing"
+- **Evidence:** `grep -n "Display names\|KIPSCOPE_PROJECT_FILE" README.md`

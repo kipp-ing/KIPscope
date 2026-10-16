@@ -5,7 +5,7 @@ import {
   floorDiv,
   type RawSeries,
   type SeriesResult,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type { SeriesRequest } from "../src/chart/tiles.ts";
 
 /** One stored point of a fake signal; `v` null is an SNA point. */

@@ -1,4 +1,4 @@
-import type { TimeseriesWindow, ValuesWindow, WorkspaceWindow } from "@letsview/shared";
+import type { TimeseriesWindow, ValuesWindow, WorkspaceWindow } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   canAdd,

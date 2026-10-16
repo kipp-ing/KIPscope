@@ -44,14 +44,14 @@ async function withServer<T>(
 }
 
 describe("server address and usage", () => {
-  it("chooses --server over LETSVIEW_URL over localhost:7310", async () => {
+  it("chooses --server over KIPSCOPE_URL over localhost:7310", async () => {
     await withServer(async (a) => {
       await withServer(async (b) => {
         await b.command({ type: "cursor.setDiff", diff: true }); // b is at revision 1, a at 0
         const viaFlag = await runCli(["--server", a.url, "state"]);
-        const viaEnv = await runCli(["state"], { LETSVIEW_URL: a.url });
-        const both = await runCli(["--server", a.url, "state"], { LETSVIEW_URL: b.url });
-        const onlyB = await runCli(["state"], { LETSVIEW_URL: b.url });
+        const viaEnv = await runCli(["state"], { KIPSCOPE_URL: a.url });
+        const both = await runCli(["--server", a.url, "state"], { KIPSCOPE_URL: b.url });
+        const onlyB = await runCli(["state"], { KIPSCOPE_URL: b.url });
         expect(viaFlag.out.data.revision).toBe(0);
         expect(viaEnv.out.data.revision).toBe(0);
         expect(both.out.data.revision).toBe(0);
@@ -67,7 +67,7 @@ describe("server address and usage", () => {
     await withServer(async (s) => {
       const before = s.requests.length;
       const viaFlag = await runCli(["--server", "localhost:7310", "state"]);
-      const viaEnv = await runCli(["state"], { LETSVIEW_URL: "localhost:7310" });
+      const viaEnv = await runCli(["state"], { KIPSCOPE_URL: "localhost:7310" });
       for (const r of [viaFlag, viaEnv]) {
         expect(r.code).toBe(2);
         expect(r.out).toMatchObject({ outcome: "usage" });
@@ -79,7 +79,7 @@ describe("server address and usage", () => {
 
   it("prints the usage with --help", async () => {
     const before = h.requests.length;
-    const result = await runCli(["--help"], { LETSVIEW_URL: h.url });
+    const result = await runCli(["--help"], { KIPSCOPE_URL: h.url });
     expect(result.code).toBe(0);
     const text = result.stdout.join("\n");
     for (const form of [
@@ -111,7 +111,7 @@ describe("server address and usage", () => {
       expect(text, form).toContain(form);
     }
     expect(h.requests.length).toBe(before); // no server contact
-    const short = await runCli(["window", "range", "w1", "--help"], { LETSVIEW_URL: h.url });
+    const short = await runCli(["window", "range", "w1", "--help"], { KIPSCOPE_URL: h.url });
     expect(short.code).toBe(0);
     expect(h.requests.length).toBe(before);
   });

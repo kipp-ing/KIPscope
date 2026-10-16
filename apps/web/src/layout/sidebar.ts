@@ -3,7 +3,7 @@ import { isTextField } from "../keys.ts";
 /** Explorer sidebar (design L1): open at SIDEBAR_WIDTH_PX or collapsed, remembered per browser. */
 export type SidebarState = "open" | "collapsed";
 
-export const SIDEBAR_STORAGE_KEY = "letsview.sidebar";
+export const SIDEBAR_STORAGE_KEY = "kipscope.sidebar";
 export const SIDEBAR_WIDTH_PX = 240;
 
 /** Unknown value, missing or throwing storage → "open". */

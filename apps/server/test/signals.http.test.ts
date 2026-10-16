@@ -158,7 +158,7 @@ describe("503 reason while the catalog is still loading", () => {
 
 describe("display names over HTTP (test project file)", () => {
   const source = testSource();
-  const rules = loadProjectFile({ path: fixture("letsview.test.yaml"), required: true });
+  const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
   const app = buildApp({
     catalog,
@@ -201,7 +201,7 @@ describe("collision warning on refresh (N5)", () => {
     listSignals: () =>
       failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.listSignals(),
   } as unknown as DataSource;
-  const rules = loadProjectFile({ path: fixture("letsview.test.yaml"), required: true });
+  const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
   const app = buildApp({
     catalog,

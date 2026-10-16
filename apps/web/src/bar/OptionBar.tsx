@@ -6,7 +6,7 @@ import {
   type TimeseriesWindow,
   type Workspace,
   windowTitle,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
 import { formatRange } from "../time/axis.ts";
 import "./bar.css";

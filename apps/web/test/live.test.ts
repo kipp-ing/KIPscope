@@ -1,4 +1,4 @@
-import { type BucketSeries, encodeTimes, type RawSeries } from "@letsview/shared";
+import { type BucketSeries, encodeTimes, type RawSeries } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   LiveStore,

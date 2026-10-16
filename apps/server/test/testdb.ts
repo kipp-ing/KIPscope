@@ -6,8 +6,8 @@ import type { TableMapping } from "../src/config.ts";
 export function testClient() {
   return createClickHouseClient({
     url: process.env.TEST_CLICKHOUSE_URL || "http://localhost:8124",
-    username: process.env.TEST_CLICKHOUSE_USER || "letsview",
-    password: process.env.TEST_CLICKHOUSE_PASSWORD ?? "letsview",
+    username: process.env.TEST_CLICKHOUSE_USER || "kipscope",
+    password: process.env.TEST_CLICKHOUSE_PASSWORD ?? "kipscope",
   });
 }
 

@@ -36,7 +36,7 @@ Jan agreed to Q1 (2026-10-16): task 3.2 includes H9.
   - `access.ts`: `isLoopbackHost`, `hostAllowed`, `originAllowed`.
   - `app.ts`: `extraHost` option; root `onRequest` guard (403 `forbidden_host` / `forbidden_origin`); `text/plain` parser removed; websocket `maxPayload` 262,144.
   - `routes/workspace.ts`: pushes carry `command`; fallback Origin/Host check in the `/api/live` handler only if the hook does not cover the upgrade (H3).
-  - `main.ts`: `extraHost` from `LETSVIEW_HOST`; non-loopback warning; `keepCatalogLoaded` replaces `loadCatalog` and `dbcWarnings`; `CatalogLog` and `onListenerError` go to `app.log`.
+  - `main.ts`: `extraHost` from `KIPSCOPE_HOST`; non-loopback warning; `keepCatalogLoaded` replaces `loadCatalog` and `dbcWarnings`; `CatalogLog` and `onListenerError` go to `app.log`.
   - Verify: every scenario of `server-access`, "Push after a range command"; `grep -n "isLoopbackHost" apps/server/src/main.ts` prints the warning's condition.
 
 ## 3. apps/web/src
@@ -63,14 +63,14 @@ Jan agreed to Q1 (2026-10-16): task 3.2 includes H9.
 - [x] 4.1 Shared and server tests, seed, test setup:
   - One test per evidence name in the delta specs for `packages/shared/test` and `apps/server/test`; replace `encoding.test.ts` "rejects offsets beyond 2^53 ns" with the two new encoding tests.
   - `seed-test-db.ts`: data reference `spancar`, signal `Span_910h.FAR` with points at 1969-12-31T23:59:58.5Z, 23:59:59.5Z, 1970-01-01T00:00:00.5Z, 2026-01-01T00:00:00Z, 2026-10-01T00:00:00Z; adjust any test that counts all signals. Seed guard: refuse when `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` have the same port and the same host, where `localhost`, `127.0.0.1` and `[::1]` count as one host.
-  - `test/globalSetup.ts` + `vitest.config.ts` `globalSetup`: load `.env` like `setup.ts`, ping the test ClickHouse and check that `spancar/Span_910h.FAR` exists; otherwise fail once with: `test ClickHouse at <url> is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @letsview/server seed:test\``.
-  - Verify: `pnpm --filter @letsview/shared test` and `pnpm --filter @letsview/server test` green after 1.1, 2.1, 2.2; with the test ClickHouse stopped, `pnpm --filter @letsview/server test` prints that message once and exits non-zero.
-- [x] 4.2 Web tests: one test per evidence name in the delta specs for `apps/web/test` (new files `ack.test.ts`, `boundary.test.ts`, `filedrop.test.ts`, `livestate.test.ts`; additions to `api.test.ts`, `loader.test.ts`, `tiles.test.ts`, `height.test.ts`). Include the two Q1 tests (no `it.skip`). Verify: `pnpm --filter @letsview/web test` green after 3.1–3.3.
+  - `test/globalSetup.ts` + `vitest.config.ts` `globalSetup`: load `.env` like `setup.ts`, ping the test ClickHouse and check that `spancar/Span_910h.FAR` exists; otherwise fail once with: `test ClickHouse at <url> is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @kipscope/server seed:test\``.
+  - Verify: `pnpm --filter @kipscope/shared test` and `pnpm --filter @kipscope/server test` green after 1.1, 2.1, 2.2; with the test ClickHouse stopped, `pnpm --filter @kipscope/server test` prints that message once and exits non-zero.
+- [x] 4.2 Web tests: one test per evidence name in the delta specs for `apps/web/test` (new files `ack.test.ts`, `boundary.test.ts`, `filedrop.test.ts`, `livestate.test.ts`; additions to `api.test.ts`, `loader.test.ts`, `tiles.test.ts`, `height.test.ts`). Include the two Q1 tests (no `it.skip`). Verify: `pnpm --filter @kipscope/web test` green after 3.1–3.3.
 
 ## 5. Root tooling
 
-- [x] 5.1 `apps/server/package.json`: `yaml` to 2.8.3 or later, test script `TZ=Europe/Berlin vitest run --passWithNoTests`; `pnpm install` updates the lockfile; root `package.json` script `check`: `pnpm build && pnpm lint && pnpm test`; README: `pnpm check`, and `LETSVIEW_SERVER_URL` (Vite proxy target, default `http://127.0.0.1:7310`). Verify: `grep -c "yaml@2.8.1" pnpm-lock.yaml` prints 0; `pnpm check` exits 0.
-- [x] 5.2 `scripts/tunnel.sh`: `keeper_pid` accepts the PID file only when `ps -o command= -p <pid>` contains `tunnel.sh run`; otherwise it removes the stale PID file and reports `not running`. Verify (only while no keeper runs): `sleep 300 & echo $! > "$TMPDIR/letsview-tunnel.pid"; scripts/tunnel.sh stop; kill -0 $!` prints `not running` and the `sleep` is still alive (`kill -0` exits 0); `scripts/tunnel.sh status` then prints `keeper not running`.
+- [x] 5.1 `apps/server/package.json`: `yaml` to 2.8.3 or later, test script `TZ=Europe/Berlin vitest run --passWithNoTests`; `pnpm install` updates the lockfile; root `package.json` script `check`: `pnpm build && pnpm lint && pnpm test`; README: `pnpm check`, and `KIPSCOPE_SERVER_URL` (Vite proxy target, default `http://127.0.0.1:7310`). Verify: `grep -c "yaml@2.8.1" pnpm-lock.yaml` prints 0; `pnpm check` exits 0.
+- [x] 5.2 `scripts/tunnel.sh`: `keeper_pid` accepts the PID file only when `ps -o command= -p <pid>` contains `tunnel.sh run`; otherwise it removes the stale PID file and reports `not running`. Verify (only while no keeper runs): `sleep 300 & echo $! > "$TMPDIR/kipscope-tunnel.pid"; scripts/tunnel.sh stop; kill -0 $!` prints `not running` and the `sleep` is still alive (`kill -0` exits 0); `scripts/tunnel.sh status` then prints `keeper not running`.
 
 ## 6. Lead
 

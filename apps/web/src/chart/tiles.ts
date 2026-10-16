@@ -9,7 +9,7 @@ import {
   TIME_MAX,
   TIME_MIN,
   type Timestamp,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 
 export const TILE_BUCKETS = 256;
 export const MAX_RUN_TILES = 64;

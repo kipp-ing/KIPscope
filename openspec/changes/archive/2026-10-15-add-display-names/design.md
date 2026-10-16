@@ -4,7 +4,7 @@
 
 See proposal.md (Why, D-035 in full). Current state that shapes the approach:
 
-- **Server config is env-only** (`apps/server/src/config.ts`, `loadConfig(env, root)`); relative paths resolve against the repo root (`REPO_ROOT`), as for `LETSVIEW_DBC_FILES`. `main.ts` loads the config, builds `Catalog`, listens, then loads the catalog; `POST /api/catalog/refresh` reloads it.
+- **Server config is env-only** (`apps/server/src/config.ts`, `loadConfig(env, root)`); relative paths resolve against the repo root (`REPO_ROOT`), as for `KIPSCOPE_DBC_FILES`. `main.ts` loads the config, builds `Catalog`, listens, then loads the catalog; `POST /api/catalog/refresh` reloads it.
 - **Catalog** (`apps/server/src/catalog.ts`): `refresh()` builds one `SignalInfo` per `(dataRef, name)`, sorts by name then dataRef, and builds the shared `SearchIndex`. Tests construct `new Catalog(source, loadMetadata)`.
 - **Search** (`packages/shared/src/search.ts`) runs in the server (`/api/signals`) and in the browser (explorer over `/api/catalog`). Fields: `name`, `short` (after the first `.`), `description`, `alias`, `unit`; tiers 0–3; `SignalMatch` carries highlight ranges for `name`, `unit`, `description`.
 - **Real data (smart451, 428 signals, measured 2026-10-15 on `/api/catalog`):** 373 names are `MESSAGE_<hex>h.SIGNAL` (`COMBI_412h.V_ANZ`, `BS_200h.DVL`, `CPC_448h.PTC_HV_Volt`), 55 are `MESSAGE.SIGNAL` without hex ID (`AC_A1.T_SOLL`, `CG.CG_UP`, `D_RS_AC.D_RS_AC`, `VIN.*`). The part after the first `.` is unique across all 428, so real data has no collision. Longest full name 43 characters, longest part after the dot 29.
@@ -29,11 +29,11 @@ See proposal.md (Why, D-035 in full). Current state that shapes the approach:
 `Config` gains:
 
 ```ts
-/** Project file (D-035). Default `<repo root>/letsview.yaml`, optional; `LETSVIEW_PROJECT_FILE` overrides it and must exist. */
+/** Project file (D-035). Default `<repo root>/kipscope.yaml`, optional; `KIPSCOPE_PROJECT_FILE` overrides it and must exist. */
 projectFile: { path: string; required: boolean };
 ```
 
-- `LETSVIEW_PROJECT_FILE` unset or empty → `{ path: resolve(root, "letsview.yaml"), required: false }`.
+- `KIPSCOPE_PROJECT_FILE` unset or empty → `{ path: resolve(root, "kipscope.yaml"), required: false }`.
 - Set → `{ path: isAbsolute(v) ? v : resolve(root, v), required: true }`.
 - A missing optional file means "no rules": every signal shows its full name (D-035 „no file … shows the full name as today"); the server logs `info` `project file <path> not found; signals show their full names`. A missing required file stops the server (N6): someone named a file explicitly, so its absence is a mistake.
 - The file is read once, in `main.ts`, before `app.listen`. `POST /api/catalog/refresh` reuses the compiled rules; editing the file takes effect on restart only (D-035 says nothing about reload; restart is enough for a file edited a few times per project).
@@ -124,7 +124,7 @@ export function loadProjectFile(file: { path: string; required: boolean }): Disp
 export function parseProjectFile(text: string, path: string): DisplayRules;
 ```
 
-`main.ts` calls `loadProjectFile(config.projectFile)` before building the catalog; on `ProjectFileError` it writes `letsview: invalid project file` and the message to stderr and exits with code 1, before `listen` (no port is opened, no ClickHouse query is sent). Checks run in three stages; a stage with problems reports all of its problems, one per line, and stops: (1) YAML syntax, (2) structure (keys, types, empty values: every zod issue), (3) regexes and templates of every rule. Fields are written as paths: `display.names[1].show`, `display.rename.COMBI_412h.V_ANZ`.
+`main.ts` calls `loadProjectFile(config.projectFile)` before building the catalog; on `ProjectFileError` it writes `kipscope: invalid project file` and the message to stderr and exits with code 1, before `listen` (no port is opened, no ClickHouse query is sent). Checks run in three stages; a stage with problems reports all of its problems, one per line, and stops: (1) YAML syntax, (2) structure (keys, types, empty values: every zod issue), (3) regexes and templates of every rule. Fields are written as paths: `display.names[1].show`, `display.rename.COMBI_412h.V_ANZ`.
 
 | Problem | Message after `<path>: ` (problem text pinned up to the colon) |
 |---|---|
@@ -177,10 +177,10 @@ export function shownName(s: Pick<SignalInfo, "name" | "displayName">): string;
 
 Without catalog metadata every place keeps today's fallback, the signal ID. The tooltip goes on the name element itself, so it beats the grip's "Drag onto another window" and the row's description only over the name.
 
-### N10: smart451 file (repo root `letsview.yaml`, pinned)
+### N10: smart451 file (repo root `kipscope.yaml`, pinned)
 
 ```yaml
-# letsview project file (D-035). See letsview.example.yaml. Restart the server after editing.
+# KIPscope project file (D-035). See kipscope.example.yaml. Restart the server after editing.
 display:
   names:
     # COMBI_412h.V_ANZ -> V_ANZ; on a collision V_ANZ (COMBI)
@@ -193,7 +193,7 @@ display:
       collision: '{signal} ({message})'
 ```
 
-Checked against the real catalog (Python `re`, same semantics for these patterns): 373 signals take rule 1, 55 rule 2, 0 none, 428 distinct shown names; `SAS_0C2h.LWS_CHKSUM` → `LWS_CHKSUM` (message `SAS`). `letsview.example.yaml` holds the same rules plus a commented `rename` example and one comment per key. The test fixture `apps/server/test/fixtures/letsview.test.yaml`:
+Checked against the real catalog (Python `re`, same semantics for these patterns): 373 signals take rule 1, 55 rule 2, 0 none, 428 distinct shown names; `SAS_0C2h.LWS_CHKSUM` → `LWS_CHKSUM` (message `SAS`). `kipscope.example.yaml` holds the same rules plus a commented `rename` example and one comment per key. The test fixture `apps/server/test/fixtures/kipscope.test.yaml`:
 
 ```yaml
 display:

@@ -1,4 +1,4 @@
-import type { SignalInfo, TimeseriesWindow } from "@letsview/shared";
+import type { SignalInfo, TimeseriesWindow } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   CHUNK,

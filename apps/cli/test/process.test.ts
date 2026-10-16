@@ -6,11 +6,11 @@ import { closedUrl, type Harness, startServer } from "./helpers.ts";
 const MAIN = resolve(import.meta.dirname, "../src/main.ts");
 const ROOT = resolve(import.meta.dirname, "../../..");
 
-function letsview(
+function kipscope(
   ...argv: string[]
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const env: Record<string, string | undefined> = { ...process.env, TZ: "Europe/Berlin" };
-  delete env.LETSVIEW_URL;
+  delete env.KIPSCOPE_URL;
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, [MAIN, ...argv], { cwd: ROOT, env });
     let stdout = "";
@@ -36,7 +36,7 @@ describe("separate process", () => {
   it("prints one JSON line on stdout and nothing on stderr", async () => {
     const fresh = await startServer();
     try {
-      const result = await letsview("--server", fresh.url, "diff", "on");
+      const result = await kipscope("--server", fresh.url, "diff", "on");
       expect(result.code).toBe(0);
       expect(result.stderr).toBe("");
       expect(result.stdout.endsWith("\n")).toBe(true);
@@ -55,7 +55,7 @@ describe("separate process", () => {
   });
 
   it("prints the reason of a failure on stderr", async () => {
-    const result = await letsview("--server", h.url, "cursor", "move", "b", "+1s");
+    const result = await kipscope("--server", h.url, "cursor", "move", "b", "+1s");
     expect(result.code).toBe(1);
     expect(result.stdout.trimEnd().split("\n")).toHaveLength(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, outcome: "rejected" });
@@ -64,7 +64,7 @@ describe("separate process", () => {
   });
 
   it("exits 3 when the server is unreachable", async () => {
-    const result = await letsview("--server", await closedUrl(), "state");
+    const result = await kipscope("--server", await closedUrl(), "state");
     expect(result.code).toBe(3);
     expect(JSON.parse(result.stdout)).toMatchObject({
       ok: false,
@@ -75,7 +75,7 @@ describe("separate process", () => {
   });
 
   it("prints the usage with --help and exits 0", async () => {
-    const result = await letsview("--help");
+    const result = await kipscope("--help");
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("window create");
     expect(result.stderr).toBe("");

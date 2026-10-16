@@ -1,5 +1,5 @@
-import type { CursorValue, CursorValueResult } from "@letsview/shared";
-import { fromIso } from "@letsview/shared";
+import type { CursorValue, CursorValueResult } from "@kipscope/shared";
+import { fromIso } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchCursorValue } from "../src/api.ts";
 import {

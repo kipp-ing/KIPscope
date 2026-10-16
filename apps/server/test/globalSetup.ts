@@ -15,8 +15,8 @@ export default async function setup() {
   const url = process.env.TEST_CLICKHOUSE_URL || "http://localhost:8124";
   const client = createClient({
     url,
-    username: process.env.TEST_CLICKHOUSE_USER || "letsview",
-    password: process.env.TEST_CLICKHOUSE_PASSWORD ?? "letsview",
+    username: process.env.TEST_CLICKHOUSE_USER || "kipscope",
+    password: process.env.TEST_CLICKHOUSE_PASSWORD ?? "kipscope",
     request_timeout: 5000,
   });
   try {
@@ -28,7 +28,7 @@ export default async function setup() {
     if (Number((await result.text()).trim()) < 1) throw new Error("not seeded");
   } catch {
     throw new Error(
-      `test ClickHouse at ${url} is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @letsview/server seed:test\``,
+      `test ClickHouse at ${url} is not reachable or not seeded: run \`docker compose up -d\` and \`pnpm --filter @kipscope/server seed:test\``,
     );
   } finally {
     await client.close().catch(() => undefined);

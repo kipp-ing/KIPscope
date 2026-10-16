@@ -4,7 +4,7 @@ import {
   MAX_PLOT_HEIGHT,
   MIN_PLOT_HEIGHT,
   type TimeseriesWindow,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 
 /** Plot height after a vertical drag of dy CSS px from startHeight: rounded, clamped to
  * MIN_PLOT_HEIGHT..MAX_PLOT_HEIGHT. */

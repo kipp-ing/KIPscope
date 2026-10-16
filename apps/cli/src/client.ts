@@ -1,4 +1,4 @@
-import type { ApiError, CommandInput, CommandResult } from "@letsview/shared";
+import type { ApiError, CommandInput, CommandResult } from "@kipscope/shared";
 import { CliError } from "./output.ts";
 
 /** The end of the call's --timeout; every request gets what is left of it. */

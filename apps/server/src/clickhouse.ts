@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type ClickHouseClient, ClickHouseLogLevel, createClient } from "@clickhouse/client";
-import type { Timestamp } from "@letsview/shared";
+import type { Timestamp } from "@kipscope/shared";
 import type { Config, TableMapping } from "./config.ts";
 import type { Bucket, DataSource, RawPoint, SeriesRef, SignalRef } from "./datasource.ts";
 
@@ -42,7 +42,7 @@ export class ClickHouseSource implements DataSource {
       query,
       query_params: params,
       format: "JSONCompactEachRow",
-      query_id: `letsview-${randomUUID()}`,
+      query_id: `kipscope-${randomUUID()}`,
       ...(abort ? { abort_signal: abort } : {}),
       clickhouse_settings: {
         max_execution_time: this.timeoutSeconds,

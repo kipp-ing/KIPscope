@@ -4,7 +4,7 @@ import {
   type SignalInfo,
   type WorkspaceWindow,
   windowTitle,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 
 /** Rest time on a row (pointer or keyboard) before its card opens (design E7). */
 export const HOVER_DELAY_MS = 350;

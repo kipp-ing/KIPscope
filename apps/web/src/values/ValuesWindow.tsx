@@ -8,7 +8,7 @@ import {
   shownName,
   type ValuesMode,
   type ValuesWindow as WindowState,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import "../chart/window.css";

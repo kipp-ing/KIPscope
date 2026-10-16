@@ -3,7 +3,7 @@ import {
   MAX_RENDER_ERRORS,
   type RenderError,
   type RenderedMessage,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 
 /**
  * Render acknowledgement (design H6): a revision counts as rendered once every window reported it.

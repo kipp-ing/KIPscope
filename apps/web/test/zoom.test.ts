@@ -1,4 +1,4 @@
-import { fromIso, NS_PER_MS } from "@letsview/shared";
+import { fromIso, NS_PER_MS } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   clampRange,

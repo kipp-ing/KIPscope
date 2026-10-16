@@ -1,4 +1,4 @@
-import type { MatchRange } from "@letsview/shared";
+import type { MatchRange } from "@kipscope/shared";
 import type { ReactNode } from "react";
 
 /** `text` with a `<mark>` around each range (sorted, merged half-open ranges, design E2). */

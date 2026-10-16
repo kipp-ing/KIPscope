@@ -5,7 +5,7 @@ import {
   type RawSeries,
   type SeriesResult,
   type Timestamp,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type { DataSource, RawPoint, SeriesRef } from "./datasource.ts";
 
 export const MIN_TARGET = 2;

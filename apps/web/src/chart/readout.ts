@@ -8,7 +8,7 @@ import {
   formatQuantityBare,
   parseTimestamp,
   type SeriesResult,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import {
   type Cell,
   loadingCell,

@@ -1,16 +1,16 @@
 # Team and round flow
 
-Adopted from the PCB-dev placer team (D-013), slimmed down for letsview: the suite runs in seconds, so there is no test manager; the pacer also takes the watchdog's stop rules.
+Adopted from the PCB-dev placer team (D-013), slimmed down for KIPscope: the suite runs in seconds, so there is no test manager; the pacer also takes the watchdog's stop rules.
 
 | Role | Agent file | Model | Writes |
 |---|---|---|---|
 | Lead dev | main session | opus | commits, push, `docs/status.md`, `docs/decisions.md`, demos to Jan; no product code |
-| Spec owner | [lv-spec-owner](../.claude/agents/lv-spec-owner.md) | opus | `openspec/` (writes the spec; edits it when a finding needs it) |
-| Engineer | [lv-engineer](../.claude/agents/lv-engineer.md) | opus, small tasks | assigned `src/` area only |
-| Tester | [lv-tester](../.claude/agents/lv-tester.md) | sonnet | `*/test/`, test fixtures, `apps/server/scripts/seed-test-db.ts` |
-| UI user | [lv-ui-user](../.claude/agents/lv-ui-user.md) | sonnet | nothing; reports with screenshots |
-| Reviewer | [lv-reviewer](../.claude/agents/lv-reviewer.md) | opus, round diff only | nothing; findings only |
-| Pacer | [lv-pacer](../.claude/agents/lv-pacer.md) | sonnet | `tasks.md` checkboxes, round log `rounds.md` (also does the scenario check) |
+| Spec owner | [ks-spec-owner](../.claude/agents/ks-spec-owner.md) | opus | `openspec/` (writes the spec; edits it when a finding needs it) |
+| Engineer | [ks-engineer](../.claude/agents/ks-engineer.md) | opus, small tasks | assigned `src/` area only |
+| Tester | [ks-tester](../.claude/agents/ks-tester.md) | sonnet | `*/test/`, test fixtures, `apps/server/scripts/seed-test-db.ts` |
+| UI user | [ks-ui-user](../.claude/agents/ks-ui-user.md) | sonnet | nothing; reports with screenshots |
+| Reviewer | [ks-reviewer](../.claude/agents/ks-reviewer.md) | opus, round diff only | nothing; findings only |
+| Pacer | [ks-pacer](../.claude/agents/ks-pacer.md) | sonnet | `tasks.md` checkboxes, round log `rounds.md` (also does the scenario check) |
 
 ## One change
 

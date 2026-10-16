@@ -23,7 +23,7 @@ importers:
 
   apps/cli:
     dependencies:
-      '@letsview/shared':
+      '@kipscope/shared':
         specifier: workspace:*
         version: link:../../packages/shared
 
@@ -35,7 +35,7 @@ importers:
       '@fastify/websocket':
         specifier: 11.3.4
         version: 11.3.4
-      '@letsview/shared':
+      '@kipscope/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       fastify:
@@ -57,7 +57,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@letsview/shared':
+      '@kipscope/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       react:

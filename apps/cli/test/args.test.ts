@@ -245,8 +245,8 @@ describe("argument grammar", () => {
     expect(parseArgs(["--timeout", "1min", "state"], {}).options.timeoutMs).toBe(60_000);
   });
 
-  it("chooses the server address: --server, else LETSVIEW_URL, else localhost:7310", () => {
-    const env = { LETSVIEW_URL: "http://env:2" };
+  it("chooses the server address: --server, else KIPSCOPE_URL, else localhost:7310", () => {
+    const env = { KIPSCOPE_URL: "http://env:2" };
     expect(parseArgs(["state"], {}).options.server).toBe("http://localhost:7310");
     expect(parseArgs(["state"], env).options.server).toBe("http://env:2");
     expect(parseArgs(["--server", "http://flag:3", "state"], env).options.server).toBe(

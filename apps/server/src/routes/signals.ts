@@ -1,4 +1,4 @@
-import type { CatalogSnapshot, SignalPage } from "@letsview/shared";
+import type { CatalogSnapshot, SignalPage } from "@kipscope/shared";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";

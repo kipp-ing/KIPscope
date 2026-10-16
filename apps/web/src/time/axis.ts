@@ -1,4 +1,4 @@
-import { floorDiv, NS_PER_MS, NS_PER_S, type Timestamp } from "@letsview/shared";
+import { floorDiv, NS_PER_MS, NS_PER_S, type Timestamp } from "@kipscope/shared";
 
 const MIN = 60n * NS_PER_S;
 const HOUR = 60n * MIN;

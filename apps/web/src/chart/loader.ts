@@ -1,4 +1,4 @@
-import type { Extent, SeriesResult } from "@letsview/shared";
+import type { Extent, SeriesResult } from "@kipscope/shared";
 import { ApiRequestError } from "../api.ts";
 import type { RecoverReason, SeriesCache } from "./cache.ts";
 import {

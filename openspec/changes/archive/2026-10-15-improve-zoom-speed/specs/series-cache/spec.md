@@ -14,7 +14,7 @@ A timeseries window SHALL load and draw the data of the range it shows, also whi
 - **Evidence:** UI timing check (design T1, steps 2 and 3, stroke bursts); command `grep -n "COMMIT_DELAY_MS = 300" apps/web/src/chart/TimeseriesWindow.tsx` prints one line
 
 ### Requirement: Loads during a gesture are throttled
-A window SHALL start the requests for its missing tiles at once when it started none in the last 100 ms, else at the end of that interval for the range shown then. Tiles a run in flight still serves SHALL NOT be aborted. Origin: necessary consequence of D-040 (1): a request set per frame would outrun the server's 4 concurrent queries (`LETSVIEW_QUERY_CONCURRENCY`); the number: design Z1.
+A window SHALL start the requests for its missing tiles at once when it started none in the last 100 ms, else at the end of that interval for the range shown then. Tiles a run in flight still serves SHALL NOT be aborted. Origin: necessary consequence of D-040 (1): a request set per frame would outrun the server's 4 concurrent queries (`KIPSCOPE_QUERY_CONCURRENCY`); the number: design Z1.
 
 #### Scenario: Wheel gesture of 250 ms
 - **WHEN** a loader with load interval 100 ms gets a new uncached view of one signal every 16 ms from 0 ms to 240 ms
@@ -89,7 +89,7 @@ When a window's shown range has rested 300 ms with its loads done, it SHALL pref
 - **Evidence:** UI timing check (design T1, step 4)
 
 ### Requirement: Prefetch never delays visible loads
-At most 2 prefetch requests SHALL be in flight per tab; further prefetch requests wait in the browser. Visible loads SHALL start without waiting for prefetch; a waiting prefetch request whose tile a visible load wants SHALL start at once as a visible load. Origin: D-040 (3) („in idle time"); the number: design Z3, against `LETSVIEW_QUERY_CONCURRENCY` 4 (`apps/server/src/config.ts`).
+At most 2 prefetch requests SHALL be in flight per tab; further prefetch requests wait in the browser. Visible loads SHALL start without waiting for prefetch; a waiting prefetch request whose tile a visible load wants SHALL start at once as a visible load. Origin: D-040 (3) („in idle time"); the number: design Z3, against `KIPSCOPE_QUERY_CONCURRENCY` 4 (`apps/server/src/config.ts`).
 
 #### Scenario: Two in flight, visible first
 - **WHEN** four prefetch runs are queued, then a visible load for other tiles arrives, then one prefetch run answers
@@ -122,12 +122,12 @@ A window SHALL count as settled when every tile of each signal's committed view 
 #### Scenario: Cached view settles at once
 - **WHEN** a window's new view is fully cached
 - **THEN** the loader is settled in the same update, with no pending request
-- **Evidence:** `apps/web/test/loader.test.ts` › "is settled only when every current request has finished" (kept) and "draws a previous view again without a request" (settled right after the update); UI check with the CLI: on a window `<w>` zoomed from its overview into one hour, `letsview --wait window range <w> <the overview's from> <the overview's to>` exits 0 and reports `complete`
+- **Evidence:** `apps/web/test/loader.test.ts` › "is settled only when every current request has finished" (kept) and "draws a previous view again without a request" (settled right after the update); UI check with the CLI: on a window `<w>` zoomed from its overview into one hour, `kipscope --wait window range <w> <the overview's from> <the overview's to>` exits 0 and reports `complete`
 
 #### Scenario: Placeholder does not settle
 - **WHEN** a loader shows a placeholder for its current request
 - **THEN** `settled` is false until the sharp data has arrived, and true right after
-- **Evidence:** `apps/web/test/loader.test.ts` › "shows a placeholder at once and sharp data after the response" (checks `settled` before and after); UI check with the CLI: `letsview --wait window range <w>` to a range not loaded before exits 0 with `complete`
+- **Evidence:** `apps/web/test/loader.test.ts` › "shows a placeholder at once and sharp data after the response" (checks `settled` before and after); UI check with the CLI: `kipscope --wait window range <w>` to a range not loaded before exits 0 with `complete`
 
 #### Scenario: Acknowledged on the committed range
 - **WHEN** a window previews a range during a gesture

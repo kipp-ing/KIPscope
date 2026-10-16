@@ -111,12 +111,12 @@ A window SHALL count as settled when every tile of each signal's committed view 
 #### Scenario: Cached view settles at once
 - **WHEN** a window's new view is fully cached
 - **THEN** the loader is settled in the same update, with no pending request
-- **Evidence:** `apps/web/test/loader.test.ts` › "is settled only when every current request has finished" (kept) and "draws a previous view again without a request" (settled right after the update); UI check with the CLI: on a window `<w>` zoomed from its overview into one hour, `letsview --wait window range <w> <the overview's from> <the overview's to>` exits 0 and reports `complete`
+- **Evidence:** `apps/web/test/loader.test.ts` › "is settled only when every current request has finished" (kept) and "draws a previous view again without a request" (settled right after the update); UI check with the CLI: on a window `<w>` zoomed from its overview into one hour, `kipscope --wait window range <w> <the overview's from> <the overview's to>` exits 0 and reports `complete`
 
 #### Scenario: Placeholder does not settle
 - **WHEN** a loader shows a placeholder for its current request
 - **THEN** `settled` is false until the sharp data has arrived, and true right after
-- **Evidence:** `apps/web/test/loader.test.ts` › "shows a placeholder at once and sharp data after the response" (checks `settled` before and after); UI check with the CLI: `letsview --wait window range <w>` to a range not loaded before exits 0 with `complete`
+- **Evidence:** `apps/web/test/loader.test.ts` › "shows a placeholder at once and sharp data after the response" (checks `settled` before and after); UI check with the CLI: `kipscope --wait window range <w>` to a range not loaded before exits 0 with `complete`
 
 #### Scenario: Acknowledged on the committed range
 - **WHEN** a window previews a range during a gesture
@@ -126,4 +126,4 @@ A window SHALL count as settled when every tile of each signal's committed view 
 #### Scenario: Settled while failed, not while a retry loads
 - **WHEN** a signal's load fails, then its retry starts, then the retry answers
 - **THEN** `settled` is true after the failure (state `error`), false while the retry loads, and true again after the answer (state `complete`, no `error`)
-- **Evidence:** `apps/web/test/loader.test.ts` › "is settled while failed, not while a retry loads"; command `grep -n "JSON.stringify(\[revision, errors\])" apps/web/src/App.tsx` prints one line (the acknowledgement repeats a revision whose errors changed, design R5); lead's manual check (design R8): with the tunnel down, `letsview --wait window range <w> <its current from> <its current to>` reports render status `error`; after the tunnel is back and without any command, `GET /api/render-status` shows this browser's last acknowledgement for the same revision as `complete` within 35 s
+- **Evidence:** `apps/web/test/loader.test.ts` › "is settled while failed, not while a retry loads"; command `grep -n "JSON.stringify(\[revision, errors\])" apps/web/src/App.tsx` prints one line (the acknowledgement repeats a revision whose errors changed, design R5); lead's manual check (design R8): with the tunnel down, `kipscope --wait window range <w> <its current from> <its current to>` reports render status `error`; after the tunnel is back and without any command, `GET /api/render-status` shows this browser's last acknowledgement for the same revision as `complete` within 35 s

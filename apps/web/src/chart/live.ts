@@ -1,4 +1,4 @@
-import { type Digits, formatQuantity } from "@letsview/shared";
+import { type Digits, formatQuantity } from "@kipscope/shared";
 import { useSyncExternalStore } from "react";
 import type { Cell } from "../values/format.ts";
 import { snapCursorTime } from "./cursors.ts";

@@ -13,7 +13,7 @@ import {
   signalColor,
   spanAround,
   zoomAround,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
 import { fetchExtent, sendCommand, signalInfo } from "./api.ts";

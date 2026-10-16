@@ -1,5 +1,5 @@
-# letsview project file (D-035): how the UI shows signal names.
-# The server reads <repo root>/letsview.yaml at start (LETSVIEW_PROJECT_FILE overrides the path).
+# KIPscope project file (D-035): how the UI shows signal names.
+# The server reads <repo root>/kipscope.yaml at start (KIPSCOPE_PROJECT_FILE overrides the path).
 # Restart the server after editing. An invalid file stops the server with one message per problem.
 # Names only change what the UI shows; signal IDs, the API, the CLI and the workspace keep full names.
 

@@ -92,7 +92,7 @@ Both web tasks are independent; S1 and S2 are what the tester writes against.
 ### S1: `apps/web/src/chart/height.ts` (task 1.1, tested by 3.1)
 
 ```ts
-import { type CommandInput, type TimeseriesWindow } from "@letsview/shared";
+import { type CommandInput, type TimeseriesWindow } from "@kipscope/shared";
 
 /** Plot height after a vertical drag of dy CSS px from startHeight: rounded, clamped to
  * MIN_PLOT_HEIGHT..MAX_PLOT_HEIGHT. */

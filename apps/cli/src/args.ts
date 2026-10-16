@@ -5,7 +5,7 @@ import {
   parseDuration,
   parseTime,
   ValuesMode,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { CliError } from "./output.ts";
 
 export type TimeArg =
@@ -34,7 +34,7 @@ export type Invocation =
 export const DEFAULT_SERVER = "http://localhost:7310";
 const DEFAULT_TIMEOUT = "30s";
 
-export const USAGE = `Usage: letsview [options] <form>
+export const USAGE = `Usage: kipscope [options] <form>
 
 Commands (each sends one command to the open workspace):
   window create [--values] [--title T] [--from TIME --to TIME] [--mode M] [--envelope on|off]
@@ -62,7 +62,7 @@ Reads:
   wait [REVISION]
 
 Options (anywhere on the line; "--" ends options):
-  --server URL        http(s) server address (default: $LETSVIEW_URL, else ${DEFAULT_SERVER})
+  --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER})
   --wait              after an accepted command, wait until an open UI has rendered it
   --timeout DURATION  deadline of the whole call (default ${DEFAULT_TIMEOUT})
   --pretty            indent the JSON output
@@ -191,7 +191,7 @@ function globalOptions(
   opts: Map<string, string | true>,
   env: Record<string, string | undefined>,
 ): GlobalOptions {
-  const server = (opts.get("--server") as string | undefined) ?? env.LETSVIEW_URL ?? DEFAULT_SERVER;
+  const server = (opts.get("--server") as string | undefined) ?? env.KIPSCOPE_URL ?? DEFAULT_SERVER;
   // `localhost:7310` parses as a URL with protocol "localhost:", so the protocol is checked too.
   if (!URL.canParse(server) || !["http:", "https:"].includes(new URL(server).protocol)) {
     usage(`server address is not an http(s) URL: "${server}"`);
@@ -207,7 +207,7 @@ function globalOptions(
   };
 }
 
-/** Throws CliError("usage", "usage", …). server: --server, else env.LETSVIEW_URL, else http://localhost:7310. */
+/** Throws CliError("usage", "usage", …). server: --server, else env.KIPSCOPE_URL, else http://localhost:7310. */
 export function parseArgs(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -216,7 +216,7 @@ export function parseArgs(
   if (opts.has("--help")) {
     return {
       options: {
-        server: (opts.get("--server") as string | undefined) ?? env.LETSVIEW_URL ?? DEFAULT_SERVER,
+        server: (opts.get("--server") as string | undefined) ?? env.KIPSCOPE_URL ?? DEFAULT_SERVER,
         wait: false,
         timeoutMs: 30_000,
         pretty: opts.has("--pretty"),

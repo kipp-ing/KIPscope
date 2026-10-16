@@ -4,7 +4,7 @@ import {
   encodeTimes,
   type SeriesResult,
   TIME_MAX,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   aggregateRaw,

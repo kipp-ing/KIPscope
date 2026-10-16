@@ -22,7 +22,7 @@ A height drag SHALL end, restoring text selection and the live cursor, when the 
 - **Evidence:** `apps/web/test/height.test.ts` › "ends a height drag on lost capture and on unmount"
 
 ### Requirement: Dropped files are ignored
-A file dragged from the desktop and dropped anywhere on the page SHALL be ignored: the tab SHALL stay on letsview, and the pointer SHALL show that no drop is possible. Origin: necessary consequence: today a dropped file navigates the tab away and loses the zoom history and cursors of the session. Design H8.
+A file dragged from the desktop and dropped anywhere on the page SHALL be ignored: the tab SHALL stay on KIPscope, and the pointer SHALL show that no drop is possible. Origin: necessary consequence: today a dropped file navigates the tab away and loses the zoom history and cursors of the session. Design H8.
 
 #### Scenario: File drag on the document
 - **WHEN** a cancelable `dragover` and a cancelable `drop` whose data types include `Files` are dispatched on the document target the guard is installed on

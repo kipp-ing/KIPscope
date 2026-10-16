@@ -1,4 +1,4 @@
-import { fromIso, NS_PER_S } from "@letsview/shared";
+import { fromIso, NS_PER_S } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { calendarTicks, labelWidth, tickStepForWidth } from "../src/time/axis.ts";
 

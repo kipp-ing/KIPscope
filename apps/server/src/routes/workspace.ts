@@ -1,4 +1,4 @@
-import { type LiveServerMessage, RenderedMessage } from "@letsview/shared";
+import { type LiveServerMessage, RenderedMessage } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppDeps } from "../app.ts";
 

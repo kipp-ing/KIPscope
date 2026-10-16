@@ -3,7 +3,7 @@ import {
   type CommandResult,
   type WorkspaceWindow,
   windowTitle,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type React from "react";
 import { useRef } from "react";
 

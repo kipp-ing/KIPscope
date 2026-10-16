@@ -1,5 +1,5 @@
-import type { Display, SeriesResult, Timestamp } from "@letsview/shared";
-import { decodeTimes } from "@letsview/shared";
+import type { Display, SeriesResult, Timestamp } from "@kipscope/shared";
+import { decodeTimes } from "@kipscope/shared";
 import { type AxisLayout, layoutAxes } from "./axes.ts";
 
 /** x/y arrays of one signal; x is the ns offset from the window origin. */

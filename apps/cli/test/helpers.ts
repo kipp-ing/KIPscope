@@ -84,7 +84,7 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-// Loose view of the workspace: tests only read a few fields, and the type lives in @letsview/shared.
+// Loose view of the workspace: tests only read a few fields, and the type lives in @kipscope/shared.
 export interface Workspace {
   windows: {
     id: string;
@@ -245,7 +245,7 @@ export async function runCli(
   return { code, stdout, stderr, out, ms };
 }
 
-/** Runs the CLI against a harness server: `letsview --server <url> <args…>`. */
+/** Runs the CLI against a harness server: `kipscope --server <url> <args…>`. */
 export function cli(h: Harness, ...argv: string[]): Promise<CliResult> {
   return runCli(["--server", h.url, ...argv]);
 }

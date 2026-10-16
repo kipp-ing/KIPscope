@@ -1,4 +1,4 @@
-import { type BucketSeries, encodeTimes, type RawSeries } from "@letsview/shared";
+import { type BucketSeries, encodeTimes, type RawSeries } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { snapCursorTime } from "../src/chart/cursors.ts";
 import {

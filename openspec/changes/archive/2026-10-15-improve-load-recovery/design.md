@@ -10,7 +10,7 @@ See proposal.md (D-042 quoted). Current state that shapes the approach:
 - **Errors** (`apps/web/src/api.ts`): `getJson` parses the body first and throws `new Error(`${code}: ${message}`)` when the response is not ok, with no HTTP status. A non-JSON error body (for example a proxy's 502 page) throws a `SyntaxError`. A network failure rejects with `TypeError`. The server answers 502 `source_error` when ClickHouse fails (`apps/server/src/routes/series.ts`) and 4xx for invalid requests.
 - **Acknowledgement** (`apps/web/src/App.tsx` `acknowledge`): sends `rendered` once all windows reported the current revision, and returns early when `revision === lastSent.current`, so a second report for the same revision (now with other errors) is never sent. The server (`apps/server/src/workspace.ts` `rendered`) overwrites the client's last acknowledgement for any revision ≤ current, so a repeat is accepted.
 - **Window** (`chart/TimeseriesWindow.tsx`): `requests` is memoized on `[w.signals, viewFrom, viewTo, target, width]`, and `loader.update(requests)` runs in a layout effect only when that memo changes. Every workspace push brings new `w.signals` arrays, so every accepted command calls `update` with identical requests. The plot draws `loader.get(id)?.result` whatever the status (line ~692). The legend status text is inline at line ~1504. The acknowledgement effect calls `onReady(w.id, revision, errors)` whenever `settled`, `revision` or the error list changes.
-- **Live channel** (`apps/web/src/live.ts`): `useLive` reopens `WS /api/live` 1 s after a close, and `ws.onopen` sets `connected`. The WebSocket goes to the letsview server, not to ClickHouse, so a tunnel drop does not close it. In the incident, recovery comes from the backoff timer and from successful requests, not from a reconnect.
+- **Live channel** (`apps/web/src/live.ts`): `useLive` reopens `WS /api/live` 1 s after a close, and `ws.onopen` sets `connected`. The WebSocket goes to the KIPscope server, not to ClickHouse, so a tunnel drop does not close it. In the incident, recovery comes from the backoff timer and from successful requests, not from a reconnect.
 
 ## Goals / Non-Goals
 
@@ -133,7 +133,7 @@ class SeriesCache {
 On real data, with one window on a range that is already loaded:
 
 1. Stop the tunnel and change the window's range to an unloaded range. The legend reads `failed: source_error …` and the old curve stays.
-2. `letsview --wait window range <w> <same from> <same to>` reports render status `error`.
+2. `kipscope --wait window range <w> <same from> <same to>` reports render status `error`.
 3. Restart the tunnel and wait without input. Within 35 s the new range's curve is drawn, the legend status is empty, and `GET /api/render-status` shows this client's last acknowledgement `complete` for the same revision.
 
 Screenshots of steps 1 and 3.
@@ -141,7 +141,7 @@ Screenshots of steps 1 and 3.
 ## Open questions (built as recommended)
 
 - **Q1: Retry per key, per window or per tab?** Recommended: per key (R1). Per window lets healthy signals reset broken ones. Per tab needs a registry the cache does not have. The immediate triggers give the "the whole tab recovers together" effect anyway.
-- **Q2: Jitter?** Recommended: none. One browser tab and one server, and retries of keys that failed together coincide on purpose so the cache merges them into shared runs. Deterministic times keep the fake-timer tests exact. ×2 for two tabs: 8 → 16 requests at the same 30 s mark, which the server's query queue (`LETSVIEW_QUERY_CONCURRENCY` 4) absorbs.
+- **Q2: Jitter?** Recommended: none. One browser tab and one server, and retries of keys that failed together coincide on purpose so the cache merges them into shared runs. Deterministic times keep the fake-timer tests exact. ×2 for two tabs: 8 → 16 requests at the same 30 s mark, which the server's query queue (`KIPSCOPE_QUERY_CONCURRENCY` 4) absorbs.
 - **Q3: Retry 4xx automatically?** Recommended: no (R4). Only the same request again retries it (D-042's „setting the same range again also retries").
 - **Q4: Legend during a retry: `loading` or `failed: …`?** Recommended: `failed: …` until data arrives (R5). Otherwise the row flickers between two texts every retry, and the marker D-042 (2) asks for disappears.
 

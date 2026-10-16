@@ -1,4 +1,4 @@
-import { type RenderedMessage, RenderedMessage as RenderedSchema } from "@letsview/shared";
+import { type RenderedMessage, RenderedMessage as RenderedSchema } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { Acknowledger } from "../src/ack.ts";
 

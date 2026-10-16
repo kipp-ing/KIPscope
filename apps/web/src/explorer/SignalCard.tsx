@@ -1,4 +1,4 @@
-import type { Digits, SignalMatch, WorkspaceWindow } from "@letsview/shared";
+import type { Digits, SignalMatch, WorkspaceWindow } from "@kipscope/shared";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import {
   formatDbcRange,

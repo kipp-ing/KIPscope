@@ -1,4 +1,4 @@
-import type { RenderStatus } from "@letsview/shared";
+import type { RenderStatus } from "@kipscope/shared";
 import { CliError, type RenderWait } from "./output.ts";
 
 export const POLL_MS = 100;

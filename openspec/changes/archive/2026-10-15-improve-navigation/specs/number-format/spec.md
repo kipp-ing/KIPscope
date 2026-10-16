@@ -52,7 +52,7 @@ The workspace's digits option (3 or 4, default 3) SHALL apply to every place of 
 - **Evidence:** UI check (screenshot after the switch); the `curl` command
 
 #### Scenario: Set from the CLI
-- **WHEN** a caller runs `letsview digits 3` while the UI shows four digits
+- **WHEN** a caller runs `kipscope digits 3` while the UI shows four digits
 - **THEN** within 1 s the cells read `363 V lin` again
 - **Evidence:** UI check (screenshot after the command); CLI output with `"accepted":true`
 
@@ -60,6 +60,6 @@ The workspace's digits option (3 or 4, default 3) SHALL apply to every place of 
 API responses and the CLI's JSON output SHALL carry values unrounded, as before this change. Origin: D-026 („Machine output (JSON, API) stays exact").
 
 #### Scenario: Value over HTTP and CLI
-- **WHEN** a caller runs `curl -s 'localhost:7310/api/value?signal=smart451/BS_200h.DVL&t=2026-10-13T13:08:00.093Z' | jq -c .value` and `letsview value smart451/BS_200h.DVL "2026-10-13 15:08:00.093"` with the digits option at 3
+- **WHEN** a caller runs `curl -s 'localhost:7310/api/value?signal=smart451/BS_200h.DVL&t=2026-10-13T13:08:00.093Z' | jq -c .value` and `kipscope value smart451/BS_200h.DVL "2026-10-13 15:08:00.093"` with the digits option at 3
 - **THEN** both print the value `179.75` (`{"kind":"interpolated","value":179.75}`), not `180`
 - **Evidence:** the two commands

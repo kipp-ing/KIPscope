@@ -8,7 +8,7 @@ See proposal.md (D-040 quoted). Current state that shapes the approach:
 - **Acknowledgement:** `settled = loader.settled(requests) && values.settled(exactRequests) && width > 0` feeds `onReady(w.id, revision, errors)`.
 - **Loader and cache** (archived `add-series-cache`, design C1–C9): views load 256-bucket tiles of width 2^k ns from one tab cache (`chart/cache.ts`), adjacent missing tiles as one run request, LRU limit 4,000,000 weight units, recent tiles (ending after now − 1 h) not stored, raw tiles serve finer levels. A view with all tiles cached completes inside `update`. `LoadState.result` stays one `SeriesResult` per signal, read by `build.ts` (drawing, badge), `readout.ts` and `live.ts`.
 - **DTO** (`packages/shared/src/series.ts`): `BucketSeries` has one `width` and per bucket `count` (valid points), `sna`, `mean`, `min`, `max`, so finer buckets merge exactly (mean weighted by count). `Extent` is `{signalId, first, last}`; `fetchExtent` exists in `api.ts`.
-- **Server:** `QueryQueue(config.queryConcurrency)`, default `LETSVIEW_QUERY_CONCURRENCY` 4 (`apps/server/src/config.ts`); an aborted waiting request leaves the queue without running.
+- **Server:** `QueryQueue(config.queryConcurrency)`, default `KIPSCOPE_QUERY_CONCURRENCY` 4 (`apps/server/src/config.ts`); an aborted waiting request leaves the queue without running.
 - **Wheel:** one tick 2^(1/5), at most 5 ticks (×2) per event and per frame; a synthetic `WheelEvent` has `wheelDelta` 0, so it is not treated as a mouse notch and keeps its delta.
 
 ## Goals / Non-Goals
@@ -57,7 +57,7 @@ See proposal.md (D-040 quoted). Current state that shapes the approach:
 ### Z5: Loader interface (pinned, `chart/loader.ts`)
 
 ```ts
-import type { Extent, SeriesResult } from "@letsview/shared";
+import type { Extent, SeriesResult } from "@kipscope/shared";
 import type { SeriesCache } from "./cache.ts";
 
 export const LOAD_INTERVAL_MS = 100; // Z1
@@ -96,7 +96,7 @@ Timers use the global `setTimeout`/`clearTimeout` (vitest fake timers). Without 
 `chart/overview.ts` (new):
 
 ```ts
-import type { Extent } from "@letsview/shared";
+import type { Extent } from "@kipscope/shared";
 import type { LoaderOptions } from "./loader.ts";
 
 export function signalExtent(signalId: string): Promise<Extent>;
@@ -227,7 +227,7 @@ Lead's method from the D-040 measurement, extended to two windows (D-041). Chrom
 })();
 ```
 
-1. Set the range (linked, so both windows): `letsview --wait window range <w1> 2026-10-13T09:00:00Z 2026-10-13T10:00:00Z`; wait 2 s (views, overviews and prefetch loaded).
+1. Set the range (linked, so both windows): `kipscope --wait window range <w1> 2026-10-13T09:00:00Z 2026-10-13T10:00:00Z`; wait 2 s (views, overviews and prefetch loaded).
 2. **Uncached zoom in:** `await __zoom(-500)` (×2 in, level one finer, never loaded). Pass, for **each** window and its signal's `series` entries: first burst `≤ 50` (placeholder from the 1 h tiles), a `series` entry with `start ≤ 50`, the last burst below 290 is `≤ 200` and later than that entry's `end`. Wait 2 s.
 3. **Cached zoom out:** `await __zoom(500)` (back to 1 h). Pass, for each window: no `series` entry with `start < 290`, exactly one burst, `≤ 50`. Wait 2 s.
 4. **Prefetched zoom out:** `await __zoom(500)` (2 h, one level coarser, prefetched in step 3's rest). Same pass rule as step 3.

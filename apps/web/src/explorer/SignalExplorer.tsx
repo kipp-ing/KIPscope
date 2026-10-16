@@ -6,7 +6,7 @@ import {
   shownName,
   type WorkspaceWindow,
   windowTitle,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";

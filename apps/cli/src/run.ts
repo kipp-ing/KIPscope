@@ -7,7 +7,7 @@ import {
   type RenderStatus,
   type SignalPage,
   type Workspace,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { type GlobalOptions, type Invocation, parseArgs, USAGE } from "./args.ts";
 import { type Client, createClient, type Deadline } from "./client.ts";
 import {

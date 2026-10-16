@@ -1,4 +1,4 @@
-import type { CursorValueResult, RenderError, ValuesMode } from "@letsview/shared";
+import type { CursorValueResult, RenderError, ValuesMode } from "@kipscope/shared";
 
 export interface ValueRequest {
   /** One row and cursor of a values window, e.g. `${assignmentId}|a`. */

@@ -1,4 +1,4 @@
-import { type BucketSeries, encodeTimes, type RawSeries } from "@letsview/shared";
+import { type BucketSeries, encodeTimes, type RawSeries } from "@kipscope/shared";
 import uPlot from "uplot";
 import { describe, expect, it } from "vitest";
 import {

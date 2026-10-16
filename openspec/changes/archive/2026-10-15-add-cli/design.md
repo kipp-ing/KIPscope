@@ -10,7 +10,7 @@ What exists and shapes the approach:
 - **Reads.** `GET /api/workspace` → `{revision, workspace}`. `GET /api/render-status` → `RenderStatus {revision, clients: [{clientId, connectedAt, rendered?: {revision, status, errors, at}}]}`. `GET /api/signals?q&offset&limit` (default 50, max 200) → `SignalPage`. `GET /api/extent?signal` → `Extent`. `GET /api/value?signal&t&mode` → `CursorValueResult`. Errors are `ApiError {error: {code, message, …}}` with 400/404/502/503.
 - **Render acknowledgement.** The web sends `{type: "rendered", revision, status, errors}` over `WS /api/live` once **every** window reported ready for the current revision (`App.tsx` `acknowledge`); with no window it acknowledges at once. A UI that drops its connection reconnects after 1 s (`live.ts`). The server keeps per client only the last acknowledgement and ignores revisions above the current one.
 - **Local time in the UI.** `apps/web/src/time/axis.ts` `formatFull(t)`: browser-local `YYYY-MM-DD HH:MM:SS[.fff[fff[fff]]]`, fraction trimmed in 3-digit groups, no offset. Values window header and tooltips use it; window headers use `formatRange` (ms, truncated).
-- **Runtime.** Node ≥ 22.18 runs TypeScript directly (D-011); the server does so with `@letsview/shared` from source. Node has `fetch`, `AbortSignal.timeout`, `node:util` `parseArgs` and a global `WebSocket`.
+- **Runtime.** Node ≥ 22.18 runs TypeScript directly (D-011); the server does so with `@kipscope/shared` from source. Node has `fetch`, `AbortSignal.timeout`, `node:util` `parseArgs` and a global `WebSocket`.
 
 ## Goals / Non-Goals
 
@@ -28,7 +28,7 @@ What exists and shapes the approach:
 
 ### L1: A thin client in `apps/cli`, run by Node
 
-Package `@letsview/cli` in `apps/cli`, `"bin": {"letsview": "src/main.ts"}` with `#!/usr/bin/env node`. It depends only on `@letsview/shared` (for `Command`, `Workspace`, `RenderStatus`, `SignalPage`, `CursorValueResult`, `ApiError` and the local-time functions of S1). Run it as `node apps/cli/src/main.ts …` from the repo root or `pnpm --filter @letsview/cli exec letsview …`.
+Package `@kipscope/cli` in `apps/cli`, `"bin": {"kipscope": "src/main.ts"}` with `#!/usr/bin/env node`. It depends only on `@kipscope/shared` (for `Command`, `Workspace`, `RenderStatus`, `SignalPage`, `CursorValueResult`, `ApiError` and the local-time functions of S1). Run it as `node apps/cli/src/main.ts …` from the repo root or `pnpm --filter @kipscope/cli exec kipscope …`.
 
 Module split (each file has one owner task, see tasks.md):
 
@@ -75,7 +75,7 @@ Global options, accepted anywhere on the line: `--server URL`, `--wait`, `--time
 
 ### L3: Output and exit codes
 
-One JSON line on stdout per call (S2 `CliOutput`); `--pretty` indents it with 2 spaces. On a non-zero exit, one line `letsview: <outcome>: <code>: <message>` goes to stderr. `--help` prints plain usage text to stdout, exit 0 (the only non-JSON output).
+One JSON line on stdout per call (S2 `CliOutput`); `--pretty` indents it with 2 spaces. On a non-zero exit, one line `kipscope: <outcome>: <code>: <message>` goes to stderr. `--help` prints plain usage text to stdout, exit 0 (the only non-JSON output).
 
 | Outcome | Exit | When |
 |---|---|---|
@@ -186,7 +186,7 @@ export function parseDuration(text: string): bigint;
 ### S2: CLI output (`apps/cli/src/output.ts`)
 
 ```ts
-import type { CommandInput, RenderError } from "@letsview/shared";
+import type { CommandInput, RenderError } from "@kipscope/shared";
 
 export const EXIT = {
   ok: 0, rejected: 1, usage: 2, unreachable: 3, timeout: 4, render_error: 5, no_ui: 6, unavailable: 7,
@@ -264,7 +264,7 @@ export type Invocation =
   | { kind: "value"; signal: SignalArg; t: TimeArg; mode?: ValuesMode }
   | { kind: "wait"; revision?: number }
   | { kind: "command"; template: CommandTemplate; /** `command JSON`: sent unchanged, never passed to resolveCommand. */ raw?: true };
-/** Throws CliError("usage", "usage", …). server: --server, else env.LETSVIEW_URL, else http://localhost:7310. */
+/** Throws CliError("usage", "usage", …). server: --server, else env.KIPSCOPE_URL, else http://localhost:7310. */
 export function parseArgs(argv: string[], env: Record<string, string | undefined>): { options: GlobalOptions; invocation: Invocation };
 export const USAGE: string;
 
@@ -317,9 +317,9 @@ The field names a `CommandTemplate` uses are exactly those of the `Command` it b
 Example (`TZ=Europe/Berlin`, A on):
 
 ```sh
-$ letsview cursor move a +500ms
+$ kipscope cursor move a +500ms
 {"ok":true,"outcome":"ok","exitCode":0,"accepted":true,"command":{"type":"cursor.move","cursor":"a","by":"500000000"},"revision":42}
-$ letsview --wait --timeout 5s cursor set b a+1s
+$ kipscope --wait --timeout 5s cursor set b a+1s
 {"ok":true,"outcome":"ok","exitCode":0,"accepted":true,"command":{"type":"cursor.set","cursor":"b","t":"1791896882500000000"},"revision":43,"render":{"status":"complete","target":43,"revision":43,"clientId":"c7","waitedMs":310}}
 ```
 
@@ -328,7 +328,7 @@ $ letsview --wait --timeout 5s cursor set b a+1s
 - [A CLI on another machine than the browser reads local times in its own zone.] → `TZ` overrides; `local` output carries the offset, so a mismatch is visible. Q8.
 - [Resolving an anchor or a bare name needs a read before the command; a human can change the state in between.] → Accepted by concept §7 (no concurrent changes). `cursor move` is atomic on the server and needs no read.
 - [The render acknowledgement of a UI that already shows a load error stays `error` for later revisions, so `--wait` after an unrelated command reports `render_error`.] → Correct by meaning: the open view does not show all its data. `render.errors` names window and signal.
-- [`apps/cli/test` imports server code by relative path.] → Only tests do; `src` depends on `@letsview/shared` alone. If `tsc -p apps/cli` trips over server types, the CLI's `tsconfig.json` leaves `test` out of `include` and vitest still runs them.
+- [`apps/cli/test` imports server code by relative path.] → Only tests do; `src` depends on `@kipscope/shared` alone. If `tsc -p apps/cli` trips over server types, the CLI's `tsconfig.json` leaves `test` out of `include` and vitest still runs them.
 - [Polling adds up to 100 ms per wait.] → L7; long-poll is the upgrade path (Q4).
 
 ## Migration Plan
@@ -347,4 +347,4 @@ Each with the spec owner's recommendation; the tasks build on it. "Detail" = che
 6. **Where relative times live.** Recommended: anchors (`a+500ms`) are resolved in the CLI; the command model keeps absolute times plus `cursor.move`. Alternative: the shared command model accepts anchor expressions and the server resolves them atomically, so any later client (script, MCP, UI command line) gets them too. *Direction*: moving them into the command model later changes `packages/shared` commands and every client that builds them.
 7. **Ambiguous local times (DST).** Recommended: refuse and ask for an offset. Alternative: take the earlier instant, as JavaScript's `Date` does. *Detail*.
 8. **Time zone of the CLI.** Recommended: the process's zone (`TZ`), same as the browser's on one machine. Alternatives: the UI reports its zone with the render acknowledgement and the CLI uses it; or a workspace time-zone setting (concept §8 „Die Zeitzone ist wählbar", planned later), which the CLI would then follow. *Detail* now (one function); the workspace setting itself is a later change.
-9. **Installation.** Recommended: run from the repo (`node apps/cli/src/main.ts`, `pnpm --filter @letsview/cli exec letsview`). Alternatives: `pnpm link --global`, or a bundled single file. *Detail*.
+9. **Installation.** Recommended: run from the repo (`node apps/cli/src/main.ts`, `pnpm --filter @kipscope/cli exec kipscope`). Alternatives: `pnpm link --global`, or a bundled single file. *Detail*.

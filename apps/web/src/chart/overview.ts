@@ -1,4 +1,4 @@
-import type { Extent } from "@letsview/shared";
+import type { Extent } from "@kipscope/shared";
 import { fetchExtent } from "../api.ts";
 import { LOAD_INTERVAL_MS, type LoaderOptions } from "./loader.ts";
 

@@ -1,22 +1,22 @@
 # cli Specification
 
 ## Purpose
-The `letsview` command-line client lets a person, a script or an AI control the open workspace remotely through the same commands as the UI, read its state, and learn whether a command was accepted, whether its data is available and whether the open UI has rendered it.
+The `kipscope` command-line client lets a person, a script or an AI control the open workspace remotely through the same commands as the UI, read its state, and learn whether a command was accepted, whether its data is available and whether the open UI has rendered it.
 
-Conventions for the evidence below: `letsview` stands for `node apps/cli/src/main.ts`, run from the repo root against the dev server at `localhost:7310` with `TZ=Europe/Berlin` (CEST, +02:00 on 2026-10-13). The `apps/cli/test/*` tests start the real server app in-process on a free port, with a stub data source and catalog, and use a WebSocket client on `/api/live` as a fake browser that sends `rendered` messages (design L8).
+Conventions for the evidence below: `kipscope` stands for `node apps/cli/src/main.ts`, run from the repo root against the dev server at `localhost:7310` with `TZ=Europe/Berlin` (CEST, +02:00 on 2026-10-13). The `apps/cli/test/*` tests start the real server app in-process on a free port, with a stub data source and catalog, and use a WebSocket client on `/api/live` as a fake browser that sends `rendered` messages (design L8).
 
 ## Requirements
 
 ### Requirement: CLI client of the open workspace
-The CLI `letsview` SHALL control the open workspace only through the server's HTTP API, at `--server <url>`, else `LETSVIEW_URL`, else `http://localhost:7310`. It SHALL never read the data source directly. `--help` SHALL print the usage of every form and exit 0. Origin: concept §7 (the CLI controls the open view); D-005 (the server holds the CLI endpoint); D-011 (D8, commands via `POST /api/commands`).
+The CLI `kipscope` SHALL control the open workspace only through the server's HTTP API, at `--server <url>`, else `KIPSCOPE_URL`, else `http://localhost:7310`. It SHALL never read the data source directly. `--help` SHALL print the usage of every form and exit 0. Origin: concept §7 (the CLI controls the open view); D-005 (the server holds the CLI endpoint); D-011 (D8, commands via `POST /api/commands`).
 
 #### Scenario: Server address
-- **WHEN** `letsview state` runs once with `--server http://127.0.0.1:<port>`, once with only `LETSVIEW_URL=http://127.0.0.1:<port>`, and once with both set to different servers
+- **WHEN** `kipscope state` runs once with `--server http://127.0.0.1:<port>`, once with only `KIPSCOPE_URL=http://127.0.0.1:<port>`, and once with both set to different servers
 - **THEN** the first two read the test server; the third reads the `--server` one
-- **Evidence:** `apps/cli/test/cli.test.ts` › "chooses --server over LETSVIEW_URL over localhost:7310"
+- **Evidence:** `apps/cli/test/cli.test.ts` › "chooses --server over KIPSCOPE_URL over localhost:7310"
 
 #### Scenario: Usage
-- **WHEN** `letsview --help` runs
+- **WHEN** `kipscope --help` runs
 - **THEN** it prints a usage text naming every form of the requirements below and exits 0 without contacting a server
 - **Evidence:** `apps/cli/test/cli.test.ts` › "prints the usage with --help"
 
@@ -24,12 +24,12 @@ The CLI `letsview` SHALL control the open workspace only through the server's HT
 Each call SHALL print exactly one JSON object on one line to stdout (indented with `--pretty`) with `ok`, `outcome` and `exitCode` and, where they apply, `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local` and `error {code, message}`. A failed call SHALL also print one line naming the reason to stderr. Origin: concept §7 („maschinenlesbare Ergebnisse").
 
 #### Scenario: Accepted command
-- **WHEN** `letsview diff on` runs against a fresh test server as a separate process
+- **WHEN** `kipscope diff on` runs against a fresh test server as a separate process
 - **THEN** stdout is exactly one line that parses as `{"ok":true,"outcome":"ok","exitCode":0,"accepted":true,"command":{"type":"cursor.setDiff","diff":true},"revision":1}`, stderr is empty and the exit code is 0
 - **Evidence:** `apps/cli/test/process.test.ts` › "prints one JSON line on stdout and nothing on stderr"
 
 #### Scenario: Failed call
-- **WHEN** `letsview cursor move b +1s` runs as a separate process while B is off
+- **WHEN** `kipscope cursor move b +1s` runs as a separate process while B is off
 - **THEN** stdout is one JSON line with `"ok":false` and `"outcome":"rejected"`, stderr is one line containing `cursor_off`, and the exit code is 1
 - **Evidence:** `apps/cli/test/process.test.ts` › "prints the reason of a failure on stderr"
 
@@ -37,27 +37,27 @@ Each call SHALL print exactly one JSON object on one line to stdout (indented wi
 The exit code and `outcome` SHALL tell what happened: 0 `ok`, 1 `rejected` (the server or a lookup refused it), 2 `usage` (bad arguments; nothing sent), 3 `unreachable`, 4 `timeout`, 5 `render_error`, 6 `no_ui`, 7 `unavailable` (the server answered 5xx, e.g. `catalog_unavailable`). Origin: concept §7 (a caller must see whether a command was accepted, data is available and the UI rendered it).
 
 #### Scenario: Rejected
-- **WHEN** B is off and `letsview cursor move b +1s` runs
+- **WHEN** B is off and `kipscope cursor move b +1s` runs
 - **THEN** the exit code is 1, `accepted` is `false`, `error.code` is `cursor_off`, and the revision does not change
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 1 with the server's code when a command is rejected"
 
 #### Scenario: Usage error sends nothing
-- **WHEN** `letsview cursor move a 500` (no unit), `letsview window range w1 2026-10-13` (no clock time) and `letsview frobnicate` run
+- **WHEN** `kipscope cursor move a 500` (no unit), `kipscope window range w1 2026-10-13` (no clock time) and `kipscope frobnicate` run
 - **THEN** each exits 2 with `outcome` `usage`, and the server's revision is the same as before
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 2 on bad arguments without sending anything"
 
 #### Scenario: Server unreachable
-- **WHEN** `letsview --server http://127.0.0.1:<port> state` runs as a separate process and nothing listens on that port
+- **WHEN** `kipscope --server http://127.0.0.1:<port> state` runs as a separate process and nothing listens on that port
 - **THEN** the exit code is 3 and `outcome` is `unreachable`
 - **Evidence:** `apps/cli/test/process.test.ts` › "exits 3 when the server is unreachable"
 
 #### Scenario: Server does not answer
-- **WHEN** the server address is a TCP listener that accepts connections and never answers, and `letsview --timeout 300ms state` runs
+- **WHEN** the server address is a TCP listener that accepts connections and never answers, and `kipscope --timeout 300ms state` runs
 - **THEN** it exits 4 with `outcome` `timeout` in less than 1 s
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 4 when the server does not answer in time"
 
 #### Scenario: Data source unavailable
-- **WHEN** the server's catalog has never loaded and `letsview search volt` runs
+- **WHEN** the server's catalog has never loaded and `kipscope search volt` runs
 - **THEN** the exit code is 7, `outcome` is `unavailable` and `error.code` is `catalog_unavailable`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 7 when the server answers 5xx"
 
@@ -71,11 +71,11 @@ The CLI SHALL offer `window create [--values] [--title T] [--from TIME --to TIME
 
 #### Scenario: Windows over HTTP
 - **WHEN** `window create`, `window rename`, `window height`, `window display --mode step`, `window range`, `link off` and `window remove` run one after another against the test server
-- **THEN** each exits 0 with a revision one higher than the one before, and `letsview state` shows each change
+- **THEN** each exits 0 with a revision one higher than the one before, and `kipscope state` shows each change
 - **Evidence:** `apps/cli/test/cli.test.ts` › "drives windows and the link flag over HTTP"
 
 #### Scenario: Window from the CLI in the open UI
-- **WHEN** the UI is open on real data and `letsview window create --title Speeds --from "2026-10-13 15:08:00" --to "2026-10-13 15:08:03"` runs, then `letsview signal add <new window ID> V_ANZ`
+- **WHEN** the UI is open on real data and `kipscope window create --title Speeds --from "2026-10-13 15:08:00" --to "2026-10-13 15:08:03"` runs, then `kipscope signal add <new window ID> V_ANZ`
 - **THEN** within 1 s the UI shows a window "Speeds" whose header reads `2026-10-13 15:08:00 – 2026-10-13 15:08:03` with `COMBI_412h.V_ANZ` in it
 - **Evidence:** UI check (screenshot of the window and the two CLI outputs)
 
@@ -88,7 +88,7 @@ The CLI SHALL offer `signal add W SIGNAL`, `signal remove W REF` and `signal mov
 - **Evidence:** `apps/cli/test/cli.test.ts` › "drives signal add, move, copy and remove over HTTP"
 
 #### Scenario: Reference not in the window
-- **WHEN** `w1` does not show RPM and `letsview signal remove w1 RPM` runs
+- **WHEN** `w1` does not show RPM and `kipscope signal remove w1 RPM` runs
 - **THEN** the exit code is 1, `error.code` is `unknown_assignment`, and the revision does not change
 - **Evidence:** `apps/cli/test/cli.test.ts` › "drives signal add, move, copy and remove over HTTP"
 
@@ -101,7 +101,7 @@ A SIGNAL argument SHALL be a full ID (`dataRef/name`), sent unchanged, or a bare
 - **Evidence:** `apps/cli/test/cli.test.ts` › "resolves bare signal names and refuses ambiguous ones"
 
 #### Scenario: Bare name on real data
-- **WHEN** a window `<w>` exists in the open UI and `letsview signal add <w> V_ANZ` runs
+- **WHEN** a window `<w>` exists in the open UI and `kipscope signal add <w> V_ANZ` runs
 - **THEN** `command.signalId` in the output is `smart451/COMBI_412h.V_ANZ` and the signal appears in that window
 - **Evidence:** UI check (CLI output and screenshot), covered by "Window from the CLI in the open UI"
 
@@ -109,12 +109,12 @@ A SIGNAL argument SHALL be a full ID (`dataRef/name`), sent unchanged, or a bare
 `search QUERY… [--limit N]` SHALL return the server's ranked search page (`items`, `total`, `more`) in `data`, and `extent SIGNAL` the signal's first and last time in `data` and in local time in `local`. Origin: concept §4, §7 („Signale suchen"); signal-catalog "Signal search" and "Search ranking".
 
 #### Scenario: Ranked search on real data
-- **WHEN** `letsview search volt --limit 3 | jq -r '.data.items[0].id, (.data.items | length)'` runs
+- **WHEN** `kipscope search volt --limit 3 | jq -r '.data.items[0].id, (.data.items | length)'` runs
 - **THEN** it prints `smart451/CPC_168h.EAC_HV_Volt` and `3`
 - **Evidence:** the command against the dev server; `apps/cli/test/cli.test.ts` › "searches and reads extents"
 
 #### Scenario: Extent
-- **WHEN** the stub source gives `testcar/Sna_800h.SPEED` the extent 2026-10-01T02:00:00Z … 02:01:39.9Z and `letsview extent testcar/Sna_800h.SPEED` runs
+- **WHEN** the stub source gives `testcar/Sna_800h.SPEED` the extent 2026-10-01T02:00:00Z … 02:01:39.9Z and `kipscope extent testcar/Sna_800h.SPEED` runs
 - **THEN** `data.first` is `1790820000000000000`, `local.first` is `2026-10-01 04:00:00+02:00` and `local.last` is `2026-10-01 04:01:39.900+02:00`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "searches and reads extents"
 
@@ -122,12 +122,12 @@ A SIGNAL argument SHALL be a full ID (`dataRef/name`), sent unchanged, or a bare
 `state` SHALL return in `data` the revision, the workspace exactly as `GET /api/workspace` gives it, and the render status of `GET /api/render-status`; `local` SHALL give cursors A and B and each timeseries window's range in local time with offset. Origin: concept §7 („auslesbarer Zustand"; the open view including cursors and zoom must be controllable); D-011 (D8).
 
 #### Scenario: State with local times
-- **WHEN** window `w1` spans 2026-10-13T13:08:00Z … 13:08:03Z, A is at 13:08:01.5Z, a fake browser acknowledged the current revision, and `letsview state` runs
+- **WHEN** window `w1` spans 2026-10-13T13:08:00Z … 13:08:03Z, A is at 13:08:01.5Z, a fake browser acknowledged the current revision, and `kipscope state` runs
 - **THEN** `data.workspace` equals the body of `GET /api/workspace`, `data.render.clients` lists the fake browser with that revision, `local.cursors.a` is `2026-10-13 15:08:01.500+02:00` and `local.ranges.w1` is `{"from":"2026-10-13 15:08:00+02:00","to":"2026-10-13 15:08:03+02:00"}`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "returns workspace, render status and local times"
 
 #### Scenario: Same times as the UI
-- **WHEN** the UI is open with a values window, `letsview cursor set a "2026-10-13 15:08:01.5"` runs and then `letsview state | jq -r .local.cursors.a`
+- **WHEN** the UI is open with a values window, `kipscope cursor set a "2026-10-13 15:08:01.5"` runs and then `kipscope state | jq -r .local.cursors.a`
 - **THEN** it prints `2026-10-13 15:08:01.500+02:00`, and the values window header shows A at `2026-10-13 15:08:01.500`
 - **Evidence:** UI check (screenshot of the values window header next to the CLI output)
 
@@ -150,7 +150,7 @@ A TIME SHALL be decimal ns, ISO-8601 with `Z` or `±HH:MM`, or local wall time `
 - **Evidence:** `packages/shared/test/localtime.test.ts` › "round-trips local times with offset to the nanosecond"; `apps/web/test/axis.test.ts` › "formats local times like the shared formatLocal"
 
 #### Scenario: Local time on real data
-- **WHEN** `letsview value smart451/COMBI_412h.V_ANZ "2026-10-13 15:08:00.1435" | jq -c .data.value` runs
+- **WHEN** `kipscope value smart451/COMBI_412h.V_ANZ "2026-10-13 15:08:00.1435" | jq -c .data.value` runs
 - **THEN** it prints `{"kind":"interpolated","value":22.5}`, the value `add-cursors` checks at `2026-10-13T13:08:00.1435Z`
 - **Evidence:** the command against the dev server
 
@@ -179,7 +179,7 @@ The CLI SHALL offer `cursor set a|b TIME`, `cursor move a|b DURATION`, `cursor r
 - **Evidence:** `apps/cli/test/cli.test.ts` › "sets, moves and removes cursors and switches diff"
 
 #### Scenario: Relative move in the open UI
-- **WHEN** the UI shows a values window and A at 15:08:01.500 local, and `letsview --wait cursor move a +500ms` runs
+- **WHEN** the UI shows a values window and A at 15:08:01.500 local, and `kipscope --wait cursor move a +500ms` runs
 - **THEN** it exits 0 with `render.status` `complete`, and the screenshot taken right after shows A at `2026-10-13 15:08:02` in the values window header and the line moved by 0.5 s in every window
 - **Evidence:** UI check (screenshot and CLI output)
 
@@ -195,17 +195,17 @@ The CLI SHALL offer `cursor set a|b TIME`, `cursor move a|b DURATION`, `cursor r
 With `--wait`, an accepted command SHALL block until a connected UI has acknowledged its revision or a later one; `wait [REVISION]` does the same (default: current). `render` SHALL report `complete`, `error` with the UI's errors, `no_ui` once no UI was connected for 2 s in a row, or `timeout` after `--timeout` (default 30 s). Origin: concept §7 (the caller sees whether data is available and the open UI rendered the state); D-005; D-011.
 
 #### Scenario: Rendered
-- **WHEN** a fake browser is connected and acknowledges each new revision as `complete` 200 ms after it arrives, and `letsview --wait window create --from 0 --to 10` runs
+- **WHEN** a fake browser is connected and acknowledges each new revision as `complete` 200 ms after it arrives, and `kipscope --wait window create --from 0 --to 10` runs
 - **THEN** it exits 0 after at least 200 ms with `render.status` `complete`, `render.revision` the command's revision and `render.clientId` the fake browser's client ID
 - **Evidence:** `apps/cli/test/cli.test.ts` › "waits for the render acknowledgement"
 
 #### Scenario: A later revision counts
-- **WHEN** the fake browser does not acknowledge revision R but, after another command, acknowledges R + 1, while `letsview wait R` runs
+- **WHEN** the fake browser does not acknowledge revision R but, after another command, acknowledges R + 1, while `kipscope wait R` runs
 - **THEN** it exits 0 with `render.revision` R + 1
 - **Evidence:** `apps/cli/test/cli.test.ts` › "counts an acknowledgement of a later revision"
 
 #### Scenario: Revision that does not exist yet
-- **WHEN** the current revision is 5 and `letsview wait 9` runs
+- **WHEN** the current revision is 5 and `kipscope wait 9` runs
 - **THEN** it exits 1 at once with `error.code` `unknown_revision`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "counts an acknowledgement of a later revision"
 
@@ -215,17 +215,17 @@ With `--wait`, an accepted command SHALL block until a connected UI has acknowle
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 5 when the UI rendered with data errors"
 
 #### Scenario: No UI connected
-- **WHEN** no browser is connected and `letsview --wait diff on` runs
+- **WHEN** no browser is connected and `kipscope --wait diff on` runs
 - **THEN** it exits 6 after 2 to 3 s, with `accepted` `true`, the new `revision` and `render.status` `no_ui`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 6 when no UI is connected"; `apps/cli/test/wait.test.ts` › "reports no_ui after 2 s without a client, not after a 1 s reconnect gap"
 
 #### Scenario: UI does not acknowledge
-- **WHEN** a fake browser is connected but never acknowledges, and `letsview --wait --timeout 500ms diff on` runs
+- **WHEN** a fake browser is connected but never acknowledges, and `kipscope --wait --timeout 500ms diff on` runs
 - **THEN** it exits 4 in less than 1 s with `accepted` `true` and `render.status` `timeout`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 4 when the UI does not acknowledge in time"
 
 #### Scenario: Real UI
-- **WHEN** the UI is open on real data with a window `<w>`, and `letsview --wait signal add <w> smart451/BS_200h.DVL` runs; then the UI tab is closed and `letsview --wait diff off` runs
+- **WHEN** the UI is open on real data with a window `<w>`, and `kipscope --wait signal add <w> smart451/BS_200h.DVL` runs; then the UI tab is closed and `kipscope --wait diff off` runs
 - **THEN** the first exits 0 with `render.status` `complete` and a screenshot taken right after shows DVL drawn, not loading; the second exits 6 with `render.status` `no_ui`
 - **Evidence:** UI check (screenshot and both CLI outputs)
 
@@ -238,7 +238,7 @@ With `--wait`, an accepted command SHALL block until a connected UI has acknowle
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reads a value at a time and at a cursor"
 
 #### Scenario: Unknown signal
-- **WHEN** `letsview value testcar/NOPE.X 0` runs
+- **WHEN** `kipscope value testcar/NOPE.X 0` runs
 - **THEN** it exits 1 with `error.code` `unknown_signal`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reads a value at a time and at a cursor"
 
@@ -251,7 +251,7 @@ The CLI SHALL offer `digits 3|4`, sending exactly one `workspace.setOptions {dig
 - **Evidence:** `apps/cli/test/args.test.ts` › "maps every command form to its command"
 
 #### Scenario: Digits over HTTP
-- **WHEN** `letsview digits 4` and then `letsview state` run against the test server
+- **WHEN** `kipscope digits 4` and then `kipscope state` run against the test server
 - **THEN** the first exits 0 with a new revision, and the state shows `options.digits` `4`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "sets the digits option over HTTP"
 
@@ -259,11 +259,11 @@ The CLI SHALL offer `digits 3|4`, sending exactly one `workspace.setOptions {dig
 When an accepted command removed a window as a side effect (workspace-state "Window emptied by a move is removed"), the CLI's JSON result SHALL carry `removedWindow` with that window's ID, placed right after `createdWindow` in the key order. Origin: concept §7 („maschinenlesbare Ergebnisse", a caller must see what its command changed); D-027 (emptied window removed).
 
 #### Scenario: Move empties a window
-- **WHEN** against the test server `w1` shows only `testcar/Sna_800h.RPM`, `w3` exists, and `letsview signal move w1 RPM w3` runs
-- **THEN** it exits 0, its output carries `"removedWindow":"w1"` after `revision`, and a following `letsview state` no longer lists `w1`
+- **WHEN** against the test server `w1` shows only `testcar/Sna_800h.RPM`, `w3` exists, and `kipscope signal move w1 RPM w3` runs
+- **THEN** it exits 0, its output carries `"removedWindow":"w1"` after `revision`, and a following `kipscope state` no longer lists `w1`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reports the window a move removed"
 
 #### Scenario: Copy reports no removal
-- **WHEN** `letsview signal move w3 RPM new --copy` runs
+- **WHEN** `kipscope signal move w3 RPM new --copy` runs
 - **THEN** the output carries `createdWindow` and `created` and no `removedWindow`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reports the window a move removed"

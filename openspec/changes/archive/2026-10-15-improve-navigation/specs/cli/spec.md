@@ -9,6 +9,6 @@ The CLI SHALL offer `digits 3|4`, sending exactly one `workspace.setOptions {dig
 - **Evidence:** `apps/cli/test/args.test.ts` › "maps every command form to its command"
 
 #### Scenario: Digits over HTTP
-- **WHEN** `letsview digits 4` and then `letsview state` run against the test server
+- **WHEN** `kipscope digits 4` and then `kipscope state` run against the test server
 - **THEN** the first exits 0 with a new revision, and the state shows `options.digits` `4`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "sets the digits option over HTTP"

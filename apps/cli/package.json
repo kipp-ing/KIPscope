@@ -1,15 +1,15 @@
 {
-  "name": "@letsview/cli",
+  "name": "@kipscope/cli",
   "private": true,
   "type": "module",
   "bin": {
-    "letsview": "src/main.ts"
+    "kipscope": "src/main.ts"
   },
   "scripts": {
     "build": "tsc -p .",
     "test": "TZ=Europe/Berlin vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@letsview/shared": "workspace:*"
+    "@kipscope/shared": "workspace:*"
   }
 }

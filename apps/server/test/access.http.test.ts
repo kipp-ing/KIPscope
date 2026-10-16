@@ -1,4 +1,4 @@
-import type { RenderStatus } from "@letsview/shared";
+import type { RenderStatus } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { isLoopbackHost } from "../src/access.ts";

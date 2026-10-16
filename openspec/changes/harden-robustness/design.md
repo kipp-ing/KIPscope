@@ -54,7 +54,7 @@ export function assertSeries(value: unknown): asserts value is SeriesResult;
 ```ts
 /** 127.0.0.1, localhost, ::1 and [::1], case-insensitive. 0.0.0.0 and :: are not loopback. */
 export function isLoopbackHost(host: string): boolean;
-export interface AccessOptions { /** LETSVIEW_HOST when neither loopback nor 0.0.0.0/::. */ extraHost?: string }
+export interface AccessOptions { /** KIPSCOPE_HOST when neither loopback nor 0.0.0.0/::. */ extraHost?: string }
 /** Host header without port: loopback name or extraHost. Undefined → false. */
 export function hostAllowed(host: string | undefined, options: AccessOptions): boolean;
 /** Undefined → true. Else http:/https: URL whose hostname passes hostAllowed. "null" → false. */
@@ -62,7 +62,7 @@ export function originAllowed(origin: string | undefined, options: AccessOptions
 ```
 
 - `app.ts`: `buildApp(deps, options: { logger?: boolean; extraHost?: string })`. One `onRequest` hook at the root, before the route plugins, answers 403 `forbidden_host` or `forbidden_origin` as `ApiError`. `app.removeContentTypeParser("text/plain")`, so Fastify answers 415 to non-JSON bodies. The live channel's upgrade runs through the same hook; if `@fastify/websocket` does not let a hook refuse the upgrade, the `/api/live` handler checks the same two functions on `request.headers` and closes with 1008 before sending `hello` (the spec scenario accepts either).
-- `main.ts`: `extraHost` from `config.host` as above; when `!isLoopbackHost(config.host)` it logs at warn: `LETSVIEW_HOST <host> is not loopback: every machine that reaches it can read signals and change the workspace`. For a wildcard host the warning adds that only loopback names pass the Host check.
+- `main.ts`: `extraHost` from `config.host` as above; when `!isLoopbackHost(config.host)` it logs at warn: `KIPSCOPE_HOST <host> is not loopback: every machine that reaches it can read signals and change the workspace`. For a wildcard host the warning adds that only loopback names pass the Host check.
 - The Vite proxy needs no change: it forwards `Host: localhost:5173` and `Origin: http://localhost:5173`, both allowed. `changeOrigin` stays off.
 - Alternatives: CORS headers alone (do not cover WebSockets or DNS rebinding); a token in the page (needs a login flow; out of scope for a local tool).
 
@@ -140,7 +140,7 @@ export function keepCatalogLoaded(
 
 ## Risks / Trade-offs
 
-- [Host guard locks out a legitimate setup, e.g. Vite started with `--host` and opened by LAN IP] → the 403 names the host; setting `LETSVIEW_HOST` to that address admits it. Logged in the start-up warning.
+- [Host guard locks out a legitimate setup, e.g. Vite started with `--host` and opened by LAN IP] → the 403 names the host; setting `KIPSCOPE_HOST` to that address admits it. Logged in the start-up warning.
 - [`@fastify/websocket` skips `onRequest` on upgrade] → fallback check in the handler (H3); the scenario covers both.
 - [`positiveModulo` returns UInt64 and the subtraction changes type] → `toInt64` cast; the epoch scenario on the test DB catches it.
 - [Adding `spancar` to the seed changes catalog counts in existing tests] → its own data reference, so `testcar` counts stay; the tester adjusts any test that counts all signals.
@@ -154,13 +154,13 @@ No stored data changes. Deploy with the usual restart; reload open tabs. Rollbac
 ## Manual checks (lead)
 
 1. Tunnel down, server restart, tunnel up after 20 s: catalog loads within 35 s without a refresh (signal-catalog "Restart with the tunnel down").
-2. Server restart with the UI open, then `letsview --wait link off` exits 0 `complete` (workspace-state "Wait after a server restart on real data").
+2. Server restart with the UI open, then `kipscope --wait link off` exits 0 `complete` (workspace-state "Wait after a server restart on real data").
 3. Server stopped, rename a window: message line shows the error, no unhandled rejection in the console (workspace-state "Server down in the UI").
 
 ## Ledger entries on archive (proposed for `docs/decisions.md`)
 
 - **D-045: Exact wire times and bucket bounds.** Series offsets travel as JSON numbers up to 2^53 − 1 ns and as decimal strings beyond (supersedes D-011 D3's "offsets as numbers"); bucket width at most 2^62 ns; buckets on the floor grid before 1970; own computation errors answer 400. (H1, H2)
-- **D-046: Local access only.** `Host` and, when present, `Origin` must name localhost, 127.0.0.1, [::1] or a non-loopback `LETSVIEW_HOST`; JSON bodies only; live frames ≤ 256 KiB; acknowledgements ≤ 50 errors of ≤ 500 characters; ≤ 64 windows; warning on a non-loopback host. (H3, H4)
+- **D-046: Local access only.** `Host` and, when present, `Origin` must name localhost, 127.0.0.1, [::1] or a non-loopback `KIPSCOPE_HOST`; JSON bodies only; live frames ≤ 256 KiB; acknowledgements ≤ 50 errors of ≤ 500 characters; ≤ 64 windows; warning on a non-loopback host. (H3, H4)
 - **D-047: Robustness conventions.** Catalog reloads 1, 2, 4 … 30 s until its first success, one load at a time, DBC warnings per load; UI commands never reject (`network`, `bad_response`); an acknowledgement counts as sent only when the socket took it and is repeated after a reconnect; state pushes name their command type and only content changes or `window.setRange` re-hand requests to the loader; a window that fails to draw shows an error box and reports a render error. (H5–H9; H9 refines D-044 per Jan, 2026-10-16)
 
 ## Open Questions

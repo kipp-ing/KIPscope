@@ -1,4 +1,4 @@
-import type { LiveServerMessage, RenderStatus } from "@letsview/shared";
+import type { LiveServerMessage, RenderStatus } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { buildApp } from "../src/app.ts";

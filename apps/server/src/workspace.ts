@@ -9,7 +9,7 @@ import {
   type RenderedMessage,
   type RenderStatus,
   type Workspace,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 
 type Listener = (revision: number, workspace: Workspace, command: CommandType) => void;
 

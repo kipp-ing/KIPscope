@@ -1,4 +1,4 @@
-import type { CursorName } from "@letsview/shared";
+import type { CursorName } from "@kipscope/shared";
 
 /** Half width in CSS px of a cursor line's hit strip (design C3). */
 export const CURSOR_HIT_PX = 6;

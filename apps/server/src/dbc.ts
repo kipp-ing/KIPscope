@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import type { SnaSource, SnaValue } from "@letsview/shared";
+import type { SnaSource, SnaValue } from "@kipscope/shared";
 
 /** SNA codes of a signal (D-010, D-012, D-014, D-015) with the matching tolerance. */
 export interface DbcSna {

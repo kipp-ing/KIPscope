@@ -1,4 +1,4 @@
-# letsview project file (D-035). See letsview.example.yaml. Restart the server after editing.
+# KIPscope project file (D-035). See kipscope.example.yaml. Restart the server after editing.
 display:
   names:
     # COMBI_412h.V_ANZ -> V_ANZ; on a collision V_ANZ (COMBI)

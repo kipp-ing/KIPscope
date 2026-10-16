@@ -1,12 +1,13 @@
 # Test database for automated tests (design D10). Same ClickHouse line as carserver.
+name: kipscope
 services:
   clickhouse-test:
     image: clickhouse/clickhouse-server:26.8
     ports:
       - "127.0.0.1:8124:8123"
     environment:
-      CLICKHOUSE_USER: letsview
-      CLICKHOUSE_PASSWORD: letsview
+      CLICKHOUSE_USER: kipscope
+      CLICKHOUSE_PASSWORD: kipscope
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     ulimits:
       nofile: { soft: 262144, hard: 262144 }

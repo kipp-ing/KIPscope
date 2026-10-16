@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-048: Renamed to KIPscope (2026-10-16)
+
+- **Decision:** Jan: the project is called KIPscope. Prose uses `KIPscope`; packages, CLI, files and paths use `kipscope` (`@kipscope/*`, `kipscope.yaml`); env vars use `KIPSCOPE_*`; agents use `ks-*`. All references were rewritten, past ledger entries and archived changes included.
+- **Exception:** the read-only ClickHouse user on carserver stays `letsview`. It is deployed through serverzoo and is not part of this repo.
+- **Consequences:** a local `.env` with `LETSVIEW_*` keys needs them renamed; the test DB is compose project `kipscope` (reseed after the switch); the sidebar state in the browser starts fresh under `kipscope.sidebar`.
+
 ## D-044: Load recovery conventions (2026-10-15)
 
 From the archived change `improve-load-recovery` (R1–R7, Q1–Q4 as recommended); details there.
@@ -60,14 +66,14 @@ From the archived changes `improve-window-handling` (G1, B2, Q1–Q3) and `add-s
 
 From the archived change `add-display-names` (design N1, N5, N6, N7, open questions Q1–Q4 built as recommended); details there.
 
-- **File:** `letsview.yaml` in the repo root, `LETSVIEW_PROJECT_FILE` overrides it (a named file must exist); read at startup only, a catalog refresh does not reread it. Parsed with `yaml`, validated with `zod`.
+- **File:** `kipscope.yaml` in the repo root, `KIPSCOPE_PROJECT_FILE` overrides it (a named file must exist); read at startup only, a catalog refresh does not reread it. Parsed with `yaml`, validated with `zod`.
 - **Invalid file:** the server refuses to start (exit 1), one line per problem `<path>: <field>: <problem>`.
 - **Computed on the server:** once per catalog load, delivered as optional `SignalInfo.displayName` (absent when equal to `name`); the web uses `shownName()` and never evaluates rules. Search ranks the shown name like the name.
 - **Collisions:** a rule's optional `collision` template (e.g. `{signal} ({message})`) applies to rule-made names only; a rename stays as written; names still alike fall back to full names with a server warning. Lists stay ordered by full name; names without hex ID are shortened too.
 
 ## D-035: Display names from a project YAML (2026-10-15)
 
-- **Decision:** Jan: the UI shows short signal names (`V_ANZ` instead of `COMBI_412h.V_ANZ`), defined per project in a YAML. The YAML holds pattern rules (regex with named groups and a `show` template; first match wins) plus an optional `rename` map for single signals (rename beats rules). When two signals get the same shown name, both show the short name plus a message suffix, e.g. `V_ANZ (COMBI)`. The full source name stays in the hover card and tooltips; search matches full name, short name and message alike; CLI and API keep the stable full IDs. Lead's defaults: the file is `letsview.yaml` in the repo root, path overridable by env; no file or no matching rule shows the full name as today.
+- **Decision:** Jan: the UI shows short signal names (`V_ANZ` instead of `COMBI_412h.V_ANZ`), defined per project in a YAML. The YAML holds pattern rules (regex with named groups and a `show` template; first match wins) plus an optional `rename` map for single signals (rename beats rules). When two signals get the same shown name, both show the short name plus a message suffix, e.g. `V_ANZ (COMBI)`. The full source name stays in the hover card and tooltips; search matches full name, short name and message alike; CLI and API keep the stable full IDs. Lead's defaults: the file is `kipscope.yaml` in the repo root, path overridable by env; no file or no matching rule shows the full name as today.
 - **Why:** Jan: „the signal names. no one is interested in hex. so it will be just V_ANZ in this case. However: this is different in each project. so a yaml shall be able to define whats shown in the ui". Picks: rules + renames, short + message suffix on collisions, full name in hover card/tooltips, search on both, CLI keeps full IDs.
 
 ## D-034: Live cursor conventions (2026-10-15)
@@ -287,7 +293,7 @@ From the archived change [add-timeseries-skeleton](../openspec/changes/archive/2
 
 ## D-004: Build our own (2026-10-14)
 
-- **Decision:** letsview is a custom build. Grafana, ibaAnalyzer, PlotJuggler and Seeq (concept §11) serve as references only.
+- **Decision:** KIPscope is a custom build. Grafana, ibaAnalyzer, PlotJuggler and Seeq (concept §11) serve as references only.
 - **Why:** Decided by the user; resolves the build/buy question of concept §12.
 
 ## D-003: Commit and push at session end (2026-10-14)

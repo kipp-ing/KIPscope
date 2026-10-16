@@ -2,7 +2,7 @@
 
 ## Why
 
-letsview starts from an empty repo. Before cursors, CLI control and persistence can be built, the core path from the concept ([docs/concept.md](../../../docs/concept.md)) must work end to end: pick signals from ClickHouse, show them in a time-series window, and zoom from a ten-hour overview down to raw milliseconds without loading millions of points. This change builds that walking skeleton and fixes the architecture the later features rely on (D-004, D-005, D-006).
+KIPscope starts from an empty repo. Before cursors, CLI control and persistence can be built, the core path from the concept ([docs/concept.md](../../../docs/concept.md)) must work end to end: pick signals from ClickHouse, show them in a time-series window, and zoom from a ten-hour overview down to raw milliseconds without loading millions of points. This change builds that walking skeleton and fixes the architecture the later features rely on (D-004, D-005, D-006).
 
 ## What Changes
 
@@ -30,6 +30,6 @@ Out of scope here (later changes): cursors A/B and differences, CLI, undo, save/
 ## Impact
 
 - New code: server, browser UI, shared package; new dependencies (ClickHouse client, charting library, web framework — chosen in design.md).
-- carserver (serverzoo): new read-only ClickHouse user `letsview`; ClickHouse stays bound to localhost. The machine is small (2 GB RAM, 512 MiB and 8 concurrent queries max), so letsview must keep its query load bounded.
+- carserver (serverzoo): new read-only ClickHouse user `letsview`; ClickHouse stays bound to localhost. The machine is small (2 GB RAM, 512 MiB and 8 concurrent queries max), so KIPscope must keep its query load bounded.
 - Reads DBC files from the CarController repo (`vehicles/smart451/dbc/`).
 - Requires Docker for the local test database.

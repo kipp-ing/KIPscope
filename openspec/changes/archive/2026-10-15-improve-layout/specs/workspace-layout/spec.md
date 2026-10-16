@@ -94,7 +94,7 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 
 #### Scenario: Idle strip
 - **WHEN** the app is connected at revision n and no drag runs
-- **THEN** the bottom strip reads `connected · revision n`, no "letsview" top bar is shown, and the top row holds "Signals" followed by the option bar
+- **THEN** the bottom strip reads `connected · revision n`, no "KIPscope" top bar is shown, and the top row holds "Signals" followed by the option bar
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Error in the strip

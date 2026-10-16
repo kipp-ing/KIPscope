@@ -3,7 +3,7 @@ import {
   isTimeseries,
   type TimeseriesWindow,
   type Workspace,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { snapCursorTime } from "../chart/cursors.ts";
 
 const NS_PER_S = 1_000_000_000n;

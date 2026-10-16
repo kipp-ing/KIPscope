@@ -1,4 +1,4 @@
-import type { ClientRenderStatus, RenderError, RenderStatus } from "@letsview/shared";
+import type { ClientRenderStatus, RenderError, RenderStatus } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { NO_UI_GRACE_MS, POLL_MS, waitForRender } from "../src/wait.ts";
 

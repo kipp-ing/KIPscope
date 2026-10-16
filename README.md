@@ -1,4 +1,4 @@
-# letsview
+# KIPscope
 
 Interactive workspace for exploring recorded vehicle time series (CAN signals in ClickHouse): search signals, lay them out in linked chart windows, zoom from a whole drive down to single samples, and read exact values and differences with two cursors. Everything in the UI is also a command, so a CLI (or an agent) can drive the same workspace.
 
@@ -18,7 +18,7 @@ Interactive workspace for exploring recorded vehicle time series (CAN signals in
 | `packages/shared` | Workspace model and commands (`apply.ts`), series encoding, cursor evaluation, number and time formats; used by all three apps |
 | `apps/server` | HTTP API on port 7310: signal catalog from the DBC, resolution-aware series queries, cursor values, the workspace and its live channel |
 | `apps/web` | React + uPlot UI on port 5173 |
-| `apps/cli` | `letsview` command line, see [CLI](#cli) |
+| `apps/cli` | `kipscope` command line, see [CLI](#cli) |
 
 ## Setup
 
@@ -39,13 +39,13 @@ scripts/tunnel.sh status   # keeper running? ClickHouse answering on 18123?
 scripts/tunnel.sh stop
 ```
 
-The keeper runs `ssh -N -L 18123:localhost:8123 jan@192.168.42.207` in a loop (host: `LETSVIEW_TUNNEL_HOST`); log in `$TMPDIR/letsview-tunnel.log`.
+The keeper runs `ssh -N -L 18123:localhost:8123 jan@192.168.42.207` in a loop (host: `KIPSCOPE_TUNNEL_HOST`); log in `$TMPDIR/kipscope-tunnel.log`.
 
 **Test database (automated tests):** local ClickHouse with synthetic data:
 
 ```sh
 docker compose up -d
-pnpm --filter @letsview/server seed:test
+pnpm --filter @kipscope/server seed:test
 ```
 
 The seed script refuses to run if `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` name the same host and port (`localhost`, `127.0.0.1` and `[::1]` count as one host).
@@ -53,13 +53,13 @@ The seed script refuses to run if `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` nam
 ## Run
 
 ```sh
-pnpm --filter @letsview/server dev   # server
-pnpm --filter @letsview/web dev      # UI at http://localhost:5173, proxies /api to the server
+pnpm --filter @kipscope/server dev   # server
+pnpm --filter @kipscope/web dev      # UI at http://localhost:5173, proxies /api to the server
 ```
 
-The UI's dev server proxies `/api` and the live channel to `LETSVIEW_SERVER_URL` (default `http://127.0.0.1:7310`).
+The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL` (default `http://127.0.0.1:7310`).
 
-The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `LETSVIEW_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `LETSVIEW_HOST` logs a warning at start: there is no authentication.
+The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `KIPSCOPE_HOST` logs a warning at start: there is no authentication.
 
 ## Using the app
 
@@ -84,7 +84,7 @@ The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or 
 
 ## Display names
 
-The UI shows short signal names from the project file `letsview.yaml` in the repo root (keys explained in [letsview.example.yaml](letsview.example.yaml)). The shipped rules shorten every smart451 name to the part after the message:
+The UI shows short signal names from the project file `kipscope.yaml` in the repo root (keys explained in [kipscope.example.yaml](kipscope.example.yaml)). The shipped rules shorten every smart451 name to the part after the message:
 
 ```yaml
 display:
@@ -108,7 +108,7 @@ display:
 - `rename` beats every rule and gets no collision suffix.
 - Collisions are checked over the whole catalog: rule-made names take their `collision` suffix; names still shared fall back to the full name (logged as `warn`).
 - Only the UI changes: explorer, legend, values window and drag ghost show the short name; hover card and name tooltips show the full name; search matches short name, message and full name. IDs, API, CLI and workspace keep full names.
-- `LETSVIEW_PROJECT_FILE` points to another file (relative to the repo root); it must then exist. Without it a missing `letsview.yaml` means full names.
+- `KIPSCOPE_PROJECT_FILE` points to another file (relative to the repo root); it must then exist. Without it a missing `kipscope.yaml` means full names.
 - Restart the server after editing the file. An invalid file (YAML syntax, unknown key, bad regex, unknown group in a template) stops the server with one line per problem.
 
 ## Check
@@ -122,14 +122,14 @@ pnpm lint    # pnpm format to fix
 
 ## CLI
 
-`letsview` controls the open workspace through the server's HTTP API (spec [cli](openspec/specs/cli/spec.md)). Run it from the repo root while the server runs:
+`kipscope` controls the open workspace through the server's HTTP API (spec [cli](openspec/specs/cli/spec.md)). Run it from the repo root while the server runs:
 
 ```sh
 node apps/cli/src/main.ts --help
 node apps/cli/src/main.ts state
 ```
 
-Server: `--server URL` (an `http://` or `https://` URL), else `LETSVIEW_URL`, else `http://localhost:7310`. Global options anywhere on the line: `--wait` (block until an open UI rendered the command), `--timeout DURATION` (default `30s`), `--pretty`, `--help`; `--` ends options.
+Server: `--server URL` (an `http://` or `https://` URL), else `KIPSCOPE_URL`, else `http://localhost:7310`. Global options anywhere on the line: `--wait` (block until an open UI rendered the command), `--timeout DURATION` (default `30s`), `--pretty`, `--help`; `--` ends options.
 
 W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/`±HH:MM`, local wall time `YYYY-MM-DD[T ]HH:MM[:SS[.fffffffff]]` in the process's zone (`TZ`), or a cursor anchor `a`, `b+500ms`, `a-1s`. DURATION is `[+-]<number><unit>` with `ns us µs ms s min h`. SIGNAL is a full ID (`smart451/COMBI_412h.V_ANZ`) or a unique bare name (`V_ANZ`); REF is an assignment ID (`a7`) or a signal in window W.
 

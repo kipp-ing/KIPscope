@@ -5,7 +5,7 @@ import {
   type RawSeries,
   type SeriesResult,
   TIME_MAX,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
 import { SeriesCache } from "../src/chart/cache.ts";

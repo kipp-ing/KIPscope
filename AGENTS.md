@@ -1,6 +1,6 @@
 # AGENTS.md
 
-letsview: a workspace for exploring historical time series. Concept (German, source of requirements): [docs/concept.md](docs/concept.md).
+KIPscope: a workspace for exploring historical time series. Concept (German, source of requirements): [docs/concept.md](docs/concept.md).
 
 ## Rules
 

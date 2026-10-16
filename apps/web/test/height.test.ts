@@ -1,4 +1,4 @@
-import type { TimeseriesWindow } from "@letsview/shared";
+import type { TimeseriesWindow } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
   draggedHeight,

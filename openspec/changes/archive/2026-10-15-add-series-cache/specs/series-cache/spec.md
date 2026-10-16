@@ -134,4 +134,4 @@ A window SHALL count as settled when every tile of each signal's current view is
 #### Scenario: Cached view settles at once
 - **WHEN** a window's new view is fully cached
 - **THEN** the loader is settled in the same update, with no pending request
-- **Evidence:** `apps/web/test/loader.test.ts` › "is settled only when every current request has finished" (kept) and "draws a previous view again without a request" (settled right after the update); UI check with the CLI: on a window `<w>` zoomed from its overview into one hour, `letsview --wait window range <w> <the overview's from> <the overview's to>` exits 0 and reports `complete`
+- **Evidence:** `apps/web/test/loader.test.ts` › "is settled only when every current request has finished" (kept) and "draws a previous view again without a request" (settled right after the update); UI check with the CLI: on a window `<w>` zoomed from its overview into one hour, `kipscope --wait window range <w> <the overview's from> <the overview's to>` exits 0 and reports `complete`

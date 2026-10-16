@@ -9,7 +9,7 @@ Precondition: `add-cursors`, `add-cli` and `improve-navigation` are archived (or
 
 ## 1. packages/shared
 
-- [x] 1.1 In `src/workspace.ts` and `src/apply.ts` add `removedWindow?: string` to `CommandResult` and `ApplyResult` (S1). In `window.moveSignal`, after placing the assignment and only for a move (not a copy), remove a source left without signals exactly as `window.remove` does (filter, `pruneColors`, clear `lastZoomed` when it named the source) and return `removedWindow` (L7). A move into a new window creates it from the source first. Verify the `apply.test.ts` tests of 4.1 pass and the rest of `pnpm --filter @letsview/shared test` stays green.
+- [x] 1.1 In `src/workspace.ts` and `src/apply.ts` add `removedWindow?: string` to `CommandResult` and `ApplyResult` (S1). In `window.moveSignal`, after placing the assignment and only for a move (not a copy), remove a source left without signals exactly as `window.remove` does (filter, `pruneColors`, clear `lastZoomed` when it named the source) and return `removedWindow` (L7). A move into a new window creates it from the source first. Verify the `apply.test.ts` tests of 4.1 pass and the rest of `pnpm --filter @kipscope/shared test` stays green.
 
 ## 2. apps/server and apps/cli
 

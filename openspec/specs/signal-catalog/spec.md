@@ -64,7 +64,7 @@ The UI SHALL offer a signal explorer that searches the catalog and lists each re
 - **THEN** the signal appears in that window
 
 #### Scenario: SNA values shown in explorer
-- **WHEN** the user searches for `V_ANZ` on real data with the shipped `letsview.yaml`
+- **WHEN** the user searches for `V_ANZ` on real data with the shipped `kipscope.yaml`
 - **THEN** the row `V_ANZ` (`COMBI_412h.V_ANZ`) shows an SNA dot whose tooltip reads `SNA 511 km/h`, its hover card shows `511 km/h (raw 1FFh)` under SNA, and the row `SZS` (`BS_208h.SZS`, no SNA codes, D-014) shows no dot
 - **Evidence:** UI check (screenshot of the explorer with the V_ANZ card open)
 
@@ -229,7 +229,7 @@ For a signal with a DBC entry the catalog SHALL return the DBC file it came from
 The explorer SHALL highlight every matched part of the query terms in the shown name and unit of each row, and in the full name and description inside the hover card. Overlapping matches SHALL be shown as one highlight. Origin: D-018 ("match highlighting"); shown name in the row, full name in the card: D-035.
 
 #### Scenario: Highlight in the name
-- **WHEN** the user searches for `volt` on real data with the shipped `letsview.yaml`
+- **WHEN** the user searches for `volt` on real data with the shipped `kipscope.yaml`
 - **THEN** the row `PTC_HV_Volt` (`CPC_448h.PTC_HV_Volt`) shows `Volt` highlighted (one `<mark>` element) and the rest of the name plain
 - **Evidence:** UI check (screenshot; `document.querySelectorAll('.explorer mark')` text); `packages/shared/test/search.test.ts` › "returns merged highlight ranges for name, unit and description" (`volt` on `CPC_448h.PTC_HV_Volt` → name `[[16, 20]]`; `v_a anz` on `COMBI_412h.V_ANZ` → `[[11, 16]]`) and › "returns highlight ranges in the shown name" (`volt` on `CPC_448h.PTC_HV_Volt` shown `PTC_HV_Volt` → shown `[[7, 11]]`; without `displayName` shown ranges equal name ranges; empty query → `[]`)
 
@@ -322,7 +322,7 @@ The explorer SHALL support: `/` focuses the search field when focus is not in a 
 Pressing on an explorer row's name and moving the pointer SHALL start the app's pointer drag (design S3) with that signal; the ghost SHALL show the signal's shown name. Windows that do not show it and stay within four units SHALL be highlighted with "Drop to add"; one that would reach a fifth unit SHALL be marked not droppable ("At most 4 units per window") and ignore a drop. A drop adds, never moves; Alt/Ctrl change nothing. The add button SHALL NOT start a drag. Origin: D-020 (explorer drag; fifth unit refused as for legend drags); shown name in the ghost: D-035.
 
 #### Scenario: Drag a row onto a window
-- **WHEN** a window exists that does not show `COMBI_412h.V_ANZ`, and the user drags the `V_ANZ` row onto it with the mouse (shipped `letsview.yaml`)
+- **WHEN** a window exists that does not show `COMBI_412h.V_ANZ`, and the user drags the `V_ANZ` row onto it with the mouse (shipped `kipscope.yaml`)
 - **THEN** windows not showing V_ANZ are highlighted with "Drop to add" while dragging, a window showing it is not highlighted, the ghost reads `V_ANZ · add` over a valid target, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
 - **Evidence:** UI check (screenshot during the drag and after the drop); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
 

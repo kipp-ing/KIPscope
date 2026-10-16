@@ -4,7 +4,7 @@ import {
   MAX_UNITS,
   type WorkspaceWindow,
   windowUnits,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 
 /** A legend row or a values row (design C7): both name their window and assignment. */
 export interface DragSource {

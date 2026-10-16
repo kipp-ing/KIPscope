@@ -13,7 +13,7 @@ import {
   shownName,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { flushSync } from "react-dom";

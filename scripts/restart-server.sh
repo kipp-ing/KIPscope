@@ -1,10 +1,10 @@
 #!/bin/sh
-# Restarts the letsview dev server on port 7310.
+# Restarts the KIPscope dev server on port 7310.
 # Stops only a node process running src/main.ts; anything else on the port aborts (Docker Desktop owns forwarded ports).
 set -eu
 cd "$(dirname "$0")/.."
 PORT=7310
-LOG="${TMPDIR:-/tmp}/letsview-server.log"
+LOG="${TMPDIR:-/tmp}/kipscope-server.log"
 
 for pid in $(lsof -nP -tiTCP:$PORT -sTCP:LISTEN || true); do
   cmd=$(ps -o command= -p "$pid")

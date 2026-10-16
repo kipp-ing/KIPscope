@@ -1,5 +1,5 @@
 {
-  "name": "@letsview/web",
+  "name": "@kipscope/web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "test": "TZ=Europe/Berlin vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@letsview/shared": "workspace:*",
+    "@kipscope/shared": "workspace:*",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "uplot": "1.6.32"

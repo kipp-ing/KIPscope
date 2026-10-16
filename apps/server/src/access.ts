@@ -8,7 +8,7 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 export interface AccessOptions {
-  /** LETSVIEW_HOST when neither loopback nor 0.0.0.0/::. */
+  /** KIPSCOPE_HOST when neither loopback nor 0.0.0.0/::. */
   extraHost?: string;
 }
 

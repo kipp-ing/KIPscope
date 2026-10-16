@@ -8,7 +8,7 @@ Precondition: `add-cursors` is archived before this change (its deltas are the b
 
 ## What Changes
 
-- **New CLI** `letsview` (package `apps/cli`, run with Node like the server, no new runtime dependency). It speaks only the existing HTTP API of the server.
+- **New CLI** `kipscope` (package `apps/cli`, run with Node like the server, no new runtime dependency). It speaks only the existing HTTP API of the server.
 - **Every workspace command** has a CLI form: windows (create timeseries or values window, remove, rename, height, range, display), the link flag, signals (add, remove, move or copy), cursors (set, move by a duration, remove), diff mode. A raw form `command '<json>'` sends any command of the shared command model.
 - **Reads:** `state` (workspace, revision, render status of every connected UI, cursor and range times in local time), `search`, `extent`, and `value` (a signal's value at a time, as the values window shows it).
 - **Machine-readable results:** one JSON object per call on stdout, with the outcome and fixed exit codes for ok, rejected, usage error, server unreachable, timeout, rendered with data errors, no UI connected, and data source unavailable.
@@ -23,7 +23,7 @@ Out of scope: playback ("Historische Cursorbewegung", concept §7), save/load, s
 ## Capabilities
 
 ### New Capabilities
-- `cli`: the `letsview` command-line client: command forms, reads, output and exit codes, time and signal references, and waiting for the UI's render acknowledgement.
+- `cli`: the `kipscope` command-line client: command forms, reads, output and exit codes, time and signal references, and waiting for the UI's render acknowledgement.
 
 ### Modified Capabilities
 - `workspace-state`: "Render acknowledgement" pins `GET /api/render-status` (current revision, every connected UI with its last acknowledged revision, status and errors), which the CLI's wait builds on.
@@ -31,7 +31,7 @@ Out of scope: playback ("Historische Cursorbewegung", concept §7), save/load, s
 ## Impact
 
 - `packages/shared`: new `src/localtime.ts` (`formatLocal`, `parseTime`, `parseDuration`), exported from `index.ts`; the package's test script runs with `TZ=Europe/Berlin` like the web's.
-- `apps/cli` (new): `package.json` (bin `letsview`), `tsconfig.json`, `src/main.ts`, `src/run.ts`, `src/args.ts`, `src/refs.ts`, `src/client.ts`, `src/wait.ts`, `src/output.ts`; README section "CLI".
+- `apps/cli` (new): `package.json` (bin `kipscope`), `tsconfig.json`, `src/main.ts`, `src/run.ts`, `src/args.ts`, `src/refs.ts`, `src/client.ts`, `src/wait.ts`, `src/output.ts`; README section "CLI".
 - `apps/server`, `apps/web`: no source change. A web test asserts that the UI's `formatFull` and the shared `formatLocal` agree.
 - Tests: `packages/shared/test/localtime.test.ts`, `apps/cli/test/*.test.ts` (in-process server with a stub source and a fake browser over `WS /api/live`), `apps/web/test/axis.test.ts` (one added case).
 - `pnpm install` once for the new workspace package (lockfile).

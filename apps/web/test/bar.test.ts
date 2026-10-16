@@ -4,7 +4,7 @@ import {
   type TimeseriesWindow,
   type ValuesWindow,
   type Workspace,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { barTarget, defaultCursorTime, resetSignals } from "../src/bar/bar.ts";
 

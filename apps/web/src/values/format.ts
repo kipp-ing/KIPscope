@@ -6,7 +6,7 @@ import {
   formatQuantity,
   type NoValueReason,
   parseTimestamp,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { formatDate, formatFull } from "../time/axis.ts";
 
 /** One value cell of the values window and the chart readout (design S4). */

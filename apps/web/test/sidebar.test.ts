@@ -21,7 +21,7 @@ const key = (k: string, mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: b
 
 describe("sidebar state", () => {
   it("loads and saves the sidebar state, open by default and when storage fails", () => {
-    expect(SIDEBAR_STORAGE_KEY).toBe("letsview.sidebar");
+    expect(SIDEBAR_STORAGE_KEY).toBe("kipscope.sidebar");
     expect(SIDEBAR_WIDTH_PX).toBe(240);
 
     const data = new Map<string, string>();
@@ -33,14 +33,14 @@ describe("sidebar state", () => {
     expect(loadSidebar(storage)).toBe("open");
     // Round trip of both states, under the documented key and value.
     saveSidebar(storage, "collapsed");
-    expect(data.get("letsview.sidebar")).toBe("collapsed");
+    expect(data.get("kipscope.sidebar")).toBe("collapsed");
     expect(loadSidebar(storage)).toBe("collapsed");
     saveSidebar(storage, "open");
-    expect(data.get("letsview.sidebar")).toBe("open");
+    expect(data.get("kipscope.sidebar")).toBe("open");
     expect(loadSidebar(storage)).toBe("open");
     // An unknown stored value falls back to open.
     for (const junk of ["", "closed", "OPEN", "1", "null"]) {
-      data.set("letsview.sidebar", junk);
+      data.set("kipscope.sidebar", junk);
       expect(loadSidebar(storage)).toBe("open");
     }
     // Missing storage and throwing storage: open, and saving never throws.

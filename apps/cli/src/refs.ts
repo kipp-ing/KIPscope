@@ -5,7 +5,7 @@ import {
   TIME_MAX,
   TIME_MIN,
   type Workspace,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import type { CommandTemplate, RefArg, SignalArg, TimeArg } from "./args.ts";
 import { CliError } from "./output.ts";
 

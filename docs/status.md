@@ -7,7 +7,7 @@ As of 2026-10-15, end of session 5. No change in flight; all fourteen changes ar
 | Capability | Spec | In short |
 |---|---|---|
 | Signal catalog | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Signals with DBC metadata and SNA rules; ranked search, hover card, keyboard and drag in the explorer |
-| Display names | [display-names](../openspec/specs/display-names/spec.md) | `letsview.yaml` rules and renames give short names (`V_ANZ`) in the UI; full name in card and tooltips; search on both |
+| Display names | [display-names](../openspec/specs/display-names/spec.md) | `kipscope.yaml` rules and renames give short names (`V_ANZ`) in the UI; full name in card and tooltips; search on both |
 | Series cache | [series-cache](../openspec/specs/series-cache/spec.md) | Power-of-two tiles kept in tab memory (LRU, 4 M values); zoom/pan back without a request |
 | Series queries | [series-query](../openspec/specs/series-query/spec.md) | Raw points or min/mean/max buckets by zoom level; SNA as `null`; verified on 10 h at 5 ms |
 | Workspace | [workspace-state](../openspec/specs/workspace-state/spec.md) | Command-driven state with revisions, live push and render acknowledgement |

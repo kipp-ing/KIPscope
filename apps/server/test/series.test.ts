@@ -9,7 +9,7 @@ import {
   TIME_MAX,
   TIME_MIN,
   toIso,
-} from "@letsview/shared";
+} from "@kipscope/shared";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Catalog } from "../src/catalog.ts";
 import { loadDbcFiles } from "../src/dbc.ts";

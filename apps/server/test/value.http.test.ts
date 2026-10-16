@@ -1,4 +1,4 @@
-import { fromIso } from "@letsview/shared";
+import { fromIso } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";

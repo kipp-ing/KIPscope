@@ -4,7 +4,7 @@
 
 See proposal.md (Why) and D-025, D-026, D-027. Current state after `add-cursors`, `add-cli` and `improve-navigation` (the base of this change):
 
-- **Page shell (`App.tsx`, `styles.css`).** `.app` is a two-column CSS grid: explorer `clamp(200px, 26vw, 340px)` (340 px from a 1308 px viewport) and `.workspace`. `.workspace` is a flex column: `<main>` (scrolls; top bar "letsview · connected · revision n · message", then the sticky `.option-bar-slot`, then the windows one per row with `margin-bottom: 12px`) and below it the `.drop-new` zone, which keeps its ~56 px permanently and is `visibility: hidden` outside a drag (add-cursors C7).
+- **Page shell (`App.tsx`, `styles.css`).** `.app` is a two-column CSS grid: explorer `clamp(200px, 26vw, 340px)` (340 px from a 1308 px viewport) and `.workspace`. `.workspace` is a flex column: `<main>` (scrolls; top bar "KIPscope · connected · revision n · message", then the sticky `.option-bar-slot`, then the windows one per row with `margin-bottom: 12px`) and below it the `.drop-new` zone, which keeps its ~56 px permanently and is `visibility: hidden` outside a drag (add-cursors C7).
 - **Window header.** Timeseries: title button (click renames), badge (`resolutionLabel`: `raw`, `aggregated · 2 min per point`, `partly aggregated · …`, coloured green/yellow), range, spacer, Mode select, Min/max, then the zoom controls (which `improve-navigation` reduces per D-025) and Remove. Values: title, cursor times, spacer, "Between points" select, Remove. A flex row with `nowrap`; the range shrinks first. Badge and range texts change length on zoom, and the controls after the spacer move with them only when the header overflows; the designer saw the Back button move after a zoom.
 - **"Add to".** `SignalExplorer` holds `target` (window ID or `NEW_WINDOW`) in its own state; `resolveTarget` falls back to `NEW_WINDOW` when the window is gone (D-022).
 - **Moves.** `applyCommand` `window.moveSignal` filters the assignment out of the source and leaves the window, empty or not. `window.remove` deletes the window, prunes colours and clears `lastZoomed`.
@@ -29,7 +29,7 @@ See proposal.md (Why) and D-025, D-026, D-027. Current state after `add-cursors`
 - Open: `.app { grid-template-columns: 240px minmax(0, 1fr) }`. Collapsed: `.app.sidebar-collapsed { grid-template-columns: minmax(0, 1fr) }` and `.explorer { display: none }`. The explorer stays mounted, so query, active row and the `/` listener survive.
 - One toggle, always in the same place: a "Signals" button at the left end of the top row (`aria-expanded`, tooltip "Hide signals (s)" / "Show signals (s)"). Alternatives: a collapse arrow inside the sidebar plus a 32 px rail when collapsed (costs width and two controls); a popover on `/` (that is the later sidebar work package).
 - Key `s` (no modifier, focus not in a text field or select, via `isTextField`) toggles. A select is excluded because letter keys pick options there. `/` keeps D-020's meaning: if collapsed, App opens the sidebar and the explorer focuses and selects the search after the open render.
-- Remembered in `localStorage["letsview.sidebar"]` = `"open" | "collapsed"`, every access in try/catch, default and fallback `"open"`. Not workspace state: two viewers of one workspace can have different screens.
+- Remembered in `localStorage["kipscope.sidebar"]` = `"open" | "collapsed"`, every access in try/catch, default and fallback `"open"`. Not workspace state: two viewers of one workspace can have different screens.
 - No animation: the plots resize once through their `ResizeObserver`.
 
 | Number | Value | Half | Double |
@@ -89,7 +89,7 @@ A classic scrollbar (up to 15 px) narrows the list: at 1000 px collapsed the lis
 
 ### L6: The mark is view state (recommendation)
 
-The mark lives in App state of one browser tab, like the old select and the zoom history: no command, no revision, gone on reload. Pro: no shared-model change, no CLI change, two viewers do not fight over one target, and a stale ID after a server restart (IDs restart at `w1`) cannot point at the wrong window. Con: a CLI or AI caller cannot see where the user's adds go. Alternative: `Workspace.marked?: string` with a command `window.mark {windowId | null}`, in `GET /api/workspace` and `letsview state` (concept §7 „auslesbarer Zustand"); costs one shared command, one CLI form and tests in three packages. Q1 (direction).
+The mark lives in App state of one browser tab, like the old select and the zoom history: no command, no revision, gone on reload. Pro: no shared-model change, no CLI change, two viewers do not fight over one target, and a stale ID after a server restart (IDs restart at `w1`) cannot point at the wrong window. Con: a CLI or AI caller cannot see where the user's adds go. Alternative: `Workspace.marked?: string` with a command `window.mark {windowId | null}`, in `GET /api/workspace` and `kipscope state` (concept §7 „auslesbarer Zustand"); costs one shared command, one CLI form and tests in three packages. Q1 (direction).
 
 ### L7: Auto-remove inside `window.moveSignal`
 
@@ -179,7 +179,7 @@ DOM and CSS:
 ```ts
 // apps/web/src/layout/sidebar.ts (3.1)
 export type SidebarState = "open" | "collapsed";
-export const SIDEBAR_STORAGE_KEY = "letsview.sidebar";
+export const SIDEBAR_STORAGE_KEY = "kipscope.sidebar";
 export const SIDEBAR_WIDTH_PX = 240;
 /** Unknown value, missing or throwing storage → "open". */
 export function loadSidebar(storage: Pick<Storage, "getItem"> | undefined): SidebarState;
