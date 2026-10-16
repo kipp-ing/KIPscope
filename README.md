@@ -172,3 +172,7 @@ Examples:
 node apps/cli/src/main.ts --wait window create --title Speeds --from "2026-10-13 15:08:00" --to "2026-10-13 15:08:03"
 node apps/cli/src/main.ts state | jq -r .local.cursors.a   # 2026-10-13 15:08:01.500+02:00
 ```
+
+## License
+
+[Attribution Assurance License](LICENSE) (SPDX `AAL`). © 2026 Jan Kipping, Agentic engineer · [kipp.ing](https://kipp.ing). The GPG-signed license text is [LICENSE.asc](LICENSE.asc); verify with `gpg --import KEYS.asc && gpg --verify LICENSE.asc` (key `1E3BF6DE3CC6227749622E8EA53393CE9B74E4F7`).

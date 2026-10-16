@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-049: Attribution Assurance License (2026-10-16)
+
+- **Decision:** Jan: KIPscope is licensed under the AAL (SPDX `AAL`). Author attribution: Jan Kipping, Agentic engineer, https://kipp.ing, "efficient agentic engineering". `LICENSE` holds the text, `LICENSE.asc` the GPG-clearsigned copy clause 1 asks for, `KEYS.asc` the public key (ed25519, `1E3BF6DE3CC6227749622E8EA53393CE9B74E4F7`, valid until 2028-10-15). Every package.json says `"license": "AAL"`.
+- **Key:** created on Jan's Mac without a passphrase (Jan's choice; add one with `gpg --passwd`). Revocation certificate in `~/.gnupg/openpgp-revocs.d/`.
+- **Consequences:** a changed `LICENSE` must be signed again (`gpg --clearsign --output LICENSE.asc LICENSE`). The app shows the attribution itself (change `add-footer`).
+
 ## D-048: Renamed to KIPscope (2026-10-16)
 
 - **Decision:** Jan: the project is called KIPscope. Prose uses `KIPscope`; packages, CLI, files and paths use `kipscope` (`@kipscope/*`, `kipscope.yaml`); env vars use `KIPSCOPE_*`; agents use `ks-*`. All references were rewritten, past ledger entries and archived changes included.

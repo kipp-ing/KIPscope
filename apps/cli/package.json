@@ -1,6 +1,7 @@
 {
   "name": "@kipscope/cli",
   "private": true,
+  "license": "AAL",
   "type": "module",
   "bin": {
     "kipscope": "src/main.ts"

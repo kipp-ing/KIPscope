@@ -1,6 +1,7 @@
 {
   "name": "@kipscope/server",
   "private": true,
+  "license": "AAL",
   "type": "module",
   "scripts": {
     "build": "tsc -p .",

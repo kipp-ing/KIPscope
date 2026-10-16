@@ -1,6 +1,7 @@
 {
   "name": "@kipscope/web",
   "private": true,
+  "license": "AAL",
   "type": "module",
   "scripts": {
     "dev": "vite",
