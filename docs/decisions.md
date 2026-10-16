@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-067: Session kinds (2026-10-17)
+
+- **Decision:** For the later split of the data stream into sessions: a **driving** session covers at least 500 m driven; a **charging** session at least 0.5 kWh charged (not measured yet); everything else is **idle**.
+- **Why:** Jan (2026-10-17): „a driving session has at least 500m drive. a charging seesion has at leat 0.5kwh charged ( not measured yet) the rest ist idle.“ Backlog, not specced yet.
+
 ## D-066: Multi-select drops overflow by units (2026-10-17)
 
 From the archived change `add-multi-select`; details there.
