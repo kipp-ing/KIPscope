@@ -15,9 +15,9 @@ Today the bottom of the page is the status strip (`connected · revision n`, the
 - **Measurement info** (new capability `measurement-info`): part of the workspace (`workspace.measurement`), so `kipscope state` reports it and revisions, live push and `--wait` apply. Start value from a new optional `measurement` section in `kipscope.yaml` (read once at start, like the display rules); changed at runtime by three commands `measurement.set {name?, object?}`, `measurement.setMeta {key, value}` and `measurement.clear`, which win until the server restarts. CLI: `measurement name TEXT`, `measurement object TEXT`, `measurement meta KEY VALUE`, `measurement clear`. Limits: name and object 120 characters, at most 8 meta entries with keys of 40 and values of 200 characters, one line each.
 - **Automatic meta items**, small and separate from Jan's fields, from a new `GET /api/meta` unless noted: data source `ClickHouse sdlog` coloured by a ping of the source; catalog `1234 signals` (or loading / unavailable); the browser's time zone `Europe/Berlin`; the server's short git commit at start (`7c1e2a9`, `*` when dirty).
 - **Fitting:** one line of at most 32 px at 1440×900 and 1000×557. When space runs short, whole items drop out in a fixed order (build, time zone, catalog, measurement meta entries, source, object, name), measurement texts are cut at 40 characters, status and attribution are never cut; below the width they need, the attribution moves to a right-aligned second line.
-- **Attribution outside the UI** (pending Jan, design Q4): the last line of `kipscope --help` and one log line at server start.
+- **Attribution outside the UI** (Jan, design Q4): the last line of `kipscope --help` and one log line at server start.
 
-**Out of scope:** editing measurement info in the UI (design Q8); persisting measurement info across restarts or writing it back to the YAML (comes with persistence); a time zone selector (concept §8, its own change); a semantic version or release process; serving `LICENSE.asc` or `KEYS.asc`; a link to the GitHub repository (design Q2); an about dialog; data references, uptime, query load or any other automatic item beyond the four above; the footer in the sidebar column; changing the "+ New window" drop behaviour; any change to `server-access` (the new routes pass its guard like every route).
+**Out of scope:** editing measurement info in the UI (design Q8); persisting measurement info across restarts or writing it back to the YAML (comes with persistence); a time zone selector (concept §8, its own change); a semantic version or release process (Jan: a version tag comes later, Q3); serving `LICENSE.asc` or `KEYS.asc`; a link to the GitHub repository (design Q2); an about dialog; data references, uptime, query load or any other automatic item beyond the four above; the footer in the sidebar column; changing the "+ New window" drop behaviour; any change to `server-access` (the new routes pass its guard like every route).
 
 ## Capabilities
 
@@ -29,7 +29,7 @@ Today the bottom of the page is the status strip (`connected · revision n`, the
 ### Modified Capabilities
 
 - `workspace-layout`: "Top row and status strip": the strip also carries the footer; during a drag the attribution stays next to "+ New window".
-- `cli`: `--help` ends with the attribution line (pending Jan, design Q4); new `measurement` forms.
+- `cli`: `--help` ends with the attribution line (Jan, design Q4); new `measurement` forms.
 
 ## Impact
 

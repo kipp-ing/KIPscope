@@ -52,13 +52,13 @@ The project file (read once at start, `display-names` "Project file location") M
 - **Evidence:** `apps/server/test/project.test.ts` › "reads the measurement section"; `apps/server/test/workspace.http.test.ts` › "starts with the measurement from the project file"
 
 #### Scenario: Commands win until restart
-- **WHEN** the server started with that file, `kipscope measurement name "Run 2"` runs, and the server is restarted
-- **THEN** after the command the name is `Run 2`; after the restart it is `Testfahrt A9` again and the file is unchanged
-- **Evidence:** lead's manual check (`curl -s localhost:7310/api/workspace | jq -r .workspace.measurement.name` before and after `scripts/restart-server.sh`; `git diff --quiet kipscope.yaml`)
+- **WHEN** the server started with the shipped `kipscope.yaml` (object `smart451`), `kipscope measurement object testcar` runs, and the server is restarted
+- **THEN** after the command the object is `testcar`; after the restart it is `smart451` again and the file is unchanged
+- **Evidence:** lead's manual check (`curl -s localhost:7310/api/workspace | jq -r .workspace.measurement.object` before and after `scripts/restart-server.sh`; `git diff --quiet kipscope.yaml`)
 
 #### Scenario: Display rules unchanged
 - **WHEN** the shipped `kipscope.yaml` is loaded, and a file with only a `measurement` section is loaded
-- **THEN** the first gives the same display rules as before this change and no measurement info; the second gives no rules and the measurement info
+- **THEN** the first gives the same display rules as before this change and the measurement info `{object: "smart451"}` (Jan, Q7); the second gives no rules and the measurement info
 - **Evidence:** `apps/server/test/project.test.ts` existing tests stay green, plus › "reads the measurement section"
 
 ### Requirement: Invalid measurement section stops the server

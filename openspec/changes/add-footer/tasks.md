@@ -31,7 +31,7 @@ Every task has its own files; all build in one round against the interfaces pinn
 - [ ] 2.2 Measurement section of the project file (F7):
   - `project.ts`: `ProjectFile`, `parseProject`, `loadProject`; `measurement` schema with the problem texts of F7; `parseProjectFile` and `loadProjectFile` keep their signatures.
   - `workspace.ts`: `WorkspaceStoreOptions.measurement` sets the state at revision 0.
-  - `kipscope.example.yaml`: commented `measurement` section with keys, limits and "commands win until restart"; the header no longer says `display` is the only top-level key. `kipscope.yaml` stays without a `measurement` section (Q7).
+  - `kipscope.example.yaml`: commented `measurement` section with keys, limits and "commands win until restart"; the header no longer says `display` is the only top-level key. `kipscope.yaml` gets `measurement:` with `object: smart451` only (Jan, Q7).
   - Verify: scenarios "Start value", "Invalid section", "Display rules unchanged", "Documented" (example part).
 
 ## 3. apps/web/src

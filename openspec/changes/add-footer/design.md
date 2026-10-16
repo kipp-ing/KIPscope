@@ -246,14 +246,14 @@ No stored data. `kipscope.yaml` without `measurement` behaves as before. Deploy 
 
 ## Open Questions
 
-Pending Jan; the change is built as recommended unless he says otherwise.
+Answered by Jan on 2026-10-16; the change is built this way.
 
-- **Q1: Attribution wording.** Recommended: `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, the slogan "efficient agentic engineering" only as the link's tooltip. Alternatives: slogan visible (about 170 px more, wraps earlier); without `© 2026`.
-- **Q2: License link target.** Recommended: the running server's `/api/license` (works offline, shows the running build's text, independent of repository visibility). Alternative: https://github.com/kipp-ing/KIPscope/blob/main/LICENSE, only if the repository is public; it could be added as a second link later.
-- **Q3: Build label.** Recommended: the server's short commit at start with `*` for uncommitted changes. Alternative: a semver `version` in `package.json` shown as `v0.1.0`, which needs a release habit that does not exist yet.
-- **Q4: Attribution outside the UI.** Recommended: yes, as the last line of `kipscope --help` and one info line at server start (AAL clause 2 speaks of every launch; one line each, results stay JSON). If Jan says no, the `cli` requirement "Attribution in the help", `app-footer` "Attribution at server start" and tasks 2.1 (log line) and 4.1 (help line) drop out.
-- **Q5: Precedence of YAML and CLI.** Recommended: the YAML gives the start value, commands win until restart, nothing writes the file. Alternatives: commands write back into `kipscope.yaml` (the file then mixes project rules and per-session data); the YAML reread on change (needs a file watcher, unlike the display rules).
-- **Q6: Drop order.** Recommended: build, zone, catalog, meta entries (last first), source, object, name. Alternative: the source state hidden last of all, as an alarm.
-- **Q7: Shipped `kipscope.yaml`.** Recommended: no `measurement` section (empty footer part until set); only `kipscope.example.yaml` shows it. Alternative: `object: smart451` as the shipped default.
-- **Q8: Editing in the UI.** Recommended: not now; CLI and YAML only, as Jan asked. A later option: click a footer item to edit it, sending the same commands.
-- **Q9: Bar width.** Recommended: the bar stays in the workspace column right of the sidebar, as the strip is today. Alternative: full viewport width under the sidebar too (moves the "+ New window" zone under the sidebar).
+- **Q1: Attribution wording.** As recommended: `KIPscope · © 2026 Jan Kipping, Agentic engineer · kipp.ing · AAL`, the slogan "efficient agentic engineering" only as the link's tooltip.
+- **Q2: License link target.** As recommended: the running server's `/api/license` (local). The repository is public, so a GitHub link could be added later.
+- **Q3: Build label.** As recommended: the server's short commit at start with `*` for uncommitted changes. Jan: a version tag comes later (its own change).
+- **Q4: Attribution outside the UI.** Yes: the last line of `kipscope --help` and one info line at server start.
+- **Q5: Precedence of YAML and CLI.** As recommended: the YAML gives the start value, commands win until restart, nothing writes the file.
+- **Q6: Drop order.** As recommended: build, zone, catalog, meta entries (last first), source, object, name.
+- **Q7: Shipped `kipscope.yaml`.** Jan: ship it with `measurement: {object: smart451}`; `kipscope.example.yaml` explains the whole section.
+- **Q8: Editing in the UI.** As recommended: not now; CLI and YAML only.
+- **Q9: Bar width.** As recommended: the bar stays in the workspace column right of the sidebar.
