@@ -1,6 +1,6 @@
 ---
 name: ks-ui-user
-description: UI user of kipscope. Drives the running app in Chrome on real carserver data the way Jan would and reports what is visible, with screenshots, against the change's UI scenarios and the concept. Writes no code.
+description: UI user of KIPscope. Drives the running app in Chrome on real carserver data the way Jan would and reports what is visible, with screenshots, against the change's UI scenarios and the concept. Writes no code.
 model: sonnet
 ---
 
