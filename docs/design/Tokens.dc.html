@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KIPscope tokens and parts</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#0369a1}a:hover{color:#0c4a6e}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 1200px; height: 900px; box-sizing: border-box; padding: 40px 48px; display: flex; flex-direction: column; gap: 28px; background: #f8fafc; color: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px;">
+  <div style="display: flex; align-items: baseline; gap: 12px;">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em;">Tokens and parts</h1>
+    <span style="color: #64748b;">Taken from KI.ping proto-v1: Tailwind slate, one accent, status pills, Okabe-Ito series</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px;">
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Neutrals</h2>
+      <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;">
+        <sc-for list="{{neutrals}}" as="c" hint-placeholder-count="10">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="height: 36px; border-radius: 4px; border: 1px solid #e2e8f0; background: {{c.hex}};"></span>
+            <span style="font-weight: 500;">{{c.name}}</span>
+            <span style="color: #64748b; font-family: ui-monospace, Menlo, monospace;">{{c.hex}} · {{c.use}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Accent and status</h2>
+      <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;">
+        <sc-for list="{{status}}" as="c" hint-placeholder-count="10">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="height: 36px; border-radius: 4px; border: 1px solid #e2e8f0; background: {{c.hex}};"></span>
+            <span style="font-weight: 500;">{{c.name}}</span>
+            <span style="color: #64748b; font-family: ui-monospace, Menlo, monospace;">{{c.hex}} · {{c.use}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </div>
+
+  <section style="display: flex; flex-direction: column; gap: 10px;">
+    <h2 style="margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Series (Okabe-Ito, colour-blind safe) · current KIPscope below</h2>
+    <div style="display: flex; gap: 8px;">
+      <sc-for list="{{okabe}}" as="c" hint-placeholder-count="6">
+        <div style="flex: 1 1 0; display: flex; flex-direction: column; gap: 4px;">
+          <span style="height: 6px; border-radius: 3px; background: {{c.hex}};"></span>
+          <span style="color: #475569; font-family: ui-monospace, Menlo, monospace;">{{c.hex}}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <sc-for list="{{current}}" as="c" hint-placeholder-count="6">
+        <div style="flex: 1 1 0; display: flex; flex-direction: column; gap: 4px;">
+          <span style="height: 6px; border-radius: 3px; background: {{c.hex}};"></span>
+          <span style="color: #64748b; font-family: ui-monospace, Menlo, monospace;">{{c.hex}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px;">
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Type</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 15px; font-weight: 600;">KIPscope <span style="font-weight: 400; color: #64748b; font-size: 12px;">15 / 600 brand</span></span>
+        <span style="font-size: 12px; font-weight: 600;">Window 2 <span style="font-weight: 400; color: #64748b;">12 / 600 titles</span></span>
+        <span style="font-size: 12px;">Link time axes <span style="color: #64748b;">12 / 400 body, controls</span></span>
+        <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Signals <span style="font-weight: 400; text-transform: none; letter-spacing: 0;">11 / 600 caps section label</span></span>
+        <span style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11.5px;">PNHV_SupBat_Curr <span style="font-family: ui-sans-serif, system-ui, sans-serif; color: #64748b;">mono, signal names and IDs</span></span>
+        <span style="font-variant-numeric: tabular-nums;">−143 · 87.4 · 13:05:00.000 <span style="color: #64748b;">tabular numbers everywhere</span></span>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Controls</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+        <button style="height: 26px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; color: #0f172a;">Reset</button>
+        <button disabled="{{yes}}" style="height: 26px; padding: 0 10px; border: 1px solid #e2e8f0; border-radius: 4px; background: #ffffff; color: #94a3b8;">Back</button>
+        <button style="height: 26px; padding: 0 10px; border: 0; border-radius: 4px; background: #0f172a; color: #ffffff; font-weight: 500;">Add T_LUFT to Window 2</button>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+        <button style="height: 26px; padding: 0 10px; border: 1px solid #0f172a; border-radius: 999px; background: #0f172a; color: #ffffff; font-weight: 500;">A</button>
+        <button style="height: 26px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; color: #0f172a; font-weight: 500;">Diff</button>
+        <div style="display: inline-flex; border: 1px solid #0f172a; border-radius: 4px; overflow: hidden;">
+          <button style="height: 24px; padding: 0 10px; border: 0; background: #0f172a; color: #ffffff;">Signals</button>
+          <button style="height: 24px; padding: 0 10px; border: 0; background: #ffffff; color: #0f172a;">Values</button>
+        </div>
+      </div>
+      <input aria-label="Search sample" placeholder="Search name, description, unit…" style="height: 30px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 4px; font: inherit; box-sizing: border-box;">
+      <span style="color: #64748b;">Radius 4 px (pills 999), 1 px slate-300 borders, height 26 px; one dark primary per surface.</span>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h2 style="margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Pills and list</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <span style="padding: 1px 6px; border-radius: 4px; background: #ecfdf5; color: #047857;">ready</span>
+        <span style="padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: #475569;">loading</span>
+        <span style="padding: 1px 6px; border-radius: 4px; background: #fffbeb; color: #92400e;">SNA 8.2 %</span>
+        <span style="padding: 1px 6px; border-radius: 4px; background: #fff1f2; color: #be123c;">query failed</span>
+        <span style="padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #075985; font-weight: 500;">Add to</span>
+        <span style="padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: #475569;">agg 1.2 s</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px; width: 260px; padding: 6px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 4px; background: #f1f5f9;"><span style="color: #64748b; font-size: 10px;">▼</span><span style="font-weight: 600; color: #334155;">Engine</span><span style="margin-left: auto; color: #64748b;">63</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 20px; border-radius: 4px; background: #e0f2fe;"><span style="width: 7px; height: 7px;"></span><span style="font-family: ui-monospace, Menlo, monospace; color: #075985;">TEMP_KL</span><span style="margin-left: auto; color: #0284c7;">+</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 20px;"><span style="width: 7px; height: 7px; border-radius: 999px; background: #E69F00;"></span><span style="font-family: ui-monospace, Menlo, monospace;">T_MOT</span><span style="margin-left: auto; color: #64748b;">°C</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 4px; background: #f1f5f9;"><span style="color: #64748b; font-size: 10px;">▶</span><span style="font-weight: 600; color: #334155;">ESP</span><span style="margin-left: auto; color: #64748b;">64</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sw = (name, hex, use) => ({ name: name, hex: hex, use: use });
+    return {
+      yes: true,
+      neutrals: [
+        sw('slate-50', '#f8fafc', 'page'), sw('white', '#ffffff', 'panels'), sw('slate-100', '#f1f5f9', 'group band'),
+        sw('slate-200', '#e2e8f0', 'dividers'), sw('slate-300', '#cbd5e1', 'control border'), sw('slate-400', '#94a3b8', 'disabled'),
+        sw('slate-500', '#64748b', 'muted text'), sw('slate-700', '#334155', 'labels'), sw('slate-800', '#1e293b', 'names'),
+        sw('slate-900', '#0f172a', 'text, primary'),
+      ],
+      status: [
+        sw('sky-600', '#0284c7', 'accent, L'), sw('sky-100', '#e0f2fe', 'active row'), sw('sky-800', '#075985', 'active ink'),
+        sw('emerald-700', '#047857', 'ready, ok'), sw('emerald-50', '#ecfdf5', 'ready fill'), sw('amber-500', '#f59e0b', 'SNA dot'),
+        sw('amber-50', '#fffbeb', 'SNA fill'), sw('amber-800', '#92400e', 'SNA ink'), sw('rose-700', '#be123c', 'error'),
+        sw('rose-50', '#fff1f2', 'error fill'),
+      ],
+      okabe: ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9'].map((h) => ({ hex: h })),
+      current: ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c', '#0891b2'].map((h) => ({ hex: h })),
+    };
+  }
+}
+</script>
+</body>
+</html>
