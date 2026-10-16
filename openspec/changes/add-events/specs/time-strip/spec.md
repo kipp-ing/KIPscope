@@ -30,7 +30,7 @@ The strip SHALL draw the shown events of its data ref as pins in a 6 px lane at 
 
 #### Scenario: Pins on smart451
 - **WHEN** smart451's whole recording is shown at 1440×900 with the shipped project file and the default filter
-- **THEN** the strip shows pins, among them one at 2026-10-15 07:27 local in `rgb(190, 18, 60)` whose tooltip starts `17 events · 13 active faults, 4 stored faults`; the strip measures 55 px
+- **THEN** the strip shows pins, among them one at 2026-10-15 07:27 local in `rgb(190, 18, 60)` whose tooltip starts `13 events · 13 active faults`; the strip measures 55 px
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, tooltip text, strip height)
 
 ### Requirement: Pin tooltips
@@ -59,7 +59,7 @@ While the strip's data ref has events, the strip head SHALL show after the range
 
 #### Scenario: Count on smart451
 - **WHEN** smart451 is shown at 1440×900 with the shipped project file and the default filter, then at 1000×557 with the sidebar open, and the user clicks the count
-- **THEN** the head shows `55 of 402 events` at both sizes, fully visible; after the click the sidebar shows the Events tab with the field focused
+- **THEN** the head shows `51 of 402 events` at both sizes, fully visible; after the click the sidebar shows the Events tab with the field focused
 - **Evidence:** UI check on smart451 (screenshots at both sizes)
 
 ### Requirement: Signal drop on the strip

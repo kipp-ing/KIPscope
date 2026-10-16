@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Filter words
-An event filter SHALL be a string of terms separated by white space: words naming categories or presets (`faults`, `changes`, `active`, `logger`, `all`, `none` and the others of design F1), `ecu:<value>`, `name:<value>`, `text:<value>`, a quoted phrase, or any other word as text; a leading `-` excludes what a term selects. Keywords and keys are case-insensitive. Origin: D-058 („the filter also needs cli. it needs human way of thinking too"); grammar: design F1, Q3.
+An event filter SHALL be a string of terms separated by white space: words naming categories or presets (`faults`, `changes`, `active`, `logger`, `all`, `none` and the others of design F1), `ecu:<value>`, `name:<value>`, `text:<value>`, a quoted phrase, or any other word as text; a leading `-` excludes what a term selects. Keywords and keys are case-insensitive. Origin: D-058 („the filter also needs cli. it needs human way of thinking too"); grammar: design F1; D-058 (answer Q3).
 
 #### Scenario: Parsing
 - **WHEN** `Faults  BMS`, `all -snapshots -untested`, `changes "circuit open" code:P0AA`, `-ecu:VCU text:active` and `12:30` are parsed
@@ -38,7 +38,7 @@ The UI and the CLI SHALL say in words what a filter shows: the categories (`All 
 - **Evidence:** `packages/shared/test/eventFilter.test.ts` › "describes a filter in words"
 
 ### Requirement: Presets and chips edit the filter
-The UI SHALL offer presets that replace the filter (`Faults & changes`, `Faults`, `Changes`, `Logger`, `Everything`, `Off`) and a chip per category and source that has events or is named in the filter; a chip click SHALL switch it in the string by the toggle rule of design F5. Every preset or chip click SHALL send one `events.setFilter`. Origin: D-058 (filter in human categories, „by ECU").
+The UI SHALL offer presets that replace the filter (`Active & changes`, `Faults`, `Changes`, `Logger`, `Everything`, `Off`) and a chip per category and source that has events or is named in the filter; a chip click SHALL switch it in the string by the toggle rule of design F5. Every preset or chip click SHALL send one `events.setFilter`. Origin: D-058 (filter in human categories, „by ECU").
 
 #### Scenario: Toggles
 - **WHEN** in `faults changes` Stored fault is switched off, then on; in `all -logger` Request refused is switched on; in the empty filter ECU BMS is switched off, then on; in `ecu:BMS` ECU VCU is switched on
@@ -46,23 +46,23 @@ The UI SHALL offer presets that replace the filter (`Faults & changes`, `Faults`
 - **Evidence:** `packages/shared/test/eventFilter.test.ts` › "switches categories and sources in the string"
 
 #### Scenario: Preset in the UI
-- **WHEN** on smart451 the user clicks `Logger`, then `Faults & changes`
-- **THEN** the field shows `logger`, the heading `4 of 402`, strip and windows show only the two NRC and two ISO-TP marks; then `faults changes` and `55 of 402`; the revision rose by one per click
+- **WHEN** on smart451 the user clicks `Logger`, then `Active & changes`
+- **THEN** the field shows `logger`, the heading `4 of 402`, strip and windows show only the two NRC and two ISO-TP marks; then `active changes` and `51 of 402`; the revision rose by one per click
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after `Logger`, heading and revision after each click)
 
 ### Requirement: Filter field
 The filter field SHALL hold the workspace filter. While the user types, the description line, the heading count and the list SHALL preview the typed filter (an invalid one shows its error and keeps the last list); Enter SHALL send `events.setFilter` and the field then shows the normal form; Escape or leaving the field SHALL restore the workspace filter. Origin: D-058 (UI and CLI share the filter); preview: design F5.
 
 #### Scenario: Typing and Enter
-- **WHEN** on smart451 the field holds `faults changes`, the user appends ` Contactor` and presses Enter; then types `faults "` and presses Escape
-- **THEN** while typing the line reads `Faults and state changes · mentioning “contactor”` with the count of matching events; after Enter the field shows `faults changes Contactor`, the revision rose by one; while `faults "` is typed the line shows the unterminated-quote error in the error colour; after Escape the field shows `faults changes Contactor` again
+- **WHEN** on smart451 the field holds `active changes`, the user appends ` Contactor` and presses Enter; then types `faults "` and presses Escape
+- **THEN** while typing the line reads `Active faults and state changes · mentioning “contactor”` with the count of matching events; after Enter the field shows `active changes Contactor`, the revision rose by one; while `faults "` is typed the line shows the unterminated-quote error in the error colour; after Escape the field shows `active changes Contactor` again
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots of the panel)
 
 ### Requirement: Filter in the workspace
-The workspace SHALL hold one event filter for strip, windows, panel and CLI: `eventFilter` in normal form, absent when it equals the default `faults changes`. `events.setFilter {filter}` (at most 200 characters) SHALL store it normalised with one revision; a filter that does not parse SHALL be rejected with `invalid_filter` and the parser's message. Origin: D-058 („the filter also needs cli"); default: design Q1.
+The workspace SHALL hold one event filter for strip, windows, panel and CLI: `eventFilter` in normal form, absent when it equals the default `active changes`. `events.setFilter {filter}` (at most 200 characters) SHALL store it normalised with one revision; a filter that does not parse SHALL be rejected with `invalid_filter` and the parser's message. Origin: D-058 („the filter also needs cli"); default: D-058 (Jan's answer Q1).
 
 #### Scenario: Set, default and reject
-- **WHEN** `events.setFilter` is applied with `Faults  BMS`, then with `faults changes`, then with `ecu:`
+- **WHEN** `events.setFilter` is applied with `Faults  BMS`, then with `active changes`, then with `ecu:`
 - **THEN** the first stores `eventFilter` `faults bms`; the second removes the field; the third is rejected with `invalid_filter` and the workspace stays as before
 - **Evidence:** `packages/shared/test/apply.test.ts` › "sets the event filter in normal form"
 

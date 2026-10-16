@@ -25,7 +25,7 @@ Each call SHALL print exactly one JSON object on one line to stdout (indented wi
 
 #### Scenario: JSON and filter
 - **WHEN** against the CLI test server (stub events: the 18 testcar events; window `w1` shows `testcar/Sna_800h.RPM`) `kipscope events list`, `kipscope events list faults ecu:bms`, `kipscope events list changes -snapshots --from 2026-10-01T00:00Z --to 2026-10-01T03:00Z` and `kipscope events list 'ecu:'` run
-- **THEN** the first returns 7 events (the workspace's default `faults changes`: 5 faults, 2 changes) with `data.filter` `faults changes`, `data.description` `Faults and state changes` and `data.total` 18; the second 5 events; the third 2; the last exits 1 with `invalid_filter`
+- **THEN** the first returns 4 events (the workspace's default `active changes`: 2 active faults, 2 changes) with `data.filter` `active changes`, `data.description` `Active faults and state changes` and `data.total` 18; the second 5 events; the third 2; the last exits 1 with `invalid_filter`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "lists events with the workspace filter or the given one"
 
 #### Scenario: Table
@@ -35,7 +35,7 @@ Each call SHALL print exactly one JSON object on one line to stdout (indented wi
 
 #### Scenario: Events on smart451
 - **WHEN** `kipscope events list --table` runs against the dev server with the shipped project file and the default filter
-- **THEN** 55 event lines, the last line `55 of 402 events · faults changes · Faults and state changes`
+- **THEN** 51 event lines, the last line `51 of 402 events · active changes · Active faults and state changes`
 - **Evidence:** the command (head and tail of the output)
 
 ### Requirement: Event filter and events-line commands

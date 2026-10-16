@@ -1,15 +1,8 @@
 # Design
 
-## Open questions for Jan (defaults used throughout)
+## Jan's answers (D-058)
 
-D-058 and D-059 settle what is built. Six points are Jan's to choose; specs and tasks use the recommended default, and each answer changes one constant, one line of `kipscope.yaml` or one sentence.
-
-- **Q1: What does the events line show by default?** **Default `faults changes`** (active, pending, stored faults and state changes): on smart451 55 of 402 events (17 faults, 22 diag state changes, 16 ignition changes). Why: these answer the first two questions anyone asks ("what is wrong, what happened") without the 304 repeated snapshots and the 38 untested DTCs. Alternatives: `faults` (17, quietest), `active changes` (51, drops the 4 stored faults), `all` (402, what Jan called overwhelming).
-- **Q2: Where does the events list live?** **Default: a second tab of the sidebar (`Signals | Events`)**, opened by the count in the strip head or the key `e`. Why: it stays open while you click through events and zoom, takes no room from the charts, and there is one list per workspace, like the explorer. Alternatives: an "Events" window kind in the grid (closer to the values window, but a list of 240 px width sits oddly between charts, and several of them make no sense with one filter); a popover from the strip head (closes on every click in a chart).
-- **Q3: Filter grammar.** **Default: a search-engine string** (`faults bms`, `all -snapshots`, `name:P0AA`, `changes "circuit open"`), the same text in the UI field, in `kipscope events filter …` and in the workspace; presets and chips in the UI only edit that string. Why: one thing to learn, it reads as words, and what the UI shows can be typed in the CLI and the other way round. Alternative: structured flags (`--category faults --ecu BMS`) in the CLI and checkboxes in the UI: no grammar, but two representations that drift apart and nothing to copy between them.
-- **Q4: Which signal is "ignition"?** **Default `smart451/CPC_168h.IgnCurMode`.** Both candidates change at the same moments (16 changes, KL_15 50–150 ms earlier), but IgnCurMode has `VAL_` names (`NONE`, `CHARGE`, `CHARGE_KEYON`, `KEYON`, so it also shows charging), costs a fifth of the rows (87,369 vs. 403,272) and needs nothing new. `SAM_423h.KL_15` (0/1, no `VAL_`) would need label maps in `kipscope.yaml`, which this change leaves out.
-- **Q5: Which signal is "contactor"?** **Default `smart451/BMS.contactor`** (diag text state, 375 rows, `open`/`closed`), since it is recorded already and shows today. It is also a state name in `sdlog.events`, so its changes come from there and the signal adds no second mark (E7 `in_events_table`). D-059 says "not recorded yet": if Jan means a CAN contactor signal, name it and it replaces this line; until it is recorded it waits quietly (spec "Waiting signals", built and tested either way). I found no obvious contactor signal in the two DBCs.
-- **Q6: Does a changed snapshot count as a change?** **Default: yes, marked "seen after a gap".** 11 of smart451's 22 diag state changes happened while no logger session ran, e.g. `BMS.contactor` closed at 2026-10-13 12:08:54 local and open at the next snapshot 2026-10-14 18:59:47. Shown at the time it was first seen, with the last time the old state was seen. Without it the line would never show that the contactor opened between the two drives. Alternative: only logged transitions (11).
+The six open questions are answered in D-058 (last bullet): Q1 default filter `active changes` (on smart451 51 of 402 events: 13 active faults, 22 diag state changes, 16 ignition changes); Q2 the events list is a sidebar tab; Q3 one search-style filter string in UI, CLI and workspace; Q4 ignition is `CPC_168h.IgnCurMode`; Q5 the contactor entry is `BMS.contactor`, used now (the quiet wait for missing signals stays as a general rule); Q6 a snapshot that differs from the previous state counts as a change, marked "seen after a gap". References to Q1–Q6 below point to these answers.
 
 ## Context
 
@@ -215,8 +208,8 @@ hasStates(signalId: string): boolean;   // catalog: SignalInfo.states present
 events:
   # Signals whose state changes are on the events line from the start (D-059); a signal not recorded yet waits.
   signals:
-    - smart451/CPC_168h.IgnCurMode   # ignition (design Q4)
-    - smart451/BMS.contactor         # HV contactor (design Q5)
+    - smart451/CPC_168h.IgnCurMode   # ignition (D-058, Q4)
+    - smart451/BMS.contactor         # HV contactor (D-058, Q5)
 ```
 
 `ProjectFile.events?: { signals: string[] }`; `events` a map with only `signals`; `signals` a list of at most 8 strings that `parseSignalId` accepts. Problems as for `measurement`.
@@ -235,7 +228,7 @@ word   := { any char but white space and '"' }    (at least one char)
 A bare token is keyed only when the part before its first `:` is letters only; then an unknown key is an error. A bare `word` (not quoted, not keyed) that equals a keyword (case-insensitive) is a category term, else a text term. Keywords → canonical: `faults`/`fault`, `active`, `pending`, `stored`, `untested`, `passed`, `changes`/`change`, `snapshots`/`snapshot`, `refused`/`nrc`, `transport`/`isotp`, `logger`, `other`, `all`/`everything`, `none`. Presets: `faults` = active, pending, stored; `logger` = refused, transport; `all` = every category; `none` = none. Keys → canonical: `ecu`/`source`, `name`/`code`, `text`.
 
 ```ts
-export const DEFAULT_EVENT_FILTER = "faults changes";
+export const DEFAULT_EVENT_FILTER = "active changes";
 export const MAX_FILTER_LENGTH = 200;
 export const MAX_FILTER_TERMS = 20;
 export type CategoryWord = "faults" | "active" | "pending" | "stored" | "untested" | "passed" | "changes" | "snapshots" | "refused" | "transport" | "logger" | "other" | "all" | "none";
@@ -271,7 +264,7 @@ Categories `S = categoriesOf(f)`: all → `All events`; empty → `No events`; |
 
 ### F5: Presets, chips and the field (pinned)
 
-`EVENT_PRESETS`: `Faults & changes` → `faults changes`, `Faults` → `faults`, `Changes` → `changes`, `Logger` → `logger`, `Everything` → `all`, `Off` → `none`; a preset button is pressed when the normal form equals its filter.
+`EVENT_PRESETS`: `Active & changes` → `active changes`, `Faults` → `faults`, `Changes` → `changes`, `Logger` → `logger`, `Everything` → `all`, `Off` → `none`; a preset button is pressed when the normal form equals its filter.
 
 `toggleCategory(f, c, on)`: on: every negative category term whose set holds `c` is removed and the other members of its set are appended as negative terms; then if `c ∉ categoriesOf` a positive `c` word (`changes`/`snapshots` for change/snapshot) is appended. Off: a positive term whose set is exactly `{c}` is removed; then if `c ∈ categoriesOf` a negative `c` term is appended. `toggleSource(f, s, on)`: on: remove `-ecu:s`; if s does not pass the ecu facet now, append `ecu:s`. Off: remove `ecu:s`; if s still passes, append `-ecu:s` (compare case-insensitive). The result is normalised.
 
@@ -370,11 +363,11 @@ Props gain `events?: readonly DiagEvent[]` (the shown events of the window's dat
 
 ```
 [ Signals | Events ]                      segmented switch, 26 px (sidebar head)
-EVENTS                       55 of 402    11 px caps label; count muted, tabular
-[ faults changes                       ]  mono field, 26 px; invalid: error border
-Faults and state changes                  muted 11 px line, or the error in --error
-(Faults & changes)(Faults)(Changes)(Logger)(Everything)(Off)   pills, wrap
-● Active fault 13  ● Stored fault 4  ○ Not tested 38 …         chips, wrap
+EVENTS                       51 of 402    11 px caps label; count muted, tabular
+[ active changes                       ]  mono field, 26 px; invalid: error border
+Active faults and state changes           muted 11 px line, or the error in --error
+(Active & changes)(Faults)(Changes)(Logger)(Everything)(Off)   pills, wrap
+● Active fault 13  ○ Stored fault 4  ○ Not tested 38 …         chips, wrap
 ● BMS 385  ● IgnCurMode 17                                     ECU chips
 ON THE EVENTS LINE   IgnCurMode ×   BMS.contactor ×            muted: "· not recorded yet"
 ── Thu 2026-10-15 ───────────────────────────────────────        day band (explorer group look)
@@ -415,7 +408,7 @@ export function isEventsKey(e, focused): boolean;        // "e", no Ctrl/Meta/Al
 - Forms: `events list [FILTER…] [--ref R] [--from T --to T] [--table]`, `events filter FILTER…` (at least one word; `""` allowed), `events add SIGNAL`, `events remove SIGNAL`. New options `--ref` (value), `--table` (flag); `--from`/`--to` as for `window create`.
 - `events list`: reads the workspace, resolves the data ref, `GET /api/events` with `signal` = the workspace's `eventSignals` of that ref, `filter` = the words joined by one space (none: `eventFilter ?? DEFAULT_EVENT_FILTER`), range. `data` = the body plus `description`; `local.t` = `formatLocal` of each event's `t`. Server 404 → rejected `unknown_data_ref`; 400 `invalid_filter` → rejected.
 - `--table` (success only): columns local time (`formatLocal`), `CATEGORY_TEXT.label`, source, name, text (change: `<from> → <to>`), padded to the widest cell, two spaces apart, trailing spaces trimmed; then `<n> of <total> events · <filter> · <description>`; then `skipped: <id> (<reason>)` lines.
-- Usage text: the four forms and `FILTER   words: faults changes active … all none; ecu:X name:X text:X "phrase"; -term excludes`.
+- Usage text: the four forms and `FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes`.
 
 ### T: Test data (pinned, `apps/server/scripts/seed-test-db.ts`, `apps/server/test/fixtures/test-a.dbc`; tester)
 
@@ -479,7 +472,7 @@ Signals (`testcar`, chunk `c11`):
 - [Two names for one thing] → a text signal and a diag state of the same name (`BMS.contactor`) would mark twice; E7 skips the signal (`in_events_table`). A CAN signal for the same state is a different name and would show both; the filter `-ecu:…` hides one.
 - [`VAL_` tables that name special values of numeric signals] → such signals count as having states and can be put on the line; only changes into or out of a named value are marked, so a temperature signal gives a few marks, not thousands.
 - [Unknown event kinds] → `other`, visible with `all`; a finding goes to Jan when one appears.
-- [Head width at 1000×557] → `55 of 402 events` takes ~100 px; the range and info truncate first (spec). Checked in the UI scenario.
+- [Head width at 1000×557] → `51 of 402 events` takes ~100 px; the range and info truncate first (spec). Checked in the UI scenario.
 - [Interpolation rule] → for a signal with named special codes, a line-mode readout next to a special value is held instead of interpolated; that is the honest answer there.
 - [The CLI test server's stub source] → needs `events`, `stateChanges` and `textSignals`; `apps/cli/test/helpers.ts` stub gets the 18 testcar rows (tester).
 - [Drag checks] → the browser tool may not hold a drag onto the strip; the drop mapping is unit-tested and the drop checked by hand (Manual checks).
@@ -490,8 +483,8 @@ None. All payload fields are additive; restart the server; reseed the test DB (`
 
 ## Manual checks (lead)
 
-- Drag `BS_200h.BLS` from the explorer onto the strip on smart451 with a real mouse; check the drop look, the 156 new events, and removing it with `×`. Send Jan one screenshot of the strip and a chart with event marks, and one of the Events tab, together with Q1–Q6 if still open.
+- Drag `BS_200h.BLS` from the explorer onto the strip on smart451 with a real mouse; check the drop look, the 156 new events, and removing it with `×`. Send Jan one screenshot of the strip and a chart with event marks, and one of the Events tab, .
 
 ## Ledger entries on archive (proposed for `docs/decisions.md`)
 
-- D-0xx Events conventions: `GET /api/events` (table events + events-line signal changes), ten categories (E5 status bits, E6 changes vs. snapshots incl. inferred, E7 signal changes: only named-state changes, gap 5 min, ≤ 2,000), cached per catalog load; filter grammar F1–F4 (words, `ecu:`/`name:`/`text:`, quotes, `-`; facets or-within/and-across), default `faults changes` (Q1), `eventFilter`/`eventSignals` in the workspace with `events.setFilter`/`addSignal`/`removeSignal`; pins 6 px at the strip top grouped within 6 px, chart lines and headroom glyphs, glyph click places A/B; Events tab in the sidebar (Q2), key `e`; state names: `SignalInfo.states`, `stateLabel`/`shortLabel`, no interpolation into a named state; `events.signals` in `kipscope.yaml` (IgnCurMode Q4, BMS.contactor Q5); CLI `events list|filter|add|remove`, `--table`, single-dash words are arguments.
+- D-0xx Events conventions: `GET /api/events` (table events + events-line signal changes), ten categories (E5 status bits, E6 changes vs. snapshots incl. inferred, E7 signal changes: only named-state changes, gap 5 min, ≤ 2,000), cached per catalog load; filter grammar F1–F4 (words, `ecu:`/`name:`/`text:`, quotes, `-`; facets or-within/and-across), default `active changes` (Q1), `eventFilter`/`eventSignals` in the workspace with `events.setFilter`/`addSignal`/`removeSignal`; pins 6 px at the strip top grouped within 6 px, chart lines and headroom glyphs, glyph click places A/B; Events tab in the sidebar (Q2), key `e`; state names: `SignalInfo.states`, `stateLabel`/`shortLabel`, no interpolation into a named state; `events.signals` in `kipscope.yaml` (IgnCurMode Q4, BMS.contactor Q5); CLI `events list|filter|add|remove`, `--table`, single-dash words are arguments.
