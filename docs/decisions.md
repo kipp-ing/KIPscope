@@ -4,6 +4,18 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-064: Events conventions (2026-10-16)
+
+From the archived change `add-events`; details there.
+
+- **Decision:** `GET /api/events?dataRef=&signal=…&filter=&from=&to=` returns derived `DiagEvent`s (category from the UDS status byte or the state transition; `inferred` for a snapshot that differs from the previous state, "seen after a gap"), counts per category and source, skipped signals; cached per catalog load, prefetched, capped at 100,000; a missing events table means no events. One filter string in UI, CLI and workspace (`events.setFilter`): category words and presets OR, `ecu:`/`name:`/`text:`, quoted phrases, `-` excludes; one normalised spelling and a sentence describing it; default `active changes`. State changes of a signal come from one window-function query returning changed rows only (≤ 2,000 per signal). Pins in a 6 px lane of the strip (grouped within 6 px), lines and glyphs in the charts (click sets A, Shift+click B), Events sidebar tab. Signals with named states: `VAL_` labels (number in the tooltip), diag enums and text states (label from the row text, label-only tooltip); drawn as steps where a segment has a named end; `kipscope.yaml` `events.signals` (IgnCurMode, BMS.contactor), a listed signal not recorded yet waits quietly.
+
+## D-063: Diagnostic catalog conventions (2026-10-16)
+
+From the archived change `add-diag-metadata`; details there.
+
+- **Decision:** `KIPSCOPE_DIAG_CATALOGS` lists `.manifest.json` files (default smart451's `bms-live`), `<name>.names.toml` next to each, read on every catalog load; names as the decoder (`<ECU>.<name>`, arrays `.nnn`). `SignalInfo.unit` from the field, `SignalInfo.diag` {file, ecu, group, did, field, element, kind, states, invalid}. DBC wins, then catalogs in list order (one warning). Broken manifest skipped, missing names file falls back to catalog names, server always starts. Invalid sentinels never become SNA. Parser `smol-toml`.
+
 ## D-062: Lines break where there is no data (2026-10-16)
 
 - **Context:** Jan: „in the chart windows. lines are drawn throgh times with no data. what can we do, how can we do? better display nothing than smthn wrong". DBC `GenMsgCycleTime` is set for 138 of 327 messages (h-can 47/164, hybrid-can 91/163; often 20 ms); the diagnostic manifest gives each group an `interval` (e.g. 30 s); event-triggered messages have no period.

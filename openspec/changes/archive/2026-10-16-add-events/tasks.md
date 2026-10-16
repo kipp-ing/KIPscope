@@ -54,7 +54,7 @@ Every task has its own files and builds against the interfaces pinned in design 
 
 ## 6. Lead
 
-- [ ] 6.1 Reseed the test DB and restart the dev server before the checks of 2.2, 2.3, 3.x and 4.1; do the hand check of design "Manual checks" (drag BLS onto the strip, remove it) and send Jan the screenshots.
+- [x] 6.1 Reseed the test DB and restart the dev server before the checks of 2.2, 2.3, 3.x and 4.1; do the hand check of design "Manual checks" (drag BLS onto the strip, remove it) and send Jan the screenshots.
 
 ## Workflow follow-up
 
