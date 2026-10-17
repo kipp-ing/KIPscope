@@ -1719,7 +1719,7 @@ export function TimeseriesWindow({
             <option value="step">Step</option>
             <option value="markers">Markers</option>
           </select>
-          <label>
+          <label title={HINTS.envelope}>
             <input
               type="checkbox"
               checked={w.display.envelope}

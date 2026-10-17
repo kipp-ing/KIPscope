@@ -14,6 +14,11 @@
   line-height: 1.5;
 }
 
+/* During a drag: invisible but in place, so the window list does not move (B1, B2). */
+.start-card.drag-hidden {
+  visibility: hidden;
+}
+
 .start-card-head {
   display: flex;
   align-items: center;

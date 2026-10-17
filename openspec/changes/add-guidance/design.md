@@ -167,8 +167,8 @@ Wording rule W1:
 | `legendUnit(unit, side)` | `[<unit>] · y axis <side>` |
 | `sna(share)` | `<share>: of the points in view are SNA (signal not available, marked invalid by the sender); strip in the signal's colour at the plot's foot` |
 | `legendRemove` | `Remove from this window` |
-| `stripInfo(recorded, width)` | `TIME: the whole recording (<recorded>). Each bar is <width>; its height shows how much was logged. Click a bar to jump, drag to zoom, double-click for all` |
-| `eventsCount(shown, total, sentence)` | `<shown> events match the filter (<sentence>), <total> in the recording · click to open the list · e` |
+| `stripInfo(recorded, width)` | `TIME: the whole recording (<recorded>). Each bar is <width>, its height the amount logged. Click to jump, drag to zoom, double-click for all` |
+| `eventsCount(shown, total, sentence)` | `<shown> events match the filter (<sentence>), <total> in the recording · click to open the list · e`; a sentence over 50 characters is cut to 49 plus `…` (lead, round 2: keeps W1) |
 
 Readout cells, cursor times, the strip's bar and drive tooltips, the footer items and the explorer hover card keep their current texts, which already follow their own requirements.
 

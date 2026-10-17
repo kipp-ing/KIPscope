@@ -30,7 +30,7 @@ Not touched: `apps/web/src/events/*` (`improve-events`), any server, CLI or `pac
 
 ## 1. App: mark, reveal, flash, help wiring
 
-- [ ] 1.1 Mark, reveal, flash and help wiring (H1, H3, H7).
+- [x] 1.1 Mark, reveal, flash and help wiring (H1, H3, H7).
   - **Reproduce first.** Before changing anything, take a UI check with 17 windows, no mark, and an Enter add, and note in the report whether today's reveal scrolled and whether the window was fully visible.
   - **Helpers.** New `reveal.ts` with `markTarget`, `revealDelta` and `FLASH_MS`.
   - **Mark on click.** `.window-grid` `onClick` → `markTarget` → `onMark`.
@@ -54,7 +54,7 @@ Not touched: `apps/web/src/events/*` (`improve-events`), any server, CLI or `pac
 
 ## 2. Tooltips and hints
 
-- [ ] 2.1 Hints table and every title (H2, H4, H5, H7 next hints).
+- [x] 2.1 Hints table and every title (H2, H4, H5, H7 next hints).
   - **Hints table.** New `help/hints.ts` exactly as the H5 table.
   - **Titles from the table.** Replace every literal `title="…"` and every inline tooltip string in the files of this write area with `HINTS` entries, including `MARKED_HINT` → `HINTS.windowHeader(marked)`.
   - **New titles:**
@@ -77,7 +77,7 @@ Not touched: `apps/web/src/events/*` (`improve-events`), any server, CLI or `pac
 
 ## 3. Help panel, shortcuts, manual renderer, start card
 
-- [ ] 3.1 Help components (H6, H7, H8).
+- [x] 3.1 Help components (H6, H7, H8).
   - **`shortcuts.ts`:** `SHORTCUTS` with probes, exactly as H6.
   - **`markdown.ts`:** `parseMarkdown` and `unsupportedLines`.
   - **`storage.ts`:** start card and learned flags, with try/catch.

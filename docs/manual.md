@@ -7,7 +7,7 @@ KIPscope shows recorded vehicle data over time: CAN signals and diagnostic data 
 The screen, from left to right and top to bottom:
 
 - **Signal list**, with the tabs Signals and Events. `s` hides or shows it.
-- **Top row**: the cursor pills A, B and Diff, Link time axes, Go to, Span, Back, Reset, Digits, + Values window and `?` for help. On a narrow screen, Digits and + Values window move into the ⋯ menu.
+- **Top row**: the cursor pills A, B and Diff, Link time axes, Go to, Span, Back, Reset, Digits, + Values window and `?` for help. On a narrow screen, Digits, + Values window, Span and Help (`?`) move into the ⋯ menu.
 - **TIME strip**: the whole recording as bars, the drives under them, and the events count.
 - **Windows**: signals over time, or a table of values, in two columns on a wide screen.
 - **Status strip**: connection, revision, the last error and the measurement info.

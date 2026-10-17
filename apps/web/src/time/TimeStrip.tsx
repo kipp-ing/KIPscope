@@ -93,6 +93,8 @@ function useDensity(dataRef: string | undefined): Load | undefined {
 export interface StripEvents {
   shown: readonly DiagEvent[];
   total: number;
+  /** The events filter as a sentence, for the count's tooltip (add-guidance H5); absent without a filter. */
+  sentence?: string | undefined;
 }
 
 /** A signal dragged over the strip (add-events V10): eventsDrop's answer and the signal's name. */
@@ -434,7 +436,7 @@ export function TimeStrip({
           <button
             type="button"
             className="time-strip-events"
-            title={HINTS.eventsCount(events.shown.length, events.total)}
+            title={HINTS.eventsCount(events.shown.length, events.total, events.sentence)}
             {...(onOpenEvents ? { onClick: onOpenEvents } : {})}
           >
             {`${events.shown.length.toLocaleString("en-US")} of ${events.total.toLocaleString("en-US")} events`}

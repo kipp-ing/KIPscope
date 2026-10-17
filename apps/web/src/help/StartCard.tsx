@@ -4,19 +4,27 @@ import "./help.css";
 /**
  * "Start here" card (add-guidance H7, G-4 a): the four first steps at the top of the window list.
  * `empty` is the empty workspace's state, headed "No windows yet" and without ×. The texts are
- * pinned; keys are drawn as key caps without changing the text.
+ * pinned; keys are drawn as key caps without changing the text. `hidden` (during a drag) keeps the
+ * card's space so nothing moves, and takes it out of the tab order and the accessibility tree.
  */
 export function StartCard({
   empty,
+  hidden,
   onDismiss,
   onHelp,
 }: {
   empty: boolean;
+  hidden: boolean;
   onDismiss(): void;
   onHelp(t: HelpTab): void;
 }) {
   return (
-    <section className="start-card" aria-label={empty ? "No windows yet" : "Start here"}>
+    <section
+      className={hidden ? "start-card drag-hidden" : "start-card"}
+      aria-label={empty ? "No windows yet" : "Start here"}
+      aria-hidden={hidden || undefined}
+      inert={hidden}
+    >
       <div className="start-card-head">
         <h2>{empty ? "No windows yet" : "Start here"}</h2>
         {!empty && (

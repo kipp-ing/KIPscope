@@ -4,6 +4,7 @@ import {
   type CursorName,
   DEFAULT_EVENT_FILTER,
   type DiagEvent,
+  describeEventFilter,
   EMPTY_WORKSPACE,
   type EventList,
   isTimeseries,
@@ -53,7 +54,7 @@ import { liveCursor } from "./chart/live.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
 import { EventsPanel } from "./events/EventsPanel.tsx";
-import { shownEvents, useEvents } from "./events/eventsData.ts";
+import { appliedFilter, shownEvents, useEvents } from "./events/eventsData.ts";
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { ignoreFileDrops } from "./filedrop.ts";
@@ -374,9 +375,22 @@ export function App() {
   }, [shownByRef, windowRefsKey]);
   const stripList = stripRef ? eventLists.get(stripRef) : undefined;
   const stripShown = stripRef ? shownByRef.get(stripRef) : undefined;
+  // The filter in plain words for the count's tooltip (H5), lower-cased inside its parentheses;
+  // absent when it lets every event through.
+  const filterSentence = useMemo(() => {
+    const text = describeEventFilter(appliedFilter(eventFilter));
+    return text === "All events" ? undefined : text.charAt(0).toLowerCase() + text.slice(1);
+  }, [eventFilter]);
   const stripEvents = useMemo<StripEvents | undefined>(
-    () => (stripList && stripShown ? { shown: stripShown, total: stripList.total } : undefined),
-    [stripList, stripShown],
+    () =>
+      stripList && stripShown
+        ? {
+            shown: stripShown,
+            total: stripList.total,
+            ...(filterSentence && { sentence: filterSentence }),
+          }
+        : undefined,
+    [stripList, stripShown, filterSentence],
   );
 
   // The marked window, the explorer's add target (design L5, L6): view state of this tab. A removed
@@ -1433,8 +1447,14 @@ export function App() {
               drop={stripDrop}
             />
           </div>
-          {workspace && (windows.length === 0 || !startHidden) && !activeDrag && (
-            <StartCard empty={windows.length === 0} onDismiss={onDismissStart} onHelp={setHelp} />
+          {/* Hidden during a drag but kept in place, so nothing below it moves (B1, B2). */}
+          {workspace && (windows.length === 0 || !startHidden) && (
+            <StartCard
+              empty={windows.length === 0}
+              hidden={activeDrag !== undefined}
+              onDismiss={onDismissStart}
+              onHelp={setHelp}
+            />
           )}
           {/* Any click that ends inside a window marks it (H1); a drag between windows ends on
               the grid or higher and marks nothing. Keyboard marking is the "Add to" select. */}

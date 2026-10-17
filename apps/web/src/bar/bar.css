@@ -87,23 +87,20 @@
 
 /* Top-row give-way steps (add-saved-views V7), after the view title has shrunk to its minimum
    (views.css). Widths are the .option-bar-slot content box (container top-row), measured
-   2026-10-17 in Chrome with a 120-character modified view open (title minimum 10ch + dot = 91 px)
-   and the sidebar open: "Signals" 63 px + 8 px gap, then the bar with "Go to" at its 6em basis.
-   - Full labels with the "Views" label: 949 px → the label words go below 950 px (step 2).
-   - Short labels with the "Views" label: 872 px → the Views button shows only its icon below
-     880 px (step 3); the row then needs 851 px.
-   - Overflow items in the row (step 4, re-measured 2026-10-17 in Chrome as the narrowest content
-     box with every item's top equal): 852 px → T = 860 px, below it Digits, "+ Values window"
-     and Span go into the "⋯" menu.
-   - Row after the move, with "⋯": 728 px with Span still in the row, which is the whole 728 px
-     content box at 1000×557 without a scroll bar but 713 px with the main area's classic scroll
-     bar (six windows), so the row wrapped: Span joined the overflow items (V7). It now needs
-     653 px.
-   - add-guidance's "?" (26 px + 6 px gap), an overflow item right before "⋯", moves every width
-     above by 32 px: full labels 981 px → 990 px; short labels with the "Views" label 904 px →
-     910 px; overflow items in the row 884 px → T = 890 px. The row after the move is unchanged
-     (653 px): the "?" is in the menu as "Help".
-   At 1440×900 the content box is 1168 px (full row with "?", no "⋯").
+   2026-10-17 in Chrome on smart451 with the six-window setup and the sidebar open, as the
+   narrowest content box with every item's top equal, the view title held at the minimum of a
+   120-character modified view (10ch + dot = 91 px), "Go to" at its 6em basis, "Signals" 63 px +
+   8 px gap, and add-guidance's "?" (26 px + 6 px gap) right before "⋯":
+   - Full labels with the "Views" label: 981 px → the label words go at 990 px and below (step 2).
+   - Short labels with the "Views" label: 905 px → the Views button shows only its icon at 910 px
+     and below (step 3).
+   - Overflow items in the row (short labels, Views icon): 884 px → T = 890 px; at T and below
+     Digits, "+ Values window", Span and the "?" go into the "⋯" menu (step 4), the "?" as "Help".
+   - Row after the move, with "⋯": 653 px.
+   At 1000×557 (an iframe of that size) the content box is 713 px with the main area's classic
+   scroll bar (15 px, six windows) and 728 px without: "⋯" shows, and "⋯", Reset and "Signals" share
+   one top (4 px). At 1440×900 it is 1153 px with the scroll bar (1168 px without): the full row
+   with "?" and no "⋯".
    Lower-priority label words ("Link time axes", "+ Values window") collapse; title and aria-label
    keep the full name. */
 @container top-row (max-width: 990px) {

@@ -10,7 +10,7 @@ The app SHALL have a help panel with two tabs, *Manual* and *Keys*. It SHALL be 
 
 #### Scenario: Top row still one line
 - **WHEN** the six-window setup is shown with the sidebar open at 1000×557
-- **THEN** the "?" button (26 px tall) has the same `getBoundingClientRect().top` (±1 px) as "Reset" and the "Signals" toggle
+- **THEN** the overflow "⋯" button, "Reset" and the "Signals" toggle (26 px tall) share one `getBoundingClientRect().top` (±1 px), and Help is an item of the "⋯" menu (add-saved-views V7 overflow rule; at 1440×900 the "?" itself shares that top)
 - **Evidence:** UI check on smart451 at 1000×557 (tops, screenshot)
 
 ### Requirement: Help key
@@ -36,7 +36,7 @@ The Keys tab SHALL list every key and mouse gesture of the app from one table (`
 
 #### Scenario: Keys tab on smart451
 - **WHEN** the user presses `?`
-- **THEN** the panel shows the six group headings in the order above, with an entry `Shift+click` that sets cursor B under "In a plot" and entries `,` and `.` for the previous and next drive under "Time", keys drawn as `kbd` elements
+- **THEN** the panel shows the six group headings in the order above, with an entry `Shift+click` that sets cursor B under "In a plot" and one entry with the keys `,` and `.` for the previous or next drive under "Time", keys drawn as `kbd` elements
 - **Evidence:** UI check on smart451 (screenshot of the Keys tab)
 
 ### Requirement: User manual

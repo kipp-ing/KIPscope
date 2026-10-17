@@ -10,6 +10,13 @@ type Linked = boolean;
 const one = (linked: Linked, title: string | undefined): title is string =>
   !linked && title !== undefined;
 
+/** Longest filter sentence in the events count, so the tooltip stays within W1's 140 characters. */
+const SENTENCE_MAX = 50;
+
+function cutSentence(sentence: string): string {
+  return sentence.length <= SENTENCE_MAX ? sentence : `${sentence.slice(0, SENTENCE_MAX - 1)}…`;
+}
+
 export const HINTS = {
   sidebarToggle: (open: boolean) =>
     open ? "Signals: hide the signal list · s" : "Signals: show the signal list · s",
@@ -63,12 +70,21 @@ export const HINTS = {
   legendUnit: (unit: string | undefined, side: string) =>
     unit ? `[${unit}] · y axis ${side}` : `y axis ${side}`,
   sna: (share: string) =>
-    `${share}: of the points in view are SNA (signal not available, marked invalid by the sender); amber strip at the plot's foot`,
+    `${share}: of the points in view are SNA (signal not available, marked invalid by the sender); strip in the signal's colour at the plot's foot`,
   legendRemove: "Remove from this window",
+  envelope: "Min/max: shade the range between the lowest and highest value of each bucket",
   stripInfo: (recorded: string, width: string) =>
-    `TIME: the whole recording (${recorded}). Each bar is ${width}; taller bars hold more data. Click a bar to jump, drag to zoom, double-click for all`,
-  eventsCount: (shown: number, total: number, sentence?: string) =>
-    `${shown.toLocaleString("en-US")} events match the filter${sentence ? ` (${sentence})` : ""}, ${total.toLocaleString("en-US")} in the recording · click to open the list · e`,
+    `TIME: the whole recording (${recorded}). Each bar is ${width}, its height the amount logged. Click to jump, drag to zoom, double-click for all`,
+  /** With no filter sentence and nothing filtered out, the count names no filter (W1). */
+  eventsCount: (shown: number, total: number, sentence?: string) => {
+    const n = shown.toLocaleString("en-US");
+    const all = total.toLocaleString("en-US");
+    const head =
+      !sentence && shown === total
+        ? `${n} of ${all} events in the recording`
+        : `${n} events match the filter${sentence ? ` (${cutSentence(sentence)})` : ""}, ${all} in the recording`;
+    return `${head} · click to open the list · e`;
+  },
 
   // Top row, add-saved-views (V7): Views menu, overflow menu, open view.
   views: "Views: save, open, import and share named views",

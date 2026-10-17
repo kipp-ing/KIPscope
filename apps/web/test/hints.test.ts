@@ -110,4 +110,40 @@ describe("hints table", () => {
     }
     expect(bad).toEqual([]);
   });
+
+  it("words the SNA hint with the strip in the signal's colour (design H5)", () => {
+    const t = HINTS.sna("4.0 %");
+    expect(t).toContain("strip in the signal's colour");
+    expect(t.toLowerCase()).not.toContain("amber");
+  });
+
+  it("words the strip info as design H5", () => {
+    expect(HINTS.stripInfo("3 d 4 h", "2 h")).toBe(
+      "TIME: the whole recording (3 d 4 h). Each bar is 2 h, its height the amount logged. Click to jump, drag to zoom, double-click for all",
+    );
+  });
+
+  it("puts the filter sentence of the events count in parentheses, and none without one", () => {
+    const withS = HINTS.eventsCount(13, 669, "faults and state changes");
+    expect(withS).toContain("(faults and state changes)");
+    expect(withS).toBe(
+      "13 events match the filter (faults and state changes), 669 in the recording · click to open the list · e",
+    );
+    for (const none of [undefined, ""]) {
+      const t = HINTS.eventsCount(13, 669, none);
+      expect(t).not.toContain("()");
+      expect(t).not.toContain("(");
+      expect(t).toContain("13 events match the filter, 669 in the recording");
+    }
+  });
+});
+
+describe("events count with a long filter sentence", () => {
+  it("cuts the sentence so the count stays within 140 characters", () => {
+    const sentence =
+      "active faults, stored faults and state changes of BMS and IgnCurMode, without NRCs";
+    const t = HINTS.eventsCount(99_999, 99_999 + 1, sentence);
+    expect(t.length).toBeLessThanOrEqual(140);
+    expect(t).toContain("…)");
+  });
 });
