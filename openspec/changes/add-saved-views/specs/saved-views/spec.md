@@ -146,10 +146,15 @@ Each saved view SHALL be downloadable as its YAML file (`<name>.kipscope.yaml`).
 - **THEN** the answer is 400 `invalid_view_yaml` and the message names line 4
 - **Evidence:** `apps/server/test/views.http.test.ts` › "imports YAML and JSON"
 
+#### Scenario: Alias bomb refused
+- **WHEN** a 2 KiB YAML text whose anchors and aliases nest 10 levels deep (each level 10 aliases of the one before) is imported, and the same text lies in the views directory as `bomb.yaml`
+- **THEN** the import answers 400 `invalid_view_yaml` within 1 s and the server stays up; `GET /api/views` lists `bomb` with `error`; `POST /api/views/open {name: "bomb"}` answers 422 `invalid_view`
+- **Evidence:** `apps/server/test/views.http.test.ts` › "refuses an alias bomb"
+
 #### Scenario: Download and import in the UI
-- **WHEN** in the Views menu the user downloads a view, deletes it, and imports the downloaded file with "Import file…"
-- **THEN** the browser saves `<name>.kipscope.yaml`; after the import the view is listed again and open, with the same windows
-- **Evidence:** UI check on smart451 (screenshot of the menu after the import; the file read with `head`)
+- **WHEN** in the Views menu the user hovers a view's row, then `kipscope view export <name> --out /tmp/v.yaml`, `kipscope view delete <name>` and `kipscope view import /tmp/v.yaml --open` run, and the menu is opened again
+- **THEN** the row's Download link has `href` `/api/views/<name>?download=1`; after the import every tab shows the view's windows, the title in the top row and the notice `"<title>" opened elsewhere`, and the menu lists the view again, marked ✓
+- **Evidence:** UI check on smart451 (the `href` read from the page; one screenshot of the menu after the import). The file dialogs themselves (browser saves `<name>.kipscope.yaml`; "Import file…" with it) are the lead's hand check (design "Manual checks").
 
 ### Requirement: Links to a view
 "Copy link" SHALL copy a link `<page address>#view=<code>` holding the whole open workspace as a view document (deflate-raw, base64url). It works only where a KIPscope server is reachable at that address (local-only, D-046) and knows the view's data refs. Origin: Jan 2026-10-17 („url? shared link?"); concept §9 („Untersuchung direkt öffnen … über … Link").
@@ -168,9 +173,14 @@ Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>`
 - **Evidence:** `apps/web/test/viewlink.test.ts` › "reads a view from the address"
 
 #### Scenario: Link in a second browser
-- **WHEN** the user clicks "Copy link" with Jan's windows open, removes all windows, and pastes the link into a new tab
-- **THEN** the new tab's address loses `#view=…` after loading, all tabs show the windows again, and the strip shows `Opened "<title>"`
-- **Evidence:** UI check on smart451 (screenshot after opening the link; copied link length from the notice)
+- **WHEN** with Jan's windows open the user clicks "Copy link" and `kipscope view link --page <UI address>` runs, then all windows are removed and a new tab navigates to the printed `url`
+- **THEN** the notice says `Link copied (<n> characters)` with n equal to the CLI's `data.chars` (same workspace, same page address, so the same link); the new tab's address loses `#view=…` after loading, all tabs show the windows again, and the new tab's strip shows `Opened "<title>"`
+- **Evidence:** UI check on smart451 (the notice text and the CLI line; screenshot after opening the link). Pasting the clipboard into a tab is the lead's hand check.
+
+#### Scenario: Bookmark by name
+- **WHEN** a new tab navigates to `<UI address>?view=<saved name>` and then to `<UI address>?view=nope`
+- **THEN** the first opens the view (address without `?view=` after loading, `Opened "<title>"`); the second leaves the workspace unchanged and shows an error naming `unknown_view`
+- **Evidence:** UI check on smart451 (one screenshot each)
 
 ### Requirement: Title of the open view
 The top row SHALL show a **Views** button and, when the workspace has an open view, its title with a `•` while it is modified and its note as tooltip; the browser tab title SHALL be `<title> · KIPscope`, else `KIPscope`. Origin: persona test (boss: „a title", no story on screen); concept §9 („Lesezeichen mit Notiz").
@@ -178,25 +188,48 @@ The top row SHALL show a **Views** button and, when the workspace has an open vi
 #### Scenario: Title and modified dot
 - **WHEN** a view "Drive 3" with a note is opened, then cursor A is moved, then the view is saved with Ctrl+S
 - **THEN** after the open the top row shows `Drive 3` without dot and the tab title is `Drive 3 · KIPscope`; after the move it shows `Drive 3 •`; after Ctrl+S (no form) the dot is gone and the revision rose by one
-- **Evidence:** UI check on smart451 (three screenshots of the top row); `packages/shared/test/apply.test.ts` › "marks the open view modified"
+- **Evidence:** UI check on smart451 (three screenshots of the top row); `packages/shared/test/apply.test.ts` › "marks the open view modified"; `apps/web/test/views.test.ts` › "titles the top row and the browser tab" (`titleParts` and `documentTitle` for no view, a clean and a modified view)
 
 #### Scenario: Top row stays one line
 - **WHEN** a view titled with 120 characters is open with the six-window setup and the sidebar open, at 1440×900 and at 1000×557
-- **THEN** every control of the top row has the same `getBoundingClientRect().top` (±1 px) in each viewport, and the title ends in an ellipsis with the full title in its tooltip and in the tab title
-- **Evidence:** UI check on smart451 (tops per viewport, one screenshot each)
+- **THEN** every control of the top row has the same `getBoundingClientRect().top` (±1 px) in each viewport; the title text is at least `10ch` wide (rect width ≥ its computed `min-width`, which is `10ch`) and ends in an ellipsis with the full title in its tooltip and in the tab title; at 1000×557 "+ Values" is still in the row
+- **Evidence:** UI check on smart451 (tops, title width and computed `min-width` per viewport, one screenshot each); `apps/web/test/views.test.ts` › "keeps the title at least ten characters" (`titleMinChars` gives 10 for 120 characters, 7 for `Drive 3`)
 
 ### Requirement: Views menu
-The Views menu SHALL offer "Save view…" (Ctrl/Cmd+S), the saved views newest first with saved time, window count and data refs, the open one marked, "Before last open" last, "Import file…" and "Copy link"; each row SHALL offer Download and Delete (inline confirm). Saving onto an existing title SHALL ask "Replace?". Origin: persona test (boss); Jan 2026-10-17.
+The Views menu SHALL offer save entries, the saved views newest first with saved time, window count and data refs, the open one marked, "Before last open" last, "Import file…" and "Copy link"; each row SHALL offer Download and Delete (inline confirm) without shortening the row's meta line. Origin: persona test (boss); Jan 2026-10-17; row layout: round-1 UI finding (spec owner's default, design V7).
 
-#### Scenario: Save twice under one title
-- **WHEN** the user saves the workspace as "Speeds", builds another view and saves it as "Speeds" again
-- **THEN** the second save shows `"Speeds" exists. Replace?`; "Replace" saves it and the menu lists one "Speeds"
-- **Evidence:** UI check on smart451 (screenshot of the prompt and of the list after)
+#### Scenario: Row actions keep the meta line
+- **WHEN** the menu lists a view with 6 windows and data `smart451`, and the pointer moves onto its row
+- **THEN** Download and Delete appear; the meta line's rect width and text are the same as before the hover (±1 px), and it reads `<saved local time> · 6 windows · smart451`
+- **Evidence:** UI check on smart451 (rects before and on hover, one screenshot on hover); `apps/web/test/views.test.ts` › "describes a menu row" (`rowDetails`)
+
+### Requirement: Save in place
+With a named open view, "Save" (Ctrl/Cmd+S) SHALL save it in place without asking and "Save as…" SHALL open the form; otherwise "Save view…" (Ctrl/Cmd+S) opens the form. Saving SHALL ask "Replace?" only when the name belongs to a different view. Origin: round-1 UI finding (spec owner's default, design V7); persona test (boss: keep a view).
+
+#### Scenario: Save the open view in place
+- **WHEN** view "Speeds" (name `speeds`) is open and modified, and the user picks "Save"; then "Save as…" with the title unchanged; then Ctrl+S
+- **THEN** "Save" and Ctrl+S save without a form, the "Save as…" form saves without "Replace?"; each removes the `•` and raises the revision by one; the menu lists one "Speeds"
+- **Evidence:** UI check on smart451 (screenshot of the menu after); `apps/web/test/views.test.ts` › "saves the open view in place" (`saveEntries` and `saveTarget` for no view, an unnamed view, a named view with unchanged, changed and same-name titles)
+
+#### Scenario: Save onto another view's title
+- **WHEN** "Speeds" is saved, view "Drive 3" is opened, and the user saves with "Save as…" under the title "Speeds"
+- **THEN** the form shows `"Speeds" exists. Replace?`; "Replace" saves it, the menu lists one "Speeds", marked ✓, and "Drive 3" is unchanged
+- **Evidence:** UI check on smart451 (screenshot of the prompt and of the list after); `apps/web/test/views.test.ts` › "reads a 409 into a Replace prompt" (`existingTitle`)
 
 ### Requirement: Open notice
-After an open, the strip SHALL show `Opened "<title>"` and, if any, how many signals were not found or left out, in the info tone; a click removes it. Origin: necessary consequence of "Signals left out on open" (the user must see what is missing).
+After an open, the strip SHALL show `Opened "<title>"` and, if any, how many signals were not found or left out, in the info tone, replacing any older message; a click removes it. Other tabs SHALL show `"<title>" opened elsewhere`. Origin: necessary consequence of "Signals left out on open" (the user must see what is missing); replacing and "elsewhere": round-1 UI finding (spec owner's default, design V7).
 
 #### Scenario: Open notice names missing signals
 - **WHEN** a view file whose first window lists `smart451/Nope_1h.X` is imported and opened
 - **THEN** the strip shows `Opened "<title>" · 1 signal not found: Nope_1h.X` in the info tone, and a click removes it
-- **Evidence:** UI check on smart451 (screenshot of the strip)
+- **Evidence:** UI check on smart451 (screenshot of the strip); `apps/web/test/views.test.ts` › "builds the open notice" (`openNotice`)
+
+#### Scenario: Open clears an older message
+- **WHEN** `<UI address>?view=nope` shows the `unknown_view` error, and then a view is opened from the menu
+- **THEN** the strip shows only `Opened "<title>"` in the info tone, no error
+- **Evidence:** UI check on smart451 (screenshot of the strip); `apps/web/test/views.test.ts` › "clears an older message on open" (`nextStrip`: error then opened gives the notice; notice then error gives the error)
+
+#### Scenario: Opened elsewhere
+- **WHEN** two tabs are open and `kipscope view open <name>` runs
+- **THEN** both tabs show the view, and each strip shows `"<title>" opened elsewhere` in the info tone; a tab that opened a view itself shows `Opened "<title>"` instead
+- **Evidence:** UI check on smart451 (one screenshot of a tab); `apps/web/test/views.test.ts` › "notices an open from elsewhere" (`openedElsewhere` for a foreign `view.open` push, the tab's own revision, and another command)

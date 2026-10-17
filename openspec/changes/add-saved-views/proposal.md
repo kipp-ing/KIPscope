@@ -42,8 +42,8 @@ The first slice solves "keep a view, and hand it on" with one portable file form
 
 ### Modified Capabilities
 
-- `workspace-state`: new "Workspace survives a restart", "Open view in the workspace", "Open replaces the workspace".
-- `cli`: new "View commands" and "View export prints the file".
+- `workspace-state`: new "Workspace survives a restart", "Workspace restored at start", "Open view in the workspace", "Open replaces the workspace", "View names only from the store".
+- `cli`: new "View commands", "View export prints the file" and "Link from the CLI".
 
 ## Impact
 
