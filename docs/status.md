@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-17, session 7. Next to build: `improve-events` (spec ready). Twenty-five changes are archived and the main specs describe the running app.
+As of 2026-10-17, session 7. Feature work pauses for user feedback; next: adoptability (lean, documented data-source interfaces; Azure as the first case). Twenty-six changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -9,7 +9,7 @@ As of 2026-10-17, session 7. Next to build: `improve-events` (spec ready). Twent
 | Signal catalog | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Signals with DBC metadata and SNA rules; ranked search, hover card, keyboard and drag in the explorer |
 | Design language | [design-language](../openspec/specs/design-language/spec.md) | KI.ping look (D-055): slate neutrals, sky accent, dense 12 px, pills, grey group bands, Okabe-Ito series |
 | Time strip | [time-strip](../openspec/specs/time-strip/spec.md) | Data density and drives over the whole recording under the option bar; click jumps, drag zooms, the shown range slides and resizes, a drive fits, double-click shows all, `,`/`.` step drives; A/B/L marked; `/api/density` with drives, prefetched after each catalog load |
-| Events | [events](../openspec/specs/events/spec.md), [event-filter](../openspec/specs/event-filter/spec.md) | Diagnostic events (`sdlog.events`) and state changes as pins on the strip, lines in the charts and a sidebar Events tab; one human filter string in UI, CLI and workspace, default `active changes`; IgnCurMode and BMS.contactor on the events line via `kipscope.yaml` |
+| Events | [events](../openspec/specs/events/spec.md), [event-filter](../openspec/specs/event-filter/spec.md) | Diagnostic events (`sdlog.events`) and state changes as pins on the strip, lines in the charts and a sidebar Events tab; one human filter string in UI, CLI and workspace, default `active changes`; IgnCurMode and BMS.contactor on the events line via `kipscope.yaml`; list scoped to the view, `n`/`p` stepping, fault memory reads hollow |
 | State names | [state-names](../openspec/specs/state-names/spec.md) | Cursors show `KEYON`, `open` from `VAL_` tables, diag enums and row text; state signals drawn as steps |
 | Diagnostic catalogs | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Units and states of `BMS.*` from the decoder's manifest + names files (`KIPSCOPE_DIAG_CATALOGS`); group `BMS (diag)` |
 | Signal groups | [signal-groups](../openspec/specs/signal-groups/spec.md) | `display.groups` rules in `kipscope.yaml` group the explorer by sending ECU (DBC `BO_` sender, CPC/PNHV fallback); collapsible headers, groups with hits open while searching, `Other` last |
@@ -32,7 +32,7 @@ As of 2026-10-17, session 7. Next to build: `improve-events` (spec ready). Twent
 | Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance). Decisions D-001 … D-072: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance, events usability). Decisions D-001 … D-073: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -72,10 +72,11 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Built and archived `add-saved-views` (D-069 … D-071) in three rounds: the workspace survives a restart, named views, YAML export and import, `#view=` links, CLI `view`; top-row overflow menu.
 - Built and archived `add-guidance` (D-072) in two rounds plus lead fixes: the window last clicked is the "Add to" target, reveal and flash, hints, help panel with `docs/manual.md` and keys, "Start here" card.
 - Crash gate `pnpm smoke` (headless Chrome against the dev server and a preview) is now the last step of every app round. Jan on the three changes: „its good".
+- Built and archived `improve-events` (D-073) in three rounds plus a lead check (the 1000×557 count check, run headless): events in view with `In view | All`, `n`/`p` stepping, fault memory reads as hollow marks, a Refine section, a key line. Jan: „nice. before we upgrade some more we need more user feedback".
 
 ## Next
 
-1. Build `improve-events` (spec ready, persona test).
+1. Jan (2026-10-17): „before we upgrade some more we nee more user feedback": no new features until more user feedback is in. Next: adoptability, „if one wants to connect this to azur cli as data aquisition. the interfaces shall be lean and documented".
 2. Rest of persistence (concept §8): snapshots, templates, undo. Save and load are done (D-070).
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
 4. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.

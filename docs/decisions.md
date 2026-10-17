@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-073: Events usability (2026-10-17)
+
+From the archived change `improve-events` (E-1 … E-4); details there.
+
+- **Decision:** E-1 (a): the events list shows the events in the bar target's view, with a switch `In view | All` (default In view, kept per browser in `kipscope.eventsScope`) and `↑ earlier` / `↓ later` jumps. E-2 (a): `n`/`p`, `‹ ›` and a row click put cursor A on the event (Shift+click: B) and centre the view only when the event lies outside it. E-3 (a): DTCs are fault memory reads: one row per ECU and readout time (expandable), hollow pins and glyphs, a tooltip line saying the onset time is unknown. E-4 (a): filter field, chips and events-line signals sit in a `Refine` section, closed by default (`e` and the strip count open it); rows wrap; a key line under the list; the strip count's tooltip says what the numbers are. The CLI, the filter grammar and `/api/events` are unchanged.
+- **Why:** Jan (2026-10-17): „events need an expert, yes i think its cluttered hard to use too“; the list should focus on what is in view. Then: „all recommended“.
+
 ## D-072: Add target, reveal and help (2026-10-17)
 
 From the archived change `add-guidance` (G-1 … G-4); details there.
