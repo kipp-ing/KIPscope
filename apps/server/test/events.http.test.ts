@@ -383,11 +383,8 @@ describe("GET /api/events with a signal that is recorded later", () => {
   source.listSignals = async (abort) => {
     const list = await real.listSignals(abort);
     loads++;
-    return loads >= 2 ? [...list, later] : list;
-  };
-  source.textSignals = async (abort) => {
-    const list = await real.textSignals(abort);
-    return loads >= 2 ? [...list, later] : list;
+    // From the second load on the list holds it, with text rows (the text flag of the list).
+    return loads >= 2 ? [...list, { ...later, text: true }] : list;
   };
   const { app, catalog, warn } = appFor(source, ["testcar/Ign_A20h.MODE", "testcar/Later.X"]);
   beforeAll(async () => {

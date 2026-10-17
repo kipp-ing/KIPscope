@@ -4,15 +4,16 @@ import { attributionText, type Measurement } from "@kipscope/shared";
 import { isLoopbackHost } from "./access.ts";
 import { buildApp } from "./app.ts";
 import { Catalog, keepCatalogLoaded, warnDisplayFallbacks } from "./catalog.ts";
-import { ClickHouseSource, createClickHouseClient } from "./clickhouse.ts";
 import { loadConfig, REPO_ROOT } from "./config.ts";
 import { loadDbcFiles } from "./dbc.ts";
 import { loadDiagCatalogs } from "./diag.ts";
+import { completeSource, nativeMethods } from "./fallbacks.ts";
 import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
 import { loadState, STATE_FILE, StatePersister } from "./persist.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
-import { QueryQueue, queuedSource } from "./queue.ts";
+import { QueryQueue, queuedAdapter } from "./queue.ts";
+import { createAdapter } from "./sources.ts";
 import { ViewStore } from "./views.ts";
 import { WorkspaceStore } from "./workspace.ts";
 
@@ -42,11 +43,9 @@ try {
   licenseMissing = true;
 }
 
-const client = createClickHouseClient(config.clickhouse);
-const source = queuedSource(
-  new ClickHouseSource(client, config.mapping, config.queryTimeoutSeconds),
-  new QueryQueue(config.queryConcurrency),
-);
+// Fallbacks outside the queue: each inner query of a fallback takes its own slot (design C3).
+const adapter = createAdapter(config);
+const source = completeSource(queuedAdapter(adapter, new QueryQueue(config.queryConcurrency)));
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 const loopback = isLoopbackHost(config.host);
@@ -87,18 +86,11 @@ const app = buildApp(
     workspace,
     meta: {
       build,
-      // Labels only: the URL, user and password stay in the client config.
-      source: {
-        kind: "clickhouse",
-        database: config.mapping.database,
-        table: config.mapping.table,
-      },
+      // Labels only: URLs, users, passwords and tokens stay in the adapter.
+      source: source.info,
       // Outside the query queue, so a busy queue does not read as an unreachable source.
       // Aborted on the 2 s timeout, so a hung tunnel does not hold a socket per poll.
-      ping: async (signal) => {
-        const result = await client.ping({ select: false, abort_signal: signal });
-        if (!result.success) throw result.error;
-      },
+      ping: (signal) => source.ping(signal),
     },
     ...(licenseText === undefined ? {} : { licenseText }),
     views,
@@ -127,6 +119,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
   });
 
 app.log.info(attributionText());
+app.log.info(
+  `source ${source.info.kind} ${source.info.database}: native ${nativeMethods(adapter).join(", ") || "none"}`,
+);
 await app.listen({ host: config.host, port: config.port });
 // Retries in the background until the source answers once (design H5).
 keepCatalogLoaded(catalog, {

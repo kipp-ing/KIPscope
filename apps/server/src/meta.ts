@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import type { CatalogState, ServerMeta } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { Catalog } from "./catalog.ts";
+import type { SourceInfo } from "./datasource.ts";
 import { apiError } from "./http.ts";
 
 /** The repo's commit when the server started (design F2). */
@@ -39,7 +40,7 @@ export const PING_TIMEOUT_MS = 2000;
 export interface MetaDeps {
   build: BuildInfo;
   /** Labels only; the source URL and credentials never enter here. */
-  source: { kind: "clickhouse"; database: string; table: string };
+  source: Pick<SourceInfo, "kind" | "database" | "table">;
   /** Resolves when the source answers; rejects with the reason. Must not use the query queue.
    *  `signal` aborts on the timeout, so a hung source does not keep the request (and its socket) open. */
   ping: (signal: AbortSignal) => Promise<void>;

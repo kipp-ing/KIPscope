@@ -7,6 +7,8 @@ import { WorkspaceStore } from "../src/workspace.ts";
 /** Source whose count takes `delayMs` and records whether it was aborted. */
 function slowSource(delayMs: number) {
   const seen: { aborted: boolean }[] = [];
+  /** The `limit` each raw call got: the series route reads without one. */
+  const limits: (number | undefined)[] = [];
   const source = {
     count: (_ref: unknown, _from: bigint, _to: bigint, abort?: AbortSignal) =>
       new Promise<number>((resolve, reject) => {
@@ -19,13 +21,15 @@ function slowSource(delayMs: number) {
           reject(abort.reason);
         });
       }),
-    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "car", name: "S" }],
-    raw: async () => [],
+    raw: async (_ref: unknown, _from: bigint, _to: bigint, limit?: number) => {
+      limits.push(limit);
+      return [];
+    },
     before: async () => undefined,
     after: async () => undefined,
   } as unknown as DataSource;
-  return { source, seen };
+  return { source, seen, limits };
 }
 
 describe("GET /api/series over a real connection", () => {
@@ -51,6 +55,9 @@ describe("GET /api/series over a real connection", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).kind).toBe("raw");
     expect(slow.seen.at(-1)?.aborted).toBe(false);
+    // The route passes no limit to `raw` (data-source C1).
+    expect(slow.limits.length).toBeGreaterThan(0);
+    expect(slow.limits.every((limit) => limit === undefined)).toBe(true);
   });
 
   it("aborts the queries when the client disconnects", async () => {
@@ -67,7 +74,7 @@ describe("GET /api/series over a real connection", () => {
 describe("GET /api/extent over a real connection", () => {
   const seen: { aborted: boolean }[] = [];
   const source = {
-    textSignals: async () => [],
+    info: { kind: "clickhouse", database: "sdlog", table: "signals" },
     listSignals: async () => [{ dataRef: "car", name: "S" }],
     extent: (_ref: unknown, abort?: AbortSignal) =>
       new Promise((_resolve, reject) => {

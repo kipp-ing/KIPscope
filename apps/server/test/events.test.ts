@@ -50,7 +50,7 @@ function fakeSource(
   return {
     eventCalls: [] as { dataRef: string; limit: number }[],
     changeCalls: [] as { ref: SeriesRef; by: StateChangeRule; limit: number }[],
-    eventsTable: "sdlog.events",
+    info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
     async events(dataRef: string, limit: number) {
       this.eventCalls.push({ dataRef, limit });
       await Promise.resolve();

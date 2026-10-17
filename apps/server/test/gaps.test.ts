@@ -13,7 +13,6 @@ const workspace = () => new WorkspaceStore({ signalExists: () => true, hasStates
 function stubSource() {
   const calls = { logger: 0, samples: 0, failNext: false };
   const source = {
-    textSignals: async () => [],
     listSignals: async () => [
       { dataRef: "car", name: "Cyc" },
       { dataRef: "car", name: "Odd" },
@@ -134,7 +133,6 @@ function refreshSource() {
   };
   const calls = { count: 0, logger: 0 };
   const source = {
-    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "car", name: "Cyc" }],
     refExtent: async () => undefined,
     events: async () => [],

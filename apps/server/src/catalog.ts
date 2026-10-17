@@ -8,7 +8,7 @@ import {
   signalId,
   valueLabels,
 } from "@kipscope/shared";
-import type { DataSource, SnaRange } from "./datasource.ts";
+import type { DataSource, SnaRange, SourceSignal } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
 import type { DiagSignal } from "./diag.ts";
 import { assignGroup } from "./groups.ts";
@@ -92,16 +92,15 @@ export class Catalog {
   }
 
   private async load(): Promise<void> {
-    let refs: Awaited<ReturnType<DataSource["listSignals"]>>;
-    let textRefs: Awaited<ReturnType<DataSource["textSignals"]>>;
+    let listed: SourceSignal[];
     let metadata: Map<string, DbcSignal>;
     let diag: Map<string, DiagSignal>;
     const warn = (message: string) => this.log?.warn(`DBC file skipped: ${message}`);
     const warnDiag = (message: string) => this.log?.warn(`diag catalog: ${message}`);
     try {
-      [[refs, textRefs], metadata, diag] = await Promise.all([
-        // Signals whose rows carry text, once per load after the list (add-events N1).
-        this.source.listSignals().then(async (r) => [r, await this.source.textSignals()] as const),
+      [listed, metadata, diag] = await Promise.all([
+        // Each listed signal carries whether its rows have text (add-events N1).
+        this.source.listSignals(),
         this.loadMetadata(warn),
         this.loadDiag(warnDiag),
       ]);
@@ -110,8 +109,9 @@ export class Catalog {
       this.lastError = errorMessage(error);
       throw error;
     }
+    const refs = validRefs(listed, (message) => this.log?.warn(message));
     const ranges = new Map<string, SnaRange[]>();
-    const textIds = new Set(textRefs.map((r) => signalId(r.dataRef, r.name)));
+    const textIds = new Set(refs.filter((r) => r.text).map((r) => signalId(r.dataRef, r.name)));
     // Names with data that a DBC and a diagnostic catalog both define; the DBC wins (design M5).
     const both = new Set<string>();
     const entries = refs.map(({ dataRef, name }) => {
@@ -281,6 +281,24 @@ function errorMessage(error: unknown): string {
   }
   const message = error instanceof Error ? error.message : String(error);
   return message || (error instanceof Error ? error.name : "unknown error");
+}
+
+/**
+ * The listed signals whose ID `<dataRef>/<name>` is well formed: a non-empty data ref without `/`
+ * and a non-empty name (data-source "Source data model"); one warning names the others.
+ */
+function validRefs(listed: SourceSignal[], warn: (message: string) => void): SourceSignal[] {
+  const valid: SourceSignal[] = [];
+  const skipped: string[] = [];
+  for (const ref of listed) {
+    if (ref.dataRef !== "" && !ref.dataRef.includes("/") && ref.name !== "") valid.push(ref);
+    else skipped.push(`${JSON.stringify(ref.dataRef)} ${JSON.stringify(ref.name)}`);
+  }
+  if (skipped.length > 0)
+    warn(
+      `catalog: ${skipped.length} listed signals skipped, their data ref or name would break the ID (data ref, name): ${skipped.slice(0, 10).join(", ")}`,
+    );
+  return valid;
 }
 
 /**

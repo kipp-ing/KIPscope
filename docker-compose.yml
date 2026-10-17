@@ -1,4 +1,5 @@
 # Test database for automated tests (design D10). Same ClickHouse line as carserver.
+# The Kusto emulator `adx-test` is under the profile `adx`: a plain `docker compose up -d` starts only ClickHouse.
 name: kipscope
 services:
   clickhouse-test:
@@ -14,5 +15,20 @@ services:
     volumes:
       - clickhouse-test-data:/var/lib/clickhouse
 
+  adx-test:
+    # Kusto emulator (Kustainer) for the ADX conformance run (add-adx-source C8); opt in with
+    # `docker compose --profile adx up -d`. amd64 only, emulated on arm64 Macs.
+    image: mcr.microsoft.com/azuredataexplorer/kustainer-linux@sha256:449165318234dd6aa9811341712e083953d99bd130eb72ed55dc5181d335b8b5
+    platform: linux/amd64
+    profiles: ["adx"]
+    ports:
+      - "127.0.0.1:8125:8080"
+    environment:
+      ACCEPT_EULA: "Y"
+    mem_limit: 4g
+    volumes:
+      - adx-test-data:/kustodata
+
 volumes:
   clickhouse-test-data:
+  adx-test-data:

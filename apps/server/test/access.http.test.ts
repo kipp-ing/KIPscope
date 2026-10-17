@@ -8,7 +8,6 @@ import type { DataSource } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
 const source = {
-  textSignals: async () => [],
   listSignals: async () => [{ dataRef: "car", name: "S" }],
 } as unknown as DataSource;
 

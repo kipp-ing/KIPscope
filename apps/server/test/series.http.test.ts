@@ -291,7 +291,6 @@ describe("GET /api/series beyond 104 days and at the bounds (harden-robustness)"
 
 describe("GET /api/series when the server cannot compute (harden-robustness)", () => {
   const source = {
-    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "car", name: "S" }],
     count: async () => {
       throw new RangeError("cannot compute");

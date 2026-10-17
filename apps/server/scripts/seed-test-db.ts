@@ -53,10 +53,16 @@
  *                         00:01:10, :20, :30, :50, 00:02:00, :10: 48 rows
  *                         Logger gaps 00:04:59.980-00:06:00.000 and 00:09:40.000-00:09:42.000; last row 00:09:59.980.
  *                         Catalog 1,021 -> 1,025 signals.
+ * - sdlog.conf_signals / sdlog.conf_events: the portable conformance fixture of add-adx-source (design C7), schemas of
+ *                         `signals_ns` and `events` with DateTime64(9); rows from test/conformance/fixture.ts (the
+ *                         same file seeds the Kusto emulator): `conf-a` 17,069 timestamped rows + 1 without time,
+ *                         `conf-b` 12 rows (17,082 in all), 8 signals; 6 events of `conf-a`, one without time.
+ *                         Own tables, so the counts above (1,025 signals) stay.
  *
  * Run: pnpm --filter @kipscope/server seed:test   (needs `docker compose up -d`)
  */
 import { createClient } from "@clickhouse/client";
+import { fixtureEvents, fixtureRows, formatTime } from "../test/conformance/fixture.ts";
 
 const url = process.env.TEST_CLICKHOUSE_URL;
 if (!url) throw new Error("TEST_CLICKHOUSE_URL is not set (see .env.example)");
@@ -133,12 +139,12 @@ const schema = (table: string, precision: number) => `
   ) ENGINE = MergeTree PARTITION BY vehicle ORDER BY (vehicle, signal, utc)
   SETTINGS allow_nullable_key = 1`;
 
-const eventsSchema = `
-  CREATE TABLE sdlog.events (
+const eventsSchema = (table: string, precision: number) => `
+  CREATE TABLE sdlog.${table} (
     vehicle LowCardinality(String),
     device LowCardinality(String),
     chunk String CODEC(ZSTD(3)),
-    utc Nullable(DateTime64(3, 'UTC')) CODEC(DoubleDelta, ZSTD(3)),
+    utc Nullable(DateTime64(${precision}, 'UTC')) CODEC(DoubleDelta, ZSTD(3)),
     source LowCardinality(String),
     kind LowCardinality(String),
     name String,
@@ -202,9 +208,13 @@ const statements = [
   "DROP TABLE IF EXISTS sdlog.signals",
   "DROP TABLE IF EXISTS sdlog.signals_ns",
   "DROP TABLE IF EXISTS sdlog.events",
+  "DROP TABLE IF EXISTS sdlog.conf_signals",
+  "DROP TABLE IF EXISTS sdlog.conf_events",
   schema("signals", 3),
   schema("signals_ns", 9),
-  eventsSchema,
+  schema("conf_signals", 9),
+  eventsSchema("events", 3),
+  eventsSchema("conf_events", 9),
   ...["A", "B", "C"].map((s, i) =>
     insert(
       "signals",
@@ -423,6 +433,20 @@ const checks: [string, string][] = [
   ],
   ["SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.signals_ns", NS_BASE.toString()],
   ["SELECT count() FROM sdlog.events", "19"],
+  ["SELECT count() FROM sdlog.conf_signals", "17082"],
+  ["SELECT countIf(utc IS NOT NULL) FROM sdlog.conf_signals WHERE vehicle = 'conf-a'", "17069"],
+  ["SELECT count() FROM sdlog.conf_signals WHERE vehicle = 'conf-b'", "12"],
+  ["SELECT count() FROM (SELECT DISTINCT vehicle, signal FROM sdlog.conf_signals)", "8"],
+  [
+    "SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.conf_signals WHERE signal = 'Fine.NS'",
+    "1791158400123456700",
+  ],
+  [
+    "SELECT toString(toUnixTimestamp64Nano(min(utc))) FROM sdlog.conf_signals WHERE signal = 'Span.FAR'",
+    "-1500000000",
+  ],
+  ["SELECT count() FROM sdlog.conf_events", "6"],
+  ["SELECT count() FROM sdlog.conf_events WHERE utc IS NOT NULL", "5"],
   ["SELECT count() FROM sdlog.events WHERE utc IS NOT NULL", "18"],
   [
     "SELECT count() FROM sdlog.signals WHERE signal IN ('Ign_A20h.MODE', 'Tmp_A21h.TEMP', 'DIAG.door', 'DIAG.lock')",
@@ -444,6 +468,37 @@ const started = Date.now();
 for (const query of statements) {
   await client.command({ query, clickhouse_settings: { wait_end_of_query: 1 } });
 }
+// The conformance fixture (design C7 of add-adx-source), from the file the emulator seed uses too.
+const confTime = (t: bigint | null) => (t === null ? null : formatTime(t, 9));
+await client.insert({
+  table: "sdlog.conf_signals",
+  format: "JSONEachRow",
+  values: fixtureRows().map((r) => ({
+    vehicle: r.dataRef,
+    device: "conf-dev",
+    chunk: "conf1",
+    signal: r.signal,
+    utc: confTime(r.t),
+    value: r.value,
+    text: r.text,
+  })),
+});
+await client.insert({
+  table: "sdlog.conf_events",
+  format: "JSONEachRow",
+  values: fixtureEvents().map((e) => ({
+    vehicle: e.dataRef,
+    device: "conf-dev",
+    chunk: "conf1",
+    utc: confTime(e.t),
+    source: e.source,
+    kind: e.kind,
+    name: e.name,
+    value: e.value,
+    text: e.text,
+    detail: e.detail,
+  })),
+});
 console.log(`seeded in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 
 let failed = 0;

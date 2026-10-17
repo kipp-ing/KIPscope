@@ -11,7 +11,6 @@ const MS = 1_000_000n;
 function fakeSource() {
   const calls = { extent: 0, buckets: 0, failNext: false };
   const source = {
-    textSignals: async () => [],
     listSignals: async () => [{ dataRef: "testcar", name: "S" }],
     refExtent: async () => {
       calls.extent++;
@@ -22,8 +21,10 @@ function fakeSource() {
       }
       return { count: 3, first: 0n, last: 5n * MS };
     },
-    refBuckets: async () => {
+    refBuckets: async (_ref: string, _width: bigint, times: boolean) => {
       calls.buckets++;
+      // The density asks for counts only: row times would cost +25 % on carserver.
+      expect(times).toBe(false);
       return [
         { start: 0n, count: 1 },
         { start: 5n * MS, count: 2 },
@@ -45,7 +46,8 @@ describe("DensityCache grid", () => {
       refExtent: async () => ({ count: 6, first, last }),
       // Grid buckets of 1.5 s: three in the first 10 min bar, one in the second, one after the
       // extent's last bar (left out), one before the first bar (left out).
-      refBuckets: async (_ref: string, width: bigint) => {
+      refBuckets: async (_ref: string, width: bigint, times: boolean) => {
+        expect(times).toBe(false);
         widths.push(width);
         return [
           { start: first, count: 1 },

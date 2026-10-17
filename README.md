@@ -31,6 +31,8 @@ cp .env.example .env   # then set CLICKHOUSE_PASSWORD (read-only user `letsview`
 
 ## Data sources
 
+The server reads one source, ClickHouse (default) or Azure Data Explorer (`KIPSCOPE_SOURCE=adx`); the adapter contract, every variable and "Connect your ADX" are in [docs/data-sources.md](docs/data-sources.md), the HTTP routes in [docs/http-api.md](docs/http-api.md).
+
 **Real data (development):** ClickHouse `sdlog` on carserver, reachable only through an SSH tunnel:
 
 ```sh
@@ -50,6 +52,14 @@ pnpm --filter @kipscope/server seed:test
 
 The seed script refuses to run if `TEST_CLICKHOUSE_URL` and `CLICKHOUSE_URL` name the same host and port (`localhost`, `127.0.0.1` and `[::1]` count as one host).
 
+**ADX test (Kusto emulator, opt-in):** under the compose profile `adx` on `127.0.0.1:8125`; `pnpm test` does not need it:
+
+```sh
+docker compose --profile adx up -d
+pnpm --filter @kipscope/server seed:adx   # refuses a non-loopback TEST_ADX_URL
+pnpm --filter @kipscope/server test:adx   # ADX conformance and adapter tests
+```
+
 ## Run
 
 ```sh
@@ -63,7 +73,7 @@ The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL`
 
 The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `KIPSCOPE_HOST` logs a warning at start: there is no authentication.
 
-Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the ClickHouse address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
+Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the source address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
 
 ## Using the app
 
@@ -166,7 +176,7 @@ pnpm lint    # pnpm format to fix
 
 ## CLI
 
-`kipscope` controls the open workspace through the server's HTTP API (spec [cli](openspec/specs/cli/spec.md)). Run it from the repo root while the server runs:
+`kipscope` controls the open workspace through the server's HTTP API (spec [cli](openspec/specs/cli/spec.md); routes in [docs/http-api.md](docs/http-api.md), sources in [docs/data-sources.md](docs/data-sources.md)). Run it from the repo root while the server runs:
 
 ```sh
 node apps/cli/src/main.ts --help

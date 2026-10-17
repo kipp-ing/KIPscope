@@ -6,6 +6,11 @@ export interface SignalRef {
   name: string;
 }
 
+/** A listed signal; `text`: some of its rows carry non-empty text (state names, add-events N1). */
+export interface SourceSignal extends SignalRef {
+  text?: boolean;
+}
+
 /** Closed interval of stored values that mean SNA. */
 export interface SnaRange {
   lo: number;
@@ -44,25 +49,55 @@ export interface Bucket {
   max: number | null;
 }
 
+/** A bucket of all timestamped rows of a data ref; `first`/`last` (row times) only when asked for. */
+export interface RefBucket {
+  start: Timestamp;
+  count: number;
+  first?: Timestamp;
+  last?: Timestamp;
+}
+
+/** Logger gaps of a data ref (design G2); `last`: its last row time, undefined without rows. */
+export interface LoggerGaps {
+  gaps: { from: Timestamp; to: Timestamp }[];
+  last?: Timestamp;
+}
+
+/** Labels of a source for meta, footer and log messages; never a URL or a credential. */
+export interface SourceInfo {
+  /** `clickhouse`, `adx`, or a new adapter's own word; the footer labels the known ones. */
+  kind: string;
+  database: string;
+  table: string;
+  /** Events table for log lines, e.g. `sdlog.events`; absent: "the events table". */
+  eventsTable?: string;
+}
+
 /**
- * Read-only access to one time-series source (ClickHouse now, ADX later). Ranges are half-open
- * [from, to). Points without a timestamp never appear in any result. Value-returning queries take a
- * `SeriesRef` and report values within its SNA ranges as SNA (design S3, S6).
+ * What an adapter author implements (docs/data-sources.md, design C1): read-only access to one
+ * time-series source. Ranges are half-open [from, to), points ascending by time, times `bigint`
+ * ns; rows without a time never appear in any result. Value-returning queries take a `SeriesRef`
+ * and report values within its SNA ranges as SNA (design S3, S6). `abort` is always the last
+ * parameter; an aborted call rejects with the signal's reason and leaves no work running.
  */
-export interface DataSource {
-  listSignals(abort?: AbortSignal): Promise<SignalRef[]>;
-  /** First and last timestamp of the signal's data, or undefined if it has none. */
-  extent(
-    ref: SignalRef,
+export interface SourceAdapter {
+  readonly info: SourceInfo;
+  /** Resolves when the source answers; never through the query queue. */
+  ping(abort: AbortSignal): Promise<void>;
+  listSignals(abort?: AbortSignal): Promise<SourceSignal[]>;
+  /** Points in [from, to), ascending; with `limit` the earliest `limit` of them. */
+  raw(
+    ref: SeriesRef,
+    from: Timestamp,
+    to: Timestamp,
+    limit?: number,
     abort?: AbortSignal,
-  ): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
-  count(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<number>;
-  raw(ref: SeriesRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<RawPoint[]>;
+  ): Promise<RawPoint[]>;
   /** Last point strictly before `t`. */
   before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
   /** First point at or after `t`. */
   after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
-  /** Non-empty buckets on the absolute grid `k * width`, ordered by start. */
+  /** Non-empty buckets on the floor grid `k * width` (also before 1970), ordered by start. */
   buckets(
     ref: SeriesRef,
     from: Timestamp,
@@ -70,54 +105,60 @@ export interface DataSource {
     width: bigint,
     abort?: AbortSignal,
   ): Promise<Bucket[]>;
-  /** Rows of the data ref with a timestamp: count, first and last; undefined if none. */
-  refExtent(
-    dataRef: string,
-    abort?: AbortSignal,
-  ): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
-  /** All rows of the data ref, with or without a timestamp; cheap from part metadata (design G9 (b)). */
-  refCount(dataRef: string, abort?: AbortSignal): Promise<number>;
-  /** Non-empty buckets of all the data ref's rows on the grid k * width, any order. */
+  /** Non-empty buckets of all timestamped rows of the data ref on k * width, any order; `times`: with first/last. */
   refBuckets(
     dataRef: string,
     width: bigint,
+    times: boolean,
     abort?: AbortSignal,
-  ): Promise<{ start: Timestamp; count: number }[]>;
+  ): Promise<RefBucket[]>;
+
+  // Optional fast paths; the server computes a missing one from the methods above (C2).
+  count?(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<number>;
+  /** First and last timestamp of the signal's data, or undefined if it has none. */
+  extent?(
+    ref: SignalRef,
+    abort?: AbortSignal,
+  ): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
+  /** Rows of the data ref with a timestamp: count, first and last; undefined if none. */
+  refExtent?(
+    dataRef: string,
+    abort?: AbortSignal,
+  ): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
+  /** A row count that changes whenever rows are added; rows without time may count, consistently (design G9 (b)). */
+  refCount?(dataRef: string, abort?: AbortSignal): Promise<number>;
   /**
    * Consecutive timestamped rows of the data ref at least `minGap` apart, exact, time order, found
-   * on the floor grid `grid` (≤ minGap / 2) (design G2); `last`: the data ref's last row time,
-   * undefined without rows.
+   * on the floor grid `grid` (≤ minGap / 2) (design G2).
    */
-  loggerGaps(
+  loggerGaps?(
     dataRef: string,
     grid: bigint,
     minGap: bigint,
     abort?: AbortSignal,
-  ): Promise<{ gaps: { from: Timestamp; to: Timestamp }[]; last?: Timestamp }>;
+  ): Promise<LoggerGaps>;
   /**
    * Up to `rows` timestamps of each named signal of the data ref, any order (design G3); signals
    * without rows are absent; no query for [].
    */
-  firstTimes(
+  firstTimes?(
     dataRef: string,
     names: readonly string[],
     rows: number,
     abort?: AbortSignal,
   ): Promise<Map<string, Timestamp[]>>;
-  /**
-   * The data ref's event rows with a time, time order (ties kind, source, name), at most `limit`;
-   * undefined when the events table does not exist (design E4).
-   */
-  events(dataRef: string, limit: number, abort?: AbortSignal): Promise<EventRow[] | undefined>;
   /** Rows of one signal (SNA left out) where the state changes, plus its first row; at most `limit` rows (E7). */
-  stateChanges(
+  stateChanges?(
     ref: SeriesRef,
     by: StateChangeRule,
     limit: number,
     abort?: AbortSignal,
   ): Promise<StateRow[]>;
-  /** Signals with non-empty text (one query); [] when the text column does not exist. */
-  textSignals(abort?: AbortSignal): Promise<SignalRef[]>;
-  /** Qualified events table name for log messages, e.g. `sdlog.events`; absent: "the events table". */
-  readonly eventsTable?: string;
+
+  // Capability without fallback: absent, or `undefined` from it, means "no events table".
+  /** The data ref's event rows with a time, time order (ties kind, source, name), at most `limit` (design E4). */
+  events?(dataRef: string, limit: number, abort?: AbortSignal): Promise<EventRow[] | undefined>;
 }
+
+/** What the server uses: every method present (`completeSource`, design C2). */
+export type DataSource = Required<SourceAdapter>;

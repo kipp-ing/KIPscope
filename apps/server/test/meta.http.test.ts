@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AdxSource } from "../src/adx.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
+import { KustoClient } from "../src/kusto.ts";
 import { type BuildInfo, type MetaDeps, PING_TIMEOUT_MS, readBuildInfo } from "../src/meta.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { adxEventMapping, adxMapping } from "./adxdb.ts";
 import { testDbcFiles, testSource } from "./testdb.ts";
 
 const LICENSE = readFileSync(resolve(import.meta.dirname, "../../../LICENSE"), "utf8");
@@ -117,7 +120,6 @@ describe("GET /api/meta catalog states", () => {
   it("reports a catalog that has not loaded", async () => {
     let fail = false;
     const source = {
-      textSignals: async () => [],
       listSignals: () =>
         fail ? Promise.reject(new Error("connect ECONNREFUSED")) : new Promise<never>(() => {}),
     } as unknown as DataSource;
@@ -327,6 +329,66 @@ describe("credentials", () => {
       }
     } finally {
       await app.close();
+    }
+  });
+
+  it("never sends source credentials of an ADX source", async () => {
+    // An ADX adapter with a fake cluster and a fake bearer token; MetaDeps takes only its labels.
+    const cluster = "https://kipscope-fake.westeurope.kusto.windows.net";
+    const token = "secret-token-123";
+    const frames = JSON.stringify([
+      { FrameType: "DataSetHeader", IsProgressive: false },
+      { FrameType: "DataTable", TableKind: "PrimaryResult", Rows: [[1]] },
+      { FrameType: "DataSetCompletion", HasErrors: false, Cancelled: false },
+    ]);
+    const sent: (string | undefined)[] = [];
+    const answering: typeof fetch = async (_url, init) => {
+      sent.push((init?.headers as Record<string, string> | undefined)?.Authorization);
+      return new Response(frames, { status: 200 });
+    };
+    const unreachable: typeof fetch = async () => {
+      throw new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED") });
+    };
+    const adapter = (fetchImpl: typeof fetch) =>
+      new AdxSource(
+        new KustoClient({
+          cluster,
+          database: "kipscope_test",
+          timeoutSeconds: 30,
+          token: async () => token,
+          fetch: fetchImpl,
+        }),
+        adxMapping,
+        adxEventMapping,
+      );
+    for (const [fetchImpl, reachable] of [
+      [answering, true],
+      [unreachable, false],
+    ] as const) {
+      const source = adapter(fetchImpl);
+      const app = buildApp({
+        catalog: idleCatalog(),
+        source: never,
+        workspace: workspace(),
+        meta: { ...metaDeps(async () => {}), source: source.info, ping: (s) => source.ping(s) },
+      });
+      try {
+        const res = await app.inject({ url: "/api/meta" });
+        expect(res.json().source).toMatchObject({
+          kind: "adx",
+          database: "kipscope_test",
+          reachable,
+        });
+        expect(res.body).not.toContain(token);
+        if (reachable) {
+          // The request did carry the token; the answer holds neither it nor the cluster URL.
+          expect(sent).toEqual([`Bearer ${token}`]);
+          expect(res.body).not.toContain("kusto.windows.net");
+          expect(res.body).not.toContain("https://");
+        }
+      } finally {
+        await app.close();
+      }
     }
   });
 });

@@ -112,7 +112,6 @@ describe("GET /api/signals", () => {
 
 describe("GET /api/signals without a reachable source", () => {
   const failing = {
-    textSignals: async () => [],
     listSignals: () => Promise.reject(new Error("connect ECONNREFUSED")),
   } as unknown as DataSource;
   const catalog = new Catalog(failing, async () => new Map());
@@ -203,7 +202,6 @@ describe("collision warning on refresh (N5)", () => {
   let failing = false;
   const source = {
     ...real,
-    textSignals: async () => [],
     listSignals: () =>
       failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.listSignals(),
     // No rows, so the density prefetch after each load (design Q4) logs no warn line of its own.
@@ -252,7 +250,6 @@ describe("collision warning on refresh (N5)", () => {
 
 describe("diag catalog over HTTP", () => {
   const source = {
-    textSignals: async () => [],
     listSignals: async () =>
       ["TBMS.cell_voltage.01", "TBMS.contactor", "TBMS.unknown", "Nodbc_500h.RAW"].map((name) => ({
         dataRef: "testcar",

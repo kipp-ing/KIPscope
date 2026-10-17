@@ -63,7 +63,7 @@ export async function querySeries(
 
   if (count <= target) {
     const [points, before, after] = await Promise.all([
-      source.raw(ref, from, to, abort),
+      source.raw(ref, from, to, undefined, abort),
       source.before(ref, from, abort),
       source.after(ref, to, abort),
     ]);

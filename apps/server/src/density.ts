@@ -72,7 +72,7 @@ export class DensityCache {
     const grid = driveGrid(width);
     const counts = new Array<number>(length).fill(0);
     const kept: GridBucket[] = [];
-    for (const bucket of await this.source.refBuckets(dataRef, grid)) {
+    for (const bucket of await this.source.refBuckets(dataRef, grid, false)) {
       // Rows written between the two queries may fall outside the extent; they are left out.
       if (bucket.start < start || bucket.start >= end) continue;
       kept.push(bucket);

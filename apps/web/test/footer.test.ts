@@ -110,6 +110,38 @@ describe("automatic meta items (app-footer)", () => {
     expect(find(clean, "build").title).not.toContain("uncommitted");
   });
 
+  it("labels ADX and unknown source kinds", () => {
+    const sourceOf = (kind: string, database: string, reachable: boolean) =>
+      metaOf({
+        source: {
+          kind,
+          database,
+          table: "signals",
+          reachable,
+          checkedAt: "2026-10-17T10:00:00.000Z",
+          ...(reachable ? {} : { error: "connect ECONNREFUSED" }),
+        },
+      });
+    const sourceItem = (meta: ServerMeta) => find(footerItems(meta, false, ZONE), "source");
+
+    // ADX is labelled, ok when reachable and unreachable in the error tone when not.
+    expect(sourceItem(sourceOf("adx", "kipscope_test", true))).toMatchObject({
+      text: "ADX kipscope_test",
+      tone: "ok",
+    });
+    expect(sourceItem(sourceOf("adx", "kipscope_test", false))).toMatchObject({
+      text: "ADX kipscope_test unreachable",
+      tone: "error",
+    });
+    // Any other kind shows as the adapter named it.
+    expect(sourceItem(sourceOf("memory", "fixture", true))).toMatchObject({
+      text: "memory fixture",
+      tone: "ok",
+    });
+    // ClickHouse keeps its label.
+    expect(sourceItem(sourceOf("clickhouse", "sdlog", true)).text).toBe("ClickHouse sdlog");
+  });
+
   it("shows unreachable, loading and failed meta", () => {
     const down = metaOf({
       build: { commit: null, dirty: false, startedAt: "2026-10-16T13:07:10.000Z" },

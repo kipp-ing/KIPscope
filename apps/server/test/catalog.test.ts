@@ -198,7 +198,6 @@ describe("Catalog background load and warnings (stubbed source)", () => {
     const starts: number[] = [];
     const t0 = Date.now();
     const source = {
-      textSignals: async () => [],
       listSignals: async () => {
         starts.push(Date.now() - t0);
         if (starts.length <= 4) throw new Error("connect ECONNREFUSED");
@@ -229,7 +228,6 @@ describe("Catalog background load and warnings (stubbed source)", () => {
       release = resolve;
     });
     const source = {
-      textSignals: async () => [],
       listSignals: async () => {
         calls++;
         await gate;
@@ -245,9 +243,59 @@ describe("Catalog background load and warnings (stubbed source)", () => {
     expect(catalog.size).toBe(1);
   });
 
+  it("skips listed signals whose data ref or name would break the ID", async () => {
+    const source = {
+      listSignals: async () => [
+        { dataRef: "a/b", name: "X" },
+        { dataRef: "", name: "Y" },
+        { dataRef: "ok", name: "" },
+        { dataRef: "ok", name: "Z" },
+      ],
+    } as unknown as DataSource;
+    const warnings: string[] = [];
+    const catalog = new Catalog(source, async () => new Map(), undefined, {
+      warn: (message) => warnings.push(message),
+    });
+    await catalog.refresh();
+    await catalog.refresh();
+    expect(catalog.size).toBe(1);
+    expect(catalog.get("ok/Z")).toMatchObject({ id: "ok/Z", dataRef: "ok", name: "Z" });
+    // One warning per load, naming the three skipped entries.
+    expect(warnings).toHaveLength(2);
+    for (const message of warnings) {
+      expect(message).toContain("3 listed signals skipped");
+      expect(message).toContain("a/b");
+      expect(message).toContain('"Y"');
+      expect(message).toContain('"ok" ""');
+    }
+  });
+
+  it("reads the text flag from the list and asks for nothing else", async () => {
+    const asked: string[] = [];
+    const source = {
+      listSignals: async () => {
+        asked.push("listSignals");
+        return [
+          { dataRef: "car", name: "Door", text: true },
+          { dataRef: "car", name: "Speed", text: false },
+          { dataRef: "car", name: "Plain" },
+        ];
+      },
+      textSignals: async () => {
+        asked.push("textSignals");
+        return [{ dataRef: "car", name: "Speed" }];
+      },
+    } as unknown as DataSource;
+    const catalog = new Catalog(source, async () => new Map());
+    await catalog.refresh();
+    expect(asked).toEqual(["listSignals"]);
+    expect(catalog.get("car/Door")?.states).toBe("text");
+    expect(catalog.get("car/Speed")).not.toHaveProperty("states");
+    expect(catalog.get("car/Plain")).not.toHaveProperty("states");
+  });
+
   it("logs DBC warnings once per load", async () => {
     const source = {
-      textSignals: async () => [],
       listSignals: async () => [{ dataRef: "car", name: "S" }],
     } as unknown as DataSource;
     const warnings: string[] = [];
@@ -272,7 +320,6 @@ describe("Catalog background load and warnings (stubbed source)", () => {
 describe("Catalog diag catalogs (stubbed source)", () => {
   const stub = (...names: string[]) =>
     ({
-      textSignals: async () => [],
       listSignals: async () => names.map((name) => ({ dataRef: "car", name })),
     }) as unknown as DataSource;
   const fixtureDiag = (warn: (m: string) => void) => loadDiagCatalogs(testDiagCatalogs, warn);
@@ -355,8 +402,8 @@ describe("Catalog diag catalogs (stubbed source)", () => {
 describe("Catalog states (stubbed source)", () => {
   const stub = (texts: string[], ...names: string[]) =>
     ({
-      listSignals: async () => names.map((name) => ({ dataRef: "car", name })),
-      textSignals: async () => texts.map((name) => ({ dataRef: "car", name })),
+      listSignals: async () =>
+        names.map((name) => ({ dataRef: "car", name, text: texts.includes(name) })),
     }) as unknown as DataSource;
   const diag = (warn: (m: string) => void) => loadDiagCatalogs(testDiagCatalogs, warn);
 

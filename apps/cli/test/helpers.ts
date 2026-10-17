@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import type { EventRow, StateRow } from "@kipscope/shared";
 import { buildApp } from "../../server/src/app.ts";
 import { Catalog } from "../../server/src/catalog.ts";
-import type { DataSource, RawPoint, SignalRef } from "../../server/src/datasource.ts";
+import type { DataSource, RawPoint, SignalRef, SourceSignal } from "../../server/src/datasource.ts";
 import { loadDbcFiles } from "../../server/src/dbc.ts";
 import { ViewStore } from "../../server/src/views.ts";
 import { WorkspaceStore } from "../../server/src/workspace.ts";
@@ -20,13 +20,14 @@ export const T0 = 1790820000000000000n;
  * othercar/Fast_100h.SIG_A, and the state signals of add-events: testcar/Ign_A20h.MODE (`VAL_` labels
  * from the server's test DBC) and testcar/DIAG.door (rows with text).
  */
-const SIGNALS: SignalRef[] = [
+const SIGNALS: SourceSignal[] = [
   { dataRef: "testcar", name: "Sna_800h.RPM" },
   { dataRef: "testcar", name: "Sna_800h.SPEED" },
   { dataRef: "testcar", name: "Fast_100h.SIG_A" },
   { dataRef: "othercar", name: "Fast_100h.SIG_A" },
   { dataRef: "testcar", name: "Ign_A20h.MODE" },
-  { dataRef: "testcar", name: "DIAG.door" },
+  // The text flag replaces the old textSignals call (data-source "Source data model").
+  { dataRef: "testcar", name: "DIAG.door", text: true },
 ];
 
 /** 2026-10-01T00:00:00Z, base B of design T of add-events, in ns. */
@@ -112,12 +113,14 @@ const EXTENTS = new Map<string, { first: bigint; last: bigint }>([
   ["testcar/Sna_800h.SPEED", { first: T0, last: T0 + 99_900_000_000n }],
 ]);
 
-/** In-memory data source; only listSignals, extent, before and after are meaningful. */
+/** In-memory data source; only info, ping, listSignals, extent, before and after are meaningful. */
 export function stubSource(): DataSource {
   const unused = async () => {
     throw new Error("not used by the CLI tests");
   };
   return {
+    info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
+    ping: async () => {},
     listSignals: async () => SIGNALS,
     extent: async (ref) => EXTENTS.get(id(ref)),
     before: async (ref, t) => [...(POINTS.get(id(ref)) ?? [])].reverse().find((p) => p.t < t),
@@ -138,7 +141,6 @@ export function stubSource(): DataSource {
     refCount: async () => 1,
     events: async (dataRef) => (dataRef === "testcar" ? EVENT_ROWS : []),
     stateChanges: async (ref) => (ref.name === "Ign_A20h.MODE" ? MODE_CHANGES : []),
-    textSignals: async () => [{ dataRef: "testcar", name: "DIAG.door" }],
   };
 }
 

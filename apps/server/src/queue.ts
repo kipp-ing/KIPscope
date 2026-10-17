@@ -1,4 +1,4 @@
-import type { DataSource } from "./datasource.ts";
+import type { SourceAdapter } from "./datasource.ts";
 
 interface Waiting {
   start: () => void;
@@ -73,29 +73,46 @@ export class QueryQueue {
   }
 }
 
-/** Wraps a source so that every query runs through the queue. */
-export function queuedSource(source: DataSource, queue: QueryQueue): DataSource {
-  return {
-    listSignals: (abort) => queue.run((a) => source.listSignals(a), abort),
-    extent: (ref, abort) => queue.run((a) => source.extent(ref, a), abort),
-    count: (ref, from, to, abort) => queue.run((a) => source.count(ref, from, to, a), abort),
-    raw: (ref, from, to, abort) => queue.run((a) => source.raw(ref, from, to, a), abort),
-    before: (ref, t, abort) => queue.run((a) => source.before(ref, t, a), abort),
-    after: (ref, t, abort) => queue.run((a) => source.after(ref, t, a), abort),
+/** Wraps every method the adapter has in the queue; `ping` and `info` pass through unqueued (design C3). */
+export function queuedAdapter(adapter: SourceAdapter, queue: QueryQueue): SourceAdapter {
+  const queued: SourceAdapter = {
+    info: adapter.info,
+    ping: (abort) => adapter.ping(abort),
+    listSignals: (abort) => queue.run((a) => adapter.listSignals(a), abort),
+    raw: (ref, from, to, limit, abort) =>
+      queue.run((a) => adapter.raw(ref, from, to, limit, a), abort),
+    before: (ref, t, abort) => queue.run((a) => adapter.before(ref, t, a), abort),
+    after: (ref, t, abort) => queue.run((a) => adapter.after(ref, t, a), abort),
     buckets: (ref, from, to, width, abort) =>
-      queue.run((a) => source.buckets(ref, from, to, width, a), abort),
-    refExtent: (dataRef, abort) => queue.run((a) => source.refExtent(dataRef, a), abort),
-    refCount: (dataRef, abort) => queue.run((a) => source.refCount(dataRef, a), abort),
-    refBuckets: (dataRef, width, abort) =>
-      queue.run((a) => source.refBuckets(dataRef, width, a), abort),
-    loggerGaps: (dataRef, grid, minGap, abort) =>
-      queue.run((a) => source.loggerGaps(dataRef, grid, minGap, a), abort),
-    firstTimes: (dataRef, names, rows, abort) =>
-      queue.run((a) => source.firstTimes(dataRef, names, rows, a), abort),
-    events: (dataRef, limit, abort) => queue.run((a) => source.events(dataRef, limit, a), abort),
-    stateChanges: (ref, by, limit, abort) =>
-      queue.run((a) => source.stateChanges(ref, by, limit, a), abort),
-    textSignals: (abort) => queue.run((a) => source.textSignals(a), abort),
-    ...(source.eventsTable === undefined ? {} : { eventsTable: source.eventsTable }),
+      queue.run((a) => adapter.buckets(ref, from, to, width, a), abort),
+    refBuckets: (dataRef, width, times, abort) =>
+      queue.run((a) => adapter.refBuckets(dataRef, width, times, a), abort),
   };
+  // Optional methods only where the adapter has them, so the fallbacks see what is native.
+  const count = adapter.count?.bind(adapter);
+  if (count)
+    queued.count = (ref, from, to, abort) => queue.run((a) => count(ref, from, to, a), abort);
+  const extent = adapter.extent?.bind(adapter);
+  if (extent) queued.extent = (ref, abort) => queue.run((a) => extent(ref, a), abort);
+  const refExtent = adapter.refExtent?.bind(adapter);
+  if (refExtent)
+    queued.refExtent = (dataRef, abort) => queue.run((a) => refExtent(dataRef, a), abort);
+  const refCount = adapter.refCount?.bind(adapter);
+  if (refCount) queued.refCount = (dataRef, abort) => queue.run((a) => refCount(dataRef, a), abort);
+  const loggerGaps = adapter.loggerGaps?.bind(adapter);
+  if (loggerGaps)
+    queued.loggerGaps = (dataRef, grid, minGap, abort) =>
+      queue.run((a) => loggerGaps(dataRef, grid, minGap, a), abort);
+  const firstTimes = adapter.firstTimes?.bind(adapter);
+  if (firstTimes)
+    queued.firstTimes = (dataRef, names, rows, abort) =>
+      queue.run((a) => firstTimes(dataRef, names, rows, a), abort);
+  const stateChanges = adapter.stateChanges?.bind(adapter);
+  if (stateChanges)
+    queued.stateChanges = (ref, by, limit, abort) =>
+      queue.run((a) => stateChanges(ref, by, limit, a), abort);
+  const events = adapter.events?.bind(adapter);
+  if (events)
+    queued.events = (dataRef, limit, abort) => queue.run((a) => events(dataRef, limit, a), abort);
+  return queued;
 }

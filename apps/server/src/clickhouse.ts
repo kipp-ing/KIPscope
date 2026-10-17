@@ -7,7 +7,7 @@ import {
 } from "@clickhouse/client";
 import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
 import {
-  type Config,
+  type ClickHouseConfig,
   DEFAULT_EVENT_MAPPING,
   type EventMapping,
   type TableMapping,
@@ -16,18 +16,36 @@ import type {
   Bucket,
   DataSource,
   RawPoint,
+  RefBucket,
   SeriesRef,
   SignalRef,
+  SourceInfo,
+  SourceSignal,
   StateChangeRule,
 } from "./datasource.ts";
 
+/**
+ * Progress headers (design D7) pile up until the first body byte; Node's 16 KiB header limit
+ * failed a 10.7 s query on carserver (105 headers of 161 bytes). The client takes up to 1 MiB, and
+ * the interval grows with the timeout so that twice the timeout at twice the measured header size
+ * still fits: 100 ms, so cancelling within 100 ms, up to a 160 s timeout.
+ */
+const MAX_RESPONSE_HEADER_BYTES = 1024 * 1024;
+const PROGRESS_HEADER_BYTES = 2 * 161;
+const progressHeaders = (MAX_RESPONSE_HEADER_BYTES - 16 * 1024) / PROGRESS_HEADER_BYTES;
+const progressIntervalMs = (timeoutSeconds: number) =>
+  Math.max(100, Math.ceil((2 * timeoutSeconds * 1000) / progressHeaders));
+
 /** Client logging is off: aborted queries would log as errors; the server reports failures itself. */
-export function createClickHouseClient(config: Config["clickhouse"]): ClickHouseClient {
+export function createClickHouseClient(
+  config: Pick<ClickHouseConfig, "url" | "username" | "password">,
+): ClickHouseClient {
   return createClient({
     url: config.url,
     username: config.username,
     password: config.password,
     log: { level: ClickHouseLogLevel.OFF },
+    max_response_headers_size: MAX_RESPONSE_HEADER_BYTES,
   });
 }
 
@@ -53,7 +71,8 @@ export class ClickHouseSource implements DataSource {
   private readonly c: TableMapping;
   private readonly timeoutSeconds: number;
   private readonly e: EventMapping;
-  readonly eventsTable: string;
+  private readonly eventsTable: string;
+  readonly info: SourceInfo;
 
   constructor(
     client: ClickHouseClient,
@@ -67,6 +86,19 @@ export class ClickHouseSource implements DataSource {
     this.table = `${mapping.database}.${mapping.table}`;
     this.e = events;
     this.eventsTable = `${mapping.database}.${events.table}`;
+    this.info = {
+      kind: "clickhouse",
+      database: mapping.database,
+      table: mapping.table,
+      eventsTable: this.eventsTable,
+    };
+  }
+
+  // Outside the query queue (C3), so a busy queue does not read as an unreachable source.
+  async ping(abort: AbortSignal): Promise<void> {
+    abort.throwIfAborted();
+    const result = await this.client.ping({ select: false, abort_signal: abort });
+    if (!result.success) throw result.error;
   }
 
   private async rows<T extends unknown[]>(
@@ -74,6 +106,8 @@ export class ClickHouseSource implements DataSource {
     params: Params,
     abort?: AbortSignal,
   ): Promise<T[]> {
+    // An already aborted call rejects with its reason; the client would report its own error.
+    abort?.throwIfAborted();
     const result = await this.client.query({
       query,
       query_params: params,
@@ -83,10 +117,10 @@ export class ClickHouseSource implements DataSource {
       clickhouse_settings: {
         max_execution_time: this.timeoutSeconds,
         // An aborted request closes the connection. ClickHouse only notices that while writing,
-        // so progress headers every 100 ms make it cancel the query promptly (design D7).
+        // so progress headers make it cancel the query promptly (design D7); interval see above.
         cancel_http_readonly_queries_on_client_close: 1,
         send_progress_in_http_headers: 1,
-        http_headers_progress_interval_ms: "100",
+        http_headers_progress_interval_ms: String(progressIntervalMs(this.timeoutSeconds)),
       },
     });
     return result.json<T>();
@@ -128,14 +162,31 @@ export class ClickHouseSource implements DataSource {
   private point = ([t, v, text]: PointRow): RawPoint =>
     text === undefined ? { t: BigInt(t), v } : { t: BigInt(t), v, text };
 
-  async listSignals(abort?: AbortSignal): Promise<SignalRef[]> {
-    const { dataRef, signal } = this.c;
+  // The signal list, then the signals with text (state names, design N2); a missing text column
+  // means none has text.
+  async listSignals(abort?: AbortSignal): Promise<SourceSignal[]> {
+    const { dataRef, signal, text } = this.c;
     const rows = await this.rows<[string, string]>(
       `SELECT DISTINCT ${dataRef}, ${signal} FROM ${this.table} ORDER BY ${dataRef}, ${signal}`,
       {},
       abort,
     );
-    return rows.map(([ref, name]) => ({ dataRef: ref, name }));
+    let textRows: [string, string][];
+    try {
+      textRows = await this.rows<[string, string]>(
+        `SELECT DISTINCT ${dataRef}, ${signal} FROM ${this.table} WHERE ${text} != ''`,
+        {},
+        abort,
+      );
+    } catch (error) {
+      if (!hasCode(error, MISSING_COLUMN)) throw error;
+      textRows = [];
+    }
+    const key = (ref: string, name: string) => JSON.stringify([ref, name]);
+    const withText = new Set(textRows.map(([ref, name]) => key(ref, name)));
+    return rows.map(([ref, name]) =>
+      withText.has(key(ref, name)) ? { dataRef: ref, name, text: true } : { dataRef: ref, name },
+    );
   }
 
   async extent(ref: SignalRef, abort?: AbortSignal) {
@@ -162,14 +213,21 @@ export class ClickHouseSource implements DataSource {
     return Number(row?.[0] ?? 0);
   }
 
-  async raw(ref: SeriesRef, from: Timestamp, to: Timestamp, abort?: AbortSignal) {
+  async raw(ref: SeriesRef, from: Timestamp, to: Timestamp, limit?: number, abort?: AbortSignal) {
     const { time } = this.c;
     const { columns, params } = this.pointColumns(ref);
     const rows = await this.rows<PointRow>(
       `SELECT ${columns} FROM ${this.table}
        WHERE ${this.signalFilter} AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")}
-       ORDER BY ${time}`,
-      { ref: ref.dataRef, sig: ref.name, from, to, ...params },
+       ORDER BY ${time}${limit === undefined ? "" : " LIMIT {limit:UInt32}"}`,
+      {
+        ref: ref.dataRef,
+        sig: ref.name,
+        from,
+        to,
+        ...params,
+        ...(limit === undefined ? {} : { limit }),
+      },
       abort,
     );
     return rows.map(this.point);
@@ -261,17 +319,27 @@ export class ClickHouseSource implements DataSource {
     return Number(row?.[0] ?? 0);
   }
 
-  async refBuckets(dataRef: string, width: bigint, abort?: AbortSignal) {
+  // Without `times` the density query of today (counts only, design C4).
+  async refBuckets(
+    dataRef: string,
+    width: bigint,
+    times: boolean,
+    abort?: AbortSignal,
+  ): Promise<RefBucket[]> {
     const { dataRef: refColumn, time } = this.c;
-    const rows = await this.rows<[string, string]>(
+    const rows = await this.rows<[string, string, string?, string?]>(
       `WITH toUnixTimestamp64Nano(${time}) AS x
-       SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count()
+       SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count()${times ? ", toString(min(x)), toString(max(x))" : ""}
        FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL
        GROUP BY b`,
       { ref: dataRef, w: width },
       abort,
     );
-    return rows.map(([b, count]) => ({ start: BigInt(b), count: Number(count) }));
+    return rows.map(([b, count, first, last]) =>
+      first === undefined || last === undefined
+        ? { start: BigInt(b), count: Number(count) }
+        : { start: BigInt(b), count: Number(count), first: BigInt(first), last: BigInt(last) },
+    );
   }
 
   // One scan of the data-ref and time columns on a fixed floor grid: the bounding rows of every
@@ -385,21 +453,6 @@ export class ClickHouseSource implements DataSource {
       if (pt) row.prev = { t: pt, value: num(pv), text: ptext };
       return row;
     });
-  }
-
-  async textSignals(abort?: AbortSignal): Promise<SignalRef[]> {
-    const { dataRef, signal, text } = this.c;
-    try {
-      const rows = await this.rows<[string, string]>(
-        `SELECT DISTINCT ${dataRef}, ${signal} FROM ${this.table} WHERE ${text} != ''`,
-        {},
-        abort,
-      );
-      return rows.map(([ref, name]) => ({ dataRef: ref, name }));
-    } catch (error) {
-      if (hasCode(error, MISSING_COLUMN)) return [];
-      throw error;
-    }
   }
 }
 

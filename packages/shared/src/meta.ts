@@ -22,7 +22,8 @@ export type CatalogState = "loaded" | "loading" | "failed";
 export interface ServerMeta {
   build: { commit: string | null; dirty: boolean; startedAt: string };
   source: {
-    kind: "clickhouse";
+    /** `clickhouse`, `adx`, or another adapter's own word (data-source "Required source methods"). */
+    kind: string;
     database: string;
     table: string;
     reachable: boolean;

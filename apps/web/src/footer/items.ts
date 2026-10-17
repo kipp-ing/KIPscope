@@ -23,7 +23,8 @@ const RANK_SOURCE = 20;
 const RANK_OBJECT = 21;
 const RANK_NAME = 22;
 
-const KIND_LABEL: Record<ServerMeta["source"]["kind"], string> = { clickhouse: "ClickHouse" };
+/** Labels of the known source kinds; any other kind shows as given (design C10). */
+const KIND_LABEL: Record<string, string> = { clickhouse: "ClickHouse", adx: "ADX" };
 
 function clip(text: string): string {
   const chars = Array.from(text);

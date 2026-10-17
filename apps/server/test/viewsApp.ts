@@ -16,9 +16,10 @@ export const SIGNALS: SignalRef[] = [
 
 /** Source with the signal list only; the catalog refresh needs nothing else here. */
 const source = {
+  info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
+  ping: async () => {},
   listSignals: async () => SIGNALS,
   extent: async () => undefined,
-  textSignals: async () => [],
 } as unknown as DataSource;
 
 // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary fields of the JSON answers

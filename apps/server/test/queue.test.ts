@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { DataSource } from "../src/datasource.ts";
-import { QueryQueue, queuedSource } from "../src/queue.ts";
+import type { DataSource, SourceAdapter, SourceInfo } from "../src/datasource.ts";
+import { QueryQueue, queuedAdapter } from "../src/queue.ts";
 
 const tick = () => new Promise((r) => setTimeout(r, 1));
 
@@ -23,6 +23,10 @@ function fakeSource() {
 }
 
 const ref = (name: string) => ({ dataRef: "car", name });
+
+/** The stubs below implement the optional methods they call, so the queued adapter has them too. */
+const queuedSource = (stub: DataSource, queue: QueryQueue) =>
+  queuedAdapter(stub, queue) as DataSource;
 
 describe("QueryQueue", () => {
   it("runs 50 queries with at most 4 at a time and completes all", async () => {
@@ -78,7 +82,7 @@ describe("QueryQueue", () => {
   });
 });
 
-describe("queuedSource gaps", () => {
+describe("queuedAdapter gaps", () => {
   it("forwards loggerGaps, firstTimes and refCount to the wrapped source", async () => {
     const seen: unknown[][] = [];
     const stub = {
@@ -105,5 +109,86 @@ describe("queuedSource gaps", () => {
     expect(await source.refCount("car", controller.signal)).toBe(42);
     expect(seen.map((a) => a[0])).toEqual(["car", "car", "car"]);
     expect(seen[2]?.[1]).toBe(controller.signal);
+  });
+});
+
+describe("queuedAdapter shape", () => {
+  const info: SourceInfo = { kind: "memory", database: "fixture", table: "rows" };
+  const required = (extra: Partial<SourceAdapter> = {}): SourceAdapter => ({
+    info,
+    ping: async () => {},
+    listSignals: async () => [],
+    raw: async () => [],
+    before: async () => undefined,
+    after: async () => undefined,
+    buckets: async () => [],
+    refBuckets: async () => [],
+    ...extra,
+  });
+
+  it("wraps only the optional methods the adapter has", () => {
+    const bare = queuedAdapter(required(), new QueryQueue(2));
+    for (const name of [
+      "count",
+      "extent",
+      "refExtent",
+      "refCount",
+      "loggerGaps",
+      "firstTimes",
+      "stateChanges",
+      "events",
+    ] as const) {
+      expect(bare[name], name).toBeUndefined();
+    }
+    const withEvents = queuedAdapter(required({ events: async () => [] }), new QueryQueue(2));
+    expect(typeof withEvents.events).toBe("function");
+    expect(withEvents.count).toBeUndefined();
+  });
+
+  it("passes ping and info through without the queue", async () => {
+    const queue = new QueryQueue(1);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const adapter = required({
+      listSignals: async () => {
+        await gate;
+        return [];
+      },
+    });
+    const queued = queuedAdapter(adapter, queue);
+    expect(queued.info).toBe(info);
+    // The only slot is busy, a second query waits, and ping still answers at once.
+    const busy = queued.listSignals();
+    const waiting = queued.listSignals();
+    expect(queue.stats).toEqual({ running: 1, waiting: 1, peak: 1 });
+    await expect(queued.ping(new AbortController().signal)).resolves.toBeUndefined();
+    release();
+    await Promise.all([busy, waiting]);
+  });
+
+  it("forwards limit, times and abort to the wrapped methods", async () => {
+    const seen: unknown[][] = [];
+    const queued = queuedAdapter(
+      required({
+        raw: async (...a) => {
+          seen.push(a);
+          return [];
+        },
+        refBuckets: async (...a) => {
+          seen.push(a);
+          return [];
+        },
+      }),
+      new QueryQueue(2),
+    );
+    const controller = new AbortController();
+    await queued.raw({ dataRef: "car", name: "S", sna: [] }, 1n, 2n, 7, controller.signal);
+    await queued.refBuckets("car", 5n, true, controller.signal);
+    expect(seen[0]?.slice(1, 4)).toEqual([1n, 2n, 7]);
+    expect(seen[0]?.[4]).toBe(controller.signal);
+    expect(seen[1]?.slice(0, 3)).toEqual(["car", 5n, true]);
+    expect(seen[1]?.[3]).toBe(controller.signal);
   });
 });

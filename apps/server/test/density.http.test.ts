@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
+import { ClickHouseSource } from "../src/clickhouse.ts";
 import type { DataSource } from "../src/datasource.ts";
+import { DensityCache } from "../src/density.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { testClient, testSource } from "./testdb.ts";
+import { testClient, testEventMapping, testMapping, testSource } from "./testdb.ts";
 
 const real = testSource();
 let failing = false;
@@ -11,7 +13,6 @@ let failing = false;
 const extentCalls: string[] = [];
 /** The test source, whose density queries fail on demand ("source unreachable"). */
 const source = {
-  textSignals: async () => [],
   listSignals: (abort?: AbortSignal) => real.listSignals(abort),
   refExtent: (...args: Parameters<typeof real.refExtent>) => {
     extentCalls.push(args[0]);
@@ -164,5 +165,39 @@ describe("GET /api/density", () => {
       failing = false;
       await fresh.close();
     }
+  });
+});
+
+describe("density queries", () => {
+  it("sends the counts-only bucket query", async () => {
+    // A client that records the text of every query it sends.
+    const client = testClient();
+    const texts: string[] = [];
+    const recording = new Proxy(client, {
+      get(target, key) {
+        const member = Reflect.get(target, key, target);
+        if (key !== "query") return typeof member === "function" ? member.bind(target) : member;
+        return (params: Parameters<typeof client.query>[0]) => {
+          texts.push(params.query);
+          return client.query(params);
+        };
+      },
+    });
+    const cache = new DensityCache(
+      new ClickHouseSource(recording, testMapping, 30, testEventMapping),
+      () => new Date(1),
+    );
+    const density = await cache.get("drivecar");
+    expect(density?.dataRef).toBe("drivecar");
+    const flat = texts.map((text) => text.replace(/\s+/g, " ").trim());
+    expect(flat).toHaveLength(2);
+    // refExtent: count, first and last row time of the data ref.
+    expect(flat[0]).toContain("count()");
+    expect(flat[0]).toContain("min(utc)");
+    // refBuckets without row times: today's query, no min or max of the time column.
+    expect(flat[1]).toBe(
+      "WITH toUnixTimestamp64Nano(utc) AS x SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count() FROM sdlog.signals WHERE vehicle = {ref:String} AND utc IS NOT NULL GROUP BY b",
+    );
+    expect(flat[1]).not.toMatch(/\b(min|max)\(/);
   });
 });

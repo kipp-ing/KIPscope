@@ -11,6 +11,7 @@ import {
 } from "@kipscope/shared";
 import type { Catalog } from "./catalog.ts";
 import type { DataSource, StateChangeRule } from "./datasource.ts";
+import { ScanLimitError, STATE_SCAN_MAX } from "./fallbacks.ts";
 
 /** Table events of one data ref (design E3). */
 export interface TableEvents {
@@ -26,7 +27,7 @@ interface Entry<T> {
   promise: Promise<T>;
 }
 
-type EventsSource = Pick<DataSource, "events" | "stateChanges" | "eventsTable">;
+type EventsSource = Pick<DataSource, "events" | "stateChanges" | "info">;
 type EventsCatalog = Pick<Catalog, "loadedAt" | "get" | "snaRanges">;
 
 /**
@@ -115,7 +116,7 @@ export class EventsCache {
     // One row more than the cap tells a full table from a truncated one (design E3).
     const rows = await this.source.events(dataRef, MAX_EVENTS + 1);
     if (!rows) {
-      const table = this.source.eventsTable ?? "the events table";
+      const table = this.source.info.eventsTable ?? "the events table";
       this.warnOnce("table", `events: ${table} does not exist; no events`);
       return { events: [], truncated: false, names: new Set() };
     }
@@ -142,11 +143,22 @@ export class EventsCache {
     const table = await this.table(info.dataRef);
     if (table.names.has(info.name)) return "in_events_table";
     // First row plus MAX_SIGNAL_CHANGES changes are allowed; one more row means too many.
-    const rows = await this.source.stateChanges(
-      { dataRef: info.dataRef, name: info.name, sna: this.catalog.snaRanges(signalId) },
-      changeRule(info),
-      MAX_SIGNAL_CHANGES + 2,
-    );
+    let rows: Awaited<ReturnType<EventsSource["stateChanges"]>>;
+    try {
+      rows = await this.source.stateChanges(
+        { dataRef: info.dataRef, name: info.name, sna: this.catalog.snaRanges(signalId) },
+        changeRule(info),
+        MAX_SIGNAL_CHANGES + 2,
+      );
+    } catch (error) {
+      // The state-change fallback reads at most STATE_SCAN_MAX points (data-source "Scan cap").
+      if (!(error instanceof ScanLimitError)) throw error;
+      this.warnOnce(
+        `${signalId}:scan`,
+        `events line: ${signalId} has more than ${STATE_SCAN_MAX.toLocaleString("en")} points; the source's adapter should implement stateChanges`,
+      );
+      return "too_many_changes";
+    }
     if (rows.length > MAX_SIGNAL_CHANGES + 1) return "too_many_changes";
     return signalEvents(info, rows);
   }
