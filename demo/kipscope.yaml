@@ -1,0 +1,20 @@
+# KIPscope project file of the demo (README "Demo"): demo/smart-ed.dbc, database `demo`.
+display:
+  names:
+    # VEH_200h.VehSpeed -> VehSpeed; on a collision VehSpeed (VEH)
+    - match: '^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$'
+      show: '{signal}'
+      collision: '{signal} ({message})'
+  groups:
+    # Explorer groups by the sending ECU of the demo DBC
+    - group: '{sender}'
+measurement:
+  name: Commute and charge
+  object: smart fortwo ED (451), demo data
+  meta:
+    source: simulated, OVMS-public signals only
+events:
+  signals:
+    - smart-ed/BODY_423h.Ignition
+    - smart-ed/CHG_168h.ChargeActive
+    - smart-ed/PT_418h.Gear

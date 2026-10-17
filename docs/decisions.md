@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-076: Public pictures show only the demo recording (2026-10-17)
+
+Jan: „we do not want to disclose can messages“; the screenshots show what OVMS knows on the smart, error codes are common knowledge.
+
+- **Decision:** README pictures, the GIF and the manual's examples use the demo recording only: `demo/smart-ed.dbc` (signals the OVMS module `vehicle_smarted` decodes publicly, at its public CAN IDs, with made-up message and signal names), simulated rows from `seed:demo` in the database `demo`, generic SAE J2012 fault codes. `scripts/demo.sh` runs it on 7320/5183; `scripts/capture.mjs` remakes the pictures.
+- **Why:** The smart451 DBCs are not public; the repo is. OVMS covers enough of the car (speed, pack, cells, charger, doors, gear) to show every feature.
+- **Consequences:** Real DBC names still appear in `kipscope.yaml`, `kipscope.example.yaml`, specs, decisions and tests (and in git history); this decision does not scrub them.
+
 ## D-075: ClickHouse progress headers fit the header limit (2026-10-17)
 
 Lead fix during `add-adx-source`; details in its `rounds.md`.

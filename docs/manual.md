@@ -16,9 +16,9 @@ The Start here card above the windows sums up the first moves; × hides it, and 
 
 ## Find a signal
 
-Press `/` and type. Every word must occur in the signal's name, short name, description or unit, and parts of words match: `wheel speed` finds DVL, DVR, DHL and DHR. With an empty search the list shows all signals (553 in smart451), grouped by the ECU that sends them; click a group to open it. While you search, only groups with a match show, already open.
+Press `/` and type. Every word must occur in the signal's name, short name, description or unit, and parts of words match: `pack` finds PackVoltage and PackCurrent, `cellv` the 93 cell voltages. With an empty search the list shows all signals (135 in the demo recording), grouped by the ECU that sends them; click a group to open it. While you search, only groups with a match show, already open.
 
-A row shows the short name, the unit and an SNA marker. Short names come from the full DBC name, for example V_ANZ for COMBI_412h.V_ANZ; the full name is the row's tooltip.
+A row shows the short name, the unit and an SNA marker. Short names come from the full DBC name, for example VehSpeed for VEH_200h.VehSpeed; the full name is the row's tooltip.
 
 Rest the pointer on a row, or move to it with `↑` and `↓`, and a card shows what the DBC and diagnostic catalog know: full name, description, message and CAN ID, unit, scaling, raw step, range, SNA codes, state names, source file, and the windows that show the signal. `Esc` clears the search.
 
@@ -36,7 +36,7 @@ Drag a legend row onto another window to move the signal; hold Alt or Ctrl while
 
 ## Compare signals
 
-A timeseries window holds up to four units, with one y axis per unit. Signals with the same unit share an axis, so the four wheel speeds in 1/min compare on one scale.
+A timeseries window holds up to four units, with one y axis per unit. Signals with the same unit share an axis, so the 93 cell voltages in V compare on one scale.
 
 **Link time axes** decides whether windows share one time range. On (the default), zooming or panning one window moves all windows. Off, each window keeps its own range, and Go to, Span, Back and Reset act on the window you zoomed last; their tooltips name it.
 
@@ -50,9 +50,9 @@ Each legend row shows the signal's exact value at A and at B, read from the reco
 
 The column **L** follows the pointer: it shows each value under the pointer, a thin L line marks that time in the other windows, and the signal nearest the pointer is highlighted.
 
-Signals with states show the state name: PT_Rdy_IndLmp_Rq reads `OFF`, `GREEN` or `YELLOW`. For states, Δ shows `=` or `≠`.
+Signals with states show the state name: Gear reads `P`, `R`, `N` or `D`. For states, Δ shows `=` or `≠`.
 
-**Example, an acceleration in smart451:** add V_ANZ (indicated speed), type `2026-10-13 15:15:30 +30s` into Go to and press `Enter`. Click where the speed leaves 0 at 15:15:38.525 for A, `Shift+click` where it reaches 43 km/h at 15:15:44.833 for B, and switch on Diff. The row reads A 0, B 43.0, Δ 43.0 [km/h], Δt +6.308 s: about 1.9 m/s².
+**Example, an acceleration in the demo recording:** add VehSpeed (vehicle speed), type `2026-10-14 07:44:10 +30s` into Go to and press `Enter`. Click where the speed leaves 0 at 07:44:22.950 for A, `Shift+click` where it reaches 40 km/h at 07:44:28.350 for B, and switch on Diff. The row reads A 0, B 40.1, Δ 40.1 [km/h], Δt +5.400 s: about 2.1 m/s².
 
 ## Move in time
 
@@ -88,7 +88,7 @@ A hollow mark or glyph is a fault memory read: the time the DTCs were read out, 
 
 **The badge** after a window's title: `raw` draws every recorded sample. `agg · 2 s` is aggregated: each point stands for 2 s of data, drawn as their mean; zoom in for raw samples. `part · 2 s`: some signals aggregated, others raw.
 
-**SNA** means signal not available: the sender marked the value invalid, for example 511 for V_ANZ. SNA is never drawn as a value; the curve stops, and a thin strip in the signal's colour at the foot of the plot marks the time. `SNA 4.0 %` in a legend row means 4.0 % of the signal's points in the shown range are SNA. Cursor cells read `SNA`.
+**SNA** means signal not available: the sender marked the value invalid, for example the raw value 255 for SocDisplay. SNA is never drawn as a value; the curve stops, and a thin strip in the signal's colour at the foot of the plot marks the time. `SNA 4.0 %` in a legend row means 4.0 % of the signal's points in the shown range are SNA. Cursor cells read `SNA`.
 
 **No data:** where the logger recorded nothing for 2 s or more, the plot shows a grey band and the curves break. A cursor there reads `no data`; `—` means no value for another reason, named in the tooltip.
 
@@ -115,4 +115,4 @@ Press `?` in the app for every key and gesture.
 - **aggregated**: each point stands for a stretch of time.
 - **drive**: a stretch of dense logging, shown under the strip bars.
 - **event**: a fault, a state change or a logger error at one time.
-- **data ref**: one recording, for example smart451.
+- **data ref**: one recording, for example smart-ed.

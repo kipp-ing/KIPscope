@@ -6,3 +6,4 @@ dist/
 
 # Saved views and workspace state (add-saved-views, S-1)
 .kipscope/
+.kipscope-demo/

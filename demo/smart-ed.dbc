@@ -1,0 +1,252 @@
+VERSION ""
+
+NS_ :
+	CM_
+	VAL_
+	BA_DEF_
+	BA_
+
+BS_:
+
+BU_: VCU DASH BODY BMS OBL
+
+BO_ 360 CHG_168h: 8 VCU
+ SG_ ChargeActive : 56|1@1+ (1,0) [0|1] ""  DASH
+
+BO_ 512 VEH_200h: 8 VCU
+ SG_ Handbrake : 0|1@1+ (1,0) [0|1] ""  DASH
+ SG_ VehSpeed : 16|16@1+ (0.0555556,0) [0|200] "km/h"  DASH
+
+BO_ 725 BMS_2D5h: 8 BMS
+ SG_ SocReal : 32|10@1+ (0.1,0) [0|100] "%"  VCU
+
+BO_ 792 DASH_318h: 8 DASH
+ SG_ Throttle : 40|8@1+ (1,0) [0|100] "%"  VCU
+ SG_ RangeEst : 56|8@1+ (1,0) [0|254] "km"  VCU
+
+BO_ 974 ENERGY_3CEh: 8 DASH
+ SG_ EnergyStart : 0|16@1+ (0.01,0) [0|655.35] "kWh"  VCU
+
+BO_ 981 PWR_3D5h: 8 VCU
+ SG_ Bat12V : 24|8@1+ (0.1,0) [0|25.5] "V"  DASH
+
+BO_ 983 HV_3D7h: 8 BMS
+ SG_ HvActive : 0|1@1+ (1,0) [0|1] ""  VCU
+
+BO_ 1032 ENV_408h: 8 DASH
+ SG_ OutsideTemp : 32|8@1+ (0.5555556,-45.5555556) [-45.6|96.1] "degC"  VCU
+
+BO_ 1042 DASH_412h: 8 DASH
+ SG_ Odometer : 16|24@1+ (1,0) [0|16777214] "km"  VCU
+
+BO_ 1048 PT_418h: 8 VCU
+ SG_ Gear : 32|8@1+ (1,0) [0|255] ""  DASH
+
+BO_ 1059 BODY_423h: 8 BODY
+ SG_ Ignition : 0|1@1+ (1,0) [0|1] ""  VCU
+ SG_ DoorFL : 16|1@1+ (1,0) [0|1] ""  VCU
+ SG_ DoorFR : 17|1@1+ (1,0) [0|1] ""  VCU
+ SG_ Tailgate : 18|1@1+ (1,0) [0|1] ""  VCU
+ SG_ Headlights : 25|1@1+ (1,0) [0|1] ""  VCU
+
+BO_ 1096 BMS_448h: 8 BMS
+ SG_ PackVoltage : 48|16@1+ (0.1,0) [0|6553.5] "V"  VCU
+
+BO_ 1155 OBL_483h: 8 OBL
+ SG_ AcVoltage : 0|16@1+ (0.1,0) [0|6553.5] "V"  VCU
+ SG_ AcCurrent : 16|16@1+ (0.1,0) [0|6553.5] "A"  VCU
+ SG_ DcVoltage : 32|16@1+ (0.1,0) [0|6553.5] "V"  VCU
+ SG_ DcCurrent : 48|8@1+ (0.1,0) [0|25.5] "A"  VCU
+ SG_ ChargerTemp : 56|8@1+ (1,-40) [-40|215] "degC"  VCU
+
+BO_ 1284 TRIP_504h: 8 DASH
+ SG_ TripStart : 8|16@1+ (0.1,0) [0|6553.4] "km"  VCU
+
+BO_ 1288 BMS_508h: 8 BMS
+ SG_ PackCurrent : 16|14@1+ (0.1,-819.2) [-819.2|819.1] "A"  VCU
+ SG_ ChargePort : 22|1@1+ (1,0) [0|1] ""  VCU
+
+BO_ 1304 DASH_518h: 8 DASH
+ SG_ PilotLimit : 8|8@1+ (0.5,0) [0|127.5] "A"  VCU
+ SG_ DriveMode : 16|8@1+ (1,0) [0|255] ""  VCU
+ SG_ SocDisplay : 56|8@1+ (0.5,0) [0|127] "%"  VCU
+
+BO_ 2031 BMS_7EFh: 8 BMS
+ SG_ BatTemp : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ Soh : 0|8@1+ (1,0) [0|100] "%"  VCU
+ SG_ CapAvg : 0|16@1+ (0.01,0) [0|100] "Ah"  VCU
+ SG_ Isolation : 0|16@1+ (1000,0) [0|65535000] "Ohm"  VCU
+ SG_ CellT_1 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_2 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_3 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_4 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_5 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_6 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_7 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_8 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellT_9 : 0|16@1+ (0.015625,0) [-40|100] "degC"  VCU
+ SG_ CellV_01 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_02 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_03 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_04 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_05 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_06 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_07 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_08 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_09 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_10 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_11 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_12 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_13 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_14 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_15 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_16 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_17 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_18 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_19 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_20 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_21 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_22 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_23 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_24 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_25 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_26 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_27 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_28 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_29 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_30 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_31 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_32 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_33 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_34 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_35 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_36 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_37 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_38 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_39 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_40 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_41 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_42 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_43 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_44 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_45 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_46 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_47 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_48 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_49 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_50 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_51 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_52 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_53 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_54 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_55 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_56 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_57 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_58 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_59 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_60 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_61 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_62 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_63 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_64 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_65 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_66 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_67 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_68 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_69 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_70 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_71 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_72 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_73 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_74 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_75 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_76 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_77 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_78 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_79 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_80 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_81 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_82 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_83 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_84 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_85 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_86 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_87 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_88 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_89 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_90 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_91 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_92 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+ SG_ CellV_93 : 0|16@1+ (0.001,0) [0|5] "V"  VCU
+
+CM_ "Demo DBC for the KIPscope screenshots. Every signal is one the Open Vehicle Monitoring System (OVMS v3, module vehicle_smarted) decodes publicly for the smart fortwo electric drive 451; message and signal names are made up for this demo.";
+CM_ SG_ 360 ChargeActive "Charging active (OVMS xse.v.c.active)";
+CM_ SG_ 512 Handbrake "Handbrake applied (OVMS v.e.handbrake)";
+CM_ SG_ 512 VehSpeed "Vehicle speed (OVMS v.p.speed)";
+CM_ SG_ 725 SocReal "State of charge as the BMS reports it (OVMS xse.v.b.real.soc)";
+CM_ SG_ 792 Throttle "Power bar on the dashboard (OVMS v.e.throttle)";
+CM_ SG_ 792 RangeEst "Range shown on the dashboard (OVMS v.b.range.est)";
+CM_ SG_ 974 EnergyStart "Energy used since start (OVMS xse.v.b.energy.used.start)";
+CM_ SG_ 981 Bat12V "12 V battery voltage (OVMS xse.v.b.12v.voltage)";
+CM_ SG_ 983 HvActive "HV system active (OVMS xse.v.b.hv.active)";
+CM_ SG_ 1032 OutsideTemp "Outside temperature (OVMS v.e.temp)";
+CM_ SG_ 1042 Odometer "Odometer (OVMS v.p.odometer)";
+CM_ SG_ 1048 Gear "Selected gear (OVMS v.e.gear)";
+CM_ SG_ 1059 Ignition "Ignition on (OVMS v.e.on)";
+CM_ SG_ 1059 DoorFL "Driver door open (OVMS v.d.fl)";
+CM_ SG_ 1059 DoorFR "Passenger door open (OVMS v.d.fr)";
+CM_ SG_ 1059 Tailgate "Tailgate open (OVMS v.d.trunk)";
+CM_ SG_ 1059 Headlights "Headlights on (OVMS v.e.headlights)";
+CM_ SG_ 1096 PackVoltage "HV pack voltage (OVMS v.b.voltage)";
+CM_ SG_ 1155 AcVoltage "Charger mains voltage L1 (OVMS xse.v.nlg6.main.volts)";
+CM_ SG_ 1155 AcCurrent "Charger mains current L1 (OVMS xse.v.nlg6.main.amps)";
+CM_ SG_ 1155 DcVoltage "Charger DC output voltage (OVMS xse.v.nlg6.dc.hv)";
+CM_ SG_ 1155 DcCurrent "Charger DC output current (OVMS xse.v.nlg6.dc.current)";
+CM_ SG_ 1155 ChargerTemp "Charger temperature (OVMS xse.v.nlg6.temp.reported)";
+CM_ SG_ 1284 TripStart "Trip distance since start (OVMS xse.v.display.trip.start)";
+CM_ SG_ 1288 PackCurrent "HV pack current, negative while discharging (OVMS v.b.current)";
+CM_ SG_ 1288 ChargePort "Charge cable plugged in (OVMS v.d.cp)";
+CM_ SG_ 1304 PilotLimit "Current limit from the charging station's pilot signal (OVMS v.c.climit)";
+CM_ SG_ 1304 DriveMode "Drive mode (OVMS v.e.drivemode)";
+CM_ SG_ 1304 SocDisplay "State of charge shown on the dashboard (OVMS v.b.soc)";
+CM_ SG_ 2031 CellV_01 "Cell voltage 1 of 93, polled (OVMS v.b.c.voltage)";
+CM_ SG_ 2031 CellT_1 "Module temperature sensor 1 of 9, polled (OVMS v.b.c.temp)";
+CM_ SG_ 2031 BatTemp "Battery temperature, polled (OVMS v.b.temp)";
+CM_ SG_ 2031 Soh "State of health, polled (OVMS v.b.soh)";
+CM_ SG_ 2031 CapAvg "Average cell capacity, polled (OVMS v.b.cac)";
+CM_ SG_ 2031 Isolation "DC isolation resistance, polled (OVMS xse.mybms.isolation)";
+
+VAL_ 360 ChargeActive 0 "OFF" 1 "CHARGING" ;
+VAL_ 512 Handbrake 0 "RELEASED" 1 "APPLIED" ;
+VAL_ 983 HvActive 0 "OFF" 1 "ON" ;
+VAL_ 1048 Gear 0 "N" 17 "D" 187 "R" 221 "P" 255 "SNA" ;
+VAL_ 1059 Ignition 0 "OFF" 1 "ON" ;
+VAL_ 1059 DoorFL 0 "CLOSED" 1 "OPEN" ;
+VAL_ 1059 DoorFR 0 "CLOSED" 1 "OPEN" ;
+VAL_ 1059 Tailgate 0 "CLOSED" 1 "OPEN" ;
+VAL_ 1059 Headlights 0 "OFF" 1 "ON" ;
+VAL_ 1288 ChargePort 0 "UNPLUGGED" 1 "PLUGGED" ;
+VAL_ 1304 DriveMode 32 "D-" 64 "D" 96 "D+" 128 "Ds" ;
+VAL_ 1304 SocDisplay 255 "SNA" ;
+
+BA_DEF_ SG_  "GenSigSNA" STRING ;
+BA_DEF_DEF_  "GenSigSNA" "";
+BA_DEF_ BO_  "GenMsgCycleTime" INT 0 65535;
+BA_DEF_DEF_  "GenMsgCycleTime" 0;
+BA_ "GenSigSNA" SG_ 512 VehSpeed "FFFFh";
+BA_ "GenSigSNA" SG_ 1304 SocDisplay "FFh";
+BA_ "GenMsgCycleTime" BO_ 360 200;
+BA_ "GenMsgCycleTime" BO_ 512 50;
+BA_ "GenMsgCycleTime" BO_ 725 100;
+BA_ "GenMsgCycleTime" BO_ 792 100;
+BA_ "GenMsgCycleTime" BO_ 974 1000;
+BA_ "GenMsgCycleTime" BO_ 981 1000;
+BA_ "GenMsgCycleTime" BO_ 983 200;
+BA_ "GenMsgCycleTime" BO_ 1032 1000;
+BA_ "GenMsgCycleTime" BO_ 1042 1000;
+BA_ "GenMsgCycleTime" BO_ 1048 100;
+BA_ "GenMsgCycleTime" BO_ 1059 200;
+BA_ "GenMsgCycleTime" BO_ 1096 50;
+BA_ "GenMsgCycleTime" BO_ 1284 1000;
+BA_ "GenMsgCycleTime" BO_ 1288 50;
+BA_ "GenMsgCycleTime" BO_ 1304 100;
