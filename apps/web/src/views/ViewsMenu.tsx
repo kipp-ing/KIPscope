@@ -21,8 +21,19 @@ import { existingTitle, rowDetails, saveEntries, saveTarget, titleMinChars } fro
 import { SaveForm, type SaveOutcome } from "./SaveForm.tsx";
 import "./views.css";
 
+/**
+ * App's tracked open: the request counts as this tab's open while in flight and its result's
+ * revision as own, so its push is not "opened elsewhere" (V7 round 3).
+ */
+export type TrackOpen = <T>(
+  request: () => Promise<T>,
+  revisionOf: (result: T) => number | undefined,
+) => Promise<T>;
+
 export interface ViewsMenuProps {
   workspace: Workspace;
+  /** Every open this menu sends goes through it. */
+  trackOpen: TrackOpen;
   /** App: the open notice after the push, or the error of a refused open. */
   onOpened: (result: CommandResult, warnings?: readonly string[]) => void;
   /** Info notice in the strip. */
@@ -65,7 +76,7 @@ const BookmarkIcon = () => (
  * last, "Import file…" and "Copy link". A row click opens the view; hovering shows Download and
  * Delete (inline confirm) over the row's title line. Esc or a pointer down outside closes it.
  */
-export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMenuProps) {
+export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage }: ViewsMenuProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [views, setViews] = useState<ViewSummary[] | undefined>();
@@ -173,7 +184,12 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
   const openNamed = async (name: string) => {
     close();
     try {
-      onOpened(await openView({ name }));
+      onOpened(
+        await trackOpen(
+          () => openView({ name }),
+          (r) => (r.ok ? r.revision : undefined),
+        ),
+      );
     } catch (e) {
       onMessage(errorText(e));
     }
@@ -191,7 +207,10 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
 
   const runImport = async (text: string, overwrite: boolean) => {
     try {
-      const result = await importView({ text, open: true, ...(overwrite ? { overwrite } : {}) });
+      const result = await trackOpen(
+        () => importView({ text, open: true, ...(overwrite ? { overwrite } : {}) }),
+        (r) => (r.opened?.ok ? r.opened.revision : undefined),
+      );
       close();
       if (result.opened) onOpened(result.opened, result.warnings);
       else onNotice(`Imported "${result.view.title}"`, result.warnings.join("\n") || undefined);

@@ -2,13 +2,12 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   type CommandResult,
-  encodeViewLink,
   type ImportViewRequest,
   MAX_VIEW_BYTES,
   type SaveViewRequest,
   type ViewSummary,
+  viewLinkUrl,
   type Workspace,
-  workspaceToView,
 } from "@kipscope/shared";
 import type { Client } from "./client.ts";
 import { CliError } from "./output.ts";
@@ -92,12 +91,9 @@ export async function runView(
       return (await opened(Promise.resolve(answer.opened), body)).revision;
     }
     case "link": {
-      // The document of the UI's "Copy link" (V7): same title rule, no saved time, no note.
+      // The same function as the UI's "Copy link" (V1), so both links are equal.
       const { workspace } = await client.get<{ workspace: Workspace }>("/api/workspace");
-      const title = workspace.view?.title ?? workspace.measurement?.name ?? "Shared view";
-      const code = await encodeViewLink(workspaceToView(workspace, { title }));
-      const page = new URL(invocation.page);
-      const url = `${page.origin}${page.pathname}#view=${code}`;
+      const url = await viewLinkUrl(workspace, invocation.page);
       body.data = { url, chars: url.length };
       return undefined;
     }

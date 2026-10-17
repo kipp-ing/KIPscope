@@ -1,6 +1,13 @@
-import { encodeViewLink, type ViewDoc } from "@kipscope/shared";
+import {
+  decodeViewLink,
+  EMPTY_WORKSPACE,
+  encodeViewLink,
+  type ViewDoc,
+  viewLinkUrl,
+  type Workspace,
+} from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
-import { cleanAddress, startupView } from "../src/views/link.ts";
+import { cleanAddress, startupView, viewLink } from "../src/views/link.ts";
 
 const DOC: ViewDoc = {
   kipscope: "view",
@@ -51,5 +58,33 @@ describe("view links in the page address", () => {
       view: { title: "Drive 3" },
     });
     await expect(startupView(at("/#view=@@@"))).rejects.toThrow();
+  });
+});
+
+describe("copy link", () => {
+  it("copies the shared link", async () => {
+    const ws: Workspace = {
+      ...EMPTY_WORKSPACE,
+      windows: [
+        {
+          id: "w1",
+          kind: "values",
+          mode: "line",
+          signals: [{ id: "a2", signalId: "car/A" }],
+        },
+      ],
+      nextId: 3,
+      view: { name: "drive-3", title: "Drive 3", note: "BLS first", modified: false },
+    };
+    const link = await viewLink(ws, { origin: "http://127.0.0.1:5173", pathname: "/" });
+    // The web helper adds nothing of its own: it is the shared encoder's link.
+    expect(link).toBe(await viewLinkUrl(ws, "http://127.0.0.1:5173/"));
+    const doc = (await decodeViewLink(link.slice(link.indexOf("#view=") + 6))) as Record<
+      string,
+      unknown
+    >;
+    expect(doc.title).toBe("Drive 3");
+    expect(doc.note).toBe("BLS first");
+    expect("saved" in doc).toBe(false);
   });
 });

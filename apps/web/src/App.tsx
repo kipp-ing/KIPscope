@@ -83,7 +83,13 @@ import {
 } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 import { cleanAddress, startupView } from "./views/link.ts";
-import { documentTitle, nextStrip, type StripEvent, type StripItem } from "./views/notice.ts";
+import {
+  documentTitle,
+  nextStrip,
+  openedElsewhere,
+  type StripEvent,
+  type StripItem,
+} from "./views/notice.ts";
 import { WindowBoundary } from "./WindowBoundary.tsx";
 
 /** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
@@ -1067,6 +1073,40 @@ export function App() {
   // A file dropped anywhere on the page would navigate the tab away (design H8).
   useEffect(() => ignoreFileDrops(document), []);
 
+  // Own opens (add-saved-views V7 round 3): a `view.open` push whose revision is none of this tab's
+  // open results was opened elsewhere and replaces the strip's item. The push can beat the HTTP
+  // answer, so it is decided only while no own open is in flight; one that waits is decided when
+  // the last own open settles.
+  const own = useRef({ pending: 0, revisions: new Set<number>() });
+  const decidedOpen = useRef<number | undefined>(undefined);
+  const decideOpen = useCallback(() => {
+    const push = liveRef.current.lastOpen;
+    if (!push || own.current.pending > 0 || decidedOpen.current === push.revision) return;
+    decidedOpen.current = push.revision;
+    const text = openedElsewhere(push, own.current.revisions);
+    if (text !== undefined) toStrip({ kind: "notice", text });
+  }, [toStrip]);
+  const lastOpenRevision = live.lastOpen?.revision;
+  useEffect(() => {
+    if (lastOpenRevision !== undefined) decideOpen();
+  }, [lastOpenRevision, decideOpen]);
+  /** Sends an open of this tab: counted as in flight until it settles, its revision kept as own. */
+  const trackOpen = useCallback(
+    async <T,>(request: () => Promise<T>, revisionOf: (result: T) => number | undefined) => {
+      own.current.pending++;
+      try {
+        const result = await request();
+        const revision = revisionOf(result);
+        if (revision !== undefined) own.current.revisions.add(revision);
+        return result;
+      } finally {
+        own.current.pending--;
+        decideOpen();
+      }
+    },
+    [decideOpen],
+  );
+
   // Open notice (add-saved-views V7): shown once the push of the open's revision brings the title.
   const [opened, setOpened] = useState<{
     revision: number;
@@ -1076,7 +1116,11 @@ export function App() {
   const onOpened = useCallback(
     (result: CommandResult, warnings: readonly string[] = []) => {
       if (!result.ok) setMessage(`${result.code}: ${result.message}`);
-      else setOpened({ revision: result.revision, report: result.report, warnings });
+      else {
+        // The menu's opens report here once settled: their push is this tab's own.
+        own.current.revisions.add(result.revision);
+        setOpened({ revision: result.revision, report: result.report, warnings });
+      }
     },
     [setMessage],
   );
@@ -1117,7 +1161,10 @@ export function App() {
       for (;;) {
         let result: CommandResult;
         try {
-          result = await openView(body);
+          result = await trackOpen(
+            () => openView(body),
+            (r) => (r.ok ? r.revision : undefined),
+          );
         } catch (e) {
           const waiting = e instanceof ApiRequestError && e.code === "catalog_unavailable";
           if (waiting && Date.now() < deadline) {
@@ -1136,7 +1183,7 @@ export function App() {
       }
       history.replaceState(null, "", cleanAddress(location));
     })();
-  }, [live.connected, onOpened, setMessage]);
+  }, [live.connected, onOpened, setMessage, trackOpen]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -1235,6 +1282,7 @@ export function App() {
                     if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
                   }}
                   onOpened={onOpened}
+                  trackOpen={trackOpen}
                   onNotice={setNotice}
                   onMessage={setMessage}
                 />

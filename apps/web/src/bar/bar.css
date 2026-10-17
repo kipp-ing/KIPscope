@@ -92,8 +92,14 @@
    - Full labels with the "Views" label: 949 px → the label words go below 950 px (step 2).
    - Short labels with the "Views" label: 872 px → the Views button shows only its icon below
      880 px (step 3); the row then needs 851 px.
-   At 1440×900 the content box is 1168 px (full row); at 1000×557 it is 728 px, so the row still
-   wraps there after step 3 (finding for the spec owner, V7).
+   - Overflow items in the row (step 4, re-measured 2026-10-17 in Chrome as the narrowest content
+     box with every item's top equal): 852 px → T = 860 px, below it Digits, "+ Values window"
+     and Span go into the "⋯" menu.
+   - Row after the move, with "⋯": 728 px with Span still in the row, which is the whole 728 px
+     content box at 1000×557 without a scroll bar but 713 px with the main area's classic scroll
+     bar (six windows), so the row wrapped: Span joined the overflow items (V7). It now needs
+     653 px.
+   At 1440×900 the content box is 1168 px (full row, no "⋯").
    Lower-priority label words ("Link time axes", "+ Values window") collapse; title and aria-label
    keep the full name. */
 @container top-row (max-width: 950px) {
@@ -110,6 +116,53 @@
   .option-bar .views-icon {
     display: block;
   }
+}
+
+/* Step 4, the overflow items (V7 "Top-row overflow rule"): Digits, "+ Values window" and Span leave
+   the row (display: none, so also the tab order) and "⋯", the row's last item, holds them in its
+   menu. T: see the give-way comment above. */
+.option-bar .overflow-menu {
+  position: relative;
+  flex: none;
+  display: none;
+}
+
+@container top-row (max-width: 860px) {
+  .option-bar .overflow-item {
+    display: none;
+  }
+
+  .option-bar .overflow-menu {
+    display: block;
+  }
+}
+
+.option-bar-slot .option-bar .overflow-button {
+  width: 26px;
+  padding: 0;
+  font-weight: 600;
+}
+
+/* Below the trigger, right-aligned (the row's last item), as the Views popover (views.css). */
+.overflow-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
+}
+
+/* The menu shows the full label at every width. */
+.option-bar .overflow-popover .long {
+  display: inline;
 }
 
 .option-bar .go-to.invalid {

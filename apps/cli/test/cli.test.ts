@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decodeViewLink } from "@kipscope/shared";
+import { decodeViewLink, type Workspace as SharedWorkspace, viewLinkUrl } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseArgs } from "../src/args.ts";
 import type { EventListData } from "../src/output.ts";
@@ -1047,6 +1047,36 @@ describe("views", () => {
       const list = await cli(s, "view", "list");
       expect(list.code).toBe(0);
       expect(list.out.data.views.map((v: { name: string }) => v.name)).toEqual(["speeds"]);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("prints the same link as Copy link", async () => {
+    const s = await startServer();
+    try {
+      const page = "http://127.0.0.1:5173/";
+      expect(
+        (await cli(s, "window", "create", "--title", "Speeds", "--from", "0", "--to", "10")).code,
+      ).toBe(0);
+      expect((await cli(s, "view", "save", "Drive 3", "--note", "BLS first")).code).toBe(0);
+      const opened = await cli(s, "view", "open", "drive-3");
+      expect(opened.code).toBe(0);
+
+      const { workspace } = await s.workspace();
+      expect(workspace.view?.note).toBe("BLS first");
+      const link = await cli(s, "view", "link", "--page", page);
+      expect(link.code).toBe(0);
+      // What the web's "Copy link" calls: viewLinkUrl on GET /api/workspace.
+      const url: string = link.out.data.url;
+      expect(url).toBe(await viewLinkUrl(workspace as unknown as SharedWorkspace, page));
+      expect(link.out.data.chars).toBe(url.length);
+      const decoded = (await decodeViewLink(
+        url.slice(url.indexOf("#view=") + "#view=".length),
+      )) as Record<string, unknown>;
+      expect(decoded.title).toBe("Drive 3");
+      expect(decoded.note).toBe("BLS first");
+      expect("saved" in decoded).toBe(false);
     } finally {
       await s.close();
     }

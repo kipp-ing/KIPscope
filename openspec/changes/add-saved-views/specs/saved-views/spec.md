@@ -169,7 +169,7 @@ Each saved view SHALL be downloadable as its YAML file (`<name>.kipscope.yaml`).
 
 #### Scenario: Same link from web and CLI
 - **WHEN** view "Drive 3" with the note `BLS first` is saved and open, the web's "Copy link" helper and `kipscope view link --page http://127.0.0.1:5173/` build a link for that workspace and page, and the CLI's code is decoded
-- **THEN** both links are equal character for character; the decoded document is `linkViewDoc(workspace)`: title `Drive 3`, note `BLS first`, no `saved`; without an open view the title is the measurement name, else `Shared view`, and there is no note; `grep -rn "encodeViewLink(" apps/web/src apps/cli/src` prints nothing (both call `viewLinkUrl`)
+- **THEN** both links decode to the same document (compressed bytes may differ between browser and Node: lead 2026-10-17, measured 520 vs 512 characters); the decoded document is `linkViewDoc(workspace)`: title `Drive 3`, note `BLS first`, no `saved`; without an open view the title is the measurement name, else `Shared view`, and there is no note; `grep -rn "encodeViewLink(" apps/web/src apps/cli/src` prints nothing (both call `viewLinkUrl`)
 - **Evidence:** `packages/shared/test/views.test.ts` › "builds the link document" (`linkViewDoc` title rule, note, no `saved`); `apps/cli/test/cli.test.ts` › "prints the same link as Copy link" (`data.url` equals `viewLinkUrl(<GET /api/workspace>, page)`, the call web "Copy link" makes); `apps/web/test/viewlink.test.ts` › "copies the shared link" (the web helper's link equals `viewLinkUrl` for a workspace with a noted view); the grep above
 
 ### Requirement: Open from the address
@@ -182,7 +182,7 @@ Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>`
 
 #### Scenario: Link in a second browser
 - **WHEN** with Jan's windows open the user clicks "Copy link" and `kipscope view link --page <UI address>` runs, then all windows are removed and a new tab navigates to the printed `url`
-- **THEN** the notice says `Link copied (<n> characters)` with n equal to the CLI's `data.chars` (same workspace, same page address, so the same link); the new tab's address loses `#view=…` after loading, all tabs show the windows again, and the new tab's strip shows `Opened "<title>"`
+- **THEN** the notice says `Link copied (<n> characters)` with n within a few characters of the CLI's `data.chars` (same workspace and page address; compression may differ); the new tab's address loses `#view=…` after loading, all tabs show the windows again, and the new tab's strip shows `Opened "<title>"`
 - **Evidence:** UI check on smart451 (the notice text and the CLI line; screenshot after opening the link). Pasting the clipboard into a tab is the lead's hand check.
 
 #### Scenario: Bookmark by name

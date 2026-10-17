@@ -9,6 +9,11 @@ export interface LiveState {
   workspace?: Workspace;
   /** State pushes caused by `window.setRange` since the tab opened (design H7). */
   rangeSets: number;
+  /**
+   * The latest state push caused by `view.open`, kept across later pushes so a push in the same
+   * React batch cannot hide it (add-saved-views V7 round 3). The state sent on connect never sets it.
+   */
+  lastOpen?: Extract<LiveServerMessage, { type: "state" }>;
 }
 
 /** The live state after one server message (design H7). */
@@ -19,6 +24,7 @@ export function applyLiveMessage(state: LiveState, message: LiveServerMessage): 
     revision: message.revision,
     workspace: message.workspace,
     rangeSets: state.rangeSets + (message.command === "window.setRange" ? 1 : 0),
+    ...(message.command === "view.open" ? { lastOpen: message } : {}),
   };
 }
 

@@ -1,10 +1,4 @@
-import {
-  decodeViewLink,
-  encodeViewLink,
-  MAX_LINK_CHARS,
-  type Workspace,
-  workspaceToView,
-} from "@kipscope/shared";
+import { decodeViewLink, MAX_LINK_CHARS, viewLinkUrl, type Workspace } from "@kipscope/shared";
 
 type Address = Pick<Location, "pathname" | "search" | "hash">;
 
@@ -26,17 +20,12 @@ export function cleanAddress(location: Address): string {
   return location.pathname;
 }
 
-/** Link to the open workspace as a self-contained view: `<origin><path>#view=<code>`. */
-export async function viewLink(
+/** Link to the open workspace as a self-contained view: the shared `viewLinkUrl`, the CLI's `view link` too. */
+export function viewLink(
   workspace: Workspace,
   page: Pick<Location, "origin" | "pathname">,
 ): Promise<string> {
-  const view = workspace.view;
-  const doc = workspaceToView(workspace, {
-    title: view?.title ?? workspace.measurement?.name ?? "Shared view",
-    ...(view?.note !== undefined ? { note: view.note } : {}),
-  });
-  return `${page.origin}${page.pathname}#view=${await encodeViewLink(doc)}`;
+  return viewLinkUrl(workspace, page.origin + page.pathname);
 }
 
 /** The notice after "Copy link". */

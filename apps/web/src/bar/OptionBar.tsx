@@ -9,9 +9,10 @@ import {
 } from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
 import { formatRange } from "../time/axis.ts";
-import { ViewsMenu } from "../views/ViewsMenu.tsx";
+import { type TrackOpen, ViewsMenu } from "../views/ViewsMenu.tsx";
 import "./bar.css";
 import { defaultCursorTime, SPAN_PRESETS } from "./bar.ts";
+import { OverflowMenu } from "./OverflowMenu.tsx";
 
 interface OptionBarProps {
   workspace: Workspace;
@@ -32,6 +33,8 @@ interface OptionBarProps {
   onGoToClear?: () => void;
   /** App: the open notice after the push, or the error of a refused open (add-saved-views V7). */
   onOpened: (result: CommandResult, warnings?: readonly string[]) => void;
+  /** App: sends an open as this tab's own (add-saved-views V7 round 3). */
+  trackOpen: TrackOpen;
   /** Info notice in the strip ("Link copied", "Saved"). */
   onNotice: (text: string, title?: string) => void;
   /** Error in the strip. */
@@ -40,7 +43,7 @@ interface OptionBarProps {
 
 /**
  * Sticky bar above the windows (D-023): Views menu and the open view's title, cursors, link, Go to, span presets, Back, Reset, digits,
- * new values window.
+ * new values window; on a short row digits, new values window and span move into the "⋯" menu (V7).
  */
 export function OptionBar({
   workspace,
@@ -53,6 +56,7 @@ export function OptionBar({
   onSpan,
   onGoToClear,
   onOpened,
+  trackOpen,
   onNotice,
   onMessage,
 }: OptionBarProps) {
@@ -118,10 +122,73 @@ export function OptionBar({
   const named = (action: string, linked: string) =>
     linkTime ? linked : target ? `${action} · ${windowTitle(target)}` : action;
 
+  // The overflow items (V7 "Top-row overflow rule"; Span joined, bar.css): in the row, or the same
+  // controls in the "⋯" menu below the threshold.
+  const spanSelect = (inMenu: boolean, after?: () => void) => (
+    <select
+      className={inMenu ? undefined : "overflow-item"}
+      aria-label="Span"
+      value=""
+      disabled={!target}
+      title={named("Span", "Span around cursor A or the centre, all windows")}
+      onChange={(e) => {
+        const preset = SPAN_PRESETS.find((p) => p.label === e.target.value);
+        // Navigation keys go to the page again, not to the select.
+        e.currentTarget.blur();
+        after?.();
+        if (preset) onSpan(preset.ns);
+      }}
+    >
+      <option value="" disabled>
+        Span
+      </option>
+      {SPAN_PRESETS.map((p) => (
+        <option key={p.label} value={p.label}>
+          {p.label}
+        </option>
+      ))}
+    </select>
+  );
+  const digitsSelect = (inMenu: boolean) => (
+    <select
+      className={inMenu ? undefined : "overflow-item"}
+      aria-label="Digits"
+      title="Significant digits of all values"
+      value={digits}
+      onChange={(e) => {
+        // Navigation keys go to the page again, not to the select; in the menu, focus stays for
+        // Tab to the next control.
+        if (!inMenu) e.currentTarget.blur();
+        void onCommand({
+          type: "workspace.setOptions",
+          digits: Number(e.target.value) as Digits,
+        });
+      }}
+    >
+      <option value={3}>3 digits</option>
+      <option value={4}>4 digits</option>
+    </select>
+  );
+  const newValuesButton = (after?: () => void) => (
+    <button
+      type="button"
+      className={after ? "new-values" : "new-values overflow-item"}
+      aria-label="New values window"
+      title="New values window"
+      onClick={() => {
+        void onCommand({ type: "window.create", kind: "values" });
+        after?.();
+      }}
+    >
+      + Values<span className="long"> window</span>
+    </button>
+  );
+
   return (
     <div className="option-bar">
       <ViewsMenu
         workspace={workspace}
+        trackOpen={trackOpen}
         onOpened={onOpened}
         onNotice={onNotice}
         onMessage={onMessage}
@@ -188,27 +255,7 @@ export function OptionBar({
           if (error === undefined) field.select();
         }}
       />
-      <select
-        aria-label="Span"
-        value=""
-        disabled={!target}
-        title={named("Span", "Span around cursor A or the centre, all windows")}
-        onChange={(e) => {
-          const preset = SPAN_PRESETS.find((p) => p.label === e.target.value);
-          // Navigation keys go to the page again, not to the select.
-          e.currentTarget.blur();
-          if (preset) onSpan(preset.ns);
-        }}
-      >
-        <option value="" disabled>
-          Span
-        </option>
-        {SPAN_PRESETS.map((p) => (
-          <option key={p.label} value={p.label}>
-            {p.label}
-          </option>
-        ))}
-      </select>
+      {spanSelect(false)}
       <button
         type="button"
         disabled={!target || !canGoBack}
@@ -226,31 +273,17 @@ export function OptionBar({
         Reset
       </button>
       <span className="separator" />
-      <select
-        aria-label="Digits"
-        title="Significant digits of all values"
-        value={digits}
-        onChange={(e) => {
-          // Navigation keys go to the page again, not to the select.
-          e.currentTarget.blur();
-          void onCommand({
-            type: "workspace.setOptions",
-            digits: Number(e.target.value) as Digits,
-          });
-        }}
-      >
-        <option value={3}>3 digits</option>
-        <option value={4}>4 digits</option>
-      </select>
-      <button
-        type="button"
-        className="new-values"
-        aria-label="New values window"
-        title="New values window"
-        onClick={() => void onCommand({ type: "window.create", kind: "values" })}
-      >
-        + Values<span className="long"> window</span>
-      </button>
+      {digitsSelect(false)}
+      {newValuesButton()}
+      <OverflowMenu>
+        {(close) => (
+          <>
+            {digitsSelect(true)}
+            {newValuesButton(() => close(true))}
+            {spanSelect(true, close)}
+          </>
+        )}
+      </OverflowMenu>
     </div>
   );
 }

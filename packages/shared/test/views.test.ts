@@ -3,8 +3,10 @@ import { applyCommand } from "../src/apply.ts";
 import {
   decodeViewLink,
   encodeViewLink,
+  linkViewDoc,
   parseViewDoc,
   type ViewDoc,
+  viewLinkUrl,
   viewName,
   workspaceToView,
 } from "../src/views.ts";
@@ -321,3 +323,55 @@ function syntheticDoc(): ViewDoc {
     windows,
   };
 }
+
+describe("link document", () => {
+  const base: Workspace = {
+    ...EMPTY_WORKSPACE,
+    windows: [
+      {
+        id: "w1",
+        kind: "values",
+        mode: "line",
+        signals: [{ id: "a2", signalId: "car/A" }],
+      },
+    ],
+    nextId: 3,
+  };
+
+  it("builds the link document", async () => {
+    // Title rule: view title, else measurement name, else "Shared view".
+    const named: Workspace = {
+      ...base,
+      measurement: { name: "Drive 3" },
+      view: { name: "drive-3", title: "Drive 3 view", note: "BLS first", modified: true },
+    };
+    const doc = linkViewDoc(named);
+    expect(doc.title).toBe("Drive 3 view");
+    expect(doc.note).toBe("BLS first");
+    expect("saved" in doc).toBe(false);
+
+    expect(linkViewDoc({ ...base, measurement: { name: "Drive 3" } }).title).toBe("Drive 3");
+    const bare = linkViewDoc(base);
+    expect(bare.title).toBe("Shared view");
+    expect("note" in bare).toBe(false);
+    expect("saved" in bare).toBe(false);
+
+    // An open view without a note has no note in the document.
+    const noNote = linkViewDoc({ ...base, view: { title: "Plain", modified: false } });
+    expect(noNote.title).toBe("Plain");
+    expect("note" in noNote).toBe(false);
+
+    // The URL: page origin and path, query and fragment dropped, then #view=<code of linkViewDoc>.
+    const url = await viewLinkUrl(named, "http://127.0.0.1:5173/app/?x=1#old");
+    const prefix = "http://127.0.0.1:5173/app/#view=";
+    expect(url.startsWith(prefix)).toBe(true);
+    expect(url.slice(prefix.length)).toBe(await encodeViewLink(doc));
+    expect(await decodeViewLink(url.slice(prefix.length))).toMatchObject({
+      title: "Drive 3 view",
+      note: "BLS first",
+    });
+    expect(await viewLinkUrl(named, "http://127.0.0.1:5173/")).toMatch(
+      /^http:\/\/127\.0\.0\.1:5173\/#view=/,
+    );
+  });
+});

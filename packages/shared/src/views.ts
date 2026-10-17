@@ -442,6 +442,21 @@ export async function encodeViewLink(doc: ViewDoc): Promise<string> {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/** The document a link carries: title = view title ?? measurement name ?? "Shared view"; the open view's note when set; no `saved`. */
+export function linkViewDoc(ws: Workspace): ViewDoc {
+  const view = ws.view;
+  return workspaceToView(ws, {
+    title: view?.title ?? ws.measurement?.name ?? "Shared view",
+    ...(view?.note !== undefined && { note: view.note }),
+  });
+}
+
+/** The one link encoder of web "Copy link" and CLI `view link`: `<origin><path of page>#view=<code>`; the page's query and fragment are dropped. */
+export async function viewLinkUrl(ws: Workspace, page: string): Promise<string> {
+  const { origin, pathname } = new URL(page);
+  return `${origin}${pathname}#view=${await encodeViewLink(linkViewDoc(ws))}`;
+}
+
 /** Inverse of encodeViewLink up to JSON.parse; rejects bad base64url, bad deflate and > MAX_VIEW_BYTES inflated. */
 export async function decodeViewLink(code: string): Promise<unknown> {
   // Deflate never shrinks below ~1/1000, so a longer code cannot be a valid view.

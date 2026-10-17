@@ -2,6 +2,7 @@ import type { LiveServerMessage, OpenView, ViewSummary, Workspace } from "@kipsc
 import { EMPTY_WORKSPACE } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
+import { applyLiveMessage, type LiveState } from "../src/live.ts";
 import {
   existingTitle,
   rowDetails,
@@ -188,5 +189,78 @@ describe("open notices", () => {
     expect(openedElsewhere(push("view.open", 8), own)).toBeUndefined();
     // Another command.
     expect(openedElsewhere(push("window.create", 10), own)).toBeUndefined();
+  });
+});
+
+// Opened elsewhere, own open versus foreign push (design V7 "How a tab learns a push was not its
+// own"). App.tsx keeps this protocol in a ref; this harness restates it on the real
+// `applyLiveMessage` and `openedElsewhere`, so it pins the protocol, not the component wiring.
+describe("opened elsewhere, push before the HTTP answer", () => {
+  const openPush = (revision: number, title: string): LiveServerMessage =>
+    ({
+      type: "state",
+      revision,
+      command: "view.open",
+      workspace: ws({ name: "x", title, modified: false }),
+    }) as LiveServerMessage;
+
+  function makeTab() {
+    let live: LiveState = { connected: true, revision: 0, workspace: EMPTY_WORKSPACE } as LiveState;
+    const own = { pending: 0, revisions: new Set<number>() };
+    let decided: number | undefined;
+    const notices: (string | undefined)[] = [];
+    const decide = () => {
+      const push = live.lastOpen;
+      if (!push || own.pending > 0 || decided === push.revision) return;
+      decided = push.revision;
+      const text = openedElsewhere(push, own.revisions);
+      if (text !== undefined) notices.push(text);
+    };
+    return {
+      notices,
+      push(m: LiveServerMessage) {
+        live = applyLiveMessage(live, m);
+        decide();
+      },
+      /** An own open (menu row, Before last open, import): in flight until its answer. */
+      startOpen() {
+        own.pending++;
+      },
+      answer(revision: number) {
+        own.revisions.add(revision);
+        own.pending--;
+        decide();
+      },
+    };
+  }
+
+  for (const source of ["menu row", "Before last open", "import with open"]) {
+    it(`own open by ${source}: push first, answer later, no notice`, () => {
+      const tab = makeTab();
+      tab.startOpen();
+      tab.push(openPush(5, "Drive 3"));
+      expect(tab.notices).toEqual([]); // waits while the open is in flight
+      tab.answer(5);
+      expect(tab.notices).toEqual([]); // revision 5 is its own
+    });
+  }
+
+  it("own open: answer first, push later, no notice", () => {
+    const tab = makeTab();
+    tab.startOpen();
+    tab.answer(5);
+    tab.push(openPush(5, "Drive 3"));
+    expect(tab.notices).toEqual([]);
+  });
+
+  it("foreign push gives one notice, also when it arrives during an own open", () => {
+    const tab = makeTab();
+    tab.push(openPush(6, "Speeds"));
+    expect(tab.notices).toEqual(['"Speeds" opened elsewhere']);
+    tab.startOpen();
+    tab.push(openPush(7, "Other"));
+    expect(tab.notices).toHaveLength(1); // held back
+    tab.answer(8); // own open got revision 8; 7 was foreign
+    expect(tab.notices).toEqual(['"Speeds" opened elsewhere', '"Other" opened elsewhere']);
   });
 });
