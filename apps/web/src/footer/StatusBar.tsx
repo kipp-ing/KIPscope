@@ -8,6 +8,10 @@ export interface StatusBarProps {
   connected: boolean;
   revision: number;
   message?: string | undefined;
+  /** Error (default) or info tone, e.g. the open notice (add-saved-views V7). */
+  messageTone?: "error" | "info" | undefined;
+  /** Tooltip of the message; default the message itself. */
+  messageTitle?: string | undefined;
   onDismissMessage: () => void;
   measurement?: Measurement | undefined;
   meta?: ServerMeta | undefined;
@@ -172,8 +176,8 @@ export function StatusBar(props: StatusBarProps) {
         {message && (
           <button
             type="button"
-            className="message"
-            title={`${message} · Click to dismiss`}
+            className={`message${props.messageTone === "info" ? " info" : ""}`}
+            title={`${props.messageTitle ?? message} · Click to dismiss`}
             onClick={props.onDismissMessage}
           >
             {message} ✕

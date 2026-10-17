@@ -456,6 +456,13 @@ main {
   border-radius: var(--radius);
 }
 
+/* Info tone of the strip message: open notice, "Link copied" (add-saved-views V7). */
+.message.info {
+  border-color: var(--accent-ring);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
 /* Tile box only; everything inside a window lives in chart/window.css (design S3). Chrome above
    the plot (design L4 goal: plot top ≤ 48 px below the window top): border 1, padding 3, header
    24, axis titles 14, plus the plot's 6 px headroom (TimeseriesWindow). */

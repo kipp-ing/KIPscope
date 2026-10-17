@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closedUrl, type Harness, startServer } from "./helpers.ts";
 
@@ -91,5 +93,84 @@ describe("separate process", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("window create");
     expect(result.stderr).toBe("");
+  });
+});
+
+describe("view export as a separate process", () => {
+  let h: Harness;
+  let dir: string;
+  beforeAll(async () => {
+    h = await startServer();
+    dir = mkdtempSync(join(tmpdir(), "kipscope-export-"));
+  });
+  afterAll(async () => {
+    rmSync(dir, { recursive: true, force: true });
+    await h.close();
+  });
+
+  it("exports a view as YAML text", async () => {
+    // Success: the YAML text itself on stdout, nothing on stderr, then the file imports again.
+    expect(
+      (
+        await kipscope(
+          "--server",
+          h.url,
+          "window",
+          "create",
+          "--title",
+          "Speeds",
+          "--from",
+          "0",
+          "--to",
+          "10",
+        )
+      ).code,
+    ).toBe(0);
+    expect((await kipscope("--server", h.url, "view", "save", "Speeds")).code).toBe(0);
+
+    const exported = await kipscope("--server", h.url, "view", "export", "speeds");
+    expect(exported.code).toBe(0);
+    expect(exported.stderr).toBe("");
+    expect(exported.stdout.startsWith("kipscope: view\n")).toBe(true);
+    expect(exported.stdout).toContain("title: Speeds");
+    // The text is the stored file, unchanged.
+    expect(exported.stdout).toBe(readFileSync(join(h.viewsDir, "speeds.yaml"), "utf8"));
+
+    const file = join(dir, "s.yaml");
+    writeFileSync(file, exported.stdout);
+    const imported = await kipscope(
+      "--server",
+      h.url,
+      "view",
+      "import",
+      file,
+      "--name",
+      "speeds-copy",
+    );
+    expect(imported.code).toBe(0);
+    expect(JSON.parse(imported.stdout).data.view.name).toBe("speeds-copy");
+
+    // --out: the file gets the text, stdout is one JSON line with name, path and bytes.
+    const out = join(dir, "o.yaml");
+    const written = await kipscope("--server", h.url, "view", "export", "speeds", "--out", out);
+    expect(written.code).toBe(0);
+    expect(written.stdout.trimEnd().split("\n")).toHaveLength(1);
+    const line = JSON.parse(written.stdout);
+    expect(line).toMatchObject({ ok: true, outcome: "ok", data: { name: "speeds" } });
+    expect(line.data.bytes).toBe(statSync(out).size);
+    expect(readFileSync(out, "utf8")).toBe(exported.stdout);
+    expect(resolve(line.data.path)).toBe(out);
+
+    // Failure: the usual JSON line and the reason on stderr, no YAML.
+    const failed = await kipscope("--server", h.url, "view", "export", "nope");
+    expect(failed.code).toBe(1);
+    expect(failed.stdout.trimEnd().split("\n")).toHaveLength(1);
+    expect(JSON.parse(failed.stdout)).toMatchObject({
+      ok: false,
+      outcome: "rejected",
+      error: { code: "unknown_view" },
+    });
+    expect(failed.stderr.trimEnd().split("\n")).toHaveLength(1);
+    expect(failed.stderr).toContain("unknown_view");
   });
 });

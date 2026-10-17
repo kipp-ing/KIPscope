@@ -9,6 +9,7 @@ import {
 } from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
 import { formatRange } from "../time/axis.ts";
+import { ViewsMenu } from "../views/ViewsMenu.tsx";
 import "./bar.css";
 import { defaultCursorTime, SPAN_PRESETS } from "./bar.ts";
 
@@ -29,10 +30,16 @@ interface OptionBarProps {
   onSpan: (span: bigint) => void;
   /** The "Go to" error is void (text edited, target or its range changed): App clears the message. */
   onGoToClear?: () => void;
+  /** App: the open notice after the push, or the error of a refused open (add-saved-views V7). */
+  onOpened: (result: CommandResult, warnings?: readonly string[]) => void;
+  /** Info notice in the strip ("Link copied", "Saved"). */
+  onNotice: (text: string, title?: string) => void;
+  /** Error in the strip. */
+  onMessage: (text: string) => void;
 }
 
 /**
- * Sticky bar above the windows (D-023): cursors, link, Go to, span presets, Back, Reset, digits,
+ * Sticky bar above the windows (D-023): Views menu and the open view's title, cursors, link, Go to, span presets, Back, Reset, digits,
  * new values window.
  */
 export function OptionBar({
@@ -45,6 +52,9 @@ export function OptionBar({
   onGoTo,
   onSpan,
   onGoToClear,
+  onOpened,
+  onNotice,
+  onMessage,
 }: OptionBarProps) {
   const { cursors, linkTime } = workspace;
   const digits = workspace.options?.digits ?? 3;
@@ -110,6 +120,13 @@ export function OptionBar({
 
   return (
     <div className="option-bar">
+      <ViewsMenu
+        workspace={workspace}
+        onOpened={onOpened}
+        onNotice={onNotice}
+        onMessage={onMessage}
+      />
+      <span className="separator" />
       {cursorToggle("a")}
       {cursorToggle("b")}
       <label className="toggle pill" title="Show the differences B − A (Δ and Δt)">

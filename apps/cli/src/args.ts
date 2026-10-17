@@ -8,6 +8,7 @@ import {
   ValuesMode,
 } from "@kipscope/shared";
 import { CliError } from "./output.ts";
+import type { ViewInvocation } from "./views.ts";
 
 export type TimeArg =
   | { kind: "abs"; t: bigint }
@@ -39,7 +40,8 @@ export type Invocation =
       table: boolean;
     }
   /** raw: a `command JSON`, sent as parsed without resolving anything. */
-  | { kind: "command"; template: CommandTemplate; raw?: true };
+  | { kind: "command"; template: CommandTemplate; raw?: true }
+  | ViewInvocation;
 
 export const DEFAULT_SERVER = "http://localhost:7310";
 const DEFAULT_TIMEOUT = "30s";
@@ -81,6 +83,16 @@ Reads:
                                    (no FILTER: the workspace's; DATAREF: default that of the
                                    first signal shown; --table prints lines instead of JSON)
 
+Views (saved workspaces, stored by the server):
+  view list
+  view save TITLE [--name N] [--note TEXT] [--overwrite]
+                                   (N: file name, default derived from TITLE)
+  view open NAME                   (one command; honours --wait)
+  view delete NAME
+  view export NAME [--out FILE]    (prints the YAML text itself; --out writes FILE instead)
+  view import FILE [--name N] [--overwrite] [--open]
+                                   (FILE: YAML or JSON, at most 256 KiB)
+
 Options (anywhere on the line; "--" ends options):
   --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER})
   --wait              after an accepted command, wait until an open UI has rendered it
@@ -97,7 +109,8 @@ SIGNAL   full ID (dataRef/name) or a unique bare name (V_ANZ)
 REF      assignment ID (a3) or a SIGNAL shown in window W
 FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes
 
-Output: one JSON line on stdout. Exit codes: 0 ok, 1 rejected, 2 usage, 3 unreachable,
+Output: one JSON line on stdout (except events list --table and view export without --out).
+Exit codes: 0 ok, 1 rejected, 2 usage, 3 unreachable,
 4 timeout, 5 render_error, 6 no_ui, 7 unavailable.
 
 ${attributionText()}
@@ -113,8 +126,20 @@ const VALUE_OPTIONS = new Set([
   "--envelope",
   "--limit",
   "--ref",
+  "--name",
+  "--note",
+  "--out",
 ]);
-const FLAG_OPTIONS = new Set(["--wait", "--pretty", "--help", "--values", "--copy", "--table"]);
+const FLAG_OPTIONS = new Set([
+  "--wait",
+  "--pretty",
+  "--help",
+  "--values",
+  "--copy",
+  "--table",
+  "--overwrite",
+  "--open",
+]);
 const GLOBAL_OPTIONS = new Set(["--server", "--timeout", "--wait", "--pretty", "--help"]);
 
 function usage(message: string): never {
@@ -258,7 +283,7 @@ export function parseArgs(
 function invocation(pos: string[], opts: Map<string, string | true>): Invocation {
   const [first, second] = pos;
   if (first === undefined) usage("no command given (see --help)");
-  const group = ["window", "signal", "cursor", "measurement", "events"].includes(first);
+  const group = ["window", "signal", "cursor", "measurement", "events", "view"].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
 
@@ -279,6 +304,8 @@ function invocation(pos: string[], opts: Map<string, string | true>): Invocation
   };
   const arg = (i: number) => args[i] as string;
   const command = (template: CommandTemplate): Invocation => ({ kind: "command", template });
+  /** NAME of a view form; an empty one would address the list route. */
+  const viewName = (i: number) => (arg(i) === "" ? usage("NAME is empty") : arg(i));
 
   switch (form) {
     case "state":
@@ -445,6 +472,53 @@ function invocation(pos: string[], opts: Map<string, string | true>): Invocation
     case "events remove":
       take(1);
       return command({ type: "events.removeSignal", signalId: signal(arg(0)) });
+    case "view list":
+      take(0);
+      return { kind: "view", action: "list" };
+    case "view save": {
+      const opt = take(1, ["--name", "--note", "--overwrite"]);
+      const [name, note] = ["--name", "--note"].map(opt);
+      return {
+        kind: "view",
+        action: "save",
+        request: {
+          title: arg(0),
+          ...(note !== undefined && { note }),
+          ...(name !== undefined && { name }),
+          ...(opts.has("--overwrite") && { overwrite: true }),
+        },
+      };
+    }
+    case "view open":
+      take(1);
+      return { kind: "view", action: "open", request: { name: viewName(0) } };
+    case "view delete":
+      take(1);
+      return { kind: "view", action: "delete", name: viewName(0) };
+    case "view export": {
+      const out = take(1, ["--out"])("--out");
+      if (out === "") usage("--out is empty");
+      return {
+        kind: "view",
+        action: "export",
+        name: viewName(0),
+        ...(out !== undefined && { out }),
+      };
+    }
+    case "view import": {
+      const name = take(1, ["--name", "--overwrite", "--open"])("--name");
+      if (arg(0) === "") usage("FILE is empty");
+      return {
+        kind: "view",
+        action: "import",
+        file: arg(0),
+        request: {
+          ...(name !== undefined && { name }),
+          ...(opts.has("--overwrite") && { overwrite: true }),
+          ...(opts.has("--open") && { open: true }),
+        },
+      };
+    }
     case "command": {
       take(1);
       try {

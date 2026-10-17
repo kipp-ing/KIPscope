@@ -196,10 +196,14 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `measurement meta KEY VALUE` | `measurement.setMeta` (`""` removes the entry) |
 | `measurement clear` | `measurement.clear` |
 | `command JSON` | the JSON as is (no anchors, names or REFs resolved) |
+| `view save TITLE [--name N] [--note TEXT] [--overwrite]` | `POST /api/views`: saves the workspace as view N (default derived from TITLE); `data.view`, `revision` |
+| `view open NAME` | `POST /api/views/open`: one command (`accepted`, `revision`, `data.report` of missing or left-out signals); honours `--wait` |
+| `view delete NAME` | `DELETE /api/views/NAME` |
+| `view import FILE [--name N] [--overwrite] [--open]` | `POST /api/views/import` with FILE's text (YAML or JSON, at most 256 KiB; an unreadable or larger FILE is a usage error) |
 
-Reads: `state`, `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]`, `wait [REVISION]`.
+Reads: `state`, `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]`, `wait [REVISION]`, `view list`, `view export NAME [--out FILE]` (prints the view's YAML text; with `--out` writes FILE and prints `data {name, path, bytes}`).
 
-Each call prints one JSON line (`ok`, `outcome`, `exitCode`, and where they apply `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local`, `error`); a failure also prints one line to stderr. `local` holds times as local wall time with offset.
+Each call prints one JSON line (`ok`, `outcome`, `exitCode`, and where they apply `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local`, `error`), except a successful `events list --table` and `view export NAME` without `--out`; a failure also prints one line to stderr. `local` holds times as local wall time with offset.
 
 | Exit | Outcome | When |
 |---|---|---|

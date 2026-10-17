@@ -1,4 +1,4 @@
-import type { ApiError } from "@kipscope/shared";
+import type { ApiError, CommandResult } from "@kipscope/shared";
 import type { FastifyReply } from "fastify";
 import type { z } from "zod";
 
@@ -26,4 +26,12 @@ export function parseInput<T extends z.ZodType>(
     .join("; ");
   apiError(reply, 400, "invalid_request", message);
   return undefined;
+}
+
+/** HTTP status of a command result: 400 invalid command, 503 catalog not loaded, else 422. */
+export function commandStatus(result: CommandResult): number {
+  if (result.ok) return 200;
+  if (result.code === "invalid_command") return 400;
+  if (result.code === "catalog_unavailable") return 503;
+  return 422;
 }

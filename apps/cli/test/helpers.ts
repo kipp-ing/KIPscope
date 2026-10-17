@@ -1,10 +1,13 @@
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:net";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { EventRow, StateRow } from "@kipscope/shared";
 import { buildApp } from "../../server/src/app.ts";
 import { Catalog } from "../../server/src/catalog.ts";
 import type { DataSource, RawPoint, SignalRef } from "../../server/src/datasource.ts";
 import { loadDbcFiles } from "../../server/src/dbc.ts";
+import { ViewStore } from "../../server/src/views.ts";
 import { WorkspaceStore } from "../../server/src/workspace.ts";
 import type { Io } from "../src/run.ts";
 import { run } from "../src/run.ts";
@@ -157,6 +160,10 @@ export interface Harness {
   url: string;
   store: WorkspaceStore;
   catalog: Catalog;
+  /** The server's view store, on a temp dir that `close()` removes (add-saved-views). */
+  views: ViewStore;
+  /** Directory of the view files. */
+  viewsDir: string;
   /** "METHOD path" of every request the server received. */
   requests: string[];
   /** POSTs a command straight to the server (not through the CLI). */
@@ -185,6 +192,7 @@ export interface Workspace {
   linkTime: boolean;
   cursors: { a?: string; b?: string; diff: boolean };
   options: { digits: number };
+  view?: { name?: string; title: string; note?: string; modified: boolean };
 }
 
 /**
@@ -195,12 +203,18 @@ export async function startServer(options: { loadCatalog?: boolean } = {}): Prom
   const source = stubSource();
   const catalog = new Catalog(source, loadStubDbc);
   if (options.loadCatalog !== false) await catalog.refresh();
-  const store = new WorkspaceStore({
-    signalExists: (signalId) => catalog.get(signalId) !== undefined,
-    unitOf: (signalId) => catalog.get(signalId)?.unit,
-    hasStates: (signalId) => catalog.get(signalId)?.states !== undefined,
-  });
-  const app = buildApp({ catalog, source, workspace: store });
+  const viewsDir = join(mkdtempSync(join(tmpdir(), "kipscope-cli-views-")), "views");
+  const views = new ViewStore(viewsDir);
+  const store = new WorkspaceStore(
+    {
+      signalExists: (signalId) => catalog.get(signalId) !== undefined,
+      unitOf: (signalId) => catalog.get(signalId)?.unit,
+      hasStates: (signalId) => catalog.get(signalId)?.states !== undefined,
+      catalogReady: () => catalog.loadedAt !== undefined,
+    },
+    { beforeOpen: (previous) => views.beforeOpen(previous) },
+  );
+  const app = buildApp({ catalog, source, workspace: store, views });
   const requests: string[] = [];
   app.addHook("onRequest", async (request) => {
     requests.push(`${request.method} ${request.url.split("?")[0]}`);
@@ -215,6 +229,8 @@ export async function startServer(options: { loadCatalog?: boolean } = {}): Prom
     url,
     store,
     catalog,
+    views,
+    viewsDir,
     requests,
     async command(body) {
       const res = await fetch(`${url}/api/commands`, {
@@ -297,6 +313,7 @@ export async function startServer(options: { loadCatalog?: boolean } = {}): Prom
     async close() {
       for (const browser of [...sockets]) await browser.close();
       await app.close();
+      rmSync(join(viewsDir, ".."), { recursive: true, force: true });
     },
   };
   return harness;

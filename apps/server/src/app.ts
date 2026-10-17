@@ -8,7 +8,9 @@ import { type MetaDeps, metaRoutes } from "./meta.ts";
 import { eventsRoutes } from "./routes/events.ts";
 import { seriesRoutes } from "./routes/series.ts";
 import { signalRoutes } from "./routes/signals.ts";
+import { viewRoutes } from "./routes/views.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
+import type { ViewStore } from "./views.ts";
 import type { WorkspaceStore } from "./workspace.ts";
 
 /** Largest live channel message in bytes (design H4). */
@@ -23,6 +25,8 @@ export interface AppDeps {
   meta?: MetaDeps;
   /** Content of `LICENSE`, read once at start; without it `/api/license` answers 404. */
   licenseText?: string;
+  /** Saved views (saved-views V5); without it the view routes answer 404 (tests that do not need them). */
+  views?: ViewStore;
 }
 
 export function buildApp(
@@ -50,6 +54,7 @@ export function buildApp(
   app.register(seriesRoutes(deps));
   app.register(eventsRoutes(deps));
   app.register(workspaceRoutes(deps));
+  app.register(viewRoutes(deps));
   app.register(metaRoutes(deps));
   return app;
 }

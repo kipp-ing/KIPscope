@@ -1,0 +1,239 @@
+/* Views button, view title and Views menu (add-saved-views V7), D-055 tokens. The button box comes
+   from .option-bar-slot (styles.css); the popover follows the window menu (chart/window.css). */
+
+.option-bar .views-menu {
+  position: relative;
+  flex: none;
+}
+
+/* Grows from 0 to its text (≤ 240 px) and gives way first on a short row, so the row never wraps
+   for the title (design "Title width 240 px"). */
+.option-bar .view-title {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: fit-content;
+  height: var(--control-h);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--name);
+  font-weight: 600;
+}
+
+.option-bar .view-title-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-bar .view-modified {
+  flex: none;
+  color: var(--muted);
+}
+
+.views-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-height: min(70vh, 520px);
+  padding: 4px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.option-bar-slot .views-popover button {
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.views-popover .views-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 10px;
+}
+
+.views-popover .views-key {
+  color: var(--muted);
+}
+
+.views-popover .views-list {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.views-popover .views-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+.views-popover .views-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.views-popover .views-row.previous {
+  border-top: 1px solid var(--border);
+}
+
+.views-popover .views-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 10px;
+}
+
+.views-popover .views-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--name);
+  font-weight: 500;
+}
+
+.views-popover .views-current {
+  margin-right: 4px;
+  color: var(--accent);
+}
+
+.views-popover .views-row-details {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.views-popover .views-row.broken .views-row-title,
+.views-popover .views-row.broken .views-row-details {
+  color: var(--disabled);
+}
+
+.views-popover .views-open:disabled {
+  cursor: default;
+}
+
+/* Download and Delete only on hover or focus, so the list stays quiet. */
+.views-popover .views-row-actions {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  color: var(--label);
+}
+
+.views-popover .views-row:is(:hover, :focus-within) .views-row-actions,
+.views-popover .views-row.confirming .views-row-actions {
+  display: flex;
+}
+
+.views-popover .views-row-actions a,
+.option-bar-slot .views-popover .views-row-actions button {
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+
+.views-popover :is(.views-item, .views-open, .views-row-actions a):is(:hover, :focus-visible),
+.option-bar-slot .views-popover .views-row-actions button:is(:hover, :focus-visible) {
+  background: var(--band);
+}
+
+.views-popover .views-open:disabled:hover {
+  background: none;
+}
+
+.views-popover .views-empty,
+.views-popover .views-error {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--muted);
+}
+
+.views-popover .views-error {
+  color: var(--error);
+}
+
+.views-save {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.views-save label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--label);
+  font-weight: 500;
+}
+
+.option-bar-slot .views-save input[type="text"],
+.views-save textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.views-save textarea {
+  resize: vertical;
+}
+
+.views-popover .views-actions,
+.views-popover .views-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.views-popover > .views-confirm {
+  padding: 6px 10px;
+}
+
+.option-bar-slot .views-popover :is(.views-actions, .views-confirm) button {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  text-align: center;
+}
+
+/* One dark primary per surface (D-055). */
+.option-bar-slot .views-popover :is(.views-actions, .views-confirm) button.primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
+}
+
+.option-bar-slot .views-popover button:disabled {
+  color: var(--disabled);
+}

@@ -1,6 +1,7 @@
 import { type LiveServerMessage, RenderedMessage } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppDeps } from "../app.ts";
+import { commandStatus } from "../http.ts";
 
 export const workspaceRoutes =
   ({ workspace }: AppDeps): FastifyPluginAsync =>
@@ -8,7 +9,7 @@ export const workspaceRoutes =
     /** Applies one command; the endpoint the UI and the CLI share. */
     app.post("/api/commands", async (request, reply) => {
       const result = workspace.execute(request.body);
-      if (!result.ok) reply.code(result.code === "invalid_command" ? 400 : 422);
+      reply.code(commandStatus(result));
       return result;
     });
 

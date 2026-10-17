@@ -10,12 +10,20 @@ export interface Deadline {
 export interface Client {
   /** 2xx → body; 4xx → CliError rejected (ApiError code); 5xx → unavailable; network → unreachable; deadline → timeout. */
   get<T>(path: string, query?: Record<string, string>): Promise<T>;
+  /** GET of a text body (view export): 2xx → the text unchanged; failures as get. */
+  getText(path: string): Promise<string>;
+  /** POST of a JSON body: 2xx → body; failures as get. */
+  post<T>(path: string, body: unknown): Promise<T>;
+  /** DELETE: 2xx → body; failures as get. */
+  delete<T>(path: string): Promise<T>;
   /** 200/400/422 → CommandResult; other statuses and failures as get. */
   postCommand(command: CommandInput): Promise<CommandResult>;
+  /** As postCommand, for an endpoint that answers like POST /api/commands (POST /api/views/open). */
+  postCommandAt(path: string, body: unknown): Promise<CommandResult>;
 }
 
 export function createClient(baseUrl: string, deadline: Deadline): Client {
-  async function request(method: "GET" | "POST", path: string, init: RequestInit) {
+  async function request(method: "GET" | "POST" | "DELETE", path: string, init: RequestInit) {
     const what = `${method} ${path}`;
     const remaining = deadline.remainingMs();
     if (remaining <= 0) throw new CliError("timeout", "timeout", `${what}: --timeout ran out`);
@@ -24,12 +32,21 @@ export function createClient(baseUrl: string, deadline: Deadline): Client {
       const response = await fetch(new URL(path, baseUrl), { ...init, method, signal });
       // Read the body under the same deadline; a server can stall after the headers.
       const text = await response.text();
-      return { status: response.status, body: parseJson(text), what };
+      return { status: response.status, text, body: parseJson(text), what };
     } catch (error) {
       if (error instanceof CliError) throw error;
       if (signal.aborted) throw new CliError("timeout", "timeout", `${what}: --timeout ran out`);
       throw new CliError("unreachable", "unreachable", `${what}: ${networkReason(error)}`);
     }
+  }
+
+  async function postCommandAt(path: string, json: unknown): Promise<CommandResult> {
+    const { status, body, what } = await request("POST", path, jsonInit(json));
+    // A 400/422 in the ApiError form (`{ error }`) is no command result: mapped as by get.
+    if (status === 200 || ((status === 400 || status === 422) && !isApiError(body))) {
+      return expectJson(body, what) as CommandResult;
+    }
+    throw statusError(status, body, what);
   }
 
   return {
@@ -40,17 +57,35 @@ export function createClient(baseUrl: string, deadline: Deadline): Client {
       throw statusError(status, body, what);
     },
 
-    async postCommand(command: CommandInput): Promise<CommandResult> {
-      const { status, body, what } = await request("POST", "/api/commands", {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(command),
-      });
-      if (status === 200 || status === 400 || status === 422) {
-        return expectJson(body, what) as CommandResult;
-      }
+    async getText(path: string): Promise<string> {
+      const { status, text, body, what } = await request("GET", path, {});
+      if (status >= 200 && status < 300) return text;
       throw statusError(status, body, what);
     },
+
+    async post<T>(path: string, json: unknown): Promise<T> {
+      const { status, body, what } = await request("POST", path, jsonInit(json));
+      if (status >= 200 && status < 300) return expectJson(body, what) as T;
+      throw statusError(status, body, what);
+    },
+
+    async delete<T>(path: string): Promise<T> {
+      const { status, body, what } = await request("DELETE", path, {});
+      if (status >= 200 && status < 300) return expectJson(body, what) as T;
+      throw statusError(status, body, what);
+    },
+
+    postCommand: (command: CommandInput) => postCommandAt("/api/commands", command),
+    postCommandAt,
   };
+}
+
+function jsonInit(json: unknown): RequestInit {
+  return { headers: { "content-type": "application/json" }, body: JSON.stringify(json) };
+}
+
+function isApiError(body: unknown): boolean {
+  return typeof (body as Partial<ApiError> | null)?.error === "object";
 }
 
 const NOT_JSON = Symbol("not json");
@@ -74,6 +109,11 @@ function statusError(status: number, body: unknown, what: string): CliError {
   const error = (body as Partial<ApiError> | null)?.error;
   if (typeof error === "object" && error !== null && typeof error.code === "string") {
     return new CliError(outcome, error.code, `${what}: HTTP ${status}: ${error.message}`);
+  }
+  // A failed CommandResult (`{ ok: false, code, message }`) outside 400/422, e.g. 503 catalog_unavailable.
+  const failed = body as { ok?: unknown; code?: unknown; message?: unknown } | null;
+  if (failed?.ok === false && typeof failed.code === "string") {
+    return new CliError(outcome, failed.code, `${what}: HTTP ${status}: ${String(failed.message)}`);
   }
   const message = (body as { message?: unknown } | null)?.message;
   const detail = typeof message === "string" ? `: ${message}` : "";

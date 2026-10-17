@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { attributionText, type Measurement } from "@kipscope/shared";
 import { isLoopbackHost } from "./access.ts";
 import { buildApp } from "./app.ts";
@@ -10,8 +10,10 @@ import { loadDbcFiles } from "./dbc.ts";
 import { loadDiagCatalogs } from "./diag.ts";
 import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
+import { loadState, STATE_FILE, StatePersister } from "./persist.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
 import { QueryQueue, queuedSource } from "./queue.ts";
+import { ViewStore } from "./views.ts";
 import { WorkspaceStore } from "./workspace.ts";
 
 const config = loadConfig();
@@ -59,16 +61,24 @@ const catalog = new Catalog(
   { warn: (message) => app.log.warn(message) },
   (warn) => loadDiagCatalogs(config.diagCatalogs, warn),
 );
+// Views and the state file (design V4, V5); the warnings wait for the logger.
+const views = new ViewStore(join(config.stateDir, "views"));
+const statePath = join(config.stateDir, STATE_FILE);
+const restoreWarnings: string[] = [];
+const initial = loadState(statePath, (message) => restoreWarnings.push(message));
 const workspace = new WorkspaceStore(
   {
     signalExists: (id) => catalog.get(id) !== undefined,
     unitOf: (id) => catalog.get(id)?.unit,
     hasStates: (id) => catalog.get(id)?.states !== undefined,
+    catalogReady: () => catalog.loadedAt !== undefined,
   },
   {
     onListenerError: (error) => app.log.error({ error: String(error) }, "live listener failed"),
     ...(measurement ? { measurement } : {}),
     eventSignals,
+    ...(initial ? { initial } : {}),
+    beforeOpen: (previous) => views.beforeOpen(previous),
   },
 );
 const app = buildApp(
@@ -92,6 +102,7 @@ const app = buildApp(
       },
     },
     ...(licenseText === undefined ? {} : { licenseText }),
+    views,
   },
   extraHost === undefined ? { logger: true } : { logger: true, extraHost },
 );
@@ -104,6 +115,17 @@ if (!loopback)
     `KIPSCOPE_HOST ${config.host} is not loopback: every machine that reaches it can read signals and change the workspace` +
       (wildcard ? "; only loopback names pass the Host check" : ""),
   );
+
+for (const message of restoreWarnings) app.log.warn(message);
+if (initial) app.log.info({ revision: initial.revision }, `workspace restored from ${statePath}`);
+const persister = new StatePersister(statePath, { warn: (message) => app.log.warn(message) });
+persister.subscribe(workspace);
+// node --watch restarts with SIGTERM: write the last changes, then exit as the signal would.
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => {
+    persister.flush();
+    process.kill(process.pid, signal);
+  });
 
 app.log.info(attributionText());
 await app.listen({ host: config.host, port: config.port });

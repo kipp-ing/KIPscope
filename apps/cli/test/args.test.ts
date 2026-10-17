@@ -487,3 +487,77 @@ describe("argument grammar", () => {
     }
   });
 });
+
+describe("view forms (add-saved-views)", () => {
+  const parse = (...argv: string[]) => parseArgs(argv, {}).invocation;
+
+  it("maps the view forms", () => {
+    // The requests of design V8, as the forms build them.
+    expect(parse("view", "save", "Drive 3", "--note", "BLS first", "--overwrite")).toMatchObject({
+      kind: "view",
+      action: "save",
+      request: { title: "Drive 3", note: "BLS first", overwrite: true },
+    });
+    expect(parse("view", "open", "drive-3")).toMatchObject({
+      kind: "view",
+      action: "open",
+      request: { name: "drive-3" },
+    });
+    expect(parse("view", "import", "x.yaml", "--name", "copy", "--open")).toMatchObject({
+      kind: "view",
+      action: "import",
+      file: "x.yaml",
+      request: { name: "copy", open: true },
+    });
+    // No title: a usage error.
+    const error = usageError(["view", "save"]);
+    expect(error.outcome).toBe("usage");
+
+    // The other forms.
+    expect(parse("view", "list")).toMatchObject({ kind: "view", action: "list" });
+    expect(parse("view", "delete", "drive-3")).toMatchObject({
+      kind: "view",
+      action: "delete",
+      name: "drive-3",
+    });
+    expect(parse("view", "export", "drive-3")).toMatchObject({
+      kind: "view",
+      action: "export",
+      name: "drive-3",
+    });
+    expect(parse("view", "export", "drive-3", "--out", "v.yaml")).toMatchObject({
+      kind: "view",
+      action: "export",
+      name: "drive-3",
+      out: "v.yaml",
+    });
+    // Options the form does not take, and the wrong number of arguments.
+    for (const argv of [
+      ["view"],
+      ["view", "frob"],
+      ["view", "list", "x"],
+      ["view", "open"],
+      ["view", "open", "a", "b"],
+      ["view", "delete"],
+      ["view", "export"],
+      ["view", "import"],
+      ["view", "save", "T", "--out", "f"],
+      ["view", "open", "a", "--overwrite"],
+    ]) {
+      expect(usageError(argv).outcome).toBe("usage");
+    }
+  });
+
+  it("names the view forms in the usage text", () => {
+    for (const form of [
+      "view list",
+      "view save",
+      "view open",
+      "view delete",
+      "view export",
+      "view import",
+    ]) {
+      expect(USAGE).toContain(form);
+    }
+  });
+});

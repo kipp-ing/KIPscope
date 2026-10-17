@@ -40,6 +40,8 @@ export interface Config {
   queryTimeoutSeconds: number;
   /** Project file (D-035). Default `<repo root>/kipscope.yaml`, optional; `KIPSCOPE_PROJECT_FILE` overrides it and must exist. */
   projectFile: { path: string; required: boolean };
+  /** Views and the state file (design V4); `KIPSCOPE_STATE_DIR`, default `<repo root>/.kipscope`. */
+  stateDir: string;
 }
 
 export const REPO_ROOT = resolve(import.meta.dirname, "../../..");
@@ -130,5 +132,6 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     projectFile: project
       ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }
       : { path: resolve(root, "kipscope.yaml"), required: false },
+    stateDir: resolve(root, env.KIPSCOPE_STATE_DIR || ".kipscope"),
   };
 }

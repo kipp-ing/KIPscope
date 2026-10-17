@@ -15,4 +15,5 @@ export * from "./signals.ts";
 export * from "./states.ts";
 export * from "./time.ts";
 export * from "./timenav.ts";
+export * from "./views.ts";
 export * from "./workspace.ts";

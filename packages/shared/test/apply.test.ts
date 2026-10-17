@@ -1043,3 +1043,182 @@ describe("events commands", () => {
     expect(MAX_EVENT_SIGNALS).toBe(8);
   });
 });
+
+describe("view.open and view.markSaved (add-saved-views)", () => {
+  const known = new Set([
+    "testcar/Sna_800h.RPM",
+    "testcar/Fast_100h.V1",
+    "testcar/Fast_100h.KMH",
+    "testcar/Fast_100h.DEG",
+    "testcar/Fast_100h.DN",
+  ]);
+  const units: Record<string, string> = {
+    "testcar/Sna_800h.RPM": "1/min",
+    "testcar/Fast_100h.V1": "V",
+    "testcar/Fast_100h.KMH": "km/h",
+    "testcar/Fast_100h.DEG": "°C",
+    "testcar/Fast_100h.DN": "rpm/10ms",
+  };
+  const viewCtx = {
+    signalExists: (id: string) => known.has(id),
+    hasStates: () => false,
+    unitOf: (id: string) => units[id],
+  };
+  const timeseries = (over: Record<string, unknown> = {}) => ({
+    kind: "timeseries",
+    from: "2026-10-13T13:08:00Z",
+    to: "2026-10-13T13:08:20Z",
+    mode: "line",
+    envelope: false,
+    signals: [],
+    ...over,
+  });
+  const doc = (windows: unknown[], over: Record<string, unknown> = {}) => ({
+    kipscope: "view",
+    version: 1,
+    title: "T",
+    data: ["testcar"],
+    linkTime: true,
+    cursors: { diff: false },
+    digits: 3,
+    windows,
+    ...over,
+  });
+  const open = (state: Workspace, view: unknown, name?: string) =>
+    applyCommand(
+      state,
+      Command.parse({ type: "view.open", view, ...(name === undefined ? {} : { name }) }),
+      viewCtx,
+    );
+
+  it("opens a view with missing and skipped signals", () => {
+    const view = doc([
+      timeseries({
+        signals: [
+          "testcar/Sna_800h.RPM",
+          "testcar/Gone_1h.X",
+          "testcar/Sna_800h.RPM",
+          "testcar/Fast_100h.V1",
+          "testcar/Fast_100h.KMH",
+          "testcar/Fast_100h.DEG",
+          "testcar/Fast_100h.DN",
+        ],
+      }),
+    ]);
+    const result = open(EMPTY_WORKSPACE, view, "t");
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    const w = result.workspace.windows[0];
+    expect(w?.signals.map((s) => s.signalId)).toEqual([
+      "testcar/Sna_800h.RPM",
+      "testcar/Fast_100h.V1",
+      "testcar/Fast_100h.KMH",
+      "testcar/Fast_100h.DEG",
+    ]);
+    expect(result.report?.missing).toEqual(["testcar/Gone_1h.X"]);
+    expect(result.report?.skipped).toEqual([
+      { signalId: "testcar/Sna_800h.RPM", window: 0, reason: "already_in_window" },
+      { signalId: "testcar/Fast_100h.DN", window: 0, reason: "too_many_units" },
+    ]);
+    expect(result.workspace.view).toEqual({ name: "t", title: "T", modified: false });
+  });
+
+  it("fails the whole open on a bad document and before the catalog loaded", () => {
+    const bad = open(EMPTY_WORKSPACE, { kipscope: "view", version: 9 });
+    expect(bad).toMatchObject({ ok: false, code: "unsupported_version" });
+    const notView = open(EMPTY_WORKSPACE, { kipscope: "workspace", version: 1 });
+    expect(notView).toMatchObject({ ok: false, code: "invalid_view" });
+    const early = applyCommand(
+      EMPTY_WORKSPACE,
+      Command.parse({ type: "view.open", view: doc([]) }),
+      { ...viewCtx, catalogReady: () => false },
+    );
+    expect(early).toMatchObject({ ok: false, code: "catalog_unavailable" });
+  });
+
+  it("continues IDs from the current nextId", () => {
+    const base = { ...EMPTY_WORKSPACE, nextId: 12 };
+    const result = open(
+      base,
+      doc([timeseries(), timeseries(), timeseries({ signals: ["testcar/Sna_800h.RPM"] })]),
+    );
+    if (!result.ok) throw new Error(result.message);
+    expect(result.workspace.windows.map((w) => w.id)).toEqual(["w12", "w13", "w14"]);
+    expect(result.workspace.windows[2]?.signals[0]?.id).toBe("a15");
+    expect(result.workspace.nextId).toBe(16);
+  });
+
+  it("aligns ranges of a linked view", () => {
+    const view = doc([
+      timeseries({ from: "2026-10-13T13:08:00Z", to: "2026-10-13T13:08:20Z" }),
+      timeseries({ from: "2026-10-13T13:09:00Z", to: "2026-10-13T13:09:05Z" }),
+    ]);
+    const result = open(EMPTY_WORKSPACE, view);
+    if (!result.ok) throw new Error(result.message);
+    const ranges = result.workspace.windows.map((w) => (w.kind === "timeseries" ? w.range : null));
+    const first = { from: "1791896880000000000", to: "1791896900000000000" };
+    expect(ranges).toEqual([first, first]);
+    expect(result.report?.warnings).toContain(
+      "time axes are linked: ranges aligned to the first window",
+    );
+
+    // Unlinked ranges stay as they are and raise no warning.
+    const free = open(EMPTY_WORKSPACE, { ...view, linkTime: false });
+    if (!free.ok) throw new Error(free.message);
+    expect(
+      free.workspace.windows.map((w) => (w.kind === "timeseries" ? w.range.from : "")),
+    ).toEqual(["1791896880000000000", "1791896940000000000"]);
+    expect(free.report?.warnings).toEqual([]);
+  });
+
+  it("marks the open view modified", () => {
+    const opened = open(EMPTY_WORKSPACE, doc([timeseries()]), "t");
+    if (!opened.ok) throw new Error(opened.message);
+    expect(opened.workspace.view?.modified).toBe(false);
+
+    const moved = applyCommand(
+      opened.workspace,
+      Command.parse({ type: "cursor.set", cursor: "a", t: "1791896881000000000" }),
+      viewCtx,
+    );
+    if (!moved.ok) throw new Error(moved.message);
+    expect(moved.workspace.view).toEqual({ name: "t", title: "T", modified: true });
+
+    const saved = applyCommand(
+      moved.workspace,
+      Command.parse({ type: "view.markSaved", name: "t", title: "T2", note: "n" }),
+      viewCtx,
+    );
+    if (!saved.ok) throw new Error(saved.message);
+    expect(saved.workspace.view).toEqual({ name: "t", title: "T2", note: "n", modified: false });
+    // markSaved changes nothing but `view`.
+    expect({ ...saved.workspace, view: undefined }).toEqual({
+      ...moved.workspace,
+      view: undefined,
+    });
+
+    const rejected = applyCommand(
+      saved.workspace,
+      Command.parse({ type: "cursor.move", cursor: "b", by: "1" }),
+      viewCtx,
+    );
+    expect(rejected).toMatchObject({ ok: false, code: "cursor_off" });
+    expect(saved.workspace.view?.modified).toBe(false);
+  });
+
+  it("leaves a workspace without a view without one", () => {
+    const moved = applyCommand(
+      EMPTY_WORKSPACE,
+      Command.parse({ type: "cursor.set", cursor: "a", t: "5" }),
+      viewCtx,
+    );
+    if (!moved.ok) throw new Error(moved.message);
+    expect(moved.workspace.view).toBeUndefined();
+  });
+
+  it("refuses markSaved with a name that is not a view name", () => {
+    expect(() =>
+      Command.parse({ type: "view.markSaved", name: "_previous", title: "x" }),
+    ).toThrow();
+    expect(() => Command.parse({ type: "view.markSaved", name: "Abc", title: "x" })).toThrow();
+  });
+});

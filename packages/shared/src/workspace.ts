@@ -150,6 +150,25 @@ export interface Measurement {
 /** Signals on the events line at most (design E8, D-059). */
 export const MAX_EVENT_SIGNALS = 8;
 
+/**
+ * View limits of design V1, defined here so the command schema needs no import cycle; views.ts
+ * re-exports them.
+ */
+/** User view names: file-safe, no leading dash, no underscore. */
+export const VIEW_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+export const MAX_VIEW_TITLE = 120;
+export const MAX_VIEW_NOTE = 2_000;
+
+/** The view the workspace came from or was saved as; absent for a fresh workspace. */
+export interface OpenView {
+  /** Saved view name; absent when opened from a link that was not saved here. */
+  name?: string;
+  title: string;
+  note?: string;
+  /** True after any accepted command other than view.open / view.markSaved. */
+  modified: boolean;
+}
+
 export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
 
 export interface Workspace {
@@ -174,6 +193,8 @@ export interface Workspace {
   eventFilter?: string;
   /** Events-line signal IDs in order, at most MAX_EVENT_SIGNALS (D-059); absent when empty. */
   eventSignals?: string[];
+  /** Open view (saved-views, design V2); absent for a fresh workspace. */
+  view?: OpenView;
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -303,6 +324,19 @@ export const Command = z.discriminatedUnion("type", [
   z.object({ type: z.literal("events.setFilter"), filter: z.string().max(MAX_FILTER_LENGTH) }),
   z.object({ type: z.literal("events.addSignal"), signalId: Id }),
   z.object({ type: z.literal("events.removeSignal"), signalId: Id }),
+  /** Replaces the workspace with a view document (design V2); `name` when it is a saved view. */
+  z.object({
+    type: z.literal("view.open"),
+    view: z.record(z.string(), z.unknown()),
+    name: z.string().max(64).optional(),
+  }),
+  /** Marks the open view as saved under `name`; changes nothing but `view`. */
+  z.object({
+    type: z.literal("view.markSaved"),
+    name: z.string().regex(VIEW_NAME),
+    title: z.string().trim().min(1).max(MAX_VIEW_TITLE),
+    note: z.string().max(MAX_VIEW_NOTE).optional(),
+  }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -326,6 +360,9 @@ export type CommandErrorCode =
   | "already_listed"
   | "event_signal_limit"
   | "not_listed"
+  | "invalid_view"
+  | "unsupported_version"
+  | "catalog_unavailable"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */
@@ -338,8 +375,23 @@ export type CommandResult =
       created?: string;
       createdWindow?: string;
       removedWindow?: string;
+      /** view.open only. */
+      report?: OpenReport;
     }
   | { ok: false; code: CommandErrorCode; message: string };
+
+/** What view.open left out (design V2). */
+export interface OpenReport {
+  /** Window signals the catalog does not know, unique, sorted. */
+  missing: string[];
+  /** Known signals left out; window = index in the document's windows. */
+  skipped: {
+    signalId: string;
+    window: number;
+    reason: "too_many_units" | "signal_limit" | "already_in_window";
+  }[];
+  warnings: string[];
+}
 
 /** Messages on `WS /api/live`. */
 export type LiveServerMessage =
@@ -378,3 +430,76 @@ export interface RenderStatus {
   revision: number;
   clients: ClientRenderStatus[];
 }
+
+const NsTime = z.string().regex(/^-?\d{1,20}$/);
+const ExactText = (max: number) => z.string().max(max).exactOptional();
+
+const SignalAssignmentSchema = z.strictObject({ id: Id, signalId: Id });
+
+/** zod schema of a whole Workspace (state file, design V4); unknown keys rejected. */
+export const WorkspaceSchema: z.ZodType<Workspace> = z.strictObject({
+  windows: z
+    .array(
+      z.discriminatedUnion("kind", [
+        z.strictObject({
+          id: Id,
+          kind: z.literal("timeseries"),
+          title: ExactText(200),
+          range: z.strictObject({ from: NsTime, to: NsTime }),
+          display: z.strictObject({ mode: DisplayMode, envelope: z.boolean() }),
+          signals: z.array(SignalAssignmentSchema),
+          height: z.number().int().min(MIN_PLOT_HEIGHT).max(MAX_PLOT_HEIGHT).exactOptional(),
+        }),
+        z.strictObject({
+          id: Id,
+          kind: z.literal("values"),
+          title: ExactText(200),
+          mode: ValuesMode,
+          signals: z.array(SignalAssignmentSchema),
+        }),
+      ]),
+    )
+    .max(MAX_WINDOWS),
+  nextId: z.number().int().min(1),
+  linkTime: z.boolean(),
+  lastZoomed: Id.exactOptional(),
+  colors: z.record(
+    Id,
+    z
+      .number()
+      .int()
+      .min(0)
+      .max(SIGNAL_COLORS.length - 1),
+  ),
+  cursors: z.strictObject({
+    a: NsTime.exactOptional(),
+    b: NsTime.exactOptional(),
+    diff: z.boolean(),
+  }),
+  options: z.strictObject({ digits: Digits }),
+  measurement: z
+    .strictObject({
+      name: ExactText(MAX_MEASUREMENT_TEXT),
+      object: ExactText(MAX_MEASUREMENT_TEXT),
+      meta: z
+        .array(
+          z.strictObject({
+            key: z.string().max(MAX_MEASUREMENT_KEY),
+            value: z.string().max(MAX_MEASUREMENT_VALUE),
+          }),
+        )
+        .max(MAX_MEASUREMENT_META)
+        .exactOptional(),
+    })
+    .exactOptional(),
+  eventFilter: z.string().max(MAX_FILTER_LENGTH).exactOptional(),
+  eventSignals: z.array(Id).max(MAX_EVENT_SIGNALS).exactOptional(),
+  view: z
+    .strictObject({
+      name: z.string().max(64).exactOptional(),
+      title: z.string().max(MAX_VIEW_TITLE),
+      note: ExactText(MAX_VIEW_NOTE),
+      modified: z.boolean(),
+    })
+    .exactOptional(),
+});

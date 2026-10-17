@@ -1,9 +1,11 @@
 import { DEFAULT_EVENT_FILTER, formatEventFilter, parseEventFilter } from "./eventFilter.ts";
-import { TIME_MAX, TIME_MIN, toIso } from "./time.ts";
+import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
+import { parseViewDoc } from "./views.ts";
 import {
   type Command,
   type CommandErrorCode,
   DEFAULT_DISPLAY,
+  EMPTY_WORKSPACE,
   isTimeseries,
   MAX_EVENT_SIGNALS,
   MAX_MEASUREMENT_META,
@@ -11,6 +13,7 @@ import {
   MAX_UNITS,
   MAX_WINDOWS,
   type Measurement,
+  type OpenReport,
   SIGNAL_COLORS,
   type TimeRange,
   type TimeseriesWindow,
@@ -28,6 +31,8 @@ export interface ApplyContext {
   unitOf?(signalId: string): string | undefined;
   /** Whether a signal has states (catalog: SignalInfo.states present), design E8. */
   hasStates(signalId: string): boolean;
+  /** Whether the catalog has loaded; view.open needs it (absent = ready). */
+  catalogReady?(): boolean;
 }
 
 export type ApplyResult =
@@ -37,6 +42,8 @@ export type ApplyResult =
       created?: string;
       createdWindow?: string;
       removedWindow?: string;
+      /** view.open only. */
+      report?: OpenReport;
     }
   | { ok: false; code: CommandErrorCode; message: string };
 
@@ -123,10 +130,141 @@ function withEventSignals(state: Workspace, eventSignals: string[]): Workspace {
 }
 
 /**
+ * view.open (design V2): the document replaces the workspace; IDs continue from `state.nextId`,
+ * window signals follow the rules of window.addSignal, and what is left out goes into the report.
+ */
+function openView(
+  state: Workspace,
+  command: Extract<Command, { type: "view.open" }>,
+  ctx: ApplyContext,
+): ApplyResult {
+  if (ctx.catalogReady?.() === false) {
+    return fail("catalog_unavailable", "the signal catalog has not loaded yet");
+  }
+  const parsed = parseViewDoc(command.view);
+  if (!parsed.ok) return fail(parsed.code, parsed.message);
+  const { doc } = parsed;
+  const report: OpenReport = { missing: [], skipped: [], warnings: [...parsed.warnings] };
+  let nextId = state.nextId;
+  const ns = (iso: string) => fromIso(iso).toString();
+
+  // IDs in document order: all windows first, then the assignments.
+  let windows: WorkspaceWindow[] = doc.windows.map((d) => {
+    const id = `w${nextId++}`;
+    const title = d.title ? { title: d.title } : {};
+    if (d.kind === "values") return { id, kind: "values", ...title, mode: d.mode, signals: [] };
+    return {
+      id,
+      kind: "timeseries",
+      ...title,
+      range: { from: ns(d.from), to: ns(d.to) },
+      display: { mode: d.mode, envelope: d.envelope },
+      signals: [],
+      ...(d.height !== undefined && { height: d.height }),
+    };
+  });
+
+  const missing = new Set<string>();
+  const kept = new Set<string>();
+  windows = windows.map((window, index) => {
+    let w = window;
+    for (const signalId of doc.windows[index]?.signals ?? []) {
+      const skip = (reason: OpenReport["skipped"][number]["reason"]) =>
+        report.skipped.push({ signalId, window: index, reason });
+      if (!ctx.signalExists(signalId)) missing.add(signalId);
+      else if (w.signals.some((s) => s.signalId === signalId)) skip("already_in_window");
+      else if (!kept.has(signalId) && kept.size >= MAX_SIGNALS) skip("signal_limit");
+      else if (checkUnits(w, signalId, ctx)) skip("too_many_units");
+      else {
+        w = { ...w, signals: [...w.signals, { id: `a${nextId++}`, signalId }] };
+        kept.add(signalId);
+      }
+    }
+    return w;
+  });
+  report.missing = [...missing].sort();
+
+  const first = windows.find(isTimeseries)?.range;
+  if (
+    doc.linkTime &&
+    first &&
+    windows.some((w) => isTimeseries(w) && (w.range.from !== first.from || w.range.to !== first.to))
+  ) {
+    windows = linkRange(windows, first);
+    report.warnings.push("time axes are linked: ranges aligned to the first window");
+  }
+
+  // The document's colours first, so the others take the least used of what remains.
+  const colors: Record<string, number> = {};
+  const fromDoc = (id: string) => doc.colors?.[id];
+  for (const id of kept) {
+    const index = fromDoc(id);
+    if (
+      index !== undefined &&
+      Number.isInteger(index) &&
+      index >= 0 &&
+      index < SIGNAL_COLORS.length
+    )
+      colors[id] = index;
+  }
+  for (const id of kept) if (!(id in colors)) colors[id] = leastUsedColor(colors);
+
+  let workspace: Workspace = {
+    ...EMPTY_WORKSPACE,
+    windows,
+    nextId,
+    linkTime: doc.linkTime,
+    colors,
+    cursors: {
+      ...(doc.cursors.a !== undefined && { a: ns(doc.cursors.a) }),
+      ...(doc.cursors.b !== undefined && { b: ns(doc.cursors.b) }),
+      diff: doc.cursors.diff,
+    },
+    options: { digits: doc.digits },
+  };
+  workspace = withMeasurement(workspace, doc.measurement ?? {});
+
+  const filter = doc.events?.filter;
+  if (filter !== undefined) {
+    const parsedFilter = parseEventFilter(filter);
+    if (!parsedFilter.ok) {
+      report.warnings.push(`event filter "${filter}" ignored: ${parsedFilter.message}`);
+    } else {
+      const normal = formatEventFilter(parsedFilter.filter);
+      if (normal !== DEFAULT_EVENT_FILTER) workspace.eventFilter = normal;
+    }
+  }
+  const eventSignals = [...new Set(doc.events?.signals ?? [])];
+  if (eventSignals.length > MAX_EVENT_SIGNALS) {
+    report.warnings.push(
+      `the events line holds at most ${MAX_EVENT_SIGNALS} signals: ${eventSignals.length - MAX_EVENT_SIGNALS} left out`,
+    );
+  }
+  workspace = withEventSignals(workspace, eventSignals.slice(0, MAX_EVENT_SIGNALS));
+
+  workspace.view = {
+    ...(command.name !== undefined && { name: command.name }),
+    title: doc.title,
+    ...(doc.note !== undefined && { note: doc.note }),
+    modified: false,
+  };
+  return { ok: true, workspace, report };
+}
+
+/**
  * Applies one validated command. Pure: returns a new workspace and never mutates the input, so a
- * rejected command leaves the state unchanged and undo can keep previous states.
+ * rejected command leaves the state unchanged and undo can keep previous states. Any accepted
+ * command other than view.open and view.markSaved marks an open view modified.
  */
 export function applyCommand(state: Workspace, command: Command, ctx: ApplyContext): ApplyResult {
+  const result = applyOne(state, command, ctx);
+  const view = result.ok ? result.workspace.view : undefined;
+  if (!result.ok || !view || command.type === "view.open" || command.type === "view.markSaved")
+    return result;
+  return { ...result, workspace: { ...result.workspace, view: { ...view, modified: true } } };
+}
+
+function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyResult {
   const updateWindow = (
     windowId: string,
     update: (w: WorkspaceWindow) => WorkspaceWindow | ApplyResult,
@@ -483,5 +621,22 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
       const rest = listed.filter((id) => id !== command.signalId);
       return { ok: true, workspace: withEventSignals(state, rest) };
     }
+
+    case "view.open":
+      return openView(state, command, ctx);
+
+    case "view.markSaved":
+      return {
+        ok: true,
+        workspace: {
+          ...state,
+          view: {
+            name: command.name,
+            title: command.title,
+            ...(command.note && { note: command.note }),
+            modified: false,
+          },
+        },
+      };
   }
 }

@@ -9,6 +9,7 @@ import {
   isTimeseries,
   mergeEvents,
   navAnchor,
+  type OpenReport,
   panBy,
   parseSignalId,
   placeSignals,
@@ -24,7 +25,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
 import { runPlan } from "./addSignals.ts";
-import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
+import { ApiRequestError, fetchExtent, openView, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar } from "./bar/OptionBar.tsx";
 import {
@@ -81,6 +82,8 @@ import {
   TimeStrip,
 } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
+import { cleanAddress, startupView } from "./views/link.ts";
+import { openNotice } from "./views/notice.ts";
 import { WindowBoundary } from "./WindowBoundary.tsx";
 
 /** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
@@ -95,6 +98,10 @@ interface Drag {
   copy: boolean;
   target?: DropTarget | undefined;
 }
+
+/** Start-up open from the address (add-saved-views V7): retry pause while the catalog loads, and how long to wait for it. */
+const STARTUP_RETRY_MS = 1000;
+const STARTUP_CATALOG_WAIT_MS = 60_000;
 
 /** Auto-scroll band below the top row and above the status strip (design C7, L3), and its top speed per frame. */
 const EDGE_PX = 48;
@@ -198,7 +205,20 @@ function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undef
 export function App() {
   const [live, send] = useLive();
   const [message, setMessage] = useState<string | undefined>();
-  const dismissMessage = useCallback(() => setMessage(undefined), []);
+  // An info notice in the strip's message slot, e.g. the open notice (add-saved-views V7); a new
+  // error replaces it.
+  const [notice, setNoticeState] = useState<{ text: string; title?: string } | undefined>();
+  const setNotice = useCallback((text: string, title?: string) => {
+    setMessage(undefined);
+    setNoticeState({ text, ...(title !== undefined ? { title } : {}) });
+  }, []);
+  useEffect(() => {
+    if (message !== undefined) setNoticeState(undefined);
+  }, [message]);
+  const dismissMessage = useCallback(() => {
+    setMessage(undefined);
+    setNoticeState(undefined);
+  }, []);
 
   // Explorer sidebar (design L1): loaded once, saved on every change, per browser.
   const [sidebar, setSidebar] = useState<SidebarState>(() => loadSidebar(localStore()));
@@ -1043,6 +1063,70 @@ export function App() {
   // A file dropped anywhere on the page would navigate the tab away (design H8).
   useEffect(() => ignoreFileDrops(document), []);
 
+  // Open notice (add-saved-views V7): shown once the push of the open's revision brings the title.
+  const [opened, setOpened] = useState<{
+    revision: number;
+    report: OpenReport | undefined;
+    warnings: readonly string[];
+  }>();
+  const onOpened = useCallback((result: CommandResult, warnings: readonly string[] = []) => {
+    if (!result.ok) setMessage(`${result.code}: ${result.message}`);
+    else setOpened({ revision: result.revision, report: result.report, warnings });
+  }, []);
+  useEffect(() => {
+    if (!opened || live.revision < opened.revision) return;
+    const shown = openNotice(workspace?.view?.title ?? "view", opened.report, opened.warnings);
+    setNotice(shown.text, shown.title);
+    setOpened(undefined);
+  }, [opened, live.revision, workspace, setNotice]);
+  const viewTitle = workspace?.view?.title;
+  useEffect(() => {
+    document.title = viewTitle ? `${viewTitle} · KIPscope` : "KIPscope";
+  }, [viewTitle]);
+
+  // Start-up from the address (V7): `#view=` or `?view=` opens once the live channel is connected;
+  // until the catalog's first load the server refuses with `catalog_unavailable` and the open is
+  // retried. Then the address loses that part, so a reload does not open it again.
+  const startup = useRef(false);
+  useEffect(() => {
+    if (!live.connected || startup.current) return;
+    startup.current = true;
+    void (async () => {
+      let asked: Awaited<ReturnType<typeof startupView>>;
+      try {
+        asked = await startupView(location);
+      } catch (e) {
+        setMessage(`Cannot read the view link: ${e instanceof Error ? e.message : String(e)}`);
+        history.replaceState(null, "", cleanAddress(location));
+        return;
+      }
+      if (!asked) return;
+      const body = "name" in asked ? asked : { view: asked.view as object };
+      const deadline = Date.now() + STARTUP_CATALOG_WAIT_MS;
+      for (;;) {
+        let result: CommandResult;
+        try {
+          result = await openView(body);
+        } catch (e) {
+          const waiting = e instanceof ApiRequestError && e.code === "catalog_unavailable";
+          if (waiting && Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, STARTUP_RETRY_MS));
+            continue;
+          }
+          setMessage(e instanceof Error ? e.message : String(e));
+          break;
+        }
+        if (!result.ok && result.code === "catalog_unavailable" && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, STARTUP_RETRY_MS));
+          continue;
+        }
+        onOpened(result);
+        break;
+      }
+      history.replaceState(null, "", cleanAddress(location));
+    })();
+  }, [live.connected, onOpened]);
+
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -1139,6 +1223,9 @@ export function App() {
                   onReset={() => {
                     if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
                   }}
+                  onOpened={onOpened}
+                  onNotice={setNotice}
+                  onMessage={setMessage}
                 />
               )}
             </div>
@@ -1220,7 +1307,9 @@ export function App() {
         <StatusBar
           connected={live.connected}
           revision={live.revision}
-          message={message}
+          message={message ?? notice?.text}
+          messageTone={message === undefined && notice ? "info" : "error"}
+          messageTitle={message ?? notice?.title}
           onDismissMessage={dismissMessage}
           measurement={workspace?.measurement}
           meta={meta.meta}

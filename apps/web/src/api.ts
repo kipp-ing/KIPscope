@@ -8,11 +8,14 @@ import type {
   EventList,
   Extent,
   GapInfo,
+  ImportViewRequest,
+  SaveViewRequest,
   SeriesResult,
   ServerMeta,
   SignalInfo,
   SignalPage,
   ValuesMode,
+  ViewSummary,
 } from "@kipscope/shared";
 import type { SeriesRequest } from "./chart/tiles.ts";
 
@@ -20,26 +23,35 @@ import type { SeriesRequest } from "./chart/tiles.ts";
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
+  /** The whole `error` object of the answer, e.g. `existing` of a 409 `view_exists` (add-saved-views V6). */
+  readonly details: Record<string, unknown> | undefined;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
     super(`${code}: ${message}`);
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
+}
+
+/** The error of a response that is not ok, from its parsed body (a proxy or a crashed server may answer without an ApiError body). */
+function requestError(res: Response, body: unknown): ApiRequestError {
+  const error = (body as Partial<ApiError> | undefined)?.error;
+  if (typeof error?.code === "string" && typeof error.message === "string") {
+    return new ApiRequestError(
+      res.status,
+      error.code,
+      error.message,
+      error as unknown as Record<string, unknown>,
+    );
+  }
+  return new ApiRequestError(res.status, `http_${res.status}`, res.statusText);
 }
 
 async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
   const res = await fetch(url, abort ? { signal: abort } : {});
-  if (!res.ok) {
-    // A proxy or a crashed server may answer without an ApiError body.
-    const body = (await res.json().catch(() => undefined)) as Partial<ApiError> | undefined;
-    const error = body?.error;
-    if (typeof error?.code === "string" && typeof error.message === "string") {
-      throw new ApiRequestError(res.status, error.code, error.message);
-    }
-    throw new ApiRequestError(res.status, `http_${res.status}`, res.statusText);
-  }
+  if (!res.ok) throw requestError(res, await res.json().catch(() => undefined));
   return (await res.json()) as T;
 }
 
@@ -139,4 +151,68 @@ export async function sendCommand(command: CommandInput): Promise<CommandResult>
     if (isCommandResult(body)) return body;
   }
   return { ok: false, code: "bad_response", message: `HTTP ${res.status}: ${res.statusText}` };
+}
+
+// Saved views (add-saved-views V6, V7).
+
+async function sendJson<T>(url: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  const data: unknown = await res.json().catch(() => undefined);
+  if (!res.ok) throw requestError(res, data);
+  return data as T;
+}
+
+/** What `POST /api/views/open` opens: a saved view by name or a whole document (a link). */
+export type OpenViewBody = { name: string } | { view: object };
+
+export interface SaveViewResult {
+  view: ViewSummary;
+  revision: number;
+}
+
+export interface ImportViewResult {
+  view: ViewSummary;
+  warnings: string[];
+  opened?: CommandResult;
+}
+
+/** The saved views, newest first, "Before last open" last. */
+export async function listViews(abort?: AbortSignal): Promise<ViewSummary[]> {
+  return (await getJson<{ views: ViewSummary[] }>("/api/views", abort)).views;
+}
+
+/** Saves the open workspace; 409 `view_exists` (with `details.existing`) unless `overwrite`. */
+export function saveView(req: SaveViewRequest): Promise<SaveViewResult> {
+  return sendJson("/api/views", "POST", req);
+}
+
+/** Opens a view as one `view.open` command; a refused open resolves to its command result. */
+export async function openView(body: OpenViewBody): Promise<CommandResult> {
+  const res = await fetch("/api/views/open", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data: unknown = await res.json().catch(() => undefined);
+  if (isCommandResult(data)) return data;
+  throw requestError(res, data);
+}
+
+export function deleteView(name: string): Promise<{ deleted: string }> {
+  return sendJson(`/api/views/${encodeURIComponent(name)}`, "DELETE");
+}
+
+/** Stores a YAML or JSON view text under its name, opened at once with `open`. */
+export function importView(req: ImportViewRequest): Promise<ImportViewResult> {
+  return sendJson("/api/views/import", "POST", req);
+}
+
+/** Address of a view's YAML file; `download` makes the browser save it as `<name>.kipscope.yaml`. */
+export function viewFileUrl(name: string, download: boolean): string {
+  return `/api/views/${encodeURIComponent(name)}${download ? "?download=1" : ""}`;
 }

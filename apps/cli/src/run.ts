@@ -26,6 +26,7 @@ import {
   type RenderWait,
 } from "./output.ts";
 import { type Lookups, resolveCommand, resolveSignal, resolveTime } from "./refs.ts";
+import { runView } from "./views.ts";
 import { NO_UI_GRACE_MS, waitForRender } from "./wait.ts";
 
 export interface Io {
@@ -35,12 +36,13 @@ export interface Io {
 }
 
 /** Everything of a CliOutput except ok, outcome and exitCode; filled while the call runs. */
-type Body = Omit<CliOutput, "ok" | "outcome" | "exitCode">;
+export type Body = Omit<CliOutput, "ok" | "outcome" | "exitCode">;
 
 /** Parses, executes and prints one call; returns the exit code. Never throws. */
 export async function run(argv: string[], io: Io): Promise<number> {
   let out: CliOutput;
-  let table: string | undefined;
+  /** Printed instead of the JSON line: `events list --table`, `view export` without --out. */
+  let text: string | undefined;
   let pretty = prettyRequested(argv);
   try {
     const { options, invocation } = parseArgs(argv, io.env);
@@ -51,14 +53,19 @@ export async function run(argv: string[], io: Io): Promise<number> {
     pretty = options.pretty;
     out = await execute(invocation, options);
     if (invocation.kind === "events" && invocation.table && out.ok) {
-      table = eventTable(out.data as EventListData, out.local?.t as string[]);
+      text = eventTable(out.data as EventListData, out.local?.t as string[]);
+    }
+    if (invocation.kind === "view" && invocation.action === "export" && !invocation.out && out.ok) {
+      // The YAML text unchanged: io.stdout adds the final line break back.
+      const yaml = out.data as string;
+      text = yaml.endsWith("\n") ? yaml.slice(0, -1) : yaml;
     }
   } catch (e) {
     out = failure({}, e);
   }
   try {
-    // `events list --table` prints its lines instead of the JSON, on success only (spec cli).
-    if (table !== undefined) io.stdout(table);
+    // Only on success; a failure prints the JSON line as usual (spec cli).
+    if (text !== undefined) io.stdout(text);
     else printOutput(out, io, pretty);
   } catch {
     // A closed stdout must not turn into a throw; the exit code still tells the result.
@@ -165,6 +172,11 @@ async function execute(
       }
       case "command":
         return await runCommand(invocation, options, client, lookups, deadline, body);
+      case "view": {
+        const opened = await runView(invocation, client, body);
+        if (opened === undefined || !options.wait) return result("ok", body);
+        return renderResult(await awaitRender(opened, deadline, client), body, options);
+      }
     }
   } catch (e) {
     return failure(body, e);

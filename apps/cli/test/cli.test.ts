@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseArgs } from "../src/args.ts";
 import type { EventListData } from "../src/output.ts";
@@ -1002,5 +1005,185 @@ describe("events", () => {
       const gone = await cli(s, "events", "remove", MODE);
       expect(gone.out.error.code).toBe("not_listed");
     });
+  });
+});
+
+describe("views", () => {
+  const speeds = async (s: Harness) => {
+    const { workspace } = await s.workspace();
+    return workspace.windows.find((w) => w.title === "Speeds");
+  };
+
+  // The spec says `window create --title Speeds`; a fresh workspace has no range to share, so --from/--to are given.
+  it("saves, lists and opens views", async () => {
+    const s = await startServer();
+    try {
+      expect(
+        (await cli(s, "window", "create", "--title", "Speeds", "--from", "0", "--to", "10")).code,
+      ).toBe(0);
+      const saved = await cli(s, "view", "save", "Speeds");
+      expect(saved.code).toBe(0);
+      expect(saved.out).toMatchObject({
+        ok: true,
+        data: { view: { name: "speeds", title: "Speeds" } },
+      });
+      expect(typeof saved.out.revision).toBe("number");
+      expect((await cli(s, "window", "remove", "w1")).code).toBe(0);
+      expect(await speeds(s)).toBeUndefined();
+
+      const before = await revisionOf(s);
+      const opened = await cli(s, "view", "open", "speeds");
+      expect(opened.code).toBe(0);
+      expect(opened.out).toMatchObject({
+        ok: true,
+        accepted: true,
+        data: { report: { missing: [] } },
+      });
+      expect(opened.out.revision).toBe(before + 1);
+      expect(await speeds(s)).toBeDefined();
+
+      // The workspace was empty before the open: no `_previous`.
+      const list = await cli(s, "view", "list");
+      expect(list.code).toBe(0);
+      expect(list.out.data.views.map((v: { name: string }) => v.name)).toEqual(["speeds"]);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("rejects an unknown view and an existing name", async () => {
+    const s = await startServer();
+    try {
+      const missing = await cli(s, "view", "open", "nope");
+      expect(missing.code).toBe(1);
+      expect(missing.out).toMatchObject({
+        ok: false,
+        outcome: "rejected",
+        error: { code: "unknown_view" },
+      });
+
+      expect((await cli(s, "view", "save", "Speeds")).code).toBe(0);
+      const again = await cli(s, "view", "save", "Speeds");
+      expect(again.code).toBe(1);
+      expect(again.out).toMatchObject({
+        ok: false,
+        outcome: "rejected",
+        error: { code: "view_exists" },
+      });
+      const forced = await cli(s, "view", "save", "Speeds", "--overwrite");
+      expect(forced.code).toBe(0);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("deletes a view and reports one that is gone", async () => {
+    const s = await startServer();
+    try {
+      await cli(s, "view", "save", "Speeds", "--note", "first");
+      const deleted = await cli(s, "view", "delete", "speeds");
+      expect(deleted.code).toBe(0);
+      expect(deleted.out.data).toEqual({ deleted: "speeds" });
+      const gone = await cli(s, "view", "delete", "speeds");
+      expect(gone.code).toBe(1);
+      expect(gone.out.error.code).toBe("unknown_view");
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("keeps the replaced workspace as _previous and honours --wait", async () => {
+    const s = await startServer();
+    const browser = await s.browser({ autoAckMs: 5 });
+    try {
+      await cli(s, "view", "save", "Empty");
+      await cli(s, "window", "create", "--title", "Speeds", "--from", "0", "--to", "10");
+      const opened = await cli(s, "view", "open", "empty", "--wait");
+      expect(opened.code).toBe(0);
+      expect(opened.out).toMatchObject({
+        ok: true,
+        accepted: true,
+        render: { status: "complete" },
+      });
+      const list = await cli(s, "view", "list");
+      expect(list.out.data.views.at(-1)).toMatchObject({
+        name: "_previous",
+        title: "Before last open",
+        windows: 1,
+      });
+    } finally {
+      await browser.close();
+      await s.close();
+    }
+  });
+
+  it("answers 503 as unavailable when the catalog never loaded", async () => {
+    const s = await startServer({ loadCatalog: false });
+    try {
+      s.views.write("v", {
+        kipscope: "view",
+        version: 1,
+        title: "V",
+        data: [],
+        linkTime: true,
+        cursors: { diff: false },
+        digits: 3,
+        windows: [],
+      });
+      const opened = await cli(s, "view", "open", "v");
+      expect(opened.code).toBe(7);
+      expect(opened.out).toMatchObject({
+        ok: false,
+        outcome: "unavailable",
+        error: { code: "catalog_unavailable" },
+      });
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("imports a file and opens it, and refuses an unreadable one without sending anything", async () => {
+    const s = await startServer();
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-cli-import-"));
+    try {
+      const file = join(dir, "v.yaml");
+      writeFileSync(
+        file,
+        [
+          "kipscope: view",
+          "version: 1",
+          "title: Imported",
+          "data:",
+          "  - testcar",
+          "linkTime: true",
+          "cursors:",
+          "  diff: false",
+          "digits: 3",
+          "windows:",
+          "  - kind: values",
+          "    mode: line",
+          "    signals:",
+          "      - testcar/Sna_800h.RPM",
+          "",
+        ].join("\n"),
+      );
+      const imported = await cli(s, "view", "import", file, "--open");
+      expect(imported.code).toBe(0);
+      expect(imported.out.data.view).toMatchObject({ name: "imported", title: "Imported" });
+      expect((await s.workspace()).workspace.windows).toHaveLength(1);
+
+      const requests = s.requests.length;
+      const missing = await cli(s, "view", "import", join(dir, "nope.yaml"));
+      expect(missing.code).toBe(2);
+      expect(missing.out).toMatchObject({ ok: false, outcome: "usage" });
+      const big = join(dir, "big.yaml");
+      writeFileSync(big, "x".repeat(256 * 1024 + 1));
+      const tooBig = await cli(s, "view", "import", big);
+      expect(tooBig.code).toBe(2);
+      expect(s.requests.length).toBe(requests);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      await s.close();
+    }
   });
 });
