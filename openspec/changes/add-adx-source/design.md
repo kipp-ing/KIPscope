@@ -348,6 +348,10 @@ Test env: `TEST_ADX_URL` (default `http://127.0.0.1:8125`), database `kipscope_t
 - **A-2 One source per server, or per data ref.** (a) `KIPSCOPE_SOURCE` picks one source for the whole server; to see ClickHouse and ADX side by side, run two servers. (b) A routing table (`data ref pattern → source`) and a footer that lists several sources. **Recommended (a):** it keeps the contract and the footer as they are, IDs already carry the data ref, so (b) can come later without a format change; (b) needs UI work, which waits for feedback. The spec is written for (a).
 - **A-3 The emulator in the everyday test run.** (a) The emulator is a compose profile (`docker compose --profile adx up -d`) with its own `test:adx`; `pnpm test` stays as today plus the ClickHouse conformance run; rounds that touch a source run both. (b) The emulator always starts with `docker compose up -d` and `pnpm test` needs it. **Recommended (a):** the image is 1.18 GB, amd64-only (emulated here) and uses 0.4–1.3 GB of memory, and most changes never touch a source. The spec is written for (a).
 
+## Jan's answers (2026-10-17)
+
+Jan chose the recommended option on all three: A-1 (a) `az account get-access-token` with an in-memory cache; A-2 (a) one source per server via `KIPSCOPE_SOURCE`; A-3 (a) the emulator as compose profile `adx` with its own `test:adx`. The lead numbers them as D-nnn on archive.
+
 ## Spec owner's defaults (Jan can veto)
 
 - The 7-method core of C1; `textSignals` folded into `listSignals`; `events` as the only capability.
