@@ -131,6 +131,8 @@ export function stubSource(): DataSource {
     }),
     // No signal has a measurable period in the stub.
     firstTimes: async () => new Map(),
+    // Constant row count: the gap info never refreshes in the stub (add-gap-display G9).
+    refCount: async () => 1,
     events: async (dataRef) => (dataRef === "testcar" ? EVENT_ROWS : []),
     stateChanges: async (ref) => (ref.name === "Ign_A20h.MODE" ? MODE_CHANGES : []),
     textSignals: async () => [{ dataRef: "testcar", name: "DIAG.door" }],

@@ -1,3 +1,5 @@
+import { decodeTimes } from "./encoding.ts";
+import type { SeriesResult } from "./series.ts";
 import type { SignalInfo } from "./signals.ts";
 
 /** D-062: a split needs more than this many periods between two points. */
@@ -6,6 +8,8 @@ export const GAP_PERIODS = 3;
 export const LOGGER_GAP_MIN = 2_000_000_000n;
 /** Grid of the logger-gap query; must be ≤ LOGGER_GAP_MIN / 2 so every gap is found exactly (G2). */
 export const LOGGER_GAP_GRID = LOGGER_GAP_MIN / 2n;
+/** Refresh interval of the gap info, server poll and web refetch (G9 (b), (c)). */
+export const GAP_REFRESH_MS = 300_000;
 /** Rows read per signal to measure a period (G3). */
 export const PERIOD_SAMPLE_ROWS = 1001;
 /** A measured period needs at least this many spacings. */
@@ -107,18 +111,80 @@ export function loggerGapBetween(
   return gap !== undefined && gap.from < q ? gap : undefined;
 }
 
+/** Index of the first gap with from ≥ t (gaps sorted by from). */
+function firstStartingAtOrAfter(t: bigint, logger: readonly LoggerGap[]): number {
+  let lo = 0;
+  let hi = logger.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((logger[mid] as LoggerGap).from >= t) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+/** The earliest logger gap with p ≤ from and to ≤ q; binary search. Pure. */
+export function loggerGapWithin(
+  p: bigint,
+  q: bigint,
+  logger: readonly LoggerGap[],
+): LoggerGap | undefined {
+  // Gaps do not overlap, so the first one starting at or after p also ends first.
+  const gap = logger[firstStartingAtOrAfter(p, logger)];
+  return gap !== undefined && gap.to <= q ? gap : undefined;
+}
+
 /** The logger gap with from < t < to. Pure. */
 export function loggerGapAt(t: bigint, logger: readonly LoggerGap[]): LoggerGap | undefined {
   const gap = logger[firstEndingAfter(t, logger)];
   return gap !== undefined && gap.from < t ? gap : undefined;
 }
 
+/** Decoded times of a result, once per result. */
+const timesOf = new WeakMap<SeriesResult, readonly bigint[]>();
+
+/** Index of the first time > t (times ascending). */
+function firstAfter(t: bigint, times: readonly bigint[]): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((times[mid] as bigint) > t) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
 /**
- * G4: consecutive points p < q are split by a logger gap between them, or by more than
- * GAP_PERIODS periods; the earlier value holds up to min(p + period, the gap's start). Pure.
+ * G9 (a): a sample of `result` lies strictly inside `gap`: a raw point or edge neighbour with
+ * from < t < to, or a non-empty bucket [s, s + w) with from < s and s + w ≤ to. A real logger gap
+ * holds no row, so such a sample proves the gap stale. Pure.
+ */
+export function holdsSample(result: SeriesResult, gap: LoggerGap): boolean {
+  let times = timesOf.get(result);
+  if (!times) {
+    times = decodeTimes(result.t);
+    timesOf.set(result, times);
+  }
+  const first = times[firstAfter(gap.from, times)];
+  if (result.kind === "buckets")
+    return first !== undefined && first + BigInt(result.width) <= gap.to;
+  if (first !== undefined && first < gap.to) return true;
+  const inside = (edge: { t: string } | undefined) => {
+    if (!edge) return false;
+    const t = BigInt(edge.t);
+    return gap.from < t && t < gap.to;
+  };
+  return inside(result.before) || inside(result.after);
+}
+
+/**
+ * G4: consecutive points p < q are split by a logger gap within [p, q], or by more than
+ * GAP_PERIODS periods; the earlier value holds up to min(p + period, the gap's start). A gap that
+ * holds p or q strictly inside is stale (G9 (a)) and does not split them. Pure.
  */
 export function splitPoints(p: bigint, q: bigint, gaps: SignalGaps): Split | undefined {
-  const gap = loggerGapBetween(p, q, gaps.logger);
+  const gap = loggerGapWithin(p, q, gaps.logger);
   const { period } = gaps;
   const periodSplit = period !== undefined && q - p > BigInt(GAP_PERIODS) * period;
   if (!gap && !periodSplit) return undefined;
@@ -133,7 +199,7 @@ export function splitPoints(p: bigint, q: bigint, gaps: SignalGaps): Split | und
 /**
  * G5, consecutive non-empty buckets starting at s1 < s2 of width w: split only where a gap is
  * certain (an empty stretch of more than GAP_PERIODS periods, or a logger gap between the bucket
- * centres). Pure.
+ * centres that holds neither bucket entirely, G9 (a)). Pure.
  */
 export function splitBuckets(
   s1: bigint,
@@ -144,7 +210,13 @@ export function splitBuckets(
   const { period } = gaps;
   if (period !== undefined && s2 - (s1 + width) > BigInt(GAP_PERIODS) * period) return "period";
   const half = width / 2n;
-  if (loggerGapBetween(s1 + half, s2 + half, gaps.logger)) return "logger";
+  const holds = (gap: LoggerGap, s: bigint) => gap.from < s && s + width <= gap.to;
+  const { logger } = gaps;
+  for (let i = firstEndingAfter(s1 + half, logger); i < logger.length; i++) {
+    const gap = logger[i] as LoggerGap;
+    if (gap.from >= s2 + half) break;
+    if (!holds(gap, s1) && !holds(gap, s2)) return "logger";
+  }
   return undefined;
 }
 

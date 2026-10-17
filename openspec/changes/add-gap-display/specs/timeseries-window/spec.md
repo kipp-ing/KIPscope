@@ -124,7 +124,7 @@ A window SHALL draw the curves, envelopes and bands of a stretch whose logger ga
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Gap info loads with the window
-A window SHALL fetch the gap info of each data ref of its signals once per browser tab, draw its data meanwhile without breaks, and count as settled only when every needed gap info has loaded or failed. A failure SHALL be a render error of the window and SHALL be retried every 30 s while the window shows that data ref. Origin: necessary consequence of D-062 (breaks and bands need it) and D-011 (`--wait` reports the drawn state).
+A window SHALL fetch the gap info of each data ref of its signals once per browser tab (and again as in "Gap info refetched"), draw its data meanwhile without breaks, and count as settled only when every needed gap info has loaded or failed. A failure SHALL be a render error of the window and SHALL be retried every 30 s while the window shows that data ref. Origin: necessary consequence of D-062 (breaks and bands need it) and D-011 (`--wait` reports the drawn state).
 
 #### Scenario: Once per tab, failure retried
 - **WHEN** two windows of one data ref ask for its gap info, the first fetch fails, and 30 s pass

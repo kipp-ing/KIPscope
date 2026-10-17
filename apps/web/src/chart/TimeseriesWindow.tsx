@@ -228,6 +228,10 @@ function spread([min, max]: [number, number]): [number, number] {
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
 
+/** Same items by identity. */
+const sameItems = <T,>(a: readonly T[], b: readonly T[]) =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
 /** Same chart inputs (results by identity): buildModel would build the same model. */
 const sameInputs = (a: SignalInput[], b: SignalInput[]) =>
   a.length === b.length &&
@@ -290,14 +294,21 @@ function seriesOptions(spec: SeriesSpec): uPlot.Series {
   };
 }
 
+/** One data ref's logger gaps (time order) and the drawn results of its signals (G9 (a)). */
+interface GapGroup {
+  logger: readonly LoggerGap[];
+  results: readonly SeriesResult[];
+}
+
 /**
  * Paints the logger gaps that meet the shown range as bands over the plot's full height (G7), in
- * the drawClear hook: under the grid, the event lines, the curves and the SNA lanes.
+ * the drawClear hook: under the grid, the event lines, the curves and the SNA lanes. Bands per
+ * data ref, without gaps that hold a sample of its results (G9 (a)); painted as their union.
  */
-function drawGapBands(u: uPlot, logger: readonly LoggerGap[], origin: bigint) {
-  if (logger.length === 0) return;
+function drawGapBands(u: uPlot, groups: readonly GapGroup[], origin: bigint) {
+  if (groups.length === 0) return;
   const { from, to } = shownRangeOf(u, origin);
-  const bands = bandsIn(logger, from, to);
+  const bands = groups.flatMap((g) => bandsIn(g.logger, from, to, g.results));
   if (bands.length === 0) return;
   const { ctx } = u;
   const { left, top, width, height } = u.bbox;
@@ -792,21 +803,29 @@ export function TimeseriesWindow({
   };
   const gapsOfRef = useRef(gapsOf);
   gapsOfRef.current = gapsOf;
-  // The union of the data refs' logger gaps, sorted by `from`: read by the drawClear hook.
+  // Per data ref its logger gaps and the drawn results of its signals (a sample of another data
+  // ref says nothing, G9 (a)): read by the drawClear hook.
   const loggerInfos = dataRefs.map((r) => gapInfo.infos.get(r));
-  const windowGaps = useRef<{ infos: typeof loggerInfos; logger: readonly LoggerGap[] }>({
-    infos: [],
-    logger: [],
-  });
+  const drawnResults = w.signals.map((s) => loader.get(s.id)?.result);
+  const windowGaps = useRef<{
+    infos: typeof loggerInfos;
+    results: typeof drawnResults;
+    groups: readonly GapGroup[];
+  }>({ infos: [], results: [], groups: [] });
   if (
-    loggerInfos.length !== windowGaps.current.infos.length ||
-    loggerInfos.some((x, i) => x !== windowGaps.current.infos[i])
+    !sameItems(loggerInfos, windowGaps.current.infos) ||
+    !sameItems(drawnResults, windowGaps.current.results)
   ) {
-    const logger = loggerInfos
-      .flatMap((x) => x?.logger ?? [])
-      .map((g) => ({ from: BigInt(g.from), to: BigInt(g.to) }))
-      .sort((p, q) => (p.from < q.from ? -1 : p.from > q.from ? 1 : 0));
-    windowGaps.current = { infos: loggerInfos, logger };
+    const groups = dataRefs.flatMap((ref, i): GapGroup[] => {
+      const logger = loggerInfos[i]?.logger ?? [];
+      if (logger.length === 0) return [];
+      const results = w.signals.flatMap((s, j) => {
+        const result = drawnResults[j];
+        return result && parseSignalId(s.signalId)?.dataRef === ref ? [result] : [];
+      });
+      return [{ logger: logger.map((g) => ({ from: BigInt(g.from), to: BigInt(g.to) })), results }];
+    });
+    windowGaps.current = { infos: loggerInfos, results: drawnResults, groups };
   }
   // A window removed while it owns L gets no mouseleave.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a window keeps its id
@@ -1148,7 +1167,7 @@ export function TimeseriesWindow({
           },
         },
         hooks: {
-          drawClear: [(self) => drawGapBands(self, windowGaps.current.logger, origin.current)],
+          drawClear: [(self) => drawGapBands(self, windowGaps.current.groups, origin.current)],
           drawAxes: [(self) => drawEventLines(self, eventsRef.current, origin.current)],
           draw: [
             (self) => {
@@ -1524,11 +1543,12 @@ export function TimeseriesWindow({
     uplot.current?.redraw(false, true);
   }, [digits]);
 
-  // Bands follow the gap info (read via windowGaps); new gap info also rebuilds the model.
-  const drawnGaps = useRef(windowGaps.current.logger);
+  // Bands follow the gap info and the drawn results (read via windowGaps); new gap info also
+  // rebuilds the model.
+  const drawnGaps = useRef(windowGaps.current.groups);
   useLayoutEffect(() => {
-    if (drawnGaps.current === windowGaps.current.logger) return;
-    drawnGaps.current = windowGaps.current.logger;
+    if (drawnGaps.current === windowGaps.current.groups) return;
+    drawnGaps.current = windowGaps.current.groups;
     uplot.current?.redraw(false);
   });
 

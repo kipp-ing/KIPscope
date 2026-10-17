@@ -75,6 +75,8 @@ export interface DataSource {
     dataRef: string,
     abort?: AbortSignal,
   ): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
+  /** All rows of the data ref, with or without a timestamp; cheap from part metadata (design G9 (b)). */
+  refCount(dataRef: string, abort?: AbortSignal): Promise<number>;
   /** Non-empty buckets of all the data ref's rows on the grid k * width, any order. */
   refBuckets(
     dataRef: string,

@@ -7,6 +7,7 @@ import {
   type EdgePoint,
   evaluateAt,
   formatQuantityBare,
+  holdsSample,
   loggerGapAt,
   NO_GAPS,
   parseTimestamp,
@@ -113,8 +114,9 @@ function rawValueAt(
  * raw by evaluateAt with the edge neighbours (markers evaluate as line), named by `info` (N3);
  * buckets by the mean of the bucket containing t, SNA if it holds SNA points only, named when
  * its minimum and maximum share a state name. With `gaps` (G7 "Drawn value"): raw reads no
- * value across a split pair; buckets read none inside a logger gap and in the empty stretch
- * between two split buckets. undefined: nothing loaded yet.
+ * value across a split pair; buckets read none inside a logger gap that holds no sample of
+ * `result` (a gap that does is stale, G9 (a)) and in the empty stretch between two split
+ * buckets. undefined: nothing loaded yet.
  */
 export function chartValueAt(
   result: SeriesResult | undefined,
@@ -129,7 +131,8 @@ export function chartValueAt(
   const times = timesOf(result);
   const i = lastAtOrBefore(times, t);
   if (result.kind === "raw") return rawValueAt(result, times, i, t, mode, info, gaps);
-  if (loggerGapAt(t, gaps.logger)) return { kind: "none", reason: "logger_gap" };
+  const gap = loggerGapAt(t, gaps.logger);
+  if (gap && !holdsSample(result, gap)) return { kind: "none", reason: "logger_gap" };
   const width = BigInt(result.width);
   if (i < 0) return { kind: "none", reason: "empty_bucket" };
   if (t >= (times[i] as bigint) + width) {

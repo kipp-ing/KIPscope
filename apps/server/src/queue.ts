@@ -85,6 +85,7 @@ export function queuedSource(source: DataSource, queue: QueryQueue): DataSource 
     buckets: (ref, from, to, width, abort) =>
       queue.run((a) => source.buckets(ref, from, to, width, a), abort),
     refExtent: (dataRef, abort) => queue.run((a) => source.refExtent(dataRef, a), abort),
+    refCount: (dataRef, abort) => queue.run((a) => source.refCount(dataRef, a), abort),
     refBuckets: (dataRef, width, abort) =>
       queue.run((a) => source.refBuckets(dataRef, width, a), abort),
     loggerGaps: (dataRef, grid, minGap, abort) =>

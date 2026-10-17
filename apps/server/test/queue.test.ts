@@ -79,9 +79,13 @@ describe("QueryQueue", () => {
 });
 
 describe("queuedSource gaps", () => {
-  it("forwards loggerGaps and firstTimes to the wrapped source", async () => {
+  it("forwards loggerGaps, firstTimes and refCount to the wrapped source", async () => {
     const seen: unknown[][] = [];
     const stub = {
+      refCount: async (...a: unknown[]) => {
+        seen.push(a);
+        return 42;
+      },
       loggerGaps: async (...a: unknown[]) => {
         seen.push(a);
         return { gaps: [{ from: 1n, to: 9n }], last: 9n };
@@ -97,6 +101,9 @@ describe("queuedSource gaps", () => {
       last: 9n,
     });
     expect(await source.firstTimes("car", ["x"], 2)).toEqual(new Map([["x", [1n, 2n]]]));
-    expect(seen.map((a) => a[0])).toEqual(["car", "car"]);
+    const controller = new AbortController();
+    expect(await source.refCount("car", controller.signal)).toBe(42);
+    expect(seen.map((a) => a[0])).toEqual(["car", "car", "car"]);
+    expect(seen[2]?.[1]).toBe(controller.signal);
   });
 });

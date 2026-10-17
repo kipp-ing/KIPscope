@@ -250,6 +250,17 @@ export class ClickHouseSource implements DataSource {
     return { count: Number(row[0]), first: BigInt(row[1]), last: BigInt(row[2]) };
   }
 
+  // A plain count() with only the data-ref filter: ClickHouse answers it from part metadata, since
+  // the data ref is the partition key (design G9 (b)).
+  async refCount(dataRef: string, abort?: AbortSignal) {
+    const [row] = await this.rows<[string]>(
+      `SELECT count() FROM ${this.table} WHERE ${this.c.dataRef} = {ref:String}`,
+      { ref: dataRef },
+      abort,
+    );
+    return Number(row?.[0] ?? 0);
+  }
+
   async refBuckets(dataRef: string, width: bigint, abort?: AbortSignal) {
     const { dataRef: refColumn, time } = this.c;
     const rows = await this.rows<[string, string]>(

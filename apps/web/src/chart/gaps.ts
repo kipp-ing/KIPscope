@@ -1,4 +1,10 @@
-import type { GapInfo, LoggerGap } from "@kipscope/shared";
+import {
+  GAP_REFRESH_MS,
+  type GapInfo,
+  holdsSample,
+  type LoggerGap,
+  type SeriesResult,
+} from "@kipscope/shared";
 import { useCallback, useSyncExternalStore } from "react";
 import { fetchGaps } from "../api.ts";
 
@@ -15,10 +21,14 @@ export interface GapInfoState {
 
 interface Entry {
   info?: GapInfo;
+  /** `info` as JSON: a refetch replaces it only when the answer differs (G9 (c)). */
+  json?: string;
   /** The last failure; kept while the retry runs, dropped on success. */
   error?: string;
   loading: boolean;
   retry?: ReturnType<typeof setTimeout>;
+  /** The next refetch of a loaded info. */
+  refresh?: ReturnType<typeof setTimeout>;
   /** Windows asking for this data ref. */
   wanted: number;
 }
@@ -28,8 +38,9 @@ const refsOf = (key: string) => (key === "" ? [] : key.split("\n"));
 
 /**
  * Gap info per data ref for one browser tab (design G7): one request in flight per data ref,
- * shared by every window; a loaded info is kept for the tab's life; a failure is kept as an error
- * and fetched again every `retryMs` while any window still asks for that data ref.
+ * shared by every window; a failure is kept as an error and fetched again every `retryMs` while
+ * any window still asks for that data ref. A loaded info is fetched again every `refreshMs` while
+ * asked for (G9 (c)): replaced only by a different answer, kept on a failure without an error.
  */
 export class GapInfoStore {
   private readonly entries = new Map<string, Entry>();
@@ -39,13 +50,16 @@ export class GapInfoStore {
 
   private readonly fetchInfo: (dataRef: string) => Promise<GapInfo>;
   private readonly retryMs: number;
+  private readonly refreshMs: number;
 
   constructor(
     fetchInfo: (dataRef: string) => Promise<GapInfo> = fetchGaps,
     retryMs = GAP_RETRY_MS,
+    refreshMs = GAP_REFRESH_MS,
   ) {
     this.fetchInfo = fetchInfo;
     this.retryMs = retryMs;
+    this.refreshMs = refreshMs;
   }
 
   /** Asks for `dataRefs` until the returned release is called; `listener` hears every change. */
@@ -59,7 +73,9 @@ export class GapInfoStore {
         this.entries.set(ref, entry);
       }
       entry.wanted++;
-      if (!entry.info && !entry.loading && entry.retry === undefined) this.load(ref, entry);
+      // A loaded info whose refetch fell due while nobody asked is fetched again now.
+      if (!entry.loading && entry.retry === undefined && entry.refresh === undefined)
+        this.load(ref, entry);
     }
     return () => {
       this.listeners.delete(listener);
@@ -95,12 +111,21 @@ export class GapInfoStore {
     this.fetchInfo(ref).then(
       (info) => {
         entry.loading = false;
+        this.scheduleRefresh(ref, entry);
+        const json = JSON.stringify(info);
+        if (entry.info && json === entry.json) return;
         entry.info = info;
+        entry.json = json;
         delete entry.error;
         this.changed(ref);
       },
       (error: unknown) => {
         entry.loading = false;
+        // A failed refetch keeps the loaded info and tries again at the next interval.
+        if (entry.info) {
+          this.scheduleRefresh(ref, entry);
+          return;
+        }
         entry.error = error instanceof Error ? error.message : String(error);
         entry.retry = setTimeout(() => {
           delete entry.retry;
@@ -109,6 +134,13 @@ export class GapInfoStore {
         this.changed(ref);
       },
     );
+  }
+
+  private scheduleRefresh(ref: string, entry: Entry): void {
+    entry.refresh = setTimeout(() => {
+      delete entry.refresh;
+      if (entry.wanted > 0) this.load(ref, entry);
+    }, this.refreshMs);
   }
 
   private changed(ref: string): void {
@@ -133,11 +165,21 @@ export function useGapInfo(dataRefs: readonly string[]): GapInfoState {
   return useSyncExternalStore(subscribe, snapshot);
 }
 
-/** The logger gaps that meet the view [from, to], clipped to it (time order kept). Pure. */
-export function bandsIn(logger: readonly LoggerGap[], from: bigint, to: bigint): LoggerGap[] {
+/**
+ * The logger gaps that meet the view [from, to], clipped to it (time order kept), without those
+ * that hold a sample of one of `results` (stale, G9 (a)); `results` of the gaps' data ref only.
+ * Pure.
+ */
+export function bandsIn(
+  logger: readonly LoggerGap[],
+  from: bigint,
+  to: bigint,
+  results: readonly SeriesResult[] = [],
+): LoggerGap[] {
   const bands: LoggerGap[] = [];
   for (const gap of logger) {
     if (gap.to <= from || gap.from >= to) continue;
+    if (results.some((r) => holdsSample(r, gap))) continue;
     bands.push({ from: gap.from > from ? gap.from : from, to: gap.to < to ? gap.to : to });
   }
   return bands;

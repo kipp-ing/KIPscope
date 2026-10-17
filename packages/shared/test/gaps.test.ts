@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateAt } from "../src/cursor.ts";
 import {
   type GapInfo,
   loggerGapAt,
@@ -165,5 +166,35 @@ describe("signalGaps", () => {
     );
     expect(signalGaps(undefined, "gapcar/Cyc_B10h.CYC")).toBe(NO_GAPS);
     expect(NO_GAPS).toEqual({ logger: [] });
+  });
+});
+
+describe("a sample voids a logger gap", () => {
+  // Scenario "Points and buckets inside a stale gap" (design G9 (a)): the logger gap 1 s - 61 s.
+  const pause = [{ from: 1n * S, to: 61n * S }];
+  const noPeriod: SignalGaps = { logger: pause };
+
+  it("ignores a logger gap that holds a sample", () => {
+    // Points inside the gap: it holds them, so it is stale for these pairs.
+    expect(splitPoints(10n * S, 20n * S, noPeriod)).toBeUndefined();
+    // A point on or before the gap's start with the next one inside it: the gap holds q.
+    expect(splitPoints(0n, 10n * S, noPeriod)).toBeUndefined();
+    // p inside the gap, q after it: the gap holds p.
+    expect(splitPoints(20n * S, 70n * S, noPeriod)).toBeUndefined();
+    // The gap lies within both points (p <= from, to <= q): a real split, hold ends at the gap's start.
+    expect(splitPoints(0n, 70n * S, noPeriod)).toEqual({ kind: "logger", holdEnd: 1n * S });
+    // The period rule still applies inside a stale gap: 50 ms > 3 x 10 ms.
+    expect(splitPoints(10n * S, 10n * S + 50n * MS, { period: 10n * MS, logger: pause })).toEqual({
+      kind: "period",
+      holdEnd: 10n * S + 10n * MS,
+    });
+    // Buckets of 1 s at 10 s and 11 s both lie entirely inside the gap: joined.
+    expect(splitBuckets(10n * S, 11n * S, 1n * S, noPeriod)).toBeUndefined();
+    // Buckets at 0 s and 61 s straddle the gap's edges, neither lies inside: split by the logger gap.
+    expect(splitBuckets(0n, 61n * S, 1n * S, noPeriod)).toBe("logger");
+    // A reading across the stale gap interpolates: (1 + 3) / 2 at the middle of 10 s and 20 s.
+    expect(
+      evaluateAt(15n * S, "line", { t: 10n * S, v: 1 }, { t: 20n * S, v: 3 }, undefined, noPeriod),
+    ).toEqual({ kind: "interpolated", value: 2 });
   });
 });

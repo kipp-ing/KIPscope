@@ -213,6 +213,7 @@ describe("collision warning on refresh (N5)", () => {
     // No gap info either (add-gap-display G6 prefetch).
     loggerGaps: async () => ({ gaps: [] }),
     firstTimes: async () => new Map(),
+    refCount: async () => 0,
   } as unknown as DataSource;
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);

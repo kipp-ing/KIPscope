@@ -495,6 +495,73 @@ describe("readouts across gaps (add-gap-display)", () => {
     });
   });
 
+  it("reads drawn data inside a stale logger gap", () => {
+    // G9 repro: the logger gap 18:51:11.171 - 18:52:43.235 UTC holds drawn samples; read at 18:51:15.000.
+    const gapFrom = 1_792_176_671_171_000_000n;
+    const gapTo = 1_792_176_763_235_000_000n;
+    const viewFrom = 1_792_176_671_385_000_000n;
+    const viewTo = 1_792_176_680_691_000_000n;
+    const t = 1_792_176_675_000_000_000n;
+    const MS = 1_000_000n;
+    const stale: SignalGaps = { logger: [{ from: gapFrom, to: gapTo }] };
+
+    // LWS_ANGLE: 500 buckets of 20 ms from 18:51:11.400 (means alternating -1400 / 1400, so 18:51:15.000
+    // is bucket 180, even: -1400), period 10 ms.
+    const starts = Array.from(
+      { length: 500 },
+      (_, i) => 1_792_176_671_400_000_000n + BigInt(i) * 20n * MS,
+    );
+    const mean = starts.map((_, i) => (i % 2 === 0 ? -1400 : 1400));
+    const lws: BucketSeries = {
+      kind: "buckets",
+      signalId: "smart451/SAS_0C2h.LWS_ANGLE",
+      from: viewFrom.toString(),
+      to: viewTo.toString(),
+      width: (20n * MS).toString(),
+      t: encodeTimes(starts),
+      count: starts.map(() => 2),
+      sna: starts.map(() => 0),
+      mean,
+      min: mean,
+      max: mean,
+    };
+    expect(
+      chartValueAt(lws, t, "line", undefined, { period: 10n * MS, logger: stale.logger }),
+    ).toEqual({
+      kind: "aggregated",
+      value: -1400,
+    });
+
+    // PTC_HV_Volt: 95 points 100 ms apart from the view start; 18:51:15.000 lies 15 ms after point 36
+    // (350) towards point 37 (351): 350.15, interpolated, not logger_gap.
+    const times = Array.from({ length: 95 }, (_, i) => viewFrom + BigInt(i) * 100n * MS);
+    const ptc: RawSeries = {
+      kind: "raw",
+      signalId: "smart451/CPC_448h.PTC_HV_Volt",
+      from: viewFrom.toString(),
+      to: viewTo.toString(),
+      t: encodeTimes(times),
+      v: times.map((_, i) => 350 + (i % 2)),
+    };
+    const read = chartValueAt(ptc, t, "line", undefined, {
+      period: 100n * MS,
+      logger: stale.logger,
+    });
+    expect(read).toMatchObject({ kind: "interpolated" });
+    expect((read as { value: number }).value).toBeCloseTo(350.15, 9);
+
+    // A result with no sample inside the gap still reads logger_gap there (a real gap, G4/G7).
+    const sparse: RawSeries = {
+      ...ptc,
+      t: encodeTimes([gapFrom - 1_000n * MS, gapTo + 1_000n * MS]),
+      v: [1, 2],
+    };
+    expect(chartValueAt(sparse, t, "line", undefined, stale)).toEqual({
+      kind: "none",
+      reason: "logger_gap",
+    });
+  });
+
   it("reads gaps as no data, and Δ as —", () => {
     const logger = { kind: "none" as const, reason: "logger_gap" as const };
     const period = { kind: "none" as const, reason: "period_gap" as const };

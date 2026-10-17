@@ -817,6 +817,71 @@ describe("gap breaks (add-gap-display)", () => {
     ]);
   });
 
+  it("draws through a logger gap that holds samples", () => {
+    // G9 repro: smart451, logger gap 18:51:11.171 - 18:52:43.235 UTC (stale: carserver holds rows there),
+    // view 18:51:11.385 - 18:51:20.691.
+    const gapFrom = 1_792_176_671_171_000_000n;
+    const gapTo = 1_792_176_763_235_000_000n;
+    const viewFrom = 1_792_176_671_385_000_000n;
+    const viewTo = 1_792_176_680_691_000_000n;
+    const logger = [{ from: gapFrom, to: gapTo }];
+    const o = viewFrom;
+
+    // LWS_ANGLE: 500 buckets of 20 ms on the 20 ms grid from 18:51:11.400, period 10 ms, means
+    // alternating -1400 / 1400, all inside the gap. Was: 499 breaks, all 500 isolated.
+    const width = 20n * MS;
+    const starts = Array.from(
+      { length: 500 },
+      (_, i) => 1_792_176_671_400_000_000n + BigInt(i) * width,
+    );
+    const lws: BucketSeries = {
+      kind: "buckets",
+      signalId: "smart451/SAS_0C2h.LWS_ANGLE",
+      from: viewFrom.toString(),
+      to: viewTo.toString(),
+      width: width.toString(),
+      t: encodeTimes(starts),
+      count: starts.map(() => 2),
+      sna: starts.map(() => 0),
+      mean: starts.map((_, i) => (i % 2 === 0 ? -1400 : 1400)),
+      min: starts.map((_, i) => (i % 2 === 0 ? -1405 : 1395)),
+      max: starts.map((_, i) => (i % 2 === 0 ? -1395 : 1405)),
+    };
+    const lwsModel = buildModel([input(lws, { period: 10n * MS, logger }, undefined)], o, {
+      mode: "line",
+      envelope: true,
+    });
+    const lwsTable = table(lwsModel);
+    // x, mean, max, min: 500 columns, no inserted null in any of them, nothing isolated.
+    expect(lwsTable.map((row) => row.length)).toEqual([500, 500, 500, 500]);
+    for (const row of lwsTable.slice(1)) expect(row.includes(null)).toBe(false);
+    expect(isolatedPoints(lwsTable[1] as (number | null)[])).toEqual([]);
+    expect(lwsTable[1]?.slice(0, 3)).toEqual([-1400, 1400, -1400]);
+
+    // PTC_HV_Volt: 95 raw points 100 ms apart from the view start (period 100 ms), edge neighbours
+    // 100 ms before and after, all inside the gap. Was: 94 breaks.
+    const times = Array.from({ length: 95 }, (_, i) => viewFrom + BigInt(i) * 100n * MS);
+    const ptc = raw(
+      times,
+      times.map((_, i) => 350 + (i % 2)),
+      {
+        signalId: "smart451/CPC_448h.PTC_HV_Volt",
+        from: viewFrom.toString(),
+        to: viewTo.toString(),
+        before: { t: (viewFrom - 100n * MS).toString(), v: 351 },
+        after: { t: (viewFrom + 9_500n * MS).toString(), v: 351 },
+      },
+    );
+    const ptcTable = table(buildModel([input(ptc, { period: 100n * MS, logger })], o, none));
+    expect(ptcTable[1]?.includes(null)).toBe(false);
+    expect(isolatedPoints(ptcTable[1] as (number | null)[])).toEqual([]);
+
+    // Control: a logger gap that holds none of the signal's samples still breaks (a real gap).
+    const real = [{ from: viewFrom + 100n * MS, to: viewFrom + 900n * MS }];
+    const sparse = raw([viewFrom, viewFrom + 1_000n * MS], [1, 2]);
+    expect(table(buildModel([input(sparse, { logger: real })], o, none))[1]).toContain(null);
+  });
+
   it("ends an SNA mark at the hold end", () => {
     // Period 20 ms: SNA at 0 ms, the next point at 1 s: the mark covers 0 - 20 ms, not up to 1 s.
     const r = raw([at(0n), at(S)], [null, 5]);

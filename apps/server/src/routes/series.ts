@@ -3,6 +3,7 @@ import {
   type CursorValueResult,
   type Extent,
   evaluateAt,
+  GAP_REFRESH_MS,
   parseSignalId,
   type SignalInfo,
   signalGaps,
@@ -47,19 +48,48 @@ export const seriesRoutes =
   async (app) => {
     const density = new DensityCache(source, () => catalog.loadedAt);
     const gaps = new GapCache(source, catalog);
+    const warn = (message: string) => app.log.warn(message);
+    // Gap info polls (design G9 (b)): a setTimeout chain, each poll GAP_REFRESH_MS after the
+    // previous poll or the catalog load's prefetch ended, so polls never overlap each other or a
+    // prefetch and at most one gap recompute runs at a time.
+    let closed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polling: Promise<void> = Promise.resolve();
+    const schedule = () => {
+      if (closed) return;
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(poll, GAP_REFRESH_MS);
+    };
+    const poll = () => {
+      timer = undefined;
+      const loadedAt = catalog.loadedAt;
+      const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
+      polling = gaps.refresh(dataRefs, warn).then(() => {
+        // A newer load stopped this poll; its prefetch schedules the next one.
+        if (catalog.loadedAt === loadedAt) schedule();
+      });
+    };
     // Warm the caches after each catalog load (design Q4 (b)); the load does not wait for it. The
     // gap info follows the density, so carserver sees one full scan at a time (design G6); a newer
-    // load starts its own run.
+    // load starts its own run, after a running poll ended.
     const stopPrefetch = catalog.onLoaded(() => {
       const loadedAt = catalog.loadedAt;
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
-      const warn = (message: string) => app.log.warn(message);
-      void density.prefetch(dataRefs, warn).then(() => {
-        if (catalog.loadedAt === loadedAt) return gaps.prefetch(dataRefs, warn);
-      });
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      void polling
+        .then(() => density.prefetch(dataRefs, warn))
+        .then(() => {
+          if (catalog.loadedAt === loadedAt) return gaps.prefetch(dataRefs, warn);
+        })
+        .then(() => {
+          if (catalog.loadedAt === loadedAt) schedule();
+        });
     });
     app.addHook("onClose", async () => {
       stopPrefetch();
+      closed = true;
+      if (timer !== undefined) clearTimeout(timer);
     });
 
     /** Rows per bucket of a data ref over its whole extent (spec time-strip). */
