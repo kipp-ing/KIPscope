@@ -26,5 +26,5 @@ While the strip's data ref has events, the strip head SHALL show after the range
 
 #### Scenario: Count on smart451
 - **WHEN** smart451 is shown at 1440×900 with the shipped project file and the default filter, then at 1000×557 with the sidebar open, and the user clicks the count
-- **THEN** the head shows `63 of 477 events` (by `/api/events` on 2026-10-17) at both sizes, fully visible, with the tooltip `63 events match the filter (Active faults and state changes), 477 in the recording · click to open the list · e`; after the click the sidebar shows the Events tab with `Refine` open and the field focused
+- **THEN** the head shows `43 of 629 events` (by `/api/events` on 2026-10-17, lead's headless check) at both sizes, fully visible, with the tooltip `43 events match the filter (active faults and state changes), 629 in the recording · click to open the list · e` (sentence lower-cased inside the parentheses, add-guidance H5); after the click the sidebar shows the Events tab with `Refine` open and the field focused
 - **Evidence:** UI check on smart451 (screenshots at both sizes, tooltip text)

@@ -76,6 +76,12 @@ export const SHORTCUTS: Shortcut[] = [
     action: "Previous or next drive",
     probe: [{ key: "," }, { key: "." }],
   },
+  {
+    group: "Time",
+    keys: "p  n",
+    action: "Previous or next event: put cursor A on it",
+    probe: [{ key: "p" }, { key: "n" }],
+  },
 
   { group: "Signal list", keys: "↑  ↓", action: "Move through the list" },
   { group: "Signal list", keys: "Enter", action: "Add to the Add to target" },

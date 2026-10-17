@@ -29,7 +29,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import "./window.css";
 import { fetchCursorValue } from "../api.ts";
-import { groupMarks, type Mark, markColor, markTitle, PIN_H } from "../events/marks.ts";
+import { groupMarks, type Mark, markColor, markStyle, markTitle, PIN_H } from "../events/marks.ts";
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
@@ -503,7 +503,10 @@ function placeEventGlyphs(
       glyph.title = titles[i] ?? "";
       glyph.style.left = `${m.hit.left}px`;
       glyph.style.width = `${m.hit.right - m.hit.left}px`;
-      glyph.style.color = markColor(m.category);
+      // The drawn part is the glyph's ::before (window.css); markStyle reaches it as variables.
+      const style = markStyle(m);
+      glyph.style.setProperty("--glyph-bg", style.background);
+      glyph.style.setProperty("--glyph-shadow", style.boxShadow ?? "none");
       glyph.style.setProperty("--glyph-left", `${m.drawn.left - m.hit.left}px`);
       glyph.style.setProperty("--glyph-width", `${m.drawn.right - m.drawn.left}px`);
       return glyph;

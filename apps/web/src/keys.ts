@@ -38,7 +38,10 @@ export function isHelpKey(e: KeyLike, focused: Element | null): boolean {
   return !isTextField(focused);
 }
 
-/** Navigation keys (design N6): zoom, pan, page, reset, "Go to" and the strip's drives (S9). */
+/**
+ * Navigation keys (design N6): zoom, pan, page, reset, "Go to", the strip's drives (S9) and its
+ * events (improve-events P7).
+ */
 export type NavKey =
   | "in"
   | "out"
@@ -49,7 +52,9 @@ export type NavKey =
   | "home"
   | "goTo"
   | "prevDrive"
-  | "nextDrive";
+  | "nextDrive"
+  | "prevEvent"
+  | "nextEvent";
 
 /**
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
@@ -79,6 +84,10 @@ export function navKey(
       return "prevDrive";
     case ".":
       return "nextDrive";
+    case "p":
+      return "prevEvent";
+    case "n":
+      return "nextEvent";
     default:
       return undefined;
   }

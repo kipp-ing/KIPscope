@@ -76,7 +76,13 @@ Events are faults (diagnostic trouble codes), state changes and logger errors. T
 
 The count in the strip head, such as `13 of 669 events`, means 13 events pass the filter out of 669 in the whole recording, not only in the time shown. A click on it opens the Events tab.
 
-The Events tab (`e`) has the filter, presets such as Faults or Changes, chips per category and ECU, and the list; a click on an event centres the view on it. Filter words include `faults`, `changes`, `active`, `logger`, `ecu:BMS` and any text; a leading `-` excludes. The default is `active changes`.
+The Events tab (`e`) has the filter, presets such as Faults or Changes, and under Refine the field and chips per category and ECU; then the list. A click on an event puts cursor A on it (`Shift+click`: B) and centres the view only when the event lies outside it. Filter words include `faults`, `changes`, `active`, `logger`, `ecu:BMS` and any text; a leading `-` excludes. The default is `active changes`.
+
+`In view` lists the events of the time shown, with how many lie earlier and later; `All` lists every event that passes the filter.
+
+`n` and `p` put cursor A on the next or previous event, so the values window shows the values there.
+
+A hollow mark or glyph is a fault memory read: the time the DTCs were read out, not when a fault first occurred.
 
 ## Read the display
 

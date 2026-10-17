@@ -55,6 +55,7 @@ import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
 import { EventsPanel } from "./events/EventsPanel.tsx";
 import { appliedFilter, shownEvents, useEvents } from "./events/eventsData.ts";
+import { stepEvent } from "./events/list.ts";
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { ignoreFileDrops } from "./filedrop.ts";
@@ -375,6 +376,9 @@ export function App() {
   }, [shownByRef, windowRefsKey]);
   const stripList = stripRef ? eventLists.get(stripRef) : undefined;
   const stripShown = stripRef ? shownByRef.get(stripRef) : undefined;
+  // For `n`/`p` in the key handler (improve-events P7), which reads it at the press.
+  const stripShownRef = useRef(stripShown);
+  stripShownRef.current = stripShown;
   // The filter in plain words for the count's tooltip (H5), lower-cased inside its parentheses;
   // absent when it lets every event through.
   const filterSentence = useMemo(() => {
@@ -654,13 +658,6 @@ export function App() {
     },
     [navView, navigate],
   );
-  /** An events row click (V8): centre the bar target on the event, span kept, one history entry. */
-  const onCentre = useCallback(
-    (t: bigint) => {
-      stripNavigate((view) => centreRange(view, t), true);
-    },
-    [stripNavigate],
-  );
   const onBack = useCallback(
     (windowId: string) => {
       const r = histories.current
@@ -743,6 +740,20 @@ export function App() {
   );
   const cursorsRef = useRef(cursors);
   cursorsRef.current = cursors;
+  /**
+   * An event jump (improve-events P7, E-2): a t outside the bar target's view centres it there
+   * (span kept, one history entry), then cursor.set puts the cursor on t.
+   */
+  const onJump = useCallback(
+    (t: bigint, cursor: CursorName) => {
+      stripNavigate(
+        (view) => (t >= view.from && t < view.to ? undefined : centreRange(view, t)),
+        true,
+      );
+      void onCursorCommit(cursor, t);
+    },
+    [stripNavigate, onCursorCommit],
+  );
 
   // "Go to" and span presets act on the bar target (design S5, D-024).
   // The Go to error is remembered so clearing the field drops only that message.
@@ -855,6 +866,19 @@ export function App() {
         if (drive) navigate(target.id, { from: BigInt(drive.from), to: BigInt(drive.to) }, true);
         return;
       }
+      if (key === "prevEvent" || key === "nextEvent") {
+        // The strip's events, stepped on the bar target's view from cursor A (P7), once per press.
+        const target = barTarget(ws);
+        if (!target) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        const view = navView(target.id);
+        const events = stripShownRef.current;
+        const dir = key === "nextEvent" ? 1 : -1;
+        const next = view && events && stepEvent(events, view, cursorsRef.current.a, dir);
+        if (next) onJump(BigInt(next.t), "a");
+        return;
+      }
       const hoveredId = ws.windows.some((w) => w.id === hovered.current && isTimeseries(w))
         ? hovered.current
         : undefined;
@@ -911,7 +935,7 @@ export function App() {
       document.removeEventListener("pointerout", onOut);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onBack, onReset, navView, navigate, toggleSidebar, openEvents, toggleHelp]);
+  }, [onBack, onReset, navView, navigate, onJump, toggleSidebar, openEvents, toggleHelp]);
 
   // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
   const mainRef = useRef<HTMLElement>(null);
@@ -1398,7 +1422,8 @@ export function App() {
           info={info}
           range={barWindow ? toRange(barWindow.range) : undefined}
           onCommand={command}
-          onCentre={onCentre}
+          onJump={onJump}
+          cursorA={cursors.a}
           focus={eventsFocus}
         />
       </SignalExplorer>

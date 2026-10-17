@@ -41,6 +41,8 @@ const STEP: Record<string, NavKey> = {
   t: "goTo",
   ",": "prevDrive",
   ".": "nextDrive",
+  n: "nextEvent",
+  p: "prevEvent",
 };
 
 describe("shortcut table", () => {
@@ -68,6 +70,8 @@ describe("shortcut table", () => {
       { key: "t" },
       { key: "," },
       { key: "." },
+      { key: "n" },
+      { key: "p" },
       { key: "/" },
       { key: "s" },
       { key: "e" },

@@ -321,8 +321,9 @@
 }
 
 /* Event glyphs (design V6, V7): pins in the 6 px headroom above the plot, grouped and coloured
-   like the strip's pins (colour from markColor as currentColor); the hit span reaches 4 px down
-   into the plot. The box takes no pointer, the glyphs do. */
+   like the strip's pins (markStyle's fill and ring arrive as --glyph-bg and --glyph-shadow, set per
+   glyph in TimeseriesWindow); the hit span reaches 4 px down into the plot. The box takes no
+   pointer, the glyphs do. */
 .window .plot .event-glyphs {
   position: absolute;
   z-index: 3;
@@ -346,7 +347,8 @@
   height: var(--glyph-height);
   box-sizing: border-box;
   border-radius: 1px;
-  background: currentColor;
+  background: var(--glyph-bg);
+  box-shadow: var(--glyph-shadow, none);
   outline: 1px solid var(--panel);
 }
 

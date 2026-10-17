@@ -5,9 +5,11 @@ import {
   GROUP_PX,
   groupMarks,
   markColor,
+  markStyle,
   markTitle,
   PIN_HIT_PX,
   PIN_LANE_PX,
+  READ_LINE,
 } from "../src/events/marks.ts";
 import { trackOf, xOf } from "../src/time/stripGeometry.ts";
 import { atB, fakeEvent, TESTCAR_DTCS } from "./fakeEvents.ts";
@@ -43,10 +45,10 @@ describe("event marks", () => {
     // Events at 5 h (active), 5 h 20 min (change), 5 h 40 min (snapshot) and 130 h (off the track).
     const marks = groupMarks(
       [
-        fakeEvent(5n * H, "active"),
-        fakeEvent(5n * H + 20n * MIN, "change"),
-        fakeEvent(5n * H + 40n * MIN, "snapshot"),
-        fakeEvent(130n * H, "active"),
+        fakeEvent(5n * H, "active", { kind: "state" }),
+        fakeEvent(5n * H + 20n * MIN, "change", { kind: "state" }),
+        fakeEvent(5n * H + 40n * MIN, "snapshot", { kind: "state" }),
+        fakeEvent(130n * H, "active", { kind: "state" }),
       ],
       (t) => xOf(tr, t),
       tr.px,
@@ -110,7 +112,11 @@ describe("event marks", () => {
       "2026-10-01 07:00:00.000 · Active fault · BMS P0CA700",
       "Discharge current too high",
       "Status 0x29 failing now · confirmed · failed since clear",
+      "Fault memory read at this time; when a fault first occurred is unknown",
     ]);
+    expect(READ_LINE).toBe(
+      "Fault memory read at this time; when a fault first occurred is unknown",
+    );
 
     // The inferred door change at 02:00 UTC = 04:00 Berlin.
     const inferred = fakeEvent(atB(2, 0, 0), "change", {
@@ -140,9 +146,10 @@ describe("event marks", () => {
     expect(lines[0]).toBe(
       "9 events · 2 active faults, 1 pending fault, 2 stored faults, 2 untested DTCs, 1 passed DTC, 1 other event",
     );
-    expect(lines).toHaveLength(1 + 8 + 1);
+    expect(lines[1]).toBe(READ_LINE);
+    expect(lines).toHaveLength(1 + 1 + 8 + 1);
     expect(lines.at(-1)).toBe("… and 1 more");
-    for (const line of lines.slice(1, 9))
+    for (const line of lines.slice(2, 10))
       expect(line.startsWith("2026-10-01 07:00:00.000 ")).toBe(true);
 
     // Long texts are cut to 60 characters with an ellipsis in the lines of several events.
@@ -154,5 +161,30 @@ describe("event marks", () => {
     expect(longLine.endsWith("…")).toBe(true);
     expect(longLine).not.toContain("x".repeat(61));
     expect(longLine).toContain("x".repeat(59));
+  });
+
+  it("draws fault memory reads hollow", () => {
+    const hollow = { background: "var(--panel)", boxShadow: "inset 0 0 0 1px #be123c" };
+    const active = (name: string) => fakeEvent(atB(5, 0, 0), "active", { name });
+    const mark = (events: DiagEvent[]) => groupMarks(events, () => 10, 100)[0];
+    const one = mark([active("P1")]);
+    expect(one?.read).toBe(true);
+    expect(markStyle(one as NonNullable<typeof one>)).toEqual(hollow);
+    // The lone DTC mark is at least 5 px wide.
+    expect((one?.drawn.right ?? 0) - (one?.drawn.left ?? 0)).toBeGreaterThanOrEqual(5);
+
+    const two = mark([active("P1"), active("P2")]);
+    expect(two?.read).toBe(true);
+    expect(markStyle(two as NonNullable<typeof two>)).toEqual(hollow);
+
+    // A DTC and a state change: filled in the most severe colour.
+    const change = fakeEvent(atB(5, 0, 0), "change", { kind: "state", name: "VCU.door" });
+    const mixed = mark([active("P1"), change]);
+    expect(mixed?.read).toBe(false);
+    expect(markStyle(mixed as NonNullable<typeof mixed>)).toEqual({ background: "#be123c" });
+
+    const state = mark([change]);
+    expect(state?.read).toBe(false);
+    expect(markStyle(state as NonNullable<typeof state>)).toEqual({ background: "#7c3aed" });
   });
 });

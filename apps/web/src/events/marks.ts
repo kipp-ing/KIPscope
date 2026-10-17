@@ -6,8 +6,10 @@ import {
 } from "@kipscope/shared";
 import { formatDate, formatTime } from "../time/axis.ts";
 import type { Rect } from "../time/stripGeometry.ts";
+import { isRead } from "./list.ts";
 
-// Event pins on the strip and glyphs over the plots (design V1, V2, V4 of add-events; D-058).
+// Event pins on the strip and glyphs over the plots (design V1, V2, V4 of add-events; D-058;
+// hollow fault memory reads: P5 of improve-events).
 
 /** Events less than this from a group's first event join it. */
 export const GROUP_PX = 6;
@@ -28,6 +30,8 @@ export interface Mark {
   events: DiagEvent[];
   /** The most severe category of the events (first of EVENT_CATEGORIES present). */
   category: EventCategory;
+  /** Every event of the mark is a DTC (isRead): drawn hollow. */
+  read: boolean;
   drawn: Rect;
   hit: Rect;
 }
@@ -59,11 +63,12 @@ export function groupMarks(
   }
   return groups.map(({ x0, x1, events: es }) => {
     const centre = (x0 + x1) / 2;
-    const width = Math.max(es.length > 1 ? PIN_W_MANY : PIN_W, x1 - x0 + PIN_W);
+    const read = es.every(isRead);
+    const width = Math.max(es.length > 1 || read ? PIN_W_MANY : PIN_W, x1 - x0 + PIN_W);
     const drawn = { left: centre - width / 2, right: centre + width / 2 };
     const present = new Set(es.map((e) => e.category));
     const category = EVENT_CATEGORIES.find((c) => present.has(c)) ?? "other";
-    return { x0, x1, events: es, category, drawn, hit: widenAbout(drawn, PIN_HIT_PX) };
+    return { x0, x1, events: es, category, read, drawn, hit: widenAbout(drawn, PIN_HIT_PX) };
   });
 }
 
@@ -83,6 +88,17 @@ export function markColor(c: EventCategory): string {
   return EVENT_COLORS.info;
 }
 
+/** Inline style of a pin or glyph: hollow in the category's colour for a read, else filled. */
+export function markStyle(m: Mark): { background: string; boxShadow?: string } {
+  const color = markColor(m.category);
+  return m.read
+    ? { background: "var(--panel)", boxShadow: `inset 0 0 0 1px ${color}` }
+    : { background: color };
+}
+
+/** Tooltip line of a DTC: its time is the fault memory readout's. */
+export const READ_LINE = "Fault memory read at this time; when a fault first occurred is unknown";
+
 /** Local time to the ms, as the window header: `2026-10-01 07:00:00.000`. */
 function stamp(t: string): string {
   const ns = BigInt(t);
@@ -101,22 +117,24 @@ const TITLE_TEXT_CHARS = 60;
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-/** Tooltip of a pin or glyph (design V4). */
+/** The one-event tooltip (design V4), plus READ_LINE last for a DTC. */
+export function eventTitle(e: DiagEvent): string {
+  const lines = [`${stamp(e.t)} · ${CATEGORY_TEXT[e.category].label} · ${e.source} ${e.name}`];
+  const text = eventText(e);
+  if (text) lines.push(text);
+  if (e.kind === "dtc" && e.status) lines.push(`Status ${e.status}`);
+  if (e.category === "change" && e.inferred && e.from) {
+    lines.push(`seen after a gap; last seen ${e.from.text} at ${stamp(e.from.t)}`);
+  }
+  if (isRead(e)) lines.push(READ_LINE);
+  return lines.join("\n");
+}
+
+/** Tooltip of a pin or glyph (design V4; READ_LINE after line 1 when any event is a DTC). */
 export function markTitle(m: Mark): string {
   const [first] = m.events;
   if (!first) return "";
-  if (m.events.length === 1) {
-    const lines = [
-      `${stamp(first.t)} · ${CATEGORY_TEXT[first.category].label} · ${first.source} ${first.name}`,
-    ];
-    const text = eventText(first);
-    if (text) lines.push(text);
-    if (first.kind === "dtc" && first.status) lines.push(`Status ${first.status}`);
-    if (first.category === "change" && first.inferred && first.from) {
-      lines.push(`seen after a gap; last seen ${first.from.text} at ${stamp(first.from.t)}`);
-    }
-    return lines.join("\n");
-  }
+  if (m.events.length === 1) return eventTitle(first);
   const counts = new Map<EventCategory, number>();
   for (const e of m.events) counts.set(e.category, (counts.get(e.category) ?? 0) + 1);
   const parts = EVENT_CATEGORIES.flatMap((c) => {
@@ -124,6 +142,7 @@ export function markTitle(m: Mark): string {
     return n ? [`${n} ${n === 1 ? CATEGORY_TEXT[c].one : CATEGORY_TEXT[c].many}`] : [];
   });
   const lines = [`${m.events.length} events · ${parts.join(", ")}`];
+  if (m.events.some(isRead)) lines.push(READ_LINE);
   for (const e of m.events.slice(0, TITLE_LINES)) {
     const text = eventText(e);
     const line = `${stamp(e.t)} ${CATEGORY_TEXT[e.category].label} ${e.name}`;

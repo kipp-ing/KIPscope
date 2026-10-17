@@ -4,7 +4,7 @@ import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
 import { useLiveCursor } from "../chart/live.ts";
 import { clampRange, type Range } from "../chart/zoom.ts";
-import { groupMarks, type Mark, markColor, markTitle } from "../events/marks.ts";
+import { groupMarks, type Mark, markStyle, markTitle } from "../events/marks.ts";
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
@@ -494,7 +494,7 @@ export function TimeStrip({
               style={{
                 left: m.drawn.left,
                 width: m.drawn.right - m.drawn.left,
-                background: markColor(m.category),
+                ...markStyle(m),
               }}
             />
           ))}

@@ -72,6 +72,8 @@ describe("navKey", () => {
       expect(navKey(key("ArrowRight", { shiftKey: true }), focused)).toBe("pageRight");
       expect(navKey(key("Home"), focused)).toBe("home");
       expect(navKey(key("t"), focused)).toBe("goTo");
+      expect(navKey(key("n"), focused)).toBe("nextEvent");
+      expect(navKey(key("p"), focused)).toBe("prevEvent");
     }
     // `+` is Shift+= on many layouts: Shift does not change zoom keys.
     expect(navKey(key("+", { shiftKey: true }), null)).toBe("in");
@@ -84,14 +86,14 @@ describe("navKey", () => {
       el("SELECT"),
       el("DIV", { isContentEditable: true }),
     ]) {
-      for (const k of ["+", "=", "-", "ArrowLeft", "ArrowRight", "Home", "t"]) {
+      for (const k of ["+", "=", "-", "ArrowLeft", "ArrowRight", "Home", "t", "n", "p"]) {
         expect(navKey(key(k), field), `${k} in ${field.tagName}`).toBeUndefined();
       }
     }
 
     // Ctrl, Meta or Alt turn every key into a browser or system shortcut.
     for (const mods of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
-      for (const k of ["+", "-", "ArrowLeft", "Home", "t"]) {
+      for (const k of ["+", "-", "ArrowLeft", "Home", "t", "n", "p"]) {
         expect(navKey(key(k, mods), null), k).toBeUndefined();
       }
     }

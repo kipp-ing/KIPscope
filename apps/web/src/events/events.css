@@ -1,4 +1,4 @@
-/* Sidebar switch and events panel (add-events V8, V11). */
+/* Sidebar switch and events panel (add-events V8, V11; improve-events P3, P4, P6). */
 
 /* While the events show, the explorer's own elements stay mounted but hidden, so query, scroll
    position and the `/` listener survive the switch. */
@@ -51,21 +51,96 @@
 
 .events-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 0 4px 6px;
+  margin: 0 4px 4px;
 }
 
 .events-head h2 {
   margin: 0;
 }
 
-.events-count {
-  color: var(--muted);
+/* Scope switch `In view <k> | All <n>` (improve-events P3), the sidebar switch's look at 20 px. */
+.events-scope {
+  display: flex;
+  flex: none;
+  height: 20px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.events-seg {
+  padding: 0 6px;
+  border: none;
+  background: var(--panel);
+  color: var(--label);
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.events-seg + .events-seg {
+  border-left: 1px solid var(--control-border);
+}
+
+.events-seg[aria-pressed="true"] {
+  background: var(--text);
+  color: #fff;
+}
+
+.events-seg:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.events-scope-n {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Refine disclosure: closed, the filter in mono after the word (P3). */
+.events-refine {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  min-width: 0;
+  margin: 0 0 6px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--label);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.events-refine:hover {
+  background: var(--bg);
+}
+
+.events-refine-arrow {
+  flex: none;
+  width: 10px;
+  color: var(--muted);
+}
+
+.events-refine-filter {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--name-size);
+  color: var(--muted);
+}
+
+.events-refine-body {
+  flex: none;
+  margin-bottom: 6px;
 }
 
 .events-filter {
@@ -86,8 +161,12 @@
   outline-color: var(--error);
 }
 
+.events-refine-body .events-filter {
+  margin-bottom: 6px;
+}
+
 .explorer .events-describe {
-  margin: 4px 4px 6px;
+  margin: 0 4px 6px;
   color: var(--muted);
   font-size: 11px;
   overflow-wrap: anywhere;
@@ -95,6 +174,11 @@
 
 .explorer .events-describe.error {
   color: var(--error);
+}
+
+/* The hidden count stays muted next to a parser error. */
+.explorer .events-hidden {
+  color: var(--muted);
 }
 
 .events-pills,
@@ -205,9 +289,62 @@
   flex: 1;
   min-height: 0;
   margin: 0 -8px;
-  padding: 4px 8px 0;
+  padding: 0 8px;
   overflow-y: auto;
   border-top: 1px solid var(--border);
+}
+
+/* `↑ k earlier` and `‹ ›`, sticky at the list's top (P3). */
+.events-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  background: var(--panel);
+}
+
+.events-jump {
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.events-jump:hover {
+  background: var(--bg);
+}
+
+.events-step {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.events-stepper {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--label);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.events-stepper:disabled {
+  color: var(--muted);
+  opacity: 0.5;
+  cursor: default;
 }
 
 .explorer .events-empty,
@@ -234,17 +371,22 @@
   margin-top: 3px;
 }
 
+/* Rows wrap and are never cut (P4): no nowrap or ellipsis below .events-row. */
 .events-row {
   display: flex;
   flex-direction: column;
+  gap: 1px;
   width: 100%;
-  padding: 2px 4px 2px 6px;
+  min-width: 0;
+  padding: 3px 4px 3px 6px;
   border: none;
   border-left: 2px solid transparent;
   border-radius: 0 var(--radius) var(--radius) 0;
   background: none;
   text-align: left;
   cursor: pointer;
+  /* Clear of the sticky list head when scrolled into view. */
+  scroll-margin-top: 28px;
 }
 
 .events-row:hover {
@@ -255,12 +397,16 @@
   border-left-color: var(--accent);
 }
 
+.events-row.current {
+  background: var(--accent-soft);
+}
+
 .events-row-head {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   min-width: 0;
-  white-space: nowrap;
 }
 
 .events-glyph {
@@ -276,22 +422,110 @@
   color: var(--label);
 }
 
+.events-cat {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+}
+
+.events-body {
+  display: block;
+  padding-left: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .events-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-size: var(--name-size);
   color: var(--name);
 }
 
-.events-text {
-  display: block;
-  max-width: 100%;
-  padding-left: 9px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Fault memory read: the row and its expand button side by side, the DTC lines below (P4). */
+.events-read {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  align-items: start;
+}
+
+.events-expand {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.events-expand:hover {
+  background: var(--bg);
+  color: var(--label);
+}
+
+.events-dtc {
+  grid-column: 1 / -1;
+  margin: 0 4px 3px 17px;
   color: var(--muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.events-dtc-text {
+  display: block;
+  color: var(--label);
+}
+
+/* Key line below the list (P6): a 6 × 10 px sample per mark kind. */
+.events-key {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0 -8px;
+  padding: 5px 12px 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.events-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.events-key-sample {
+  flex: none;
+  width: 6px;
+  height: 10px;
+  border-left: 2px solid;
+}
+
+.events-key-sample.fault {
+  border-left-color: var(--ev-fault);
+}
+
+.events-key-sample.stored {
+  border-left-color: var(--ev-stored);
+}
+
+.events-key-sample.change {
+  border-left: 2px dashed var(--ev-change);
+}
+
+.events-key-sample.other {
+  border-left: 2px dotted var(--ev-info);
+}
+
+.events-key-sample.read {
+  border: none;
+  border-radius: 1px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--ev-fault);
 }
