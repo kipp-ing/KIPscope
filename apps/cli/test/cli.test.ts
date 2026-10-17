@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { decodeViewLink } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseArgs } from "../src/args.ts";
 import type { EventListData } from "../src/output.ts";
@@ -1046,6 +1047,30 @@ describe("views", () => {
       const list = await cli(s, "view", "list");
       expect(list.code).toBe(0);
       expect(list.out.data.views.map((v: { name: string }) => v.name)).toEqual(["speeds"]);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("prints a link to the open workspace", async () => {
+    const s = await startServer();
+    try {
+      expect(
+        (await cli(s, "window", "create", "--title", "Speeds", "--from", "0", "--to", "10")).code,
+      ).toBe(0);
+      const link = await cli(s, "view", "link", "--page", "http://127.0.0.1:5173/");
+      expect(link.code).toBe(0);
+      expect(link.out.ok).toBe(true);
+      const url: string = link.out.data.url;
+      expect(url.startsWith("http://127.0.0.1:5173/#view=")).toBe(true);
+      expect(link.out.data.chars).toBe(url.length);
+      const decoded = (await decodeViewLink(
+        url.slice(url.indexOf("#view=") + "#view=".length),
+      )) as {
+        windows: unknown[];
+      };
+      expect(decoded.windows).toHaveLength(1);
+      expect(decoded).toMatchObject({ kipscope: "view", windows: [{ title: "Speeds" }] });
     } finally {
       await s.close();
     }

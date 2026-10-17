@@ -1,4 +1,4 @@
-import { type LiveServerMessage, RenderedMessage } from "@kipscope/shared";
+import { type CommandResult, type LiveServerMessage, RenderedMessage } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppDeps } from "../app.ts";
 import { commandStatus } from "../http.ts";
@@ -8,6 +8,15 @@ export const workspaceRoutes =
   async (app) => {
     /** Applies one command; the endpoint the UI and the CLI share. */
     app.post("/api/commands", async (request, reply) => {
+      // Only the view routes name the open view, so a save in place writes its own file (V2 round 2).
+      if (namedViewOpen(request.body)) {
+        const refused: CommandResult = {
+          ok: false,
+          code: "invalid_command",
+          message: "open a saved view through POST /api/views/open",
+        };
+        return reply.code(400).send(refused);
+      }
       const result = workspace.execute(request.body);
       reply.code(commandStatus(result));
       return result;
@@ -47,3 +56,10 @@ export const workspaceRoutes =
       });
     });
   };
+
+/** A `view.open` that carries `name`. */
+function namedViewOpen(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  const { type, name } = body as { type?: unknown; name?: unknown };
+  return type === "view.open" && name !== undefined;
+}

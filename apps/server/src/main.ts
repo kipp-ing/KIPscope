@@ -75,9 +75,8 @@ const workspace = new WorkspaceStore(
   },
   {
     onListenerError: (error) => app.log.error({ error: String(error) }, "live listener failed"),
-    ...(measurement ? { measurement } : {}),
-    eventSignals,
-    ...(initial ? { initial } : {}),
+    // A restored workspace is used whole; the project file seeds only a fresh one (V4, S-3 (b)).
+    ...(initial ? { initial } : { ...(measurement ? { measurement } : {}), eventSignals }),
     beforeOpen: (previous) => views.beforeOpen(previous),
   },
 );

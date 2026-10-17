@@ -2,10 +2,13 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   type CommandResult,
+  encodeViewLink,
   type ImportViewRequest,
   MAX_VIEW_BYTES,
   type SaveViewRequest,
   type ViewSummary,
+  type Workspace,
+  workspaceToView,
 } from "@kipscope/shared";
 import type { Client } from "./client.ts";
 import { CliError } from "./output.ts";
@@ -21,7 +24,9 @@ export type ViewInvocation =
   | { kind: "view"; action: "delete"; name: string }
   | { kind: "view"; action: "export"; name: string; out?: string }
   /** FILE is read when the call runs; its text completes the request. */
-  | { kind: "view"; action: "import"; file: string; request: Omit<ImportViewRequest, "text"> };
+  | { kind: "view"; action: "import"; file: string; request: Omit<ImportViewRequest, "text"> }
+  /** page: --page, else the --server address; query and fragment are dropped when the link is built. */
+  | { kind: "view"; action: "link"; page: string };
 
 /**
  * Executes one view form and fills `body`; failures throw CliError. Returns the revision to wait
@@ -85,6 +90,16 @@ export async function runView(
       if (answer.opened === undefined) return undefined;
       // A refused open after the store is rejected like a command; the stored view stays.
       return (await opened(Promise.resolve(answer.opened), body)).revision;
+    }
+    case "link": {
+      // The document of the UI's "Copy link" (V7): same title rule, no saved time, no note.
+      const { workspace } = await client.get<{ workspace: Workspace }>("/api/workspace");
+      const title = workspace.view?.title ?? workspace.measurement?.name ?? "Shared view";
+      const code = await encodeViewLink(workspaceToView(workspace, { title }));
+      const page = new URL(invocation.page);
+      const url = `${page.origin}${page.pathname}#view=${code}`;
+      body.data = { url, chars: url.length };
+      return undefined;
     }
   }
 }

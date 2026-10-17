@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import {
   type ApplyContext,
   applyCommand,
@@ -19,8 +18,8 @@ export interface WorkspaceStoreOptions {
   /** Gets what a listener threw; default `console.error`. */
   onListenerError?(error: unknown): void;
   /**
-   * Measurement info at the start, from the project file (design F7); commands win until restart.
-   * Also replaces the measurement of a restored workspace (saved-views V4, D-051).
+   * Measurement info at the start, from the project file (design F7). Seeds only a fresh workspace:
+   * with `initial` the restored measurement wins (saved-views V4, S-3 (b)).
    */
   measurement?: Measurement;
   /** Events-line signals at revision 0, from the project file (add-events E8), unchecked: a signal not in the catalog waits. */
@@ -50,26 +49,14 @@ export class WorkspaceStore {
     this.onListenerError = options.onListenerError ?? ((error) => console.error(error));
     this.beforeOpen = options.beforeOpen;
     if (options.initial) {
-      this.restore(options.initial, options.measurement);
+      // Restored whole, measurement and events-line signals included; `view.modified` as stored.
+      this.state = options.initial.workspace;
+      this.rev = options.initial.revision;
       return;
     }
     if (options.measurement) this.state = { ...this.state, measurement: options.measurement };
     if (options.eventSignals?.length)
       this.state = { ...this.state, eventSignals: [...options.eventSignals] };
-  }
-
-  /**
-   * Everything from the state file except the measurement, which comes from the project file as at
-   * a fresh start (D-051, design S-3); an open view whose measurement that changes is modified.
-   * Events-line signals stay as saved.
-   */
-  private restore(initial: { revision: number; workspace: Workspace }, measurement?: Measurement) {
-    const { measurement: saved, ...rest } = initial.workspace;
-    let state: Workspace = measurement ? { ...rest, measurement } : rest;
-    if (state.view && !isDeepStrictEqual(saved, measurement))
-      state = { ...state, view: { ...state.view, modified: true } };
-    this.state = state;
-    this.rev = initial.revision;
   }
 
   get workspace(): Workspace {

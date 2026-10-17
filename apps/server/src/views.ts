@@ -32,9 +32,13 @@ export function viewYaml(doc: ViewDoc): string {
   return stringify(doc, { lineWidth: 0 });
 }
 
+/** Alias expansions allowed per document; the `yaml` default, named so it cannot drift (design V6). */
+const MAX_ALIAS_COUNT = 100;
+
 /**
  * Parses view text (YAML or JSON, YAML 1.2 core: ISO times stay strings) into a plain value.
- * A syntax error gives its message, which names line and column.
+ * A syntax error gives its message, which names line and column; a resolve error (alias bomb)
+ * counts as one.
  */
 export function parseViewText(
   text: string,
@@ -42,7 +46,11 @@ export function parseViewText(
   const doc = parseDocument(text, { schema: "core" });
   const [error] = doc.errors;
   if (error) return { ok: false, message: error.message };
-  return { ok: true, data: doc.toJS() };
+  try {
+    return { ok: true, data: doc.toJS({ maxAliasCount: MAX_ALIAS_COUNT }) };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export function viewSummary(name: string, doc: ViewDoc): ViewSummary {

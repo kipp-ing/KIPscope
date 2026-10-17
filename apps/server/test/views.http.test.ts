@@ -466,6 +466,51 @@ describe("views over HTTP", () => {
     expect(t.store.revision).toBe(rev + 1);
   });
 
+  it("refuses a view name through the command endpoint", async () => {
+    await seeded();
+    const rev = t.store.revision;
+    const named = await t.post("/api/commands", {
+      type: "view.open",
+      view: doc([[RPM]]),
+      name: "speeds",
+    });
+    expect(named.status).toBe(400);
+    expect(codeOf(named.body)).toBe("invalid_command");
+    expect(t.store.revision).toBe(rev);
+    // Without a name the link path stays.
+    const plain = await t.post("/api/commands", { type: "view.open", view: doc([[RPM]]) });
+    expect(plain.status).toBe(200);
+  });
+
+  it("refuses an alias bomb", async () => {
+    await seeded();
+    // 10 levels, each of 10 aliases of the level before: 10^10 nodes if expanded.
+    const lines = ["x0: &a0 [a, a, a, a, a, a, a, a, a, a]"];
+    for (let i = 1; i < 10; i++) {
+      const prev = `*a${i - 1}`;
+      lines.push(`x${i}: &a${i} [${Array(10).fill(prev).join(", ")}]`);
+    }
+    const bomb = `${lines.join("\n")}\n`;
+    expect(bomb.length).toBeLessThan(2048 + 512);
+    const started = Date.now();
+    const res = await t.post("/api/views/import", { text: bomb, name: "bomb-import" });
+    expect(res.status).toBe(400);
+    expect(codeOf(res.body)).toBe("invalid_view_yaml");
+    expect(Date.now() - started).toBeLessThan(1000);
+
+    writeFileSync(join(t.viewsDir, "bomb.yaml"), bomb);
+    const list = await t.get("/api/views");
+    expect(list.status).toBe(200);
+    const entry = list.body.views.find((v: { name: string }) => v.name === "bomb");
+    expect(entry).toBeDefined();
+    expect(typeof entry.error).toBe("string");
+    const rev = t.store.revision;
+    const open = await t.post("/api/views/open", { name: "bomb" });
+    expect(open.status).toBe(422);
+    expect(codeOf(open.body)).toBe("invalid_view");
+    expect(t.store.revision).toBe(rev);
+  });
+
   it("answers 404 for the view routes when the app has no view store", async () => {
     const { buildApp } = await import("../src/app.ts");
     const { Catalog } = await import("../src/catalog.ts");

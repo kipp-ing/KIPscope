@@ -1,13 +1,12 @@
 import {
   type CommandResult,
-  formatLocal,
-  fromIso,
+  type OpenView,
   PREVIOUS_VIEW,
   PREVIOUS_VIEW_TITLE,
   type ViewSummary,
   type Workspace,
 } from "@kipscope/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiRequestError,
   deleteView,
@@ -18,6 +17,7 @@ import {
   viewFileUrl,
 } from "../api.ts";
 import { copyViewLink } from "./link.ts";
+import { existingTitle, rowDetails, saveEntries, saveTarget, titleMinChars } from "./model.ts";
 import { SaveForm, type SaveOutcome } from "./SaveForm.tsx";
 import "./views.css";
 
@@ -33,35 +33,37 @@ export interface ViewsMenuProps {
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Title of the existing view in a 409 `view_exists` (V6), else undefined. */
-function existingTitle(e: unknown, fallback: string): string | undefined {
-  if (!(e instanceof ApiRequestError) || e.code !== "view_exists") return undefined;
-  const existing = e.details?.existing as { title?: unknown } | undefined;
-  return typeof existing?.title === "string" ? existing.title : fallback;
+/** The title a 409 `view_exists` names; the given title when the answer names none. */
+function conflictTitle(e: unknown, fallback: string): string | undefined {
+  const title = existingTitle(e);
+  if (title !== undefined) return title;
+  return e instanceof ApiRequestError && e.code === "view_exists" ? fallback : undefined;
 }
 
-/** Second line of a row: saved local time, window count, data refs. */
-function rowDetails(v: ViewSummary): string {
-  let saved: string | undefined;
-  try {
-    saved = v.saved ? formatLocal(fromIso(v.saved)) : undefined;
-  } catch {
-    saved = v.saved;
-  }
-  const windows = `${v.windows} window${v.windows === 1 ? "" : "s"}`;
-  return [saved, windows, v.data.join(", ")].filter(Boolean).join(" · ");
-}
+const SAVE_KEY =
+  typeof navigator !== "undefined" && /Mac|iP(hone|ad|od)/.test(navigator.platform)
+    ? "Cmd+S"
+    : "Ctrl+S";
+const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-/** The view name Ctrl+S saves to directly; "Before last open" and link views have none. */
-function savedName(workspace: Workspace): string | undefined {
-  const name = workspace.view?.name;
-  return name !== undefined && name !== PREVIOUS_VIEW ? name : undefined;
-}
+/** Bookmark glyph of the Views button, alone once the top row is short (V7 give-way step 3). */
+const BookmarkIcon = () => (
+  <svg className="views-icon" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
+    <path
+      d="M2 1.5h8v11L6 9.6 2 12.5z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
 /**
- * "Views" in the top row (add-saved-views V7): "Save view…" (Ctrl/Cmd+S), the saved views, "Before
- * last open" last, "Import file…" and "Copy link". A row click opens the view; hovering shows
- * Download and Delete (inline confirm). Esc or a pointer down outside closes it.
+ * "Views" in the top row (add-saved-views V7): the save entries ("Save" and "Save as…" for a named
+ * open view, else "Save view…"; Ctrl/Cmd+S runs the first), the saved views, "Before last open"
+ * last, "Import file…" and "Copy link". A row click opens the view; hovering shows Download and
+ * Delete (inline confirm) over the row's title line. Esc or a pointer down outside closes it.
  */
 export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMenuProps) {
   const [open, setOpen] = useState(false);
@@ -127,7 +129,7 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
           ...(overwrite ? { overwrite: true } : {}),
         });
       } catch (e) {
-        const exists = existingTitle(e, title);
+        const exists = conflictTitle(e, title);
         return exists !== undefined ? { exists } : { error: errorText(e) };
       }
       onNotice(`Saved "${title}"`);
@@ -137,21 +139,28 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
     [onNotice, close],
   );
 
-  // Ctrl/Cmd+S (V7, no key in keys.ts): a named open view is saved at once, else the form opens;
-  // preventDefault keeps the browser's own save dialog shut.
-  const latest = useRef({ workspace, save, onMessage });
-  latest.current = { workspace, save, onMessage };
+  // "Save": the open named view in place, at once, no form and no prompt (V7).
+  const saveInPlace = useCallback(
+    async (view: OpenView) => {
+      const target = saveTarget(view, view.title);
+      const outcome = await save(view.title, view.note ?? "", target.overwrite, target.name);
+      if ("error" in outcome) onMessage(outcome.error);
+    },
+    [save, onMessage],
+  );
+
+  // Ctrl/Cmd+S (V7, no key in keys.ts) runs the first save entry: "Save" in place, or the form of
+  // "Save view…"; preventDefault keeps the browser's own save dialog shut.
+  const latest = useRef({ view: workspace.view, saveInPlace });
+  latest.current = { view: workspace.view, saveInPlace };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "s")
         return;
       e.preventDefault();
-      const { workspace: ws, save: saveNow, onMessage: fail } = latest.current;
-      const name = savedName(ws);
-      if (name !== undefined && ws.view) {
-        void saveNow(ws.view.title, ws.view.note ?? "", true, name).then((outcome) => {
-          if ("error" in outcome) fail(outcome.error);
-        });
+      const { view, saveInPlace: saveNow } = latest.current;
+      if (view && saveEntries(view)[0] === "save") {
+        void saveNow(view);
         return;
       }
       setOpen(true);
@@ -187,7 +196,7 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
       if (result.opened) onOpened(result.opened, result.warnings);
       else onNotice(`Imported "${result.view.title}"`, result.warnings.join("\n") || undefined);
     } catch (e) {
-      const exists = existingTitle(e, "The view");
+      const exists = conflictTitle(e, "The view");
       if (exists !== undefined) setImporting({ text, title: exists });
       else {
         close();
@@ -206,7 +215,7 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
   };
 
   const view = workspace.view;
-  const formName = savedName(workspace);
+  const entryLabel = { save: "Save", saveAs: "Save as…", saveNew: "Save view…" } as const;
 
   // The title is a sibling of the menu, so it is a flex item of the option bar and shrinks there.
   return (
@@ -216,12 +225,14 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
           type="button"
           ref={button}
           className="views-button"
-          title="Save, open and share views · Ctrl+S saves"
+          title="Views"
+          aria-label="Views"
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => (open ? close() : setOpen(true))}
         >
-          Views
+          <BookmarkIcon />
+          <span className="views-label">Views</span>
         </button>
         <input
           ref={fileInput}
@@ -238,12 +249,10 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
           <div className="views-popover" role="menu">
             {saving ? (
               <SaveForm
+                view={view}
                 title={view?.title ?? workspace.measurement?.name ?? ""}
                 note={view?.note ?? ""}
-                onSave={(title, note, overwrite) =>
-                  // The open view's own name while its title is kept, else the name from the title.
-                  save(title, note, overwrite, title === view?.title ? formName : undefined)
-                }
+                onSave={(title, note, target) => save(title, note, target.overwrite, target.name)}
                 onCancel={() => setSaving(false)}
               />
             ) : importing ? (
@@ -262,14 +271,23 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
               </div>
             ) : (
               <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="views-item"
-                  onClick={() => setSaving(true)}
-                >
-                  Save view…<span className="views-key">Ctrl+S</span>
-                </button>
+                {saveEntries(view).map((entry, i) => (
+                  <button
+                    key={entry}
+                    type="button"
+                    role="menuitem"
+                    className="views-item"
+                    onClick={() => {
+                      if (entry === "save" && view) {
+                        close();
+                        void saveInPlace(view);
+                      } else setSaving(true);
+                    }}
+                  >
+                    {entryLabel[entry]}
+                    {i === 0 && <span className="views-key">{SAVE_KEY}</span>}
+                  </button>
+                ))}
                 <div className="views-list">
                   {listError && <p className="views-error">{listError}</p>}
                   {views?.length === 0 && <p className="views-empty">No saved views</p>}
@@ -290,7 +308,7 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
                           {v.name === view?.name && <span className="views-current">✓</span>}
                           {v.name === PREVIOUS_VIEW ? PREVIOUS_VIEW_TITLE : v.title}
                         </span>
-                        <span className="views-row-details">{v.error ?? rowDetails(v)}</span>
+                        <span className="views-row-details">{rowDetails(v, TIME_ZONE)}</span>
                       </button>
                       <span className="views-row-actions">
                         {confirmDelete === v.name ? (
@@ -344,7 +362,11 @@ export function ViewsMenu({ workspace, onOpened, onNotice, onMessage }: ViewsMen
         )}
       </div>
       {view && (
-        <span className="view-title" title={view.note ? `${view.title}\n${view.note}` : view.title}>
+        <span
+          className="view-title"
+          title={view.note ? `${view.title}\n${view.note}` : view.title}
+          style={{ "--title-min": `${titleMinChars(view.title)}ch` } as CSSProperties}
+        >
           <span className="view-title-text">{view.title}</span>
           {view.modified && (
             <span className="view-modified" title="Changed since saved or opened">

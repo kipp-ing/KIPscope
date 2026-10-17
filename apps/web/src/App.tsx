@@ -83,7 +83,7 @@ import {
 } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 import { cleanAddress, startupView } from "./views/link.ts";
-import { openNotice } from "./views/notice.ts";
+import { documentTitle, nextStrip, type StripEvent, type StripItem } from "./views/notice.ts";
 import { WindowBoundary } from "./WindowBoundary.tsx";
 
 /** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
@@ -204,21 +204,17 @@ function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undef
 
 export function App() {
   const [live, send] = useLive();
-  const [message, setMessage] = useState<string | undefined>();
-  // An info notice in the strip's message slot, e.g. the open notice (add-saved-views V7); a new
-  // error replaces it.
-  const [notice, setNoticeState] = useState<{ text: string; title?: string } | undefined>();
-  const setNotice = useCallback((text: string, title?: string) => {
-    setMessage(undefined);
-    setNoticeState({ text, ...(title !== undefined ? { title } : {}) });
-  }, []);
-  useEffect(() => {
-    if (message !== undefined) setNoticeState(undefined);
-  }, [message]);
-  const dismissMessage = useCallback(() => {
-    setMessage(undefined);
-    setNoticeState(undefined);
-  }, []);
+  // The strip's message slot (add-saved-views V7 round 2): one error or info notice; any new one
+  // replaces it, so an open clears an older error.
+  const [strip, setStrip] = useState<StripItem | undefined>();
+  const toStrip = useCallback((event: StripEvent) => setStrip((s) => nextStrip(s, event)), []);
+  const setMessage = useCallback((text: string) => toStrip({ kind: "error", text }), [toStrip]);
+  const setNotice = useCallback(
+    (text: string, title?: string) =>
+      toStrip({ kind: "notice", text, ...(title !== undefined ? { title } : {}) }),
+    [toStrip],
+  );
+  const dismissMessage = useCallback(() => toStrip({ kind: "dismiss" }), [toStrip]);
 
   // Explorer sidebar (design L1): loaded once, saved on every change, per browser.
   const [sidebar, setSidebar] = useState<SidebarState>(() => loadSidebar(localStore()));
@@ -346,11 +342,19 @@ export function App() {
     [shownKey, colorOf],
   );
 
-  const command = useCallback(async (input: CommandInput): Promise<CommandResult> => {
-    const result = await sendCommand(input);
-    setMessage(result.ok ? undefined : `${result.code}: ${result.message}`);
-    return result;
-  }, []);
+  const command = useCallback(
+    async (input: CommandInput): Promise<CommandResult> => {
+      const result = await sendCommand(input);
+      // An accepted command ends an older error; a notice stays.
+      toStrip(
+        result.ok
+          ? { kind: "dismiss", tone: "error" }
+          : { kind: "error", text: `${result.code}: ${result.message}` },
+      );
+      return result;
+    },
+    [toStrip],
+  );
 
   // A window created by "+ Values window" or a drop on "+ New window" is scrolled into view once the
   // workspace shows it (the effect below the window list refs).
@@ -534,7 +538,7 @@ export function App() {
       );
       return true;
     },
-    [historyOf, setRange],
+    [historyOf, setRange, setMessage],
   );
   /** One strip step on the bar target (S9): `next` maps its current view to the new range. */
   const stripNavigate = useCallback<StripNavigate>(
@@ -592,7 +596,7 @@ export function App() {
         setMessage(e instanceof Error ? e.message : String(e));
       }
     },
-    [navigate],
+    [navigate, setMessage],
   );
 
   // Cursors (design C2): timeseries windows draw the preview over the committed time; release or the
@@ -632,7 +636,7 @@ export function App() {
       if (!ok || shown)
         setCursorPreview((p) => (p?.cursor === cursor && p.t === t ? undefined : p));
     },
-    [command],
+    [command, setMessage],
   );
   const cursorsRef = useRef(cursors);
   cursorsRef.current = cursors;
@@ -658,16 +662,16 @@ export function App() {
       const previous = goToMessageRef.current;
       goToMessageRef.current = error;
       if (error !== undefined) setMessage(error);
-      else if (previous !== undefined) setMessage((m) => (m === previous ? undefined : m));
+      else if (previous !== undefined) toStrip({ kind: "dismiss", tone: "error", text: previous });
       return error;
     },
-    [navView, navigate],
+    [navView, navigate, setMessage, toStrip],
   );
   const onGoToClear = useCallback(() => {
     const goToMessage = goToMessageRef.current;
     goToMessageRef.current = undefined;
-    if (goToMessage !== undefined) setMessage((m) => (m === goToMessage ? undefined : m));
-  }, []);
+    if (goToMessage !== undefined) toStrip({ kind: "dismiss", tone: "error", text: goToMessage });
+  }, [toStrip]);
   const onSpan = useCallback(
     (span: bigint) => {
       const ws = liveRef.current.workspace;
@@ -1069,20 +1073,27 @@ export function App() {
     report: OpenReport | undefined;
     warnings: readonly string[];
   }>();
-  const onOpened = useCallback((result: CommandResult, warnings: readonly string[] = []) => {
-    if (!result.ok) setMessage(`${result.code}: ${result.message}`);
-    else setOpened({ revision: result.revision, report: result.report, warnings });
-  }, []);
+  const onOpened = useCallback(
+    (result: CommandResult, warnings: readonly string[] = []) => {
+      if (!result.ok) setMessage(`${result.code}: ${result.message}`);
+      else setOpened({ revision: result.revision, report: result.report, warnings });
+    },
+    [setMessage],
+  );
   useEffect(() => {
     if (!opened || live.revision < opened.revision) return;
-    const shown = openNotice(workspace?.view?.title ?? "view", opened.report, opened.warnings);
-    setNotice(shown.text, shown.title);
+    toStrip({
+      kind: "opened",
+      title: workspace?.view?.title ?? "view",
+      report: opened.report,
+      warnings: opened.warnings,
+    });
     setOpened(undefined);
-  }, [opened, live.revision, workspace, setNotice]);
-  const viewTitle = workspace?.view?.title;
+  }, [opened, live.revision, workspace, toStrip]);
+  const tabTitle = documentTitle(workspace);
   useEffect(() => {
-    document.title = viewTitle ? `${viewTitle} · KIPscope` : "KIPscope";
-  }, [viewTitle]);
+    document.title = tabTitle;
+  }, [tabTitle]);
 
   // Start-up from the address (V7): `#view=` or `?view=` opens once the live channel is connected;
   // until the catalog's first load the server refuses with `catalog_unavailable` and the open is
@@ -1125,7 +1136,7 @@ export function App() {
       }
       history.replaceState(null, "", cleanAddress(location));
     })();
-  }, [live.connected, onOpened]);
+  }, [live.connected, onOpened, setMessage]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -1307,9 +1318,9 @@ export function App() {
         <StatusBar
           connected={live.connected}
           revision={live.revision}
-          message={message ?? notice?.text}
-          messageTone={message === undefined && notice ? "info" : "error"}
-          messageTitle={message ?? notice?.title}
+          message={strip?.text}
+          messageTone={strip?.tone ?? "error"}
+          messageTitle={strip?.title ?? strip?.text}
           onDismissMessage={dismissMessage}
           measurement={workspace?.measurement}
           meta={meta.meta}

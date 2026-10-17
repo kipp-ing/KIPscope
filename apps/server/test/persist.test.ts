@@ -195,9 +195,8 @@ describe("state file", () => {
     expect(existsSync(join(dir, "workspace.bad.json"))).toBe(false);
   });
 
-  it("takes the measurement from the project file", async () => {
-    // Black box through main.ts: restored workspace says `old`, the project file says `smart451 test`.
-    // Needs no ClickHouse: the server starts and retries the catalog in the background.
+  it("keeps the restored measurement", async () => {
+    // Black box through main.ts, two starts. Needs no ClickHouse: the server retries the catalog.
     const state: Workspace = {
       ...EMPTY_WORKSPACE,
       windows: [
@@ -207,6 +206,7 @@ describe("state file", () => {
       colors: { "car/A": 2 },
       cursors: { a: "5", diff: true },
       measurement: { name: "old", object: "keep?" },
+      view: { name: "mine", title: "Mine", modified: true },
     };
     writeFileSync(
       path,
@@ -220,39 +220,51 @@ describe("state file", () => {
     );
     const project = join(dir, "kipscope.yaml");
     writeFileSync(project, "measurement:\n  name: smart451 test\n");
-    const port = await freePort();
-    const main = resolve(import.meta.dirname, "../src/main.ts");
-    const env = {
-      ...process.env,
-      KIPSCOPE_PORT: String(port),
-      KIPSCOPE_HOST: "127.0.0.1",
-      KIPSCOPE_STATE_DIR: dir,
-      KIPSCOPE_PROJECT_FILE: project,
-    };
-    const child = spawn(process.execPath, [main], { env, stdio: "ignore" });
-    try {
-      let body: { revision: number; workspace: Workspace } | undefined;
-      for (let i = 0; i < 100 && !body; i++) {
-        try {
-          body = (await (
-            await fetch(`http://127.0.0.1:${port}/api/workspace`)
-          ).json()) as typeof body;
-        } catch {
-          await new Promise((r) => setTimeout(r, 100));
+
+    type Body = { revision: number; workspace: Workspace };
+    const startAndRead = async (): Promise<Body | undefined> => {
+      const port = await freePort();
+      const main = resolve(import.meta.dirname, "../src/main.ts");
+      const env = {
+        ...process.env,
+        KIPSCOPE_PORT: String(port),
+        KIPSCOPE_HOST: "127.0.0.1",
+        KIPSCOPE_STATE_DIR: dir,
+        KIPSCOPE_PROJECT_FILE: project,
+      };
+      const child = spawn(process.execPath, [main], { env, stdio: "ignore" });
+      try {
+        for (let i = 0; i < 100; i++) {
+          try {
+            return (await (await fetch(`http://127.0.0.1:${port}/api/workspace`)).json()) as Body;
+          } catch {
+            await new Promise((r) => setTimeout(r, 100));
+          }
         }
+        return undefined;
+      } finally {
+        child.kill("SIGTERM");
+        await new Promise((r) => child.once("close", r));
       }
-      expect(body, "server did not start").toBeDefined();
-      // Measurement from the project file as at a fresh start; the rest as restored.
-      expect(body?.workspace.measurement).toEqual({ name: "smart451 test" });
-      expect(body?.workspace.windows).toEqual(state.windows);
-      expect(body?.workspace.colors).toEqual({ "car/A": 2 });
-      expect(body?.workspace.cursors).toEqual({ a: "5", diff: true });
-      expect(body?.revision).toBe(3);
-    } finally {
-      child.kill("SIGTERM");
-      await new Promise((r) => child.once("close", r));
-    }
-  }, 30_000);
+    };
+
+    // First start: the restored workspace whole, measurement included; view.modified as stored.
+    const restored = await startAndRead();
+    expect(restored, "server did not start").toBeDefined();
+    expect(restored?.workspace.measurement).toEqual({ name: "old", object: "keep?" });
+    expect(restored?.workspace.windows).toEqual(state.windows);
+    expect(restored?.workspace.colors).toEqual({ "car/A": 2 });
+    expect(restored?.workspace.cursors).toEqual({ a: "5", diff: true });
+    expect(restored?.workspace.view?.modified).toBe(true);
+    expect(restored?.revision).toBe(3);
+
+    // Second start without a state file: a fresh workspace takes the project file's measurement.
+    rmSync(path, { force: true });
+    const fresh = await startAndRead();
+    expect(fresh, "server did not start").toBeDefined();
+    expect(fresh?.workspace.measurement).toEqual({ name: "smart451 test" });
+    expect(fresh?.workspace.windows).toEqual([]);
+  }, 60_000);
 });
 
 async function freePort(): Promise<number> {

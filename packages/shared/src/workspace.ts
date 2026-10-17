@@ -328,7 +328,7 @@ export const Command = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("view.open"),
     view: z.record(z.string(), z.unknown()),
-    name: z.string().max(64).optional(),
+    name: z.string().regex(VIEW_NAME).optional(),
   }),
   /** Marks the open view as saved under `name`; changes nothing but `view`. */
   z.object({

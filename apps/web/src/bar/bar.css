@@ -85,11 +85,30 @@
   max-width: 24em;
 }
 
-/* Lower-priority label words ("Link time axes", "+ Values window") collapse while the top row is
-   narrower than the full bar needs; title and aria-label keep the full name. */
-@container top-row (max-width: 840px) {
+/* Top-row give-way steps (add-saved-views V7), after the view title has shrunk to its minimum
+   (views.css). Widths are the .option-bar-slot content box (container top-row), measured
+   2026-10-17 in Chrome with a 120-character modified view open (title minimum 10ch + dot = 91 px)
+   and the sidebar open: "Signals" 63 px + 8 px gap, then the bar with "Go to" at its 6em basis.
+   - Full labels with the "Views" label: 949 px → the label words go below 950 px (step 2).
+   - Short labels with the "Views" label: 872 px → the Views button shows only its icon below
+     880 px (step 3); the row then needs 851 px.
+   At 1440×900 the content box is 1168 px (full row); at 1000×557 it is 728 px, so the row still
+   wraps there after step 3 (finding for the spec owner, V7).
+   Lower-priority label words ("Link time axes", "+ Values window") collapse; title and aria-label
+   keep the full name. */
+@container top-row (max-width: 950px) {
   .option-bar .long {
     display: none;
+  }
+}
+
+@container top-row (max-width: 880px) {
+  .option-bar .views-label {
+    display: none;
+  }
+
+  .option-bar .views-icon {
+    display: block;
   }
 }
 

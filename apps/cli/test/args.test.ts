@@ -531,6 +531,21 @@ describe("view forms (add-saved-views)", () => {
       name: "drive-3",
       out: "v.yaml",
     });
+    // `view link`: the page defaults to the --server address.
+    expect(parse("view", "link")).toMatchObject({
+      kind: "view",
+      action: "link",
+      page: "http://localhost:7310",
+    });
+    expect(
+      parseArgs(["view", "link", "--server", "http://127.0.0.1:7310"], {}).invocation,
+    ).toMatchObject({ kind: "view", action: "link", page: "http://127.0.0.1:7310" });
+    expect(parse("view", "link", "--page", "http://127.0.0.1:5173/")).toMatchObject({
+      kind: "view",
+      action: "link",
+      page: "http://127.0.0.1:5173/",
+    });
+    expect(usageError(["view", "link", "--page", "nope"]).outcome).toBe("usage");
     // Options the form does not take, and the wrong number of arguments.
     for (const argv of [
       ["view"],

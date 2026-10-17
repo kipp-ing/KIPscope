@@ -1215,6 +1215,15 @@ describe("view.open and view.markSaved (add-saved-views)", () => {
     expect(moved.workspace.view).toBeUndefined();
   });
 
+  it("refuses a view name that is not file-safe", () => {
+    const view = doc([timeseries()]);
+    for (const name of ["../x", "Abc", "a.b", "-x", "", "a/b", "_previous", "x".repeat(64)]) {
+      expect(() => Command.parse({ type: "view.open", view, name }), name).toThrow();
+    }
+    expect(() => Command.parse({ type: "view.open", view, name: "speeds-2" })).not.toThrow();
+    expect(() => Command.parse({ type: "view.open", view })).not.toThrow();
+  });
+
   it("refuses markSaved with a name that is not a view name", () => {
     expect(() =>
       Command.parse({ type: "view.markSaved", name: "_previous", title: "x" }),

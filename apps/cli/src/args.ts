@@ -92,6 +92,8 @@ Views (saved workspaces, stored by the server):
   view export NAME [--out FILE]    (prints the YAML text itself; --out writes FILE instead)
   view import FILE [--name N] [--overwrite] [--open]
                                    (FILE: YAML or JSON, at most 256 KiB)
+  view link [--page URL]           (link to the open workspace, like "Copy link" in the UI;
+                                   URL: the UI page, default the server address)
 
 Options (anywhere on the line; "--" ends options):
   --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER})
@@ -129,6 +131,7 @@ const VALUE_OPTIONS = new Set([
   "--name",
   "--note",
   "--out",
+  "--page",
 ]);
 const FLAG_OPTIONS = new Set([
   "--wait",
@@ -277,10 +280,11 @@ export function parseArgs(
     };
   }
   const options = globalOptions(opts, env);
-  return { options, invocation: invocation(pos, opts) };
+  return { options, invocation: invocation(pos, opts, options.server) };
 }
 
-function invocation(pos: string[], opts: Map<string, string | true>): Invocation {
+/** server: the resolved --server address (default page of `view link`). */
+function invocation(pos: string[], opts: Map<string, string | true>, server: string): Invocation {
   const [first, second] = pos;
   if (first === undefined) usage("no command given (see --help)");
   const group = ["window", "signal", "cursor", "measurement", "events", "view"].includes(first);
@@ -518,6 +522,13 @@ function invocation(pos: string[], opts: Map<string, string | true>): Invocation
           ...(opts.has("--open") && { open: true }),
         },
       };
+    }
+    case "view link": {
+      const page = take(0, ["--page"])("--page") ?? server;
+      if (!URL.canParse(page) || !["http:", "https:"].includes(new URL(page).protocol)) {
+        usage(`--page is not an http(s) URL: "${page}"`);
+      }
+      return { kind: "view", action: "link", page };
     }
     case "command": {
       take(1);

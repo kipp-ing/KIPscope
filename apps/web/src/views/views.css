@@ -6,11 +6,22 @@
   flex: none;
 }
 
-/* Grows from 0 to its text (≤ 240 px) and gives way first on a short row, so the row never wraps
-   for the title (design "Title width 240 px"). */
+.option-bar .views-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The bookmark glyph shows only in the icon-only step (bar.css). */
+.option-bar .views-icon {
+  display: none;
+}
+
+/* Grows from its minimum to its text (≤ 240 px) and gives way first on a short row (V7 give-way
+   step 1). --title-min is min(n, 10)ch, set inline from titleMinChars; the dot is 1ch plus the gap. */
 .option-bar .view-title {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: var(--title-min, 0);
   max-width: fit-content;
   height: var(--control-h);
   display: flex;
@@ -20,9 +31,13 @@
   font-weight: 600;
 }
 
+.option-bar .view-title:has(.view-modified) {
+  min-width: calc(var(--title-min, 0px) + 1ch + 3px);
+}
+
 .option-bar .view-title-text {
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: var(--title-min, 0);
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -31,6 +46,8 @@
 
 .option-bar .view-modified {
   flex: none;
+  width: 1ch;
+  text-align: center;
   color: var(--muted);
 }
 
@@ -85,8 +102,11 @@
 
 .views-popover .views-row {
   position: relative;
-  display: flex;
-  align-items: center;
+}
+
+.views-popover .views-row:is(:hover, :focus-within),
+.views-popover .views-row.confirming {
+  background: var(--band);
 }
 
 .views-popover .views-row.previous {
@@ -94,8 +114,7 @@
 }
 
 .views-popover .views-open {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -103,6 +122,7 @@
 }
 
 .views-popover .views-row-title {
+  line-height: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -131,13 +151,18 @@
   cursor: default;
 }
 
-/* Download and Delete only on hover or focus, so the list stays quiet. */
+/* Download and Delete only on hover or focus, so the list stays quiet; laid over the right end of
+   the title line on the row's hover background, so the meta line keeps the row's full width (V7). */
 .views-popover .views-row-actions {
   display: none;
-  flex: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  height: 16px;
   align-items: center;
   gap: 2px;
-  padding-right: 6px;
+  padding-left: 6px;
+  background: var(--band);
   color: var(--label);
 }
 
@@ -148,19 +173,20 @@
 
 .views-popover .views-row-actions a,
 .option-bar-slot .views-popover .views-row-actions button {
-  padding: 2px 6px;
+  padding: 0 6px;
+  line-height: 16px;
   border-radius: var(--radius);
   color: var(--accent-ink);
   text-decoration: none;
 }
 
-.views-popover :is(.views-item, .views-open, .views-row-actions a):is(:hover, :focus-visible),
-.option-bar-slot .views-popover .views-row-actions button:is(:hover, :focus-visible) {
+.views-popover .views-item:is(:hover, :focus-visible) {
   background: var(--band);
 }
 
-.views-popover .views-open:disabled:hover {
-  background: none;
+.views-popover .views-row-actions a:is(:hover, :focus-visible),
+.option-bar-slot .views-popover .views-row-actions button:is(:hover, :focus-visible) {
+  background: var(--panel);
 }
 
 .views-popover .views-empty,
