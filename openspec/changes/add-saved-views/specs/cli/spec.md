@@ -32,12 +32,12 @@ The CLI SHALL offer `view list`, `view save TITLE [--name N] [--note TEXT] [--ov
 - **Evidence:** the command and `cmp` of the two texts
 
 ### Requirement: Link from the CLI
-`view link [--page URL]` SHALL print one JSON line with `data {url, chars}`: `url` is `<page>#view=<code>` for the open workspace, built like the UI's "Copy link", and `chars` its length; `--page` SHALL default to the server address. Origin: concept §9 („Untersuchung direkt öffnen … über CLI oder Link"); design goal "the CLI can do all of it"; round-1 finding (the UI user's tool cannot read the clipboard).
+`view link [--page URL]` SHALL print one JSON line with `data {url, chars}`: `url` is `<page>#view=<code>` for the open workspace, built by `viewLinkUrl` like the UI's "Copy link" (design V1, round 3), and `chars` its length; `--page` SHALL default to the server address. Origin: concept §9 („Untersuchung direkt öffnen … über CLI oder Link"); design goal "the CLI can do all of it"; round-1 finding (the UI user's tool cannot read the clipboard).
 
 #### Scenario: Link of the open workspace
 - **WHEN** against the test server `window create --title Speeds` runs, then `view link --page http://127.0.0.1:5173/`, and the code after `#view=` is decoded with `decodeViewLink`
 - **THEN** it exits 0, `data.url` starts with `http://127.0.0.1:5173/#view=`, `data.chars` equals the length of `data.url`, and the decoded document has one window titled Speeds; `args.test.ts` maps `view link` without `--page` to the `--server` address
-- **Evidence:** `apps/cli/test/cli.test.ts` › "prints a link to the open workspace"; `apps/cli/test/args.test.ts` › "maps the view forms"
+- **Evidence:** `apps/cli/test/cli.test.ts` › "prints a link to the open workspace"; `apps/cli/test/args.test.ts` › "maps the view forms"; equality with "Copy link": saved-views "Same link from web and CLI"
 
 ## MODIFIED Requirements
 

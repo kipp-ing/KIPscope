@@ -25,6 +25,13 @@ Round 2 (S-3 (b) and round-1 findings; design "Round-2 defaults"). Disjoint writ
 - 5.6: `apps/web/test/views.test.ts` (new)
 - 5.7: `apps/cli/test/args.test.ts`, `cli.test.ts`
 
+Round 3 (lead's decisions on round-2 findings; design "Round-3 decisions"). Disjoint write areas; 3.4 and 3.5 share no file, 1.4 owns the three link call sites:
+
+- 1.4: `packages/shared/src/views.ts`, `apps/web/src/views/link.ts`, `apps/cli/src/views.ts`
+- 3.4 (still open): `apps/web/src/live.ts`, `App.tsx`, `views/notice.ts`
+- 3.5: `apps/web/src/bar/OptionBar.tsx`, `bar/bar.css` (and a new `bar/OverflowMenu.tsx` if the engineer wants one)
+- 5.8: `packages/shared/test/views.test.ts`, `apps/cli/test/cli.test.ts`, `apps/web/test/viewlink.test.ts`, `livestate.test.ts`
+
 ## 1. packages/shared
 
 - [x] 1.1 View document (V1): constants, `ViewDoc`, `ViewWindowDoc`, `ParsedView`, `ViewSummary`, `SaveViewRequest`, `ImportViewRequest`, `parseViewDoc` (version check first, zod with `TimeInput`, unknown-key warnings), `workspaceToView`, `viewName`, `encodeViewLink` / `decodeViewLink` (`CompressionStream("deflate-raw")`, base64url without padding, inflated size ≤ `MAX_VIEW_BYTES`); export from `index.ts`. Verify: `pnpm --filter @kipscope/shared build && pnpm --filter @kipscope/shared test`; scenarios "Workspace to document and back", "Nanoseconds survive", "Versions and keys", "Names from titles", "Link codec".
@@ -65,3 +72,11 @@ Round 2 (S-3 (b) and round-1 findings; design "Round-2 defaults"). Disjoint writ
 ## 6. Lead
 
 - [ ] 6.1 `.gitignore` gains `.kipscope/` (S-1 a); manual checks of design "Manual checks" (restart with the measurement; clipboard paste and file dialogs); ledger: the S-3 entry superseding D-051's „commands win until restart" (design "Ledger entry on archive"); status.md: drop "Workspace lives in server memory" from Known limitations.
+
+## Round 3 (2026-10-17)
+
+- [ ] 1.4 One link encoder (V1, V7, V8 round 3): `views.ts` gains `linkViewDoc(ws)` (title = view title ?? measurement name ?? "Shared view"; the open view's note when set; no `saved`) and `viewLinkUrl(ws, page)`; `link.ts`'s `viewLink` and the CLI's `link` case call `viewLinkUrl` and build no document of their own. Verify: `pnpm --filter @kipscope/shared test && pnpm --filter @kipscope/cli test && pnpm --filter @kipscope/web test`; `grep -rn "encodeViewLink(" apps/web/src apps/cli/src` prints nothing; scenario "Same link from web and CLI".
+- [ ] 3.5 Top-row overflow (V7 "Top-row overflow rule"): step (4) as a `top-row` container query: below the measured threshold T the in-row Digits and "+ Values window" hide and a "⋯" button (last item, `aria-label` "More controls", `aria-haspopup="menu"`, `aria-expanded`) opens a menu with the same controls; keyboard per V7. Measure T and the row width after the move (≤ 728 px, else "Span" joins per V7) in Chrome at 1000×557 with the sidebar open and a 120-character modified title, and write both into the `bar.css` comment (replacing the round-2 "still wraps" line). Verify: `pnpm --filter @kipscope/web build`; scenarios "Top row stays one line" (both viewports), "Overflow menu by keyboard". 3.3's top-row part is done when these pass.
+- [ ] 5.8 Tests (test-first): `packages/shared/test/views.test.ts` › "builds the link document"; `apps/cli/test/cli.test.ts` › "prints the same link as Copy link" (a saved view with a note, opened; `data.url` equals `viewLinkUrl(<GET /api/workspace>, "http://127.0.0.1:5173/")`; decoded note present, `saved` absent); `apps/web/test/viewlink.test.ts` › "copies the shared link"; `apps/web/test/livestate.test.ts` › "keeps the last view open across later pushes".
+
+3.4 stays open for round 3 with design V7 "How a tab learns a push was not its own" (`live.ts` `lastOpen`, own-open bookkeeping in `App.tsx`, a foreign open replaces the strip item); verify with scenario "Opened elsewhere" as changed in round 3.

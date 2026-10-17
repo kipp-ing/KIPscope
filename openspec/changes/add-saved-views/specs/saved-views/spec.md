@@ -164,6 +164,14 @@ Each saved view SHALL be downloadable as its YAML file (`<name>.kipscope.yaml`).
 - **THEN** the round trip gives the same document; the code has at most 2,000 characters (goal; Jan's real workspace measured ≈ 1,400); the two bad inputs reject
 - **Evidence:** `packages/shared/test/views.test.ts` › "encodes views into short links"
 
+### Requirement: One link for web and CLI
+"Copy link" and `kipscope view link` SHALL build the link with one shared function (`viewLinkUrl`, design V1) from one document (`linkViewDoc`: title rule, the note when set, no saved time), so one workspace and page give one link. Origin: design V7/V8; round-2 finding (372 vs 355 characters); lead's decision 2026-10-17.
+
+#### Scenario: Same link from web and CLI
+- **WHEN** view "Drive 3" with the note `BLS first` is saved and open, the web's "Copy link" helper and `kipscope view link --page http://127.0.0.1:5173/` build a link for that workspace and page, and the CLI's code is decoded
+- **THEN** both links are equal character for character; the decoded document is `linkViewDoc(workspace)`: title `Drive 3`, note `BLS first`, no `saved`; without an open view the title is the measurement name, else `Shared view`, and there is no note; `grep -rn "encodeViewLink(" apps/web/src apps/cli/src` prints nothing (both call `viewLinkUrl`)
+- **Evidence:** `packages/shared/test/views.test.ts` › "builds the link document" (`linkViewDoc` title rule, note, no `saved`); `apps/cli/test/cli.test.ts` › "prints the same link as Copy link" (`data.url` equals `viewLinkUrl(<GET /api/workspace>, page)`, the call web "Copy link" makes); `apps/web/test/viewlink.test.ts` › "copies the shared link" (the web helper's link equals `viewLinkUrl` for a workspace with a noted view); the grep above
+
 ### Requirement: Open from the address
 Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>` the saved view of that name; afterwards the UI SHALL remove that part from the address so a reload does not open it again. A bad code or unknown name SHALL leave the workspace unchanged and show an error. Origin: concept §9 („Untersuchung direkt öffnen"); Jan 2026-10-17.
 
@@ -192,8 +200,16 @@ The top row SHALL show a **Views** button and, when the workspace has an open vi
 
 #### Scenario: Top row stays one line
 - **WHEN** a view titled with 120 characters is open with the six-window setup and the sidebar open, at 1440×900 and at 1000×557
-- **THEN** every control of the top row has the same `getBoundingClientRect().top` (±1 px) in each viewport; the title text is at least `10ch` wide (rect width ≥ its computed `min-width`, which is `10ch`) and ends in an ellipsis with the full title in its tooltip and in the tab title; at 1000×557 "+ Values" is still in the row
-- **Evidence:** UI check on smart451 (tops, title width and computed `min-width` per viewport, one screenshot each); `apps/web/test/views.test.ts` › "keeps the title at least ten characters" (`titleMinChars` gives 10 for 120 characters, 7 for `Drive 3`)
+- **THEN** every control of the top row has the same `getBoundingClientRect().top` (±1 px) in each viewport; the title text is at least `10ch` wide (rect width ≥ its computed `min-width`, which is `10ch`) and ends in an ellipsis with the full title in its tooltip and in the tab title; at 1440×900 Digits and "+ Values window" are in the row and "⋯" is not displayed; at 1000×557 Digits and "+ Values window" are not displayed in the row, "⋯" is the row's last item, and its menu holds both
+- **Evidence:** UI check on smart451: the UI user measures `getBoundingClientRect().top` of every displayed top-row item in a 1000×557 iframe and at 1440×900, as in round 2 (tops, title width and computed `min-width` per viewport, one screenshot each); `bar/bar.css` comment names the measured threshold and the row width after the move (≤ 728 px); `apps/web/test/views.test.ts` › "keeps the title at least ten characters" (`titleMinChars` gives 10 for 120 characters, 7 for `Drive 3`)
+
+### Requirement: Top-row overflow menu
+Below a measured width, after the other give-way steps, the top row SHALL move its overflow items (Digits, "+ Values window"; later end-of-row controls such as `add-guidance`'s "?") into a "⋯" menu at its end, so it never wraps at 1000×557 with the sidebar open nor at 1440×900; each item SHALL stay usable by keyboard. Origin: round-2 UI finding (851 px needed, 728 px available); lead's decision 2026-10-17 (Jan: his hints are ideas); design V7 "Top-row overflow rule".
+
+#### Scenario: Overflow menu by keyboard
+- **WHEN** at 1000×557 with the sidebar open the user tabs to "⋯", presses Enter, changes Digits to 4 with the arrow keys, tabs to "+ Values window" and presses Enter, then opens "⋯" again and presses Escape
+- **THEN** Enter opens the menu with focus on the Digits select; the workspace's digits become 4; a new values window appears; Escape closes the menu and focus is on "⋯"; "⋯" has `aria-haspopup="menu"` and `aria-expanded` true while open, false after
+- **Evidence:** UI check on smart451 (focused element and `aria-expanded` read from the page after each step, `kipscope state` for digits and windows; one screenshot with the menu open)
 
 ### Requirement: Views menu
 The Views menu SHALL offer save entries, the saved views newest first with saved time, window count and data refs, the open one marked, "Before last open" last, "Import file…" and "Copy link"; each row SHALL offer Download and Delete (inline confirm) without shortening the row's meta line. Origin: persona test (boss); Jan 2026-10-17; row layout: round-1 UI finding (spec owner's default, design V7).
@@ -230,6 +246,6 @@ After an open, the strip SHALL show `Opened "<title>"` and, if any, how many sig
 - **Evidence:** UI check on smart451 (screenshot of the strip); `apps/web/test/views.test.ts` › "clears an older message on open" (`nextStrip`: error then opened gives the notice; notice then error gives the error)
 
 #### Scenario: Opened elsewhere
-- **WHEN** two tabs are open and `kipscope view open <name>` runs
-- **THEN** both tabs show the view, and each strip shows `"<title>" opened elsewhere` in the info tone; a tab that opened a view itself shows `Opened "<title>"` instead
-- **Evidence:** UI check on smart451 (one screenshot of a tab); `apps/web/test/views.test.ts` › "notices an open from elsewhere" (`openedElsewhere` for a foreign `view.open` push, the tab's own revision, and another command)
+- **WHEN** two tabs are open, tab A opens "Speeds" from its menu (A shows `Opened "Speeds"`), and then `kipscope view open <other name>` runs
+- **THEN** both tabs show the other view, and each strip shows `"<other title>" opened elsewhere` in the info tone; tab A's `Opened "Speeds"` is gone (replaced, not kept); right after A's own open, A showed `Opened "Speeds"` and no "opened elsewhere" for it (its own push, even when the push arrived before the HTTP answer)
+- **Evidence:** UI check on smart451 (A's strip text before and after the CLI open, one screenshot of A after); `apps/web/test/views.test.ts` › "notices an open from elsewhere" (`openedElsewhere` for a foreign `view.open` push, the tab's own revision, and another command); `apps/web/test/livestate.test.ts` › "keeps the last view open across later pushes" (`applyLiveMessage` sets `lastOpen` on a `view.open` push, keeps it over a following `window.setRange` push, never sets it from the connect state)

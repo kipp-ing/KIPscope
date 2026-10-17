@@ -367,3 +367,7 @@ The Keys tab renders the table grouped, with keys in `<kbd>`.
 ## Jan's answers (2026-10-17)
 
 Jan: „all recommended“. G-1 to G-4 are decided as recommended in this design; the lead numbers them as D-nnn on archive.
+
+## Note from add-saved-views (lead, 2026-10-17)
+
+The top row now has an overflow rule (add-saved-views design V7, "Top-row overflow rule"): below a measured width, Digits and "+ Values window" move into a "⋯" menu, the row's last item. The "?" button of this change is pinned as the last item before "⋯" and must follow the same rule; re-check the one-line scenarios against it when this change is built.
