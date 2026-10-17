@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { HINTS } from "../help/hints.ts";
 
 /**
  * The window's "⋯" menu (design L4): "Rename" and "Remove window" in a popover below the button.
@@ -42,7 +43,7 @@ export function WindowMenu({ onRename, onRemove }: { onRename: () => void; onRem
         ref={button}
         className="window-menu-button"
         aria-label="Window menu"
-        title="Window menu"
+        title={HINTS.windowMenu}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}

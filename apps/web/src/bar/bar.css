@@ -99,16 +99,20 @@
      content box at 1000×557 without a scroll bar but 713 px with the main area's classic scroll
      bar (six windows), so the row wrapped: Span joined the overflow items (V7). It now needs
      653 px.
-   At 1440×900 the content box is 1168 px (full row, no "⋯").
+   - add-guidance's "?" (26 px + 6 px gap), an overflow item right before "⋯", moves every width
+     above by 32 px: full labels 981 px → 990 px; short labels with the "Views" label 904 px →
+     910 px; overflow items in the row 884 px → T = 890 px. The row after the move is unchanged
+     (653 px): the "?" is in the menu as "Help".
+   At 1440×900 the content box is 1168 px (full row with "?", no "⋯").
    Lower-priority label words ("Link time axes", "+ Values window") collapse; title and aria-label
    keep the full name. */
-@container top-row (max-width: 950px) {
+@container top-row (max-width: 990px) {
   .option-bar .long {
     display: none;
   }
 }
 
-@container top-row (max-width: 880px) {
+@container top-row (max-width: 910px) {
   .option-bar .views-label {
     display: none;
   }
@@ -118,8 +122,8 @@
   }
 }
 
-/* Step 4, the overflow items (V7 "Top-row overflow rule"): Digits, "+ Values window" and Span leave
-   the row (display: none, so also the tab order) and "⋯", the row's last item, holds them in its
+/* Step 4, the overflow items (V7 "Top-row overflow rule"): Digits, "+ Values window", Span and the
+   "?" leave the row (display: none, so also the tab order) and "⋯", the row's last item, holds them in its
    menu. T: see the give-way comment above. */
 .option-bar .overflow-menu {
   position: relative;
@@ -127,7 +131,7 @@
   display: none;
 }
 
-@container top-row (max-width: 860px) {
+@container top-row (max-width: 890px) {
   .option-bar .overflow-item {
     display: none;
   }
@@ -137,7 +141,8 @@
   }
 }
 
-.option-bar-slot .option-bar .overflow-button {
+.option-bar-slot .option-bar .overflow-button,
+.option-bar-slot .option-bar .help-button {
   width: 26px;
   padding: 0;
   font-weight: 600;

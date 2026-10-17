@@ -30,6 +30,7 @@ import "uplot/dist/uPlot.min.css";
 import "./window.css";
 import { fetchCursorValue } from "../api.ts";
 import { groupMarks, type Mark, markColor, markTitle, PIN_H } from "../events/marks.ts";
+import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import {
@@ -47,7 +48,7 @@ import {
   valueRequests,
 } from "../values/loader.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
-import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
+import { markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
 import type { AxisSpec } from "./axes.ts";
 import {
   buildModel,
@@ -175,6 +176,8 @@ interface Props {
   marked: boolean;
   /** A click on the header outside the controls; App marks the window. */
   onMark: (windowId: string) => void;
+  /** Next-step hints not yet learned in this browser (add-guidance H7, S1). */
+  nextHints?: { b: boolean; diff: boolean };
   /** "Link time axes" is on: the window shows another linked window's gesture preview (Z9). */
   linked: boolean;
   /** The shown events of the window's data refs (design V6), from App. */
@@ -651,6 +654,12 @@ function placeLiveLine(u: uPlot, line: HTMLElement, t: bigint | undefined, origi
 
 const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r.mode, abort);
 
+/** The badge's tooltip from its short text `raw`, `agg · <w>` or `part · <w>` (H5). */
+function badgeHint(short: string): string {
+  const [kind, width] = short.split(" · ");
+  return HINTS.badge(kind === "agg" || kind === "part" ? kind : "raw", width);
+}
+
 /** One readout value in a legend row: number with unit, tag, SNA or gap style, reason as tooltip. */
 function ReadoutCell({ cell, className }: { cell: Cell; className?: string }) {
   return (
@@ -713,6 +722,7 @@ export function TimeseriesWindow({
   onCursorCommit,
   marked,
   onMark,
+  nextHints,
   linked,
   events,
 }: Props) {
@@ -1671,7 +1681,7 @@ export function TimeseriesWindow({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path to mark is the explorer's "Add to" select (L5) */}
       <header
         className="window-header"
-        title={marked ? MARKED_HINT : undefined}
+        title={HINTS.windowHeader(marked)}
         onClick={(e) => markFromHeader(e, w.id, onMark)}
       >
         <WindowTitle
@@ -1683,17 +1693,17 @@ export function TimeseriesWindow({
         />
         {marked && <span className="mark-pill">Add to</span>}
         {badge && (
-          <span className="badge" title={badge.full}>
+          <span className="badge" title={badgeHint(badge.short)}>
             {badge.short}
           </span>
         )}
-        <span className="range" title={range}>
+        <span className="range" title={HINTS.range(range)}>
           {range}
         </span>
         <div className="window-controls" title="">
           <select
             aria-label="Display mode"
-            title="Display mode"
+            title={HINTS.chartMode}
             value={w.display.mode}
             onChange={(e) => {
               onCommand({
@@ -1738,16 +1748,22 @@ export function TimeseriesWindow({
         ))}
       </div>
       <div className="plot" ref={plotRef} style={{ height: plotHeight }} />
-      <div className="height-handle" title="Drag to resize" onPointerDown={startHeightDrag} />
+      <div className="height-handle" title={HINTS.grip} onPointerDown={startHeightDrag} />
       {readout && (
         <div className="readout-row">
           <span className="cursor-time" title={a === undefined ? undefined : formatCursorTime(a)}>
             {a === undefined ? "A off" : `A ${formatClock(a)}`}
           </span>
+          {a !== undefined && b === undefined && nextHints?.b && (
+            <span className="next-hint">Shift+click sets B</span>
+          )}
           {showB && (
             <span className="cursor-time" title={b === undefined ? undefined : formatCursorTime(b)}>
               {b === undefined ? "B off" : `B ${formatClock(b)}`}
             </span>
+          )}
+          {a !== undefined && b !== undefined && !diff && nextHints?.diff && (
+            <span className="next-hint">Diff shows Δ and Δt</span>
           )}
           {diff && a !== undefined && b !== undefined && (
             <span className="cursor-time">Δt {formatDeltaT(b - a)}</span>
@@ -1787,7 +1803,7 @@ export function TimeseriesWindow({
             >
               <span
                 className="grip"
-                title="Drag onto another window"
+                title={HINTS.legendDrag}
                 onPointerDown={(e) =>
                   onDragStart({ windowId: w.id, assignmentId: s.id, signalId: s.signalId }, e)
                 }
@@ -1800,7 +1816,10 @@ export function TimeseriesWindow({
                   {name}
                 </span>
               </span>
-              <span className="unit" title={`y axis ${model.layout.sideOf.get(s.id) ?? "–"}`}>
+              <span
+                className="unit"
+                title={HINTS.legendUnit(meta?.unit, model.layout.sideOf.get(s.id) ?? "–")}
+              >
                 {meta?.unit && `[${meta.unit}]`}
               </span>
               {readout && <ReadoutCell cell={cellAt("a", sourceA)} />}
@@ -1826,11 +1845,13 @@ export function TimeseriesWindow({
               <span className={`status ${state?.error ? "error" : (state?.status ?? "loading")}`}>
                 {loadStatusText(state)}
               </span>
-              <span className="sna">{sna}</span>
+              <span className="sna sna-share" title={sna && HINTS.sna(sna.replace(/^SNA /, ""))}>
+                {sna}
+              </span>
               <button
                 type="button"
                 className="remove"
-                title="Remove from this window"
+                title={HINTS.legendRemove}
                 aria-label={`Remove ${name}`}
                 onClick={() =>
                   onCommand({ type: "window.removeSignal", windowId: w.id, assignmentId: s.id })
@@ -1854,7 +1875,7 @@ export function TimeseriesWindow({
         className="corner-grip"
         role="separator"
         aria-orientation="horizontal"
-        title="Drag to resize height"
+        title={HINTS.grip}
         aria-label="Resize height"
         onPointerDown={(e) => {
           e.stopPropagation();

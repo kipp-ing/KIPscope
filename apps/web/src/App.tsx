@@ -28,6 +28,7 @@ import { runPlan } from "./addSignals.ts";
 import { ApiRequestError, fetchExtent, openView, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar } from "./bar/OptionBar.tsx";
+import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
 import {
   type AnyDragSource,
   canAdd,
@@ -58,7 +59,11 @@ import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import { ignoreFileDrops } from "./filedrop.ts";
 import { StatusBar } from "./footer/StatusBar.tsx";
 import { useMeta } from "./footer/useMeta.ts";
-import { isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
+import { HelpPanel } from "./help/HelpPanel.tsx";
+import { HINTS } from "./help/hints.ts";
+import { StartCard } from "./help/StartCard.tsx";
+import { dismissStart, hasLearned, learn, showStartAgain, startDismissed } from "./help/storage.ts";
+import { isHelpKey, isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
 import {
   isEventsKey,
   isSidebarKey,
@@ -72,6 +77,7 @@ import {
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
+import { FLASH_MS, markTarget, revealDelta } from "./reveal.ts";
 import { stripDataRef } from "./time/strip.ts";
 import { centreRange, stepDrive } from "./time/stripGeometry.ts";
 import {
@@ -242,6 +248,53 @@ export function App() {
     setEventsFocus((n) => n + 1);
   }, []);
 
+  // Help panel (add-guidance H7): the "?" button opens the manual, the `?` key the keys; either
+  // closes an open panel.
+  const [help, setHelp] = useState<"manual" | "keys" | undefined>();
+  const toggleHelp = useCallback(
+    (tab: "manual" | "keys") => setHelp((h) => (h ? undefined : tab)),
+    [],
+  );
+  const closeHelp = useCallback(() => setHelp(undefined), []);
+  // The start card (H7): shown until dismissed in this browser, and always on an empty workspace.
+  const [startHidden, setStartHidden] = useState(startDismissed);
+  const onDismissStart = useCallback(() => {
+    dismissStart();
+    setStartHidden(true);
+  }, []);
+  const onShowStart = useCallback(() => {
+    showStartAgain();
+    setStartHidden(false);
+  }, []);
+  const helpTail = useMemo<OverflowTail>(
+    () => ({
+      row: (
+        <button
+          type="button"
+          className="help-button overflow-item"
+          aria-label="Help"
+          title={HINTS.help}
+          onClick={() => toggleHelp("manual")}
+        >
+          ?
+        </button>
+      ),
+      menu: (close) => (
+        <button
+          type="button"
+          title={HINTS.help}
+          onClick={() => {
+            close(true);
+            toggleHelp("manual");
+          }}
+        >
+          Help
+        </button>
+      ),
+    }),
+    [toggleHelp],
+  );
+
   // Signal metadata seen in the explorer or looked up for signals already in the workspace.
   const infos = useRef(new Map<string, SignalInfo>());
   const [, setInfoVersion] = useState(0);
@@ -260,6 +313,17 @@ export function App() {
 
   const workspace = live.workspace;
   const meta = useMeta(live.connected);
+
+  // Next-step hints (H7, S1) retire for good once the workspace has shown B on, or Diff on.
+  const [learned, setLearned] = useState(() => ({ b: hasLearned("b"), diff: hasLearned("diff") }));
+  const bOn = workspace?.cursors?.b !== undefined;
+  const diffOn = workspace?.cursors?.diff === true;
+  useEffect(() => {
+    if (bOn) learn("b");
+    if (diffOn) learn("diff");
+    if (bOn || diffOn) setLearned((l) => ({ b: l.b || bOn, diff: l.diff || diffOn }));
+  }, [bOn, diffOn]);
+  const nextHints = useMemo(() => ({ b: !learned.b, diff: !learned.diff }), [learned]);
   const windows = workspace?.windows ?? [];
   const linked = workspace?.linkTime ?? true;
 
@@ -362,19 +426,25 @@ export function App() {
     [toStrip],
   );
 
-  // A window created by "+ Values window" or a drop on "+ New window" is scrolled into view once the
-  // workspace shows it (the effect below the window list refs).
-  const [reveal, setReveal] = useState<string | undefined>();
+  // Windows this tab created, and the target of an explorer add, are scrolled into view and flash
+  // once the workspace lists them (add-guidance H3; the effect below the window list refs). Drops
+  // onto an existing window and CLI changes reveal nothing.
+  const [reveal, setReveal] = useState<{ ids: string[] } | undefined>();
+  const revealWindows = useCallback((ids: string[]) => {
+    if (ids.length > 0) setReveal({ ids });
+  }, []);
   const barCommand = useCallback(
     async (input: CommandInput): Promise<CommandResult> => {
       const result = await command(input);
-      if (result.ok && input.type === "window.create" && result.created) setReveal(result.created);
+      if (result.ok && input.type === "window.create" && result.created)
+        revealWindows([result.created]);
       return result;
     },
-    [command],
+    [command, revealWindows],
   );
 
-  const addSignal = async (signal: SignalInfo, target: string) => {
+  /** Adds one signal; `drop`: a drop, which reveals a created window but not an existing target. */
+  const addSignal = async (signal: SignalInfo, target: string, drop = false) => {
     let windowId = target;
     if (target === NEW_WINDOW) {
       try {
@@ -391,22 +461,24 @@ export function App() {
         });
         if (!created.ok || !created.created) return;
         windowId = created.created;
-        setReveal(windowId);
+        revealWindows([windowId]);
       } catch (e) {
         setMessage(e instanceof Error ? e.message : String(e));
         return;
       }
     }
-    await command({ type: "window.addSignal", windowId, signalId: signal.id });
+    const added = await command({ type: "window.addSignal", windowId, signalId: signal.id });
+    // A refused add reveals nothing new (H3).
+    if (added.ok && target !== NEW_WINDOW && !drop) revealWindows([windowId]);
   };
   // The drag listeners outlive a render; they add through the current function.
   const addSignalRef = useRef(addSignal);
   addSignalRef.current = addSignal;
 
   // A selection of two or more (D-066): placed on the live workspace (placeSignals), sent in order.
-  const addSignals = async (signalIds: string[], target: string) => {
+  const addSignals = async (signalIds: string[], target: string, drop = false) => {
     const only = signalIds.length === 1 ? infos.current.get(signalIds[0] ?? "") : undefined;
-    if (only) return addSignal(only, target);
+    if (only) return addSignal(only, target, drop);
     const ws = liveRef.current.workspace;
     if (!ws) return;
     const targetWindow =
@@ -417,19 +489,30 @@ export function App() {
     // window exists (the first one this add creates counts); otherwise its signals' extent.
     const linkedNow = ws.linkTime ?? true;
     let haveTimeseries = ws.windows.some(isTimeseries);
+    // Revealed (H3): the windows created, also those of an add that failed later, and the target
+    // once a signal went into it (not for a drop).
+    const created: string[] = [];
+    let intoTarget = false;
     try {
-      const created = await runPlan(plan, targetWindow?.id, {
-        command,
+      await runPlan(plan, targetWindow?.id, {
+        command: async (input) => {
+          const result = await command(input);
+          if (result.ok && input.type === "window.create" && result.created)
+            created.push(result.created);
+          if (result.ok && input.type === "window.addSignal" && input.windowId === target)
+            intoTarget = true;
+          return result;
+        },
         rangeFor: async (ids) => {
           if (linkedNow && haveTimeseries) return undefined;
           haveTimeseries = true;
           return extentRange(await Promise.all(ids.map((id) => fetchExtent(id))));
         },
       });
-      if (created[0]) setReveal(created[0]);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
+    revealWindows([...(intoTarget && !drop ? [target] : []), ...created]);
   };
   const addSignalsRef = useRef(addSignals);
   addSignalsRef.current = addSignals;
@@ -445,7 +528,7 @@ export function App() {
         to: range.to.toString(),
       });
       if (!created.ok || !created.created) return;
-      setReveal(created.created);
+      revealWindows([created.created]);
       await command({
         type: "window.moveSignal",
         windowId: source.windowId,
@@ -789,6 +872,12 @@ export function App() {
         if (!e.repeat) openEvents();
         return;
       }
+      if (isHelpKey(e, document.activeElement)) {
+        if (dragRef.current) return;
+        e.preventDefault();
+        if (!e.repeat) toggleHelp("keys");
+        return;
+      }
       if (e.key !== "Backspace") return onNavKey(e);
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTextField(document.activeElement)) return;
@@ -808,7 +897,7 @@ export function App() {
       document.removeEventListener("pointerout", onOut);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onBack, onReset, navView, navigate, toggleSidebar, openEvents]);
+  }, [onBack, onReset, navView, navigate, toggleSidebar, openEvents, toggleHelp]);
 
   // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
   const mainRef = useRef<HTMLElement>(null);
@@ -818,13 +907,54 @@ export function App() {
     dragRef.current = d;
     setDrag(d);
   }, []);
+  // Reveal (H3): once the workspace lists every window to reveal, two frames later (the tiles laid
+  // out) the first is scrolled fully into view below the top row and each flashes for FLASH_MS.
+  // The attribute is set on the element, so React never overwrites it.
+  const flashTimers = useRef(new Map<Element, number>());
   useEffect(() => {
-    if (!reveal || !windowKey.split(",").includes(reveal)) return;
+    if (!reveal) return;
+    const listed = new Set(windowKey.split(","));
+    if (!reveal.ids.every((id) => listed.has(id))) return;
     setReveal(undefined);
-    mainRef.current
-      ?.querySelector(`[data-window-id="${CSS.escape(reveal)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    const ids = reveal.ids;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const main = mainRef.current;
+        if (!main) return;
+        const tiles = ids.flatMap((id) => {
+          const el = main.querySelector(`[data-window-id="${CSS.escape(id)}"]`);
+          return el ? [el] : [];
+        });
+        const first = tiles[0]?.getBoundingClientRect();
+        if (first) {
+          const box = main.getBoundingClientRect();
+          const top = barRef.current?.getBoundingClientRect().bottom ?? box.top;
+          main.scrollTop += revealDelta(first, { top, bottom: box.bottom });
+        }
+        for (const el of tiles) {
+          const timers = flashTimers.current;
+          clearTimeout(timers.get(el));
+          // A tile still flashing starts over.
+          el.removeAttribute("data-flash");
+          void (el as HTMLElement).offsetWidth;
+          el.setAttribute("data-flash", "");
+          timers.set(
+            el,
+            window.setTimeout(() => {
+              el.removeAttribute("data-flash");
+              timers.delete(el);
+            }, FLASH_MS),
+          );
+        }
+      }),
+    );
   }, [reveal, windowKey]);
+  useEffect(() => {
+    const timers = flashTimers.current;
+    return () => {
+      for (const t of timers.values()) clearTimeout(t);
+    };
+  }, []);
   const onDragStart = useCallback(
     (source: AnyDragSource, event: React.PointerEvent) => {
       if (event.button !== 0 || dragRef.current) return;
@@ -937,6 +1067,7 @@ export function App() {
           void addSignalsRef.current(
             [...many],
             target.kind === "new" ? NEW_WINDOW : target.windowId,
+            true,
           );
           return;
         }
@@ -949,7 +1080,11 @@ export function App() {
         if (!isLegendSource(cur.source)) {
           const signal = infos.current.get(cur.source.signalId);
           if (!signal || !canAdd(signal.id, target, ws.windows, unitOf)) return;
-          void addSignalRef.current(signal, target.kind === "new" ? NEW_WINDOW : target.windowId);
+          void addSignalRef.current(
+            signal,
+            target.kind === "new" ? NEW_WINDOW : target.windowId,
+            true,
+          );
           return;
         }
         const cmd = dropCommand(cur.source, target, ws.windows, unitOf, {
@@ -964,7 +1099,7 @@ export function App() {
           return;
         }
         void command(cmd).then((r) => {
-          if (r.ok && r.createdWindow) setReveal(r.createdWindow);
+          if (r.ok && r.createdWindow) revealWindows([r.createdWindow]);
         });
       };
       const onModifier = (e: KeyboardEvent) => {
@@ -993,7 +1128,7 @@ export function App() {
       document.addEventListener("contextmenu", onMenu, true);
       window.addEventListener("blur", finish);
     },
-    [command, unitOf, update],
+    [command, unitOf, update, revealWindows],
   );
 
   // Option bar (design C5): Back and Reset zoom act on the window zoomed last, else the first one.
@@ -1263,29 +1398,31 @@ export function App() {
                 type="button"
                 className="sidebar-toggle"
                 aria-expanded={sidebarOpen}
-                title={sidebarOpen ? "Hide signals (s)" : "Show signals (s)"}
+                title={HINTS.sidebarToggle(sidebarOpen)}
                 onClick={toggleSidebar}
               >
                 Signals
               </button>
               {workspace && (
-                <OptionBar
-                  workspace={workspace}
-                  target={barWindow}
-                  canGoBack={canGoBack(barWindow?.id)}
-                  onCommand={barCommand}
-                  onBack={onBack}
-                  onGoTo={onGoTo}
-                  onGoToClear={onGoToClear}
-                  onSpan={onSpan}
-                  onReset={() => {
-                    if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
-                  }}
-                  onOpened={onOpened}
-                  trackOpen={trackOpen}
-                  onNotice={setNotice}
-                  onMessage={setMessage}
-                />
+                <OverflowTailContext.Provider value={helpTail}>
+                  <OptionBar
+                    workspace={workspace}
+                    target={barWindow}
+                    canGoBack={canGoBack(barWindow?.id)}
+                    onCommand={barCommand}
+                    onBack={onBack}
+                    onGoTo={onGoTo}
+                    onGoToClear={onGoToClear}
+                    onSpan={onSpan}
+                    onReset={() => {
+                      if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
+                    }}
+                    onOpened={onOpened}
+                    trackOpen={trackOpen}
+                    onNotice={setNotice}
+                    onMessage={setMessage}
+                  />
+                </OverflowTailContext.Provider>
               )}
             </div>
             <TimeStrip
@@ -1296,7 +1433,20 @@ export function App() {
               drop={stripDrop}
             />
           </div>
-          <div className="window-grid">
+          {workspace && (windows.length === 0 || !startHidden) && !activeDrag && (
+            <StartCard empty={windows.length === 0} onDismiss={onDismissStart} onHelp={setHelp} />
+          )}
+          {/* Any click that ends inside a window marks it (H1); a drag between windows ends on
+              the grid or higher and marks nothing. Keyboard marking is the "Add to" select. */}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated click, see above */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: delegated click, see above */}
+          <div
+            className="window-grid"
+            onClick={(e) => {
+              const id = markTarget(e.target as Element);
+              if (id) onMark(id);
+            }}
+          >
             {windows.map((w) => (
               <WindowBoundary key={w.id} windowId={w.id} revision={live.revision} onReady={onReady}>
                 {isTimeseries(w) ? (
@@ -1322,6 +1472,7 @@ export function App() {
                     marked={w.id === markedId}
                     onMark={onMark}
                     linked={linked}
+                    nextHints={nextHints}
                     {...eventsProp(windowEvents.get(w.id))}
                     {...dropProp(dropStateOf(w.id))}
                     {...dropActionProp}
@@ -1347,9 +1498,6 @@ export function App() {
               </WindowBoundary>
             ))}
           </div>
-          {workspace && windows.length === 0 && !activeDrag && (
-            <p className="hint">No windows yet. Search a signal and add it to a new window.</p>
-          )}
           {/* The free area below the windows (design B1, B2): always rendered so nothing moves at
               drag start; during a drag a second "+ New window" zone filling what the list leaves. */}
           <div
@@ -1378,6 +1526,9 @@ export function App() {
           dropRef={dropRef}
         />
       </div>
+      {help && (
+        <HelpPanel tab={help} onTab={setHelp} onClose={closeHelp} onShowStart={onShowStart} />
+      )}
       {activeDrag && (
         <div className="drag-ghost" ref={ghostRef}>
           <span className="swatch" style={{ background: colorOf(activeDrag.source.signalId) }} />

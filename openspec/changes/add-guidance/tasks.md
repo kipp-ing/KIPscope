@@ -96,7 +96,7 @@ Not touched: `apps/web/src/events/*` (`improve-events`), any server, CLI or `pac
 
 ## 4. Manual text
 
-- [ ] 4.1 Write `docs/manual.md` from the outline in design H8.
+- [x] 4.1 Write `docs/manual.md` from the outline in design H8.
   - English, about 1,500 words, Markdown subset only, ten `##` sections in order.
   - Every term as in the Words section.
   - Facts checked against the main specs and the running app, not invented. For example, the numbers in the Measure example come from smart451.
@@ -105,7 +105,7 @@ Not touched: `apps/web/src/events/*` (`improve-events`), any server, CLI or `pac
 
 ## 5. Tests
 
-- [ ] 5.1 Web tests, written test-first:
+- [x] 5.1 Web tests, written test-first:
   - `reveal.test.ts`:
     - "finds the window of a click"
     - "scrolls a window fully into view below the top row"

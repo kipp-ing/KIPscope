@@ -16,8 +16,9 @@ import "./values.css";
 import { fetchCursorValue } from "../api.ts";
 import type { DragSource, DropState } from "../chart/drag.ts";
 import { LIVE_REST_MS, useLiveCursor } from "../chart/live.ts";
+import { HINTS } from "../help/hints.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
-import { MARKED_HINT, markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
+import { markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
 import { type Cell, deltaCell, formatCell, headerTimes, loadingCell, NO_VALUE } from "./format.ts";
 import {
   cellState,
@@ -257,7 +258,7 @@ export function ValuesWindow({
       <header
         ref={headerRef}
         className={`window-header${showB ? " diff" : ""}`}
-        title={marked ? MARKED_HINT : undefined}
+        title={HINTS.windowHeader(marked)}
         onClick={(e) => markFromHeader(e, w.id, onMark)}
       >
         <WindowTitle
@@ -281,7 +282,7 @@ export function ValuesWindow({
             <span className="mode-word">Between points</span>
             <select
               aria-label="Between points"
-              title="Between points"
+              title={HINTS.valuesMode}
               value={w.mode}
               onChange={(e) => {
                 onCommand({
@@ -341,7 +342,7 @@ export function ValuesWindow({
                   <td className="name">
                     <span
                       className="grip"
-                      title="Drag onto another window"
+                      title={HINTS.legendDrag}
                       onPointerDown={(e) =>
                         onDragStart({ windowId: w.id, assignmentId: s.id, signalId: s.signalId }, e)
                       }

@@ -8,6 +8,7 @@ import {
   windowTitle,
 } from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
+import { HINTS } from "../help/hints.ts";
 import { formatRange } from "../time/axis.ts";
 import { type TrackOpen, ViewsMenu } from "../views/ViewsMenu.tsx";
 import "./bar.css";
@@ -101,14 +102,7 @@ export function OptionBar({
     });
   };
   const cursorToggle = (cursor: CursorName) => (
-    <label
-      className="toggle pill"
-      title={
-        target
-          ? `Cursor ${cursor.toUpperCase()} · ${cursor === "a" ? "click" : "Shift+click"} in a plot to place it`
-          : "Needs a timeseries window"
-      }
-    >
+    <label className="toggle pill" title={target ? HINTS.cursor(cursor) : HINTS.cursorDisabled}>
       <input
         type="checkbox"
         checked={cursors[cursor] !== undefined}
@@ -119,8 +113,7 @@ export function OptionBar({
     </label>
   );
   // While unlinked, the bar's navigation acts on one window; the tooltip names it (design C5).
-  const named = (action: string, linked: string) =>
-    linkTime ? linked : target ? `${action} · ${windowTitle(target)}` : action;
+  const targetTitle = target ? windowTitle(target) : undefined;
 
   // The overflow items (V7 "Top-row overflow rule"; Span joined, bar.css): in the row, or the same
   // controls in the "⋯" menu below the threshold.
@@ -130,7 +123,7 @@ export function OptionBar({
       aria-label="Span"
       value=""
       disabled={!target}
-      title={named("Span", "Span around cursor A or the centre, all windows")}
+      title={HINTS.span(linkTime, targetTitle)}
       onChange={(e) => {
         const preset = SPAN_PRESETS.find((p) => p.label === e.target.value);
         // Navigation keys go to the page again, not to the select.
@@ -153,7 +146,7 @@ export function OptionBar({
     <select
       className={inMenu ? undefined : "overflow-item"}
       aria-label="Digits"
-      title="Significant digits of all values"
+      title={HINTS.digits}
       value={digits}
       onChange={(e) => {
         // Navigation keys go to the page again, not to the select; in the menu, focus stays for
@@ -174,7 +167,7 @@ export function OptionBar({
       type="button"
       className={after ? "new-values" : "new-values overflow-item"}
       aria-label="New values window"
-      title="New values window"
+      title={HINTS.valuesWindow}
       onClick={() => {
         void onCommand({ type: "window.create", kind: "values" });
         after?.();
@@ -196,7 +189,7 @@ export function OptionBar({
       <span className="separator" />
       {cursorToggle("a")}
       {cursorToggle("b")}
-      <label className="toggle pill" title="Show the differences B − A (Δ and Δt)">
+      <label className="toggle pill" title={HINTS.diff}>
         <input
           type="checkbox"
           checked={cursors.diff}
@@ -205,7 +198,7 @@ export function OptionBar({
         Diff
       </label>
       <span className="separator" />
-      <label className="toggle" title="While on, zooming one window zooms all windows">
+      <label className="toggle" title={HINTS.link}>
         <input
           type="checkbox"
           aria-label="Link time axes"
@@ -225,15 +218,7 @@ export function OptionBar({
         aria-label="Go to"
         aria-invalid={goToError !== undefined}
         disabled={!target}
-        title={[
-          goToError,
-          named(
-            "Go to",
-            "Go to a time or range in all windows: 15:08, 15:07 .. 15:09, 1h, +10min · t",
-          ),
-        ]
-          .filter(Boolean)
-          .join("\n")}
+        title={[goToError, HINTS.goTo(linkTime, targetTitle)].filter(Boolean).join("\n")}
         value={goToText}
         onChange={(e) => {
           setGoToText(e.target.value);
@@ -259,7 +244,7 @@ export function OptionBar({
       <button
         type="button"
         disabled={!target || !canGoBack}
-        title={named("Back", "Previous range of all windows")}
+        title={HINTS.back(linkTime, targetTitle, canGoBack)}
         onClick={() => target && onBack(target.id)}
       >
         Back
@@ -267,7 +252,7 @@ export function OptionBar({
       <button
         type="button"
         disabled={!target}
-        title={named("Reset", "Show all signals of all windows")}
+        title={HINTS.reset(linkTime, targetTitle)}
         onClick={onReset}
       >
         Reset

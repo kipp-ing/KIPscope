@@ -29,6 +29,15 @@ export function isSearchKey(e: KeyLike, focused: Element | null): boolean {
   return !isTextField(focused) || focused?.tagName.toUpperCase() === "SELECT";
 }
 
+/**
+ * `?` opens or closes the help panel (add-guidance H7) without Ctrl, Meta or Alt, outside text
+ * fields and selects; Shift is part of `?` on most layouts, so it does not matter.
+ */
+export function isHelpKey(e: KeyLike, focused: Element | null): boolean {
+  if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey) return false;
+  return !isTextField(focused);
+}
+
 /** Navigation keys (design N6): zoom, pan, page, reset, "Go to" and the strip's drives (S9). */
 export type NavKey =
   | "in"

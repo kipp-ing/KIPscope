@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSearchKey, isTextField, NavRepeat, navKey } from "../src/keys.ts";
+import { isHelpKey, isSearchKey, isTextField, NavRepeat, navKey } from "../src/keys.ts";
 
 /** No DOM in the tests: plain objects shaped like the element properties isTextField reads. */
 const el = (tagName: string, props: { type?: string; isContentEditable?: boolean } = {}) =>
@@ -153,5 +153,31 @@ describe("NavRepeat", () => {
     expect(r.step(true, 1420)).toBe("join");
     // A press after a pause is a push as well.
     expect(r.step(false, 5000)).toBe("push");
+  });
+});
+
+describe("isHelpKey", () => {
+  const key = (
+    k: string,
+    mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
+  ) => ({
+    key: k,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    ...mods,
+  });
+
+  it("opens help with ? outside text fields", () => {
+    expect(isHelpKey(key("?"), null)).toBe(true);
+    expect(isHelpKey(key("?"), el("INPUT", { type: "search" }))).toBe(false);
+    expect(isHelpKey(key("?"), el("TEXTAREA"))).toBe(false);
+    expect(isHelpKey(key("?", { ctrlKey: true }), null)).toBe(false);
+    expect(isHelpKey(key("?", { metaKey: true }), null)).toBe(false);
+    expect(isHelpKey(key("?", { altKey: true }), null)).toBe(false);
+    expect(isHelpKey(key("/"), null)).toBe(false);
+    // A button or checkbox takes no typed text, so ? still opens help there.
+    expect(isHelpKey(key("?"), el("BUTTON"))).toBe(true);
+    expect(isHelpKey(key("?"), el("INPUT", { type: "checkbox" }))).toBe(true);
   });
 });

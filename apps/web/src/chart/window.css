@@ -167,9 +167,35 @@
   background: var(--border);
 }
 
-/* Marked window (design L5, T4): the frame in the accent ring colour; same width, so nothing moves. */
+/* Marked window (add-guidance H2): a 2 px accent frame; the border stays 1 px, so nothing moves,
+   and the shadow adds the second pixel outside. */
 .window.marked {
-  border-color: var(--accent-ring);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Reveal flash (add-guidance H4): set by App on a created or added-to window for FLASH_MS. A
+   marked window keeps its mark after it, as the .marked rule applies again. */
+.window[data-flash] {
+  animation: window-flash 1.2s ease-out;
+}
+
+@keyframes window-flash {
+  from {
+    box-shadow: 0 0 0 3px var(--accent-ring);
+    background: var(--accent-soft);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+    background: var(--panel);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .window[data-flash] {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--accent-ring);
+  }
 }
 
 .window .axis-titles {
@@ -394,6 +420,13 @@
   margin-top: 6px;
   font-family: ui-monospace, monospace;
   font-size: 12px;
+}
+
+/* Next-step hint after the cursor times (add-guidance H7, S1). */
+.window .readout-row .next-hint {
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
 }
 
 .window .signals .value {

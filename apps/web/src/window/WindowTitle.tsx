@@ -6,9 +6,7 @@ import {
 } from "@kipscope/shared";
 import type React from "react";
 import { useRef } from "react";
-
-/** Header tooltip of the marked window (design L5). */
-export const MARKED_HINT = "Adds from the explorer go here";
+import { HINTS } from "../help/hints.ts";
 
 /** A header click marks the window unless it hit `.window-controls` (design L5). */
 export function markFromHeader(
@@ -42,7 +40,7 @@ export function WindowTitle({
       <button
         type="button"
         className="window-title"
-        title={`${title} · Double-click to rename`}
+        title={HINTS.windowTitle(title)}
         onDoubleClick={() => {
           cancelled.current = false;
           onEditing(true);

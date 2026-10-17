@@ -11,6 +11,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";
 import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
+import { HINTS } from "../help/hints.ts";
 import { isSearchKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
 import {
@@ -171,7 +172,7 @@ export function SignalExplorer({
 
   // The target is a window ID held by App (the mark, design L5); App resolves it with resolveTarget.
   const targetWindow = windows.find((w) => w.id === target);
-  const addLabel = `Add to ${targetWindow ? windowTitle(targetWindow) : "new window"}`;
+  const addLabel = HINTS.addButton(targetWindow ? windowTitle(targetWindow) : undefined);
 
   const clearTimers = useCallback(() => {
     clearTimeout(openTimer.current);
@@ -377,7 +378,7 @@ export function SignalExplorer({
             type="button"
             role="tab"
             aria-selected={part === p}
-            title={p === "signals" ? "Signals ( / )" : "Events ( e )"}
+            title={p === "signals" ? HINTS.tabSignals : HINTS.tabEvents}
             onClick={() => onPart(p)}
           >
             {p === "signals" ? "Signals" : "Events"}
@@ -395,6 +396,7 @@ export function SignalExplorer({
         onFocus={(e) => quietFocus.current || e.currentTarget.select()}
         onBlur={() => card?.byKey && closeCard()}
         aria-label="Search signals"
+        title={HINTS.search}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={items.length > 0}
@@ -403,11 +405,7 @@ export function SignalExplorer({
       />
       <label className="target">
         Add to{" "}
-        <select
-          value={target}
-          title={targetWindow ? windowTitle(targetWindow) : "New window"}
-          onChange={(e) => onTarget(e.target.value)}
-        >
+        <select value={target} title={HINTS.target} onChange={(e) => onTarget(e.target.value)}>
           <option value={NEW_WINDOW}>New window</option>
           {windows.map((w) => (
             <option key={w.id} value={w.id}>
@@ -419,8 +417,15 @@ export function SignalExplorer({
       {error && <p className="error">{catalog ? error : `${error} (retrying)`}</p>}
       {catalog ? (
         <p className="count">
-          {matches.length} match{matches.length === 1 ? "" : "es"}
-          {shownRows !== undefined ? `, showing ${shownRows}` : ""}
+          {query.trim() === "" ? (
+            // Empty search: the catalog's size and how to chart a row (add-guidance S5).
+            `${catalog.length} signals · drag a row onto a window, or press +`
+          ) : (
+            <>
+              {matches.length} match{matches.length === 1 ? "" : "es"}
+              {shownRows !== undefined ? `, showing ${shownRows}` : ""}
+            </>
+          )}
         </p>
       ) : (
         !error && <p className="count">Loading catalog…</p>

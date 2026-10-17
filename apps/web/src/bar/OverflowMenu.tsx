@@ -1,17 +1,42 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { HINTS } from "../help/hints.ts";
+
+/** Closes the "⋯" menu; `true` also focuses "⋯" (after an action). */
+type Close = (refocus?: boolean) => void;
+
+/**
+ * Overflow items App adds after the bar's own (add-guidance "?", V7 "Top-row overflow rule"): `row`
+ * in the row right before "⋯" (it carries `overflow-item`), `menu` at the end of the menu.
+ */
+export interface OverflowTail {
+  row: ReactNode;
+  menu: (close: Close) => ReactNode;
+}
+
+export const OverflowTailContext = createContext<OverflowTail | undefined>(undefined);
 
 /**
  * "⋯" at the end of the top row (add-saved-views V7 "Top-row overflow rule"): shown only below the
  * measured threshold (bar.css), where the in-row overflow items hide; its menu renders the same
  * controls. Enter, Space or ArrowDown opens it and focuses the first control; Esc closes it and
  * returns focus to "⋯"; Tab past the last control, a pointer down outside, or "⋯" hiding closes it.
+ * App's overflow items (OverflowTailContext) come last, in the row and in the menu.
  */
 export function OverflowMenu({
   children,
 }: {
   /** The menu's controls; `close(true)` closes it and focuses "⋯" (after an action). */
-  children: (close: (refocus?: boolean) => void) => ReactNode;
+  children: (close: Close) => ReactNode;
 }) {
+  const tail = useContext(OverflowTailContext);
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -52,29 +77,33 @@ export function OverflowMenu({
   }, [open, close]);
 
   return (
-    <div ref={root} className="overflow-menu">
-      <button
-        ref={button}
-        type="button"
-        className="overflow-button"
-        aria-label="More controls"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="More controls"
-        onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (e.key !== "ArrowDown" || open) return;
-          e.preventDefault();
-          setOpen(true);
-        }}
-      >
-        ⋯
-      </button>
-      {open && (
-        <div ref={panel} className="overflow-popover">
-          {children(close)}
-        </div>
-      )}
-    </div>
+    <>
+      {tail?.row}
+      <div ref={root} className="overflow-menu">
+        <button
+          ref={button}
+          type="button"
+          className="overflow-button"
+          aria-label="More controls"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title={HINTS.moreControls}
+          onClick={() => setOpen((o) => !o)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" || open) return;
+            e.preventDefault();
+            setOpen(true);
+          }}
+        >
+          ⋯
+        </button>
+        {open && (
+          <div ref={panel} className="overflow-popover">
+            {children(close)}
+            {tail?.menu(close)}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

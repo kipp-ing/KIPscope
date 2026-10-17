@@ -1,0 +1,254 @@
+/* Help panel, start card and key caps (add-guidance H7), D-055 tokens. */
+
+/* Start card: first child of <main> after the top area, at the top of the window list. */
+.start-card {
+  flex: none;
+  max-width: 640px;
+  margin: 0 0 8px;
+  padding: 10px 12px 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  color: var(--label);
+  line-height: 1.5;
+}
+
+.start-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--control-h);
+}
+
+.start-card-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--name);
+}
+
+.start-card ol {
+  margin: 4px 0 10px;
+  padding-left: 18px;
+}
+
+.start-card strong {
+  color: var(--name);
+  font-weight: 600;
+}
+
+.start-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.start-card-actions button {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+/* Fixed at the right, non-modal; top and bottom are set inline from the top area's bottom and the
+   status strip's top (HelpPanel), these are the fallbacks before the first measure. */
+.help-panel {
+  position: fixed;
+  top: 92px;
+  right: 0;
+  bottom: 28px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, 100vw - 32px);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 12px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.help-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-head h2 {
+  margin: 0 auto 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--name);
+}
+
+/* Segmented like the sidebar switch (events.css). */
+.help-tabs {
+  display: flex;
+  height: var(--control-h);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.help-tabs button {
+  padding: 0 10px;
+  border: none;
+  background: var(--panel);
+  color: var(--label);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.help-tabs button + button {
+  border-left: 1px solid var(--control-border);
+}
+
+.help-tabs button[aria-selected="true"] {
+  background: var(--text);
+  color: #fff;
+}
+
+.help-close,
+.start-card-close {
+  width: var(--control-h);
+  height: var(--control-h);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.help-close:hover,
+.start-card-close:hover {
+  background: var(--band);
+  color: var(--text);
+}
+
+.help-tabs button:focus-visible,
+.help-close:focus-visible,
+.start-card-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.help-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  color: var(--label);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.help-sections ol {
+  margin: 0 0 12px;
+  padding: 0 0 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-sections button.link {
+  font-size: 12px;
+  text-align: left;
+}
+
+.help-manual h1 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--name);
+}
+
+.help-manual h2 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  color: var(--name);
+}
+
+.help-manual h3,
+.help-shortcuts h3 {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  color: var(--name);
+}
+
+.help-manual p,
+.help-manual ul,
+.help-manual ol {
+  margin: 0 0 8px;
+}
+
+.help-manual ul,
+.help-manual ol {
+  padding-left: 18px;
+}
+
+.help-manual code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--name);
+}
+
+.help-start-again {
+  margin-top: 8px;
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.help-shortcuts h3:first-child {
+  margin-top: 0;
+}
+
+.help-shortcuts dl {
+  margin: 0 0 8px;
+}
+
+.help-shortcut {
+  display: grid;
+  grid-template-columns: 136px 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--band);
+}
+
+.help-shortcut dt,
+.help-shortcut dd {
+  margin: 0;
+}
+
+.help-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* Key cap: slate-100 fill, slate-300 border. */
+.help-panel kbd,
+.start-card kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  background: var(--band);
+  color: var(--name);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.start-card-actions button:hover,
+.help-start-again:hover {
+  border-color: var(--disabled);
+}

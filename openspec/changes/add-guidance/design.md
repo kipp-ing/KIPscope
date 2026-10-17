@@ -165,7 +165,7 @@ Wording rule W1:
 | `grip` | `Drag to resize the height` (both grips) |
 | `legendDrag` | `Drag onto another window to move it; Alt/Ctrl+drop copies` |
 | `legendUnit(unit, side)` | `[<unit>] · y axis <side>` |
-| `sna(share)` | `<share>: of the points in view are SNA (signal not available, marked invalid by the sender); amber strip at the plot's foot` |
+| `sna(share)` | `<share>: of the points in view are SNA (signal not available, marked invalid by the sender); strip in the signal's colour at the plot's foot` |
 | `legendRemove` | `Remove from this window` |
 | `stripInfo(recorded, width)` | `TIME: the whole recording (<recorded>). Each bar is <width>; its height shows how much was logged. Click a bar to jump, drag to zoom, double-click for all` |
 | `eventsCount(shown, total, sentence)` | `<shown> events match the filter (<sentence>), <total> in the recording · click to open the list · e` |
@@ -321,7 +321,7 @@ The Keys tab renders the table grouped, with keys in `<kbd>`.
      - this section is kept short: `improve-events` may change the panel
   9. `## Read the display`:
      - badge raw / agg · w / part
-     - SNA: amber strip and share, never drawn as a value
+     - SNA: strip in the signal's colour and share, never drawn as a value
      - `no data` and the grey bands of logger gaps (add-gap-display)
      - `1 bar = …` on the strip
      - loading and failed states

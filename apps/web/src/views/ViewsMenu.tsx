@@ -16,6 +16,7 @@ import {
   saveView,
   viewFileUrl,
 } from "../api.ts";
+import { HINTS } from "../help/hints.ts";
 import { copyViewLink } from "./link.ts";
 import { existingTitle, rowDetails, saveEntries, saveTarget, titleMinChars } from "./model.ts";
 import { SaveForm, type SaveOutcome } from "./SaveForm.tsx";
@@ -244,7 +245,7 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
           type="button"
           ref={button}
           className="views-button"
-          title="Views"
+          title={HINTS.views}
           aria-label="Views"
           aria-haspopup="menu"
           aria-expanded={open}
@@ -370,7 +371,7 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
                   type="button"
                   role="menuitem"
                   className="views-item"
-                  title="Link holding this view; works where a KIPscope server with the same data runs"
+                  title={HINTS.copyLink}
                   onClick={() => void copyLink()}
                 >
                   Copy link
@@ -388,7 +389,7 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
         >
           <span className="view-title-text">{view.title}</span>
           {view.modified && (
-            <span className="view-modified" title="Changed since saved or opened">
+            <span className="view-modified" title={HINTS.viewModified}>
               •
             </span>
           )}

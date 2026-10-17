@@ -1,0 +1,1 @@
+Round 1 (2026-10-17): needs_jan — unit scenarios fulfilled (4.1, 5.1 ticked), but every UI scenario is not_run (Chrome extension not connected) and two spec-owner items are open (design H5/H8 say 'amber' SNA strip vs spec/code 'signal colour'; start card moves the list at drag start vs H7 'hidden during a drag').

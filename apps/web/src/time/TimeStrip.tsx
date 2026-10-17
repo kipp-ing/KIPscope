@@ -5,9 +5,10 @@ import { barTarget } from "../bar/bar.ts";
 import { useLiveCursor } from "../chart/live.ts";
 import { clampRange, type Range } from "../chart/zoom.ts";
 import { groupMarks, type Mark, markColor, markTitle } from "../events/marks.ts";
+import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
-import { RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
+import { formatSpan, RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
 import {
   barTitle,
   brushRange,
@@ -433,6 +434,7 @@ export function TimeStrip({
           <button
             type="button"
             className="time-strip-events"
+            title={HINTS.eventsCount(events.shown.length, events.total)}
             {...(onOpenEvents ? { onClick: onOpenEvents } : {})}
           >
             {`${events.shown.length.toLocaleString("en-US")} of ${events.total.toLocaleString("en-US")} events`}
@@ -440,7 +442,16 @@ export function TimeStrip({
         )}
         <span
           className="time-strip-info"
-          {...(load?.state === "failed" ? { title: load.message } : {})}
+          {...(density
+            ? {
+                title: HINTS.stripInfo(
+                  formatSpan(BigInt(density.last) - BigInt(density.first)),
+                  formatSpan(BigInt(density.width)),
+                ),
+              }
+            : load?.state === "failed"
+              ? { title: load.message }
+              : {})}
         >
           {info}
         </span>
