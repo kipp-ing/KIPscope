@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Saved views and workspace state (add-saved-views, S-1)
+.kipscope/
