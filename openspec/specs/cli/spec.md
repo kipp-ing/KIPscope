@@ -21,7 +21,7 @@ The CLI `kipscope` SHALL control the open workspace only through the server's HT
 - **Evidence:** `apps/cli/test/cli.test.ts` › "prints the usage with --help"
 
 ### Requirement: One JSON result per call
-Each call SHALL print exactly one JSON object on one line to stdout (indented with `--pretty`) with `ok`, `outcome` and `exitCode` and, where they apply, `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local` and `error {code, message}`, except that a successful `events list --table` prints its table. A failed call SHALL also print one line naming the reason to stderr. Origin: concept §7 („maschinenlesbare Ergebnisse"); table: D-058.
+Each call SHALL print exactly one JSON object on one line to stdout (indented with `--pretty`) with `ok`, `outcome` and `exitCode` and, where they apply, `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local` and `error {code, message}`, except that a successful `events list --table` prints its table and a successful `view export NAME` without `--out` prints the view's YAML text. A failed call SHALL also print one line naming the reason to stderr. Origin: concept §7 („maschinenlesbare Ergebnisse"); table: D-058; YAML text: Jan 2026-10-17 („yaml export"), this change.
 
 #### Scenario: Accepted command
 - **WHEN** `kipscope diff on` runs against a fresh test server as a separate process
@@ -37,6 +37,11 @@ Each call SHALL print exactly one JSON object on one line to stdout (indented wi
 - **WHEN** `kipscope events list --table --ref nope` runs as a separate process
 - **THEN** stdout is one JSON line with `"outcome":"rejected"` and `error.code` `unknown_data_ref`, and the exit code is 1
 - **Evidence:** `apps/cli/test/process.test.ts` › "prints the reason of a failure on stderr" (table case)
+
+#### Scenario: YAML only on success
+- **WHEN** `kipscope view export nope` runs as a separate process
+- **THEN** stdout is one JSON line with `"outcome":"rejected"` and `error.code` `unknown_view`, stderr names `unknown_view`, and the exit code is 1
+- **Evidence:** `apps/cli/test/process.test.ts` › "exports a view as YAML text" (failure case)
 
 ### Requirement: Exit codes
 The exit code and `outcome` SHALL tell what happened: 0 `ok`, 1 `rejected` (the server or a lookup refused it), 2 `usage` (bad arguments; nothing sent), 3 `unreachable`, 4 `timeout`, 5 `render_error`, 6 `no_ui`, 7 `unavailable` (the server answered 5xx, e.g. `catalog_unavailable`). Origin: concept §7 (a caller must see whether a command was accepted, data is available and the UI rendered it).
@@ -347,3 +352,55 @@ A token of one `-` followed by a character other than `-` SHALL be a positional 
 - **WHEN** `events list all -snapshots -ecu:VCU`, `window rename w1 -x` and `-h` are parsed
 - **THEN** filter words `all -snapshots -ecu:VCU`; title `-x`; help
 - **Evidence:** `apps/cli/test/args.test.ts` › "keeps single-dash words as arguments"
+
+### Requirement: Value in a gap
+`value SIGNAL TIME` SHALL return the server's gap reason unchanged when the time lies in a gap: `data.value` `{"kind":"none","reason":"logger_gap"}` or `{"kind":"none","reason":"period_gap"}`, with exit code 0. Origin: D-062 (a cursor in a gap shows „no data"; concept §7: the CLI reads what the UI shows).
+
+#### Scenario: Stub logger gap
+- **WHEN** the stub source gives `testcar/Sna_800h.SPEED` the points 10 at 2026-10-01T02:00:01Z, 11 at 02:00:01.1Z and 12 at 02:00:05Z and the logger gap 02:00:02Z–02:00:04Z, and `value testcar/Sna_800h.SPEED 2026-10-01T02:00:03Z --mode step` runs
+- **THEN** it exits 0 and `data.value` is `{"kind":"none","reason":"logger_gap"}`
+- **Evidence:** `apps/cli/test/cli.test.ts` › "reads a value at a time and at a cursor" (gap case added)
+
+#### Scenario: Real dropout
+- **WHEN** `kipscope value smart451/SAS_0C2h.LWS_ANGLE "2026-10-13 11:34:36.6" | jq -c .data.value` runs against the dev server
+- **THEN** it prints `{"kind":"none","reason":"period_gap"}`
+- **Evidence:** the command
+
+### Requirement: View commands
+The CLI SHALL offer `view list`, `view save TITLE [--name N] [--note TEXT] [--overwrite]`, `view open NAME`, `view delete NAME` and `view import FILE [--name N] [--overwrite] [--open]`, each printing one JSON line; `view open` SHALL report like a command and honour `--wait`. An unreadable FILE or one over 256 KiB SHALL be a usage error. Origin: concept §7 (everything from the shell); concept §9 („… über CLI").
+
+#### Scenario: Forms
+- **WHEN** the argument lists `view save "Drive 3" --note "BLS first" --overwrite`, `view open drive-3`, `view import x.yaml --name copy --open` and `view save` (no title) are parsed
+- **THEN** the first three give the requests of design V8 (`POST /api/views {title: "Drive 3", note: "BLS first", overwrite: true}`, `POST /api/views/open {name: "drive-3"}`, an import with `name: "copy", open: true`); the last is a usage error
+- **Evidence:** `apps/cli/test/args.test.ts` › "maps the view forms"
+
+#### Scenario: Save, list, open over HTTP
+- **WHEN** against the test server with a temp state dir `window create --title Speeds`, `view save Speeds`, `window remove w1`, `view open speeds` and `view list` run
+- **THEN** each exits 0; the open's output has `accepted` true, a revision one higher than before and `data.report.missing` `[]`; `kipscope state` shows a window titled Speeds; the list holds `speeds` (no `_previous`: the workspace was empty before the open)
+- **Evidence:** `apps/cli/test/cli.test.ts` › "saves, lists and opens views"
+
+#### Scenario: Unknown view and existing name
+- **WHEN** `view open nope` runs, and `view save Speeds` runs a second time without `--overwrite`
+- **THEN** both exit 1 with `outcome` `rejected`, the first with `error.code` `unknown_view`, the second with `view_exists`
+- **Evidence:** `apps/cli/test/cli.test.ts` › "saves, lists and opens views"
+
+### Requirement: View export prints the file
+`view export NAME` SHALL print the view's YAML text unchanged to stdout and exit 0; with `--out FILE` it SHALL write the text to FILE and print one JSON line with `data {name, path, bytes}`. On failure it SHALL print the usual JSON line. Origin: Jan 2026-10-17 („yaml export"); like `events list --table` (D-058), the useful output of this form is the file itself.
+
+#### Scenario: Export round trip
+- **WHEN** `kipscope view export speeds > s.yaml` runs as a separate process, then `kipscope view import s.yaml --name speeds-copy`
+- **THEN** `s.yaml` starts with `kipscope: view` and the import exits 0 with `data.view.name` `speeds-copy`
+- **Evidence:** `apps/cli/test/process.test.ts` › "exports a view as YAML text"
+
+#### Scenario: Export to a file on real data
+- **WHEN** `kipscope view export <name> --out /tmp/v.yaml` runs against the dev server for a saved view
+- **THEN** it prints one JSON line with `data.bytes` equal to the size of `/tmp/v.yaml`, whose text equals `curl -s localhost:7310/api/views/<name>`
+- **Evidence:** the command and `cmp` of the two texts
+
+### Requirement: Link from the CLI
+`view link [--page URL]` SHALL print one JSON line with `data {url, chars}`: `url` is `<page>#view=<code>` for the open workspace, built by `viewLinkUrl` like the UI's "Copy link" (design V1, round 3), and `chars` its length; `--page` SHALL default to the server address. Origin: concept §9 („Untersuchung direkt öffnen … über CLI oder Link"); design goal "the CLI can do all of it"; round-1 finding (the UI user's tool cannot read the clipboard).
+
+#### Scenario: Link of the open workspace
+- **WHEN** against the test server `window create --title Speeds` runs, then `view link --page http://127.0.0.1:5173/`, and the code after `#view=` is decoded with `decodeViewLink`
+- **THEN** it exits 0, `data.url` starts with `http://127.0.0.1:5173/#view=`, `data.chars` equals the length of `data.url`, and the decoded document has one window titled Speeds; `args.test.ts` maps `view link` without `--page` to the `--server` address
+- **Evidence:** `apps/cli/test/cli.test.ts` › "prints a link to the open workspace"; `apps/cli/test/args.test.ts` › "maps the view forms"; equality with "Copy link": saved-views "Same link from web and CLI"

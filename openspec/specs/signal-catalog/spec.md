@@ -358,7 +358,7 @@ Pressing on an explorer row's name and moving the pointer SHALL start the app's 
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging)
 
 ### Requirement: Stable "Add to" target
-The explorer's "Add to" target SHALL be the marked window (workspace-layout "Marked window"), held by window ID, or "New window" while none is marked. It SHALL change only by the user's own act (a click on a window header, or a choice in the "Add to" select, which shows and sets the same mark), or fall back to "New window" when its window is removed. Origin: D-020 (target stays); D-022 (fallback); D-027 (marking sets the target).
+The explorer's "Add to" target SHALL be the marked window (workspace-layout "Marked window"), held by window ID, or "New window" while none is marked. It SHALL change only by the user's own act: a click that ends inside a window, or a choice in the "Add to" select, which shows and sets the same mark. It SHALL fall back to "New window" when its window is removed. The select's tooltip SHALL say that a click on a window chooses it. Origin: D-020 (target stays); D-022 (fallback); D-027 (marking sets the target); Jan 2026-10-17 („the window clicked last"), D-072 (G-1).
 
 #### Scenario: Removed target falls back
 - **WHEN** the marked window is removed, by its menu or because a move emptied it
@@ -366,17 +366,22 @@ The explorer's "Add to" target SHALL be the marked window (workspace-layout "Mar
 - **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (screenshot after dragging the marked window's only signal into another window)
 
 #### Scenario: Select and header mark the same window
-- **WHEN** the user marks `Window 1` by a click on its header, then chooses `Window 2` in the "Add to" select, then chooses "New window"
+- **WHEN** the user marks `Window 1` by a click into its plot (or its header), then chooses `Window 2` in the "Add to" select, then chooses "New window"
 - **THEN** after the click the select shows `Window 1` and Window 1 shows the mark; after the choice the mark is on Window 2 only; after "New window" no window shows the mark
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each step)
 
 ### Requirement: "Add to" target ignores other changes
-Creating, renaming or reordering windows, drops, cursor clicks, new revisions and query changes SHALL NOT change the "Add to" target. Origin: D-020 („The "Add to" target stays where the user put it"); D-027.
+Creating, renaming or reordering windows, drops, drags, new revisions and query changes SHALL NOT change the "Add to" target. A window created by an explorer add or a drop SHALL NOT become the target. Origin: D-020 („The "Add to" target stays where the user put it; creating, renaming or reordering windows does not move it"); D-027 (marking, not „follow the new window"); D-072 (G-2) (design.md). Cursor clicks inside a window now mark it (workspace-layout "Marked window", D-072 (G-1)).
 
 #### Scenario: Target survives window changes
 - **WHEN** windows `w1` and `w2` exist, the user marks `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed
 - **THEN** the target is still `w2`, and the next add (button or Enter) lands in `w2`
 - **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SOLL after creating another window; screenshot shows it in the marked window)
+
+#### Scenario: New window is not the target
+- **WHEN** no window is marked and the user adds `BS_200h.DVL` with Enter
+- **THEN** a new window shows DVL, is scrolled into view and flashes, the "Add to" select still shows "New window" and no window is marked
+- **Evidence:** UI check on smart451 (screenshot within 1 s of Enter, the select's value)
 
 ### Requirement: Add button names its target
 The add button SHALL name its "Add to" target; Enter adds to the same target. Origin: D-020; D-027.
@@ -559,3 +564,29 @@ The `+` button of a selected row, and Enter in the search while the active row i
 - **WHEN** "Add to" is a window `W` showing `CPC_168h.EAC_HV_Volt`, the user types `speed`, clicks `DVL` and presses Shift+ArrowDown once, then Enter
 - **THEN** `DVL` and `DVR` are added to `W` and the revision rose by two
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of W)
+
+### Requirement: Message period from the DBC
+A DBC signal's details SHALL carry its message's cycle time in ms from `BA_ "GenMsgCycleTime" BO_ <id> <ms>;` of the same file, or the file's `BA_DEF_DEF_` default for that attribute when the message has none; a cycle time of 0 or none SHALL leave it absent. Origin: D-062 („period from the DBC"); data fact: smart451's DBCs set it for 138 of 327 messages (h-can 47, hybrid-can 91), default 0.
+
+#### Scenario: Test DBC
+- **WHEN** `test-a.dbc` (ISO-8859-1, CRLF) declares `BA_ "GenMsgCycleTime" BO_ 2832 20;` and `BA_ "GenMsgCycleTime" BO_ 2833 0;` with default 0, and is parsed
+- **THEN** `Cyc_B10h.CYC` has `cycleMs` 20, `Evt_B11h.EVT` and `Fast_100h.SIG_A` have none; a DBC text whose default is 100 gives a message without its own value `cycleMs` 100
+- **Evidence:** `apps/server/test/dbc.test.ts` › "reads GenMsgCycleTime per message"
+
+#### Scenario: Real DBCs
+- **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.dataRef == "smart451" and .dbc.cycleMs != null)] | length, (map(select(.name == "COMBI_412h.V_ANZ"))[0].dbc.cycleMs)'` runs
+- **THEN** it prints `408` and `100`
+- **Evidence:** the `curl` command against the dev server
+
+### Requirement: Group interval from the diagnostic catalog
+A diagnostic catalog signal's details SHALL carry its group's `interval` in ms when it is a positive number with unit `ms`, `s`, `min` or `h` (e.g. `30s`); `never` or no interval SHALL leave it absent, and any other text SHALL leave it absent with a warning in that catalog load. Origin: D-062 („period from … the diagnostic catalog"); data fact: `bms-live.manifest.json` has 28 groups, 7 with an interval (`10s` 2, `30s` 4, `60s` 1), 21 `never`.
+
+#### Scenario: Test catalog
+- **WHEN** `test-diag.manifest.json` gives group `DT_Pack` the interval `10s` and `DT_Cell` `never` and is parsed; then a copy of it whose `DT_Contactor` has the interval `2 sec`
+- **THEN** `TBMS.current` has `intervalMs` 10000, the `DT_Cell` signals and `TBMS.contactor` none, and the fixture gives no warning about an interval; the copy gives one warning naming `DT_Contactor` and `2 sec`
+- **Evidence:** `apps/server/test/diag.test.ts` › "reads group intervals"
+
+#### Scenario: Real catalog
+- **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.dataRef == "smart451" and .diag.intervalMs != null)] | length, (map(select(.name == "BMS.soc"))[0].diag.intervalMs)'` runs
+- **THEN** it prints `29` and `30000`
+- **Evidence:** the `curl` command against the dev server

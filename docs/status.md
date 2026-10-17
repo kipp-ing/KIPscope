@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-16, session 6. Next to build: `add-gap-display` (spec ready, D-062). Twenty-one changes are archived and the main specs describe the running app.
+As of 2026-10-17, session 7. Next to build: `improve-events` (spec ready). Twenty-five changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -16,20 +16,23 @@ As of 2026-10-16, session 6. Next to build: `add-gap-display` (spec ready, D-062
 | Display names | [display-names](../openspec/specs/display-names/spec.md) | `kipscope.yaml` rules and renames give short names (`V_ANZ`) in the UI; full name in card and tooltips; search on both |
 | Series cache | [series-cache](../openspec/specs/series-cache/spec.md) | Power-of-two tiles kept in tab memory (LRU, 4 M values); zoom/pan back without a request |
 | Series queries | [series-query](../openspec/specs/series-query/spec.md) | Raw points or min/mean/max buckets by zoom level; SNA as `null`; verified on 10 h at 5 ms |
-| Workspace | [workspace-state](../openspec/specs/workspace-state/spec.md) | Command-driven state with revisions, live push and render acknowledgement |
+| Data gaps | [data-gaps](../openspec/specs/data-gaps/spec.md) | Lines break at logger gaps (≥ 2 s) and after more than 3 periods (DBC, diag catalog or measured); faint grey band; cursors show `no data`; `/api/gaps`, rechecked every 5 min |
+| Workspace | [workspace-state](../openspec/specs/workspace-state/spec.md) | Command-driven state with revisions, live push and render acknowledgement; survives a restart (`.kipscope/workspace.json`) |
+| Saved views | [saved-views](../openspec/specs/saved-views/spec.md) | Named views in `.kipscope/views/*.yaml`, title in the top row, YAML export and import, self-contained `#view=` links, `?view=<name>`, CLI `view …` |
 | Chart windows | [timeseries-window](../openspec/specs/timeseries-window/spec.md) | uPlot windows, one axis per unit (max 4), linked zoom, history, drag and drop, wheel and keys |
 | Time navigation | [time-navigation](../openspec/specs/time-navigation/spec.md) | "Go to" with times, ranges and durations; span presets; zoom and pan keys |
 | Cursors | [cursors](../openspec/specs/cursors/spec.md) | A and B in every window; exact values, Δ and Δt in the legend |
 | Live cursor | [live-cursor](../openspec/specs/live-cursor/spec.md) | L follows the mouse in every window: L column in legends and values window, nearest curve within 16 px highlighted with a value label; grey L line |
 | Values window | [values-window](../openspec/specs/values-window/spec.md) | Many signals at the cursors, no plot |
 | Number format | [number-format](../openspec/specs/number-format/spec.md) | 3 (or 4) significant digits with SI prefixes everywhere people read numbers |
-| Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window |
+| Layout | [workspace-layout](../openspec/specs/workspace-layout/spec.md) | Collapsible sidebar, tiled windows, compact headers, marked "Add to" window (the window last clicked) |
+| Guidance | [guidance](../openspec/specs/guidance/spec.md) | Reveal and flash where an add lands, tooltips from one hints table, next-step hints, help panel (manual, keys; `?`), "Start here" card |
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
 | Footer | [app-footer](../openspec/specs/app-footer/spec.md) | Permanent bottom bar: status, measurement info, source/catalog/zone/build items, `KIPscope · kipp.ing · AAL` at the far right |
 | Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language). Decisions D-001 … D-066: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance). Decisions D-001 … D-072: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -65,11 +68,15 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 ## Session 7 in brief
 
 - Built and archived `add-multi-select` (D-065, D-066) in three rounds plus a lead fix after Jan's check (a list click focuses the search, so Shift+Arrow works without typing first). No text selection in the explorer list; Ctrl/Cmd and Shift selection; a selection drags and adds as one, overflowing into new windows by the 4-unit limit. Jan: „good", then „now it works".
+- Built and archived `add-gap-display` (D-068, implementing D-062), with G9 after Jan's report of points turned into dots: a chunk backfilled after the gap info left a stale logger gap; gap info is now rechecked every 5 min.
+- Built and archived `add-saved-views` (D-069 … D-071) in three rounds: the workspace survives a restart, named views, YAML export and import, `#view=` links, CLI `view`; top-row overflow menu.
+- Built and archived `add-guidance` (D-072) in two rounds plus lead fixes: the window last clicked is the "Add to" target, reveal and flash, hints, help panel with `docs/manual.md` and keys, "Start here" card.
+- Crash gate `pnpm smoke` (headless Chrome against the dev server and a preview) is now the last step of every app round. Jan on the three changes: „its good".
 
 ## Next
 
-1. Build `add-gap-display` (running 2026-10-17); spec `improve-events`, `add-guidance`, `add-saved-views` in parallel (persona test).
-2. Persistence: save and load, snapshots, templates, undo (concept §8). The workspace still lives in server memory.
+1. Build `improve-events` (spec ready, persona test).
+2. Rest of persistence (concept §8): snapshots, templates, undo. Save and load are done (D-070).
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
 4. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
 5. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): split the data stream into sessions (charging, driving, idle; definitions in D-067); expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
@@ -77,8 +84,6 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 ## Known limitations
 
 - Bucket mean is arithmetic, not time-weighted (concept §13). It now shows only in the plot and in a cursor's live value while its line is dragged in a zoomed-out view.
-- Workspace lives in server memory and is lost on restart; the dev server restarts on every server or shared code change (`--watch`). Rebuild demos with the CLI.
-- Until `add-gap-display` lands, lines connect across recording pauses (D-062 supersedes D-009).
 - The 1000×557 part of the events count check ran in a 996×553 iframe stand-in only.
 - Two signals at the same value on different axes overlap exactly.
 - Tick labels may thin out to one label on very narrow plots. A header range below 1 s shows equal start and end (ms precision).

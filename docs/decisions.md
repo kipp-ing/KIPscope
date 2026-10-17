@@ -4,6 +4,41 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-072: Add target, reveal and help (2026-10-17)
+
+From the archived change `add-guidance` (G-1 … G-4); details there.
+
+- **Decision:** G-1 (a): any click that ends inside a window marks it as the "Add to" target (header, plot, legend, values table, controls); drags and drops mark nothing; the mark is a 2 px accent frame `#0284c7` plus the "Add to" pill (D-055's 1 px `#7dd3fc` frame retired). G-2 (a): a window created by an add does not become the target; it is revealed and flashes once (D-020, D-027 stand). G-3 (a): help is a non-modal 360 px panel on the right with the tabs *Manual* (`docs/manual.md`, bundled) and *Keys* (from `shortcuts.ts`), opened by "?" at the end of the top row or the `?` key. G-4 (a): a "Start here" card at the top of the window list until dismissed (per browser), always the empty-workspace state. Spec owner's defaults (Jan can veto): next-step hints `Shift+click sets B` and `Diff shows Δ and Δt` in the readout row, each retired once used; reveal and flash for `FLASH_MS` 1,200 ms on windows this tab creates and explorer-add targets, not on drops onto a window or CLI windows; tooltips stay native `title` texts from one hints table (`<Name>: <what it does> · <key>`).
+- **Why:** Jan (2026-10-17) on the persona findings: „3. the window the signal goes to maybe could be the window clicked last and (new) outline highlighted or so. 4 yes. we need a manual and hover explanations.“ Then: „all recommended“.
+
+## D-071: Top-row overflow rule (2026-10-17)
+
+From the archived change `add-saved-views` (round 3), first used by `add-guidance`.
+
+- **Decision:** The top row's end holds the overflow items, least-used first: Digits, "+ Values window", Help ("?"). Below one measured container width they all move together into a "⋯" menu (the row's last item, keyboard-reachable; CSS container query, the same controls rendered in the menu). Any later control at the end of the row is an overflow item unless its change says otherwise, and its change re-measures the threshold and writes the widths into the comment in `bar/bar.css`. Before that the title shrinks to `min(n, 10)ch`, long labels hide, and Views shows only its icon.
+- **Why:** The lead's decision; Jan called his own hints ideas („do not take my words as hard fact“). The row must not wrap at 1000×557 with the sidebar open and a 120-character title.
+
+## D-070: Saved views conventions (2026-10-17)
+
+From the archived change `add-saved-views`; details there.
+
+- **Decision:** One versioned view document (`kipscope: view`, `version: 1`; YAML on disk, JSON read as well, JSON in links): signals by full ID, absolute UTC times to the ns, no measured data and no credentials. Open replaces the workspace as one command `view.open` with a report of missing and skipped signals; IDs continue; the replaced workspace is kept as "Before last open". Views live in `.kipscope/views/<name>.yaml` (names `[a-z0-9-]` ≤ 63, derived from the title); the workspace state file `.kipscope/workspace.json` is written 500 ms after the last change and on SIGTERM and restored at start with its revision. Links: "Copy link" gives the self-contained `#view=` (deflate-raw, base64url, ≤ 8,192 characters); `?view=<name>` opens a saved view (bookmarks). CLI `view list|save|open|delete|export|import|link`. Jan's answers: S-1 (a) `.kipscope/` in the repo root, gitignored, `KIPSCOPE_STATE_DIR` moves it; S-2 (a) both link forms, the button gives `#view=`; S-4 (a) open without confirmation. Spec owner's defaults (Jan can veto): "Save" in place for a named open view (`Ctrl+S`/`Cmd+S`), "Save as…"; `view.open` with `name` refused on `POST /api/commands`; an "opened elsewhere" notice in other tabs.
+- **Why:** Jan (2026-10-17): „5 yes saving the view somehow necessary. url? shared link? yaml export. we need something.“ The dev server's restarts had dropped his 17 windows; in the persona test the boss could not hand a view on. Jan: „all recommended“.
+
+## D-069: A restart restores the whole workspace (2026-10-17)
+
+From the archived change `add-saved-views` (S-3 (b)).
+
+- **Decision:** Supersedes D-051's „commands win until restart“; the rest of D-051 stands. A restart restores the whole workspace, measurement included. The project file's `measurement` section (like its events-line signals) seeds only a fresh workspace (no state file, or one moved to `workspace.bad.json`). A restore never marks the open view modified.
+- **Why:** A restart should be invisible; otherwise a measurement set by command, or opened with a view, silently changes back. Jan: „all recommended“.
+
+## D-068: Gap display conventions (2026-10-17)
+
+From the archived change `add-gap-display`, implementing D-062; details there.
+
+- **Decision:** Logger gap = two consecutive rows of a data ref (any signal) ≥ 2 s apart, found exactly from per-second minimum and maximum row times. Period = DBC `GenMsgCycleTime` > 0, else the diag group `interval`, else the median spacing of the first 1,001 rows if ≥ 100 spacings and ≤ 5 % of them longer than 3 medians (smart451: 408 / 29 / 94, 22 without). Split = a logger gap between two points, or more than 3 periods; a step holds at most one period and never into a logger gap; buckets split only on a certain gap (empty stretch > 3 P, or a logger gap between their drawn points). `GET /api/gaps`; cursor reasons `logger_gap` / `period_gap`, cell text `no data`, Δ `—`; band `--gap-fill` `#f1f5f9` under grid and curves. G9: a logger gap that holds a drawn sample splits nothing and draws no band; the server checks each data ref's row count every 5 min and recomputes after new rows (backfill included); the web refetches every 5 min.
+- **Why:** D-062. G9 after Jan's report (2026-10-17): „same values are cluttered as dots, which should have a hüllkurve instead? looks strange. I get more data when i zoom in“: a chunk backfilled after the gap info was computed left a stale logger gap that split every point.
+
 ## D-067: Session kinds (2026-10-17)
 
 - **Decision:** For the later split of the data stream into sessions: a **driving** session covers at least 500 m driven; a **charging** session at least 0.5 kWh charged (not measured yet); everything else is **idle**.

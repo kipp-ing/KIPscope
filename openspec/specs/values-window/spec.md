@@ -94,7 +94,7 @@ A raw value (a point exactly at the cursor) SHALL be shown plain, an interpolate
 - **Evidence:** `apps/web/test/values.test.ts` › "formats raw, interpolated and held values with their tags"; UI check (screenshot with the tooltip)
 
 ### Requirement: SNA and missing values at a cursor
-A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, never as a number. Where no value can be evaluated without inventing one, `—` SHALL be shown with the reason as tooltip: before the first point, after the last point, or (in "linear") the next point is SNA. Origin: D-010 (SNA never shown as valid), D-016 (null = SNA); concept §5 („Ohne verfügbare Messgrundlage darf kein Wert erfunden werden").
+A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, never as a number. A value inside a gap SHALL be shown as `no data` in the muted style with the gap as tooltip: the logger recorded nothing (`logger_gap`), or more than 3 periods without a point (`period_gap`). Where no other value can be evaluated without inventing one, `—` SHALL be shown with the reason as tooltip: before the first point, after the last point, or (in "linear") the next point is SNA. Origin: D-010 (SNA never shown as valid), D-016 (null = SNA); concept §5 („Ohne verfügbare Messgrundlage darf kein Wert erfunden werden"); `no data`: D-062.
 
 #### Scenario: SNA run
 - **WHEN** the window lists V_ANZ and A is set to `2026-10-13T09:57:00Z` (between the SNA points at 09:56:59.937 and 09:57:00.037 UTC)
@@ -110,6 +110,11 @@ A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, neve
 - **WHEN** A is set to `2026-10-11T12:00:00Z`, before V_ANZ's first point (12:34:24.824Z)
 - **THEN** the row reads `—` with tooltip "before the first point"
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "formats SNA and missing values without a number"
+
+#### Scenario: Inside gaps
+- **WHEN** the window lists `CPC_448h.PTC_HV_Volt` and `SAS_0C2h.LWS_ANGLE`, A is set to `2026-10-13T09:27:55Z` (logger gap 09:27:53.936–09:27:56.982), in "linear" and in "hold"; then to `2026-10-13T09:34:36.6Z` (LWS_ANGLE dropout)
+- **THEN** both rows read `no data` in both modes with tooltip "no data: the logger recorded nothing"; then both rows read `no data` with tooltip "no data: more than 3 periods without a point" in both modes (PTC_HV_Volt, 100 ms, has nothing from 09:34:36.162 to 09:34:37.051)
+- **Evidence:** UI check (screenshots); `apps/web/test/values.test.ts` › "formats gaps as no data"
 
 ### Requirement: Diff columns
 While B is on or diff mode is on, each row SHALL show the value at B next to A's, and the header B's time; diff mode adds Δ = B−A to each row and Δt = B−A, with sign, to the header. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (Δt and ΔWert, B−A); texts: D-026; B without Diff: D-031.

@@ -176,11 +176,11 @@ Each window's header SHALL end with a "⋯" button that opens a menu with "Renam
 - **Evidence:** UI check (revision before and after)
 
 ### Requirement: Marked window
-The user SHALL mark a window by a click on its header outside its controls, title included, or by choosing it in the explorer's "Add to" select; at most one window is marked. The marked window SHALL show its frame in the accent ring colour and an "Add to" pill (accent soft fill, accent ink) after its title; the pill SHALL NOT be truncated, SHALL NOT move the header's controls, and the header's truncation order stays (range first, then the title). Explorer adds by Enter or a row's add button SHALL go to it, or to a new window while none is marked. Origin: D-027 („the user marks a window, and adds go there"); look: D-055 (mock: target window framed `#7dd3fc` with an "Add to" pill in `#e0f2fe` / `#075985`), which replaces the accent bar and accent title.
+The user SHALL mark a window by a click that ends inside it, anywhere: header, title, plot (where the click also places cursor A or B), legend, values table or a control. The user can also choose it in the explorer's "Add to" select. At most one window is marked. A drag that starts in one window and ends in another, and a drop, SHALL NOT mark. The marked window SHALL show its frame 2 px wide in the accent (`#0284c7`: 1 px border plus a 1 px outer ring, so nothing moves) and an "Add to" pill (accent soft fill, accent ink) after its title. The pill SHALL NOT be truncated and SHALL NOT move the header's controls, and the header's truncation order stays (range first, then the title). Explorer adds by Enter or a row's add button SHALL go to the marked window, or to a new window while none is marked. Origin: D-027 („the user marks a window, and adds go there"); Jan 2026-10-17 („the window the signal goes to maybe could be the window clicked last and (new) outline highlighted"), D-072 (G-1) (design.md); pill: D-055 (mock pill `#e0f2fe` / `#075985`); frame colour changed from the mock's `#7dd3fc`, D-072 (G-1).
 
 #### Scenario: Mark and add
 - **WHEN** the six-window setup is shown, the user clicks the empty part of window 4's header, then presses `/`, types `T_SOLL` and presses Enter
-- **THEN** window 4's border colour is `rgb(125, 211, 252)` and its header shows the "Add to" pill with background `rgb(224, 242, 254)` after the title, no other window shows either, `AC_A1.T_SOLL` appears in window 4, and the number of windows is still six
+- **THEN** window 4's border colour is `rgb(2, 132, 199)` and its `box-shadow` contains `rgb(2, 132, 199) 0px 0px 0px 1px`; its header shows the "Add to" pill with background `rgb(224, 242, 254)` after the title; no other window shows either; `AC_A1.T_SOLL` appears in window 4; the number of windows is still six
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the click and after Enter, computed values)
 
 #### Scenario: Values window marked
@@ -193,10 +193,20 @@ The user SHALL mark a window by a click on its header outside its controls, titl
 - **THEN** each lands in its own new window, and neither new window is marked
 - **Evidence:** UI check on smart451 (screenshot after the second Enter)
 
+#### Scenario: A click anywhere marks
+- **WHEN** window 2 is marked and the user clicks into window 3's plot, then into window 5's legend row, then window 6's mode select
+- **THEN** after the plot click window 3 is the only marked window, cursor A moved to the click, and the "Add to" select shows window 3; after the legend click window 5; after the select window 6
+- **Evidence:** UI check on smart451 (screenshot after each click, the select's value)
+
 #### Scenario: Other gestures do not mark
-- **WHEN** window 2 is marked and the user clicks into window 3's plot (cursor A), drags an explorer row onto window 3, changes window 3's mode select and opens and closes its "⋯" menu
+- **WHEN** window 2 is marked and the user scrolls the list, presses `+` and `←` with the pointer over window 3, drags a legend row from window 3 onto window 4, and drags an explorer row onto window 5
 - **THEN** window 2 is still the only marked window and the "Add to" select still shows it
 - **Evidence:** UI check on smart451 (screenshot after the last step)
+
+#### Scenario: Click target helper
+- **WHEN** `markTarget` gets a fake element whose `closest("[data-window-id]")` returns an element with `data-window-id` `w7`, one whose `closest` returns null, and null
+- **THEN** it returns `w7`, undefined, undefined
+- **Evidence:** `apps/web/test/reveal.test.ts` › "finds the window of a click"
 
 #### Scenario: Refused add keeps the target
 - **WHEN** the marked window shows four units and the user adds `MS_312h.DNMOT` with Enter
