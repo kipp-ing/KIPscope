@@ -14,12 +14,12 @@ const names = (signals: SignalInfo[], query: string) =>
 describe("searchSignals", () => {
   it("matches parts of name, description and unit case-insensitively", () => {
     const catalog = [
-      sig("c", "COMBI_412h.V_ANZ", { unit: "km/h" }),
+      sig("c", "ICL_3A2h.SPEED_DISP", { unit: "km/h" }),
       sig("c", "Fast_100h.SIG_B", { description: "Öltemperatur Getriebe" }),
       sig("c", "Many_700h.S0001", { unit: "kPa", description: "Reifendruck vorn links" }),
     ];
-    expect(names(catalog, "anz")).toEqual(["COMBI_412h.V_ANZ"]);
-    expect(names(catalog, "ANZ")).toEqual(["COMBI_412h.V_ANZ"]);
+    expect(names(catalog, "disp")).toEqual(["ICL_3A2h.SPEED_DISP"]);
+    expect(names(catalog, "DISP")).toEqual(["ICL_3A2h.SPEED_DISP"]);
     expect(names(catalog, "ÖLTEMP")).toEqual(["Fast_100h.SIG_B"]);
     expect(names(catalog, "kpa")).toEqual(["Many_700h.S0001"]);
     expect(names(catalog, "druck vorn")).toEqual(["Many_700h.S0001"]);
@@ -37,28 +37,28 @@ describe("searchSignals", () => {
 
   it("ranks exact before prefix before name substring before other fields", () => {
     const catalog = [
-      sig("c", "A_100h.DIFF_V_ANZ"),
-      sig("c", "B_200h.SPEED", { description: "copy of V_ANZ" }),
-      sig("c", "C_300h.V_ANZ_RAW"),
-      sig("c", "COMBI_412h.V_ANZ"),
+      sig("c", "A_100h.DIFF_SPEED_DISP"),
+      sig("c", "B_200h.SPEED", { description: "copy of SPEED_DISP" }),
+      sig("c", "C_300h.SPEED_DISP_RAW"),
+      sig("c", "ICL_3A2h.SPEED_DISP"),
     ];
-    const result = search(catalog, "v_anz");
+    const result = search(catalog, "speed_disp");
     expect(result.map((m) => m.signal.name)).toEqual([
-      "COMBI_412h.V_ANZ",
-      "C_300h.V_ANZ_RAW",
-      "A_100h.DIFF_V_ANZ",
+      "ICL_3A2h.SPEED_DISP",
+      "C_300h.SPEED_DISP_RAW",
+      "A_100h.DIFF_SPEED_DISP",
       "B_200h.SPEED",
     ]);
     expect(result.map((m) => m.tier)).toEqual([0, 1, 2, 3]);
   });
 
   it("treats the part after the first dot as the signal name", () => {
-    const catalog = [sig("c", "COMBI_412h.V_ANZ")];
-    expect(search(catalog, "combi_412h.v_anz")[0]?.tier).toBe(0);
-    expect(search(catalog, "v_anz")[0]?.tier).toBe(0);
-    expect(search(catalog, "combi")[0]?.tier).toBe(1);
-    expect(search(catalog, "v_a")[0]?.tier).toBe(1);
-    expect(search(catalog, "anz")[0]?.tier).toBe(2);
+    const catalog = [sig("c", "ICL_3A2h.SPEED_DISP")];
+    expect(search(catalog, "icl_3a2h.speed_disp")[0]?.tier).toBe(0);
+    expect(search(catalog, "speed_disp")[0]?.tier).toBe(0);
+    expect(search(catalog, "icl")[0]?.tier).toBe(1);
+    expect(search(catalog, "spe")[0]?.tier).toBe(1);
+    expect(search(catalog, "disp")[0]?.tier).toBe(2);
   });
 
   it("keeps catalog order within a tier and for an empty query", () => {
@@ -84,11 +84,11 @@ describe("searchSignals", () => {
   });
 
   it("returns merged highlight ranges for name, unit and description", () => {
-    const ptc = sig("smart451", "CPC_448h.PTC_HV_Volt", { unit: "V" });
+    const ptc = sig("smart451", "DCU_2B8h.HTR_HV_Volt", { unit: "V" });
     expect(search([ptc], "volt")[0]?.name).toEqual([[16, 20]]);
-    // v_a covers [11,14), anz covers [13,16): overlapping ranges merge.
-    const anz = sig("smart451", "COMBI_412h.V_ANZ");
-    expect(search([anz], "v_a anz")[0]?.name).toEqual([[11, 16]]);
+    // speed_d covers [9,16), d_disp covers [13,19): overlapping ranges merge.
+    const disp = sig("smart451", "ICL_3A2h.SPEED_DISP");
+    expect(search([disp], "speed_d d_disp")[0]?.name).toEqual([[9, 19]]);
     // Unit and description, every non-overlapping occurrence.
     const speed = sig("c", "X.VELOCITY", { unit: "km/h", description: "Indicated speed" });
     const m = search([speed], "km ed")[0];
@@ -129,27 +129,27 @@ describe("searchSignals", () => {
 
   it("ranks the shown name like the name", () => {
     const catalog = [
-      sig("c", "COMBI_412h.V_ANZ", { displayName: "Speed" }),
+      sig("c", "ICL_3A2h.SPEED_DISP", { displayName: "Speed" }),
       sig("c", "B_200h.SPEED_RAW"),
-      sig("c", "C_300h.X", { displayName: "V_ANZ (C)" }),
+      sig("c", "C_300h.X", { displayName: "TORQUE (C)" }),
     ];
     const tiers = (q: string) =>
       Object.fromEntries(search(catalog, q).map((m) => [m.signal.name, m.tier]));
-    expect(tiers("speed")).toEqual({ "COMBI_412h.V_ANZ": 0, "B_200h.SPEED_RAW": 1 });
-    expect(tiers("spe")).toEqual({ "COMBI_412h.V_ANZ": 1, "B_200h.SPEED_RAW": 1 });
+    expect(tiers("speed")).toEqual({ "ICL_3A2h.SPEED_DISP": 0, "B_200h.SPEED_RAW": 1 });
+    expect(tiers("spe")).toEqual({ "ICL_3A2h.SPEED_DISP": 1, "B_200h.SPEED_RAW": 1 });
     expect(tiers("(c)")).toEqual({ "C_300h.X": 2 });
     // The full name still finds the renamed signal.
-    expect(tiers("combi")).toEqual({ "COMBI_412h.V_ANZ": 1 });
-    expect(names(catalog, "combi")).toEqual(["COMBI_412h.V_ANZ"]);
+    expect(tiers("icl")).toEqual({ "ICL_3A2h.SPEED_DISP": 1 });
+    expect(names(catalog, "icl")).toEqual(["ICL_3A2h.SPEED_DISP"]);
   });
 
   it("returns highlight ranges in the shown name", () => {
-    const ptc = sig("smart451", "CPC_448h.PTC_HV_Volt", { displayName: "PTC_HV_Volt" });
+    const ptc = sig("smart451", "DCU_2B8h.HTR_HV_Volt", { displayName: "HTR_HV_Volt" });
     const m = search([ptc], "volt")[0];
     expect(m?.shown).toEqual([[7, 11]]);
     expect(m?.name).toEqual([[16, 20]]);
     // Without displayName the shown ranges equal the name ranges.
-    const plain = sig("smart451", "CPC_448h.PTC_HV_Volt");
+    const plain = sig("smart451", "DCU_2B8h.HTR_HV_Volt");
     const p = search([plain], "volt")[0];
     expect(p?.shown).toEqual(p?.name);
     // Empty query: no ranges.

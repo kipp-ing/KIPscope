@@ -6,12 +6,12 @@ Loaded series data SHALL stay in the tab's memory until the tab closes or reload
 #### Scenario: Zoom back to a previous view
 - **WHEN** a window shows a signal on view A, zooms to view B, both loads complete, and the window returns to view A (history back or the same range again)
 - **THEN** no further series request is sent and the signal's state for view A is complete at once, with no loading state in between
-- **Evidence:** `apps/web/test/loader.test.ts` › "draws a previous view again without a request"; UI check: window with `COMBI_412h.V_ANZ` on its full extent, rectangle-zoom into one hour, wait for the curve, Backspace; the network log (filtered to `/api/series`) shows no request after the Backspace and the overview curve is drawn without a loading mark
+- **Evidence:** `apps/web/test/loader.test.ts` › "draws a previous view again without a request"; UI check: window with `ICL_3A2h.SPEED_DISP` on its full extent, rectangle-zoom into one hour, wait for the curve, Backspace; the network log (filtered to `/api/series`) shows no request after the Backspace and the overview curve is drawn without a loading mark
 
 #### Scenario: Re-add a removed signal
 - **WHEN** a signal is removed from a window after its load completed and is added to the same window again on the same range
 - **THEN** no series request is sent for it and it is drawn at once
-- **Evidence:** `apps/web/test/loader.test.ts` › "serves a re-added signal from the cache"; UI check: remove `COMBI_412h.V_ANZ` from a window and drop it back in; the network log shows no `/api/series` request for it
+- **Evidence:** `apps/web/test/loader.test.ts` › "serves a re-added signal from the cache"; UI check: remove `ICL_3A2h.SPEED_DISP` from a window and drop it back in; the network log shows no `/api/series` request for it
 
 ### Requirement: Fixed bucket widths and tiles
 A view SHALL load its data as tiles of 256 buckets, each starting at a multiple of its span; the bucket width is the largest power of two ns at or below `ceil((to − from) / (target − 1))` (at least 1 ns), giving `target − 1` to 2 × (`target` − 1) buckets. A view SHALL use every tile that touches its range. Origin: necessary consequence of D-037 (3) (exact ranges are never reused); snapping down: D-038 („never coarser than before the cache").
@@ -37,7 +37,7 @@ A view SHALL request only tiles that are neither cached nor already being loaded
 #### Scenario: Pan by half a view
 - **WHEN** that view has loaded and the window pans to `[524,288,000, 1,572,864,000)` ns
 - **THEN** exactly one more request is sent, for `from` 1,073,741,824, `to` 1,610,612,736 and target 513
-- **Evidence:** `apps/web/test/loader.test.ts` › "requests only the tiles a pan uncovers"; UI check: pan a loaded V_ANZ window by a few horizontal swipes back and forth; the network log shows requests only while new time comes into view
+- **Evidence:** `apps/web/test/loader.test.ts` › "requests only the tiles a pan uncovers"; UI check: pan a loaded SPEED_DISP window by a few horizontal swipes back and forth; the network log shows requests only while new time comes into view
 
 ### Requirement: Raw tiles serve finer zooms
 A tile that was loaded as raw points SHALL serve every finer bucket width inside its time span, without a request. Origin: necessary consequence of D-037 (3) and series-query "Raw points": raw points are the unmodified data, valid at any zoom where raw points are shown.
@@ -45,7 +45,7 @@ A tile that was loaded as raw points SHALL serve every finer bucket width inside
 #### Scenario: Zoom further into raw data
 - **WHEN** a view's tiles came back as raw points and the window zooms in by a factor of 4 inside that view
 - **THEN** no request is sent and the new view shows exactly the raw points of its range, with the nearest point before and after as edge neighbours
-- **Evidence:** `apps/web/test/loader.test.ts` › "zooms into raw tiles without a request"; `apps/web/test/tiles.test.ts` › "derives a finer raw tile with its edge neighbours"; UI check: zoom V_ANZ to 2026-10-13T09:56:59Z – 09:57:01Z (raw), wait, then Ctrl+wheel-zoom in twice; no `/api/series` request in the network log
+- **Evidence:** `apps/web/test/loader.test.ts` › "zooms into raw tiles without a request"; `apps/web/test/tiles.test.ts` › "derives a finer raw tile with its edge neighbours"; UI check: zoom SPEED_DISP to 2026-10-13T09:56:59Z – 09:57:01Z (raw), wait, then Ctrl+wheel-zoom in twice; no `/api/series` request in the network log
 
 ### Requirement: Same drawn data as without cache
 A view SHALL draw the raw points or complete buckets its tiles returned: raw inside its range with the nearest outside points as edge neighbours when all touched tiles are raw, else the buckets touching its range, raw tiles aggregated by the series-query bucket rules. SNA stays SNA. Origin: concept §2 („für Zeichnung und Cursor nutzbar"); D-032/D-034 (the live cursor reads the drawn data); D-010.

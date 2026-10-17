@@ -25,7 +25,7 @@ Y-axis ticks SHALL use one SI prefix per axis, chosen from the largest absolute 
 - **Evidence:** `packages/shared/test/numfmt.test.ts` › "formats axis ticks with one prefix per axis"
 
 #### Scenario: Narrow voltage range
-- **WHEN** a window shows `CPC_448h.PTC_HV_Volt` from 2026-10-13T13:08:00Z to 13:08:03Z
+- **WHEN** a window shows `DCU_2B8h.HTR_HV_Volt` from 2026-10-13T13:08:00Z to 13:08:03Z
 - **THEN** the axis labels are distinct, all with the same number of decimals, and the axis title reads `V` or a prefixed `V` matching the labels
 - **Evidence:** UI check (zoomed screenshot of the axis)
 
@@ -59,7 +59,7 @@ A mouse wheel event in pixel mode SHALL move by a fixed step whatever its delta:
 While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-click reset, history back, "Reset", navigation keys, "Go to" and span presets in or for any window SHALL change the time range of all windows; the other windows SHALL show the new range at the latest 1 s after the last zoom or pan input. While unlinked, each window SHALL keep its own range. Origin: D-017 („gemeinsamer zoom standard aktiv abschaltbar“); D-027 (the new navigation follows the same rule).
 
 #### Scenario: Zoom one of two linked windows
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
 - **THEN** within 1 s window 2's header shows the same range as window 1 and its curve is reloaded for it
 - **Evidence:** UI check (screenshot of both headers); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
 
@@ -72,12 +72,12 @@ While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-cl
 The plot crosshair SHALL be hidden when the pointer leaves the plot and right after every change of the window's shown range, whatever caused it (wheel zoom, wheel pan, drag-select, double-click reset, navigation keys, "Go to", presets, "Back", "Reset", a linked window or the CLI), until the pointer moves over the plot again. Origin: lead decision (rounds.md round 5 of `improve-window-workflow`): a crosshair left at the old pixel after a zoom points at a wrong time; keys and typed ranges change the range under a resting pointer too (D-027).
 
 #### Scenario: Leave and zoom
-- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), then leaves the plot; then the user returns, Ctrl+wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
+- **WHEN** the pointer hovers a SPEED_DISP plot (crosshair visible), then leaves the plot; then the user returns, Ctrl+wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
 - **THEN** the crosshair is gone after leaving, and after each of the wheel zoom, the drag-select and the double-click reset until the pointer moves
 - **Evidence:** UI check (screenshots after leaving and after each zoom commit)
 
 #### Scenario: Pan and Zoom out
-- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), the user presses `→` without moving, then moves, then presses `-`
+- **WHEN** the pointer hovers a SPEED_DISP plot (crosshair visible), the user presses `→` without moving, then moves, then presses `-`
 - **THEN** the crosshair is gone after `→` until the pointer moves, and gone again after `-`
 - **Evidence:** UI check (screenshots after each key)
 
@@ -103,7 +103,7 @@ With Ctrl or Shift held, a wheel event over a plot SHALL zoom the time span cent
 Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, "Go to" and span preset SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. Backspace SHALL act on the window under the pointer, else the window zoomed last, and SHALL do nothing while a text field has focus. "Back" SHALL be disabled when there is no previous range. Origin: D-018 ("zoom history back"); D-025 (one "Back", in the bar); D-027 (the new navigation is undone the same way).
 
 #### Scenario: Two steps back
-- **WHEN** the user zooms a V_ANZ window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
+- **WHEN** the user zooms a SPEED_DISP window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
 - **THEN** the window shows the morning range, then the full extent, and the bar's "Back" is disabled
 - **Evidence:** UI check (screenshots of the header after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
 
@@ -116,7 +116,7 @@ Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset
 Wheel zoom, pan, navigation keys, "Go to", presets, reset and back SHALL keep the window range within 1900-01-01T00:00:00Z … 2262-04-11T00:00:00Z. Origin: necessary consequence of the bug "window range 1036-01-11 … 3937-05-09" (D-021).
 
 #### Scenario: Zoom out forty times
-- **WHEN** a window shows `CPC_448h.PTC_HV_Volt` and the user presses `-` 40 times with the pointer over it
+- **WHEN** a window shows `DCU_2B8h.HTR_HV_Volt` and the user presses `-` 40 times with the pointer over it
 - **THEN** the header range never shows a year before 1900 or after 2262, no command is rejected, and the signal is still drawn (as an aggregated point or short curve)
 - **Evidence:** UI check (screenshot of the header and the message area); `apps/web/test/zoom.test.ts` › "clamps ranges into the time bounds"
 
@@ -124,8 +124,8 @@ Wheel zoom, pan, navigation keys, "Go to", presets, reset and back SHALL keep th
 Axis titles SHALL be horizontal text above their axis, showing the unit exactly as in the signal metadata, preceded by the axis' SI prefix when its ticks are scaled ("Axis tick numbers"), and SHALL NOT overlap or cut tick labels; tick labels SHALL NOT be cut. Origin: bug "°C garbled in the rotated axis title" (feedback 2026-10-14); prefix: D-026.
 
 #### Scenario: Degree sign
-- **WHEN** a window shows only `AC_A1.T_SOLL`
-- **THEN** the left axis title reads `°C` in T_SOLL's colour, and the tick labels are fully visible
+- **WHEN** a window shows only `CLIM_A1.T_SET`
+- **THEN** the left axis title reads `°C` in T_SET's colour, and the tick labels are fully visible
 - **Evidence:** UI check (zoomed screenshot of the axis)
 
 ### Requirement: Option bar
@@ -140,7 +140,7 @@ Above the windows, an option bar SHALL stay visible while the window list scroll
 The bar's "Back" SHALL step back the zoom history of its target window, and "Reset" SHALL set the target's range to the union of its signals' extents. They are the only Back and Reset controls (D-025). The target is the window zoomed last, else the first timeseries window. While linked, "Reset" SHALL use the signals of all timeseries windows. While unlinked, both tooltips SHALL name the target. "Back" SHALL be disabled when the target has no history. Origin: D-023 (zoom back / reset zoom in the bar); D-024 (target while unlinked); D-025 („one "Back" and one "Reset"").
 
 #### Scenario: Linked reset
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, both at 2026-10-13T13:08:00Z–13:08:03Z, and the user clicks "Reset"
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, both at 2026-10-13T13:08:00Z–13:08:03Z, and the user clicks "Reset"
 - **THEN** both windows show the union of both signals' extents (earliest first point to just after the latest last point), and "Back" returns both to 13:08:00Z–13:08:03Z
 - **Evidence:** `apps/web/test/bar.test.ts` › "resets to the union of all timeseries extents while linked"; UI check (screenshots of both headers)
 
@@ -153,7 +153,7 @@ The bar's "Back" SHALL step back the zoom history of its target window, and "Res
 Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal at the pointer. Values are read at the cursors, in the values window and in the chart readout (cursors "Chart readout"), and neither changes while the pointer moves. Origin: D-023 („no value readout on hover"); D-027 (readout at the cursors on the chart).
 
 #### Scenario: Hover a speed plot
-- **WHEN** A is on, the pointer moves over a window showing `COMBI_412h.V_ANZ` and `BS_200h.DVL`
+- **WHEN** A is on, the pointer moves over a window showing `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL`
 - **THEN** a crosshair follows the pointer, and no signal value appears or changes anywhere on the page apart from axis ticks, values-window cells and readout cells, which stay as they were before the pointer moved
 - **Evidence:** UI check (two screenshots at different pointer positions)
 
@@ -161,7 +161,7 @@ Hovering a plot SHALL show the crosshair only: no value or tooltip of any signal
 Signals with the same unit SHALL share one y scale and axis; each unit SHALL have its own. A signal without unit SHALL have its own scale, titled with its name. The axis title SHALL be the unit, in the signal's colour when it is the only signal on that axis. Origin: D-018 ("'Same value range' means **same unit**: one y-axis per unit, nothing more."); D-017 („gleiche signalbereich gleiche achse“); coloured title from power-user expectations (feedback 2026-10-14, point 2).
 
 #### Scenario: Two signals, same unit
-- **WHEN** a window shows `CPC_168h.EAC_HV_Volt` and `CPC_448h.PTC_HV_Volt` (both `V`)
+- **WHEN** a window shows `DCU_1F4h.COMP_HV_Volt` and `DCU_2B8h.HTR_HV_Volt` (both `V`)
 - **THEN** one axis is drawn on the left titled `V` in neutral colour, and the `[V]` of both legend rows has the tooltip "y axis L"
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "puts signals with the same unit on one axis"
 
@@ -169,12 +169,12 @@ Signals with the same unit SHALL share one y scale and axis; each unit SHALL hav
 Every unit SHALL get a drawn y axis, stacked up to two per side in signal order: first unit inner left (`L`), second inner right (`R`), third outer left (`L2`), fourth outer right (`R2`); the plot narrows. Each legend row's `[unit]` SHALL name its axis side as tooltip (D-030: the side column is gone). Origin: D-019 ("stacked axes, up to two per side (at most four units), the plot area gets narrower. Every value stays readable."); legend sides from feedback 2026-10-14, point 2.
 
 #### Scenario: Second unit
-- **WHEN** `COMBI_412h.V_ANZ` (`km/h`) is added to that window
-- **THEN** a right axis titled `km/h` appears in V_ANZ's colour, V_ANZ's `[km/h]` has the tooltip "y axis R", and the `V` axis stays left
+- **WHEN** `ICL_3A2h.SPEED_DISP` (`km/h`) is added to that window
+- **THEN** a right axis titled `km/h` appears in SPEED_DISP's colour, SPEED_DISP's `[km/h]` has the tooltip "y axis R", and the `V` axis stays left
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order", "colours an axis like its only signal"
 
 #### Scenario: Third and fourth unit
-- **WHEN** `MS_608h.T_MOT` (`°C`) and then `BS_200h.DVL` (`1/min`) are added as well
+- **WHEN** `ENG_5E0h.T_ENG` (`°C`) and then `BRK_1A0h.WSPD_FL` (`1/min`) are added as well
 - **THEN** a `°C` axis appears outer left and a `1/min` axis outer right, each in its signal's colour with readable tick labels, the plot is narrower, and their `[unit]` tooltips name `L2` and `R2`
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order"
 

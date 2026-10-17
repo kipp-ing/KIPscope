@@ -141,7 +141,7 @@ describe("hints table", () => {
 describe("events count with a long filter sentence", () => {
   it("cuts the sentence so the count stays within 140 characters", () => {
     const sentence =
-      "active faults, stored faults and state changes of BMS and IgnCurMode, without NRCs";
+      "active faults, stored faults and state changes of BMS and IgnMode, without NRCs";
     const t = HINTS.eventsCount(99_999, 99_999 + 1, sentence);
     expect(t.length).toBeLessThanOrEqual(140);
     expect(t).toContain("…)");

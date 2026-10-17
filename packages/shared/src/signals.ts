@@ -23,9 +23,9 @@ export interface DbcValueLabel {
 export interface DbcInfo {
   /** Basename of the DBC file the entry came from (first file wins), e.g. `h-can.dbc`. */
   file?: string;
-  /** `BO_` message name, e.g. `COMBI_412h`. */
+  /** `BO_` message name, e.g. `ICL_3A2h`. */
   message: string;
-  /** `BO_` ID as written (decimal; extended IDs keep bit 31), e.g. 1042. */
+  /** `BO_` ID as written (decimal; extended IDs keep bit 31), e.g. 930. */
   messageId: number;
   /** `BO_` transmitter (last token), e.g. `CGW`; absent for `Vector__XXX` or none written (D-053). */
   sender?: string;
@@ -76,7 +76,7 @@ export interface DiagInfo {
 
 /** A signal in the catalog. Optional fields are absent (not empty) when the metadata is unknown. */
 export interface SignalInfo {
-  /** Stable ID: `<dataRef>/<name>`, e.g. `smart451/MS_312h.DNMOT`. */
+  /** Stable ID: `<dataRef>/<name>`, e.g. `smart451/ENG_2E8h.MOT_SPD_D`. */
   id: string;
   /** Data reference the signal belongs to (for vehicle data: the vehicle). */
   dataRef: string;

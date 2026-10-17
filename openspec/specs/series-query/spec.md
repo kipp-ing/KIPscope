@@ -41,9 +41,9 @@ Each aggregated bucket SHALL cover a contiguous time interval and report its sta
 - **Evidence:** `apps/server/test/series.test.ts` › "returns all-SNA buckets without mean, min and max"
 
 #### Scenario: Real speed overview
-- **WHEN** the full extent of `smart451/COMBI_412h.V_ANZ` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) is requested with target 2,000
+- **WHEN** the full extent of `smart451/ICL_3A2h.SPEED_DISP` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) is requested with target 2,000
 - **THEN** no bucket reports a mean, minimum or maximum of 511, and the SNA counts sum to 4,411
-- **Evidence:** command `curl -s 'localhost:7310/api/series?signal=smart451/COMBI_412h.V_ANZ&from=2026-10-11T12:34:24.824Z&to=2026-10-13T13:17:33.220Z&target=2000' | jq '([.max[]|select(.!=null)]|max), (.sna|add)'` prints `71` and `4411`
+- **Evidence:** command `curl -s 'localhost:7310/api/series?signal=smart451/ICL_3A2h.SPEED_DISP&from=2026-10-11T12:34:24.824Z&to=2026-10-13T13:17:33.220Z&target=2000' | jq '([.max[]|select(.!=null)]|max), (.sna|add)'` prints `71` and `4411`
 
 ### Requirement: Raw points
 Raw points SHALL be returned with their original timestamps and SHALL NOT be shifted onto a common sampling grid. Valid values SHALL be returned unmodified. An SNA point SHALL be returned at its timestamp marked as SNA and without a value.
@@ -53,9 +53,9 @@ Raw points SHALL be returned with their original timestamps and SHALL NOT be shi
 - **THEN** the result contains exactly those timestamps
 
 #### Scenario: SNA point in a raw result
-- **WHEN** raw points of `smart451/COMBI_412h.V_ANZ` are requested for 2026-10-13T09:56:59Z to 09:57:01Z (20 points, 3 of them stored as 511)
+- **WHEN** raw points of `smart451/ICL_3A2h.SPEED_DISP` are requested for 2026-10-13T09:56:59Z to 09:57:01Z (20 points, 3 of them stored as 511)
 - **THEN** the result has 20 timestamps; the points at 09:56:59.837, 09:56:59.937 and 09:57:00.037 are marked SNA without value; the other 17 carry their value 0
-- **Evidence:** `apps/server/test/series.test.ts` › "flags SNA raw points without value" (test DB: `Sna_800h.SPEED`); command `curl -s 'localhost:7310/api/series?signal=smart451/COMBI_412h.V_ANZ&from=2026-10-13T09:56:59Z&to=2026-10-13T09:57:01Z' | jq -c '.v'` prints 8 zeros, 3 `null`, 9 zeros
+- **Evidence:** `apps/server/test/series.test.ts` › "flags SNA raw points without value" (test DB: `Sna_800h.SPEED`); command `curl -s 'localhost:7310/api/series?signal=smart451/ICL_3A2h.SPEED_DISP&from=2026-10-13T09:56:59Z&to=2026-10-13T09:57:01Z' | jq -c '.v'` prints 8 zeros, 3 `null`, 9 zeros
 
 #### Scenario: Signed SNA point
 - **WHEN** raw points of `testcar/Sna_800h.TEMP` (signed, SNA −128) are requested
@@ -142,9 +142,9 @@ The server SHALL NOT answer a series query while the catalog has never been load
 Series requests SHALL accept only times between 1900-01-01T00:00:00Z and 2262-04-11T00:00:00Z inclusive and answer 400 `invalid_request` for a time outside, without querying the database. Origin: necessary consequence of the bug "window range 1036-01-11 … 3937-05-09" (times beyond int64 nanoseconds reached the API; design "Bug analysis").
 
 #### Scenario: Series far beyond the data
-- **WHEN** a client requests `/api/series?signal=smart451/CPC_448h.PTC_HV_Volt&from=-29473328485867940608&to=62083631947910636800`
+- **WHEN** a client requests `/api/series?signal=smart451/DCU_2B8h.HTR_HV_Volt&from=-29473328485867940608&to=62083631947910636800`
 - **THEN** the response is 400 with code `invalid_request` and a message naming the bounds
-- **Evidence:** `apps/server/test/series.http.test.ts` › "rejects times outside the bounds with 400"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/series?signal=smart451/CPC_448h.PTC_HV_Volt&from=-29473328485867940608&to=62083631947910636800'` prints `400`
+- **Evidence:** `apps/server/test/series.http.test.ts` › "rejects times outside the bounds with 400"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/series?signal=smart451/DCU_2B8h.HTR_HV_Volt&from=-29473328485867940608&to=62083631947910636800'` prints `400`
 
 ### Requirement: Value at a time
 The server SHALL evaluate one signal at one time `t` in mode `line` (default) or `step`. It SHALL return the last point at or before `t`, the first point after `t`, and the value: raw if a point lies at `t`; else linear between valid neighbours (`line`) or the earlier valid value held (`step`), unless the neighbours are split (data-gaps "Split between two points"). SNA, missing values and splits follow "No invented value at a time" and "No value across a gap". Origin: concept §6; D-023; design C4; split: D-062.
@@ -155,7 +155,7 @@ The server SHALL evaluate one signal at one time `t` in mode `line` (default) or
 - **Evidence:** `apps/server/test/value.http.test.ts` › "evaluates SPEED at points, between points and in SNA runs"
 
 #### Scenario: Real speed between two points
-- **WHEN** a client requests `/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T13:08:00.1435Z`
+- **WHEN** a client requests `/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T13:08:00.1435Z`
 - **THEN** `jq -c .value` prints `{"kind":"interpolated","value":22.5}` (neighbours 23 at 13:08:00.093Z and 22 at 13:08:00.194Z)
 - **Evidence:** the `curl` command against the dev server
 
@@ -181,9 +181,9 @@ The value at a time SHALL be SNA when the point at or before `t` is SNA. It SHAL
 A value request SHALL answer like a series request: 400 `invalid_request` for a missing or out-of-bounds `t` or an unknown `mode`, 404 `unknown_signal`, 503 `catalog_unavailable` before the catalog was ever loaded, and 502 `source_error` when the source fails. It SHALL NOT query the database for a 400 or 404. Origin: necessary consequence of series-query "SNA needs the catalog" and "Time bounds in requests" (the same data, the same rules).
 
 #### Scenario: Bad requests
-- **WHEN** a client requests `/api/value?signal=smart451/COMBI_412h.V_ANZ&t=-29473328485867940608`, then the same with `t=2026-10-13T13:08:00Z&mode=markers`, then `signal=smart451/NOPE.X`
+- **WHEN** a client requests `/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=-29473328485867940608`, then the same with `t=2026-10-13T13:08:00Z&mode=markers`, then `signal=smart451/NOPE.X`
 - **THEN** the answers are 400, 400 and 404
-- **Evidence:** `apps/server/test/value.http.test.ts` › "answers errors like the series route"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=-29473328485867940608'` prints `400`
+- **Evidence:** `apps/server/test/value.http.test.ts` › "answers errors like the series route"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=-29473328485867940608'` prints `400`
 
 ### Requirement: Reusable buckets for aligned requests
 For `from` and `to` multiples of `w` and target `(to − from) / w + 1`, an aggregated result SHALL have width exactly `w` and complete buckets, so a bucket comes back identical from every such request. Origin: necessary consequence of D-037 (3) (the browser cache combines buckets of different requests). Today's behaviour; no server code change.
@@ -194,7 +194,7 @@ For `from` and `to` multiples of `w` and target `(to − from) / w + 1`, an aggr
 - **Evidence:** `apps/server/test/series.test.ts` › "returns identical buckets for aligned requests that share them"
 
 #### Scenario: Real speed, aligned
-- **WHEN** a client requests `/api/series?signal=smart451/COMBI_412h.V_ANZ&from=1791896364897009664&to=1791896914652823552&target=513`
+- **WHEN** a client requests `/api/series?signal=smart451/ICL_3A2h.SPEED_DISP&from=1791896364897009664&to=1791896914652823552&target=513`
 - **THEN** `jq -r '.kind, .width'` prints `buckets` and `1073741824`
 - **Evidence:** the `curl` command against the dev server
 
@@ -272,8 +272,8 @@ When the neighbours of `t` are split, the value SHALL be `{kind: "none", reason}
 - **Evidence:** `packages/shared/test/cursor.test.ts` › "returns no value across a gap"
 
 #### Scenario: Real signal in a logger gap and in a dropout
-- **WHEN** a client requests `/api/value?signal=smart451/CPC_448h.PTC_HV_Volt&t=2026-10-13T09:27:55Z` and `/api/value?signal=smart451/SAS_0C2h.LWS_ANGLE&t=2026-10-13T09:34:36.6Z&mode=step`
-- **THEN** `jq -c .value` prints `{"kind":"none","reason":"logger_gap"}` and `{"kind":"none","reason":"period_gap"}` (LWS_ANGLE, 10 ms: nothing from 09:34:36.204 to 09:34:37.004 UTC)
+- **WHEN** a client requests `/api/value?signal=smart451/DCU_2B8h.HTR_HV_Volt&t=2026-10-13T09:27:55Z` and `/api/value?signal=smart451/STR_0D4h.STEER_ANGLE&t=2026-10-13T09:34:36.6Z&mode=step`
+- **THEN** `jq -c .value` prints `{"kind":"none","reason":"logger_gap"}` and `{"kind":"none","reason":"period_gap"}` (STEER_ANGLE, 10 ms: nothing from 09:34:36.204 to 09:34:37.004 UTC)
 - **Evidence:** the `curl` commands against the dev server
 
 #### Scenario: Gap info unavailable

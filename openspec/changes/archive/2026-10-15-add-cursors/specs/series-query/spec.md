@@ -9,7 +9,7 @@ The server SHALL evaluate one signal at one time `t` in mode `line` (default) or
 - **Evidence:** `apps/server/test/value.http.test.ts` › "evaluates SPEED at points, between points and in SNA runs"
 
 #### Scenario: Real speed between two points
-- **WHEN** a client requests `/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T13:08:00.1435Z`
+- **WHEN** a client requests `/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T13:08:00.1435Z`
 - **THEN** `jq -c .value` prints `{"kind":"interpolated","value":22.5}` (neighbours 23 at 13:08:00.093Z and 22 at 13:08:00.194Z)
 - **Evidence:** the `curl` command against the dev server
 
@@ -30,6 +30,6 @@ The value at a time SHALL be SNA when the point at or before `t` is SNA. It SHAL
 A value request SHALL answer like a series request: 400 `invalid_request` for a missing or out-of-bounds `t` or an unknown `mode`, 404 `unknown_signal`, 503 `catalog_unavailable` before the catalog was ever loaded, and 502 `source_error` when the source fails. It SHALL NOT query the database for a 400 or 404. Origin: necessary consequence of series-query "SNA needs the catalog" and "Time bounds in requests" (the same data, the same rules).
 
 #### Scenario: Bad requests
-- **WHEN** a client requests `/api/value?signal=smart451/COMBI_412h.V_ANZ&t=-29473328485867940608`, then the same with `t=2026-10-13T13:08:00Z&mode=markers`, then `signal=smart451/NOPE.X`
+- **WHEN** a client requests `/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=-29473328485867940608`, then the same with `t=2026-10-13T13:08:00Z&mode=markers`, then `signal=smart451/NOPE.X`
 - **THEN** the answers are 400, 400 and 404
-- **Evidence:** `apps/server/test/value.http.test.ts` › "answers errors like the series route"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=-29473328485867940608'` prints `400`
+- **Evidence:** `apps/server/test/value.http.test.ts` › "answers errors like the series route"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=-29473328485867940608'` prints `400`

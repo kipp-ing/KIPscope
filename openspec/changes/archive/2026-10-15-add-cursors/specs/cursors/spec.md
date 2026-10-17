@@ -36,7 +36,7 @@ Commands SHALL set a cursor to an absolute time, move it by a signed number of n
 Each cursor that is on SHALL be drawn in every timeseries window whose range contains its time, as a vertical line over the plot height at that absolute time, whatever the window's zoom: A solid with the flag "A", B dashed with the flag "B", in one neutral colour outside the signal palette. Other windows SHALL draw no line for it. Origin: concept §6 („A und B bezeichnen in allen Fenstern dieselben absoluten Zeitpunkte. Fenster behalten ihren unabhängigen Zoom.").
 
 #### Scenario: Two unlinked windows
-- **WHEN** "Link time axes" is off, window 1 shows `COMBI_412h.V_ANZ` from 2026-10-13T13:08:00Z to 13:08:03Z, window 2 shows `CPC_448h.PTC_HV_Volt` from 13:07:00Z to 13:10:00Z, and `cursor.set {cursor: "a", t: "2026-10-13T13:08:01.5Z"}` is posted with `curl`
+- **WHEN** "Link time axes" is off, window 1 shows `ICL_3A2h.SPEED_DISP` from 2026-10-13T13:08:00Z to 13:08:03Z, window 2 shows `DCU_2B8h.HTR_HV_Volt` from 13:07:00Z to 13:10:00Z, and `cursor.set {cursor: "a", t: "2026-10-13T13:08:01.5Z"}` is posted with `curl`
 - **THEN** within 1 s both windows show a solid line flagged "A" at 15:08:01.5 local time: in window 1 at the middle of the plot, in window 2 near its first third
 - **Evidence:** UI check (one screenshot of both windows)
 

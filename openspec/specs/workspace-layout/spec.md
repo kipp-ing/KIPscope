@@ -19,8 +19,8 @@ The signal explorer SHALL be a sidebar 240 px wide when open that takes no width
 - **Evidence:** `apps/web/test/sidebar.test.ts` › "toggles with s outside text fields and selects only"; UI check (screenshot after the first `s`)
 
 #### Scenario: Slash opens the search
-- **WHEN** the sidebar is collapsed, the last query was `temp`, focus is on the page body and the user presses `/`, types `V_ANZ` and presses Enter
-- **THEN** the sidebar opens with the search focused and `temp` selected, the field then holds `V_ANZ`, and `COMBI_412h.V_ANZ` is added to the "Add to" target
+- **WHEN** the sidebar is collapsed, the last query was `temp`, focus is on the page body and the user presses `/`, types `SPEED_DISP` and presses Enter
+- **THEN** the sidebar opens with the search focused and `temp` selected, the field then holds `SPEED_DISP`, and `ICL_3A2h.SPEED_DISP` is added to the "Add to" target
 - **Evidence:** UI check on smart451 (screenshot after `/` and after Enter)
 
 ### Requirement: Sidebar state remembered
@@ -55,7 +55,7 @@ Windows of every kind SHALL be laid out in workspace order, row by row, in two e
 - **Evidence:** UI check on smart451 at 1920×1080 (screenshot); `not_run` if the browser tool cannot set the viewport
 
 #### Scenario: Lone last window spans
-- **WHEN** three timeseries windows exist at 1440×900, and then the user adds `BS_200h.DVL` to "New window"
+- **WHEN** three timeseries windows exist at 1440×900, and then the user adds `BRK_1A0h.WSPD_FL` to "New window"
 - **THEN** before, window 3 spans the full list width below windows 1 and 2; after, windows 3 and 4 share the second row at half width each
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot before and after)
 
@@ -81,8 +81,8 @@ Each timeseries window SHALL keep its own stored plot height in the grid. A grid
 During a drag the drop target SHALL be the window under the pointer in any column. The gap between windows SHALL be no target: a release there changes nothing. Highlights, refused targets, auto-scroll and "+ New window" SHALL behave as in one column. Origin: necessary consequence of D-023 („every drop target stays reachable while dragging") with tiled windows (D-026).
 
 #### Scenario: Drop into the right column
-- **WHEN** at 1440×900 window 2 (right column) does not show `BS_200h.DVL` and the user drags the DVL explorer row onto window 2
-- **THEN** window 2 is highlighted with "Drop to add" while dragging and lists DVL after the drop
+- **WHEN** at 1440×900 window 2 (right column) does not show `BRK_1A0h.WSPD_FL` and the user drags the WSPD_FL explorer row onto window 2
+- **THEN** window 2 is highlighted with "Drop to add" while dragging and lists WSPD_FL after the drop
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging and after the drop)
 
 #### Scenario: Release in the gap
@@ -91,8 +91,8 @@ During a drag the drop target SHALL be the window under the pointer in any colum
 - **Evidence:** UI check (revision in the status strip before and after); `apps/web/test/drag.test.ts` existing drop-target tests stay green
 
 #### Scenario: Reach the last row
-- **WHEN** the six-window setup at 1440×900 is scrolled to the top and the user drags the V_ANZ legend row of window 1 into the band just above the status strip
-- **THEN** the list scrolls until windows 5 and 6 are visible, and dropping on window 6 moves V_ANZ there and removes window 1
+- **WHEN** the six-window setup at 1440×900 is scrolled to the top and the user drags the SPEED_DISP legend row of window 1 into the band just above the status strip
+- **THEN** the list scrolls until windows 5 and 6 are visible, and dropping on window 6 moves SPEED_DISP there and removes window 1
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots while scrolling and after the drop)
 
 ### Requirement: Top row and status strip
@@ -104,7 +104,7 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Error in the strip
-- **WHEN** the marked window shows four units and the user adds `MS_312h.DNMOT` from the explorer with Enter, then clicks the message
+- **WHEN** the marked window shows four units and the user adds `ENG_2E8h.MOT_SPD_D` from the explorer with Enter, then clicks the message
 - **THEN** the strip shows the `too_many_units` message in the error colour, and the click removes it
 - **Evidence:** UI check on smart451 (screenshot of the strip before and after the click)
 
@@ -114,8 +114,8 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 - **Evidence:** UI check (rects read before and during the drag, screenshot during the drag)
 
 #### Scenario: Drop on the attribution
-- **WHEN** the user drags the `BS_200h.DVL` explorer row onto the attribution text in the strip and releases there
-- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows DVL, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
+- **WHEN** the user drags the `BRK_1A0h.WSPD_FL` explorer row onto the attribution text in the strip and releases there
+- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows WSPD_FL, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, revision and tab count after); `apps/web/test/drag.test.ts` › "maps drop elements to targets" stays green
 
 #### Scenario: Compact bars
@@ -132,7 +132,7 @@ Every window's header, of every kind, SHALL be one line at most 24 px tall: titl
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, measured heights)
 
 #### Scenario: No reflow on zoom
-- **WHEN** window 1 shows only `COMBI_412h.V_ANZ` over its full extent (aggregated), the left x of every control in its header is read, and the window is zoomed to 2026-10-13T13:08:00Z–13:08:03Z (raw), during loading and after
+- **WHEN** window 1 shows only `ICL_3A2h.SPEED_DISP` over its full extent (aggregated), the left x of every control in its header is read, and the window is zoomed to 2026-10-13T13:08:00Z–13:08:03Z (raw), during loading and after
 - **THEN** every control's left x is unchanged (±0.5 px) during loading and after, while badge and range text changed
 - **Evidence:** UI check on smart451 at 1440×900 (x values before, during and after, screenshot after)
 
@@ -179,17 +179,17 @@ Each window's header SHALL end with a "⋯" button that opens a menu with "Renam
 The user SHALL mark a window by a click that ends inside it, anywhere: header, title, plot (where the click also places cursor A or B), legend, values table or a control. The user can also choose it in the explorer's "Add to" select. At most one window is marked. A drag that starts in one window and ends in another, and a drop, SHALL NOT mark. The marked window SHALL show its frame 2 px wide in the accent (`#0284c7`: 1 px border plus a 1 px outer ring, so nothing moves) and an "Add to" pill (accent soft fill, accent ink) after its title. The pill SHALL NOT be truncated and SHALL NOT move the header's controls, and the header's truncation order stays (range first, then the title). Explorer adds by Enter or a row's add button SHALL go to the marked window, or to a new window while none is marked. Origin: D-027 („the user marks a window, and adds go there"); Jan 2026-10-17 („the window the signal goes to maybe could be the window clicked last and (new) outline highlighted"), D-072 (G-1) (design.md); pill: D-055 (mock pill `#e0f2fe` / `#075985`); frame colour changed from the mock's `#7dd3fc`, D-072 (G-1).
 
 #### Scenario: Mark and add
-- **WHEN** the six-window setup is shown, the user clicks the empty part of window 4's header, then presses `/`, types `T_SOLL` and presses Enter
-- **THEN** window 4's border colour is `rgb(2, 132, 199)` and its `box-shadow` contains `rgb(2, 132, 199) 0px 0px 0px 1px`; its header shows the "Add to" pill with background `rgb(224, 242, 254)` after the title; no other window shows either; `AC_A1.T_SOLL` appears in window 4; the number of windows is still six
+- **WHEN** the six-window setup is shown, the user clicks the empty part of window 4's header, then presses `/`, types `T_SET` and presses Enter
+- **THEN** window 4's border colour is `rgb(2, 132, 199)` and its `box-shadow` contains `rgb(2, 132, 199) 0px 0px 0px 1px`; its header shows the "Add to" pill with background `rgb(224, 242, 254)` after the title; no other window shows either; `CLIM_A1.T_SET` appears in window 4; the number of windows is still six
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the click and after Enter, computed values)
 
 #### Scenario: Values window marked
-- **WHEN** the user clicks the title of a values window once and adds `COMBI_412h.V_ANZ` with the row's add button
-- **THEN** the values window is marked (ring frame and "Add to" pill) and lists V_ANZ; with A, B and Diff on in a 480 px values window with a 40-character title, the cursor times still follow "Cursor times drop their date" and Δt stays visible
+- **WHEN** the user clicks the title of a values window once and adds `ICL_3A2h.SPEED_DISP` with the row's add button
+- **THEN** the values window is marked (ring frame and "Add to" pill) and lists SPEED_DISP; with A, B and Diff on in a 480 px values window with a 40-character title, the cursor times still follow "Cursor times drop their date" and Δt stays visible
 - **Evidence:** UI check on smart451 (screenshot of both states)
 
 #### Scenario: No mark, new windows
-- **WHEN** no window is marked and the user adds `BS_200h.DVL` and then `MS_608h.T_MOT` with Enter
+- **WHEN** no window is marked and the user adds `BRK_1A0h.WSPD_FL` and then `ENG_5E0h.T_ENG` with Enter
 - **THEN** each lands in its own new window, and neither new window is marked
 - **Evidence:** UI check on smart451 (screenshot after the second Enter)
 
@@ -209,7 +209,7 @@ The user SHALL mark a window by a click that ends inside it, anywhere: header, t
 - **Evidence:** `apps/web/test/reveal.test.ts` › "finds the window of a click"
 
 #### Scenario: Refused add keeps the target
-- **WHEN** the marked window shows four units and the user adds `MS_312h.DNMOT` with Enter
+- **WHEN** the marked window shows four units and the user adds `ENG_2E8h.MOT_SPD_D` with Enter
 - **THEN** the add is rejected with `too_many_units` in the status strip, no new window is created and the mark stays
 - **Evidence:** UI check on smart451 (screenshot, window count before and after)
 
@@ -238,33 +238,33 @@ With the six-window setup (design M1), the sidebar open and the list scrolled to
 During a row drag (explorer, legend or values row), the free area of the window list below the last window, or the whole list below the top row when there is no window, SHALL be a "+ New window" target. A release there SHALL do what a release on the "+ New window" strip does: same command, move or Alt/Ctrl copy, source removed when emptied. Origin: D-037 item (2) („a drag of a signal to empty space create new time series"; "free area below the windows").
 
 #### Scenario: Explorer row below two windows
-- **WHEN** at 1440×900 windows 1 and 2 share the first row, the list has free space below them, and the user drags the `BS_200h.DVL` explorer row into that space, holds, then releases
-- **THEN** while holding, the free area shows a dashed accent outline with "+ New window" in its stronger highlight while the strip at the bottom shows "+ New window" without it; after the release a new window "Window <n>" appears last showing DVL, and the revision rose by two (`window.add` and `signal.add`, as for an explorer drop on the strip)
+- **WHEN** at 1440×900 windows 1 and 2 share the first row, the list has free space below them, and the user drags the `BRK_1A0h.WSPD_FL` explorer row into that space, holds, then releases
+- **THEN** while holding, the free area shows a dashed accent outline with "+ New window" in its stronger highlight while the strip at the bottom shows "+ New window" without it; after the release a new window "Window <n>" appears last showing WSPD_FL, and the revision rose by two (`window.add` and `signal.add`, as for an explorer drop on the strip)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, screenshot and revision after the release)
 
 #### Scenario: Legend row moved below
-- **WHEN** window 1 shows `COMBI_412h.V_ANZ` and `BS_200h.DVL`, and the user drags the V_ANZ legend row onto the free area below the windows and releases without a modifier
-- **THEN** a new window appears last showing V_ANZ in the same swatch colour, window 1 shows only DVL, and the revision rose by exactly one
+- **WHEN** window 1 shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL`, and the user drags the SPEED_DISP legend row onto the free area below the windows and releases without a modifier
+- **THEN** a new window appears last showing SPEED_DISP in the same swatch colour, window 1 shows only WSPD_FL, and the revision rose by exactly one
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop, revision in the status strip); `apps/web/test/drag.test.ts` › "treats a drop below the windows like + New window"
 
 #### Scenario: Copy below
-- **WHEN** the user drags the DVL legend row of window 1 onto the free area and releases with Alt (or Ctrl) held
-- **THEN** a new window shows DVL and window 1 still shows DVL, in the same colour
+- **WHEN** the user drags the WSPD_FL legend row of window 1 onto the free area and releases with Alt (or Ctrl) held
+- **THEN** a new window shows WSPD_FL and window 1 still shows WSPD_FL, in the same colour
 - **Evidence:** `apps/web/test/drag.test.ts` › "treats a drop below the windows like + New window"; UI check if the browser automation can hold the modifier, else `not_run` with the test as evidence
 
 #### Scenario: Last signal moved below
-- **WHEN** window 2 shows only `CPC_448h.PTC_HV_Volt` and the user drags that legend row onto the free area below the windows and releases
-- **THEN** a new window shows PTC_HV_Volt, window 2 is gone from the page, and the revision rose by exactly one
+- **WHEN** window 2 shows only `DCU_2B8h.HTR_HV_Volt` and the user drags that legend row onto the free area below the windows and releases
+- **THEN** a new window shows HTR_HV_Volt, window 2 is gone from the page, and the revision rose by exactly one
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop, revision); `packages/shared/test/apply.test.ts` › "moves the only signal into a new window and removes the source"
 
 #### Scenario: Values row below
-- **WHEN** a values window lists `COMBI_412h.V_ANZ` and `BS_200h.DVL` and the user drags its V_ANZ row onto the free area and releases
-- **THEN** a new timeseries window shows V_ANZ and the values window lists only DVL
+- **WHEN** a values window lists `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` and the user drags its SPEED_DISP row onto the free area and releases
+- **THEN** a new timeseries window shows SPEED_DISP and the values window lists only WSPD_FL
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop)
 
 #### Scenario: Empty window list
-- **WHEN** the workspace has no window and the user drags the `COMBI_412h.V_ANZ` explorer row into the middle of the empty window list, holds, then releases
-- **THEN** while holding, the list area below the top row is highlighted with "+ New window" and the "No windows yet" hint is not shown; after the release one window shows V_ANZ
+- **WHEN** the workspace has no window and the user drags the `ICL_3A2h.SPEED_DISP` explorer row into the middle of the empty window list, holds, then releases
+- **THEN** while holding, the list area below the top row is highlighted with "+ New window" and the "No windows yet" hint is not shown; after the release one window shows SPEED_DISP
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding and after the release)
 
 #### Scenario: Element mapping
@@ -291,8 +291,8 @@ The free area SHALL start 8 px below the last grid row. Gaps between windows, th
 - **Evidence:** UI check (revision in the status strip before and after); `apps/web/test/drag.test.ts` › "maps drop elements to targets"
 
 #### Scenario: Full list
-- **WHEN** the six-window setup at 1440×900 is scrolled to the end and the user drags the DVL explorer row
-- **THEN** no free area is highlighted above the strip (its height is 0 px), and a release on the "+ New window" strip creates a window with DVL
+- **WHEN** the six-window setup at 1440×900 is scrolled to the end and the user drags the WSPD_FL explorer row
+- **THEN** no free area is highlighted above the strip (its height is 0 px), and a release on the "+ New window" strip creates a window with WSPD_FL
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, screenshot after the drop)
 
 ### Requirement: Free area highlight

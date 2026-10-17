@@ -184,7 +184,7 @@ The bar SHALL never cut the status or the attribution, nor an item beyond its ow
 - **Evidence:** `apps/web/test/footer.test.ts` › "hides automatic items before measurement items"
 
 #### Scenario: Error message at 1000×557
-- **WHEN** at 1000×557 with the sidebar open the marked window shows four units and the user adds `MS_312h.DNMOT` with Enter
+- **WHEN** at 1000×557 with the sidebar open the marked window shows four units and the user adds `ENG_2E8h.MOT_SPD_D` with Enter
 - **THEN** the bar stays one line, the `too_many_units` message is shown (cut with `…` if needed, full text as tooltip), every shown item is whole, and the attribution is fully shown
 - **Evidence:** UI check on smart451 at 1000×557 (screenshot)
 

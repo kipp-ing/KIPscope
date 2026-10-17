@@ -19,33 +19,33 @@ Each timeseries window SHALL keep its own stored plot height in the grid. A grid
 During a row drag (explorer, legend or values row), the free area of the window list below the last window, or the whole list below the top row when there is no window, SHALL be a "+ New window" target. A release there SHALL do what a release on the "+ New window" strip does: same command, move or Alt/Ctrl copy, source removed when emptied. Origin: D-037 item (2) („a drag of a signal to empty space create new time series"; "free area below the windows").
 
 #### Scenario: Explorer row below two windows
-- **WHEN** at 1440×900 windows 1 and 2 share the first row, the list has free space below them, and the user drags the `BS_200h.DVL` explorer row into that space, holds, then releases
-- **THEN** while holding, the free area shows a dashed accent outline with "+ New window" in its stronger highlight while the strip at the bottom shows "+ New window" without it; after the release a new window "Window <n>" appears last showing DVL, and the revision rose by two (`window.add` and `signal.add`, as for an explorer drop on the strip)
+- **WHEN** at 1440×900 windows 1 and 2 share the first row, the list has free space below them, and the user drags the `BRK_1A0h.WSPD_FL` explorer row into that space, holds, then releases
+- **THEN** while holding, the free area shows a dashed accent outline with "+ New window" in its stronger highlight while the strip at the bottom shows "+ New window" without it; after the release a new window "Window <n>" appears last showing WSPD_FL, and the revision rose by two (`window.add` and `signal.add`, as for an explorer drop on the strip)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, screenshot and revision after the release)
 
 #### Scenario: Legend row moved below
-- **WHEN** window 1 shows `COMBI_412h.V_ANZ` and `BS_200h.DVL`, and the user drags the V_ANZ legend row onto the free area below the windows and releases without a modifier
-- **THEN** a new window appears last showing V_ANZ in the same swatch colour, window 1 shows only DVL, and the revision rose by exactly one
+- **WHEN** window 1 shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL`, and the user drags the SPEED_DISP legend row onto the free area below the windows and releases without a modifier
+- **THEN** a new window appears last showing SPEED_DISP in the same swatch colour, window 1 shows only WSPD_FL, and the revision rose by exactly one
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop, revision in the status strip); `apps/web/test/drag.test.ts` › "treats a drop below the windows like + New window"
 
 #### Scenario: Copy below
-- **WHEN** the user drags the DVL legend row of window 1 onto the free area and releases with Alt (or Ctrl) held
-- **THEN** a new window shows DVL and window 1 still shows DVL, in the same colour
+- **WHEN** the user drags the WSPD_FL legend row of window 1 onto the free area and releases with Alt (or Ctrl) held
+- **THEN** a new window shows WSPD_FL and window 1 still shows WSPD_FL, in the same colour
 - **Evidence:** `apps/web/test/drag.test.ts` › "treats a drop below the windows like + New window"; UI check if the browser automation can hold the modifier, else `not_run` with the test as evidence
 
 #### Scenario: Last signal moved below
-- **WHEN** window 2 shows only `CPC_448h.PTC_HV_Volt` and the user drags that legend row onto the free area below the windows and releases
-- **THEN** a new window shows PTC_HV_Volt, window 2 is gone from the page, and the revision rose by exactly one
+- **WHEN** window 2 shows only `DCU_2B8h.HTR_HV_Volt` and the user drags that legend row onto the free area below the windows and releases
+- **THEN** a new window shows HTR_HV_Volt, window 2 is gone from the page, and the revision rose by exactly one
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop, revision); `packages/shared/test/apply.test.ts` › "moves the only signal into a new window and removes the source"
 
 #### Scenario: Values row below
-- **WHEN** a values window lists `COMBI_412h.V_ANZ` and `BS_200h.DVL` and the user drags its V_ANZ row onto the free area and releases
-- **THEN** a new timeseries window shows V_ANZ and the values window lists only DVL
+- **WHEN** a values window lists `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` and the user drags its SPEED_DISP row onto the free area and releases
+- **THEN** a new timeseries window shows SPEED_DISP and the values window lists only WSPD_FL
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop)
 
 #### Scenario: Empty window list
-- **WHEN** the workspace has no window and the user drags the `COMBI_412h.V_ANZ` explorer row into the middle of the empty window list, holds, then releases
-- **THEN** while holding, the list area below the top row is highlighted with "+ New window" and the "No windows yet" hint is not shown; after the release one window shows V_ANZ
+- **WHEN** the workspace has no window and the user drags the `ICL_3A2h.SPEED_DISP` explorer row into the middle of the empty window list, holds, then releases
+- **THEN** while holding, the list area below the top row is highlighted with "+ New window" and the "No windows yet" hint is not shown; after the release one window shows SPEED_DISP
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding and after the release)
 
 #### Scenario: Element mapping
@@ -72,8 +72,8 @@ The free area SHALL start 8 px below the last grid row. Gaps between windows, th
 - **Evidence:** UI check (revision in the status strip before and after); `apps/web/test/drag.test.ts` › "maps drop elements to targets"
 
 #### Scenario: Full list
-- **WHEN** the six-window setup at 1440×900 is scrolled to the end and the user drags the DVL explorer row
-- **THEN** no free area is highlighted above the strip (its height is 0 px), and a release on the "+ New window" strip creates a window with DVL
+- **WHEN** the six-window setup at 1440×900 is scrolled to the end and the user drags the WSPD_FL explorer row
+- **THEN** no free area is highlighted above the strip (its height is 0 px), and a release on the "+ New window" strip creates a window with WSPD_FL
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, screenshot after the drop)
 
 ### Requirement: Free area highlight

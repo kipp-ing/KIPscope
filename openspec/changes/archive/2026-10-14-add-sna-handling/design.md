@@ -21,13 +21,13 @@ DBCs from `config.ts` defaults: `../CarController/vehicles/smart451/dbc/h-can.db
 | of which `"0h"` | 260 (237 without `VAL_`) | 0 |
 | `VAL_` labels `SNV` / `SNA` | 120 / 33 (exact upper case) | 0 |
 | `"0h"` signal with `VAL_` SNA/SNV on 0 | 0 | 0 |
-| attribute ≠ label (union gives 2 codes) | 3 under D-010; 1 under D-014: `BS_328h.ESP_DSPL` {30, 31} (`CLU_TYPE` → {15}, `OC_P_Fast_SRS` → {0}) | 0 |
+| attribute ≠ label (union gives 2 codes) | 3 under D-010; 1 under D-014: `BRK_33Ch.STAB_DISP` {30, 31} (`CLUSTER_TYPE` → {15}, `OCC_Fast_ABG` → {0}) | 0 |
 | signals with ≥ 1 SNA code: D-010 only / with D-014 | 187 / 171 | 475 / 475 |
 | signed signals with SNA, `SIG_VALTYPE_`, multiplexed, negative `VAL_`, exponent in factor | none | none |
 
-Examples: `COMBI_412h.V_ANZ` 9 bit (1,0), `"1FFh"` + `511 "SNV"` → 511 km/h. `BS_200h.DVL` 14 bit (0.5,0), `"3FFFh"` + `16383 "SNV"` → 8191.5 1/min. `MS_312h.DNMOT` 8 bit (1,−127), `"FFh"` → 128; data is constant −127 (raw 0, valid).
+Examples: `ICL_3A2h.SPEED_DISP` 9 bit (1,0), `"1FFh"` + `511 "SNV"` → 511 km/h. `BRK_1A0h.WSPD_FL` 14 bit (0.5,0), `"3FFFh"` + `16383 "SNV"` → 8191.5 1/min. `ENG_2E8h.MOT_SPD_D` 8 bit (1,−127), `"FFh"` → 128; data is constant −127 (raw 0, valid).
 
-carserver `sdlog.signals`, vehicle `smart451`: 428 signals, 176 of them have SNA codes, 95 contain SNA values, 15 are 100 % SNA. All 95 (signal, code) pairs with hits match the physical SNA value exactly (no tolerance needed today). `COMBI_412h.V_ANZ`: 4,411 SNA of 51,498 points in 4 runs; `BS_200h.DVL`: 56 of 232,644 in 4 runs of 14. Window 2026-10-13T09:56:59Z–09:57:01Z: V_ANZ 20 points (3 SNA at .837/.937/09:57:00.037, else 0); DVL 61 points (14 SNA 09:56:59.791–09:57:00.052, next point 09:57:00.072, else 0). Highest valid values: V_ANZ 71, DVL 638.5.
+carserver `sdlog.signals`, vehicle `smart451`: 428 signals, 176 of them have SNA codes, 95 contain SNA values, 15 are 100 % SNA. All 95 (signal, code) pairs with hits match the physical SNA value exactly (no tolerance needed today). `ICL_3A2h.SPEED_DISP`: 4,411 SNA of 51,498 points in 4 runs; `BRK_1A0h.WSPD_FL`: 56 of 232,644 in 4 runs of 14. Window 2026-10-13T09:56:59Z–09:57:01Z: SPEED_DISP 20 points (3 SNA at .837/.937/09:57:00.037, else 0); WSPD_FL 61 points (14 SNA 09:56:59.791–09:57:00.052, next point 09:57:00.072, else 0). Highest valid values: SPEED_DISP 71, WSPD_FL 638.5.
 
 ## Goals / Non-Goals
 
@@ -58,9 +58,9 @@ Raw → physical: `(signed && raw ≥ 2^(len−1) ? raw − 2^len : raw) × fact
 
 A stored value is SNA if `value ∈ [phys − |factor|/2, phys + |factor|/2]` for one of its codes. The server builds these closed intervals (`SnaRange`) once per catalog load. Matching happens in ClickHouse so that aggregates exclude SNA at the source (no raw transfer).
 
-*Factor of two:* a full step (×2) would swallow the neighbouring valid code (DVL 8191.0 would become SNA); a quarter step (÷2) still exceeds float error (~1e−12 relative) by far. Real data matches exactly (all 95 pairs), so the tolerance is a guard, not a dependency.
+*Factor of two:* a full step (×2) would swallow the neighbouring valid code (WSPD_FL 8191.0 would become SNA); a quarter step (÷2) still exceeds float error (~1e−12 relative) by far. Real data matches exactly (all 95 pairs), so the tolerance is a guard, not a dependency.
 
-*Alternative:* exact equality. Rejected: the decoder's float result and ours may differ in the last bit for scaled signals with offsets (e.g. `YRG_151h.AX1`, factor 0.00012742, offset −4.1752).
+*Alternative:* exact equality. Rejected: the decoder's float result and ours may differ in the last bit for scaled signals with offsets (e.g. `IMU_15Eh.ACC_X`, factor 0.00012742, offset −4.1752).
 
 ### S3: ClickHouse query shape (pinned)
 
@@ -145,7 +145,7 @@ Note the meaning change: `count` was "all points", it is now "valid points".
 
 ### S5: HTTP (pinned)
 
-- `GET /api/signals`: items are `SignalInfo` with the optional `sna`. Example item: `{"id":"smart451/COMBI_412h.V_ANZ","dataRef":"smart451","name":"COMBI_412h.V_ANZ","unit":"km/h","description":"…","sna":[{"raw":511,"value":511,"sources":["GenSigSNA","VAL_"]}]}`.
+- `GET /api/signals`: items are `SignalInfo` with the optional `sna`. Example item: `{"id":"smart451/ICL_3A2h.SPEED_DISP","dataRef":"smart451","name":"ICL_3A2h.SPEED_DISP","unit":"km/h","description":"…","sna":[{"raw":511,"value":511,"sources":["GenSigSNA","VAL_"]}]}`.
 - `GET /api/series`: payloads per S4. New error before any query when the catalog has never loaded: `503 {"error":{"code":"catalog_unavailable","message":…,"signalId":…,"from":…,"to":…}}`. All other errors unchanged.
 - `GET /api/extent`: unchanged.
 
@@ -220,7 +220,7 @@ Rules:
 - **Isolated points.** Line-path series (raw line mode, bucket means) get `points.filter` = `isolatedPoints(u.data[i])`; markers mode is unchanged (SNA nulls have no marker).
 - **Marks.** A uPlot `draw` hook paints each lane as a 6 CSS px high strip at the bottom of the plot area, lane 0 lowest, in the signal's color at 60 % opacity, each period at least 2 CSS px wide. *Factor of two:* height 3–12 px and width 1–4 px are all visible and cosmetic.
 - **Share.** The signal list shows `formatSnaShare(snaShare(result))` next to the status, for the result currently drawn.
-- **Explorer.** A result with `sna` shows a line `SNA <values> <unit>` (values joined by `, `, number as `formatSnaValue(value)` = `String(Number(value.toPrecision(12)))`, which drops float noise such as `8191.500000000001`), title tooltip with raw hex, e.g. `raw 1FFh`. *Share thresholds (0.1 %):* chosen so DVL's 0.024 % reads `< 0.1 %` instead of `0.0 %`.
+- **Explorer.** A result with `sna` shows a line `SNA <values> <unit>` (values joined by `, `, number as `formatSnaValue(value)` = `String(Number(value.toPrecision(12)))`, which drops float noise such as `8191.500000000001`), title tooltip with raw hex, e.g. `raw 1FFh`. *Share thresholds (0.1 %):* chosen so WSPD_FL's 0.024 % reads `< 0.1 %` instead of `0.0 %`.
 
 ### S8: Test data (pinned for tester; engineers may use it)
 
@@ -257,7 +257,7 @@ Seed spot checks change: total rows 21,613,857 (+1,146), distinct timestamped si
 
 ## Risks / Trade-offs
 
-- [D-014's "anything other than `SNA`/`SNV`" would count `--`, `NO_TEMP_SENSOR` and `RES` as valid (`TPM_A1.TirePress_*`, `COMBI_408h.T_AUSSEN(_RAW)`, `AC_A1.T_SOLL`, `AC_A1.T_INNEN`, `MS_608h.FCOD_MOT` 63)] → resolved by D-015: these labels do not beat `GenSigSNA`; the list is fixed and grows only by decision.
+- [D-014's "anything other than `SNA`/`SNV`" would count `--`, `NO_TEMP_SENSOR` and `RES` as valid (`TPS_A1.TirePress_*`, `ICL_3A0h.T_OUTSIDE(_RAW)`, `CLIM_A1.T_SET`, `CLIM_A1.T_CABIN`, `ENG_5E0h.FCODE_ENG` 63)] → resolved by D-015: these labels do not beat `GenSigSNA`; the list is fixed and grows only by decision.
 - [`null` also results from NaN in JSON (`JSON.stringify(NaN)`)] → would be shown as SNA. None found in the checked signals; detecting NaN is out of scope.
 - [Catalog not loaded → series 503] → previously series worked without catalog. In practice the explorer and `window.addSignal` already need the catalog; `POST /api/catalog/refresh` recovers.
 - [Step hold inserts a drawing point at the SNA timestamp] → it repeats a measured value at the end of its own hold, which step mode draws anyway; covered by a unit test.
@@ -272,8 +272,8 @@ None for data. Server and web change the payload together (one repo, one deploy)
 
 Jan answered the former open questions (2026-10-14); only the derivation in S1 changed, no interface or task boundary.
 
-1. **Valid `VAL_` label vs. `GenSigSNA`:** the label wins. In h-can 16 signals lose their `GenSigSNA` code this way, 14 of them all SNA codes (e.g. `BS_208h.SZS` 1 `OK`, `SRS_1E1h.SRS_IL` 1 `ON`, `SAS_0C2h.LWS_Status` 3 `PER_ERR`); `YRG_156h.CLU_TYPE` keeps {15}, `SRS_1E1h.OC_P_Fast_SRS` keeps {0}. Not counted here: 1-bit signals with a label (`EPS_2F1h.EPS_KL`, `MS_308h.CREEPING_OFF`), exempt by rule 2 anyway.
-2. **1-bit signals:** no `GenSigSNA` (7 in h-can: `BS_328h.BS`, `BS_300h.MPAR_ESP`, `GS_218h.MPAR_EGS`, `SRS_1E1h.PARITY_SRS`, `MS_608h.FCOD_MOT6`, `EPS_2F1h.EPS_KL`, `MS_308h.CREEPING_OFF`). **Checksum/CRC signals:** no `GenSigSNA`; detected by the `SG_` name pattern `/^CRC_|(^|_)CHKSUM(_|$)/i`. Checked with one grep over both DBCs (2026-10-14). Matches in h-can.dbc: `SAS_0C2h.LWS_CHKSUM` `"1h"`, `BS_119h.CRC_0`, `YRG_149h.CRC_1`, `YRG_151h.CRC_2`, `EWM_230h.CRC_230h` (all `"FFh"`), plus `YRG_156h.CRC_7` (`"0h"`) and `MS_212h.CRC_MS_212h` (no attribute), which have no SNA anyway. Matches in hybrid-can.dbc: 14 `CRC_*` signals (`CRC_EIS_A1`, `CRC_ENG_RQ_SBC`, `CRC_EM2_RS1`–`RS3`, `CRC_ENG_RQ2_TCM`, `CRC_HVAC_RS1`, `CRC_ENG_RS3_PT`, `CRC_EM2_RQ2_ENG`, `CRC_EM1_RQ_ENG`, `CRC_EM2_RQ_ENG`, `CRC_CVI`, `CRC_AVI2`, `CRC_EMM_STAT`), none with `GenSigSNA`. Not matched, by intent: `SSA_Enbl_Rq_CRCM`, `*_ErrChk_Stat*`, `V_MAX_SUM`, parity bits (1-bit rule covers them).
+1. **Valid `VAL_` label vs. `GenSigSNA`:** the label wins. In h-can 16 signals lose their `GenSigSNA` code this way, 14 of them all SNA codes (e.g. `BRK_21Ch.BRK_SW` 1 `OK`, `ABG_1E9h.ABG_LMP` 1 `ON`, `STR_0D4h.STEER_Status` 3 `PER_ERR`); `IMU_15Ch.CLUSTER_TYPE` keeps {15}, `ABG_1E9h.OCC_Fast_ABG` keeps {0}. Not counted here: 1-bit signals with a label (`PSU_2FAh.PSU_KL`, `ENG_30Ch.CREEP_OFF`), exempt by rule 2 anyway.
+2. **1-bit signals:** no `GenSigSNA` (7 in h-can: `BRK_33Ch.BRK_STATE`, `BRK_30Eh.PAR_STAB`, `TRN_21Eh.PAR_TRN`, `ABG_1E9h.PARITY_ABG`, `ENG_5E0h.FCODE_ENG6`, `PSU_2FAh.PSU_KL`, `ENG_30Ch.CREEP_OFF`). **Checksum/CRC signals:** no `GenSigSNA`; detected by the `SG_` name pattern `/^CRC_|(^|_)CHKSUM(_|$)/i`. Checked with one grep over both DBCs (2026-10-14). Matches in h-can.dbc: `STR_0D4h.STEER_CHKSUM` `"1h"`, `BRK_12Ah.CRC_0`, `IMU_14Eh.CRC_1`, `IMU_15Eh.CRC_2`, `SEL_23Ch.CRC_23Ch` (all `"FFh"`), plus `IMU_15Ch.CRC_7` (`"0h"`) and `ENG_21Ah.CRC_ENG_21Ah` (no attribute), which have no SNA anyway. Matches in hybrid-can.dbc: 14 `CRC_*` signals (`CRC_K01`, `CRC_K02`, `CRC_K03`–`RS3`, `CRC_K04`, `CRC_K05`, `CRC_K06`, `CRC_K07`, `CRC_K08`, `CRC_K09`, `CRC_K10`, `CRC_K11`, `CRC_K12`), none with `GenSigSNA`. Not matched, by intent: `STS_Enbl_Rq`, `*_ErrChk_Stat*`, `V_MAX_TOT`, parity bits (1-bit rule covers them).
 3. **Look of SNA marks:** thin strip per signal at the bottom of the plot (S7), as designed.
 4. **Bucket marks:** a bucket is marked from a single SNA point (S7), as designed.
 

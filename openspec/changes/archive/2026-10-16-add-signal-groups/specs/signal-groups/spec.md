@@ -4,21 +4,21 @@
 For a signal with a DBC entry, the catalog SHALL report the transmitter of its `BO_` line (the last token) as `dbc.sender`. A transmitter `Vector__XXX`, or a `BO_` line without one, SHALL leave `sender` absent. Origin: D-053 („The DBCs name a sender per `BO_` … `Vector__XXX` means no sender").
 
 #### Scenario: Senders from inline DBC text
-- **WHEN** `parseDbc` reads, with CRLF line ends, `BO_ 342 YRG_156h: 8 YRG` with one `SG_`, `BO_ 147 CBX_A2: 8 Vector__XXX` with one `SG_`, and `BO_ 7 Bare_7h:` with one `SG_`
-- **THEN** the signal of `YRG_156h` has sender `YRG`, and the signals of `CBX_A2` and `Bare_7h` have no `sender` key
+- **WHEN** `parseDbc` reads, with CRLF line ends, `BO_ 348 IMU_15Ch: 8 YRG` with one `SG_`, `BO_ 163 GWX_A2: 8 Vector__XXX` with one `SG_`, and `BO_ 7 Bare_7h:` with one `SG_`
+- **THEN** the signal of `IMU_15Ch` has sender `YRG`, and the signals of `GWX_A2` and `Bare_7h` have no `sender` key
 - **Evidence:** `apps/server/test/dbc.test.ts` › "reads the sender of each message, none for Vector__XXX"
 
 #### Scenario: Senders from the real DBCs
 - **WHEN** the real `h-can.dbc` is parsed (runs if the file exists)
-- **THEN** `COMBI_412h.V_ANZ` has sender `CGW`, `MS_608h.T_MOT` `Engine`, `BS_200h.DVL` `ESP`, and `CPC_448h.PTC_HV_Volt` none
+- **THEN** `ICL_3A2h.SPEED_DISP` has sender `CGW`, `ENG_5E0h.T_ENG` `Engine`, `BRK_1A0h.WSPD_FL` `ESP`, and `DCU_2B8h.HTR_HV_Volt` none
 - **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (extended)
 
 ### Requirement: Group rules
 `display.groups` SHALL be an optional ordered list of rules: an optional regex `match` on the source name and a template `group` over its named groups and `{sender}`. The group SHALL be the trimmed render of the first rule that matches (or has no `match`) and renders non-blank; else, or for the render `Other`, the group `Other`. Restart to apply. Origin: D-053 (rules „like the display-name rules of D-035", „Restart to change", `Other` for no DBC entry or `Vector__XXX`); fall-through: design G4.
 
 #### Scenario: First non-blank rule wins
-- **WHEN** the shipped rules apply, rule 0 `group: '{sender}'` and rule 1 `match: '^(?<ecu>CPC|PNHV)_'`, `group: '{ecu}'`, to `CPC_448h.PTC_HV_Volt` (no sender), `COMBI_412h.V_ANZ` (sender `CGW`), `VIN.VIN_1` (no DBC entry), `CPC_168h.X` (sender `BMS`) and `PNHV_STAT.PNHV_SupBat_Temp` (no sender)
-- **THEN** the groups are `CPC` (rule 0 blank, falls through), `CGW`, `Other` (undefined), `BMS` and `PNHV`
+- **WHEN** the shipped rules apply, rule 0 `group: '{sender}'` and rule 1 `match: '^(?<ecu>DCU|HVM)_'`, `group: '{ecu}'`, to `DCU_2B8h.HTR_HV_Volt` (no sender), `ICL_3A2h.SPEED_DISP` (sender `CGW`), `VIN.VIN_1` (no DBC entry), `DCU_1F4h.X` (sender `BMS`) and `HVM_STAT.HVM_Bat_Temp` (no sender)
+- **THEN** the groups are `DCU` (rule 0 blank, falls through), `CGW`, `Other` (undefined), `BMS` and `HVM`
 - **Evidence:** `apps/server/test/groups.test.ts` › "takes the first rule that matches and renders non-blank"
 
 #### Scenario: Blank renders and Other
@@ -49,7 +49,7 @@ The server SHALL compute every signal's group once per catalog load and deliver 
 
 #### Scenario: Real data grouped by sender
 - **WHEN** the server runs on real data with the shipped `kipscope.yaml`
-- **THEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | .group // "Other"] | group_by(.) | map({(.[0]): length}) | add'` prints `{"AC":21,"CGW":39,"CPC":89,"EPS":3,"ESP":64,"EWM":6,"Engine":63,"Other":18,"PNHV":10,"SAM":35,"SAS":6,"SRS":13,"TCU":38,"YRG":23}`, and `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -r '.items[0].group'` prints `CGW` and the same for `CPC_448h.PTC_HV_Volt` prints `CPC`
+- **THEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | .group // "Other"] | group_by(.) | map({(.[0]): length}) | add'` prints `{"AC":21,"CGW":39,"DCU":89,"EPS":3,"ESP":64,"EWM":6,"Engine":63,"Other":18,"HVM":10,"SAM":35,"SAS":6,"SRS":13,"TCU":38,"YRG":23}`, and `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP' | jq -r '.items[0].group'` prints `CGW` and the same for `DCU_2B8h.HTR_HV_Volt` prints `DCU`
 - **Evidence:** the two curl commands
 
 ### Requirement: Grouped explorer list
@@ -62,12 +62,12 @@ When at least one catalog entry has a group, the explorer SHALL show the matches
 
 #### Scenario: Empty search on real data
 - **WHEN** the explorer is shown on real data with the shipped `kipscope.yaml` and an empty search
-- **THEN** it lists fourteen collapsed headers `AC 21`, `CGW 39`, `CPC 89`, `Engine 63`, `EPS 3`, `ESP 64`, `EWM 6`, `PNHV 10`, `SAM 35`, `SAS 6`, `SRS 13`, `TCU 38`, `YRG 23`, `Other 18` and no signal row, the count reads `428 matches`; a click on `ESP` shows its 64 rows below it, a second click hides them
+- **THEN** it lists fourteen collapsed headers `AC 21`, `CGW 39`, `DCU 89`, `Engine 63`, `EPS 3`, `ESP 64`, `EWM 6`, `HVM 10`, `SAM 35`, `SAS 6`, `SRS 13`, `TCU 38`, `YRG 23`, `Other 18` and no signal row, the count reads `428 matches`; a click on `ESP` shows its 64 rows below it, a second click hides them
 - **Evidence:** UI check (screenshot collapsed and with `ESP` open; header height via `getBoundingClientRect`)
 
 #### Scenario: Search on real data
 - **WHEN** the user types `temp` on real data with the shipped `kipscope.yaml`
-- **THEN** the list shows, all open, `Engine 4` with `TEMP_KL`, `T_OEL`, `T_LUFT`, `T_MOT`, then `CPC 5` with `EAC_Sp_Temp_Excess`, `EAC_TempLmt_BoostReq`, `PTC_CtrlTemp`, `PTC_ShtDn_TempSensFlt`, `OverTemp_Lmp`, then `PNHV 1`, then `AC 1` with `T_SOLL`, then `CGW 2` with `T_AUSSEN`, `T_AUSSEN_RAW`, and no `Other`; the count reads `13 matches`; the row `TEMP_KL` is active
+- **THEN** the list shows, all open, `Engine 4` with `TEMP_COOL`, `T_OIL`, `T_AIR`, `T_ENG`, then `DCU 5` with `COMP_Temp_Excess`, `COMP_TempLmt_Boost`, `HTR_CtrlTemp`, `HTR_ShtDn_SensFlt`, `OverTemp_Lamp`, then `HVM 1`, then `AC 1` with `T_SET`, then `CGW 2` with `T_OUTSIDE`, `T_OUTSIDE_RAW`, and no `Other`; the count reads `13 matches`; the row `TEMP_COOL` is active
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Group collapse
@@ -87,8 +87,8 @@ A click on a group header, or Enter while it is the active item, SHALL open or c
 Signal rows inside a group SHALL keep the row markup, hover card, drag source, add button and match highlighting of the flat list. Headers SHALL have no add button, no hover card and SHALL NOT start a drag. Opening or closing a group SHALL close an open hover card. Origin: necessary consequence of D-053 with D-017 (hover infos), D-020 (drag, keys) and signal-catalog "Explorer rows are a drag source".
 
 #### Scenario: Card and drag from a grouped row
-- **WHEN** on real data the user searches `V_ANZ`, rests the pointer on the row `V_ANZ` under `CGW 1`, then drags the row onto a window not showing it
-- **THEN** the card opens with `COMBI_412h.V_ANZ` as first line, the ghost reads `V_ANZ · add`, and after the drop the signal is in that window; pressing on the header `CGW` and moving starts no drag
+- **WHEN** on real data the user searches `SPEED_DISP`, rests the pointer on the row `SPEED_DISP` under `CGW 1`, then drags the row onto a window not showing it
+- **THEN** the card opens with `ICL_3A2h.SPEED_DISP` as first line, the ghost reads `SPEED_DISP · add`, and after the drop the signal is in that window; pressing on the header `CGW` and moving starts no drag
 - **Evidence:** UI check (screenshot of the card and during the drag)
 
 ### Requirement: Grouping without visible lag
@@ -100,14 +100,14 @@ Grouping SHALL run in the browser on every keystroke with no request to the serv
 - **Evidence:** `apps/web/test/explorer.test.ts` › "groups 10,000 matches in under 10 ms" (goal: logs the time, fails only above 50 ms)
 
 ### Requirement: Shipped files group by sender
-The shipped `kipscope.yaml` SHALL group by sending ECU: rule `group: '{sender}'`, then the fallback `match: '^(?<ecu>CPC|PNHV)_'`, `group: '{ecu}'`; `kipscope.example.yaml` SHALL explain `groups`, `match`, `group`, the field `{sender}`, the fall-through of blank renders and the group `Other`; README SHALL describe groups in its project-file section. Origin: D-053 („the shipped file groups by sending ECU"; fallback rule: D-053 Q1).
+The shipped `kipscope.yaml` SHALL group by sending ECU: rule `group: '{sender}'`, then the fallback `match: '^(?<ecu>DCU|HVM)_'`, `group: '{ecu}'`; `kipscope.example.yaml` SHALL explain `groups`, `match`, `group`, the field `{sender}`, the fall-through of blank renders and the group `Other`; README SHALL describe groups in its project-file section. Origin: D-053 („the shipped file groups by sending ECU"; fallback rule: D-053 Q1).
 
 #### Scenario: Shipped files parse with groups
 - **WHEN** the shipped `kipscope.yaml` and `kipscope.example.yaml` are parsed
-- **THEN** both parse without error, both have exactly two group rules, rule 0 without `match` and template `{sender}`, rule 1 `match: '^(?<ecu>CPC|PNHV)_'` and template `{ecu}` (D-053 Q1), and the display rules and measurement of the existing test are unchanged
+- **THEN** both parse without error, both have exactly two group rules, rule 0 without `match` and template `{sender}`, rule 1 `match: '^(?<ecu>DCU|HVM)_'` and template `{ecu}` (D-053 Q1), and the display rules and measurement of the existing test are unchanged
 - **Evidence:** `apps/server/test/project.test.ts` › "parses the shipped kipscope.yaml and kipscope.example.yaml" (extended)
 
 #### Scenario: README
 - **WHEN** a reader opens README.md
-- **THEN** a section "Signal groups" shows the `{sender}` rule with its CPC/PNHV fallback and explains `match`, `group`, `{sender}`, first non-blank rule wins, `Other` last and "restart the server after editing"
+- **THEN** a section "Signal groups" shows the `{sender}` rule with its DCU/HVM fallback and explains `match`, `group`, `{sender}`, first non-blank rule wins, `Other` last and "restart the server after editing"
 - **Evidence:** `grep -n "Signal groups\|{sender}" README.md`

@@ -1,11 +1,8 @@
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { REPO_ROOT } from "../src/config.ts";
 import { loadDbcFiles, parseDbc } from "../src/dbc.ts";
 
 const fixture = (name: string) => resolve(import.meta.dirname, "fixtures", name);
-const REAL_HCAN = resolve(REPO_ROOT, "../CarController/vehicles/smart451/dbc/h-can.dbc");
 
 describe("parseDbc / loadDbcFiles", () => {
   it("reads units and comments keyed by message.signal, decoding ISO-8859-1", async () => {
@@ -94,10 +91,10 @@ describe("parseDbc / loadDbcFiles", () => {
 
   it("reads the sender of each message, none for Vector__XXX", () => {
     const text = [
-      "BO_ 342 YRG_156h: 8 YRG",
+      "BO_ 348 IMU_15Ch: 8 YRG",
       ' SG_ A : 0|8@1+ (1,0) [0|0] ""  X',
       "",
-      "BO_ 147 CBX_A2: 8 Vector__XXX",
+      "BO_ 163 GWX_A2: 8 Vector__XXX",
       ' SG_ B : 0|8@1+ (1,0) [0|0] ""  X',
       "",
       "BO_ 7 Bare_7h:",
@@ -105,44 +102,11 @@ describe("parseDbc / loadDbcFiles", () => {
       "",
     ].join("\r\n");
     const meta = parseDbc(text);
-    expect(meta.get("YRG_156h.A")?.sender).toBe("YRG");
-    expect(meta.get("CBX_A2.B")).toBeDefined();
-    expect(meta.get("CBX_A2.B")).not.toHaveProperty("sender");
+    expect(meta.get("IMU_15Ch.A")?.sender).toBe("YRG");
+    expect(meta.get("GWX_A2.B")).toBeDefined();
+    expect(meta.get("GWX_A2.B")).not.toHaveProperty("sender");
     expect(meta.get("Bare_7h.C")).toBeDefined();
     expect(meta.get("Bare_7h.C")).not.toHaveProperty("sender");
-  });
-
-  it.runIf(existsSync(REAL_HCAN))("derives DBC details from the real h-can.dbc", async () => {
-    const meta = await loadDbcFiles([REAL_HCAN]);
-    const vAnz = meta.get("COMBI_412h.V_ANZ");
-    expect(vAnz).toMatchObject({
-      file: "h-can.dbc",
-      message: "COMBI_412h",
-      messageId: 1042,
-      sender: "CGW",
-      factor: 1,
-      offset: 0,
-      min: 0,
-      max: 510,
-    });
-    expect(vAnz?.values).toEqual(new Map([[511, "SNV"]]));
-    expect(meta.get("MS_608h.T_MOT")).toMatchObject({
-      messageId: 1544,
-      sender: "Engine",
-      factor: 1,
-      offset: -40,
-      min: -40,
-      max: 214,
-    });
-    expect(meta.get("BS_200h.DVL")).toMatchObject({
-      messageId: 512,
-      sender: "ESP",
-      factor: 0.5,
-      max: 8191,
-    });
-    // Vector__XXX: no sender key at all.
-    expect(meta.get("CPC_448h.PTC_HV_Volt")).toBeDefined();
-    expect(meta.get("CPC_448h.PTC_HV_Volt")).not.toHaveProperty("sender");
   });
 
   it("skips unreadable files and reports them", async () => {
@@ -152,13 +116,6 @@ describe("parseDbc / loadDbcFiles", () => {
     );
     expect(errors).toEqual(["/nonexistent.dbc"]);
     expect(meta.has("Many_700h.S0001")).toBe(true);
-  });
-
-  it.runIf(existsSync(REAL_HCAN))("parses the real h-can.dbc and finds MS_312h", async () => {
-    const meta = await loadDbcFiles([REAL_HCAN]);
-    expect(meta.size).toBeGreaterThan(500);
-    expect([...meta.keys()].some((k) => k.startsWith("MS_312h."))).toBe(true);
-    expect(meta.has("MS_312h.DNMOT")).toBe(true);
   });
 });
 
@@ -216,20 +173,20 @@ describe("SNA derivation (design S1)", () => {
     const meta = parseDbc(
       [
         "BO_ 1 M: 8 X",
-        ' SG_ LWS_CHKSUM : 0|8@1+ (1,0) [0|0] ""  X',
+        ' SG_ STEER_CHKSUM : 0|8@1+ (1,0) [0|0] ""  X',
         ' SG_ CRC_X : 8|8@1+ (1,0) [0|0] ""  X',
-        ' SG_ SSA_Enbl_Rq_CRCM : 16|8@1+ (1,0) [0|0] ""  X',
+        ' SG_ STS_Enbl_Rq : 16|8@1+ (1,0) [0|0] ""  X',
         "",
-        'BA_ "GenSigSNA" SG_ 1 LWS_CHKSUM "FFh";',
+        'BA_ "GenSigSNA" SG_ 1 STEER_CHKSUM "FFh";',
         'BA_ "GenSigSNA" SG_ 1 CRC_X "FFh";',
-        'BA_ "GenSigSNA" SG_ 1 SSA_Enbl_Rq_CRCM "FFh";',
+        'BA_ "GenSigSNA" SG_ 1 STS_Enbl_Rq "FFh";',
         'VAL_ 1 CRC_X 254 "SNA" ;',
         "",
       ].join("\n"),
     );
-    expect(meta.get("M.LWS_CHKSUM")?.sna).toBeUndefined();
+    expect(meta.get("M.STEER_CHKSUM")?.sna).toBeUndefined();
     expect(meta.get("M.CRC_X")?.sna?.values.map((v) => v.raw)).toEqual([254]);
-    expect(meta.get("M.SSA_Enbl_Rq_CRCM")?.sna?.values.map((v) => v.raw)).toEqual([255]);
+    expect(meta.get("M.STS_Enbl_Rq")?.sna?.values.map((v) => v.raw)).toEqual([255]);
   });
 
   it("treats GenSigSNA 0h as no SNA", async () => {
@@ -250,47 +207,6 @@ describe("SNA derivation (design S1)", () => {
       'BO_ 1 M: 8 X\n SG_ S : 0|8@1- (1,0) [0|0] ""  X\n\nVAL_ 1 S -1 "SNA" ;\n',
     );
     expect(meta.get("M.S")?.sna?.values).toEqual([{ raw: 255, value: -1, sources: ["VAL_"] }]);
-  });
-
-  it.runIf(existsSync(REAL_HCAN))("derives SNA values from the real h-can.dbc", async () => {
-    const meta = await loadDbcFiles([REAL_HCAN]);
-    const rawsOf = (key: string) => meta.get(key)?.sna?.values.map((v) => v.raw);
-    expect(meta.get("COMBI_412h.V_ANZ")?.sna?.values).toEqual([
-      { raw: 511, value: 511, sources: ["GenSigSNA", "VAL_"] },
-    ]);
-    expect(meta.get("BS_200h.DVL")?.sna?.values).toEqual([
-      { raw: 16383, value: 8191.5, sources: ["GenSigSNA", "VAL_"] },
-    ]);
-    expect(meta.get("MS_312h.DNMOT")?.sna?.values.map((v) => [v.raw, v.value])).toEqual([
-      [255, 128],
-    ]);
-    expect(rawsOf("SRS_1E1h.OC_P_Fast_SRS")).toEqual([0]);
-    expect(rawsOf("BS_328h.ESP_DSPL")).toEqual([30, 31]);
-    expect(rawsOf("YRG_156h.CLU_TYPE")).toEqual([15]);
-    // No-value labels do not beat GenSigSNA (D-015).
-    for (const key of [
-      "TPM_A1.TirePress_FL",
-      "TPM_A1.TirePress_FR",
-      "TPM_A1.TirePress_RL",
-      "TPM_A1.TirePress_RR",
-      "TPM_A1.TirePress_Spr",
-      "COMBI_408h.T_AUSSEN",
-    ]) {
-      expect(rawsOf(key), key).toContain(255);
-    }
-    // Valid label, 1-bit and checksum exemptions (D-014).
-    for (const key of [
-      "YRG_156h.MSG_CNT_7",
-      "BS_208h.SZS",
-      "BS_328h.BS",
-      "SAS_0C2h.LWS_CHKSUM",
-      "BS_119h.CRC_0",
-    ]) {
-      expect(meta.has(key), `${key} exists`).toBe(true);
-      expect(meta.get(key)?.sna, key).toBeUndefined();
-    }
-    // Number of signals with SNA codes (script count, D-014 + D-015; not derived from parseDbc).
-    expect([...meta.values()].filter((e) => e.sna).length).toBe(171);
   });
 });
 

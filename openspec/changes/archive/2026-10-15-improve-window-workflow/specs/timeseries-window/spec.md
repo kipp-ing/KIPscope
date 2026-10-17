@@ -10,7 +10,7 @@
 While the time axes are linked, zoom, pan, zoom-out, double-click reset and history back in any window SHALL change the time range of all windows; the other windows SHALL show the new range at the latest 1 s after the last zoom or pan input. While unlinked, each window SHALL keep its own range. Origin: D-017 („gemeinsamer zoom standard aktiv abschaltbar“).
 
 #### Scenario: Zoom one of two linked windows
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, and the user wheel-zooms in window 1
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, and the user wheel-zooms in window 1
 - **THEN** within 1 s window 2's header shows the same range as window 1 and its curve is reloaded for it
 - **Evidence:** UI check (screenshot of both headers); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
 
@@ -36,43 +36,43 @@ The top bar SHALL show a "Link time axes" toggle that reflects and sets the work
 A signal's legend row SHALL be draggable onto another window: a plain drop moves the signal, a drop with Alt or Ctrl held copies it, each as one `window.moveSignal` command. The signal SHALL keep its colour and take the target window's display mode (mode is a window option). An emptied window SHALL stay and show "Drop a signal here". Origin: D-017 („Signale zwischen zwei anzeigen hin und her“); Alt/Ctrl copy from power-user expectations (feedback 2026-10-14, point 1).
 
 #### Scenario: Move by drag
-- **WHEN** window A shows `COMBI_412h.V_ANZ` and `BS_200h.DVL`, window B shows `CPC_448h.PTC_HV_Volt`, and the user drags the V_ANZ legend row onto window B and releases
-- **THEN** V_ANZ is listed and drawn in window B with the same swatch colour as before, window A shows only DVL, and the revision increased by exactly one
+- **WHEN** window A shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL`, window B shows `DCU_2B8h.HTR_HV_Volt`, and the user drags the SPEED_DISP legend row onto window B and releases
+- **THEN** SPEED_DISP is listed and drawn in window B with the same swatch colour as before, window A shows only WSPD_FL, and the revision increased by exactly one
 - **Evidence:** UI check (screenshot after the drop, revision in the top bar); `apps/web/test/drag.test.ts` › "moves on plain drop and copies with Alt or Ctrl"
 
 #### Scenario: Copy by drag
-- **WHEN** the user drags the DVL row onto window B with Alt (or Ctrl) held at release
-- **THEN** DVL is shown in both windows in the same colour
+- **WHEN** the user drags the WSPD_FL row onto window B with Alt (or Ctrl) held at release
+- **THEN** WSPD_FL is shown in both windows in the same colour
 - **Evidence:** `apps/web/test/drag.test.ts` › "moves on plain drop and copies with Alt or Ctrl"; UI check if the browser automation can hold the modifier, else `not_run` with the test as evidence
 
 ### Requirement: Drag feedback and cancel
 While dragging, each window that can take the signal SHALL be highlighted with the hint "Drop to move · Alt/Ctrl+drop to copy", and a "+ New window" drop zone SHALL appear below the last window. A window showing the signal already, or reaching five units, SHALL NOT be highlighted (the latter is marked not droppable) and SHALL ignore a drop. Esc or a release outside any target SHALL cancel without a command. Origin: power-user expectations (feedback 2026-10-14, point 1) serving D-017.
 
 #### Scenario: Highlight and cancel
-- **WHEN** the user starts dragging the PTC_HV_Volt row, holds it over window A, then presses Esc and releases
+- **WHEN** the user starts dragging the HTR_HV_Volt row, holds it over window A, then presses Esc and releases
 - **THEN** while dragging window A is highlighted with the hint and "+ New window" is visible; after Esc nothing is highlighted, no signal moved and the revision is unchanged
 - **Evidence:** UI check (screenshot while dragging, revision before and after) for the highlight and for a release outside any target; the Esc step is Jan's hand check (the browser automation cannot press a key during a pointer drag)
 
 #### Scenario: No drop on a window that shows the signal
-- **WHEN** V_ANZ is shown in windows A and B and the user drags it from A over B
+- **WHEN** SPEED_DISP is shown in windows A and B and the user drags it from A over B
 - **THEN** B is not highlighted and releasing over B changes nothing
 - **Evidence:** `apps/web/test/drag.test.ts` › "rejects drops on the source and on windows showing the signal"; UI check (screenshot)
 
 #### Scenario: Fifth unit refused
-- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags `MS_312h.DNMOT` (`rpm/10ms`) from window B over A
+- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags `ENG_2E8h.MOT_SPD_D` (`rpm/10ms`) from window B over A
 - **THEN** A is marked as not droppable with the hint "At most 4 units per window", and releasing over A changes nothing
 - **Evidence:** `apps/web/test/drag.test.ts` › "refuses a drop that would make a fifth unit"; UI check (screenshot while dragging, revision unchanged)
 
 #### Scenario: Drop into a new window
-- **WHEN** the user drags the PTC_HV_Volt row from window B onto "+ New window"
-- **THEN** a new window "Window <n>" appears last with B's range and mode, showing PTC_HV_Volt, and window B stays with "Drop a signal here"
+- **WHEN** the user drags the HTR_HV_Volt row from window B onto "+ New window"
+- **THEN** a new window "Window <n>" appears last with B's range and mode, showing HTR_HV_Volt, and window B stays with "Drop a signal here"
 - **Evidence:** `apps/web/test/drag.test.ts` › "drops into a new window"; UI check (screenshot)
 
 ### Requirement: One y-axis per unit
 Signals with the same unit SHALL share one y scale and axis; each unit SHALL have its own. A signal without unit SHALL have its own scale, titled with its name. The axis title SHALL be the unit, in the signal's colour when it is the only signal on that axis. Origin: D-018 ("'Same value range' means **same unit**: one y-axis per unit, nothing more."); D-017 („gleiche signalbereich gleiche achse“); coloured title from power-user expectations (feedback 2026-10-14, point 2).
 
 #### Scenario: Two signals, same unit
-- **WHEN** a window shows `CPC_168h.EAC_HV_Volt` and `CPC_448h.PTC_HV_Volt` (both `V`)
+- **WHEN** a window shows `DCU_1F4h.COMP_HV_Volt` and `DCU_2B8h.HTR_HV_Volt` (both `V`)
 - **THEN** one axis is drawn on the left titled `V` in neutral colour, and both legend rows show `L`
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "puts signals with the same unit on one axis"
 
@@ -80,12 +80,12 @@ Signals with the same unit SHALL share one y scale and axis; each unit SHALL hav
 Every unit SHALL get a drawn y axis, stacked up to two per side in signal order: first unit inner left (`L`), second inner right (`R`), third outer left (`L2`), fourth outer right (`R2`); the plot narrows. Each legend row SHALL show its axis side. Origin: D-019 ("stacked axes, up to two per side (at most four units), the plot area gets narrower. Every value stays readable."); legend sides from feedback 2026-10-14, point 2.
 
 #### Scenario: Second unit
-- **WHEN** `COMBI_412h.V_ANZ` (`km/h`) is added to that window
-- **THEN** a right axis titled `km/h` appears in V_ANZ's colour, V_ANZ's legend row shows `R`, and the `V` axis stays left
+- **WHEN** `ICL_3A2h.SPEED_DISP` (`km/h`) is added to that window
+- **THEN** a right axis titled `km/h` appears in SPEED_DISP's colour, SPEED_DISP's legend row shows `R`, and the `V` axis stays left
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order", "colours an axis like its only signal"
 
 #### Scenario: Third and fourth unit
-- **WHEN** `MS_608h.T_MOT` (`°C`) and then `BS_200h.DVL` (`1/min`) are added as well
+- **WHEN** `ENG_5E0h.T_ENG` (`°C`) and then `BRK_1A0h.WSPD_FL` (`1/min`) are added as well
 - **THEN** a `°C` axis appears outer left and a `1/min` axis outer right, each in its signal's colour with readable tick labels, the plot is narrower, and the legend rows show `L2` and `R2`
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order"
 
@@ -98,16 +98,16 @@ Every unit SHALL get a drawn y axis, stacked up to two per side in signal order:
 Axis titles SHALL be horizontal text above their axis, showing the unit exactly as in the signal metadata, and SHALL NOT overlap or cut tick labels; tick labels SHALL NOT be cut. Origin: bug "°C garbled in the rotated axis title" (feedback 2026-10-14); the API delivers `°C` correctly (design "Bug analysis").
 
 #### Scenario: Degree sign
-- **WHEN** a window shows only `AC_A1.T_SOLL`
-- **THEN** the left axis title reads `°C` in T_SOLL's colour, and the tick labels are fully visible
+- **WHEN** a window shows only `CLIM_A1.T_SET`
+- **THEN** the left axis title reads `°C` in T_SET's colour, and the tick labels are fully visible
 - **Evidence:** UI check (zoomed screenshot of the axis)
 
 ### Requirement: Stable colours in windows
 Each signal SHALL be drawn, listed and SNA-marked in its workspace colour, the same in every window. Origin: D-018 ("stable signal colours across windows").
 
 #### Scenario: First signals of two windows
-- **WHEN** window 1 shows `COMBI_412h.V_ANZ` first and window 2 shows `CPC_448h.PTC_HV_Volt` first, and V_ANZ is also copied into window 2
-- **THEN** the two first signals have different colours, and V_ANZ has the same colour in both windows
+- **WHEN** window 1 shows `ICL_3A2h.SPEED_DISP` first and window 2 shows `DCU_2B8h.HTR_HV_Volt` first, and SPEED_DISP is also copied into window 2
+- **THEN** the two first signals have different colours, and SPEED_DISP has the same colour in both windows
 - **Evidence:** UI check (screenshot); `packages/shared/test/apply.test.ts` › "assigns stable colours across windows"
 
 ### Requirement: Window names
@@ -119,15 +119,15 @@ A window SHALL be named by its title or, untitled, "Window <n>" everywhere it is
 - **Evidence:** UI check (screenshot of header and open "Add to" list)
 
 #### Scenario: New window from the explorer is untitled
-- **WHEN** the user adds `COMBI_412h.V_ANZ` to "New window" in the explorer and the new window gets the ID `w<n>`
-- **THEN** the new window's header reads `Window <n>` (not `V_ANZ`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
+- **WHEN** the user adds `ICL_3A2h.SPEED_DISP` to "New window" in the explorer and the new window gets the ID `w<n>`
+- **THEN** the new window's header reads `Window <n>` (not `SPEED_DISP`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
 - **Evidence:** UI check (screenshot of header and "Add to" list); the `curl` command. Origin: lead decision (rounds.md round 5): a signal-name title goes stale once that signal is moved out.
 
 ### Requirement: Aligned time axes
 All windows SHALL use the same plot left and right insets (per side, the widest natural axis width of any window), so that one timestamp sits at the same x position in every window of equal width. Origin: lead decision (rounds.md round 5), a necessary consequence of D-017 (linked zoom is only comparable when the time axes line up).
 
 #### Scenario: Different axis counts line up
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ` only (one axis, `L`) and window 2 shows `CPC_448h.PTC_HV_Volt`, `COMBI_412h.V_ANZ` and `MS_608h.T_MOT` (axes `L`, `R`, `L2`)
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP` only (one axis, `L`) and window 2 shows `DCU_2B8h.HTR_HV_Volt`, `ICL_3A2h.SPEED_DISP` and `ENG_5E0h.T_ENG` (axes `L`, `R`, `L2`)
 - **THEN** the left and right edges of both plot areas are at the same x (within 1 px), and the crosshair over a timestamp in window 1 and the same timestamp's tick in window 2 are vertically aligned
 - **Evidence:** UI check (one screenshot of both windows with a vertical guide or measured plot edges); `apps/web/test/insets.test.ts` › "takes the largest axis width per side across windows"
 
@@ -135,12 +135,12 @@ All windows SHALL use the same plot left and right insets (per side, the widest 
 The plot crosshair SHALL be hidden when the pointer leaves the plot and right after every range change made in the window itself (wheel zoom, wheel pan, drag-select, "Zoom out", double-click reset), until the pointer moves over the plot again. Origin: lead decision (rounds.md round 5): a crosshair left at the old pixel after a zoom points at a wrong time.
 
 #### Scenario: Leave and zoom
-- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), then leaves the plot; then the user returns, wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
+- **WHEN** the pointer hovers a SPEED_DISP plot (crosshair visible), then leaves the plot; then the user returns, wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
 - **THEN** the crosshair is gone after leaving, and after each of the wheel zoom, the drag-select and the double-click reset until the pointer moves
 - **Evidence:** UI check (screenshots after leaving and after each zoom commit)
 
 #### Scenario: Pan and Zoom out
-- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), the user Shift+wheels once without moving, then moves, then clicks "Zoom out"
+- **WHEN** the pointer hovers a SPEED_DISP plot (crosshair visible), the user Shift+wheels once without moving, then moves, then clicks "Zoom out"
 - **THEN** the crosshair is gone after the pan until the pointer moves, and gone after "Zoom out"
 - **Evidence:** UI check (screenshots after the pan and after "Zoom out")
 
@@ -214,7 +214,7 @@ The user SHALL be able to change a window's plot height by dragging a handle bel
 A double-click in the plot SHALL set the window's range to the union of its signals' extents (first point to just after the last point). While linked, all windows SHALL follow. Origin: D-018 ("double-click resets zoom").
 
 #### Scenario: Back to the full extent
-- **WHEN** a window shows only `COMBI_412h.V_ANZ` zoomed to 2026-10-13T09:56:59Z–09:57:01Z and the user double-clicks the plot
+- **WHEN** a window shows only `ICL_3A2h.SPEED_DISP` zoomed to 2026-10-13T09:56:59Z–09:57:01Z and the user double-clicks the plot
 - **THEN** the range becomes 2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.221Z (header in local time) and the view is aggregated
 - **Evidence:** UI check (screenshot of the header); `apps/web/test/zoom.test.ts` › "computes the extent range rounded up to the next millisecond"
 
@@ -222,7 +222,7 @@ A double-click in the plot SHALL set the window's range to the union of its sign
 Each committed zoom, pan, zoom-out or double-click reset SHALL be recorded; "Back" in the window header and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. Backspace SHALL act on the window under the pointer, else the window zoomed last, and SHALL do nothing while a text field has focus. Back SHALL be disabled when there is no previous range. Origin: D-018 ("zoom history back").
 
 #### Scenario: Two steps back
-- **WHEN** the user zooms a V_ANZ window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
+- **WHEN** the user zooms a SPEED_DISP window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
 - **THEN** the window shows the morning range, then the full extent, and Back is disabled
 - **Evidence:** UI check (screenshots of the header after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
 
@@ -243,14 +243,14 @@ The zoom history SHALL live in the browser tab only, not in the workspace; a rel
 Zoom-out, wheel zoom, pan, reset and back SHALL keep the window range within 1900-01-01T00:00:00Z … 2262-04-11T00:00:00Z. Origin: necessary consequence of the bug "window range 1036-01-11 … 3937-05-09" (design "Bug analysis").
 
 #### Scenario: Zoom out forty times
-- **WHEN** a window shows `CPC_448h.PTC_HV_Volt` and the user clicks "Zoom out" 40 times
+- **WHEN** a window shows `DCU_2B8h.HTR_HV_Volt` and the user clicks "Zoom out" 40 times
 - **THEN** the header range never shows a year before 1900 or after 2262, no command is rejected, and the signal is still drawn (as an aggregated point or short curve)
 - **Evidence:** UI check (screenshot of the header and the message area); `apps/web/test/zoom.test.ts` › "clamps ranges into the time bounds"
 
 ### Requirement: Valid constants at raw 0 are drawn
-A stored value that is not an SNA code of its signal SHALL be drawn as a value even when it is constant and equals the physical value of raw 0. Origin: D-019 ("T_SOLL's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions."); data facts in design "Bug analysis". `MS_312h.DNMOT` (−127, D-012) is covered by the existing scenario "Valid constant, no SNA" under "SNA share in the signal list".
+A stored value that is not an SNA code of its signal SHALL be drawn as a value even when it is constant and equals the physical value of raw 0. Origin: D-019 ("T_SET's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions."); data facts in design "Bug analysis". `ENG_2E8h.MOT_SPD_D` (−127, D-012) is covered by the existing scenario "Valid constant, no SNA" under "SNA share in the signal list".
 
-#### Scenario: T_SOLL
-- **WHEN** a window shows the full extent of `AC_A1.T_SOLL`
+#### Scenario: T_SET
+- **WHEN** a window shows the full extent of `CLIM_A1.T_SET`
 - **THEN** the curve is a flat line at −40 °C and the legend shows no SNA share
 - **Evidence:** UI check (screenshot)

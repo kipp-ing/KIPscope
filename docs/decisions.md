@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-077: Real DBC names out of the repo (2026-10-17)
+
+Jan: „clean pls“ (after D-076 listed the files that still named real messages and signals).
+
+- **Decision:** No tracked file names a message or signal of the smart451 DBCs, nor their CAN IDs or bit layouts. Specs, archived changes, decisions, feedback, tests, comments and the design mock use one consistent set of made-up names (`ICL_3A2h.SPEED_DISP`, `BRK_1A0h.WSPD_FL`, `DCU_2B8h.HTR_HV_Volt`, ECU prefixes `DCU`, `HVM`, `ICL`, …); past decision entries were rewritten for this only. `kipscope.yaml` is local and gitignored (the repo ships `kipscope.example.yaml` and `demo/kipscope.yaml`); assertions on the real h-can.dbc live in `apps/server/test/*.local.test.ts`, also gitignored. The DBC files themselves stay outside the repo (`../CarController`), as before.
+- **Why:** The repo is public; D-076 kept the pictures clean but the text still named real messages.
+- **Consequences:** Supersedes D-076's consequence that real names remain. Git history before this commit still holds the real names until it is rewritten. Generic words that happen to be DBC names (`crash`, `odometer`, `DATA`, `CRC_0`, …) stay. A fresh clone runs without `kipscope.yaml` (full names) until one is created from the example.
+
 ## D-076: Public pictures show only the demo recording (2026-10-17)
 
 Jan: „we do not want to disclose can messages“; the screenshots show what OVMS knows on the smart, error codes are common knowledge.
@@ -91,7 +99,7 @@ From the archived change `add-multi-select`.
 
 From the archived change `add-events`; details there.
 
-- **Decision:** `GET /api/events?dataRef=&signal=…&filter=&from=&to=` returns derived `DiagEvent`s (category from the UDS status byte or the state transition; `inferred` for a snapshot that differs from the previous state, "seen after a gap"), counts per category and source, skipped signals; cached per catalog load, prefetched, capped at 100,000; a missing events table means no events. One filter string in UI, CLI and workspace (`events.setFilter`): category words and presets OR, `ecu:`/`name:`/`text:`, quoted phrases, `-` excludes; one normalised spelling and a sentence describing it; default `active changes`. State changes of a signal come from one window-function query returning changed rows only (≤ 2,000 per signal). Pins in a 6 px lane of the strip (grouped within 6 px), lines and glyphs in the charts (click sets A, Shift+click B), Events sidebar tab. Signals with named states: `VAL_` labels (number in the tooltip), diag enums and text states (label from the row text, label-only tooltip); drawn as steps where a segment has a named end; `kipscope.yaml` `events.signals` (IgnCurMode, BMS.contactor), a listed signal not recorded yet waits quietly.
+- **Decision:** `GET /api/events?dataRef=&signal=…&filter=&from=&to=` returns derived `DiagEvent`s (category from the UDS status byte or the state transition; `inferred` for a snapshot that differs from the previous state, "seen after a gap"), counts per category and source, skipped signals; cached per catalog load, prefetched, capped at 100,000; a missing events table means no events. One filter string in UI, CLI and workspace (`events.setFilter`): category words and presets OR, `ecu:`/`name:`/`text:`, quoted phrases, `-` excludes; one normalised spelling and a sentence describing it; default `active changes`. State changes of a signal come from one window-function query returning changed rows only (≤ 2,000 per signal). Pins in a 6 px lane of the strip (grouped within 6 px), lines and glyphs in the charts (click sets A, Shift+click B), Events sidebar tab. Signals with named states: `VAL_` labels (number in the tooltip), diag enums and text states (label from the row text, label-only tooltip); drawn as steps where a segment has a named end; `kipscope.yaml` `events.signals` (IgnMode, BMS.contactor), a listed signal not recorded yet waits quietly.
 
 ## D-063: Diagnostic catalog conventions (2026-10-16)
 
@@ -121,7 +129,7 @@ From the archived change `add-strip-navigation`; details there.
 
 ## D-059: State names at the cursors, state changes on the events line (2026-10-16)
 
-- **Context:** Jan: „it fits her. many signals are state, or have some values defined as state. the coursers shall show the statename. like OFF. and if one drags a signal with stats to horizon. the changes are marked. not all stuff shall go to horizon. automatically only two things (yaml define) IGN and contactor state (not recorded yet)". The DBCs hold 441 `VAL_` tables (h-can 195, hybrid-can 246; parsed, so far used only for SNA); diag states carry their label in `sdlog.signals.text` (`BMS.contactor` „open", `BMS.clamp15` „not active"). Ignition candidates: `CPC_168h.IgnCurMode` (`VAL_` KEYON, CHARGE_KEYON, CHARGE, NONE), `SAM_423h.KL_15` (0/1, no `VAL_`).
+- **Context:** Jan: „it fits her. many signals are state, or have some values defined as state. the coursers shall show the statename. like OFF. and if one drags a signal with stats to horizon. the changes are marked. not all stuff shall go to horizon. automatically only two things (yaml define) IGN and contactor state (not recorded yet)". The DBCs hold 441 `VAL_` tables (h-can 195, hybrid-can 246; parsed, so far used only for SNA); diag states carry their label in `sdlog.signals.text` (`BMS.contactor` „open", `BMS.clamp15` „not active"). Ignition candidates: `DCU_1F4h.IgnMode` (`VAL_` KEYON, CHARGE_KEYON, CHARGE, NONE), `BCM_42Eh.IGN_15` (0/1, no `VAL_`).
 - **Decision:** Part of `add-events` (D-058):
   - Cursor readouts (A, B, L; legends and values window) show the state name where the value has one (`OFF`), from the DBC `VAL_` table or the row's text.
   - Dragging a signal with states onto the events line (lead's reading of „horizon") marks its state changes there.
@@ -134,7 +142,7 @@ From the archived change `add-strip-navigation`; details there.
   - The `BMS.*` readings get their own explorer group (config rule, `BMS (diag)`).
   - Events as marks on the time strip and in the chart windows. Jan: „the events line is great. however we need a filter. it can get super overwhelming. the filter also needs cli. it needs human way of thinking too. give this to a proper agent". The filter works in the UI and the CLI and speaks in terms a person uses (e.g. active faults, changes only, by ECU), not raw columns.
 - **Not now:** text states as labelled bands (they still plot as a flat 0), units for the BMS readings.
-- **Jan's answers on the `add-events` spec (also for D-059):** Q1 default filter `active changes` (not the recommended `faults changes`); Q2 the events list is a sidebar tab; Q4 ignition is `CPC_168h.IgnCurMode`; Q5 the contactor entry is `BMS.contactor`, used now. Lead took the recommended defaults for Q3 (one search-style filter string in UI, CLI and workspace) and Q6 (a snapshot that differs from the previous state counts as a change, marked "seen after a gap").
+- **Jan's answers on the `add-events` spec (also for D-059):** Q1 default filter `active changes` (not the recommended `faults changes`); Q2 the events list is a sidebar tab; Q4 ignition is `DCU_1F4h.IgnMode`; Q5 the contactor entry is `BMS.contactor`, used now. Lead took the recommended defaults for Q3 (one search-style filter string in UI, CLI and workspace) and Q6 (a snapshot that differs from the previous state counts as a change, marked "seen after a gap").
 
 ## D-057: Interactive time strip (2026-10-16)
 
@@ -164,16 +172,16 @@ From the archived change `adopt-design-language`; details there.
 
 From the archived change `add-signal-groups`; details there.
 
-- **Decision:** `display.groups` rules (`match` optional, `group` template over named groups and `{sender}`); a blank render falls through to the next rule; computed on the server as optional `SignalInfo.group` (absent = `Other`); the web groups only. Shipped rules: `{sender}`, then `^(?<ecu>CPC|PNHV)_` → `{ecu}`. Empty search: groups by name, `Other` last, also while searching; Enter adds the first row shown; arrows include headers, Enter on a header toggles; collapse state is not remembered. `DbcInfo.sender` absent for `Vector__XXX`.
+- **Decision:** `display.groups` rules (`match` optional, `group` template over named groups and `{sender}`); a blank render falls through to the next rule; computed on the server as optional `SignalInfo.group` (absent = `Other`); the web groups only. Shipped rules: `{sender}`, then `^(?<ecu>DCU|HVM)_` → `{ecu}`. Empty search: groups by name, `Other` last, also while searching; Enter adds the first row shown; arrows include headers, Enter on a header toggles; collapse state is not remembered. `DbcInfo.sender` absent for `Vector__XXX`.
 
 ## D-053: Signal groups in the explorer (2026-10-16)
 
-- **Context:** Jan: „signals shall be grouped on left bar. user defined. here as example we use sending ECU". The DBCs name a sender per `BO_` (h-can: Engine, CGW, ESP, …; hybrid-can: CPC, BMS, EM2, …); `Vector__XXX` means no sender.
+- **Context:** Jan: „signals shall be grouped on left bar. user defined. here as example we use sending ECU". The DBCs name a sender per `BO_` (h-can: Engine, CGW, ESP, …; hybrid-can: DCU, BMS, EM2, …); `Vector__XXX` means no sender.
 - **Decision:** Jan chose:
   - Groups are defined by rules in `kipscope.yaml` (like the display-name rules of D-035); the shipped file groups by sending ECU. Restart to change.
   - Empty search: all groups, collapsed. While searching: only groups with a hit, all open, ordered by their best hit; the ranking stays inside each group.
   - Signals without a group (no DBC entry, sender `Vector__XXX`) go to one group `Other`, always last.
-  - Design Q1: the shipped file adds a fallback rule `^(?<ecu>CPC|PNHV)_` → `{ecu}` after `{sender}`, since h-can.dbc names no sender for those messages (Other would hold 117 of 428 signals).
+  - Design Q1: the shipped file adds a fallback rule `^(?<ecu>DCU|HVM)_` → `{ecu}` after `{sender}`, since h-can.dbc names no sender for those messages (Other would hold 117 of 428 signals).
   - `Other` stays last while searching too; Enter adds the first row shown, even if a better hit sits in `Other`.
 
 ## D-052: Near-curve distance 16 px (2026-10-16)
@@ -285,8 +293,8 @@ From the archived change `add-display-names` (design N1, N5, N6, N7, open questi
 
 ## D-035: Display names from a project YAML (2026-10-15)
 
-- **Decision:** Jan: the UI shows short signal names (`V_ANZ` instead of `COMBI_412h.V_ANZ`), defined per project in a YAML. The YAML holds pattern rules (regex with named groups and a `show` template; first match wins) plus an optional `rename` map for single signals (rename beats rules). When two signals get the same shown name, both show the short name plus a message suffix, e.g. `V_ANZ (COMBI)`. The full source name stays in the hover card and tooltips; search matches full name, short name and message alike; CLI and API keep the stable full IDs. Lead's defaults: the file is `kipscope.yaml` in the repo root, path overridable by env; no file or no matching rule shows the full name as today.
-- **Why:** Jan: „the signal names. no one is interested in hex. so it will be just V_ANZ in this case. However: this is different in each project. so a yaml shall be able to define whats shown in the ui". Picks: rules + renames, short + message suffix on collisions, full name in hover card/tooltips, search on both, CLI keeps full IDs.
+- **Decision:** Jan: the UI shows short signal names (`SPEED_DISP` instead of `ICL_3A2h.SPEED_DISP`), defined per project in a YAML. The YAML holds pattern rules (regex with named groups and a `show` template; first match wins) plus an optional `rename` map for single signals (rename beats rules). When two signals get the same shown name, both show the short name plus a message suffix, e.g. `SPEED_DISP (ICL)`. The full source name stays in the hover card and tooltips; search matches full name, short name and message alike; CLI and API keep the stable full IDs. Lead's defaults: the file is `kipscope.yaml` in the repo root, path overridable by env; no file or no matching rule shows the full name as today.
+- **Why:** Jan: „the signal names. no one is interested in hex. so it will be just SPEED_DISP in this case. However: this is different in each project. so a yaml shall be able to define whats shown in the ui". Picks: rules + renames, short + message suffix on collisions, full name in hover card/tooltips, search on both, CLI keeps full IDs.
 
 ## D-034: Live cursor conventions (2026-10-15)
 
@@ -404,11 +412,11 @@ From the archived change `improve-window-workflow` (design D1–D3, D7); details
   - `improve-window-workflow` gets its spec brought in line with the code and cheap unit tests for wheel factor, inset alignment and Backspace in text fields before it is archived.
 - **Why:** The first three come from the power-user report ([feedback/2026-10-14-power-users.md](feedback/2026-10-14-power-users.md)); "Add to" jumping under the click is a reproduced bug. Jan chose to keep them in scope and record them here.
 
-## D-019: Stacked axes; T_SOLL follows the DBC (2026-10-14)
+## D-019: Stacked axes; T_SET follows the DBC (2026-10-14)
 
 - **Decision:** Answered by Jan on the spec owners' open questions:
   - More than two units in a window: stacked axes, up to two per side (at most four units), the plot area gets narrower. Every value stays readable.
-  - T_SOLL's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions.
+  - T_SET's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions.
 - **Why:** Jan's choice. Organisational note by the lead: the explorer items of D-018 (ranking, highlighting, no cap) are built in their own change `improve-signal-explorer`; content unchanged.
 
 ## D-018: Scope of the window-workflow change (2026-10-14)
@@ -439,7 +447,7 @@ From the archived change `improve-window-workflow` (design D1–D3, D7); details
 ## D-015: "No value" labels do not beat GenSigSNA (2026-10-14)
 
 - **Decision:** Refines D-014's label rule: `VAL_` labels that themselves mean "no value" — `--`, `NO_TEMP_SENSOR` and `RES` (reserved) — do not make a `GenSigSNA` value valid; it stays SNA. The list is fixed in the spec and grows only by decision.
-- **Why:** Answered by Jan. Taken literally, D-014 would show raw `FFh` of `TirePress_*`, `T_AUSSEN(_RAW)`, `T_SOLL`, `T_INNEN` and 63 of `FCOD_MOT` as real measurements.
+- **Why:** Answered by Jan. Taken literally, D-014 would show raw `FFh` of `TirePress_*`, `T_OUTSIDE(_RAW)`, `T_SET`, `T_CABIN` and 63 of `FCODE_ENG` as real measurements.
 
 ## D-014: SNA exceptions and SNA display (2026-10-14)
 
@@ -448,7 +456,7 @@ From the archived change `improve-window-workflow` (design D1–D3, D7); details
   - `GenSigSNA` does not apply to 1-bit signals and to checksum/CRC signals.
   - SNA periods are marked as a thin strip per signal at the bottom of the plot, not as full-height shading.
   - In aggregated views a bucket is marked as SNA from a single SNA point; mean/min/max contain valid points only.
-- **Why:** Answered by Jan on the spec owner's open questions for `add-sna-handling`. Taking `GenSigSNA` literally hid valid data: `BS_208h.SZS` "1h" = `OK` (100 %), `BS_328h.BS` brake switch (95.8 %), CRC values (0.2–1.5 %). D-010's core rule stays: SNA is never shown as a valid value.
+- **Why:** Answered by Jan on the spec owner's open questions for `add-sna-handling`. Taking `GenSigSNA` literally hid valid data: `BRK_21Ch.BRK_SW` "1h" = `OK` (100 %), `BRK_33Ch.BRK_STATE` brake switch (95.8 %), CRC values (0.2–1.5 %). D-010's core rule stays: SNA is never shown as a valid value.
 
 ## D-013: Agent team like PCB-dev (2026-10-14)
 
@@ -458,7 +466,7 @@ From the archived change `improve-window-workflow` (design D1–D3, D7); details
 
 ## D-012: Correction to D-010's evidence; SNA is compared physically (2026-10-14)
 
-- **Decision:** D-010 stands. Its example was wrong: `MS_312h.DNMOT` is not SNA. It is scaled `(1, −127)`, so SNA raw `FFh` is physical 128; the constant −127 is raw 0, a valid value. Correct examples: `COMBI_412h.V_ANZ` (raw `1FFh` → 511 km/h) and `BS_200h.DVL` (raw `3FFFh` × 0.5 → 8191.5 1/min, present in the data). SNA raw values from the DBC are converted with factor and offset (two's complement for signed signals) before comparing with stored values, since the decoder stores physical values (`scaling=True`).
+- **Decision:** D-010 stands. Its example was wrong: `ENG_2E8h.MOT_SPD_D` is not SNA. It is scaled `(1, −127)`, so SNA raw `FFh` is physical 128; the constant −127 is raw 0, a valid value. Correct examples: `ICL_3A2h.SPEED_DISP` (raw `1FFh` → 511 km/h) and `BRK_1A0h.WSPD_FL` (raw `3FFFh` × 0.5 → 8191.5 1/min, present in the data). SNA raw values from the DBC are converted with factor and offset (two's complement for signed signals) before comparing with stored values, since the decoder stores physical values (`scaling=True`).
 - **Why:** The stored values are physical; comparing raw SNA codes would miss real SNA and hide valid values.
 
 ## D-011: Architecture of the skeleton (2026-10-14)
@@ -476,7 +484,7 @@ From the archived change [add-timeseries-skeleton](../openspec/changes/archive/2
 ## D-010: SNA values are never shown as valid (2026-10-14)
 
 - **Decision:** A value the DBC marks as "signal not available" (SNA) must never be displayed, aggregated or evaluated as a valid measurement. SNA comes from the union of the `GenSigSNA` attribute (raw hex) and `VAL_` labels `SNA`/`SNV`; on conflict both count as SNA. `GenSigSNA "0h"` means "no SNA defined" unless a `VAL_` label marks 0 as SNA/SNV. Display: the curve breaks at SNA (never interpolated through), SNA periods are marked; aggregates exclude SNA and show its share.
-- **Why:** Fixed requirement from the user. Real data proves the need: `MS_312h.DNMOT` is 100 % SNA (shown as a valid −127 line in the skeleton), `COMBI_412h.V_ANZ` jumps to 511 = SNA. In h-can.dbc, 260 signals carry `"0h"` on counters and states where 0 is valid (`OFF`, `SYNCH_OK`, `0Hz`).
+- **Why:** Fixed requirement from the user. Real data proves the need: `ENG_2E8h.MOT_SPD_D` is 100 % SNA (shown as a valid −127 line in the skeleton), `ICL_3A2h.SPEED_DISP` jumps to 511 = SNA. In h-can.dbc, 260 signals carry `"0h"` on counters and states where 0 is valid (`OFF`, `SYNCH_OK`, `0Hz`).
 
 ## D-009: No special handling for recording pauses (2026-10-14)
 

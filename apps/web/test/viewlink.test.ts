@@ -24,7 +24,7 @@ const DOC: ViewDoc = {
       to: "2026-10-13T13:08:20Z",
       mode: "line",
       envelope: false,
-      signals: ["smart451/COMBI_412h.V_ANZ"],
+      signals: ["smart451/ICL_3A2h.SPEED_DISP"],
     },
   ],
 };
@@ -74,7 +74,7 @@ describe("copy link", () => {
         },
       ],
       nextId: 3,
-      view: { name: "drive-3", title: "Drive 3", note: "BLS first", modified: false },
+      view: { name: "drive-3", title: "Drive 3", note: "BRK_LMP first", modified: false },
     };
     const link = await viewLink(ws, { origin: "http://127.0.0.1:5173", pathname: "/" });
     // The web helper adds nothing of its own: it is the shared encoder's link.
@@ -84,7 +84,7 @@ describe("copy link", () => {
       unknown
     >;
     expect(doc.title).toBe("Drive 3");
-    expect(doc.note).toBe("BLS first");
+    expect(doc.note).toBe("BRK_LMP first");
     expect("saved" in doc).toBe(false);
   });
 });

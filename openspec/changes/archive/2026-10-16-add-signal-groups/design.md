@@ -5,7 +5,7 @@
 See proposal.md (Why). Facts that shape the approach:
 
 - **DBC parsing** (`apps/server/src/dbc.ts`): `MESSAGE = /^BO_\s+(\d+)\s+(\w+)\s*:/` keeps name and ID only; lines are split on `\r?\n`, so the CRLF files are fine. `DbcSignal` → `DbcInfo` via `dbcInfo()` in `catalog.ts`.
-- **Senders on real data** (shipped `kipscope.yaml`, catalog of 428 signals, all from `h-can.dbc`): AC 21, CGW 39, Engine 63, EPS 3, ESP 64, EWM 6, SAM 35, SAS 6, SRS 13, TCU 38, YRG 23, and 117 with `Vector__XXX` (messages `CPC_*`, `PNHV_*`, `D_RS_*`, `DCDC*`, `ECO_SCORE_DISP_RQ`, `MESS_CPC`). Examples: `COMBI_412h` CGW, `MS_608h` Engine, `BS_200h` ESP, `AC_443h` AC, `CPC_448h` `Vector__XXX`. Test fixtures: every `BO_` has sender `TEST`; `Nodbc_500h.RAW` has no DBC entry. With the shipped rules (`{sender}`, then the fallback `^(?<ecu>CPC|PNHV)_` → `{ecu}`, D-053 Q1): CPC 89, PNHV 10, Other 18; 14 groups.
+- **Senders on real data** (shipped `kipscope.yaml`, catalog of 428 signals, all from `h-can.dbc`): AC 21, CGW 39, Engine 63, EPS 3, ESP 64, EWM 6, SAM 35, SAS 6, SRS 13, TCU 38, YRG 23, and 117 with `Vector__XXX` (messages `DCU_*`, `HVM_*`, `DIAG_*`, `DCDC*`, `ECO_DISP_RQ`, `MEAS_DCU`). Examples: `ICL_3A2h` CGW, `ENG_5E0h` Engine, `BRK_1A0h` ESP, `CLIM_44Ch` AC, `DCU_2B8h` `Vector__XXX`. Test fixtures: every `BO_` has sender `TEST`; `Nodbc_500h.RAW` has no DBC entry. With the shipped rules (`{sender}`, then the fallback `^(?<ecu>DCU|HVM)_` → `{ecu}`, D-053 Q1): DCU 89, HVM 10, Other 18; 14 groups.
 - **Project file** (`apps/server/src/project.ts`): strict zod schema; `display` holds `names` and `rename` only, so a new key is needed. Templates (`parseTemplate`, placeholder `[A-Za-z_][A-Za-z0-9_]*`), regex compile and the group list of a regex (`(?:re)|` on `""`) exist and are reused. `DisplayRules` (`names.ts`) is what `main.ts` hands to `Catalog`.
 - **Catalog** (`catalog.ts`): `metadata.get(name)` per entry; display names assigned after building entries; entries sorted by name, then dataRef.
 - **Explorer** (`apps/web/src/explorer/SignalExplorer.tsx`): `matches = searchSignals(index, query)` (empty query → catalog order); one `listbox` whose direct children are the rows, `rowElement(i) = listRef.children[i]`; `active` index, `shown` (chunk of `CHUNK = 500`, `visibleCount`/`nextShown` in `format.ts`); card keyed by row index; drag from `.name`; Enter adds `matches[active]`.
@@ -55,7 +55,7 @@ export function groupOf(s: Pick<SignalInfo, "group">): string {
 display:
   groups:
     - group: '{sender}'             # no match: applies to every signal; blank without sender
-    - match: '^(?<ecu>CPC|PNHV)_'   # optional; JavaScript RegExp without flags on the full source name
+    - match: '^(?<ecu>DCU|HVM)_'   # optional; JavaScript RegExp without flags on the full source name
       group: '{ecu}'                # fallback for messages h-can.dbc gives no sender (D-053 Q1)
 ```
 
@@ -123,7 +123,7 @@ export function firstSignal(items: readonly ExplorerItem[]): number;
 
 - **16 px near (D-052):** 8 px was Jan's „hard to see". 32 px would cover a third of a 100 px stacked axis and highlight almost always; 16 is Jan's number, not ours to tune.
 - **14 groups, 442 items on real data:** twice the groups is still one screen of collapsed headers at 24 px (25+ visible, signal-catalog goal). A project with hundreds of groups would scroll, but works.
-- **18 in Other (4 %):** with `{sender}` alone it would be 117 (27 %); the shipped fallback rule (Q1) moves 99 into CPC and PNHV. Twice as many in Other would still be one group to open.
+- **18 in Other (4 %):** with `{sender}` alone it would be 117 (27 %); the shipped fallback rule (Q1) moves 99 into DCU and HVM. Twice as many in Other would still be one group to open.
 - **Grouping cost:** one pass over the ranked matches plus a sort of the groups; goal: 10,000 matches in 100 groups under 10 ms, so ranking plus grouping stays inside the 50 ms goal of "Filtering without visible lag". Twice the time is still invisible.
 - **Chunk 500:** headers add at most one per group; twice the groups changes nothing visible.
 
@@ -143,8 +143,8 @@ None. Without `display.groups` the catalog and the explorer are as today apart f
 
 ## Ledger entries on archive (proposed for `docs/decisions.md`)
 
-- **Signal group conventions:** `display.groups` rules (`match` optional, `group` template over named groups and `{sender}`); a blank render falls through to the next rule; computed on the server as optional `SignalInfo.group` (absent = `Other`); the web groups only. Shipped rules: `{sender}`, then `^(?<ecu>CPC|PNHV)_` → `{ecu}`. Empty search: groups by name, `Other` last, also while searching; Enter adds the first row shown; arrows include headers, Enter on a header toggles; collapse state is not remembered. `DbcInfo.sender` absent for `Vector__XXX`.
+- **Signal group conventions:** `display.groups` rules (`match` optional, `group` template over named groups and `{sender}`); a blank render falls through to the next rule; computed on the server as optional `SignalInfo.group` (absent = `Other`); the web groups only. Shipped rules: `{sender}`, then `^(?<ecu>DCU|HVM)_` → `{ecu}`. Empty search: groups by name, `Other` last, also while searching; Enter adds the first row shown; arrows include headers, Enter on a header toggles; collapse state is not remembered. `DbcInfo.sender` absent for `Vector__XXX`.
 
 ## Open Questions
 
-- **Q1 (resolved, D-053):** with `{sender}` alone 117 of 428 real signals (27 %) would land in `Other`, because `h-can.dbc` names no sender (`Vector__XXX`) for `CPC_*`, `PNHV_*`, `D_RS_*`, `DCDC*`, `ECO_SCORE_DISP_RQ` and `MESS_CPC`. Jan chose (b): the shipped `kipscope.yaml` and `kipscope.example.yaml` add the fallback rule `match: '^(?<ecu>CPC|PNHV)_'`, `group: '{ecu}'` after `{sender}`: CPC 89, PNHV 10, Other 18.
+- **Q1 (resolved, D-053):** with `{sender}` alone 117 of 428 real signals (27 %) would land in `Other`, because `h-can.dbc` names no sender (`Vector__XXX`) for `DCU_*`, `HVM_*`, `DIAG_*`, `DCDC*`, `ECO_DISP_RQ` and `MEAS_DCU`. Jan chose (b): the shipped `kipscope.yaml` and `kipscope.example.yaml` add the fallback rule `match: '^(?<ecu>DCU|HVM)_'`, `group: '{ecu}'` after `{sender}`: DCU 89, HVM 10, Other 18.

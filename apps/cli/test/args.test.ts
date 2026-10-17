@@ -493,10 +493,12 @@ describe("view forms (add-saved-views)", () => {
 
   it("maps the view forms", () => {
     // The requests of design V8, as the forms build them.
-    expect(parse("view", "save", "Drive 3", "--note", "BLS first", "--overwrite")).toMatchObject({
+    expect(
+      parse("view", "save", "Drive 3", "--note", "BRK_LMP first", "--overwrite"),
+    ).toMatchObject({
       kind: "view",
       action: "save",
-      request: { title: "Drive 3", note: "BLS first", overwrite: true },
+      request: { title: "Drive 3", note: "BRK_LMP first", overwrite: true },
     });
     expect(parse("view", "open", "drive-3")).toMatchObject({
       kind: "view",

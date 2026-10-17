@@ -12,8 +12,8 @@ The catalog SHALL support a case-insensitive text search that splits the query a
 - **THEN** the result is limited to one page and indicates that more matches exist
 
 #### Scenario: Match on a part of the name
-- **WHEN** the query is `anz` and the catalog holds `COMBI_412h.V_ANZ`
-- **THEN** `COMBI_412h.V_ANZ` is in the results, although `anz` is neither the whole name nor its start
+- **WHEN** the query is `disp` and the catalog holds `ICL_3A2h.SPEED_DISP`
+- **THEN** `ICL_3A2h.SPEED_DISP` is in the results, although `disp` is neither the whole name nor its start
 - **Evidence:** `packages/shared/test/search.test.ts` › "matches parts of name, description and unit case-insensitively"
 
 #### Scenario: All terms must match
@@ -29,9 +29,9 @@ The UI SHALL offer a signal explorer that searches the catalog and lists each re
 - **THEN** the signal appears in that window
 
 #### Scenario: SNA values shown in explorer
-- **WHEN** the user searches for `V_ANZ` on real data
-- **THEN** the row `COMBI_412h.V_ANZ` shows an SNA dot whose tooltip reads `SNA 511 km/h`, its hover card shows `511 km/h (raw 1FFh)` under SNA, and the row `BS_208h.SZS` (no SNA codes, D-014) shows no dot
-- **Evidence:** UI check (screenshot of the explorer with the V_ANZ card open)
+- **WHEN** the user searches for `SPEED_DISP` on real data
+- **THEN** the row `ICL_3A2h.SPEED_DISP` shows an SNA dot whose tooltip reads `SNA 511 km/h`, its hover card shows `511 km/h (raw 1FFh)` under SNA, and the row `BRK_21Ch.BRK_SW` (no SNA codes, D-014) shows no dot
+- **Evidence:** UI check (screenshot of the explorer with the SPEED_DISP card open)
 
 #### Scenario: One line per signal
 - **WHEN** the user searches for `temp` on real data
@@ -44,13 +44,13 @@ The UI SHALL offer a signal explorer that searches the catalog and lists each re
 Results SHALL be ordered by tier, best first: (0) a term equals the name or its part after the first `.`; (1) one of them starts with the term; (2) the name contains it; (3) only description, alias or unit do. A signal's tier is its worst term's tier; within a tier catalog order holds. API and explorer SHALL rank alike. Origin: D-018 ("explorer ranking"); tiers from the power-user report point 5.
 
 #### Scenario: Exact before prefix before substring before description
-- **WHEN** the catalog holds `A_100h.DIFF_V_ANZ`, `B_200h.SPEED` (description `copy of V_ANZ`), `C_300h.V_ANZ_RAW` and `COMBI_412h.V_ANZ`, and the query is `v_anz`
-- **THEN** the order is `COMBI_412h.V_ANZ`, `C_300h.V_ANZ_RAW`, `A_100h.DIFF_V_ANZ`, `B_200h.SPEED`
+- **WHEN** the catalog holds `A_100h.DIFF_SPEED_DISP`, `B_200h.SPEED` (description `copy of SPEED_DISP`), `C_300h.SPEED_DISP_RAW` and `ICL_3A2h.SPEED_DISP`, and the query is `speed_disp`
+- **THEN** the order is `ICL_3A2h.SPEED_DISP`, `C_300h.SPEED_DISP_RAW`, `A_100h.DIFF_SPEED_DISP`, `B_200h.SPEED`
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks exact before prefix before name substring before other fields"
 
 #### Scenario: Message prefix and full name
-- **WHEN** the query is `combi_412h.v_anz` or `combi`
-- **THEN** `COMBI_412h.V_ANZ` is tier 0 for the first and tier 1 for the second
+- **WHEN** the query is `icl_3a2h.speed_disp` or `icl`
+- **THEN** `ICL_3A2h.SPEED_DISP` is tier 0 for the first and tier 1 for the second
 - **Evidence:** `packages/shared/test/search.test.ts` › "treats the part after the first dot as the signal name"
 
 #### Scenario: Ties keep catalog order
@@ -60,7 +60,7 @@ Results SHALL be ordered by tier, best first: (0) a term equals the name or its 
 
 #### Scenario: API ranks like the explorer
 - **WHEN** the test catalog is searched for `rpm`
-- **THEN** `testcar/Sna_800h.RPM` (exact) comes before the `Fast_100h.SIG_A` entries (unit `rpm`); on real data `curl -s 'localhost:7310/api/signals?q=volt' | jq -r '.items[0].id'` prints `smart451/CPC_168h.EAC_HV_Volt` (first name match; before ranking it was the description match `smart451/AC_443h.PNHV_Evap_CoolVlv_Rq_HVAC`)
+- **THEN** `testcar/Sna_800h.RPM` (exact) comes before the `Fast_100h.SIG_A` entries (unit `rpm`); on real data `curl -s 'localhost:7310/api/signals?q=volt' | jq -r '.items[0].id'` prints `smart451/DCU_1F4h.COMP_HV_Volt` (first name match; before ranking it was the description match `smart451/CLIM_44Ch.HVM_Evap_Vlv_Rq`)
 - **Evidence:** `apps/server/test/catalog.test.ts` › "ranks search results like the explorer"; the curl command
 
 ### Requirement: Full catalog listing
@@ -80,9 +80,9 @@ The API SHALL return the whole catalog in one response, unpaged, with every fiel
 For a signal with a DBC entry the catalog SHALL return the DBC file it came from, the message name and CAN ID, and where the `SG_` line parses: factor, offset, min and max as written; plus the `VAL_` table sorted by raw value. A signal without DBC entry SHALL have no DBC details; absent fields stay absent. Origin: concept §4 („Vorhandene Metadaten werden angezeigt"), D-017 (hover infos).
 
 #### Scenario: Speed signal from the real DBC
-- **WHEN** the catalog lists `smart451/COMBI_412h.V_ANZ` (`BO_ 1042 COMBI_412h`, `SG_ V_ANZ : 0|9@0+ (1,0) [0|510] "km/h"`, `VAL_ 1042 V_ANZ 511 "SNV"`)
-- **THEN** its DBC details are file `h-can.dbc`, message `COMBI_412h`, ID 1042, factor 1, offset 0, min 0, max 510, values `[{raw 511, label SNV}]`
-- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (runs if the file exists; also `MS_608h.T_MOT` 1544, factor 1, offset −40, min −40, max 214; `BS_200h.DVL` 512, factor 0.5, max 8191); `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -cS '.items[0].dbc'` prints `{"factor":1,"file":"h-can.dbc","max":510,"message":"COMBI_412h","messageId":1042,"min":0,"offset":0,"values":[{"label":"SNV","raw":511}]}`
+- **WHEN** the catalog lists `smart451/ICL_3A2h.SPEED_DISP` (`BO_ 930 ICL_3A2h`, `SG_ SPEED_DISP : 8|9@1+ (1,0) [0|510] "km/h"`, `VAL_ 930 SPEED_DISP 511 "SNV"`)
+- **THEN** its DBC details are file `h-can.dbc`, message `ICL_3A2h`, ID 930, factor 1, offset 0, min 0, max 510, values `[{raw 511, label SNV}]`
+- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (runs if the file exists; also `ENG_5E0h.T_ENG` 1504, factor 1, offset −40, min −40, max 214; `BRK_1A0h.WSPD_FL` 416, factor 0.5, max 8191); `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP' | jq -cS '.items[0].dbc'` prints `{"factor":1,"file":"h-can.dbc","max":510,"message":"ICL_3A2h","messageId":930,"min":0,"offset":0,"values":[{"label":"SNV","raw":511}]}`
 
 #### Scenario: Details from the fixture DBCs
 - **WHEN** the test DBCs are loaded (`test-a.dbc` before `test-b.dbc`)
@@ -99,11 +99,11 @@ The explorer SHALL highlight every matched part of the query terms in the displa
 
 #### Scenario: Highlight in the name
 - **WHEN** the user searches for `volt` on real data
-- **THEN** the row `CPC_448h.PTC_HV_Volt` shows `Volt` highlighted (one `<mark>` element) and the rest of the name plain
-- **Evidence:** UI check (screenshot; `document.querySelectorAll('.explorer mark')` text); `packages/shared/test/search.test.ts` › "returns merged highlight ranges for name, unit and description" (`volt` on `CPC_448h.PTC_HV_Volt` → name `[[16, 20]]`; `v_a anz` on `COMBI_412h.V_ANZ` → `[[11, 16]]`)
+- **THEN** the row `DCU_2B8h.HTR_HV_Volt` shows `Volt` highlighted (one `<mark>` element) and the rest of the name plain
+- **Evidence:** UI check (screenshot; `document.querySelectorAll('.explorer mark')` text); `packages/shared/test/search.test.ts` › "returns merged highlight ranges for name, unit and description" (`volt` on `DCU_2B8h.HTR_HV_Volt` → name `[[16, 20]]`; `v_a disp` on `ICL_3A2h.SPEED_DISP` → `[[11, 16]]`)
 
 #### Scenario: Description match shown in the card
-- **WHEN** the user searches for `temp` on real data and hovers `MS_608h.T_MOT` (description `Motortemperatur`)
+- **WHEN** the user searches for `temp` on real data and hovers `ENG_5E0h.T_ENG` (description `Motortemperatur`)
 - **THEN** the row has no highlight in the name, rows whose name contains `TEMP` are listed above it, and the card shows `temp` highlighted in `Motortemperatur`
 - **Evidence:** UI check (screenshot of the card)
 
@@ -136,13 +136,13 @@ The explorer SHALL update its list on every keystroke without a request to the s
 ### Requirement: Signal hover card
 Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal.
 
-#### Scenario: Card for V_ANZ
-- **WHEN** the user hovers `COMBI_412h.V_ANZ` on real data and the signal is shown in one window
-- **THEN** after about a third of a second a card shows `COMBI_412h.V_ANZ`, `Indicated speed`, `COMBI_412h · 0x412`, unit `km/h`, scaling `× 1 + 0`, raw step `1 km/h`, range `0 … 510 km/h`, SNA `511 km/h (raw 1FFh)`, values `511 SNV`, source `smart451 · h-can.dbc`, and under "Shown in" that window's name as its header shows it (its title, or `Window <n>` when untitled)
+#### Scenario: Card for SPEED_DISP
+- **WHEN** the user hovers `ICL_3A2h.SPEED_DISP` on real data and the signal is shown in one window
+- **THEN** after about a third of a second a card shows `ICL_3A2h.SPEED_DISP`, `Indicated speed`, `ICL_3A2h · 0x3A2`, unit `km/h`, scaling `× 1 + 0`, raw step `1 km/h`, range `0 … 510 km/h`, SNA `511 km/h (raw 1FFh)`, values `511 SNV`, source `smart451 · h-can.dbc`, and under "Shown in" that window's name as its header shows it (its title, or `Window <n>` when untitled)
 - **Evidence:** UI check (screenshot of the card)
 
 #### Scenario: Card with offset
-- **WHEN** the user hovers `MS_608h.T_MOT` on real data
+- **WHEN** the user hovers `ENG_5E0h.T_ENG` on real data
 - **THEN** the card shows scaling `× 1 - 40`, raw step `1 °C`, range `-40 … 214 °C`, and "Shown in" reads `no window` when no window shows it
 - **Evidence:** UI check (screenshot of the card); `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range"
 
@@ -152,7 +152,7 @@ Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL 
 - **Evidence:** `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range", "formats message IDs as hex", "formats the source line", "lists the windows showing a signal"
 
 #### Scenario: Card on keyboard focus
-- **WHEN** the user types `DVL`, presses ArrowDown once and waits
+- **WHEN** the user types `WSPD_FL`, presses ArrowDown once and waits
 - **THEN** the card for the second row opens without any pointer movement, and moving the active row moves the card
 - **Evidence:** UI check (screenshot)
 
@@ -165,12 +165,12 @@ Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL 
 The explorer SHALL support: `/` focuses the search field when focus is not in a text field (the `/` is not typed); Esc in the search field clears the query and closes the card; ArrowDown/ArrowUp move the active row (first hit by default, clamped at the ends) and keep it in view; Enter adds the active row exactly as its add button does. Origin: D-020 ("The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears.").
 
 #### Scenario: Search, Enter adds the top hit
-- **WHEN** focus is on the page body, the user presses `/`, types `V_ANZ` and presses Enter
-- **THEN** the search field contains exactly `V_ANZ` and `COMBI_412h.V_ANZ` is added to the selected "Add to" target
+- **WHEN** focus is on the page body, the user presses `/`, types `SPEED_DISP` and presses Enter
+- **THEN** the search field contains exactly `SPEED_DISP` and `ICL_3A2h.SPEED_DISP` is added to the selected "Add to" target
 - **Evidence:** UI check (screenshot of the new window)
 
 #### Scenario: Arrows choose another hit
-- **WHEN** the user types `DVL`, presses ArrowDown twice and Enter
+- **WHEN** the user types `WSPD_FL`, presses ArrowDown twice and Enter
 - **THEN** the third result is added, and the active row was visibly marked while moving
 - **Evidence:** UI check (screenshot)
 
@@ -183,13 +183,13 @@ The explorer SHALL support: `/` focuses the search field when focus is not in a 
 Pressing on an explorer row's name and moving the pointer SHALL start the app's pointer drag (design S3) with that signal. Windows that do not show it and stay within four units SHALL be highlighted with "Drop to add"; one that would reach a fifth unit SHALL be marked not droppable ("At most 4 units per window") and ignore a drop. A drop adds, never moves; Alt/Ctrl change nothing. The add button SHALL NOT start a drag. Origin: D-020 (explorer drag; fifth unit refused as for legend drags).
 
 #### Scenario: Drag a row onto a window
-- **WHEN** a window exists that does not show `COMBI_412h.V_ANZ`, and the user drags the V_ANZ row onto it with the mouse
-- **THEN** windows not showing V_ANZ are highlighted with "Drop to add" while dragging, a window showing it is not highlighted, the ghost reads `COMBI_412h.V_ANZ · add` over a valid target, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
+- **WHEN** a window exists that does not show `ICL_3A2h.SPEED_DISP`, and the user drags the SPEED_DISP row onto it with the mouse
+- **THEN** windows not showing SPEED_DISP are highlighted with "Drop to add" while dragging, a window showing it is not highlighted, the ghost reads `ICL_3A2h.SPEED_DISP · add` over a valid target, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
 - **Evidence:** UI check (screenshot during the drag and after the drop); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
 
 #### Scenario: Fifth unit refused for an explorer drag
-- **WHEN** window A shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h), `MS_608h.T_MOT` (°C) and `BS_200h.DVL` (1/min), and the user drags the `MS_312h.DNMOT` (`rpm/10ms`) row over A and releases
-- **THEN** A is marked not droppable with the hint "At most 4 units per window" while dragging, and the release changes nothing (revision unchanged); dragging `CPC_448h.PTC_HV_Volt` (V) over A highlights it with "Drop to add"
+- **WHEN** window A shows `DCU_1F4h.COMP_HV_Volt` (V), `ICL_3A2h.SPEED_DISP` (km/h), `ENG_5E0h.T_ENG` (°C) and `BRK_1A0h.WSPD_FL` (1/min), and the user drags the `ENG_2E8h.MOT_SPD_D` (`rpm/10ms`) row over A and releases
+- **THEN** A is marked not droppable with the hint "At most 4 units per window" while dragging, and the release changes nothing (revision unchanged); dragging `DCU_2B8h.HTR_HV_Volt` (V) over A highlights it with "Drop to add"
 - **Evidence:** `apps/web/test/drag.test.ts` › "refuses an explorer drop that would make a fifth unit"; UI check (screenshot while dragging, revision before and after)
 
 #### Scenario: Legend drags unchanged
@@ -198,8 +198,8 @@ Pressing on an explorer row's name and moving the pointer SHALL start the app's 
 - **Evidence:** `apps/web/test/drag.test.ts` › "keeps the legend-drag states" and the existing drag tests
 
 #### Scenario: Drag a row onto "+ New window"
-- **WHEN** the user drags the `BS_200h.DVL` row onto the "+ New window" zone
-- **THEN** a new window `Window <n>` with DVL is created, exactly as with the add button and "New window" selected
+- **WHEN** the user drags the `BRK_1A0h.WSPD_FL` row onto the "+ New window" zone
+- **THEN** a new window `Window <n>` with WSPD_FL is created, exactly as with the add button and "New window" selected
 - **Evidence:** UI check (screenshot); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
 
 #### Scenario: Click is not a drag
@@ -213,7 +213,7 @@ The explorer's "Add to" target SHALL be held by window ID and change only by the
 #### Scenario: Target survives window changes
 - **WHEN** windows `w1` and `w2` exist, the user selects `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed
 - **THEN** the target is still `w2`, and the next add (button or Enter) lands in `w2`
-- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SOLL after creating another window; screenshot shows it in the selected window)
+- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SET after creating another window; screenshot shows it in the selected window)
 
 #### Scenario: Removed target falls back
 - **WHEN** the selected target window is removed

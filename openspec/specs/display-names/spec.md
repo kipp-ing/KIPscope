@@ -28,7 +28,7 @@ The server SHALL read the project file once at start: `kipscope.yaml` in the rep
 
 #### Scenario: First match wins
 - **WHEN** rule 1 is `^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$` / `{signal}` and rule 2 is `^(?<message>[^.]+)\.(?<signal>.+)$` / `{message}-{signal}`
-- **THEN** `COMBI_412h.V_ANZ` shows `V_ANZ`, `SAS_0C2h.LWS_CHKSUM` shows `LWS_CHKSUM`, and `AC_A1.T_SOLL` shows `AC_A1-T_SOLL`
+- **THEN** `ICL_3A2h.SPEED_DISP` shows `SPEED_DISP`, `STR_0D4h.STEER_CHKSUM` shows `STEER_CHKSUM`, and `CLIM_A1.T_SET` shows `CLIM_A1-T_SET`
 - **Evidence:** `apps/server/test/names.test.ts` › "takes the first matching rule and renders its template"
 
 #### Scenario: No rule matches
@@ -40,16 +40,16 @@ The server SHALL read the project file once at start: `kipscope.yaml` in the rep
 The file's `display.rename` SHALL map full source names to shown names; a signal listed there SHALL show that name whatever the rules say. A rename key that names no signal in the catalog SHALL be ignored. Origin: D-035 („an optional `rename` map for single signals (rename beats rules)").
 
 #### Scenario: Rename over a rule
-- **WHEN** rule `^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$` / `{signal}` applies and `rename` maps `COMBI_412h.V_ANZ` to `Speed` and `NOPE_1h.X` to `Nope`
-- **THEN** `COMBI_412h.V_ANZ` shows `Speed`, `BS_200h.DVL` shows `DVL`, and `NOPE_1h.X` (not in the input) causes no error
+- **WHEN** rule `^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$` / `{signal}` applies and `rename` maps `ICL_3A2h.SPEED_DISP` to `Speed` and `NOPE_1h.X` to `Nope`
+- **THEN** `ICL_3A2h.SPEED_DISP` shows `Speed`, `BRK_1A0h.WSPD_FL` shows `WSPD_FL`, and `NOPE_1h.X` (not in the input) causes no error
 - **Evidence:** `apps/server/test/names.test.ts` › "lets a rename beat every rule"
 
 ### Requirement: Collisions show the message suffix
-When signals with different source names get the same shown name, each of them made by a rule with a `collision` template SHALL show that template's render instead (smart451: `V_ANZ (COMBI)`). Renamed signals and full names SHALL stay. The same source name in two data references SHALL NOT count as a collision; the check covers the whole catalog. Origin: D-035 (short name plus message suffix on a collision); per-rule template, renames kept: design N5, Q2.
+When signals with different source names get the same shown name, each of them made by a rule with a `collision` template SHALL show that template's render instead (smart451: `SPEED_DISP (ICL)`). Renamed signals and full names SHALL stay. The same source name in two data references SHALL NOT count as a collision; the check covers the whole catalog. Origin: D-035 (short name plus message suffix on a collision); per-rule template, renames kept: design N5, Q2.
 
 #### Scenario: Two messages, one signal name
-- **WHEN** the smart451 rules (design N10) see `COMBI_412h.V_ANZ` and `KOMBI_512h.V_ANZ`
-- **THEN** they show `V_ANZ (COMBI)` and `V_ANZ (KOMBI)`, while `BS_200h.DVL` shows `DVL`
+- **WHEN** the smart451 rules (design N10) see `ICL_3A2h.SPEED_DISP` and `KOMBI_512h.SPEED_DISP`
+- **THEN** they show `SPEED_DISP (ICL)` and `SPEED_DISP (KOMBI)`, while `BRK_1A0h.WSPD_FL` shows `WSPD_FL`
 - **Evidence:** `apps/server/test/names.test.ts` › "suffixes colliding rule names with the collision template"
 
 #### Scenario: Rename collides with a rule name
@@ -92,19 +92,19 @@ A project file with a YAML syntax error, a duplicate or unknown key, a missing o
 The server SHALL compute every signal's shown name once per catalog load and deliver it in each catalog entry as `displayName`, absent when it equals `name`. Signal IDs, `name`, workspace state, commands and the CLI's arguments and output SHALL stay on the full source names. Origin: D-035 („CLI and API keep the stable full IDs"); server-side computation: necessary consequence of one source of truth for UI and API search (design N7).
 
 #### Scenario: Catalog entry with a display name
-- **WHEN** the server runs on real data with the shipped `kipscope.yaml`
-- **THEN** `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -c '.items[0] | {id, name, displayName}'` prints `{"id":"smart451/COMBI_412h.V_ANZ","name":"COMBI_412h.V_ANZ","displayName":"V_ANZ"}`
+- **WHEN** the server runs on real data with the local `kipscope.yaml`
+- **THEN** `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP' | jq -c '.items[0] | {id, name, displayName}'` prints `{"id":"smart451/ICL_3A2h.SPEED_DISP","name":"ICL_3A2h.SPEED_DISP","displayName":"SPEED_DISP"}`
 - **Evidence:** the curl command; `apps/server/test/signals.http.test.ts` › "returns displayName in search and full catalog and keeps IDs" (test DB with the test project file: `testcar/Sna_800h.RPM` has `displayName` `RPM`, `testcar/Fast_100h.SIG_A` has none)
 
 #### Scenario: All real signals shortened, none alike
-- **WHEN** the server runs on real data with the shipped `kipscope.yaml`
+- **WHEN** the server runs on real data with the local `kipscope.yaml`
 - **THEN** `curl -s localhost:7310/api/catalog | jq '[.items[] | select(.displayName)] | length'` prints `428` and `curl -s localhost:7310/api/catalog | jq '[.items[].displayName] | unique | length'` prints `428`, and the server log has no display-name collision warning
 - **Evidence:** the two curl commands; server log excerpt
 
 #### Scenario: Identity unchanged
-- **WHEN** the CLI runs `signal add w1 V_ANZ` against the server on real data with the shipped file, and the workspace is read
-- **THEN** the CLI output and the workspace hold `smart451/COMBI_412h.V_ANZ`, never `V_ANZ` as an ID
-- **Evidence:** command `node apps/cli/src/main.ts signal add <window> V_ANZ` output; `curl -s localhost:7310/api/workspace | jq` excerpt
+- **WHEN** the CLI runs `signal add w1 SPEED_DISP` against the server on real data with the shipped file, and the workspace is read
+- **THEN** the CLI output and the workspace hold `smart451/ICL_3A2h.SPEED_DISP`, never `SPEED_DISP` as an ID
+- **Evidence:** command `node apps/cli/src/main.ts signal add <window> SPEED_DISP` output; `curl -s localhost:7310/api/workspace | jq` excerpt
 
 #### Scenario: No file, no field
 - **WHEN** the catalog is built without a project file (test DB)
@@ -115,27 +115,27 @@ The server SHALL compute every signal's shown name once per catalog load and del
 Explorer rows, chart legend rows, values window rows, the drag ghost and the title of a unit-less signal's y axis SHALL show the signal's shown name. The hover card SHALL keep the full source name, and where the shown name differs from it, the shown name's tooltip in explorer rows, legend rows and values rows SHALL be the full source name. Origin: D-035 („The full source name stays in the hover card and tooltips").
 
 #### Scenario: Short names on real data
-- **WHEN** with the shipped `kipscope.yaml` the user searches `V_ANZ`, adds `COMBI_412h.V_ANZ` and `BS_200h.DVL` to a timeseries window and to a values window
-- **THEN** the explorer row reads `V_ANZ`, the legend rows read `V_ANZ` and `DVL`, the values rows read `V_ANZ` and `DVL`, and no row shows `COMBI_412h` or `412h`
+- **WHEN** with the local `kipscope.yaml` the user searches `SPEED_DISP`, adds `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` to a timeseries window and to a values window
+- **THEN** the explorer row reads `SPEED_DISP`, the legend rows read `SPEED_DISP` and `WSPD_FL`, the values rows read `SPEED_DISP` and `WSPD_FL`, and no row shows `ICL_3A2h` or `412h`
 - **Evidence:** UI check (one screenshot with explorer, chart and values window)
 
 #### Scenario: Full name in card and tooltip
-- **WHEN** the user rests the pointer on the explorer row `V_ANZ`, then on the name `V_ANZ` in the legend and in the values window
-- **THEN** the hover card's first line reads `COMBI_412h.V_ANZ`, and both name tooltips read `COMBI_412h.V_ANZ`
+- **WHEN** the user rests the pointer on the explorer row `SPEED_DISP`, then on the name `SPEED_DISP` in the legend and in the values window
+- **THEN** the hover card's first line reads `ICL_3A2h.SPEED_DISP`, and both name tooltips read `ICL_3A2h.SPEED_DISP`
 - **Evidence:** UI check (screenshot of the card; tooltip text via `title` attribute of `.sig`)
 
 #### Scenario: Drag ghost
-- **WHEN** the user drags the explorer row `V_ANZ` over a window that does not show it
-- **THEN** the ghost reads `V_ANZ · add`
+- **WHEN** the user drags the explorer row `SPEED_DISP` over a window that does not show it
+- **THEN** the ghost reads `SPEED_DISP · add`
 - **Evidence:** UI check (screenshot during the drag)
 
-### Requirement: smart451 project file shipped
-The repository SHALL ship `kipscope.yaml` with rules that shorten every smart451 signal to its part after the message (with or without hex ID) and suffix collisions with the message name, plus `kipscope.example.yaml` explaining every key; README SHALL describe the file, its keys, `KIPSCOPE_PROJECT_FILE` and that edits need a restart. Origin: D-035 („so it will be just V_ANZ in this case"); 55 names without hex ID: design Q4.
+### Requirement: Example project file shipped, real one local
+The repository SHALL ship `kipscope.example.yaml` explaining every key, with rules that shorten a signal to its part after the message (with or without hex ID) and suffix collisions with the message name, and `demo/kipscope.yaml` for the demo recording. `kipscope.yaml` SHALL be local and gitignored, so the rules for a real vehicle's DBC never enter the repo. README SHALL describe the file, its keys, `KIPSCOPE_PROJECT_FILE` and that edits need a restart. Origin: D-035 („so it will be just SPEED_DISP in this case"); 55 names without hex ID: design Q4; local file: D-077.
 
 #### Scenario: Shipped files parse
-- **WHEN** the shipped `kipscope.yaml` and `kipscope.example.yaml` are parsed and applied to `COMBI_412h.V_ANZ`, `SAS_0C2h.LWS_CHKSUM`, `CPC_448h.PTC_HV_Volt`, `AC_A1.T_SOLL` and `D_RS_AC.D_RS_AC`
-- **THEN** both parse without error and the first yields `V_ANZ`, `LWS_CHKSUM`, `PTC_HV_Volt`, `T_SOLL`, `D_RS_AC`
-- **Evidence:** `apps/server/test/project.test.ts` › "parses the shipped kipscope.yaml and kipscope.example.yaml"
+- **WHEN** `kipscope.example.yaml` is parsed and applied to `ICL_3A2h.SPEED_DISP`, `STR_0D4h.STEER_CHKSUM`, `DCU_2B8h.HTR_HV_Volt`, `CLIM_A1.T_SET` and `DIAG_CLIM.DIAG_CLIM`, and `demo/kipscope.yaml` to `VEH_200h.VehSpeed`
+- **THEN** both parse without error; the first yields `SPEED_DISP`, `STEER_CHKSUM`, `HTR_HV_Volt`, `T_SET`, `DIAG_CLIM`, the second `VehSpeed`
+- **Evidence:** `apps/server/test/project.test.ts` › "parses kipscope.example.yaml", "parses the demo project file: names, measurement and events (D-076)"
 
 #### Scenario: README
 - **WHEN** a reader opens README.md

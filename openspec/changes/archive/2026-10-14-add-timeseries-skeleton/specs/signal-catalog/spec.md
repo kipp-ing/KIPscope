@@ -24,7 +24,7 @@ Each signal SHALL have a stable ID built from its data reference and its name in
 The catalog SHALL return for each signal its name and, where available, its description, alias and unit. Metadata the source lacks SHALL come from configured metadata files (DBC). Missing fields SHALL be reported as absent, not as empty strings or invented values.
 
 #### Scenario: Unit from DBC
-- **WHEN** a signal `MS_312h.DNMOT` has data and the DBC defines unit and comment for signal `DNMOT` in message `MS_312h`
+- **WHEN** a signal `ENG_2E8h.MOT_SPD_D` has data and the DBC defines unit and comment for signal `MOT_SPD_D` in message `ENG_2E8h`
 - **THEN** the catalog entry shows that unit and the comment as description
 
 #### Scenario: Signal not in any DBC

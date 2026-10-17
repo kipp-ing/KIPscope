@@ -186,7 +186,7 @@ export function shownRange(
 
 ### T1: UI timing check (evidence for series-cache "Zoom timing", "Prefetch when the view rests", timeseries-window "Loading starts during the gesture", "Linked windows follow the gesture")
 
-Lead's method from the D-040 measurement, extended to two windows (D-041). Chrome on localhost, "Link time axes" on, window 1 (top) showing `smart451/COMBI_412h.V_ANZ`, window 2 showing `smart451/CPC_448h.PTC_HV_Volt`, run with the browser's JavaScript tool:
+Lead's method from the D-040 measurement, extended to two windows (D-041). Chrome on localhost, "Link time axes" on, window 1 (top) showing `smart451/ICL_3A2h.SPEED_DISP`, window 2 showing `smart451/DCU_2B8h.HTR_HV_Volt`, run with the browser's JavaScript tool:
 
 ```js
 (() => {

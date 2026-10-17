@@ -18,8 +18,8 @@ The signal explorer SHALL be a sidebar 240 px wide when open that takes no width
 - **Evidence:** `apps/web/test/sidebar.test.ts` › "toggles with s outside text fields and selects only"; UI check (screenshot after the first `s`)
 
 #### Scenario: Slash opens the search
-- **WHEN** the sidebar is collapsed, the last query was `temp`, focus is on the page body and the user presses `/`, types `V_ANZ` and presses Enter
-- **THEN** the sidebar opens with the search focused and `temp` selected, the field then holds `V_ANZ`, and `COMBI_412h.V_ANZ` is added to the "Add to" target
+- **WHEN** the sidebar is collapsed, the last query was `temp`, focus is on the page body and the user presses `/`, types `SPEED_DISP` and presses Enter
+- **THEN** the sidebar opens with the search focused and `temp` selected, the field then holds `SPEED_DISP`, and `ICL_3A2h.SPEED_DISP` is added to the "Add to" target
 - **Evidence:** UI check on smart451 (screenshot after `/` and after Enter)
 
 ### Requirement: Sidebar state remembered
@@ -54,7 +54,7 @@ Windows of every kind SHALL be laid out in workspace order, row by row, in two e
 - **Evidence:** UI check on smart451 at 1920×1080 (screenshot); `not_run` if the browser tool cannot set the viewport
 
 #### Scenario: Lone last window spans
-- **WHEN** three timeseries windows exist at 1440×900, and then the user adds `BS_200h.DVL` to "New window"
+- **WHEN** three timeseries windows exist at 1440×900, and then the user adds `BRK_1A0h.WSPD_FL` to "New window"
 - **THEN** before, window 3 spans the full list width below windows 1 and 2; after, windows 3 and 4 share the second row at half width each
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot before and after)
 
@@ -75,8 +75,8 @@ Each timeseries window SHALL keep its own stored plot height in the grid. A grid
 During a drag the drop target SHALL be the window under the pointer in any column. The gap between windows SHALL be no target: a release there changes nothing. Highlights, refused targets, auto-scroll and "+ New window" SHALL behave as in one column. Origin: necessary consequence of D-023 („every drop target stays reachable while dragging") with tiled windows (D-026).
 
 #### Scenario: Drop into the right column
-- **WHEN** at 1440×900 window 2 (right column) does not show `BS_200h.DVL` and the user drags the DVL explorer row onto window 2
-- **THEN** window 2 is highlighted with "Drop to add" while dragging and lists DVL after the drop
+- **WHEN** at 1440×900 window 2 (right column) does not show `BRK_1A0h.WSPD_FL` and the user drags the WSPD_FL explorer row onto window 2
+- **THEN** window 2 is highlighted with "Drop to add" while dragging and lists WSPD_FL after the drop
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging and after the drop)
 
 #### Scenario: Release in the gap
@@ -85,8 +85,8 @@ During a drag the drop target SHALL be the window under the pointer in any colum
 - **Evidence:** UI check (revision in the status strip before and after); `apps/web/test/drag.test.ts` existing drop-target tests stay green
 
 #### Scenario: Reach the last row
-- **WHEN** the six-window setup at 1440×900 is scrolled to the top and the user drags the V_ANZ legend row of window 1 into the band just above the status strip
-- **THEN** the list scrolls until windows 5 and 6 are visible, and dropping on window 6 moves V_ANZ there and removes window 1
+- **WHEN** the six-window setup at 1440×900 is scrolled to the top and the user drags the SPEED_DISP legend row of window 1 into the band just above the status strip
+- **THEN** the list scrolls until windows 5 and 6 are visible, and dropping on window 6 moves SPEED_DISP there and removes window 1
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots while scrolling and after the drop)
 
 ### Requirement: Top row and status strip
@@ -98,7 +98,7 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Error in the strip
-- **WHEN** the marked window shows four units and the user adds `MS_312h.DNMOT` from the explorer with Enter, then clicks the message
+- **WHEN** the marked window shows four units and the user adds `ENG_2E8h.MOT_SPD_D` from the explorer with Enter, then clicks the message
 - **THEN** the strip shows the `too_many_units` message in the error colour, and the click removes it
 - **Evidence:** UI check on smart451 (screenshot of the strip before and after the click)
 
@@ -121,7 +121,7 @@ Every window's header, of every kind, SHALL be one line at most 24 px tall: titl
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, measured heights)
 
 #### Scenario: No reflow on zoom
-- **WHEN** window 1 shows only `COMBI_412h.V_ANZ` over its full extent (aggregated), the left x of every control in its header is read, and the window is zoomed to 2026-10-13T13:08:00Z–13:08:03Z (raw), during loading and after
+- **WHEN** window 1 shows only `ICL_3A2h.SPEED_DISP` over its full extent (aggregated), the left x of every control in its header is read, and the window is zoomed to 2026-10-13T13:08:00Z–13:08:03Z (raw), during loading and after
 - **THEN** every control's left x is unchanged (±0.5 px) during loading and after, while badge and range text changed
 - **Evidence:** UI check on smart451 at 1440×900 (x values before, during and after, screenshot after)
 
@@ -168,17 +168,17 @@ Each window's header SHALL end with a "⋯" button that opens a menu with "Renam
 The user SHALL mark a window by a click on its header outside its controls, title included, or by choosing it in the explorer's "Add to" select; at most one window is marked. The marked window SHALL show an accent bar on its top edge and its title in the accent colour. Explorer adds by Enter or a row's add button SHALL go to it, or to a new window while none is marked. Origin: D-027 („the user marks a window, and adds go there").
 
 #### Scenario: Mark and add
-- **WHEN** the six-window setup is shown, the user clicks the empty part of window 4's header, then presses `/`, types `T_SOLL` and presses Enter
-- **THEN** window 4 shows the accent bar and accent title, `AC_A1.T_SOLL` appears in window 4, and the number of windows is still six
+- **WHEN** the six-window setup is shown, the user clicks the empty part of window 4's header, then presses `/`, types `T_SET` and presses Enter
+- **THEN** window 4 shows the accent bar and accent title, `CLIM_A1.T_SET` appears in window 4, and the number of windows is still six
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the click and after Enter)
 
 #### Scenario: Values window marked
-- **WHEN** the user clicks the title of a values window once and adds `COMBI_412h.V_ANZ` with the row's add button
-- **THEN** the values window is marked and lists V_ANZ
+- **WHEN** the user clicks the title of a values window once and adds `ICL_3A2h.SPEED_DISP` with the row's add button
+- **THEN** the values window is marked and lists SPEED_DISP
 - **Evidence:** UI check on smart451 (screenshot)
 
 #### Scenario: No mark, new windows
-- **WHEN** no window is marked and the user adds `BS_200h.DVL` and then `MS_608h.T_MOT` with Enter
+- **WHEN** no window is marked and the user adds `BRK_1A0h.WSPD_FL` and then `ENG_5E0h.T_ENG` with Enter
 - **THEN** each lands in its own new window, and neither new window is marked
 - **Evidence:** UI check on smart451 (screenshot after the second Enter)
 
@@ -188,7 +188,7 @@ The user SHALL mark a window by a click on its header outside its controls, titl
 - **Evidence:** UI check on smart451 (screenshot after the last step)
 
 #### Scenario: Refused add keeps the target
-- **WHEN** the marked window shows four units and the user adds `MS_312h.DNMOT` with Enter
+- **WHEN** the marked window shows four units and the user adds `ENG_2E8h.MOT_SPD_D` with Enter
 - **THEN** the add is rejected with `too_many_units` in the status strip, no new window is created and the mark stays
 - **Evidence:** UI check on smart451 (screenshot, window count before and after)
 

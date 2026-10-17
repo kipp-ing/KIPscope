@@ -74,27 +74,27 @@ describe("project file", () => {
     expect(dup[0]).toMatch(/^p\.yaml: yaml: .*line 4/i);
   });
 
-  it("parses the shipped kipscope.yaml and kipscope.example.yaml", () => {
+  it("parses kipscope.example.yaml", () => {
     const names = [
-      "COMBI_412h.V_ANZ",
-      "SAS_0C2h.LWS_CHKSUM",
-      "CPC_448h.PTC_HV_Volt",
-      "AC_A1.T_SOLL",
-      "D_RS_AC.D_RS_AC",
+      "ICL_3A2h.SPEED_DISP",
+      "STR_0D4h.STEER_CHKSUM",
+      "DCU_2B8h.HTR_HV_Volt",
+      "CLIM_A1.T_SET",
+      "DIAG_CLIM.DIAG_CLIM",
     ];
-    for (const file of ["kipscope.yaml", "kipscope.example.yaml"]) {
+    for (const file of ["kipscope.example.yaml"]) {
       const rules = loadProjectFile({ path: resolve(repoRoot, file), required: true });
       const { shown, fellBack } = assignDisplayNames(names, rules);
       expect(
         names.map((n) => shown.get(n)),
         file,
-      ).toEqual(["V_ANZ", "LWS_CHKSUM", "PTC_HV_Volt", "T_SOLL", "D_RS_AC"]);
+      ).toEqual(["SPEED_DISP", "STEER_CHKSUM", "HTR_HV_Volt", "T_SET", "DIAG_CLIM"]);
       expect(fellBack).toEqual([]);
-      // Three group rules: {sender}, the CPC/PNHV fallback (D-053 Q1), then diagnostic readings (D-058).
+      // Three group rules: {sender}, the DCU/HVM fallback (D-053 Q1), then diagnostic readings (D-058).
       expect(rules.groups, file).toHaveLength(3);
       expect(rules.groups[0]?.match, file).toBeUndefined();
       expect(rules.groups[0]?.group, file).toEqual([{ group: "sender" }]);
-      expect(rules.groups[1]?.match?.source, file).toBe("^(?<ecu>CPC|PNHV)_");
+      expect(rules.groups[1]?.match?.source, file).toBe("^(?<ecu>DCU|HVM)_");
       expect(rules.groups[1]?.group, file).toEqual([{ group: "ecu" }]);
       expect(rules.groups[2]?.match?.source, file).toBe("^(?<ecu>[A-Z][A-Z0-9]*)\\.[a-z]");
     }
@@ -183,13 +183,20 @@ describe("project file measurement section (add-footer)", () => {
     expect(none.measurement).toBeUndefined();
   });
 
-  it("keeps the display rules of the shipped kipscope.yaml and adds object smart451", () => {
-    const shipped = loadProject({ path: resolve(repoRoot, "kipscope.yaml"), required: true });
-    expect(shipped.measurement).toEqual({ object: "smart451" });
-    const before = loadProjectFile({ path: resolve(repoRoot, "kipscope.yaml"), required: true });
-    expect(shipped.rules).toEqual(before);
-    const { shown } = assignDisplayNames(["COMBI_412h.V_ANZ", "AC_A1.T_SOLL"], shipped.rules);
-    expect([...shown.values()]).toEqual(["V_ANZ", "T_SOLL"]);
+  it("parses the demo project file: names, measurement and events (D-076)", () => {
+    const demo = loadProject({ path: resolve(repoRoot, "demo/kipscope.yaml"), required: true });
+    expect(demo.measurement).toEqual({
+      name: "Commute and charge",
+      object: "smart fortwo ED (451), demo data",
+      meta: [{ key: "source", value: "simulated, OVMS-public signals only" }],
+    });
+    const rules = loadProjectFile({
+      path: resolve(repoRoot, "demo/kipscope.yaml"),
+      required: true,
+    });
+    expect(demo.rules).toEqual(rules);
+    const { shown } = assignDisplayNames(["VEH_200h.VehSpeed", "BMS_7EFh.CellV_59"], demo.rules);
+    expect([...shown.values()]).toEqual(["VehSpeed", "CellV_59"]);
   });
 
   it("trims meta keys like the measurement.setMeta command", () => {
@@ -278,8 +285,8 @@ describe("project file events section (add-events)", () => {
 
   it("reads events.signals", () => {
     expect(
-      parseProject("events:\n  signals:\n    - smart451/CPC_168h.IgnCurMode\n", "p.yaml").events,
-    ).toEqual({ signals: ["smart451/CPC_168h.IgnCurMode"] });
+      parseProject("events:\n  signals:\n    - smart451/DCU_1F4h.IgnMode\n", "p.yaml").events,
+    ).toEqual({ signals: ["smart451/DCU_1F4h.IgnMode"] });
     // Absent or empty: no events section.
     expect(parseProject("", "p.yaml").events?.signals ?? []).toEqual([]);
     expect(parseProject("events:\n", "p.yaml").events?.signals ?? []).toEqual([]);
@@ -308,13 +315,17 @@ describe("project file events section (add-events)", () => {
     expect(both).toContain('p.yaml: events: unknown key "colour"');
   });
 
-  it("lists the ignition and the contactor in the shipped project file", () => {
-    const shipped = parseProject(
-      readFileSync(resolve(repoRoot, "kipscope.yaml"), "utf8"),
-      "kipscope.yaml",
+  it("lists ignition, charging and gear in the demo project file", () => {
+    const demo = parseProject(
+      readFileSync(resolve(repoRoot, "demo/kipscope.yaml"), "utf8"),
+      "demo/kipscope.yaml",
     );
-    expect(shipped.events).toEqual({
-      signals: ["smart451/CPC_168h.IgnCurMode", "smart451/BMS.contactor"],
+    expect(demo.events).toEqual({
+      signals: [
+        "smart-ed/BODY_423h.Ignition",
+        "smart-ed/CHG_168h.ChargeActive",
+        "smart-ed/PT_418h.Gear",
+      ],
     });
   });
 });

@@ -4,8 +4,8 @@
 While an explorer selection of two or more signals is dragged over the strip and some of them have named states and are not on the events line, the strip SHALL show the accent outline and `Drop to mark state changes of <name>` (the shown name of the only such signal, else `<k> signals`); a drop SHALL send `events.addSignal` for each such signal in list order, skip the others, and stop at the first refusal. Origin: D-059 with D-066; skipping: lead default L5.
 
 #### Scenario: Selection with one state signal
-- **WHEN** on smart451 at 1440×900 `BS_200h.BLS` is not on the events line, the user types `BLS`, clicks `BLS` and Shift-clicks `VOLLBRE` (BLS, BLS_PA, BLS_RAW, VOLLBRE; only BLS has states) and drags the selection onto the strip
-- **THEN** while dragging the strip shows `Drop to mark state changes of BLS`; after the drop the revision rose by one and the Events tab lists BLS among the events-line signals
+- **WHEN** on smart451 at 1440×900 `BRK_1A0h.BRK_LMP` is not on the events line, the user types `BRK_LMP`, clicks `BRK_LMP` and Shift-clicks `FULL_BRK` (BRK_LMP, BRK_LMP_PA, BRK_LMP_RAW, FULL_BRK; only BRK_LMP has states) and drags the selection onto the strip
+- **THEN** while dragging the strip shows `Drop to mark state changes of BRK_LMP`; after the drop the revision rose by one and the Events tab lists BRK_LMP among the events-line signals
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, revision after)
 
 ### Requirement: Selection without new state signals

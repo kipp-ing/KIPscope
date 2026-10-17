@@ -245,8 +245,8 @@ describe("events panel in view", () => {
 describe("events row text", () => {
   it("names rows without a repeated source", () => {
     const e = (over: Partial<DiagEvent>) => fakeEvent(0n, "other", over);
-    expect(rowName(e({ kind: "signal", source: "IgnCurMode", name: "CPC_168h.IgnCurMode" }))).toBe(
-      "IgnCurMode",
+    expect(rowName(e({ kind: "signal", source: "IgnMode", name: "DCU_1F4h.IgnMode" }))).toBe(
+      "IgnMode",
     );
     expect(rowName(e({ kind: "state", source: "BMS", name: "BMS.contactor" }))).toBe(
       "BMS.contactor",

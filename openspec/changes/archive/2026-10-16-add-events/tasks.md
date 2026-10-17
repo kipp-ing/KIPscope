@@ -1,6 +1,6 @@
 # Tasks
 
-Every task has its own files and builds against the interfaces pinned in design E1–E9, F1–F5, N1–N3, V1–V11, C1, T. Group 1 lands the shared types and pure functions the others import; server, web and CLI engineers may stub them until they are in. Within web: 3.2–3.5 build on 3.1's pinned `marks.ts`/`eventsData.ts` signatures (stub until 3.1 lands); 3.3 passes the readout inputs whose signatures 3.4 pins (N3). The tester writes group 5 test-first, in parallel. Group 6 is the lead's. Jan's answers (D-058): default `active changes`, Events tab in the sidebar, the search-string grammar, IgnCurMode, BMS.contactor, changed snapshots count as changes. Expect two rounds: group 1 and 2.1 first if the round runs long. Builds on `add-diag-metadata` (D-061): 2.3 reads `SignalInfo.diag.kind` (M1) to mark diag enums as text states and to leave `kind` `text` out; stub `diag` as absent until it lands.
+Every task has its own files and builds against the interfaces pinned in design E1–E9, F1–F5, N1–N3, V1–V11, C1, T. Group 1 lands the shared types and pure functions the others import; server, web and CLI engineers may stub them until they are in. Within web: 3.2–3.5 build on 3.1's pinned `marks.ts`/`eventsData.ts` signatures (stub until 3.1 lands); 3.3 passes the readout inputs whose signatures 3.4 pins (N3). The tester writes group 5 test-first, in parallel. Group 6 is the lead's. Jan's answers (D-058): default `active changes`, Events tab in the sidebar, the search-string grammar, IgnMode, BMS.contactor, changed snapshots count as changes. Expect two rounds: group 1 and 2.1 first if the round runs long. Builds on `add-diag-metadata` (D-061): 2.3 reads `SignalInfo.diag.kind` (M1) to mark diag enums as text states and to leave `kind` `text` out; stub `diag` as absent until it lands.
 
 - 1.1: `packages/shared/src/events.ts` (new), `index.ts`
 - 1.2: `packages/shared/src/eventFilter.ts` (new)
@@ -54,7 +54,7 @@ Every task has its own files and builds against the interfaces pinned in design 
 
 ## 6. Lead
 
-- [x] 6.1 Reseed the test DB and restart the dev server before the checks of 2.2, 2.3, 3.x and 4.1; do the hand check of design "Manual checks" (drag BLS onto the strip, remove it) and send Jan the screenshots.
+- [x] 6.1 Reseed the test DB and restart the dev server before the checks of 2.2, 2.3, 3.x and 4.1; do the hand check of design "Manual checks" (drag BRK_LMP onto the strip, remove it) and send Jan the screenshots.
 
 ## Workflow follow-up
 

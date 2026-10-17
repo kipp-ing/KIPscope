@@ -107,7 +107,7 @@ M        line|step|markers
 TIME     decimal ns; YYYY-MM-DD[T| ]HH:MM[:SS[.f{1,9}]] with Z or +HH:MM, or without zone
          as local time (TZ); a or b, optionally +DURATION or -DURATION (cursor anchor)
 DURATION [+|-]<decimal><unit>, unit ns|us|µs|ms|s|min|h (e.g. +500ms, -1.5s)
-SIGNAL   full ID (dataRef/name) or a unique bare name (V_ANZ)
+SIGNAL   full ID (dataRef/name) or a unique bare name (SPEED_DISP)
 REF      assignment ID (a3) or a SIGNAL shown in window W
 FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes
 

@@ -4,9 +4,9 @@
 For a signal with a DBC entry the catalog SHALL return the DBC file it came from, the message name and CAN ID, the message's sender where the `BO_` line names one other than `Vector__XXX` (capability `signal-groups`), and where the `SG_` line parses: factor, offset, min and max as written; plus the `VAL_` table sorted by raw value. A signal without DBC entry SHALL have no DBC details; absent fields stay absent. Origin: concept §4 („Vorhandene Metadaten werden angezeigt"), D-017 (hover infos); sender: D-053.
 
 #### Scenario: Speed signal from the real DBC
-- **WHEN** the catalog lists `smart451/COMBI_412h.V_ANZ` (`BO_ 1042 COMBI_412h: 8 CGW`, `SG_ V_ANZ : 0|9@0+ (1,0) [0|510] "km/h"`, `VAL_ 1042 V_ANZ 511 "SNV"`)
-- **THEN** its DBC details are file `h-can.dbc`, message `COMBI_412h`, ID 1042, sender `CGW`, factor 1, offset 0, min 0, max 510, values `[{raw 511, label SNV}]`
-- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (runs if the file exists; also `MS_608h.T_MOT` 1544, sender `Engine`, factor 1, offset −40, min −40, max 214; `BS_200h.DVL` 512, sender `ESP`, factor 0.5, max 8191); `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -cS '.items[0].dbc'` prints `{"factor":1,"file":"h-can.dbc","max":510,"message":"COMBI_412h","messageId":1042,"min":0,"offset":0,"sender":"CGW","values":[{"label":"SNV","raw":511}]}`
+- **WHEN** the catalog lists `smart451/ICL_3A2h.SPEED_DISP` (`BO_ 930 ICL_3A2h: 8 CGW`, `SG_ SPEED_DISP : 8|9@1+ (1,0) [0|510] "km/h"`, `VAL_ 930 SPEED_DISP 511 "SNV"`)
+- **THEN** its DBC details are file `h-can.dbc`, message `ICL_3A2h`, ID 930, sender `CGW`, factor 1, offset 0, min 0, max 510, values `[{raw 511, label SNV}]`
+- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (runs if the file exists; also `ENG_5E0h.T_ENG` 1504, sender `Engine`, factor 1, offset −40, min −40, max 214; `BRK_1A0h.WSPD_FL` 416, sender `ESP`, factor 0.5, max 8191); `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP' | jq -cS '.items[0].dbc'` prints `{"factor":1,"file":"h-can.dbc","max":510,"message":"ICL_3A2h","messageId":930,"min":0,"offset":0,"sender":"CGW","values":[{"label":"SNV","raw":511}]}`
 
 #### Scenario: Details from the fixture DBCs
 - **WHEN** the test DBCs are loaded (`test-a.dbc` before `test-b.dbc`)
@@ -35,13 +35,13 @@ The explorer SHALL make every match reachable: it shows the total match count an
 The explorer SHALL support: `/` focuses the search field when focus is not in a text field (the `/` is not typed); Esc in the search field clears the query and closes the card; ArrowDown/ArrowUp move the active item (clamped at the ends) and keep it in view; Enter adds the active row exactly as its add button does. With groups (capability `signal-groups`) the items include the group headers: Enter on a header opens or closes its group and keeps it active. After each query change the active item SHALL be the first signal row shown, or the first item when no row is shown. Origin: D-020 ("The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears."); headers: D-053 with design G6.
 
 #### Scenario: Search, Enter adds the top hit
-- **WHEN** focus is on the page body, the user presses `/`, types `V_ANZ` and presses Enter
-- **THEN** the search field contains exactly `V_ANZ` and `COMBI_412h.V_ANZ` is added to the selected "Add to" target (also with the header `CGW 1` above the row)
+- **WHEN** focus is on the page body, the user presses `/`, types `SPEED_DISP` and presses Enter
+- **THEN** the search field contains exactly `SPEED_DISP` and `ICL_3A2h.SPEED_DISP` is added to the selected "Add to" target (also with the header `CGW 1` above the row)
 - **Evidence:** UI check (screenshot of the new window)
 
 #### Scenario: Arrows choose another hit
 - **WHEN** with the shipped `kipscope.yaml` the user types `temp`, presses ArrowDown twice and Enter; then ArrowDown twice more, Enter, ArrowDown once
-- **THEN** `MS_608h.T_LUFT` (third row under `Engine 4`) is added, the active item was visibly marked while moving; then the header `CPC 5` is active and Enter hides its five rows, and the next ArrowDown makes the header `PNHV 1` active
+- **THEN** `ENG_5E0h.T_AIR` (third row under `Engine 4`) is added, the active item was visibly marked while moving; then the header `DCU 5` is active and Enter hides its five rows, and the next ArrowDown makes the header `HVM 1` active
 - **Evidence:** UI check (screenshot); `apps/web/test/explorer.test.ts` › "groups matches by best hit, Other last, collapsed on an empty query" (item order)
 
 #### Scenario: Esc clears

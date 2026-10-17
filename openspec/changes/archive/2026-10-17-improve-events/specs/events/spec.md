@@ -4,8 +4,8 @@
 The sidebar's Events tab SHALL show the heading `EVENTS` with the scope switch `In view <k> | All <n>`, the filter in words followed by ` · <h> hidden` (events of the strip's data ref the filter hides) or the parser's error, the presets, a `Refine` section (closed by default, its state kept per browser) holding the filter field, the category and ECU chips with counts and the events-line signals with remove buttons, then the list and a key line (layout: design P3, P6). Origin: D-058 (filter in human terms; brief: "filtering never hides silently"); place: D-058 (Jan's answers); Jan 2026-10-17 („cluttered hard to use"); proposal E-4.
 
 #### Scenario: Panel on smart451
-- **WHEN** smart451 is shown at 1440×900 with the shipped project file's events-line signals (IgnCurMode, BMS.contactor) and the default filter, window 1 over 2026-10-14 18:55–19:15 local, Refine closed, and the user opens the Events tab
-- **THEN** the heading shows `In view 15 | All 63` with `In view` pressed, the line reads `Active faults and state changes · 414 hidden`, the six presets show, `Refine` shows `active changes` and no field or chip is visible, the list starts within the upper half of the viewport, and the key line shows `Fault`, `Stored`, `Change`, `Other`, `Fault memory read` (counts as `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/CPC_168h.IgnCurMode&signal=smart451/BMS.contactor' | jq '.total'` and the same with `&filter=active%20changes` and `&from=2026-10-14T16:55:00Z&to=2026-10-14T17:15:00Z` give them; 477, 63, 15 on 2026-10-17)
+- **WHEN** smart451 is shown at 1440×900 with the shipped project file's events-line signals (IgnMode, BMS.contactor) and the default filter, window 1 over 2026-10-14 18:55–19:15 local, Refine closed, and the user opens the Events tab
+- **THEN** the heading shows `In view 15 | All 63` with `In view` pressed, the line reads `Active faults and state changes · 414 hidden`, the six presets show, `Refine` shows `active changes` and no field or chip is visible, the list starts within the upper half of the viewport, and the key line shows `Fault`, `Stored`, `Change`, `Other`, `Fault memory read` (counts as `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/DCU_1F4h.IgnMode&signal=smart451/BMS.contactor' | jq '.total'` and the same with `&filter=active%20changes` and `&from=2026-10-14T16:55:00Z&to=2026-10-14T17:15:00Z` give them; 477, 63, 15 on 2026-10-17)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of the panel; the three `curl` counts)
 
 #### Scenario: Refine section
@@ -78,8 +78,8 @@ The list SHALL offer the scopes `In view` (default: shown events in the bar targ
 A row SHALL show the category glyph, the local time to the ms and the category in words, then the event's name without a repeated source and its text (a change `<from> → <to>`, an inferred one with ` · after a gap`), wrapping and never cut with an ellipsis (design P4). Origin: persona test 2026-10-17 (novice: "event text cut off in the narrow list", "show the description in the list, not only on hover"); D-058 („human way of thinking").
 
 #### Scenario: Row names
-- **WHEN** `rowName` runs for a signal event (source `IgnCurMode`, name `CPC_168h.IgnCurMode`), a state event (source `BMS`, name `BMS.contactor`), a DTC (`BMS`, `P0CA700`) and an NRC (`BMS`, `SID 22`)
-- **THEN** `IgnCurMode`, `BMS.contactor`, `BMS P0CA700`, `BMS SID 22`
+- **WHEN** `rowName` runs for a signal event (source `IgnMode`, name `DCU_1F4h.IgnMode`), a state event (source `BMS`, name `BMS.contactor`), a DTC (`BMS`, `P0CA700`) and an NRC (`BMS`, `SID 22`)
+- **THEN** `IgnMode`, `BMS.contactor`, `BMS P0CA700`, `BMS SID 22`
 - **Evidence:** `apps/web/test/eventsPanel.test.ts` › "names rows without a repeated source"
 
 #### Scenario: Longest text on smart451

@@ -118,7 +118,7 @@ describe("bands of a view", () => {
     const times = Array.from({ length: 95 }, (_, i) => from + BigInt(i) * 100n * MS);
     const rawResult: RawSeries = {
       kind: "raw",
-      signalId: "smart451/CPC_448h.PTC_HV_Volt",
+      signalId: "smart451/DCU_2B8h.HTR_HV_Volt",
       from: from.toString(),
       to: to.toString(),
       t: encodeTimes(times),
@@ -126,7 +126,7 @@ describe("bands of a view", () => {
     };
     const bucketResult: BucketSeries = {
       kind: "buckets",
-      signalId: "smart451/SAS_0C2h.LWS_ANGLE",
+      signalId: "smart451/STR_0D4h.STEER_ANGLE",
       from: from.toString(),
       to: to.toString(),
       width: "20000000",

@@ -18,7 +18,7 @@ describe("evaluateAt", () => {
       kind: "interpolated",
       value: 12.5,
     });
-    // Falling slope, real nanosecond times: V_ANZ 23 at .093 s, 22 at .194 s, t = .1435 s → 22.5.
+    // Falling slope, real nanosecond times: SPEED_DISP 23 at .093 s, 22 at .194 s, t = .1435 s → 22.5.
     expect(
       evaluateAt(
         1791896880143500000n,
@@ -27,7 +27,7 @@ describe("evaluateAt", () => {
         p(1791896880194000000n, 22),
       ),
     ).toEqual({ kind: "interpolated", value: 22.5 });
-    // DVL 179.5 at .083 s, 180 at .103 s, t = .093 s → 179.75.
+    // WSPD_FL 179.5 at .083 s, 180 at .103 s, t = .093 s → 179.75.
     expect(
       evaluateAt(
         1791896880093000000n,

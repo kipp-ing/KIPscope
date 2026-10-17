@@ -22,7 +22,7 @@ A window SHALL offer an envelope option, off by default, that draws the minimum 
 #### Scenario: SNA inside a bucket
 - **WHEN** the envelope is on and a bucket contains valid points and SNA points
 - **THEN** the envelope spans only the valid points' minimum and maximum, and for an all-SNA bucket no envelope is drawn
-- **Evidence:** `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"; UI check in the V_ANZ overview above
+- **Evidence:** `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"; UI check in the SPEED_DISP overview above
 
 ### Requirement: Raw display modes
 When a window shows raw points, each signal SHALL be drawable as lines between points, as steps holding the previous value, or with point markers, as chosen in the window's display options. A step SHALL hold a value until the next point's timestamp, or only up to its hold end where the two points are split (data-gaps "Split between two points"). Origin: concept §5; hold end: D-062.
@@ -115,14 +115,14 @@ The time axis SHALL display local time and SHALL be able to label ticks down to 
 The window SHALL NOT draw an SNA point or an all-SNA bucket as a value: no line, step, marker or envelope reaches it, and no segment is interpolated or connected through it. In step mode the last valid value SHALL be held up to the timestamp of the following SNA point and end there. Origin: D-010.
 
 #### Scenario: Speed SNA in raw view
-- **WHEN** a window shows `COMBI_412h.V_ANZ` from 2026-10-13T09:56:59Z to 09:57:01Z in line mode
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` from 2026-10-13T09:56:59Z to 09:57:01Z in line mode
 - **THEN** the curve is a flat line at 0 that stops at 09:56:59.737 and resumes at 09:57:00.138; nothing is drawn at 511
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "keeps SNA as null and never spans it"
 
 #### Scenario: Step mode holds until SNA
 - **WHEN** step mode is selected and a valid point at t1 is followed by an SNA point at t2
 - **THEN** the value of t1 is held until t2 and nothing is drawn from t2 until the next valid point
-- **Evidence:** `apps/web/test/build.test.ts` › "holds the last valid value up to the SNA point in step mode"; UI check with `BS_200h.DVL` in the same window in step mode
+- **Evidence:** `apps/web/test/build.test.ts` › "holds the last valid value up to the SNA point in step mode"; UI check with `BRK_1A0h.WSPD_FL` in the same window in step mode
 
 #### Scenario: Markers mode
 - **WHEN** markers mode is selected on the window above
@@ -130,12 +130,12 @@ The window SHALL NOT draw an SNA point or an all-SNA bucket as a value: no line,
 - **Evidence:** UI check (screenshot)
 
 #### Scenario: Aggregated overview
-- **WHEN** a window shows the full extent of `COMBI_412h.V_ANZ` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) aggregated, with the min/max envelope on
+- **WHEN** a window shows the full extent of `ICL_3A2h.SPEED_DISP` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) aggregated, with the min/max envelope on
 - **THEN** neither the mean curve nor the envelope reaches 511; the highest drawn value is 71 km/h
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"
 
 #### Scenario: Several signals in one window
-- **WHEN** `COMBI_412h.V_ANZ` and `BS_200h.DVL` share the window from 2026-10-13T09:56:59Z to 09:57:01Z, so their timestamps interleave
+- **WHEN** `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` share the window from 2026-10-13T09:56:59Z to 09:57:01Z, so their timestamps interleave
 - **THEN** neither curve is drawn across its own SNA period, and each curve still connects its consecutive valid points
 - **Evidence:** `apps/web/test/build.test.ts` › "joins several signals without spanning SNA"; UI check (screenshot)
 
@@ -156,7 +156,7 @@ In line mode and in aggregated mean curves, a valid point or bucket whose neighb
 The automatic y range of a scale SHALL be computed from valid values only; SNA points and all-SNA buckets SHALL NOT widen it. Origin: proposal (window never draws SNA as a value).
 
 #### Scenario: Speed window around SNA
-- **WHEN** a window shows `COMBI_412h.V_ANZ` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` from 2026-10-13T09:56:59Z to 09:57:01Z
 - **THEN** the y axis covers the flat 0 line (about −1 to 1) and does not extend to 511
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "ignores SNA in the y range"
 
@@ -164,12 +164,12 @@ The automatic y range of a scale SHALL be computed from valid values only; SNA p
 The window SHALL mark each signal's SNA periods as a thin strip per signal at the bottom of the plot, in the signal's color, so the user sees which signal is unavailable when. Raw: from an SNA point to the next point, or to its hold end where the next point is split off (data-gaps). Aggregated: each bucket that contains at least one SNA point. A period too short to see SHALL still be visible. Origin: D-010, D-014; hold end: D-062.
 
 #### Scenario: Two signals with SNA at engine start
-- **WHEN** a window shows `COMBI_412h.V_ANZ` and `BS_200h.DVL` from 2026-10-13T09:56:59Z to 09:57:01Z
-- **THEN** a mark in the V_ANZ color covers 09:56:59.837 to 09:57:00.138 and a mark in the DVL color covers 09:56:59.791 to 09:57:00.072
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **THEN** a mark in the SPEED_DISP color covers 09:56:59.837 to 09:57:00.138 and a mark in the WSPD_FL color covers 09:56:59.791 to 09:57:00.072
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "derives SNA periods from raw points and neighbors"
 
 #### Scenario: SNA in the overview
-- **WHEN** a window shows the full extent of `COMBI_412h.V_ANZ` aggregated
+- **WHEN** a window shows the full extent of `ICL_3A2h.SPEED_DISP` aggregated
 - **THEN** SNA is marked from 2026-10-11 13:41 to 2026-10-13 09:07 UTC wherever the signal has points, and at the other three SNA runs
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "derives SNA periods from buckets"
 
@@ -187,17 +187,17 @@ The window SHALL mark each signal's SNA periods as a thin strip per signal at th
 The window's signal list SHALL show per signal the share of SNA points among all points of the loaded range, edge neighbors excluded. A non-zero share SHALL never be displayed as 0 %, and a share below 100 % never as 100 %. No share is shown when it is 0 or nothing is loaded. Origin: D-010 ("show its share"); proposal.
 
 #### Scenario: Engine start window
-- **WHEN** a window shows `COMBI_412h.V_ANZ` and `BS_200h.DVL` from 2026-10-13T09:56:59Z to 09:57:01Z
-- **THEN** the list shows `SNA 15.0 %` for V_ANZ (3 of 20) and `SNA 23.0 %` for DVL (14 of 61)
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **THEN** the list shows `SNA 15.0 %` for SPEED_DISP (3 of 20) and `SNA 23.0 %` for WSPD_FL (14 of 61)
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "computes the SNA share of raw and bucket results"
 
 #### Scenario: Rare SNA
-- **WHEN** a window shows the full extent of `BS_200h.DVL` (56 SNA of 232,644 points)
+- **WHEN** a window shows the full extent of `BRK_1A0h.WSPD_FL` (56 SNA of 232,644 points)
 - **THEN** the list shows `SNA < 0.1 %`
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "formats SNA shares without rounding to 0 or 100"
 
 #### Scenario: Valid constant, no SNA
-- **WHEN** a window shows `MS_312h.DNMOT` (constant −127, which is raw 0 and valid; D-012)
+- **WHEN** a window shows `ENG_2E8h.MOT_SPD_D` (constant −127, which is raw 0 and valid; D-012)
 - **THEN** the curve is drawn at −127 and the list shows no SNA share
 - **Evidence:** UI check (screenshot)
 
@@ -205,7 +205,7 @@ The window's signal list SHALL show per signal the share of SNA points among all
 While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-click reset, history back, "Reset", navigation keys, "Go to" and span presets in or for any window SHALL change the time range of all windows. During a wheel, pan or key gesture in one window, every linked window SHALL show and load the previewed range in the same frame, each at its own resolution; the range command SHALL still be sent once, by the gesture's window. While unlinked, each window SHALL keep its own range. Origin: D-017; D-027; D-041 („every linked window shows the preview range and loads during the gesture like the zoomed one").
 
 #### Scenario: Zoom one of two linked windows
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
 - **THEN** within 1 s window 2's header shows the same range as window 1 and its curve is reloaded for it
 - **Evidence:** UI check (screenshot of both headers); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
 
@@ -236,17 +236,17 @@ The option bar SHALL show a "Link time axes" toggle that reflects and sets the w
 A signal's legend row SHALL be draggable onto another window: a plain drop moves the signal, a drop with Alt or Ctrl held copies it, each as one `window.moveSignal` command. The signal SHALL keep its colour and take the target window's display mode (mode is a window option). A window emptied by the move SHALL disappear (workspace-state "Window emptied by a move is removed"). Origin: D-017; Alt/Ctrl copy: feedback 2026-10-14, point 1; D-027 (emptied window removed).
 
 #### Scenario: Move by drag
-- **WHEN** window A shows `COMBI_412h.V_ANZ` and `BS_200h.DVL`, window B shows `CPC_448h.PTC_HV_Volt`, and the user drags the V_ANZ legend row onto window B and releases
-- **THEN** V_ANZ is listed and drawn in window B with the same swatch colour as before, window A shows only DVL, and the revision increased by exactly one
+- **WHEN** window A shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL`, window B shows `DCU_2B8h.HTR_HV_Volt`, and the user drags the SPEED_DISP legend row onto window B and releases
+- **THEN** SPEED_DISP is listed and drawn in window B with the same swatch colour as before, window A shows only WSPD_FL, and the revision increased by exactly one
 - **Evidence:** UI check (screenshot after the drop, revision in the status strip); `apps/web/test/drag.test.ts` › "moves on plain drop and copies with Alt or Ctrl"
 
 #### Scenario: Copy by drag
-- **WHEN** the user drags the DVL row onto window B with Alt (or Ctrl) held at release
-- **THEN** DVL is shown in both windows in the same colour
+- **WHEN** the user drags the WSPD_FL row onto window B with Alt (or Ctrl) held at release
+- **THEN** WSPD_FL is shown in both windows in the same colour
 - **Evidence:** `apps/web/test/drag.test.ts` › "moves on plain drop and copies with Alt or Ctrl"; UI check if the browser automation can hold the modifier, else `not_run` with the test as evidence
 
 #### Scenario: Last signal dragged out
-- **WHEN** window A shows only `BS_200h.DVL`, window B shows `CPC_448h.PTC_HV_Volt`, and the user drags the DVL legend row onto window B and releases
+- **WHEN** window A shows only `BRK_1A0h.WSPD_FL`, window B shows `DCU_2B8h.HTR_HV_Volt`, and the user drags the WSPD_FL legend row onto window B and releases
 - **THEN** window B shows both signals, window A is gone from the page, and the revision increased by exactly one
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop, revision in the status strip); `packages/shared/test/apply.test.ts` › "removes a window emptied by a move"
 
@@ -254,23 +254,23 @@ A signal's legend row SHALL be draggable onto another window: a plain drop moves
 While dragging, each window that can take the signal SHALL be highlighted with a hint naming the action: "Drop to move · Alt/Ctrl+drop to copy" for a legend or values row, "Drop to add" for an explorer row. A window that cannot take the signal SHALL NOT be highlighted and SHALL ignore a drop ("Refused drop targets"). Esc or a release outside any target SHALL cancel without a command. Origin: feedback 2026-10-14, point 1 (serving D-017); D-020 (explorer drags); D-023 (values rows).
 
 #### Scenario: Highlight and cancel
-- **WHEN** the user starts dragging the PTC_HV_Volt row, holds it over window A, then presses Esc and releases
+- **WHEN** the user starts dragging the HTR_HV_Volt row, holds it over window A, then presses Esc and releases
 - **THEN** while dragging window A is highlighted with the hint and "+ New window" is visible; after Esc nothing is highlighted, no signal moved and the revision is unchanged
 - **Evidence:** UI check (screenshot while dragging, revision before and after)
 
 #### Scenario: No drop on a window that shows the signal
-- **WHEN** V_ANZ is shown in windows A and B and the user drags it from A over B
+- **WHEN** SPEED_DISP is shown in windows A and B and the user drags it from A over B
 - **THEN** B is not highlighted and releasing over B changes nothing
 - **Evidence:** `apps/web/test/drag.test.ts` › "rejects drops on the source and on windows showing the signal"; UI check (screenshot)
 
 #### Scenario: Fifth unit refused
-- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags `MS_312h.DNMOT` (`rpm/10ms`) from window B over A
+- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags `ENG_2E8h.MOT_SPD_D` (`rpm/10ms`) from window B over A
 - **THEN** A is marked as not droppable with the hint "At most 4 units per window", and releasing over A changes nothing
 - **Evidence:** `apps/web/test/drag.test.ts` › "refuses a drop that would make a fifth unit"; UI check (screenshot while dragging, revision unchanged)
 
 #### Scenario: Drop into a new window
-- **WHEN** window B shows `CPC_448h.PTC_HV_Volt` and `COMBI_412h.V_ANZ`, and the user drags the PTC_HV_Volt row from window B onto "+ New window"
-- **THEN** a new window "Window <n>" appears last with B's range and mode, showing PTC_HV_Volt, and window B stays with V_ANZ; dragging V_ANZ, B's last signal, onto "+ New window" afterwards creates another new window and removes B
+- **WHEN** window B shows `DCU_2B8h.HTR_HV_Volt` and `ICL_3A2h.SPEED_DISP`, and the user drags the HTR_HV_Volt row from window B onto "+ New window"
+- **THEN** a new window "Window <n>" appears last with B's range and mode, showing HTR_HV_Volt, and window B stays with SPEED_DISP; dragging SPEED_DISP, B's last signal, onto "+ New window" afterwards creates another new window and removes B
 - **Evidence:** `apps/web/test/drag.test.ts` › "drops into a new window"; `packages/shared/test/apply.test.ts` › "moves the only signal into a new window and removes the source"; UI check (screenshot after each drop)
 
 #### Scenario: Hint names the action
@@ -282,7 +282,7 @@ While dragging, each window that can take the signal SHALL be highlighted with a
 Signals with the same unit SHALL share one y scale and axis; each unit SHALL have its own. A signal without unit SHALL have its own scale, titled with its name. The axis title SHALL be the unit, in the signal's colour when it is the only signal on that axis. Origin: D-018 ("'Same value range' means **same unit**: one y-axis per unit, nothing more."); D-017 („gleiche signalbereich gleiche achse“); coloured title from power-user expectations (feedback 2026-10-14, point 2).
 
 #### Scenario: Two signals, same unit
-- **WHEN** a window shows `CPC_168h.EAC_HV_Volt` and `CPC_448h.PTC_HV_Volt` (both `V`)
+- **WHEN** a window shows `DCU_1F4h.COMP_HV_Volt` and `DCU_2B8h.HTR_HV_Volt` (both `V`)
 - **THEN** one axis is drawn on the left titled `V` in neutral colour, and the `[V]` of both legend rows has the tooltip "y axis L"
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "puts signals with the same unit on one axis"
 
@@ -290,12 +290,12 @@ Signals with the same unit SHALL share one y scale and axis; each unit SHALL hav
 Every unit SHALL get a drawn y axis, stacked up to two per side in signal order: first unit inner left (`L`), second inner right (`R`), third outer left (`L2`), fourth outer right (`R2`); the plot narrows. Each legend row's `[unit]` SHALL name its axis side as tooltip (D-030: the side column is gone). Origin: D-019 ("stacked axes, up to two per side (at most four units), the plot area gets narrower. Every value stays readable."); legend sides from feedback 2026-10-14, point 2.
 
 #### Scenario: Second unit
-- **WHEN** `COMBI_412h.V_ANZ` (`km/h`) is added to that window
-- **THEN** a right axis titled `km/h` appears in V_ANZ's colour, V_ANZ's `[km/h]` has the tooltip "y axis R", and the `V` axis stays left
+- **WHEN** `ICL_3A2h.SPEED_DISP` (`km/h`) is added to that window
+- **THEN** a right axis titled `km/h` appears in SPEED_DISP's colour, SPEED_DISP's `[km/h]` has the tooltip "y axis R", and the `V` axis stays left
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order", "colours an axis like its only signal"
 
 #### Scenario: Third and fourth unit
-- **WHEN** `MS_608h.T_MOT` (`°C`) and then `BS_200h.DVL` (`1/min`) are added as well
+- **WHEN** `ENG_5E0h.T_ENG` (`°C`) and then `BRK_1A0h.WSPD_FL` (`1/min`) are added as well
 - **THEN** a `°C` axis appears outer left and a `1/min` axis outer right, each in its signal's colour with readable tick labels, the plot is narrower, and their `[unit]` tooltips name `L2` and `R2`
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order"
 
@@ -308,24 +308,24 @@ Every unit SHALL get a drawn y axis, stacked up to two per side in signal order:
 Axis titles SHALL be horizontal text above their axis, showing the unit exactly as in the signal metadata, preceded by the axis' SI prefix when its ticks are scaled ("Axis tick numbers"), and SHALL NOT overlap or cut tick labels; tick labels SHALL NOT be cut. Origin: bug "°C garbled in the rotated axis title" (feedback 2026-10-14); prefix: D-026.
 
 #### Scenario: Degree sign
-- **WHEN** a window shows only `AC_A1.T_SOLL`
-- **THEN** the left axis title reads `°C` in T_SOLL's colour, and the tick labels are fully visible
+- **WHEN** a window shows only `CLIM_A1.T_SET`
+- **THEN** the left axis title reads `°C` in T_SET's colour, and the tick labels are fully visible
 - **Evidence:** UI check (zoomed screenshot of the axis)
 
 ### Requirement: Stable colours in windows
 Each signal SHALL be drawn, listed and SNA-marked in its workspace colour, the same in every window. Origin: D-018 ("stable signal colours across windows").
 
 #### Scenario: First signals of two windows
-- **WHEN** window 1 shows `COMBI_412h.V_ANZ` first and window 2 shows `CPC_448h.PTC_HV_Volt` first, and V_ANZ is also copied into window 2
-- **THEN** the two first signals have different colours, and V_ANZ has the same colour in both windows
+- **WHEN** window 1 shows `ICL_3A2h.SPEED_DISP` first and window 2 shows `DCU_2B8h.HTR_HV_Volt` first, and SPEED_DISP is also copied into window 2
+- **THEN** the two first signals have different colours, and SPEED_DISP has the same colour in both windows
 - **Evidence:** UI check (screenshot); `packages/shared/test/apply.test.ts` › "assigns stable colours across windows"
 
 ### Requirement: Window names
 A window SHALL be named by its title or, untitled, "Window <n>" everywhere it is named, including the explorer's "Add to" list. Origin: D-018 ("window rename"); bug "'Add to' lists raw IDs" (feedback 2026-10-14).
 
 #### Scenario: New window from the explorer is untitled
-- **WHEN** the user adds `COMBI_412h.V_ANZ` to "New window" in the explorer and the new window gets the ID `w<n>`
-- **THEN** the new window's header reads `Window <n>` (not `V_ANZ`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
+- **WHEN** the user adds `ICL_3A2h.SPEED_DISP` to "New window" in the explorer and the new window gets the ID `w<n>`
+- **THEN** the new window's header reads `Window <n>` (not `SPEED_DISP`), the "Add to" list shows `Window <n>`, and `curl -s localhost:7310/api/workspace | jq '.workspace.windows[-1].title'` prints `null`
 - **Evidence:** UI check (screenshot of header and "Add to" list); the `curl` command. Origin: lead decision (rounds.md round 5): a signal-name title goes stale once that signal is moved out.
 
 ### Requirement: Renaming a window
@@ -350,7 +350,7 @@ A double-click on the title, or "Rename" in the window menu, SHALL allow renamin
 All windows SHALL use the same plot left and right insets (per side, the widest natural axis width of any window), so that one timestamp sits at the same x position in every window of equal width. Origin: lead decision (rounds.md round 5), a necessary consequence of D-017 (linked zoom is only comparable when the time axes line up).
 
 #### Scenario: Different axis counts line up
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ` only (one axis, `L`) and window 2 shows `CPC_448h.PTC_HV_Volt`, `COMBI_412h.V_ANZ` and `MS_608h.T_MOT` (axes `L`, `R`, `L2`)
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP` only (one axis, `L`) and window 2 shows `DCU_2B8h.HTR_HV_Volt`, `ICL_3A2h.SPEED_DISP` and `ENG_5E0h.T_ENG` (axes `L`, `R`, `L2`)
 - **THEN** the left and right edges of both plot areas are at the same x (within 1 px), and the crosshair over a timestamp in window 1 and the same timestamp's tick in window 2 are vertically aligned
 - **Evidence:** UI check (one screenshot of both windows with a vertical guide or measured plot edges); `apps/web/test/insets.test.ts` › "takes the largest axis width per side across windows"
 
@@ -358,12 +358,12 @@ All windows SHALL use the same plot left and right insets (per side, the widest 
 The plot crosshair SHALL be hidden when the pointer leaves the plot and right after every change of the window's shown range, whatever caused it (wheel zoom, wheel pan, drag-select, double-click reset, navigation keys, "Go to", presets, "Back", "Reset", a linked window or the CLI), until the pointer moves over the plot again. Origin: lead decision (rounds.md round 5 of `improve-window-workflow`): a crosshair left at its old pixel points at a wrong time; D-027 (keys and typed ranges).
 
 #### Scenario: Leave and zoom
-- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), then leaves the plot; then the user returns, Ctrl+wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
+- **WHEN** the pointer hovers a SPEED_DISP plot (crosshair visible), then leaves the plot; then the user returns, Ctrl+wheel-zooms once without moving, and later drag-selects a range and double-clicks the plot
 - **THEN** the crosshair is gone after leaving, and after each of the wheel zoom, the drag-select and the double-click reset until the pointer moves
 - **Evidence:** UI check (screenshots after leaving and after each zoom commit)
 
 #### Scenario: Pan and Zoom out
-- **WHEN** the pointer hovers a V_ANZ plot (crosshair visible), the user presses `→` without moving, then moves, then presses `-`
+- **WHEN** the pointer hovers a SPEED_DISP plot (crosshair visible), the user presses `→` without moving, then moves, then presses `-`
 - **THEN** the crosshair is gone after `→` until the pointer moves, and gone again after `-`
 - **Evidence:** UI check (screenshots after each key)
 
@@ -447,7 +447,7 @@ The user SHALL be able to change a timeseries window's plot height by dragging e
 A double-click in the plot SHALL set the window's range to the union of its signals' extents (first point to just after the last point). While linked, all windows SHALL follow. Origin: D-018 ("double-click resets zoom").
 
 #### Scenario: Back to the full extent
-- **WHEN** a window shows only `COMBI_412h.V_ANZ` zoomed to 2026-10-13T09:56:59Z–09:57:01Z and the user double-clicks the plot
+- **WHEN** a window shows only `ICL_3A2h.SPEED_DISP` zoomed to 2026-10-13T09:56:59Z–09:57:01Z and the user double-clicks the plot
 - **THEN** the range becomes 2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.221Z (header in local time) and the view is aggregated
 - **Evidence:** UI check (screenshot of the header); `apps/web/test/zoom.test.ts` › "computes the extent range rounded up to the next millisecond"
 
@@ -455,7 +455,7 @@ A double-click in the plot SHALL set the window's range to the union of its sign
 Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, "Go to", span preset, time-strip action and drive key SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. "Back" SHALL be disabled when there is no previous range. Origin: D-018 ("zoom history back"); D-025 (one "Back", in the bar); D-027 (new navigation undone alike); D-057 (strip actions as "Go to"; a double-click on the strip replaces its first click's entry, `time-strip` "Double-click shows the whole recording").
 
 #### Scenario: Two steps back
-- **WHEN** the user zooms a V_ANZ window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
+- **WHEN** the user zooms a SPEED_DISP window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
 - **THEN** the window shows the morning range, then the full extent, and the bar's "Back" is disabled
 - **Evidence:** UI check (screenshots of the header after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
 
@@ -484,15 +484,15 @@ The zoom history SHALL live in the browser tab only, not in the workspace; a rel
 Wheel zoom, pan, navigation keys, "Go to", presets, reset and back SHALL keep the window range within 1900-01-01T00:00:00Z … 2262-04-11T00:00:00Z. Origin: necessary consequence of the bug "window range 1036-01-11 … 3937-05-09" (D-021).
 
 #### Scenario: Zoom out forty times
-- **WHEN** a window shows `CPC_448h.PTC_HV_Volt` and the user presses `-` 40 times with the pointer over it
+- **WHEN** a window shows `DCU_2B8h.HTR_HV_Volt` and the user presses `-` 40 times with the pointer over it
 - **THEN** the header range never shows a year before 1900 or after 2262, no command is rejected, and the signal is still drawn (as an aggregated point or short curve)
 - **Evidence:** UI check (screenshot of the header and the message area); `apps/web/test/zoom.test.ts` › "clamps ranges into the time bounds"
 
 ### Requirement: Valid constants at raw 0 are drawn
-A stored value that is not an SNA code of its signal SHALL be drawn as a value even when it is constant and equals the physical value of raw 0. Origin: D-019 ("T_SOLL's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions."); data facts in design "Bug analysis". `MS_312h.DNMOT` (−127, D-012) is covered by the existing scenario "Valid constant, no SNA" under "SNA share in the signal list".
+A stored value that is not an SNA code of its signal SHALL be drawn as a value even when it is constant and equals the physical value of raw 0. Origin: D-019 ("T_SET's raw 0 (−40 °C, all data on smart451) is shown as a valid value; the DBC rules (D-010, D-014, D-015) apply unchanged, no per-signal exceptions."); data facts in design "Bug analysis". `ENG_2E8h.MOT_SPD_D` (−127, D-012) is covered by the existing scenario "Valid constant, no SNA" under "SNA share in the signal list".
 
-#### Scenario: T_SOLL
-- **WHEN** a window shows the full extent of `AC_A1.T_SOLL`
+#### Scenario: T_SET
+- **WHEN** a window shows the full extent of `CLIM_A1.T_SET`
 - **THEN** the curve is a flat line at −40 °C and the legend shows no SNA share
 - **Evidence:** UI check (screenshot)
 
@@ -500,34 +500,34 @@ A stored value that is not an SNA code of its signal SHALL be drawn as a value e
 During a drag, the legend row's own window and any window already showing the signal SHALL be refused without a highlight. A timeseries window that would reach a fifth unit SHALL be marked not droppable with the hint "At most 4 units per window", whatever the drag source, except for a drag of an explorer selection of two or more signals, which overflows instead ("Selection overflows into new windows"). A values window SHALL never be refused for units. Origin: D-019 (four units), D-020 (refusal for explorer drags), D-023 (values rows as source; no unit limit in the values window); selection exception: D-066.
 
 #### Scenario: Values row over a four-unit window
-- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags the `MS_312h.DNMOT` row of a values window over A and releases
+- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags the `ENG_2E8h.MOT_SPD_D` row of a values window over A and releases
 - **THEN** A is marked not droppable with "At most 4 units per window", and the release changes nothing (revision unchanged)
 - **Evidence:** `apps/web/test/drag.test.ts` › "drags a values row like a legend row"; UI check (screenshot while dragging, revision before and after)
 
 #### Scenario: Values window takes a fifth unit
-- **WHEN** a values window lists four units and the user drags the DNMOT legend row from a timeseries window over it
+- **WHEN** a values window lists four units and the user drags the MOT_SPD_D legend row from a timeseries window over it
 - **THEN** the values window is highlighted with "Drop to move · Alt/Ctrl+drop to copy"
 - **Evidence:** `apps/web/test/drag.test.ts` › "accepts any unit on a values window"; UI check (screenshot while dragging)
 
 #### Scenario: Selection over a four-unit window
-- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags an explorer selection of `MS_312h.DNMOT` and `SAS_0C2h.LWS_SPEED` over A and releases
-- **THEN** A is highlighted with "Drop to add" while dragging; after the release A is unchanged and one new window shows DNMOT and LWS_SPEED
+- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags an explorer selection of `ENG_2E8h.MOT_SPD_D` and `STR_0D4h.STEER_SPEED` over A and releases
+- **THEN** A is highlighted with "Drop to add" while dragging; after the release A is unchanged and one new window shows MOT_SPD_D and STEER_SPEED
 - **Evidence:** `apps/web/test/drag.test.ts` › "highlights a window for a selection while one signal is new"; `packages/shared/test/placement.test.ts` › "counts the units the target already shows"
 
 ### Requirement: New-window drop zone stays visible
 During every drag, the "+ New window" drop zone SHALL be visible at the bottom of the viewport over the window list, wherever the list is scrolled. It SHALL NOT be shown outside a drag. Origin: D-023 („"+ New window" stays visible during a drag").
 
 #### Scenario: Many windows, scrolled to the top
-- **WHEN** six timeseries windows fill more than the viewport, the list is scrolled to the top, and the user drags the `BS_200h.DVL` explorer row
-- **THEN** "+ New window" is visible at the bottom of the viewport without scrolling, and dropping on it creates a new window with DVL
+- **WHEN** six timeseries windows fill more than the viewport, the list is scrolled to the top, and the user drags the `BRK_1A0h.WSPD_FL` explorer row
+- **THEN** "+ New window" is visible at the bottom of the viewport without scrolling, and dropping on it creates a new window with WSPD_FL
 - **Evidence:** UI check (screenshot while dragging, screenshot after the drop)
 
 ### Requirement: Auto-scroll while dragging
 While dragging, the window list SHALL scroll when the pointer is within 48 px of its visible top edge (below the option bar) or bottom edge (above the drop zone), faster the deeper, up to 24 px per frame, and stop at the list's ends. Pointing at the drop zone itself SHALL NOT scroll. The wheel SHALL scroll the list during a drag instead of zooming. Origin: D-023 („the page scrolls when the pointer nears its edge").
 
 #### Scenario: Reach the last window
-- **WHEN** six windows exist, the list is scrolled to the top, and the user drags the V_ANZ legend row of window 1 into the band just above "+ New window"
-- **THEN** the list scrolls down until window 6 is visible and stops at the end; dropping on window 6 moves V_ANZ there
+- **WHEN** six windows exist, the list is scrolled to the top, and the user drags the SPEED_DISP legend row of window 1 into the band just above "+ New window"
+- **THEN** the list scrolls down until window 6 is visible and stops at the end; dropping on window 6 moves SPEED_DISP there
 - **Evidence:** UI check (screenshots while scrolling and after the drop)
 
 #### Scenario: Hold over the drop zone
@@ -547,7 +547,7 @@ Above the windows, an option bar SHALL stay visible while the window list scroll
 The bar's "Back" SHALL step back the zoom history of its target window, and "Reset" SHALL set the target's range to the union of its signals' extents. They are the only Back and Reset controls (D-025). While linked, "Reset" SHALL use the signals of all timeseries windows. "Back" SHALL be disabled when the target has no history. Origin: D-023 (zoom back / reset zoom in the bar); D-025 („one "Back" and one "Reset"").
 
 #### Scenario: Linked reset
-- **WHEN** "Link time axes" is on, window 1 shows `COMBI_412h.V_ANZ`, window 2 shows `CPC_448h.PTC_HV_Volt`, both at 2026-10-13T13:08:00Z–13:08:03Z, and the user clicks "Reset"
+- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, both at 2026-10-13T13:08:00Z–13:08:03Z, and the user clicks "Reset"
 - **THEN** both windows show the union of both signals' extents (earliest first point to just after the latest last point), and "Back" returns both to 13:08:00Z–13:08:03Z
 - **Evidence:** `apps/web/test/bar.test.ts` › "resets to the union of all timeseries extents while linked"; UI check (screenshots of both headers)
 
@@ -563,8 +563,8 @@ The target of the bar's "Back" and "Reset" SHALL be the window zoomed last, else
 A drop SHALL go to the target under the pointer at release, never to a target the pointer left earlier. The drop zone's space SHALL stay reserved below the last window whether or not a drag runs, so nothing moves when a drag starts and the "+ New window" zone never covers a window. Origin: power-user bug (feedback 2026-10-15, item 1: three stray windows); necessary consequence of "New-window drop zone stays visible".
 
 #### Scenario: Values window at the bottom
-- **WHEN** a values window is the last window, the list is scrolled to the end, and the user drags the `COMBI_412h.V_ANZ` explorer row onto the lower part of the values window and releases
-- **THEN** the values window lists V_ANZ, no new window appears, and while dragging the "+ New window" zone sits below the values window without covering it
+- **WHEN** a values window is the last window, the list is scrolled to the end, and the user drags the `ICL_3A2h.SPEED_DISP` explorer row onto the lower part of the values window and releases
+- **THEN** the values window lists SPEED_DISP, no new window appears, and while dragging the "+ New window" zone sits below the values window without covering it
 - **Evidence:** UI check (screenshot while dragging, screenshot and revision after the drop)
 
 ### Requirement: Header shows the plotted range
@@ -584,18 +584,18 @@ A window this browser tab creates SHALL be scrolled fully into view: below the t
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each creation)
 
 #### Scenario: Drop below a short list
-- **WHEN** at 1440×900 two windows share the first row and the user drops the `BS_200h.DVL` explorer row on the free area below them
+- **WHEN** at 1440×900 two windows share the first row and the user drops the `BRK_1A0h.WSPD_FL` explorer row on the free area below them
 - **THEN** the new window is fully visible right after it appears, without manual scrolling
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop)
 
 #### Scenario: Explorer add among seventeen windows
-- **WHEN** seventeen windows exist (created with `kipscope window create` and `kipscope signal add`), the list is scrolled to the top, no window is marked, and the user types `V_ANZ` and presses Enter
+- **WHEN** seventeen windows exist (created with `kipscope window create` and `kipscope signal add`), the list is scrolled to the top, no window is marked, and the user types `SPEED_DISP` and presses Enter
 - **THEN** within one second the new window is fully visible between the top row and the status strip and carries `data-flash`; 1.5 s later it no longer carries it
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot within 1 s, the attribute read twice)
 
 #### Scenario: Add into a marked window out of sight
-- **WHEN** of seventeen windows window 1 is marked, the list is scrolled to the end, and the user adds `MS_608h.T_MOT` with the row's add button
-- **THEN** window 1 is scrolled fully into view (its header right below the top row if taller), shows T_MOT and flashes; no new window is created
+- **WHEN** of seventeen windows window 1 is marked, the list is scrolled to the end, and the user adds `ENG_5E0h.T_ENG` with the row's add button
+- **THEN** window 1 is scrolled fully into view (its header right below the top row if taller), shows T_ENG and flashes; no new window is created
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot within 1 s)
 
 #### Scenario: Selection creates two windows
@@ -638,7 +638,7 @@ Y-axis ticks SHALL use one SI prefix per axis, chosen from the largest absolute 
 - **Evidence:** `packages/shared/test/numfmt.test.ts` › "formats axis ticks with one prefix per axis"
 
 #### Scenario: Narrow voltage range
-- **WHEN** a window shows `CPC_448h.PTC_HV_Volt` from 2026-10-13T13:08:00Z to 13:08:03Z
+- **WHEN** a window shows `DCU_2B8h.HTR_HV_Volt` from 2026-10-13T13:08:00Z to 13:08:03Z
 - **THEN** the axis labels are distinct, all with the same number of decimals, and the axis title reads `V` or a prefixed `V` matching the labels
 - **Evidence:** UI check (zoomed screenshot of the axis)
 
@@ -743,7 +743,7 @@ A window SHALL hand its requests to the loader again only when a signal assignme
 Each timeseries window SHALL mark the shown events of its signals' data refs within its range: a 1 px line over the plot behind the curves in the category colour at half opacity (faults solid, changes dashed, others dotted) and a 6 px glyph above the plot area, grouped, coloured and filled or hollow like the strip's pins (hollow when all its events are DTCs, fault memory reads), with the pin tooltip; both SHALL follow zoom and pan. Origin: D-058 („marks … in the chart windows"); add-events design V6; hollow: data fact (DTC times are readout times), proposal E-3.
 
 #### Scenario: Marks on smart451
-- **WHEN** window 1 shows `CPC_448h.PTC_HV_Volt` on smart451 over 2026-10-14 18:55–19:15 local with the default filter, then the filter `none`
+- **WHEN** window 1 shows `DCU_2B8h.HTR_HV_Volt` on smart451 over 2026-10-14 18:55–19:15 local with the default filter, then the filter `none`
 - **THEN** first the window shows filled glyphs and lines at the isolation changes of 18:59:47–19:08:32 (more than one glyph; the glyph at 18:59:47 lists `BMS.contactor` `closed → open`), and the plot height is the same as without events; with `none` no glyph or line remains
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots, plot height)
 
@@ -769,13 +769,13 @@ A click on an event glyph SHALL place cursor A at the exact time of the glyph's 
 A selection of two or more explorer signals, dropped or added, SHALL be placed in list order: a signal the target shows is skipped; each other goes into the first window where it fits, the target first, then the windows this add created, else into a new window. A timeseries window fits while it keeps at most four units, counting those it already shows; a values window fits every signal. Origin: D-066 („Only by unit limit", „Fill it up"); skip, first fit: lead default L4.
 
 #### Scenario: Six units onto "+ New window"
-- **WHEN** on smart451 at 1440×900 the user types `speed`, Ctrl-clicks (Cmd on macOS) `LWS_SPEED` (°/s), `CompSpd_Target_V2` (%), `DVL` (1/min), `V_ANZ` (km/h), `V_MAX_TM` (km/h(mph)) and `NMOTS` (~/min), and drags `DVL` onto "+ New window"
-- **THEN** while dragging the ghost reads `6 signals · add` over the zone; after the drop two new windows appear: the first shows LWS_SPEED, CompSpd_Target_V2, DVL, V_ANZ on four axes, the second V_MAX_TM and NMOTS; the first is scrolled into view and the revision rose by eight
+- **WHEN** on smart451 at 1440×900 the user types `speed`, Ctrl-clicks (Cmd on macOS) `STEER_SPEED` (°/s), `CompSpd_Target` (%), `WSPD_FL` (1/min), `SPEED_DISP` (km/h), `V_MAX_LIM` (km/h(mph)) and `ENG_SPD_SET` (~/min), and drags `WSPD_FL` onto "+ New window"
+- **THEN** while dragging the ghost reads `6 signals · add` over the zone; after the drop two new windows appear: the first shows STEER_SPEED, CompSpd_Target, WSPD_FL, SPEED_DISP on four axes, the second V_MAX_LIM and ENG_SPD_SET; the first is scrolled into view and the revision rose by eight
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, screenshot and revision after the drop)
 
 #### Scenario: Drop onto a window with three units
-- **WHEN** window `W` shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h) and `MS_608h.T_MOT` (°C), and the user types `speed`, Ctrl/Cmd-clicks `LWS_SPEED`, `CompSpd_Target_V2`, `DVL`, `DVR` and `V_ANZ`, and drags the selection onto `W`
-- **THEN** `W` is highlighted with "Drop to add" (not "At most 4 units per window"); after the drop `W` shows its three signals plus LWS_SPEED (four units), one new window shows CompSpd_Target_V2, DVL and DVR, V_ANZ is not added twice, and the revision rose by five
+- **WHEN** window `W` shows `DCU_1F4h.COMP_HV_Volt` (V), `ICL_3A2h.SPEED_DISP` (km/h) and `ENG_5E0h.T_ENG` (°C), and the user types `speed`, Ctrl/Cmd-clicks `STEER_SPEED`, `CompSpd_Target`, `WSPD_FL`, `WSPD_FR` and `SPEED_DISP`, and drags the selection onto `W`
+- **THEN** `W` is highlighted with "Drop to add" (not "At most 4 units per window"); after the drop `W` shows its three signals plus STEER_SPEED (four units), one new window shows CompSpd_Target, WSPD_FL and WSPD_FR, SPEED_DISP is not added twice, and the revision rose by five
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, screenshot and revision after the drop)
 
 #### Scenario: Placement rules
@@ -808,7 +808,7 @@ In a raw view the window SHALL draw no line between two split points (data-gaps)
 - **Evidence:** `apps/web/test/build.test.ts` › "breaks lines and steps at gaps"
 
 #### Scenario: Dropout in a drive
-- **WHEN** on smart451 at 1440×900 a window shows `SAS_0C2h.LWS_ANGLE` and `COMBI_412h.V_ANZ` from 2026-10-13 11:34:34 to 11:34:39 local in line mode
+- **WHEN** on smart451 at 1440×900 a window shows `STR_0D4h.STEER_ANGLE` and `ICL_3A2h.SPEED_DISP` from 2026-10-13 11:34:34 to 11:34:39 local in line mode
 - **THEN** both curves stop at about 11:34:36.2 and resume at about 11:34:37.0, nothing is drawn in between, and no grey band shows there (the logger was not silent for 2 s)
 - **Evidence:** UI check (screenshot)
 
@@ -826,7 +826,7 @@ In an aggregated view the mean curve and the min/max envelope SHALL break betwee
 - **Evidence:** `apps/web/test/build.test.ts` › "breaks buckets only where a gap is certain"
 
 #### Scenario: Day overview
-- **WHEN** on smart451 a window shows `CPC_448h.PTC_HV_Volt` over 2026-10-13 00:00–24:00 local, aggregated, envelope on
+- **WHEN** on smart451 a window shows `DCU_2B8h.HTR_HV_Volt` over 2026-10-13 00:00–24:00 local, aggregated, envelope on
 - **THEN** neither mean nor envelope crosses any of the grey bands (00:00–06:05, 06:05:45–10:30:23, 10:31:12–11:06:56, 12:13:07–12:42:29, 12:42:59–13:42:28, 13:42:58–15:07:03, 15:17:33–24:00 and the thin one at 11:27:54)
 - **Evidence:** UI check (screenshot)
 
@@ -834,7 +834,7 @@ In an aggregated view the mean curve and the min/max envelope SHALL break betwee
 Every timeseries window SHALL paint each logger gap of its signals' data refs that meets its view and holds no drawn sample of that data ref, as a faint grey band over the plot's full height, under the grid, the event marks and the curves, at least 1 CSS px wide. Origin: D-062 („logger gaps also get a faint grey band so "no data" reads as intended"; „in every timeseries window" as a consequence of „every signal"); stale gaps: design G9 (a).
 
 #### Scenario: Band in a drive
-- **WHEN** on smart451 at 1440×900 a window shows `CPC_448h.PTC_HV_Volt` and `SAS_0C2h.LWS_ANGLE` from 2026-10-13 11:27:45 to 11:28:05 local
+- **WHEN** on smart451 at 1440×900 a window shows `DCU_2B8h.HTR_HV_Volt` and `STR_0D4h.STEER_ANGLE` from 2026-10-13 11:27:45 to 11:28:05 local
 - **THEN** a faint grey band covers 11:27:53.936 to 11:27:56.982; both curves end at its left edge and resume at its right edge; grid lines show over the band
 - **Evidence:** UI check (screenshot)
 
@@ -847,13 +847,13 @@ Every timeseries window SHALL paint each logger gap of its signals' data refs th
 A window SHALL draw the curves, envelopes and bands of a stretch whose logger gap holds drawn samples as if the gap were absent: no break and no band there, and the drawn value (L, drags) a value, not `logger_gap`. Origin: Jan 2026-10-17 („same values are cluttered as dots, which should have a hüllkurve instead? looks strange"); design G9 (a).
 
 #### Scenario: Repro of the stale gap
-- **WHEN** with the logger gap 1792176671171000000–1792176763235000000 (2026-10-16 18:51:11.171–18:52:43.235 UTC) the view 18:51:11.385–18:51:20.691 is built from 500 buckets of 20 ms of `SAS_0C2h.LWS_ANGLE` (period 10 ms, means alternating −1,400 and 1,400, all inside the gap) and 95 raw points of `CPC_448h.PTC_HV_Volt` (period 100 ms, 100 ms apart, edge neighbours inside the gap); the bands of the view are listed with and without these results; and the drawn values are read at 18:51:15.000
-- **THEN** mean, min and max hold no inserted null and no bucket is isolated (was 499 breaks, 500 isolated); PTC_HV_Volt has no break (was 94); the bands are `[]` with the results and the one clipped gap without them; LWS_ANGLE reads `aggregated` and PTC_HV_Volt `interpolated`
+- **WHEN** with the logger gap 1792176671171000000–1792176763235000000 (2026-10-16 18:51:11.171–18:52:43.235 UTC) the view 18:51:11.385–18:51:20.691 is built from 500 buckets of 20 ms of `STR_0D4h.STEER_ANGLE` (period 10 ms, means alternating −1,400 and 1,400, all inside the gap) and 95 raw points of `DCU_2B8h.HTR_HV_Volt` (period 100 ms, 100 ms apart, edge neighbours inside the gap); the bands of the view are listed with and without these results; and the drawn values are read at 18:51:15.000
+- **THEN** mean, min and max hold no inserted null and no bucket is isolated (was 499 breaks, 500 isolated); HTR_HV_Volt has no break (was 94); the bands are `[]` with the results and the one clipped gap without them; STEER_ANGLE reads `aggregated` and HTR_HV_Volt `interpolated`
 - **Evidence:** `apps/web/test/build.test.ts` › "draws through a logger gap that holds samples"; `apps/web/test/gaps.test.ts` › "leaves out a band that holds samples"; `apps/web/test/readout.test.ts` › "reads drawn data inside a stale logger gap"
 
 #### Scenario: Steering angle on 2026-10-16
-- **WHEN** on smart451 at 1440×900 a window shows `CPC_448h.PTC_HV_Volt`, `SAS_0C2h.LWS_ANGLE` and `COMBI_412h.V_ANZ` from 2026-10-16 20:51:11.385 to 20:51:20.691 local
-- **THEN** LWS_ANGLE is a mean curve with its min/max envelope (or a line when raw), the other two are lines, no point markers stand alone and no grey band shows
+- **WHEN** on smart451 at 1440×900 a window shows `DCU_2B8h.HTR_HV_Volt`, `STR_0D4h.STEER_ANGLE` and `ICL_3A2h.SPEED_DISP` from 2026-10-16 20:51:11.385 to 20:51:20.691 local
+- **THEN** STEER_ANGLE is a mean curve with its min/max envelope (or a line when raw), the other two are lines, no point markers stand alone and no grey band shows
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Gap info loads with the window
@@ -865,7 +865,7 @@ A window SHALL fetch the gap info of each data ref of its signals once per brows
 - **Evidence:** `apps/web/test/gaps.test.ts` › "fetches gap info once per data ref and retries a failure"
 
 #### Scenario: Settled with breaks
-- **WHEN** on smart451 `kipscope --wait window range <w> "2026-10-13 11:27:45" "2026-10-13 11:28:05"` runs on a window showing `CPC_448h.PTC_HV_Volt` in a fresh browser tab
+- **WHEN** on smart451 `kipscope --wait window range <w> "2026-10-13 11:27:45" "2026-10-13 11:28:05"` runs on a window showing `DCU_2B8h.HTR_HV_Volt` in a fresh browser tab
 - **THEN** it reports `complete`, and a screenshot taken right after shows the band and the break
 - **Evidence:** UI check (CLI output and screenshot)
 

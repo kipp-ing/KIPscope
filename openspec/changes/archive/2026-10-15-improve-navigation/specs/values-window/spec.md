@@ -19,26 +19,26 @@ The dashboard SHALL offer a window kind "values" with a header (title, "Between 
 - **Evidence:** UI check (screenshot)
 
 #### Scenario: No unit column
-- **WHEN** a values window lists `BS_200h.DVL` and A is off
-- **THEN** the row shows grip, swatch, `DVL` and `—`, and no `[1/min]` column
+- **WHEN** a values window lists `BRK_1A0h.WSPD_FL` and A is off
+- **THEN** the row shows grip, swatch, `WSPD_FL` and `—`, and no `[1/min]` column
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Value at cursor A
 Each row SHALL show its signal's value at cursor A. The value is evaluated from the signal's raw points around A by the series-query "Value at a time" in the window's "Between points" mode: "linear" or "hold", default "linear". The value SHALL NOT depend on any timeseries window's zoom. While A is off, the rows SHALL show `—` and the header "Cursor A off". Origin: D-023 („lists signals with their value at cursor A"); concept §6 (line → linear, step → hold); D-024 (raw values from the server); texts in number-format (D-026).
 
 #### Scenario: Raw point under the cursor
-- **WHEN** the values window lists `COMBI_412h.V_ANZ`, `BS_200h.DVL` and `CPC_448h.PTC_HV_Volt`, and `cursor.set {cursor: "a", t: "2026-10-13T13:08:00.093Z"}` is posted
-- **THEN** within 1 s the rows read `23.0 km/h` (V_ANZ, raw), `180 1/min lin` (DVL) and `363 V lin` (PTC_HV_Volt), and the header reads `A 2026-10-13 15:08:00.093`
-- **Evidence:** UI check (screenshot); `curl -s 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T13:08:00.093Z' | jq -c .value` prints `{"kind":"raw","value":23}`
+- **WHEN** the values window lists `ICL_3A2h.SPEED_DISP`, `BRK_1A0h.WSPD_FL` and `DCU_2B8h.HTR_HV_Volt`, and `cursor.set {cursor: "a", t: "2026-10-13T13:08:00.093Z"}` is posted
+- **THEN** within 1 s the rows read `23.0 km/h` (SPEED_DISP, raw), `180 1/min lin` (WSPD_FL) and `363 V lin` (HTR_HV_Volt), and the header reads `A 2026-10-13 15:08:00.093`
+- **Evidence:** UI check (screenshot); `curl -s 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T13:08:00.093Z' | jq -c .value` prints `{"kind":"raw","value":23}`
 
 #### Scenario: Between points, linear and hold
 - **WHEN** A is set to `2026-10-13T13:08:00.1435Z`, first with "Between points: linear", then with "hold"
-- **THEN** V_ANZ reads `22.5 km/h lin`, then `23.0 km/h hold`
-- **Evidence:** UI check (two screenshots); `curl -s 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T13:08:00.1435Z&mode=step' | jq -c .value` prints `{"kind":"held","value":23}`
+- **THEN** SPEED_DISP reads `22.5 km/h lin`, then `23.0 km/h hold`
+- **Evidence:** UI check (two screenshots); `curl -s 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T13:08:00.1435Z&mode=step' | jq -c .value` prints `{"kind":"held","value":23}`
 
 #### Scenario: Independent of zoom
 - **WHEN** A stays at 13:08:00.1435Z and the user zooms the timeseries windows from 3 s to 2 days
-- **THEN** the values window still reads `22.5 km/h lin` for V_ANZ
+- **THEN** the values window still reads `22.5 km/h lin` for SPEED_DISP
 - **Evidence:** UI check (screenshot after the zoom)
 
 #### Scenario: Cursor A off
@@ -50,17 +50,17 @@ Each row SHALL show its signal's value at cursor A. The value is evaluated from 
 A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, never as a number. Where no value can be evaluated without inventing one, `—` SHALL be shown with the reason as tooltip: before the first point, after the last point, or (in "linear") the next point is SNA. Origin: D-010 (SNA never shown as valid), D-016 (null = SNA); concept §5 („Ohne verfügbare Messgrundlage darf kein Wert erfunden werden").
 
 #### Scenario: SNA run
-- **WHEN** the window lists V_ANZ and A is set to `2026-10-13T09:57:00Z` (between the SNA points at 09:56:59.937 and 09:57:00.037 UTC)
+- **WHEN** the window lists SPEED_DISP and A is set to `2026-10-13T09:57:00Z` (between the SNA points at 09:56:59.937 and 09:57:00.037 UTC)
 - **THEN** the row reads `SNA` in both modes, and no number appears
-- **Evidence:** UI check (screenshot); `curl -s 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T09:57:00Z' | jq -c .value` prints `{"kind":"sna"}`
+- **Evidence:** UI check (screenshot); `curl -s 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T09:57:00Z' | jq -c .value` prints `{"kind":"sna"}`
 
 #### Scenario: Next point is SNA
 - **WHEN** A is set to `2026-10-13T09:56:59.787Z` (between the valid 0 at 09:56:59.737 and the SNA point at 09:56:59.837)
 - **THEN** the row reads `—` with tooltip "next point is SNA" in "linear", and `0 km/h hold` in "hold"
-- **Evidence:** UI check (two screenshots); `curl -s 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T09:56:59.787Z' | jq -c .value` prints `{"kind":"none","reason":"next_sna"}`
+- **Evidence:** UI check (two screenshots); `curl -s 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T09:56:59.787Z' | jq -c .value` prints `{"kind":"none","reason":"next_sna"}`
 
 #### Scenario: Before the first point
-- **WHEN** A is set to `2026-10-11T12:00:00Z`, before V_ANZ's first point (12:34:24.824Z)
+- **WHEN** A is set to `2026-10-11T12:00:00Z`, before SPEED_DISP's first point (12:34:24.824Z)
 - **THEN** the row reads `—` with tooltip "before the first point"
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "formats SNA and missing values without a number"
 
@@ -69,12 +69,12 @@ While B is on or diff mode is on, each row SHALL show the value at B next to A's
 
 #### Scenario: Speed difference
 - **WHEN** diff mode is on, A is at 2026-10-13T13:08:00.093Z and B at 13:08:00.995Z
-- **THEN** V_ANZ reads A `23.0 km/h`, B `18.0 km/h`, Δ `-5.00 km/h`; PTC_HV_Volt reads Δ `500 mV lin`; the header shows `Δt +902 ms`
+- **THEN** SPEED_DISP reads A `23.0 km/h`, B `18.0 km/h`, Δ `-5.00 km/h`; HTR_HV_Volt reads Δ `500 mV lin`; the header shows `Δt +902 ms`
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "computes Δ only from numeric values and tags it by the weaker kind", "formats Δt exactly with sign"
 
 #### Scenario: SNA at one cursor
-- **WHEN** diff mode is on, A is at 2026-10-13T09:57:00Z (V_ANZ SNA) and B at 09:57:00.5Z (V_ANZ valid 0)
-- **THEN** V_ANZ reads A `SNA`, B `0 km/h lin` (between two valid zeros), Δ `—`
+- **WHEN** diff mode is on, A is at 2026-10-13T09:57:00Z (SPEED_DISP SNA) and B at 09:57:00.5Z (SPEED_DISP valid 0)
+- **THEN** SPEED_DISP reads A `SNA`, B `0 km/h lin` (between two valid zeros), Δ `—`
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "computes Δ only from numeric values and tags it by the weaker kind"
 
 #### Scenario: B off
@@ -88,10 +88,10 @@ While B is on or diff mode is on, each row SHALL show the value at B next to A's
 - **Evidence:** UI check (screenshot); `apps/web/test/values.test.ts` › "shows B without Diff but no Δt, and the off states", "requests B whenever B is on, with or without Diff"
 
 ### Requirement: Value and time formats
-Values and Δ SHALL be printed by number-format with the workspace's digits option, each followed by its unit with SI prefix. The tooltip naming the neighbour points SHALL keep the exact stored values (at most 9 significant digits, trailing zeros dropped). Cursor times SHALL be shown in local time as `YYYY-MM-DD HH:MM:SS`, with the fraction down to nanoseconds and trailing zero groups of three dropped. Δt SHALL be exact, with sign, in ns, µs, ms or s below one minute, else as `h:mm:ss` with fraction. Origin: D-026 (3 significant digits, SI prefix, option 4); exact tooltips and times: design N9 (Jan's call Q7); data fact for the 9-digit tooltip: `CPC_448h.PTC_HV_Volt` stores `362.40000000000003`.
+Values and Δ SHALL be printed by number-format with the workspace's digits option, each followed by its unit with SI prefix. The tooltip naming the neighbour points SHALL keep the exact stored values (at most 9 significant digits, trailing zeros dropped). Cursor times SHALL be shown in local time as `YYYY-MM-DD HH:MM:SS`, with the fraction down to nanoseconds and trailing zero groups of three dropped. Δt SHALL be exact, with sign, in ns, µs, ms or s below one minute, else as `h:mm:ss` with fraction. Origin: D-026 (3 significant digits, SI prefix, option 4); exact tooltips and times: design N9 (Jan's call Q7); data fact for the 9-digit tooltip: `DCU_2B8h.HTR_HV_Volt` stores `362.40000000000003`.
 
 #### Scenario: Float noise
-- **WHEN** a value of `CPC_448h.PTC_HV_Volt` is 362.40000000000003 and a Δ is 0.5000000000000568, with 3 and then 4 digits
+- **WHEN** a value of `DCU_2B8h.HTR_HV_Volt` is 362.40000000000003 and a Δ is 0.5000000000000568, with 3 and then 4 digits
 - **THEN** they are printed `362 V` and `500 mV`, then `362.4 V` and `500.0 mV`; the neighbour tooltip shows `362.4`
 - **Evidence:** `apps/web/test/values.test.ts` › "formats values with the digits option and the unit"; `packages/shared/test/cursor.test.ts` › "formats cursor numbers with at most 9 significant digits"
 
@@ -104,11 +104,11 @@ Values and Δ SHALL be printed by number-format with the workspace's digits opti
 While the value for a cell's current cursor time and mode is loading, the cell SHALL show a state distinct from `—` (the form is free), with the tooltip "loading"; `—` SHALL mean only "no value". Whenever B is on, the B cells SHALL be requested and filled like the A cells (D-031). Origin: power-user bug (feedback 2026-10-15, item 3: `—` for 1–3 s read as "no data"; B once stayed `—` with data).
 
 #### Scenario: Cursor moved from the CLI
-- **WHEN** the values window lists V_ANZ and a caller posts `cursor.move {cursor: "a", by: "100000000"}`
+- **WHEN** the values window lists SPEED_DISP and a caller posts `cursor.move {cursor: "a", by: "100000000"}`
 - **THEN** until the new value arrives the cell shows the loading state with tooltip "loading", never `—`, and then the value
 - **Evidence:** `apps/web/test/values.test.ts` › "shows a loading state distinct from no value"; UI check (screenshot right after the command)
 
 #### Scenario: B always fills
-- **WHEN** diff mode is on and B is set five times with `cursor.set` to times where V_ANZ has data (2026-10-13T13:08:00.1Z … 13:08:00.5Z)
+- **WHEN** diff mode is on and B is set five times with `cursor.set` to times where SPEED_DISP has data (2026-10-13T13:08:00.1Z … 13:08:00.5Z)
 - **THEN** after each command the B cell shows a number, never `—`
 - **Evidence:** `apps/web/test/values.test.ts` › "requests B whenever B is on, with or without Diff"; UI check (screenshot after the last command)

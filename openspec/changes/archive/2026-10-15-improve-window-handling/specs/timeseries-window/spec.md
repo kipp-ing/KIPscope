@@ -32,7 +32,7 @@ A window created by "+ Values window", by a drop on "+ New window" or by a drop 
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each creation)
 
 #### Scenario: Drop below a short list
-- **WHEN** at 1440×900 two windows share the first row and the user drops the `BS_200h.DVL` explorer row on the free area below them
+- **WHEN** at 1440×900 two windows share the first row and the user drops the `BRK_1A0h.WSPD_FL` explorer row on the free area below them
 - **THEN** the new window is fully visible right after it appears, without manual scrolling
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop)
 

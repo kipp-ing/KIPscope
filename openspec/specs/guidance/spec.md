@@ -89,7 +89,7 @@ Every control and badge in the top row, the time strip, the windows and the expl
 The labels newcomers found cryptic SHALL be explained in their tooltips with the texts of design H5: window badge, SNA share, strip info, strip events count, "Link time axes", Span, Back, Reset, the cursor pills and Diff. Origin: finding 4 (persona test: „13 of 669 events", „1 bar = 2 h", „Link time axes", „SNA 4.0 %" unclear; A/B/Diff unexplained).
 
 #### Scenario: Tooltips on smart451
-- **WHEN** smart451 is shown with the default filter and a window shows `COMBI_412h.V_ANZ` aggregated with an SNA share
+- **WHEN** smart451 is shown with the default filter and a window shows `ICL_3A2h.SPEED_DISP` aggregated with an SNA share
 - **THEN** the strip info's `title` starts `TIME: the whole recording (` and contains `Each bar is`; the events count's `title` contains `events match the filter` and `in the recording`; the badge's `title` starts `agg · ` and contains `Zoom in for raw samples`; the SNA share's `title` contains `signal not available`; the B pill's `title` contains `Shift+click`; "Back" names `Backspace` and "Reset" names `Home`
 - **Evidence:** UI check on smart451 (the `title` values read with a snippet)
 
@@ -118,14 +118,14 @@ On the first open in a browser a "Start here" card SHALL sit at the top of the w
 While the workspace has no window and no drag runs, the window area SHALL show the start card headed `No windows yet`, with the same four lines and buttons, without ×, whether or not the card was dismissed. It replaces the one-line hint. During a drag it SHALL be hidden, so the free area shows "+ New window" (`workspace-layout` "Drop below the windows"). Origin: finding 4; necessary consequence of G-4 (a card the user dismissed must still guide an empty workspace).
 
 #### Scenario: Empty workspace
-- **WHEN** the workspace is empty (`kipscope state` lists no window) after the card was dismissed, then the user drags `COMBI_412h.V_ANZ` from the explorer over the list area and releases there
-- **THEN** before the drag the card heads `No windows yet` and has no ×; while dragging the card is hidden and the area reads "+ New window"; after the release one window shows V_ANZ and the card is gone
+- **WHEN** the workspace is empty (`kipscope state` lists no window) after the card was dismissed, then the user drags `ICL_3A2h.SPEED_DISP` from the explorer over the list area and releases there
+- **THEN** before the drag the card heads `No windows yet` and has no ×; while dragging the card is hidden and the area reads "+ New window"; after the release one window shows SPEED_DISP and the card is gone
 - **Evidence:** UI check on smart451 (screenshots before and while dragging)
 
 ### Requirement: Explorer names the drag
 While the search is empty, the explorer's count line SHALL read `<n> signals · drag a row onto a window, or press +`; while searching it stays `<n> match(es)`. The "Add to" select's tooltip SHALL say that a click on a window chooses it. Origin: finding 4 („no hint that rows can be dragged onto a window"); spec owner's default S5.
 
 #### Scenario: Count line
-- **WHEN** the catalog of smart451 is loaded and the search is empty, then the user types `DVL`
+- **WHEN** the catalog of smart451 is loaded and the search is empty, then the user types `WSPD_FL`
 - **THEN** the line reads `553 signals · drag a row onto a window, or press +` (the catalog's count), then `<k> matches`
 - **Evidence:** UI check on smart451 (text of the line in both states)

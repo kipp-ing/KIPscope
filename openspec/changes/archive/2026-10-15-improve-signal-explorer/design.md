@@ -14,7 +14,7 @@ Current code: `Catalog.search` (server) already does case-insensitive substring 
 ### Data facts (checked 2026-10-14)
 
 - carserver `smart451`: 428 signals (skeleton design). Test DB: 1,013 signals (add-sna-handling 3.1), of which 1,000 are `Many_700h.S0000–S0999`.
-- h-can.dbc: `BO_ 1042 COMBI_412h` / `SG_ V_ANZ : 0|9@0+ (1,0) [0|510] "km/h"`, `CM_ "Indicated speed"`, `VAL_ 511 "SNV"`; `BO_ 1544 MS_608h` / `SG_ T_MOT : 0|8@1+ (1,-40) [-40|214] "°C"`, `CM_ "Motortemperatur"`, `VAL_ 255 "SNV"`; `BO_ 512 BS_200h` / `SG_ DVL : 21|14@0+ (0.5,0) [0|8191] "1/min"`, `CM_ "Wheel speed front left"`. hybrid-can.dbc: `SG_ PTC_HV_Volt … (0.1,0) [0|819] "V"`.
+- h-can.dbc: `BO_ 930 ICL_3A2h` / `SG_ SPEED_DISP : 8|9@1+ (1,0) [0|510] "km/h"`, `CM_ "Indicated speed"`, `VAL_ 511 "SNV"`; `BO_ 1504 ENG_5E0h` / `SG_ T_ENG : 24|8@1+ (1,-40) [-40|214] "°C"`, `CM_ "Motortemperatur"`, `VAL_ 255 "SNV"`; `BO_ 416 BRK_1A0h` / `SG_ WSPD_FL : 16|14@1+ (0.5,0) [0|8191] "1/min"`, `CM_ "Wheel speed front left"`. hybrid-can.dbc: `SG_ HTR_HV_Volt … (0.1,0) [0|819] "V"`.
 - h-can.dbc: 93 of 568 `SG_` lines have `[0|0]` (DBC convention: no range given) → shown as `not set`.
 
 ## Goals / Non-Goals
@@ -63,7 +63,7 @@ Render the first `CHUNK = 500` matches; below them a button "Show N more" (N = m
   - `Values`: one line per `VAL_` entry `<raw> <label>`
   - `Source`: `formatSource(signal)`: `<dataRef> · <file>`, `<dataRef> · DBC` when `file` is absent, or `<dataRef> · no DBC entry` when `dbc` is absent
   - `Shown in`: `windowsShowing(windows, id)` joined by `, `, or `no window`
-- Pinned formatter outputs (`apps/web/src/explorer/format.ts`, tested): `formatScaling(1, 0)` → `× 1 + 0`, `(0.5, 0)` → `× 0.5 + 0`, `(1, -40)` → `× 1 - 40`; `formatRawStep(0.5, "1/min")` → `0.5 1/min`, `(-2, undefined)` → `2`; `formatDbcRange(0, 510, "km/h")` → `0 … 510 km/h`, `(0, 0, …)` → `not set`, `(-40, 214, "°C")` → `-40 … 214 °C`; `formatMessageId(1042)` → `0x412`, `(0x98FF1234)` → `0x18FF1234 (ext)`; `windowsShowing` returns `windowTitle(w)` (`packages/shared`, "Window <n>" when untitled) of each window whose `signals` contain the ID, in window order. Numbers print via `String(n)`.
+- Pinned formatter outputs (`apps/web/src/explorer/format.ts`, tested): `formatScaling(1, 0)` → `× 1 + 0`, `(0.5, 0)` → `× 0.5 + 0`, `(1, -40)` → `× 1 - 40`; `formatRawStep(0.5, "1/min")` → `0.5 1/min`, `(-2, undefined)` → `2`; `formatDbcRange(0, 510, "km/h")` → `0 … 510 km/h`, `(0, 0, …)` → `not set`, `(-40, 214, "°C")` → `-40 … 214 °C`; `formatMessageId(930)` → `0x3A2`, `(0x98FF1234)` → `0x18FF1234 (ext)`; `windowsShowing` returns `windowTitle(w)` (`packages/shared`, "Window <n>" when untitled) of each window whose `signals` contain the ID, in window order. Numbers print via `String(n)`.
 
 ### E8: Keys
 The search input is a combobox (`role="combobox"`, `aria-controls` the list, `aria-activedescendant` the active row); the list is `role="listbox"`, rows `role="option"` with `aria-selected`. Focus stays in the input while arrows move the active row.
@@ -93,9 +93,9 @@ export interface DbcValueLabel {
 export interface DbcInfo {
   /** Basename of the DBC file the entry came from (first file wins), e.g. `h-can.dbc`. */
   file?: string;
-  /** `BO_` message name, e.g. `COMBI_412h`. */
+  /** `BO_` message name, e.g. `ICL_3A2h`. */
   message: string;
-  /** `BO_` ID as written (decimal; extended IDs keep bit 31), e.g. 1042. */
+  /** `BO_` ID as written (decimal; extended IDs keep bit 31), e.g. 930. */
   messageId: number;
   /** physical = raw × factor + offset. */
   factor?: number;
@@ -213,9 +213,9 @@ Hint while `dropState === "target"`: `"Drop to add"` when `dropAction === "add"`
 - Valid target (`overValid`): `canAdd(source.signalId, target, …)`. Ghost: the signal name, then ` · add` while over a valid target, else nothing; ` · Already shown` while over a window that shows the signal. Alt/Ctrl change nothing (no ` · copy`, no copy flag).
 - Release over a target with `canAdd` → `addSignal(info(signalId), target.kind === "new" ? NEW_WINDOW : target.windowId)` (the explorer's add path, reached through a ref so the drag listeners see the current function); `info` is filled by `onSeen(snapshot.items)` (E3), and if it is absent the drop does nothing. Release over a refused window, elsewhere, or Esc → no command.
 
-Evidence: `apps/web/test/drag.test.ts` (fixtures as in the existing tests: `wA` = V_ANZ km/h + DVL 1/min, `wB` = PTC V, plus `wC` = EAC V + V_ANZ km/h + T_MOT °C + DVL 1/min):
-- "adds an explorer signal to windows not showing it and to a new window": `canAdd("c/V_ANZ", wA)` false, `(…, wB)` true, `(…, new)` true; `dropStateFor({signalId: "c/V_ANZ"}, "wA")` undefined, `"wB"` `"target"`, never `"source"`.
-- "refuses an explorer drop that would make a fifth unit": `canAdd("c/DNMOT", wC)` false and `dropStateFor` `"refused"`; `canAdd("c/PTC", wC)` true (V already there).
+Evidence: `apps/web/test/drag.test.ts` (fixtures as in the existing tests: `wA` = SPEED_DISP km/h + WSPD_FL 1/min, `wB` = PTC V, plus `wC` = EAC V + SPEED_DISP km/h + T_ENG °C + WSPD_FL 1/min):
+- "adds an explorer signal to windows not showing it and to a new window": `canAdd("c/SPEED_DISP", wA)` false, `(…, wB)` true, `(…, new)` true; `dropStateFor({signalId: "c/SPEED_DISP"}, "wA")` undefined, `"wB"` `"target"`, never `"source"`.
+- "refuses an explorer drop that would make a fifth unit": `canAdd("c/MOT_SPD_D", wC)` false and `dropStateFor` `"refused"`; `canAdd("c/PTC", wC)` true (V already there).
 - "keeps the legend-drag states": `dropStateFor` for a legend source from `wA` gives `"source"` on `wA` and the states the existing three tests expect elsewhere.
 
 Built by this change (task 3.4, D-020) on top of D5; legend-source behaviour stays as D5 pins it.

@@ -6,7 +6,7 @@ All three persona testers (`docs/feedback/2026-10-17-personas.md`, T5 "faults an
 
 - The list shows every event of the recording that passes the filter (669 on Jan's workspace) from 2026-10-11 on; rows inside the shown range only get a 2 px accent border. Nobody found "the events of this drive" without scrolling (agreed 3/3).
 - Ten rows of controls (heading, field, description, six presets, up to eight category chips, ECU chips, events-line signals) sit above the list in a 240 px sidebar; on a 723 px high viewport the list starts below the middle of the screen.
-- Rows cut the name and text with an ellipsis; the text is only in the tooltip (novice: "event text cut off in the narrow list", "show the description in the list, not only on hover"). Names repeat the source (`IgnCurMode CPC_168h.IgnCurMode`, `BMS BMS.contactor`).
+- Rows cut the name and text with an ellipsis; the text is only in the tooltip (novice: "event text cut off in the narrow list", "show the description in the list, not only on hover"). Names repeat the source (`IgnMode DCU_1F4h.IgnMode`, `BMS BMS.contactor`).
 - "13 of 669 events" in the strip head was unclear to the novice; nothing explains pin colours, line dashes or what a glyph means without hovering.
 - Data fact (expert): all 55 DTCs of smart451 carry 2026-10-15 07:27:12.135 local, the time the fault memory was **read**, not when a fault occurred; they cannot be matched to a drive. The UI shows them as 55 events "at" that time, which reads as if 13 faults happened at once.
 

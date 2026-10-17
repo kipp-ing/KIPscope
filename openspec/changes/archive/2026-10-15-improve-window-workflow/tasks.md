@@ -13,7 +13,7 @@ Grouped by write area (docs/team.md). Groups 1–2 (shared + server), 3 (web, Ap
 
 ## 2. apps/server/src
 
-- [x] 2.1 Pass `createdWindow` through `WorkspaceStore.execute` (D2) and give the store's context `unitOf: (id) => catalog.get(id)?.unit` in `main.ts` (D1); verify a `window.addSignal` of `smart451/MS_312h.DNMOT` posted to a window with four units answers `"code":"too_many_units"`; verify `apps/server/test/workspace.http.test.ts` › "returns the created window and assignment of a move" and "applies the window-workflow commands over HTTP" pass, and after a server restart `curl -s localhost:7310/api/workspace | jq .workspace.linkTime` prints `true` (ran 2026-10-14: the curl answered HTTP 422 `{"ok":false,"code":"too_many_units","message":"a window shows at most 4 units (has: V, km/h, rpm/10ms, °C)"}`; the restart check is Jan's hand check)
+- [x] 2.1 Pass `createdWindow` through `WorkspaceStore.execute` (D2) and give the store's context `unitOf: (id) => catalog.get(id)?.unit` in `main.ts` (D1); verify a `window.addSignal` of `smart451/ENG_2E8h.MOT_SPD_D` posted to a window with four units answers `"code":"too_many_units"`; verify `apps/server/test/workspace.http.test.ts` › "returns the created window and assignment of a move" and "applies the window-workflow commands over HTTP" pass, and after a server restart `curl -s localhost:7310/api/workspace | jq .workspace.linkTime` prints `true` (ran 2026-10-14: the curl answered HTTP 422 `{"ok":false,"code":"too_many_units","message":"a window shows at most 4 units (has: V, km/h, rpm/10ms, °C)"}`; the restart check is Jan's hand check)
 
 ## 3. apps/web/src — App side
 
@@ -40,7 +40,7 @@ Grouped by write area (docs/team.md). Groups 1–2 (shared + server), 3 (web, Ap
 
 ## 6. Integration check (real carserver data)
 
-- [x] 6.1 UI user walks every UI check in `specs/timeseries-window/spec.md` on `smart451` (V_ANZ, DVL, PTC_HV_Volt, EAC_HV_Volt, T_MOT, T_SOLL, DNMOT as named there), one screenshot per scenario
+- [x] 6.1 UI user walks every UI check in `specs/timeseries-window/spec.md` on `smart451` (SPEED_DISP, WSPD_FL, HTR_HV_Volt, COMP_HV_Volt, T_ENG, T_SET, MOT_SPD_D as named there), one screenshot per scenario
 - [x] 6.2 Run the `curl` commands named in `specs/series-query/spec.md` and `specs/workspace-state/spec.md` against the dev server; verify `400` and `true`
 
 - [x] 6.3 D-020 spec alignment: UI user walks the scenarios added afterwards in `specs/timeseries-window/spec.md` ("Pan and Zoom out", "Shift+wheel pans", "Zoom in past 100 ns", "History after reload") and `specs/workspace-state/spec.md` ("Browser reload" with titles, heights, link toggle and colours); the calendar-tick and header-range scenarios are covered by their existing tests

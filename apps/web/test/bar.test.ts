@@ -29,7 +29,7 @@ const ws = (windows: Workspace["windows"], extra: Partial<Workspace> = {}): Work
 
 describe("barTarget", () => {
   it("targets the window zoomed last, else the first timeseries window", () => {
-    const w = [values("w1", ["c/DVL"]), ts("w2", ["c/V_ANZ"]), ts("w3", ["c/PTC"])];
+    const w = [values("w1", ["c/WSPD_FL"]), ts("w2", ["c/SPEED_DISP"]), ts("w3", ["c/PTC"])];
     // The window zoomed last wins.
     expect(barTarget(ws(w, { lastZoomed: "w3" }))?.id).toBe("w3");
     // No lastZoomed: the first timeseries window, skipping the values window before it.
@@ -46,15 +46,15 @@ describe("barTarget", () => {
 
 describe("resetSignals", () => {
   it("resets to the union of all timeseries extents while linked", () => {
-    const w = [ts("w1", ["c/V_ANZ"]), values("w2", ["c/DVL"]), ts("w3", ["c/PTC"])];
+    const w = [ts("w1", ["c/SPEED_DISP"]), values("w2", ["c/WSPD_FL"]), ts("w3", ["c/PTC"])];
     // Linked: the signals of all timeseries windows, never those of a values window.
     const linked = resetSignals(ws(w, { linkTime: true, lastZoomed: "w1" }));
-    expect([...linked].sort()).toEqual(["c/PTC", "c/V_ANZ"]);
+    expect([...linked].sort()).toEqual(["c/PTC", "c/SPEED_DISP"]);
     // Unlinked: the target's signals only.
     expect(resetSignals(ws(w, { linkTime: false, lastZoomed: "w3" }))).toEqual(["c/PTC"]);
-    expect(resetSignals(ws(w, { linkTime: false }))).toEqual(["c/V_ANZ"]);
+    expect(resetSignals(ws(w, { linkTime: false }))).toEqual(["c/SPEED_DISP"]);
     // Nothing to reset.
-    expect(resetSignals(ws([values("w1", ["c/DVL"])]))).toEqual([]);
+    expect(resetSignals(ws([values("w1", ["c/WSPD_FL"])]))).toEqual([]);
   });
 });
 

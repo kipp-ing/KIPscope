@@ -69,8 +69,11 @@ Requires Node ≥ 22.18, pnpm 10, Docker.
 
 ```sh
 pnpm install
-cp .env.example .env   # then set the source, see Data sources
+cp .env.example .env                    # then set the source, see Data sources
+cp kipscope.example.yaml kipscope.yaml  # optional: names, groups, measurement, events for your DBC
 ```
+
+`.env` and `kipscope.yaml` are local and gitignored: the rules for a real vehicle's DBC stay out of the repo.
 
 ## Data sources
 
@@ -146,7 +149,7 @@ The [manual](docs/manual.md) explains every part; `?` in the app shows it and al
 
 ## Display names
 
-The UI shows short signal names from the project file `kipscope.yaml` in the repo root (keys explained in [kipscope.example.yaml](kipscope.example.yaml)). The demo's [demo/kipscope.yaml](demo/kipscope.yaml) shortens every name to the part after the message:
+The UI shows short signal names from the project file `kipscope.yaml` in the repo root (local and gitignored; start from [kipscope.example.yaml](kipscope.example.yaml), which explains every key). The demo's [demo/kipscope.yaml](demo/kipscope.yaml) shortens every name to the part after the message:
 
 ```yaml
 display:

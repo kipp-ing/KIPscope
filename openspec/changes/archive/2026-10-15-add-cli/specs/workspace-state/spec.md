@@ -10,7 +10,7 @@ Connected browsers SHALL report the highest revision they have fully rendered, i
 #### Scenario: Rendered after load
 - **WHEN** a command adds a signal and the browser has loaded its data and drawn it
 - **THEN** the server reports that revision as rendered with data complete
-- **Evidence:** UI check via the CLI: `kipscope --wait signal add <w> smart451/BS_200h.DVL` exits 0 with `render.status` `complete` (cli "Waiting for the open UI", scenario "Real UI")
+- **Evidence:** UI check via the CLI: `kipscope --wait signal add <w> smart451/BRK_1A0h.WSPD_FL` exits 0 with `render.status` `complete` (cli "Waiting for the open UI", scenario "Real UI")
 
 #### Scenario: Rendered with load error
 - **WHEN** the data for a revision failed to load

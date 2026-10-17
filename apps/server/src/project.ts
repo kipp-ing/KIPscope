@@ -60,7 +60,7 @@ const FileSchema = z
 
 const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_]*)\}/y;
 
-/** `display.names[1].show`, `display.rename.COMBI_412h.V_ANZ`. */
+/** `display.names[1].show`, `display.rename.ICL_3A2h.SPEED_DISP`. */
 function fieldOf(path: readonly PropertyKey[]): string {
   return path
     .map((key, i) => (typeof key === "number" ? `[${key}]` : `${i === 0 ? "" : "."}${String(key)}`))

@@ -58,7 +58,7 @@ export function formatSnaPhysical(value: number, unit: string | undefined, digit
   return formatQuantity(value, unit, digits);
 }
 
-/** CAN ID in hex: `0x412`; an extended ID (bit 31 set) without bit 31 plus `(ext)`. */
+/** CAN ID in hex: `0x3A2`; an extended ID (bit 31 set) without bit 31 plus `(ext)`. */
 export function formatMessageId(id: number): string {
   if (id >= 0x80000000) return `${hex(id - 0x80000000)} (ext)`;
   return hex(id);

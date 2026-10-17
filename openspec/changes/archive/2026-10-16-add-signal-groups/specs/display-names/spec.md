@@ -5,7 +5,7 @@ The server SHALL compute every signal's shown name once per catalog load and del
 
 #### Scenario: Catalog entry with a display name
 - **WHEN** the server runs on real data with the shipped `kipscope.yaml`
-- **THEN** `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -c '.items[0] | {id, name, displayName}'` prints `{"id":"smart451/COMBI_412h.V_ANZ","name":"COMBI_412h.V_ANZ","displayName":"V_ANZ"}`
+- **THEN** `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP' | jq -c '.items[0] | {id, name, displayName}'` prints `{"id":"smart451/ICL_3A2h.SPEED_DISP","name":"ICL_3A2h.SPEED_DISP","displayName":"SPEED_DISP"}`
 - **Evidence:** the curl command; `apps/server/test/signals.http.test.ts` › "returns displayName in search and full catalog and keeps IDs" (test DB with the test project file: `testcar/Sna_800h.RPM` has `displayName` `RPM`, `testcar/Fast_100h.SIG_A` has none)
 
 #### Scenario: All real signals shortened, none alike
@@ -14,9 +14,9 @@ The server SHALL compute every signal's shown name once per catalog load and del
 - **Evidence:** the two curl commands; server log excerpt
 
 #### Scenario: Identity unchanged
-- **WHEN** the CLI runs `signal add w1 V_ANZ` against the server on real data with the shipped file, and the workspace is read
-- **THEN** the CLI output and the workspace hold `smart451/COMBI_412h.V_ANZ`, never `V_ANZ` as an ID
-- **Evidence:** command `node apps/cli/src/main.ts signal add <window> V_ANZ` output; `curl -s localhost:7310/api/workspace | jq` excerpt
+- **WHEN** the CLI runs `signal add w1 SPEED_DISP` against the server on real data with the shipped file, and the workspace is read
+- **THEN** the CLI output and the workspace hold `smart451/ICL_3A2h.SPEED_DISP`, never `SPEED_DISP` as an ID
+- **Evidence:** command `node apps/cli/src/main.ts signal add <window> SPEED_DISP` output; `curl -s localhost:7310/api/workspace | jq` excerpt
 
 #### Scenario: No file, no field
 - **WHEN** the catalog is built without a project file (test DB)

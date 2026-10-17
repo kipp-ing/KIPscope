@@ -8,14 +8,14 @@ UI checks below use real carserver data, vehicle `smart451`. Times are UTC; the 
 The window SHALL NOT draw an SNA point or an all-SNA bucket as a value: no line, step, marker or envelope reaches it, and no segment is interpolated or connected through it. In step mode the last valid value SHALL be held up to the timestamp of the following SNA point and end there. Origin: D-010.
 
 #### Scenario: Speed SNA in raw view
-- **WHEN** a window shows `COMBI_412h.V_ANZ` from 2026-10-13T09:56:59Z to 09:57:01Z in line mode
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` from 2026-10-13T09:56:59Z to 09:57:01Z in line mode
 - **THEN** the curve is a flat line at 0 that stops at 09:56:59.737 and resumes at 09:57:00.138; nothing is drawn at 511
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "keeps SNA as null and never spans it"
 
 #### Scenario: Step mode holds until SNA
 - **WHEN** step mode is selected and a valid point at t1 is followed by an SNA point at t2
 - **THEN** the value of t1 is held until t2 and nothing is drawn from t2 until the next valid point
-- **Evidence:** `apps/web/test/build.test.ts` › "holds the last valid value up to the SNA point in step mode"; UI check with `BS_200h.DVL` in the same window in step mode
+- **Evidence:** `apps/web/test/build.test.ts` › "holds the last valid value up to the SNA point in step mode"; UI check with `BRK_1A0h.WSPD_FL` in the same window in step mode
 
 #### Scenario: Markers mode
 - **WHEN** markers mode is selected on the window above
@@ -23,12 +23,12 @@ The window SHALL NOT draw an SNA point or an all-SNA bucket as a value: no line,
 - **Evidence:** UI check (screenshot)
 
 #### Scenario: Aggregated overview
-- **WHEN** a window shows the full extent of `COMBI_412h.V_ANZ` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) aggregated, with the min/max envelope on
+- **WHEN** a window shows the full extent of `ICL_3A2h.SPEED_DISP` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) aggregated, with the min/max envelope on
 - **THEN** neither the mean curve nor the envelope reaches 511; the highest drawn value is 71 km/h
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"
 
 #### Scenario: Several signals in one window
-- **WHEN** `COMBI_412h.V_ANZ` and `BS_200h.DVL` share the window from 2026-10-13T09:56:59Z to 09:57:01Z, so their timestamps interleave
+- **WHEN** `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` share the window from 2026-10-13T09:56:59Z to 09:57:01Z, so their timestamps interleave
 - **THEN** neither curve is drawn across its own SNA period, and each curve still connects its consecutive valid points
 - **Evidence:** `apps/web/test/build.test.ts` › "joins several signals without spanning SNA"; UI check (screenshot)
 
@@ -44,7 +44,7 @@ In line mode and in aggregated mean curves, a valid point or bucket whose neighb
 The automatic y range of a scale SHALL be computed from valid values only; SNA points and all-SNA buckets SHALL NOT widen it. Origin: proposal (window never draws SNA as a value).
 
 #### Scenario: Speed window around SNA
-- **WHEN** a window shows `COMBI_412h.V_ANZ` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` from 2026-10-13T09:56:59Z to 09:57:01Z
 - **THEN** the y axis covers the flat 0 line (about −1 to 1) and does not extend to 511
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "ignores SNA in the y range"
 
@@ -52,12 +52,12 @@ The automatic y range of a scale SHALL be computed from valid values only; SNA p
 The window SHALL mark each signal's SNA periods as a thin strip per signal at the bottom of the plot, in the signal's color, so the user sees which signal is unavailable when. Raw: from an SNA point to the next point. Aggregated: each bucket that contains at least one SNA point. A period too short to see SHALL still be visible. Origin: D-010, D-014.
 
 #### Scenario: Two signals with SNA at engine start
-- **WHEN** a window shows `COMBI_412h.V_ANZ` and `BS_200h.DVL` from 2026-10-13T09:56:59Z to 09:57:01Z
-- **THEN** a mark in the V_ANZ color covers 09:56:59.837 to 09:57:00.138 and a mark in the DVL color covers 09:56:59.791 to 09:57:00.072
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **THEN** a mark in the SPEED_DISP color covers 09:56:59.837 to 09:57:00.138 and a mark in the WSPD_FL color covers 09:56:59.791 to 09:57:00.072
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "derives SNA periods from raw points and neighbors"
 
 #### Scenario: SNA in the overview
-- **WHEN** a window shows the full extent of `COMBI_412h.V_ANZ` aggregated
+- **WHEN** a window shows the full extent of `ICL_3A2h.SPEED_DISP` aggregated
 - **THEN** SNA is marked from 2026-10-11 13:41 to 2026-10-13 09:07 UTC wherever the signal has points, and at the other three SNA runs
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "derives SNA periods from buckets"
 
@@ -70,17 +70,17 @@ The window SHALL mark each signal's SNA periods as a thin strip per signal at th
 The window's signal list SHALL show per signal the share of SNA points among all points of the loaded range, edge neighbors excluded. A non-zero share SHALL never be displayed as 0 %, and a share below 100 % never as 100 %. No share is shown when it is 0 or nothing is loaded. Origin: D-010 ("show its share"); proposal.
 
 #### Scenario: Engine start window
-- **WHEN** a window shows `COMBI_412h.V_ANZ` and `BS_200h.DVL` from 2026-10-13T09:56:59Z to 09:57:01Z
-- **THEN** the list shows `SNA 15.0 %` for V_ANZ (3 of 20) and `SNA 23.0 %` for DVL (14 of 61)
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **THEN** the list shows `SNA 15.0 %` for SPEED_DISP (3 of 20) and `SNA 23.0 %` for WSPD_FL (14 of 61)
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "computes the SNA share of raw and bucket results"
 
 #### Scenario: Rare SNA
-- **WHEN** a window shows the full extent of `BS_200h.DVL` (56 SNA of 232,644 points)
+- **WHEN** a window shows the full extent of `BRK_1A0h.WSPD_FL` (56 SNA of 232,644 points)
 - **THEN** the list shows `SNA < 0.1 %`
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "formats SNA shares without rounding to 0 or 100"
 
 #### Scenario: Valid constant, no SNA
-- **WHEN** a window shows `MS_312h.DNMOT` (constant −127, which is raw 0 and valid; D-012)
+- **WHEN** a window shows `ENG_2E8h.MOT_SPD_D` (constant −127, which is raw 0 and valid; D-012)
 - **THEN** the curve is drawn at −127 and the list shows no SNA share
 - **Evidence:** UI check (screenshot)
 
@@ -96,7 +96,7 @@ A window SHALL offer an envelope option, off by default, that draws the minimum 
 #### Scenario: SNA inside a bucket
 - **WHEN** the envelope is on and a bucket contains valid points and SNA points
 - **THEN** the envelope spans only the valid points' minimum and maximum, and for an all-SNA bucket no envelope is drawn
-- **Evidence:** `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"; UI check in the V_ANZ overview above
+- **Evidence:** `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"; UI check in the SPEED_DISP overview above
 
 ### Requirement: No invented values
 The window SHALL NOT draw a curve segment where no measured point exists on at least one side; it SHALL use edge neighbors from the query to draw segments that cross the visible range edges. An SNA point SHALL count as no measured value for this purpose.

@@ -35,17 +35,17 @@ function raw(
   };
 }
 
-// V_ANZ 23 at .093 s; DVL 179.5 at .083 s and 180 at .103 s (L = .093 s is halfway: 179.75);
-// PTC_HV_Volt 362.6 at .083 s and 363.0 at .103 s (halfway: 362.8).
-const vAnz = raw("c/V_ANZ", [
+// SPEED_DISP 23 at .093 s; WSPD_FL 179.5 at .083 s and 180 at .103 s (L = .093 s is halfway: 179.75);
+// HTR_HV_Volt 362.6 at .083 s and 363.0 at .103 s (halfway: 362.8).
+const vAnz = raw("c/SPEED_DISP", [
   [93, 23],
   [194, 22],
 ]);
-const dvl = raw("c/DVL", [
+const wspdFl = raw("c/WSPD_FL", [
   [83, 179.5],
   [103, 180],
 ]);
-const ptc = raw("c/PTC_HV_Volt", [
+const ptc = raw("c/HTR_HV_Volt", [
   [83, 362.6],
   [103, 363.0],
 ]);
@@ -71,9 +71,9 @@ describe("live value", () => {
     const L = at(93);
     const cell = (r: RawSeries | BucketSeries, unit: string, digits: 3 | 4 = 3) =>
       liveCell(chartValueAt(r, L, "line"), true, unit, digits);
-    // Zoomed in: V_ANZ is a raw point (no tooltip), DVL and PTC are interpolated (lin).
+    // Zoomed in: SPEED_DISP is a raw point (no tooltip), WSPD_FL and PTC are interpolated (lin).
     expect(cell(vAnz, "km/h")).toEqual({ text: "23.0" });
-    expect(cell(dvl, "1/min")).toEqual({ text: "180", title: "linear between points (lin)" });
+    expect(cell(wspdFl, "1/min")).toEqual({ text: "180", title: "linear between points (lin)" });
     expect(cell(ptc, "V")).toEqual({ text: "363", title: "linear between points (lin)" });
     // With four digits the interpolated 362.8 V shows its decimal.
     expect(cell(ptc, "V", 4).text).toBe("362.8");
@@ -81,7 +81,7 @@ describe("live value", () => {
     // Zoomed out: buckets of 1 s, mean 23 in the first one.
     const buckets: BucketSeries = {
       kind: "buckets",
-      signalId: "c/V_ANZ",
+      signalId: "c/SPEED_DISP",
       from: T0.toString(),
       to: at(3000).toString(),
       width: "1000000000",
@@ -106,9 +106,9 @@ describe("live value", () => {
   });
 
   it("reads SNA and gaps without a number and never highlights them", () => {
-    // V_ANZ 09:56:59 – 09:57:01 with an SNA point exactly at L = 09:57:00.
+    // SPEED_DISP 09:56:59 – 09:57:01 with an SNA point exactly at L = 09:57:00.
     const sna = raw(
-      "c/V_ANZ",
+      "c/SPEED_DISP",
       [
         [500, 20],
         [1000, null],
@@ -132,12 +132,12 @@ describe("live value", () => {
     expect(liveLabelText(next, "km/h", 3)).toBeUndefined();
 
     // Before the first point, no data, empty bucket: dash with a tooltip, no label.
-    const early = chartValueAt(raw("c/V_ANZ", [[500, 20]]), at(100), "line");
+    const early = chartValueAt(raw("c/SPEED_DISP", [[500, 20]]), at(100), "line");
     expect(liveCell(early, true, "km/h", 3).text).toBe("—");
     expect(liveLabelText(early, "km/h", 3)).toBeUndefined();
 
     // Outside the window's range (another window, 13:09:00 – 13:09:10, L = 13:08:01).
-    const other = raw("c/DVL", [[60_000, 180]], {
+    const other = raw("c/WSPD_FL", [[60_000, 180]], {
       from: at(60_000).toString(),
       to: at(70_000).toString(),
     });

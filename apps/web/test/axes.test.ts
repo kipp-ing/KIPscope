@@ -31,7 +31,7 @@ describe("layoutAxes", () => {
       input("ptc", "V", "#2"),
       input("vanz", "km/h", "#3"),
       input("tmot", "°C", "#4"),
-      input("dvl", "1/min", "#5"),
+      input("wspdFl", "1/min", "#5"),
     ]);
     expect(l.axes.map((a) => [a.title, a.side])).toEqual([
       ["V", "L"],
@@ -42,7 +42,7 @@ describe("layoutAxes", () => {
     expect(l.sideOf.get("ptc")).toBe("L");
     expect(l.sideOf.get("vanz")).toBe("R");
     expect(l.sideOf.get("tmot")).toBe("L2");
-    expect(l.sideOf.get("dvl")).toBe("R2");
+    expect(l.sideOf.get("wspdFl")).toBe("R2");
     expect(l.axes.map((a) => a.scale)).toEqual(["u:V", "u:km/h", "u:°C", "u:1/min"]);
   });
 

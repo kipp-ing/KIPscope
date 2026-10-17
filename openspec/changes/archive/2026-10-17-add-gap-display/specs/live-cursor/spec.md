@@ -4,12 +4,12 @@
 At an SNA value the L cell SHALL read `SNA`; inside a gap of the drawn data (data-gaps: between split points beyond the hold end, between split buckets, or inside a logger gap) `no data` with the gap as tooltip; where the loaded data gives no other value (before the first or after the last point, next point SNA in line mode, an empty bucket, outside the window's range) `—` with the reason as tooltip. Such a signal SHALL NOT be near and gets no label. Origin: D-010 (SNA never a number); concept §5 („Ohne verfügbare Messgrundlage darf kein Wert erfunden werden"); gaps: D-062.
 
 #### Scenario: Hover over an SNA run
-- **WHEN** a window shows V_ANZ from 2026-10-13T09:56:59Z to 09:57:01Z and the pointer hovers 09:57:00Z at the height where a valid curve would be
+- **WHEN** a window shows SPEED_DISP from 2026-10-13T09:56:59Z to 09:57:01Z and the pointer hovers 09:57:00Z at the height where a valid curve would be
 - **THEN** the L cell reads `SNA`, nothing is highlighted and no label shows
 - **Evidence:** UI check (screenshot); `apps/web/test/live.test.ts` › "reads SNA and gaps without a number and never highlights them"
 
 #### Scenario: Hover over a logger gap band
-- **WHEN** on smart451 a window shows `CPC_448h.PTC_HV_Volt` from 2026-10-13 11:27:45 to 11:28:05 local and the pointer hovers the grey band at 11:27:55 at the height of the curve
+- **WHEN** on smart451 a window shows `DCU_2B8h.HTR_HV_Volt` from 2026-10-13 11:27:45 to 11:28:05 local and the pointer hovers the grey band at 11:27:55 at the height of the curve
 - **THEN** the L cell reads `no data`, nothing is highlighted and no label shows
 - **Evidence:** UI check (screenshot); `apps/web/test/live.test.ts` › "reads SNA and gaps without a number and never highlights them"
 

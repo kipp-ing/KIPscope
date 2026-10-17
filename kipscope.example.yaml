@@ -1,5 +1,7 @@
 # KIPscope project file (D-035): how the UI shows signal names and which measurement is open.
 # The server reads <repo root>/kipscope.yaml at start (KIPSCOPE_PROJECT_FILE overrides the path).
+# kipscope.yaml is local and gitignored (D-077): copy this file and adapt it to your DBC. The names below
+# are placeholders; demo/kipscope.yaml is the project file of the demo recording.
 # Restart the server after editing. An invalid file stops the server with one message per problem.
 # Top-level keys: `display`, `measurement` and `events`, all optional; any other key is an error.
 
@@ -7,20 +9,20 @@
 display:
   # Optional ordered list of rules; the first rule whose `match` finds the full source name wins.
   names:
-    # COMBI_412h.V_ANZ -> V_ANZ; on a collision V_ANZ (COMBI)
+    # ICL_3A2h.SPEED_DISP -> SPEED_DISP; on a collision SPEED_DISP (ICL)
     # match: JavaScript RegExp without flags, run on the name without data reference; named groups feed the templates.
     - match: '^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$'
       # show: shown name; {group} inserts a named group of `match`. Renders empty -> full name.
       show: '{signal}'
       # collision: optional; used instead of `show` when two different signals would show the same name.
       collision: '{signal} ({message})'
-    # AC_A1.T_SOLL -> T_SOLL; on a collision T_SOLL (AC_A1)
+    # CLIM_A1.T_SET -> T_SET; on a collision T_SET (CLIM_A1)
     - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
       show: '{signal}'
       collision: '{signal} ({message})'
   # rename: optional map from full source name to shown name; beats every rule and gets no collision suffix.
   # rename:
-  #   COMBI_412h.V_ANZ: Speed
+  #   ICL_3A2h.SPEED_DISP: Speed
   # groups: optional ordered list of rules that sort the explorer list into groups (D-053).
   # For each signal the first rule that matches and renders non-blank wins; the group is that render, trimmed.
   # Unlike `names`, a blank render falls through to the next rule.
@@ -31,10 +33,10 @@ display:
     # group: the group name; {sender} inserts the sending ECU of the signal's DBC message (`BO_` transmitter),
     # blank without a DBC entry or for `Vector__XXX`. A named group of `match` inserts its text, e.g. {ecu};
     # a named group may not be called `sender`.
-    # COMBI_412h.V_ANZ -> CGW (its DBC sender)
+    # ICL_3A2h.SPEED_DISP -> CGW (its DBC sender)
     - group: '{sender}'
-    # CPC_448h.PTC_HV_Volt -> CPC: fallback for messages h-can.dbc gives no sender (D-053 Q1)
-    - match: '^(?<ecu>CPC|PNHV)_'
+    # DCU_2B8h.HTR_HV_Volt -> DCU: fallback for messages h-can.dbc gives no sender (D-053 Q1)
+    - match: '^(?<ecu>DCU|HVM)_'
       group: '{ecu}'
     # BMS.soc, BMS.cell_voltage.001 -> BMS (diag): decoded diagnostic readings, no DBC (D-058)
     - match: '^(?<ecu>[A-Z][A-Z0-9]*)\.[a-z]'
@@ -64,5 +66,5 @@ events:
   # signals: at most 8 signal IDs (<data ref>/<signal name>). A signal not recorded yet waits quietly
   # (logged once per catalog load) and shows once recorded; a signal without states is skipped.
   signals:
-    - smart451/CPC_168h.IgnCurMode   # ignition (D-058, Q4)
+    - smart451/DCU_1F4h.IgnMode      # ignition (D-058, Q4)
     - smart451/BMS.contactor         # HV contactor (D-058, Q5)

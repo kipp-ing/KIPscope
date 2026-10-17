@@ -4,7 +4,7 @@
 Each timeseries window SHALL mark the shown events of its signals' data refs within its range: a 1 px line over the plot behind the curves in the category colour at half opacity (faults solid, changes dashed, others dotted) and a 6 px glyph above the plot area, grouped and coloured like the strip's pins, with the pin tooltip; both SHALL follow zoom and pan. Origin: D-058 („marks … in the chart windows"); design V6.
 
 #### Scenario: Marks on smart451
-- **WHEN** window 1 shows `CPC_448h.PTC_HV_Volt` on smart451 over 2026-10-14 18:55–19:15 local with the default filter, then the filter `none`
+- **WHEN** window 1 shows `DCU_2B8h.HTR_HV_Volt` on smart451 over 2026-10-14 18:55–19:15 local with the default filter, then the filter `none`
 - **THEN** first the window shows glyphs and lines at the isolation changes of 18:59:47–19:08:32 (more than one glyph; the glyph at 18:59:47 lists `BMS.contactor` `closed → open`), and the plot height is the same as without events; with `none` no glyph or line remains
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots, plot height)
 

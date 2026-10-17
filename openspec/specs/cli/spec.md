@@ -85,8 +85,8 @@ The CLI SHALL offer `window create [--values] [--title T] [--from TIME --to TIME
 - **Evidence:** `apps/cli/test/cli.test.ts` › "drives windows and the link flag over HTTP"
 
 #### Scenario: Window from the CLI in the open UI
-- **WHEN** the UI is open on real data and `kipscope window create --title Speeds --from "2026-10-13 15:08:00" --to "2026-10-13 15:08:03"` runs, then `kipscope signal add <new window ID> V_ANZ`
-- **THEN** within 1 s the UI shows a window "Speeds" whose header reads `2026-10-13 15:08:00 – 2026-10-13 15:08:03` with `COMBI_412h.V_ANZ` in it
+- **WHEN** the UI is open on real data and `kipscope window create --title Speeds --from "2026-10-13 15:08:00" --to "2026-10-13 15:08:03"` runs, then `kipscope signal add <new window ID> SPEED_DISP`
+- **THEN** within 1 s the UI shows a window "Speeds" whose header reads `2026-10-13 15:08:00 – 2026-10-13 15:08:03` with `ICL_3A2h.SPEED_DISP` in it
 - **Evidence:** UI check (screenshot of the window and the two CLI outputs)
 
 ### Requirement: Signal commands
@@ -111,8 +111,8 @@ A SIGNAL argument SHALL be a full ID (`dataRef/name`), sent unchanged, or a bare
 - **Evidence:** `apps/cli/test/cli.test.ts` › "resolves bare signal names and refuses ambiguous ones"
 
 #### Scenario: Bare name on real data
-- **WHEN** a window `<w>` exists in the open UI and `kipscope signal add <w> V_ANZ` runs
-- **THEN** `command.signalId` in the output is `smart451/COMBI_412h.V_ANZ` and the signal appears in that window
+- **WHEN** a window `<w>` exists in the open UI and `kipscope signal add <w> SPEED_DISP` runs
+- **THEN** `command.signalId` in the output is `smart451/ICL_3A2h.SPEED_DISP` and the signal appears in that window
 - **Evidence:** UI check (CLI output and screenshot), covered by "Window from the CLI in the open UI"
 
 ### Requirement: Search and extent
@@ -120,7 +120,7 @@ A SIGNAL argument SHALL be a full ID (`dataRef/name`), sent unchanged, or a bare
 
 #### Scenario: Ranked search on real data
 - **WHEN** `kipscope search volt --limit 3 | jq -r '.data.items[0].id, (.data.items | length)'` runs
-- **THEN** it prints `smart451/CPC_168h.EAC_HV_Volt` and `3`
+- **THEN** it prints `smart451/DCU_1F4h.COMP_HV_Volt` and `3`
 - **Evidence:** the command against the dev server; `apps/cli/test/cli.test.ts` › "searches and reads extents"
 
 #### Scenario: Extent
@@ -160,7 +160,7 @@ A TIME SHALL be decimal ns, ISO-8601 with `Z` or `±HH:MM`, or local wall time `
 - **Evidence:** `packages/shared/test/localtime.test.ts` › "round-trips local times with offset to the nanosecond"; `apps/web/test/axis.test.ts` › "formats local times like the shared formatLocal"
 
 #### Scenario: Local time on real data
-- **WHEN** `kipscope value smart451/COMBI_412h.V_ANZ "2026-10-13 15:08:00.1435" | jq -c .data.value` runs
+- **WHEN** `kipscope value smart451/ICL_3A2h.SPEED_DISP "2026-10-13 15:08:00.1435" | jq -c .data.value` runs
 - **THEN** it prints `{"kind":"interpolated","value":22.5}`, the value `add-cursors` checks at `2026-10-13T13:08:00.1435Z`
 - **Evidence:** the command against the dev server
 
@@ -235,8 +235,8 @@ With `--wait`, an accepted command SHALL block until a connected UI has acknowle
 - **Evidence:** `apps/cli/test/cli.test.ts` › "exits 4 when the UI does not acknowledge in time"
 
 #### Scenario: Real UI
-- **WHEN** the UI is open on real data with a window `<w>`, and `kipscope --wait signal add <w> smart451/BS_200h.DVL` runs; then the UI tab is closed and `kipscope --wait diff off` runs
-- **THEN** the first exits 0 with `render.status` `complete` and a screenshot taken right after shows DVL drawn, not loading; the second exits 6 with `render.status` `no_ui`
+- **WHEN** the UI is open on real data with a window `<w>`, and `kipscope --wait signal add <w> smart451/BRK_1A0h.WSPD_FL` runs; then the UI tab is closed and `kipscope --wait diff off` runs
+- **THEN** the first exits 0 with `render.status` `complete` and a screenshot taken right after shows WSPD_FL drawn, not loading; the second exits 6 with `render.status` `no_ui`
 - **Evidence:** UI check (screenshot and both CLI outputs)
 
 ### Requirement: Value at a time
@@ -362,7 +362,7 @@ A token of one `-` followed by a character other than `-` SHALL be a positional 
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reads a value at a time and at a cursor" (gap case added)
 
 #### Scenario: Real dropout
-- **WHEN** `kipscope value smart451/SAS_0C2h.LWS_ANGLE "2026-10-13 11:34:36.6" | jq -c .data.value` runs against the dev server
+- **WHEN** `kipscope value smart451/STR_0D4h.STEER_ANGLE "2026-10-13 11:34:36.6" | jq -c .data.value` runs against the dev server
 - **THEN** it prints `{"kind":"none","reason":"period_gap"}`
 - **Evidence:** the command
 
@@ -370,8 +370,8 @@ A token of one `-` followed by a character other than `-` SHALL be a positional 
 The CLI SHALL offer `view list`, `view save TITLE [--name N] [--note TEXT] [--overwrite]`, `view open NAME`, `view delete NAME` and `view import FILE [--name N] [--overwrite] [--open]`, each printing one JSON line; `view open` SHALL report like a command and honour `--wait`. An unreadable FILE or one over 256 KiB SHALL be a usage error. Origin: concept §7 (everything from the shell); concept §9 („… über CLI").
 
 #### Scenario: Forms
-- **WHEN** the argument lists `view save "Drive 3" --note "BLS first" --overwrite`, `view open drive-3`, `view import x.yaml --name copy --open` and `view save` (no title) are parsed
-- **THEN** the first three give the requests of design V8 (`POST /api/views {title: "Drive 3", note: "BLS first", overwrite: true}`, `POST /api/views/open {name: "drive-3"}`, an import with `name: "copy", open: true`); the last is a usage error
+- **WHEN** the argument lists `view save "Drive 3" --note "BRK_LMP first" --overwrite`, `view open drive-3`, `view import x.yaml --name copy --open` and `view save` (no title) are parsed
+- **THEN** the first three give the requests of design V8 (`POST /api/views {title: "Drive 3", note: "BRK_LMP first", overwrite: true}`, `POST /api/views/open {name: "drive-3"}`, an import with `name: "copy", open: true`); the last is a usage error
 - **Evidence:** `apps/cli/test/args.test.ts` › "maps the view forms"
 
 #### Scenario: Save, list, open over HTTP

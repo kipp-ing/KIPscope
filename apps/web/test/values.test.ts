@@ -35,14 +35,14 @@ describe("formatCell", () => {
     expect(raw23.tag).toBeUndefined();
     expect(raw23.sna).toBeFalsy();
 
-    // DVL 179.5 at .083 s and 180 at .103 s (UTC 13:08, local 15:08), cursor at .093 s.
+    // WSPD_FL 179.5 at .083 s and 180 at .103 s (UTC 13:08, local 15:08), cursor at .093 s.
     const at = { t: "1791896880083000000", v: 179.5 };
     const next = { t: "1791896880103000000", v: 180 };
-    const dvl = formatCell(lin(179.75), at, next, "1/min", 3);
-    expect(dvl.text).toBe("180 1/min");
-    expect(dvl.tag).toBe("lin");
-    expect(dvl.title).toContain("15:08:00.083 → 179.5");
-    expect(dvl.title).toContain("15:08:00.103 → 180");
+    const wspdFl = formatCell(lin(179.75), at, next, "1/min", 3);
+    expect(wspdFl.text).toBe("180 1/min");
+    expect(wspdFl.tag).toBe("lin");
+    expect(wspdFl.title).toContain("15:08:00.083 → 179.5");
+    expect(wspdFl.title).toContain("15:08:00.103 → 180");
 
     const held = formatCell(hold(23), undefined, undefined, "km/h", 3);
     expect(held.text).toBe("23.0 km/h");
@@ -126,11 +126,11 @@ describe("digits option and unit", () => {
 
 describe("deltaCell", () => {
   it("computes Δ only from numeric values and tags it by the weaker kind", () => {
-    // Raw and raw: V_ANZ 23 → 18.
+    // Raw and raw: SPEED_DISP 23 → 18.
     const speed = deltaCell(raw(23), raw(18), "km/h", 3);
     expect(speed.text).toBe("-5.00 km/h");
     expect(speed.tag).toBeUndefined();
-    // Interpolated values with float noise: PTC_HV_Volt 362.40000000000003 → 362.9.
+    // Interpolated values with float noise: HTR_HV_Volt 362.40000000000003 → 362.9.
     const volt = deltaCell(lin(362.40000000000003), lin(362.9), "V", 3);
     expect(volt.text).toBe("500 mV");
     expect(volt.tag).toBe("lin");
@@ -245,14 +245,14 @@ function controllableFetch() {
   return { fetch, pending };
 }
 
-const result = (t: string, value: CursorValue, signalId = "c/V_ANZ"): CursorValueResult => ({
+const result = (t: string, value: CursorValue, signalId = "c/SPEED_DISP"): CursorValueResult => ({
   signalId,
   t,
   mode: "line",
   value,
 });
 
-const row = (t: string, key = "a1:a", signalId = "c/V_ANZ") => ({
+const row = (t: string, key = "a1:a", signalId = "c/SPEED_DISP") => ({
   key,
   signalId,
   t,
@@ -296,11 +296,11 @@ describe("ValueLoader", () => {
     const { fetch, pending } = controllableFetch();
     const changes = vi.fn();
     const loader = new ValueLoader(fetch, changes);
-    const rows = [row("100", "r1:a", "c/V_ANZ"), row("100", "r2:a", "c/DVL")];
+    const rows = [row("100", "r1:a", "c/SPEED_DISP"), row("100", "r2:a", "c/WSPD_FL")];
     loader.update(rows);
     expect(loader.settled(rows)).toBe(false);
     pending[0]?.reject(new Error("source_error: timeout"));
-    pending[1]?.resolve(result("100", lin(179.75), "c/DVL"));
+    pending[1]?.resolve(result("100", lin(179.75), "c/WSPD_FL"));
     await flush();
     expect(loader.get("r1:a")).toMatchObject({
       status: "error",
@@ -353,7 +353,7 @@ describe("ValueLoader", () => {
   });
 
   it("requests B whenever B is on, with or without Diff", async () => {
-    const rows = [{ id: "a1", signalId: "c/V_ANZ" }];
+    const rows = [{ id: "a1", signalId: "c/SPEED_DISP" }];
     const keys = (c: { a?: string; b?: string }) =>
       valueRequests(rows, c, "line").map((r) => r.key);
     expect(keys({ a: "100", b: "200" })).toEqual(["a1|a", "a1|b"]);
@@ -399,14 +399,14 @@ describe("fetchCursorValue", () => {
     vi.stubGlobal("fetch", stub);
     const abort = new AbortController().signal;
     await expect(
-      fetchCursorValue("c/V_ANZ", "1791896880093000000", "line", abort),
+      fetchCursorValue("c/SPEED_DISP", "1791896880093000000", "line", abort),
     ).resolves.toEqual(ok);
     const url = new URL(String(stub.mock.calls[0]?.[0]), "http://x");
     expect(url.pathname).toBe("/api/value");
-    expect(url.searchParams.get("signal")).toBe("c/V_ANZ");
+    expect(url.searchParams.get("signal")).toBe("c/SPEED_DISP");
     expect(url.searchParams.get("t")).toBe("1791896880093000000");
     expect(url.searchParams.get("mode")).toBe("line");
-    await expect(fetchCursorValue("c/V_ANZ", "1", "step", abort)).rejects.toThrow(
+    await expect(fetchCursorValue("c/SPEED_DISP", "1", "step", abort)).rejects.toThrow(
       "database unreachable",
     );
   });
@@ -414,9 +414,9 @@ describe("fetchCursorValue", () => {
 
 describe("L lookups", () => {
   const rows = [
-    { id: "r1", signalId: "c/V_ANZ" },
-    { id: "r2", signalId: "c/DVL" },
-    { id: "r3", signalId: "c/PTC_HV_Volt" },
+    { id: "r1", signalId: "c/SPEED_DISP" },
+    { id: "r2", signalId: "c/WSPD_FL" },
+    { id: "r3", signalId: "c/HTR_HV_Volt" },
   ];
 
   describe("rest", () => {
@@ -457,7 +457,7 @@ describe("L lookups", () => {
       expect(liveRequests(rows, "100", "line").map((r) => r.key)).toEqual(["r1|l", "r2|l", "r3|l"]);
       expect(liveRequests(rows, "100", "line")[1]).toEqual({
         key: "r2|l",
-        signalId: "c/DVL",
+        signalId: "c/WSPD_FL",
         t: "100",
         mode: "line",
       });

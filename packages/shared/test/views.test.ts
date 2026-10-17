@@ -277,9 +277,9 @@ function validDoc(over: Record<string, unknown> = {}): Record<string, unknown> {
         to: "2026-10-13T13:08:20Z",
         mode: "line",
         envelope: false,
-        signals: ["smart451/COMBI_412h.V_ANZ"],
+        signals: ["smart451/ICL_3A2h.SPEED_DISP"],
       },
-      { kind: "values", mode: "step", signals: ["smart451/COMBI_412h.V_ANZ"] },
+      { kind: "values", mode: "step", signals: ["smart451/ICL_3A2h.SPEED_DISP"] },
     ],
     ...over,
   };
@@ -288,7 +288,7 @@ function validDoc(over: Record<string, unknown> = {}): Record<string, unknown> {
 /** 17 windows, 66 entries (2 windows of 3, 15 of 4) over 44 smart451-like IDs, in a fixed order. */
 function syntheticDoc(): ViewDoc {
   const id = (k: number) =>
-    `smart451/${["COMBI", "BS", "CPC", "BMS", "EVC", "DCDC"][k % 6]}_${(0x200 + k * 37).toString(16).toUpperCase()}h.${["V_ANZ", "DVL", "IgnCurMode", "SOC", "Temp", "Iact"][(k * 5) % 6]}_${k}`;
+    `smart451/${["ICL", "BS", "DCU", "BMS", "EVC", "DCDC"][k % 6]}_${(0x200 + k * 37).toString(16).toUpperCase()}h.${["SPEED_DISP", "WSPD_FL", "IgnMode", "SOC", "Temp", "Iact"][(k * 5) % 6]}_${k}`;
   const windows: ViewDoc["windows"] = [];
   let k = 0;
   for (let w = 0; w < 17; w++) {
@@ -343,11 +343,11 @@ describe("link document", () => {
     const named: Workspace = {
       ...base,
       measurement: { name: "Drive 3" },
-      view: { name: "drive-3", title: "Drive 3 view", note: "BLS first", modified: true },
+      view: { name: "drive-3", title: "Drive 3 view", note: "BRK_LMP first", modified: true },
     };
     const doc = linkViewDoc(named);
     expect(doc.title).toBe("Drive 3 view");
-    expect(doc.note).toBe("BLS first");
+    expect(doc.note).toBe("BRK_LMP first");
     expect("saved" in doc).toBe(false);
 
     expect(linkViewDoc({ ...base, measurement: { name: "Drive 3" } }).title).toBe("Drive 3");
@@ -368,7 +368,7 @@ describe("link document", () => {
     expect(url.slice(prefix.length)).toBe(await encodeViewLink(doc));
     expect(await decodeViewLink(url.slice(prefix.length))).toMatchObject({
       title: "Drive 3 view",
-      note: "BLS first",
+      note: "BRK_LMP first",
     });
     expect(await viewLinkUrl(named, "http://127.0.0.1:5173/")).toMatch(
       /^http:\/\/127\.0\.0\.1:5173\/#view=/,

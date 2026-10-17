@@ -7,7 +7,7 @@ See proposal.md (Why, D-035 in full). Current state that shapes the approach:
 - **Server config is env-only** (`apps/server/src/config.ts`, `loadConfig(env, root)`); relative paths resolve against the repo root (`REPO_ROOT`), as for `KIPSCOPE_DBC_FILES`. `main.ts` loads the config, builds `Catalog`, listens, then loads the catalog; `POST /api/catalog/refresh` reloads it.
 - **Catalog** (`apps/server/src/catalog.ts`): `refresh()` builds one `SignalInfo` per `(dataRef, name)`, sorts by name then dataRef, and builds the shared `SearchIndex`. Tests construct `new Catalog(source, loadMetadata)`.
 - **Search** (`packages/shared/src/search.ts`) runs in the server (`/api/signals`) and in the browser (explorer over `/api/catalog`). Fields: `name`, `short` (after the first `.`), `description`, `alias`, `unit`; tiers 0–3; `SignalMatch` carries highlight ranges for `name`, `unit`, `description`.
-- **Real data (smart451, 428 signals, measured 2026-10-15 on `/api/catalog`):** 373 names are `MESSAGE_<hex>h.SIGNAL` (`COMBI_412h.V_ANZ`, `BS_200h.DVL`, `CPC_448h.PTC_HV_Volt`), 55 are `MESSAGE.SIGNAL` without hex ID (`AC_A1.T_SOLL`, `CG.CG_UP`, `D_RS_AC.D_RS_AC`, `VIN.*`). The part after the first `.` is unique across all 428, so real data has no collision. Longest full name 43 characters, longest part after the dot 29.
+- **Real data (smart451, 428 signals, measured 2026-10-15 on `/api/catalog`):** 373 names are `MESSAGE_<hex>h.SIGNAL` (`ICL_3A2h.SPEED_DISP`, `BRK_1A0h.WSPD_FL`, `DCU_2B8h.HTR_HV_Volt`), 55 are `MESSAGE.SIGNAL` without hex ID (`CLIM_A1.T_SET`, `GWM.GWM_UP`, `DIAG_CLIM.DIAG_CLIM`, `VIN.*`). The part after the first `.` is unique across all 428, so real data has no collision. Longest full name 43 characters, longest part after the dot 29.
 - **Synthetic test DB** (`testcar`, `othercar`): `Fast_100h.SIG_A/B/C`, `Irr_200h.JITTER`, `Sparse_300h.SLOW`, `Nodbc_500h.RAW`, `Many_700h.S0000…S0999`, `Sna_800h.SPEED/RPM/TEMP/COUNTER/STATE/MODE`; `Fast_100h.SIG_A` exists in both data references. No natural collision either; the test YAML (N8) makes them.
 - **Web places that print a signal name** (`grep -rnE "\.name\b" apps/web/src`): explorer row (`explorer/SignalExplorer.tsx` ~352), hover card header (`explorer/SignalCard.tsx` ~86), chart series label and unit-less axis title (`chart/TimeseriesWindow.tsx` ~662 → `chart/build.ts`), chart legend `.sig` (`chart/TimeseriesWindow.tsx` ~1413/1444), values row `.sig` (`values/ValuesWindow.tsx` ~323/343), drag ghost (`App.tsx` ~602). Window titles are never derived from signals; the highlight label (live cursor) and readout cells print no name. The CLI prints full IDs only.
 
@@ -47,7 +47,7 @@ display:
       show: '{signal}'                                              # template over named groups
       collision: '{signal} ({message})'                             # optional, used only on a collision
   rename:           # full source name (without data reference) → shown name; beats every rule
-    COMBI_412h.V_ANZ: Speed
+    ICL_3A2h.SPEED_DISP: Speed
 ```
 
 - Top level: only `display` (optional). `display`: only `names` (optional list) and `rename` (optional map). Rule: only `match`, `show` (both required) and `collision` (optional). Any other key is an error (N6) — a misspelt `renames:` or `colision:` would otherwise be ignored silently.
@@ -105,10 +105,10 @@ A collision is one shown name held by two or more **different source names**. Th
 
 1. Compute N4 for every distinct source name.
 2. Group by shown name (exact, case-sensitive).
-3. In every group with ≥ 2 members, each member of kind `rule` whose rule has a non-empty `collision` render shows that render (`V_ANZ (COMBI)`). Members of kind `rename` or `none` keep their name: a rename is the user's explicit choice, a full name cannot be shortened further (Q2).
+3. In every group with ≥ 2 members, each member of kind `rule` whose rule has a non-empty `collision` render shows that render (`SPEED_DISP (ICL)`). Members of kind `rename` or `none` keep their name: a rename is the user's explicit choice, a full name cannot be shortened further (Q2).
 4. Repeat until no shown name is held by two source names: every member of a shared name that does not already show its own full name switches to its full name and goes into `fellBack`. Terminates: each pass moves at least one signal to its full name, and full names are distinct.
 
-Rejected alternatives for step 4: a counter suffix (`V_ANZ (COMBI) #2`) invents a name that appears nowhere in the source; dropping the rule only for one of the pair makes the result depend on catalog order.
+Rejected alternatives for step 4: a counter suffix (`SPEED_DISP (ICL) #2`) invents a name that appears nowhere in the source; dropping the rule only for one of the pair makes the result depend on catalog order.
 
 The helper `warnDisplayFallbacks` logs once per catalog load (at startup in `main.ts` and after a successful `POST /api/catalog/refresh` in `routes/signals.ts`), when `fellBack` is not empty: `warn` `display names: <n> signals show their full name because their shown names collide: <first 10, comma-separated>`.
 
@@ -124,7 +124,7 @@ export function loadProjectFile(file: { path: string; required: boolean }): Disp
 export function parseProjectFile(text: string, path: string): DisplayRules;
 ```
 
-`main.ts` calls `loadProjectFile(config.projectFile)` before building the catalog; on `ProjectFileError` it writes `kipscope: invalid project file` and the message to stderr and exits with code 1, before `listen` (no port is opened, no ClickHouse query is sent). Checks run in three stages; a stage with problems reports all of its problems, one per line, and stops: (1) YAML syntax, (2) structure (keys, types, empty values: every zod issue), (3) regexes and templates of every rule. Fields are written as paths: `display.names[1].show`, `display.rename.COMBI_412h.V_ANZ`.
+`main.ts` calls `loadProjectFile(config.projectFile)` before building the catalog; on `ProjectFileError` it writes `kipscope: invalid project file` and the message to stderr and exits with code 1, before `listen` (no port is opened, no ClickHouse query is sent). Checks run in three stages; a stage with problems reports all of its problems, one per line, and stops: (1) YAML syntax, (2) structure (keys, types, empty values: every zod issue), (3) regexes and templates of every rule. Fields are written as paths: `display.names[1].show`, `display.rename.ICL_3A2h.SPEED_DISP`.
 
 | Problem | Message after `<path>: ` (problem text pinned up to the colon) |
 |---|---|
@@ -155,12 +155,12 @@ export function shownName(s: Pick<SignalInfo, "name" | "displayName">): string;
 
 - Absent-when-equal follows the catalog rule "missing fields are absent" and keeps existing `toEqual` tests and catalog snapshots unchanged when no file is loaded.
 - `Catalog` constructor gains a third optional parameter `rules: DisplayRules = NO_RULES`. `refresh()` calls `assignDisplayNames` on the distinct names after building the entries and sets `info.displayName = shown` where `shown !== name`. It keeps `fellBack` in a public read-only property `displayFallbacks: readonly string[]` for the log line. Catalog order (name, then dataRef) is unchanged (Q3).
-- `GET /api/signals` and `GET /api/catalog` return the field as part of each item; nothing else changes in the API. Example: `{"id":"smart451/COMBI_412h.V_ANZ","dataRef":"smart451","name":"COMBI_412h.V_ANZ","displayName":"V_ANZ",…}`.
+- `GET /api/signals` and `GET /api/catalog` return the field as part of each item; nothing else changes in the API. Example: `{"id":"smart451/ICL_3A2h.SPEED_DISP","dataRef":"smart451","name":"ICL_3A2h.SPEED_DISP","displayName":"SPEED_DISP",…}`.
 
 ### N8: Search with the shown name (`packages/shared/src/search.ts`)
 
 - `Fields` gains `shown` (lower-cased `shownName(s)`).
-- Tiers (signal-catalog "Search ranking"): 0 a term equals name, short or shown; 1 one of them starts with it; 2 name or shown contains it; 3 description, alias or unit contain it. The shown name ranks like the name, as D-035 asks („search matches full name, short name and message alike"). The message is matched through the full name (every name contains its message: `combi` is tier 1 for `COMBI_412h.V_ANZ`); no separate field.
+- Tiers (signal-catalog "Search ranking"): 0 a term equals name, short or shown; 1 one of them starts with it; 2 name or shown contains it; 3 description, alias or unit contain it. The shown name ranks like the name, as D-035 asks („search matches full name, short name and message alike"). The message is matched through the full name (every name contains its message: `icl` is tier 1 for `ICL_3A2h.SPEED_DISP`); no separate field.
 - `SignalMatch` gains `shown: MatchRange[]`: ranges in `shownName(signal)` (lower-cased like the others; `[]` for an empty query). The explorer row highlights `shown`; the card keeps `name`.
 - The CLI's bare-name lookup (`apps/cli/src/refs.ts` `nameMatches`) is unchanged: it filters the search result by name or part after the first `.`, so a shown name that differs from both (a rename) does not resolve there (out of scope).
 
@@ -183,17 +183,17 @@ Without catalog metadata every place keeps today's fallback, the signal ID. The 
 # KIPscope project file (D-035). See kipscope.example.yaml. Restart the server after editing.
 display:
   names:
-    # COMBI_412h.V_ANZ -> V_ANZ; on a collision V_ANZ (COMBI)
+    # ICL_3A2h.SPEED_DISP -> SPEED_DISP; on a collision SPEED_DISP (ICL)
     - match: '^(?<message>[^.]+?)_[0-9A-Fa-f]+h\.(?<signal>.+)$'
       show: '{signal}'
       collision: '{signal} ({message})'
-    # AC_A1.T_SOLL -> T_SOLL; on a collision T_SOLL (AC_A1)
+    # CLIM_A1.T_SET -> T_SET; on a collision T_SET (CLIM_A1)
     - match: '^(?<message>[^.]+)\.(?<signal>.+)$'
       show: '{signal}'
       collision: '{signal} ({message})'
 ```
 
-Checked against the real catalog (Python `re`, same semantics for these patterns): 373 signals take rule 1, 55 rule 2, 0 none, 428 distinct shown names; `SAS_0C2h.LWS_CHKSUM` → `LWS_CHKSUM` (message `SAS`). `kipscope.example.yaml` holds the same rules plus a commented `rename` example and one comment per key. The test fixture `apps/server/test/fixtures/kipscope.test.yaml`:
+Checked against the real catalog (Python `re`, same semantics for these patterns): 373 signals take rule 1, 55 rule 2, 0 none, 428 distinct shown names; `STR_0D4h.STEER_CHKSUM` → `STEER_CHKSUM` (message `SAS`). `kipscope.example.yaml` holds the same rules plus a commented `rename` example and one comment per key. The test fixture `apps/server/test/fixtures/kipscope.test.yaml`:
 
 ```yaml
 display:
@@ -215,7 +215,7 @@ Expected on the test DB: `Fast_100h.SIG_A/B/C` → `SIG` (3 names) → `SIG (Fas
 - **Rule evaluation cost:** catalog size × rules regex runs per catalog load (428 × 2 on real data; 10,000 × 10 would be 10⁵ runs, a few ms). Twice as many signals or rules: still far below the catalog's ClickHouse query time.
 - **Search goal 50 ms for 10,000 signals:** the shown field adds at most one equality, one prefix and one substring test per term and signal; even a doubled ranking time stays within the goal measured today (the test "ranks 10,000 signals in under 50 ms" guards it).
 - **Payload:** `displayName` adds about 20 bytes × 428 ≈ 9 kB to `/api/catalog`; doubled, still one small response loaded once.
-- **Name length:** shown names on smart451 are ≤ 29 characters (full ≤ 43); a collision suffix adds the message plus 3 characters (≤ 19 on smart451: `PNHV_ENERGY_CONS`; rule 1 strips the hex ID, so `(COMBI_510h)` cannot occur). Twice as long still fits the existing one-line row (ellipsis) and the auto-width legend grid.
+- **Name length:** shown names on smart451 are ≤ 29 characters (full ≤ 43); a collision suffix adds the message plus 3 characters (≤ 19 on smart451: `HVM_ENERGY_CONS`; rule 1 strips the hex ID, so `(ICL_51Ch)` cannot occur). Twice as long still fits the existing one-line row (ellipsis) and the auto-width legend grid.
 - **Collision passes (N5 step 4):** at most the number of colliding names; real data has 0 collisions.
 
 ## Risks / Trade-offs
@@ -232,4 +232,4 @@ Built as recommended until Jan decides.
 - **Q1: Invalid project file — refuse to start or warn?** Recommended: refuse to start with the messages of N6 (a typo otherwise ships wrong names silently). Alternative: log the errors and run with full names.
 - **Q2: A rename collides with a rule-made name.** D-035 says "both show the short name plus a message suffix"; a renamed signal has no rule and thus no suffix template. Recommended: the rename stays as written, the rule-made names in the group get their suffix (N5 step 3); if still shared, both fall back to full names. Alternative: a rename involved in a collision always falls back to its full name.
 - **Q3: Order of the empty-query list.** Recommended: keep the catalog order by full name (stable, same as API and CLI, keeps signals of one message together). Alternative: sort by shown name, which changes `/api/signals` order and the ranking ties.
-- **Q4: Shorten the 55 smart451 names without hex ID** (`AC_A1.T_SOLL` → `T_SOLL`)? Recommended: yes (rule 2 of N10), Jan's „no one is interested in hex" is about the message prefix as a whole and the short parts are unique. Alternative: rule 1 only, these 55 keep their full names.
+- **Q4: Shorten the 55 smart451 names without hex ID** (`CLIM_A1.T_SET` → `T_SET`)? Recommended: yes (rule 2 of N10), Jan's „no one is interested in hex" is about the message prefix as a whole and the short parts are unique. Alternative: rule 1 only, these 55 keep their full names.

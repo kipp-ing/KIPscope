@@ -35,9 +35,9 @@ A view SHALL reference signals by full ID `dataRef/name`, never by display name,
 - **Evidence:** `packages/shared/test/views.test.ts` › "keeps times exact to the nanosecond"
 
 #### Scenario: Display names are not references
-- **WHEN** a window shows `smart451/COMBI_412h.V_ANZ` (display name `V_ANZ`) and is saved on the dev server
-- **THEN** the file lists `smart451/COMBI_412h.V_ANZ` and does not contain `V_ANZ` as a separate value
-- **Evidence:** command `curl -s localhost:7310/api/views/<name> | grep -c "smart451/COMBI_412h.V_ANZ"` prints at least 1
+- **WHEN** a window shows `smart451/ICL_3A2h.SPEED_DISP` (display name `SPEED_DISP`) and is saved on the dev server
+- **THEN** the file lists `smart451/ICL_3A2h.SPEED_DISP` and does not contain `SPEED_DISP` as a separate value
+- **Evidence:** command `curl -s localhost:7310/api/views/<name> | grep -c "smart451/ICL_3A2h.SPEED_DISP"` prints at least 1
 
 ### Requirement: Versioned, tolerant reading
 Reading a view SHALL accept YAML and JSON. A document whose `kipscope` is not `view` SHALL be refused with `invalid_view`; a `version` above 1 with `unsupported_version` naming both versions; a field that fails validation with `invalid_view` naming its path. Unknown keys SHALL be dropped with one warning each, never refused. Origin: concept §8 („versionierbare Konfiguration"); necessary consequence (files outlive builds and are edited by hand).
@@ -173,8 +173,8 @@ Each saved view SHALL be downloadable as its YAML file (`<name>.kipscope.yaml`).
 "Copy link" and `kipscope view link` SHALL build the link with one shared function (`viewLinkUrl`, design V1) from one document (`linkViewDoc`: title rule, the note when set, no saved time), so one workspace and page give one link. Origin: design V7/V8; round-2 finding (372 vs 355 characters); lead's decision 2026-10-17.
 
 #### Scenario: Same link from web and CLI
-- **WHEN** view "Drive 3" with the note `BLS first` is saved and open, the web's "Copy link" helper and `kipscope view link --page http://127.0.0.1:5173/` build a link for that workspace and page, and the CLI's code is decoded
-- **THEN** both links decode to the same document (compressed bytes may differ between browser and Node: lead 2026-10-17, measured 520 vs 512 characters); the decoded document is `linkViewDoc(workspace)`: title `Drive 3`, note `BLS first`, no `saved`; without an open view the title is the measurement name, else `Shared view`, and there is no note; `grep -rn "encodeViewLink(" apps/web/src apps/cli/src` prints nothing (both call `viewLinkUrl`)
+- **WHEN** view "Drive 3" with the note `BRK_LMP first` is saved and open, the web's "Copy link" helper and `kipscope view link --page http://127.0.0.1:5173/` build a link for that workspace and page, and the CLI's code is decoded
+- **THEN** both links decode to the same document (compressed bytes may differ between browser and Node: lead 2026-10-17, measured 520 vs 512 characters); the decoded document is `linkViewDoc(workspace)`: title `Drive 3`, note `BRK_LMP first`, no `saved`; without an open view the title is the measurement name, else `Shared view`, and there is no note; `grep -rn "encodeViewLink(" apps/web/src apps/cli/src` prints nothing (both call `viewLinkUrl`)
 - **Evidence:** `packages/shared/test/views.test.ts` › "builds the link document" (`linkViewDoc` title rule, note, no `saved`); `apps/cli/test/cli.test.ts` › "prints the same link as Copy link" (`data.url` equals `viewLinkUrl(<GET /api/workspace>, page)`, the call web "Copy link" makes); `apps/web/test/viewlink.test.ts` › "copies the shared link" (the web helper's link equals `viewLinkUrl` for a workspace with a noted view); the grep above
 
 ### Requirement: Open from the address

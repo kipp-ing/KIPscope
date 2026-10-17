@@ -9,7 +9,7 @@ import { ViewStore } from "../src/views.ts";
 const CANONICAL = `kipscope: view
 version: 1
 title: Hard acceleration, drive 3
-note: BLS brake release 2–4 s before V_ANZ rises
+note: BRK_LMP brake release 2–4 s before SPEED_DISP rises
 saved: 2026-10-17T08:14:03Z
 data:
   - smart451
@@ -24,10 +24,10 @@ measurement:
 events:
   filter: active changes
   signals:
-    - smart451/CPC_168h.IgnCurMode
+    - smart451/DCU_1F4h.IgnMode
 colors:
-  smart451/COMBI_412h.V_ANZ: 0
-  smart451/BS_200h.DVL: 1
+  smart451/ICL_3A2h.SPEED_DISP: 0
+  smart451/BRK_1A0h.WSPD_FL: 1
 windows:
   - kind: timeseries
     title: Speeds
@@ -36,27 +36,27 @@ windows:
     mode: line
     envelope: false
     signals:
-      - smart451/COMBI_412h.V_ANZ
-      - smart451/BS_200h.DVL
+      - smart451/ICL_3A2h.SPEED_DISP
+      - smart451/BRK_1A0h.WSPD_FL
   - kind: values
     mode: step
     signals:
-      - smart451/COMBI_412h.V_ANZ
+      - smart451/ICL_3A2h.SPEED_DISP
 `;
 
 const DOC: ViewDoc = {
   kipscope: "view",
   version: 1,
   title: "Hard acceleration, drive 3",
-  note: "BLS brake release 2–4 s before V_ANZ rises",
+  note: "BRK_LMP brake release 2–4 s before SPEED_DISP rises",
   saved: "2026-10-17T08:14:03Z",
   data: ["smart451"],
   linkTime: true,
   cursors: { a: "2026-10-13T13:08:01.5Z", b: "2026-10-13T13:08:09.25Z", diff: true },
   digits: 3,
   measurement: { object: "smart451" },
-  events: { filter: "active changes", signals: ["smart451/CPC_168h.IgnCurMode"] },
-  colors: { "smart451/COMBI_412h.V_ANZ": 0, "smart451/BS_200h.DVL": 1 },
+  events: { filter: "active changes", signals: ["smart451/DCU_1F4h.IgnMode"] },
+  colors: { "smart451/ICL_3A2h.SPEED_DISP": 0, "smart451/BRK_1A0h.WSPD_FL": 1 },
   windows: [
     {
       kind: "timeseries",
@@ -65,9 +65,9 @@ const DOC: ViewDoc = {
       to: "2026-10-13T13:08:20Z",
       mode: "line",
       envelope: false,
-      signals: ["smart451/COMBI_412h.V_ANZ", "smart451/BS_200h.DVL"],
+      signals: ["smart451/ICL_3A2h.SPEED_DISP", "smart451/BRK_1A0h.WSPD_FL"],
     },
-    { kind: "values", mode: "step", signals: ["smart451/COMBI_412h.V_ANZ"] },
+    { kind: "values", mode: "step", signals: ["smart451/ICL_3A2h.SPEED_DISP"] },
   ],
 };
 

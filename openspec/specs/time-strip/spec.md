@@ -327,8 +327,8 @@ While the strip's data ref has events, the strip head SHALL show after the range
 While a signal is dragged over the strip, the strip SHALL show as a drop target: for a signal with states not yet on the events line an accent outline and `Drop to mark state changes of <name>`, and a drop sends `events.addSignal`; else the refused look with `<name> has no named states` or `<name> is already on the events line`, and a drop sends nothing. Origin: D-059 („drags a signal with stats to horizon"; horizon = the events line).
 
 #### Scenario: Drop on smart451
-- **WHEN** the user drags `BS_200h.BLS` from the explorer onto the strip and drops it, then drags `SAM_423h.KL_15` over the strip and drops it
-- **THEN** during the first drag the strip shows `Drop to mark state changes of BLS`; after the drop the revision rose by one, the Events tab lists BLS among the events-line signals and the count's total rose by 156; during the second drag it shows `KL_15 has no named states` and the drop changes nothing (revision unchanged)
+- **WHEN** the user drags `BRK_1A0h.BRK_LMP` from the explorer onto the strip and drops it, then drags `BCM_42Eh.IGN_15` over the strip and drops it
+- **THEN** during the first drag the strip shows `Drop to mark state changes of BRK_LMP`; after the drop the revision rose by one, the Events tab lists BRK_LMP among the events-line signals and the count's total rose by 156; during the second drag it shows `IGN_15 has no named states` and the drop changes nothing (revision unchanged)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshots during both drags, revision and count after)
 
 #### Scenario: Drop target mapping
@@ -340,8 +340,8 @@ While a signal is dragged over the strip, the strip SHALL show as a drop target:
 While an explorer selection of two or more signals is dragged over the strip and some of them have named states and are not on the events line, the strip SHALL show the accent outline and `Drop to mark state changes of <name>` (the shown name of the only such signal, else `<k> signals`); a drop SHALL send `events.addSignal` for each such signal in list order, skip the others, and stop at the first refusal. Origin: D-059 with D-066; skipping: lead default L5.
 
 #### Scenario: Selection with one state signal
-- **WHEN** on smart451 at 1440×900 `BS_200h.BLS` is not on the events line, the user types `BLS`, clicks `BLS` and Shift-clicks `VOLLBRE` (BLS, BLS_PA, BLS_RAW, VOLLBRE; only BLS has states) and drags the selection onto the strip
-- **THEN** while dragging the strip shows `Drop to mark state changes of BLS`; after the drop the revision rose by one and the Events tab lists BLS among the events-line signals
+- **WHEN** on smart451 at 1440×900 `BRK_1A0h.BRK_LMP` is not on the events line, the user types `BRK_LMP`, clicks `BRK_LMP` and Shift-clicks `FULL_BRK` (BRK_LMP, BRK_LMP_PA, BRK_LMP_RAW, FULL_BRK; only BRK_LMP has states) and drags the selection onto the strip
+- **THEN** while dragging the strip shows `Drop to mark state changes of BRK_LMP`; after the drop the revision rose by one and the Events tab lists BRK_LMP among the events-line signals
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, revision after)
 
 ### Requirement: Selection without new state signals

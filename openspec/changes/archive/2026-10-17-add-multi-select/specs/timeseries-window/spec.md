@@ -4,13 +4,13 @@
 A selection of two or more explorer signals, dropped or added, SHALL be placed in list order: a signal the target shows is skipped; each other goes into the first window where it fits, the target first, then the windows this add created, else into a new window. A timeseries window fits while it keeps at most four units, counting those it already shows; a values window fits every signal. Origin: D-066 („Only by unit limit", „Fill it up"); skip, first fit: lead default L4.
 
 #### Scenario: Six units onto "+ New window"
-- **WHEN** on smart451 at 1440×900 the user types `speed`, Ctrl-clicks (Cmd on macOS) `LWS_SPEED` (°/s), `CompSpd_Target_V2` (%), `DVL` (1/min), `V_ANZ` (km/h), `V_MAX_TM` (km/h(mph)) and `NMOTS` (~/min), and drags `DVL` onto "+ New window"
-- **THEN** while dragging the ghost reads `6 signals · add` over the zone; after the drop two new windows appear: the first shows LWS_SPEED, CompSpd_Target_V2, DVL, V_ANZ on four axes, the second V_MAX_TM and NMOTS; the first is scrolled into view and the revision rose by eight
+- **WHEN** on smart451 at 1440×900 the user types `speed`, Ctrl-clicks (Cmd on macOS) `STEER_SPEED` (°/s), `CompSpd_Target` (%), `WSPD_FL` (1/min), `SPEED_DISP` (km/h), `V_MAX_LIM` (km/h(mph)) and `ENG_SPD_SET` (~/min), and drags `WSPD_FL` onto "+ New window"
+- **THEN** while dragging the ghost reads `6 signals · add` over the zone; after the drop two new windows appear: the first shows STEER_SPEED, CompSpd_Target, WSPD_FL, SPEED_DISP on four axes, the second V_MAX_LIM and ENG_SPD_SET; the first is scrolled into view and the revision rose by eight
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, screenshot and revision after the drop)
 
 #### Scenario: Drop onto a window with three units
-- **WHEN** window `W` shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h) and `MS_608h.T_MOT` (°C), and the user types `speed`, Ctrl/Cmd-clicks `LWS_SPEED`, `CompSpd_Target_V2`, `DVL`, `DVR` and `V_ANZ`, and drags the selection onto `W`
-- **THEN** `W` is highlighted with "Drop to add" (not "At most 4 units per window"); after the drop `W` shows its three signals plus LWS_SPEED (four units), one new window shows CompSpd_Target_V2, DVL and DVR, V_ANZ is not added twice, and the revision rose by five
+- **WHEN** window `W` shows `DCU_1F4h.COMP_HV_Volt` (V), `ICL_3A2h.SPEED_DISP` (km/h) and `ENG_5E0h.T_ENG` (°C), and the user types `speed`, Ctrl/Cmd-clicks `STEER_SPEED`, `CompSpd_Target`, `WSPD_FL`, `WSPD_FR` and `SPEED_DISP`, and drags the selection onto `W`
+- **THEN** `W` is highlighted with "Drop to add" (not "At most 4 units per window"); after the drop `W` shows its three signals plus STEER_SPEED (four units), one new window shows CompSpd_Target, WSPD_FL and WSPD_FR, SPEED_DISP is not added twice, and the revision rose by five
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging, screenshot and revision after the drop)
 
 #### Scenario: Placement rules
@@ -40,16 +40,16 @@ During a selection drag, a window SHALL be highlighted with "Drop to add" when i
 During a drag, the legend row's own window and any window already showing the signal SHALL be refused without a highlight. A timeseries window that would reach a fifth unit SHALL be marked not droppable with the hint "At most 4 units per window", whatever the drag source, except for a drag of an explorer selection of two or more signals, which overflows instead ("Selection overflows into new windows"). A values window SHALL never be refused for units. Origin: D-019 (four units), D-020 (refusal for explorer drags), D-023 (values rows as source; no unit limit in the values window); selection exception: D-066.
 
 #### Scenario: Values row over a four-unit window
-- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags the `MS_312h.DNMOT` row of a values window over A and releases
+- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags the `ENG_2E8h.MOT_SPD_D` row of a values window over A and releases
 - **THEN** A is marked not droppable with "At most 4 units per window", and the release changes nothing (revision unchanged)
 - **Evidence:** `apps/web/test/drag.test.ts` › "drags a values row like a legend row"; UI check (screenshot while dragging, revision before and after)
 
 #### Scenario: Values window takes a fifth unit
-- **WHEN** a values window lists four units and the user drags the DNMOT legend row from a timeseries window over it
+- **WHEN** a values window lists four units and the user drags the MOT_SPD_D legend row from a timeseries window over it
 - **THEN** the values window is highlighted with "Drop to move · Alt/Ctrl+drop to copy"
 - **Evidence:** `apps/web/test/drag.test.ts` › "accepts any unit on a values window"; UI check (screenshot while dragging)
 
 #### Scenario: Selection over a four-unit window
-- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags an explorer selection of `MS_312h.DNMOT` and `SAS_0C2h.LWS_SPEED` over A and releases
-- **THEN** A is highlighted with "Drop to add" while dragging; after the release A is unchanged and one new window shows DNMOT and LWS_SPEED
+- **WHEN** window A shows four units (V, km/h, °C, 1/min) and the user drags an explorer selection of `ENG_2E8h.MOT_SPD_D` and `STR_0D4h.STEER_SPEED` over A and releases
+- **THEN** A is highlighted with "Drop to add" while dragging; after the release A is unchanged and one new window shows MOT_SPD_D and STEER_SPEED
 - **Evidence:** `apps/web/test/drag.test.ts` › "highlights a window for a selection while one signal is new"; `packages/shared/test/placement.test.ts` › "counts the units the target already shows"

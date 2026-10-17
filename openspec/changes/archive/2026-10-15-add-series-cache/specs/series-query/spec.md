@@ -9,6 +9,6 @@ For `from` and `to` multiples of `w` and target `(to − from) / w + 1`, an aggr
 - **Evidence:** `apps/server/test/series.test.ts` › "returns identical buckets for aligned requests that share them"
 
 #### Scenario: Real speed, aligned
-- **WHEN** a client requests `/api/series?signal=smart451/COMBI_412h.V_ANZ&from=1791896364897009664&to=1791896914652823552&target=513`
+- **WHEN** a client requests `/api/series?signal=smart451/ICL_3A2h.SPEED_DISP&from=1791896364897009664&to=1791896914652823552&target=513`
 - **THEN** `jq -r '.kind, .width'` prints `buckets` and `1073741824`
 - **Evidence:** the `curl` command against the dev server

@@ -233,17 +233,17 @@ const SIG = {
 };
 const WINDOWS = [
   { title: 'Window 1', agg: 'raw', unit: 'km/h', min: 0, max: 140, ticks: [140, 105, 70, 35, 0], live: 0,
-    sigs: [{ key: 'speed', name: 'V_ANZ', unit: 'km/h', ci: 0, sna: 'SNA 8.2 %' }] },
+    sigs: [{ key: 'speed', name: 'SPEED_DISP', unit: 'km/h', ci: 0, sna: 'SNA 8.2 %' }] },
   { title: 'Window 2', agg: 'agg 1.2 s', unit: '°C', min: 20, max: 100, ticks: [100, 80, 60, 40, 20], target: true,
-    sigs: [{ key: 'tmot', name: 'T_MOT', unit: '°C', ci: 1, sna: 'SNA < 0.1 %' }, { key: 'tool', name: 'T_OEL', unit: '°C', ci: 2 }, { key: 'tluft', name: 'T_LUFT', unit: '°C', ci: 3 }] },
+    sigs: [{ key: 'tmot', name: 'T_ENG', unit: '°C', ci: 1, sna: 'SNA < 0.1 %' }, { key: 'tool', name: 'T_OIL', unit: '°C', ci: 2 }, { key: 'tluft', name: 'T_AIR', unit: '°C', ci: 3 }] },
   { title: 'Battery', agg: 'agg 1.2 s', unit: 'A', min: -200, max: 50, ticks: [50, 0, -50, -100, -150, -200],
-    sigs: [{ key: 'curr', name: 'PNHV_SupBat_Curr', unit: 'A', ci: 4 }] },
+    sigs: [{ key: 'curr', name: 'HVM_Bat_Curr', unit: 'A', ci: 4 }] },
 ];
-const GROUPS = [['AC', 21], ['CGW', 39], ['CPC', 89], ['Engine', 63], ['EPS', 3], ['ESP', 64], ['EWM', 6], ['PNHV', 10], ['SAM', 35], ['SAS', 6], ['SRS', 13], ['TCU', 38], ['YRG', 23], ['Other', 18]];
+const GROUPS = [['AC', 21], ['CGW', 39], ['DCU', 89], ['Engine', 63], ['EPS', 3], ['ESP', 64], ['EWM', 6], ['HVM', 10], ['SAM', 35], ['SAS', 6], ['SRS', 13], ['TCU', 38], ['YRG', 23], ['Other', 18]];
 const ROWS = {
-  Engine: [['TEMP_KL', ''], ['T_OEL', '°C', 2, true], ['T_LUFT', '°C', 3, true], ['T_MOT', '°C', 1, true], ['DNMOT', '1/min', -1, true], ['N_MOT', '1/min']],
-  CGW: [['V_ANZ', 'km/h', 0, true], ['T_AUSSEN', '°C', -1, true], ['T_AUSSEN_RAW', '°C']],
-  CPC: [['PNHV_SupBat_Curr', 'A', 4], ['EAC_Sp_Temp_Excess', ''], ['PTC_CtrlTemp', '°C']],
+  Engine: [['TEMP_COOL', ''], ['T_OIL', '°C', 2, true], ['T_AIR', '°C', 3, true], ['T_ENG', '°C', 1, true], ['MOT_SPD_D', '1/min', -1, true], ['N_MOT', '1/min']],
+  CGW: [['SPEED_DISP', 'km/h', 0, true], ['T_OUTSIDE', '°C', -1, true], ['T_OUTSIDE_RAW', '°C']],
+  DCU: [['HVM_Bat_Curr', 'A', 4], ['COMP_Temp_Excess', ''], ['HTR_CtrlTemp', '°C']],
 };
 const BARS = [0, 0, 22, 64, 41, 0, 0, 0, 18, 72, 80, 35, 0, 0, 0, 12, 58, 66, 90, 44, 6, 0, 0, 0, 0, 30, 52, 0, 0, 0, 0, 0, 25, 70, 85, 61, 20, 0, 0, 0, 14, 48, 77, 38, 0, 0, 0, 9];
 function fmt(v) {
@@ -269,7 +269,7 @@ function band(fn, w) {
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { open: { Engine: true, CGW: true }, active: 'TEMP_KL', a: true, b: true, diff: false };
+    this.state = { open: { Engine: true, CGW: true }, active: 'TEMP_COOL', a: true, b: true, diff: false };
   }
   renderVals() {
     const pal = PALETTES[this.props.palette ?? 'okabe-ito'] || PALETTES['okabe-ito'];

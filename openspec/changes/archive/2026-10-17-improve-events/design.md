@@ -12,7 +12,7 @@ Jan (2026-10-17): „events need an expert, yes i think its cluttered hard to us
 
 ## Context
 
-Today (archived `add-events`, design V8): the panel stacks heading, field, description, six presets, category chips, ECU chips and the events-line signals above a list of every shown event of the strip's data ref (smart451 with the shipped project file: 63 of 477 with the default filter; Jan's workspace with BLS: 669 total). Rows inside the bar target's range get a 2 px accent border; a row click centres the view. Rows are two lines with ellipsis. All 55 DTCs share one time, the fault memory readout (2026-10-15 07:27:12.135 local).
+Today (archived `add-events`, design V8): the panel stacks heading, field, description, six presets, category chips, ECU chips and the events-line signals above a list of every shown event of the strip's data ref (smart451 with the shipped project file: 63 of 477 with the default filter; Jan's workspace with BRK_LMP: 669 total). Rows inside the bar target's range get a 2 px accent border; a row click centres the view. Rows are two lines with ellipsis. All 55 DTCs share one time, the fault memory readout (2026-10-15 07:27:12.135 local).
 
 How measurement tools handle this, and what this change takes from them:
 

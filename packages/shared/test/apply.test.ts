@@ -725,7 +725,7 @@ describe("cursors and values windows (add-cursors)", () => {
     const tsId = made.created as string;
     let cur = add(add(made.workspace, id, "car/KMH").workspace, tsId, "car/KMH").workspace;
     const frozen = structuredClone(cur);
-    // Both window kinds refuse a second V_ANZ; the workspace and its ID counter stay unchanged.
+    // Both window kinds refuse a second SPEED_DISP; the workspace and its ID counter stay unchanged.
     for (const windowId of [id, tsId]) {
       expect(run(cur, { type: "window.addSignal", windowId, signalId: "car/KMH" })).toMatchObject({
         ok: false,

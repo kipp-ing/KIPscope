@@ -9,18 +9,18 @@ A window this browser tab creates SHALL be scrolled fully into view: below the t
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each creation)
 
 #### Scenario: Drop below a short list
-- **WHEN** at 1440×900 two windows share the first row and the user drops the `BS_200h.DVL` explorer row on the free area below them
+- **WHEN** at 1440×900 two windows share the first row and the user drops the `BRK_1A0h.WSPD_FL` explorer row on the free area below them
 - **THEN** the new window is fully visible right after it appears, without manual scrolling
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop)
 
 #### Scenario: Explorer add among seventeen windows
-- **WHEN** seventeen windows exist (created with `kipscope window create` and `kipscope signal add`), the list is scrolled to the top, no window is marked, and the user types `V_ANZ` and presses Enter
+- **WHEN** seventeen windows exist (created with `kipscope window create` and `kipscope signal add`), the list is scrolled to the top, no window is marked, and the user types `SPEED_DISP` and presses Enter
 - **THEN** within one second the new window is fully visible between the top row and the status strip and carries `data-flash`; 1.5 s later it no longer carries it
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot within 1 s, the attribute read twice)
 
 #### Scenario: Add into a marked window out of sight
-- **WHEN** of seventeen windows window 1 is marked, the list is scrolled to the end, and the user adds `MS_608h.T_MOT` with the row's add button
-- **THEN** window 1 is scrolled fully into view (its header right below the top row if taller), shows T_MOT and flashes; no new window is created
+- **WHEN** of seventeen windows window 1 is marked, the list is scrolled to the end, and the user adds `ENG_5E0h.T_ENG` with the row's add button
+- **THEN** window 1 is scrolled fully into view (its header right below the top row if taller), shows T_ENG and flashes; no new window is created
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot within 1 s)
 
 #### Scenario: Selection creates two windows

@@ -48,25 +48,25 @@ describe("explorer formatting", () => {
     expect(formatDbcRange(-40, 214, "°C", 3)).toBe("-40.0 … 214 °C");
     expect(formatDbcRange(-40, 214, "°C", 4)).toBe("-40.00 … 214.0 °C");
     expect(formatDbcRange(0, 0, "km/h", 3)).toBe("not set");
-    // SNA physical values: DVL raw 3FFFh = 8191.5 1/min (rounded before scaling, N7).
+    // SNA physical values: WSPD_FL raw 3FFFh = 8191.5 1/min (rounded before scaling, N7).
     expect(formatSnaPhysical(8191.5, "1/min", 3)).toBe("8.19 k1/min");
     expect(formatSnaPhysical(8191.5, "1/min", 4)).toBe("8.192 k1/min");
     expect(formatSnaPhysical(511, "km/h", 3)).toBe("511 km/h");
   });
 
   it("formats message IDs as hex", () => {
-    expect(formatMessageId(1042)).toBe("0x412");
-    expect(formatMessageId(1544)).toBe("0x608");
+    expect(formatMessageId(930)).toBe("0x3A2");
+    expect(formatMessageId(1504)).toBe("0x5E0");
     expect(formatMessageId(0x98ff1234)).toBe("0x18FF1234 (ext)");
   });
 
   it("formats the source line", () => {
     const base: SignalInfo = {
-      id: "smart451/COMBI_412h.V_ANZ",
+      id: "smart451/ICL_3A2h.SPEED_DISP",
       dataRef: "smart451",
-      name: "COMBI_412h.V_ANZ",
+      name: "ICL_3A2h.SPEED_DISP",
     };
-    const dbc = { message: "COMBI_412h", messageId: 1042 };
+    const dbc = { message: "ICL_3A2h", messageId: 930 };
     expect(formatSource({ ...base, dbc: { ...dbc, file: "h-can.dbc" } })).toBe(
       "smart451 · h-can.dbc",
     );
@@ -76,12 +76,12 @@ describe("explorer formatting", () => {
 
   it("lists the windows showing a signal", () => {
     const windows = [
-      win("w1", ["c/V_ANZ", "c/DVL"], "Speeds"),
+      win("w1", ["c/SPEED_DISP", "c/WSPD_FL"], "Speeds"),
       win("w2", ["c/PTC"]),
-      win("w3", ["c/V_ANZ"]),
+      win("w3", ["c/SPEED_DISP"]),
     ];
-    expect(windowsShowing(windows, "c/V_ANZ")).toEqual(["Speeds", "Window 3"]);
-    expect(windowsShowing(windows, "c/T_MOT")).toEqual([]);
+    expect(windowsShowing(windows, "c/SPEED_DISP")).toEqual(["Speeds", "Window 3"]);
+    expect(windowsShowing(windows, "c/T_ENG")).toEqual([]);
   });
 
   it("returns Window <n> for an untitled window", () => {

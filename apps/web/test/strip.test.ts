@@ -140,7 +140,9 @@ describe("strip drop text for a selection", () => {
       "None of 4 signals has new named states",
     );
     // The one-signal wording stays as it was.
-    expect(stripDropText({ name: "BLS", ok: true })).toBe("Drop to mark state changes of BLS");
+    expect(stripDropText({ name: "BRK_LMP", ok: true })).toBe(
+      "Drop to mark state changes of BRK_LMP",
+    );
     expect(stripDropText({ name: "3 signals", ok: true })).toBe(
       "Drop to mark state changes of 3 signals",
     );

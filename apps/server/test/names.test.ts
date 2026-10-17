@@ -37,12 +37,12 @@ describe("assignDisplayNames", () => {
   it("takes the first matching rule and renders its template", () => {
     const r = rules([hexRule(false), dotRule([g("message"), "-", g("signal")], false)]);
     const { shown, fellBack } = assignDisplayNames(
-      ["COMBI_412h.V_ANZ", "SAS_0C2h.LWS_CHKSUM", "AC_A1.T_SOLL"],
+      ["ICL_3A2h.SPEED_DISP", "STR_0D4h.STEER_CHKSUM", "CLIM_A1.T_SET"],
       r,
     );
-    expect(shown.get("COMBI_412h.V_ANZ")).toBe("V_ANZ");
-    expect(shown.get("SAS_0C2h.LWS_CHKSUM")).toBe("LWS_CHKSUM");
-    expect(shown.get("AC_A1.T_SOLL")).toBe("AC_A1-T_SOLL");
+    expect(shown.get("ICL_3A2h.SPEED_DISP")).toBe("SPEED_DISP");
+    expect(shown.get("STR_0D4h.STEER_CHKSUM")).toBe("STEER_CHKSUM");
+    expect(shown.get("CLIM_A1.T_SET")).toBe("CLIM_A1-T_SET");
     expect(fellBack).toEqual([]);
   });
 
@@ -58,24 +58,24 @@ describe("assignDisplayNames", () => {
     const r = rules(
       [hexRule(false)],
       [
-        ["COMBI_412h.V_ANZ", "Speed"],
+        ["ICL_3A2h.SPEED_DISP", "Speed"],
         ["NOPE_1h.X", "Nope"],
       ],
     );
-    const { shown } = assignDisplayNames(["COMBI_412h.V_ANZ", "BS_200h.DVL"], r);
-    expect(shown.get("COMBI_412h.V_ANZ")).toBe("Speed");
-    expect(shown.get("BS_200h.DVL")).toBe("DVL");
+    const { shown } = assignDisplayNames(["ICL_3A2h.SPEED_DISP", "BRK_1A0h.WSPD_FL"], r);
+    expect(shown.get("ICL_3A2h.SPEED_DISP")).toBe("Speed");
+    expect(shown.get("BRK_1A0h.WSPD_FL")).toBe("WSPD_FL");
     expect(shown.has("NOPE_1h.X")).toBe(false);
   });
 
   it("suffixes colliding rule names with the collision template", () => {
     const { shown, fellBack } = assignDisplayNames(
-      ["COMBI_412h.V_ANZ", "KOMBI_512h.V_ANZ", "BS_200h.DVL"],
+      ["ICL_3A2h.SPEED_DISP", "KOMBI_512h.SPEED_DISP", "BRK_1A0h.WSPD_FL"],
       rules([hexRule(), dotRule()]),
     );
-    expect(shown.get("COMBI_412h.V_ANZ")).toBe("V_ANZ (COMBI)");
-    expect(shown.get("KOMBI_512h.V_ANZ")).toBe("V_ANZ (KOMBI)");
-    expect(shown.get("BS_200h.DVL")).toBe("DVL");
+    expect(shown.get("ICL_3A2h.SPEED_DISP")).toBe("SPEED_DISP (ICL)");
+    expect(shown.get("KOMBI_512h.SPEED_DISP")).toBe("SPEED_DISP (KOMBI)");
+    expect(shown.get("BRK_1A0h.WSPD_FL")).toBe("WSPD_FL");
     expect(fellBack).toEqual([]);
   });
 

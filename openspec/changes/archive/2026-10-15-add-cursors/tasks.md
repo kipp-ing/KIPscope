@@ -17,7 +17,7 @@ Test names are those the specs cite as evidence. The tasks assume the recommende
 
 ## 2. apps/server/src
 
-- [x] 2.1 In `routes/series.ts` add `GET /api/value` per design S3: the query schema (`signal`, `t` via `TimeInput`, `mode` default `line`), the 503 check first, then 404, then `before(ref, t + 1n)` and `after(ref, t + 1n)` in parallel with SNA ranges, `evaluateAt`, abort on close, and 502 on source errors. Verify `apps/server/test/value.http.test.ts` from 4.2 passes, and `curl -s 'localhost:7310/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T13:08:00.1435Z' | jq -c .value` prints `{"kind":"interpolated","value":22.5}`.
+- [x] 2.1 In `routes/series.ts` add `GET /api/value` per design S3: the query schema (`signal`, `t` via `TimeInput`, `mode` default `line`), the 503 check first, then 404, then `before(ref, t + 1n)` and `after(ref, t + 1n)` in parallel with SNA ranges, `evaluateAt`, abort on close, and 502 on source errors. Verify `apps/server/test/value.http.test.ts` from 4.2 passes, and `curl -s 'localhost:7310/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T13:08:00.1435Z' | jq -c .value` prints `{"kind":"interpolated","value":22.5}`.
 
 ## 3. apps/web/src
 
@@ -63,8 +63,8 @@ Test names are those the specs cite as evidence. The tasks assume the recommende
 
 ## 5. Integration check (real carserver data)
 
-- [x] 5.1 The UI user walks through every UI check in `specs/cursors/spec.md`, `specs/values-window/spec.md` and `specs/timeseries-window/spec.md` on `smart451`, 2026-10-13 around 13:08:00Z (V_ANZ, DVL, PTC_HV_Volt) and 09:56:59Z–09:57:01Z (V_ANZ SNA). The setup uses linked and unlinked windows, a values window, six windows for the sticky zone and auto-scroll, and `curl` for exact cursor times. One screenshot per scenario. The revision is read in the top bar where a scenario counts commands.
-- [x] 5.2 Run the `curl` commands named in the specs against the dev server: `/api/value` for V_ANZ at 13:08:00.093Z (`raw` 23), 13:08:00.1435Z (`interpolated` 22.5 and `held` 23 with `mode=step`), 09:57:00Z (`sna`) and 09:56:59.787Z (`next_sna`); the 400 for an out-of-bounds `t`; `GET /api/workspace` cursors after a restart (`{"diff":false}`); the values-window create; and `/api/render-status` after a CLI `cursor.set`.
+- [x] 5.1 The UI user walks through every UI check in `specs/cursors/spec.md`, `specs/values-window/spec.md` and `specs/timeseries-window/spec.md` on `smart451`, 2026-10-13 around 13:08:00Z (SPEED_DISP, WSPD_FL, HTR_HV_Volt) and 09:56:59Z–09:57:01Z (SPEED_DISP SNA). The setup uses linked and unlinked windows, a values window, six windows for the sticky zone and auto-scroll, and `curl` for exact cursor times. One screenshot per scenario. The revision is read in the top bar where a scenario counts commands.
+- [x] 5.2 Run the `curl` commands named in the specs against the dev server: `/api/value` for SPEED_DISP at 13:08:00.093Z (`raw` 23), 13:08:00.1435Z (`interpolated` 22.5 and `held` 23 with `mode=step`), 09:57:00Z (`sna`) and 09:56:59.787Z (`next_sna`); the 400 for an out-of-bounds `t`; `GET /api/workspace` cursors after a restart (`{"diff":false}`); the values-window create; and `/api/render-status` after a CLI `cursor.set`.
 
 ## 6. Close-out (power users)
 

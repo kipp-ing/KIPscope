@@ -32,7 +32,7 @@ For every signal a window shows, the tab SHALL fetch its extent once and, after 
 #### Scenario: Overview requested once
 - **WHEN** two loaders of one tab each show a signal whose extent is `0` … `4294967295` and both first views have loaded
 - **THEN** the extent is fetched once and exactly one series request `{from 0, to 4294967296, target 1025}` (level 22, tiles 0…3) is sent for the overview
-- **Evidence:** `apps/web/test/loader.test.ts` › "loads the overview once per signal after its first view"; UI check: reload with one window showing `smart451/COMBI_412h.V_ANZ`; the network log shows one `/api/extent?signal=smart451%2FCOMBI_412h.V_ANZ` and, after the view's first `/api/series`, one more `/api/series` whose `target` is 1025 + 256 × n for some n ≥ 0 and whose span covers the extent
+- **Evidence:** `apps/web/test/loader.test.ts` › "loads the overview once per signal after its first view"; UI check: reload with one window showing `smart451/ICL_3A2h.SPEED_DISP`; the network log shows one `/api/extent?signal=smart451%2FCOMBI_412h.SPEED_DISP` and, after the view's first `/api/series`, one more `/api/series` whose `target` is 1025 + 256 × n for some n ≥ 0 and whose span covers the extent
 
 #### Scenario: Overview survives eviction
 - **WHEN** the cache's limit is so small that the overview tiles are dropped right after they are stored, and the window then zooms to an uncached view
@@ -84,7 +84,7 @@ When a window's shown range has rested 300 ms with its loads done, it SHALL pref
 - **Evidence:** `apps/web/test/loader.test.ts` › "prefetches after the view rests, never during a gesture"; `apps/web/test/cache.test.ts` › "drops a queued prefetch run nobody wants"
 
 #### Scenario: Zoom out after rest is cached
-- **WHEN** a window on V_ANZ has rested for 2 s and is then zoomed out ×2 with one Ctrl+wheel event at the plot centre
+- **WHEN** a window on SPEED_DISP has rested for 2 s and is then zoomed out ×2 with one Ctrl+wheel event at the plot centre
 - **THEN** no `/api/series` request starts before t0 + 290 ms and there is exactly one stroke burst before t0 + 1,000 ms, within 50 ms (the first frame of the new range draws sharp data)
 - **Evidence:** UI timing check (design T1, step 4)
 
@@ -105,7 +105,7 @@ At most 2 prefetch requests SHALL be in flight per tab; further prefetch request
 On localhost with real data, a fully cached zoom SHALL draw sharp data in the first frame of the new range, within 50 ms of the wheel event; an uncached zoom SHALL draw a placeholder in that frame within 50 ms, start its request within 50 ms and draw sharp data within 200 ms. Origin: D-040 targets („within one frame (~16 ms)", „sharp data within ~150 ms"); bounds with frame wait and measurement: design T1.
 
 #### Scenario: Uncached zoom in
-- **WHEN** a window shows `smart451/COMBI_412h.V_ANZ` from 2026-10-13T09:00:00Z to 10:00:00Z, has rested 2 s, and one Ctrl+wheel event with deltaY −500 arrives at the plot centre
+- **WHEN** a window shows `smart451/ICL_3A2h.SPEED_DISP` from 2026-10-13T09:00:00Z to 10:00:00Z, has rested 2 s, and one Ctrl+wheel event with deltaY −500 arrives at the plot centre
 - **THEN** the first stroke burst is within 50 ms, a `/api/series` request starts within 50 ms, and the last stroke burst before t0 + 290 ms is within 200 ms and after that request's response end
 - **Evidence:** UI timing check (design T1, step 2), median of 3 runs, each on a fresh 1 h range
 

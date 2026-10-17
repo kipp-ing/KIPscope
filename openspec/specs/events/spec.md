@@ -71,7 +71,7 @@ For each events-line signal with states, the server SHALL derive events from its
 - **Evidence:** `packages/shared/test/events.test.ts` › "derives state changes of a signal"
 
 #### Scenario: Ignition on smart451
-- **WHEN** `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/CPC_168h.IgnCurMode&signal=smart451/BMS.contactor' | jq -c '[.events[] | select(.kind == "signal")] | length, (map(select(.category == "change")) | length), .skipped'` runs
+- **WHEN** `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/DCU_1F4h.IgnMode&signal=smart451/BMS.contactor' | jq -c '[.events[] | select(.kind == "signal")] | length, (map(select(.category == "change")) | length), .skipped'` runs
 - **THEN** it prints 17, 16 and `[{"signalId":"smart451/BMS.contactor","reason":"in_events_table"}]`; the first change is `KEYON` at 2026-10-11T13:38:56.879Z
 - **Evidence:** the command
 
@@ -84,7 +84,7 @@ The server SHALL fetch only the changed rows of a signal from the source; a sign
 - **Evidence:** `apps/server/test/events.test.ts` › "skips a signal with more than 2,000 changes"
 
 #### Scenario: Cost on carserver
-- **WHEN** the dev server was restarted and `curl -s -o /dev/null -w '%{time_total}\n' 'localhost:7310/api/events?dataRef=smart451&signal=smart451/SAM_423h.KL_15'` runs twice
+- **WHEN** the dev server was restarted and `curl -s -o /dev/null -w '%{time_total}\n' 'localhost:7310/api/events?dataRef=smart451&signal=smart451/BCM_42Eh.IGN_15'` runs twice
 - **THEN** both answer 200; goal, measured and reported but not pass/fail: the first ≤ 1 s, the second ≤ 0.1 s
 - **Evidence:** the command (both times)
 
@@ -123,11 +123,11 @@ Table events SHALL be loaded once per data ref and catalog load and a signal's c
 - **Evidence:** `apps/server/test/events.test.ts` › "caches per catalog load and prefetches", "keeps the first 100,000 events"
 
 ### Requirement: Events-line signals in the project file
-The project file's `events.signals` (at most 8 signal IDs) SHALL give the start value of the workspace's events-line signals; commands win until restart and nothing writes the file. The shipped file SHALL list `smart451/CPC_168h.IgnCurMode` and `smart451/BMS.contactor`. Origin: D-059 („automatically only two things (yaml define) IGN and contactor state"); D-051 pattern; names: D-058 (Jan's answers).
+The project file's `events.signals` (at most 8 signal IDs) SHALL give the start value of the workspace's events-line signals; commands win until restart and nothing writes the file. The shipped file SHALL list `smart451/DCU_1F4h.IgnMode` and `smart451/BMS.contactor`. Origin: D-059 („automatically only two things (yaml define) IGN and contactor state"); D-051 pattern; names: D-058 (Jan's answers).
 
 #### Scenario: Reading the section
-- **WHEN** project files with `events: {signals: [smart451/CPC_168h.IgnCurMode]}`, with 9 entries, with `signals: [nodataref]` and with `events: {colour: red}` are read
-- **THEN** the first gives `["smart451/CPC_168h.IgnCurMode"]`; the others are problems naming `events.signals` (at most 8; not a signal ID) and `events: unknown key "colour"`, handled like the other project-file problems
+- **WHEN** project files with `events: {signals: [smart451/DCU_1F4h.IgnMode]}`, with 9 entries, with `signals: [nodataref]` and with `events: {colour: red}` are read
+- **THEN** the first gives `["smart451/DCU_1F4h.IgnMode"]`; the others are problems naming `events.signals` (at most 8; not a signal ID) and `events: unknown key "colour"`, handled like the other project-file problems
 - **Evidence:** `apps/server/test/project.test.ts` › "reads events.signals"
 
 ### Requirement: Waiting signals
@@ -142,8 +142,8 @@ A listed signal missing from the catalog SHALL be skipped without an error, logg
 The sidebar's Events tab SHALL show the heading `EVENTS` with the scope switch `In view <k> | All <n>`, the filter in words followed by ` · <h> hidden` (events of the strip's data ref the filter hides) or the parser's error, the presets, a `Refine` section (closed by default, its state kept per browser) holding the filter field, the category and ECU chips with counts and the events-line signals with remove buttons, then the list and a key line (layout: design P3, P6). Origin: D-058 (filter in human terms; brief: "filtering never hides silently"); place: D-058 (Jan's answers); Jan 2026-10-17 („cluttered hard to use"); proposal E-4.
 
 #### Scenario: Panel on smart451
-- **WHEN** smart451 is shown at 1440×900 with the shipped project file's events-line signals (IgnCurMode, BMS.contactor) and the default filter, window 1 over 2026-10-14 18:55–19:15 local, Refine closed, and the user opens the Events tab
-- **THEN** the heading shows `In view 15 | All 63` with `In view` pressed, the line reads `Active faults and state changes · 414 hidden`, the six presets show, `Refine` shows `active changes` and no field or chip is visible, the list starts within the upper half of the viewport, and the key line shows `Fault`, `Stored`, `Change`, `Other`, `Fault memory read` (counts as `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/CPC_168h.IgnCurMode&signal=smart451/BMS.contactor' | jq '.total'` and the same with `&filter=active%20changes` and `&from=2026-10-14T16:55:00Z&to=2026-10-14T17:15:00Z` give them; 477, 63, 15 on 2026-10-17)
+- **WHEN** smart451 is shown at 1440×900 with the shipped project file's events-line signals (IgnMode, BMS.contactor) and the default filter, window 1 over 2026-10-14 18:55–19:15 local, Refine closed, and the user opens the Events tab
+- **THEN** the heading shows `In view 15 | All 63` with `In view` pressed, the line reads `Active faults and state changes · 414 hidden`, the six presets show, `Refine` shows `active changes` and no field or chip is visible, the list starts within the upper half of the viewport, and the key line shows `Fault`, `Stored`, `Change`, `Other`, `Fault memory read` (counts as `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/DCU_1F4h.IgnMode&signal=smart451/BMS.contactor' | jq '.total'` and the same with `&filter=active%20changes` and `&from=2026-10-14T16:55:00Z&to=2026-10-14T17:15:00Z` give them; 477, 63, 15 on 2026-10-17)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of the panel; the three `curl` counts)
 
 #### Scenario: Refine section
@@ -214,8 +214,8 @@ The list SHALL offer the scopes `In view` (default: shown events in the bar targ
 A row SHALL show the category glyph, the local time to the ms and the category in words, then the event's name without a repeated source and its text (a change `<from> → <to>`, an inferred one with ` · after a gap`), wrapping and never cut with an ellipsis (design P4). Origin: persona test 2026-10-17 (novice: "event text cut off in the narrow list", "show the description in the list, not only on hover"); D-058 („human way of thinking").
 
 #### Scenario: Row names
-- **WHEN** `rowName` runs for a signal event (source `IgnCurMode`, name `CPC_168h.IgnCurMode`), a state event (source `BMS`, name `BMS.contactor`), a DTC (`BMS`, `P0CA700`) and an NRC (`BMS`, `SID 22`)
-- **THEN** `IgnCurMode`, `BMS.contactor`, `BMS P0CA700`, `BMS SID 22`
+- **WHEN** `rowName` runs for a signal event (source `IgnMode`, name `DCU_1F4h.IgnMode`), a state event (source `BMS`, name `BMS.contactor`), a DTC (`BMS`, `P0CA700`) and an NRC (`BMS`, `SID 22`)
+- **THEN** `IgnMode`, `BMS.contactor`, `BMS P0CA700`, `BMS SID 22`
 - **Evidence:** `apps/web/test/eventsPanel.test.ts` › "names rows without a repeated source"
 
 #### Scenario: Longest text on smart451

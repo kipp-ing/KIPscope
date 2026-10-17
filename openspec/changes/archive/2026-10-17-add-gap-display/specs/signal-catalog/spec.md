@@ -9,7 +9,7 @@ A DBC signal's details SHALL carry its message's cycle time in ms from `BA_ "Gen
 - **Evidence:** `apps/server/test/dbc.test.ts` › "reads GenMsgCycleTime per message"
 
 #### Scenario: Real DBCs
-- **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.dataRef == "smart451" and .dbc.cycleMs != null)] | length, (map(select(.name == "COMBI_412h.V_ANZ"))[0].dbc.cycleMs)'` runs
+- **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.dataRef == "smart451" and .dbc.cycleMs != null)] | length, (map(select(.name == "ICL_3A2h.SPEED_DISP"))[0].dbc.cycleMs)'` runs
 - **THEN** it prints `408` and `100`
 - **Evidence:** the `curl` command against the dev server
 

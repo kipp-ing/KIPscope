@@ -11,12 +11,12 @@ Loaded series data SHALL stay in the tab's memory until the tab closes or reload
 #### Scenario: Zoom back to a previous view
 - **WHEN** a window shows a signal on view A, zooms to view B, both loads complete, and the window returns to view A (history back or the same range again)
 - **THEN** no further series request is sent and the signal's state for view A is complete at once, with no loading state in between
-- **Evidence:** `apps/web/test/loader.test.ts` › "draws a previous view again without a request"; UI check: window with `COMBI_412h.V_ANZ` on its full extent, rectangle-zoom into one hour, wait for the curve, Backspace; the network log (filtered to `/api/series`) shows no request after the Backspace and the overview curve is drawn without a loading mark
+- **Evidence:** `apps/web/test/loader.test.ts` › "draws a previous view again without a request"; UI check: window with `ICL_3A2h.SPEED_DISP` on its full extent, rectangle-zoom into one hour, wait for the curve, Backspace; the network log (filtered to `/api/series`) shows no request after the Backspace and the overview curve is drawn without a loading mark
 
 #### Scenario: Re-add a removed signal
 - **WHEN** a signal is removed from a window after its load completed and is added to the same window again on the same range
 - **THEN** no series request is sent for it and it is drawn at once
-- **Evidence:** `apps/web/test/loader.test.ts` › "serves a re-added signal from the cache"; UI check: remove `COMBI_412h.V_ANZ` from a window and drop it back in; the network log shows no `/api/series` request for it
+- **Evidence:** `apps/web/test/loader.test.ts` › "serves a re-added signal from the cache"; UI check: remove `ICL_3A2h.SPEED_DISP` from a window and drop it back in; the network log shows no `/api/series` request for it
 
 ### Requirement: Fixed bucket widths and tiles
 A view SHALL load its data as tiles of 256 buckets, each starting at a multiple of its span; the bucket width is the largest power of two ns at or below `ceil((to − from) / (target − 1))` (at least 1 ns), giving `target − 1` to 2 × (`target` − 1) buckets. A view SHALL use every tile that touches its range. Origin: necessary consequence of D-037 (3) (exact ranges are never reused); snapping down: D-038 („never coarser than before the cache").
@@ -42,7 +42,7 @@ A view SHALL request only tiles that are neither cached nor already being loaded
 #### Scenario: Pan by half a view
 - **WHEN** that view has loaded and the window pans to `[524,288,000, 1,572,864,000)` ns
 - **THEN** exactly one more request is sent, for `from` 1,073,741,824, `to` 1,610,612,736 and target 513
-- **Evidence:** `apps/web/test/loader.test.ts` › "requests only the tiles a pan uncovers"; UI check: pan a loaded V_ANZ window by a few horizontal swipes back and forth; the network log shows requests only while new time comes into view
+- **Evidence:** `apps/web/test/loader.test.ts` › "requests only the tiles a pan uncovers"; UI check: pan a loaded SPEED_DISP window by a few horizontal swipes back and forth; the network log shows requests only while new time comes into view
 
 ### Requirement: Raw tiles serve finer zooms
 A tile that was loaded as raw points SHALL serve every finer bucket width inside its time span, without a request. Origin: necessary consequence of D-037 (3) and series-query "Raw points": raw points are the unmodified data, valid at any zoom where raw points are shown.
@@ -50,7 +50,7 @@ A tile that was loaded as raw points SHALL serve every finer bucket width inside
 #### Scenario: Zoom further into raw data
 - **WHEN** a view's tiles came back as raw points and the window zooms in by a factor of 4 inside that view
 - **THEN** no request is sent and the new view shows exactly the raw points of its range, with the nearest point before and after as edge neighbours
-- **Evidence:** `apps/web/test/loader.test.ts` › "zooms into raw tiles without a request"; `apps/web/test/tiles.test.ts` › "derives a finer raw tile with its edge neighbours"; UI check: zoom V_ANZ to 2026-10-13T09:56:59Z – 09:57:01Z (raw), wait, then Ctrl+wheel-zoom in twice; no `/api/series` request in the network log
+- **Evidence:** `apps/web/test/loader.test.ts` › "zooms into raw tiles without a request"; `apps/web/test/tiles.test.ts` › "derives a finer raw tile with its edge neighbours"; UI check: zoom SPEED_DISP to 2026-10-13T09:56:59Z – 09:57:01Z (raw), wait, then Ctrl+wheel-zoom in twice; no `/api/series` request in the network log
 
 ### Requirement: Same drawn data as without cache
 A view SHALL draw the raw points or complete buckets its tiles returned: raw inside its range with the nearest outside points as edge neighbours when all touched tiles are raw, else the buckets touching its range, raw tiles aggregated by the series-query bucket rules. SNA stays SNA. Origin: concept §2 („für Zeichnung und Cursor nutzbar"); D-032/D-034 (the live cursor reads the drawn data); D-010.
@@ -188,7 +188,7 @@ For every signal a window shows, the tab SHALL fetch its extent once and, after 
 #### Scenario: Overview requested once
 - **WHEN** two loaders of one tab each show a signal whose extent is `0` … `4294967295` and both first views have loaded
 - **THEN** the extent is fetched once and exactly one series request `{from 0, to 4294967296, target 1025}` (level 22, tiles 0…3) is sent for the overview
-- **Evidence:** `apps/web/test/loader.test.ts` › "loads the overview once per signal after its first view"; UI check: reload with one window showing `smart451/COMBI_412h.V_ANZ`; the network log shows one `/api/extent?signal=smart451%2FCOMBI_412h.V_ANZ` and, after the view's first `/api/series`, one more `/api/series` whose `target` is 1025 + 256 × n for some n ≥ 0 and whose span covers the extent
+- **Evidence:** `apps/web/test/loader.test.ts` › "loads the overview once per signal after its first view"; UI check: reload with one window showing `smart451/ICL_3A2h.SPEED_DISP`; the network log shows one `/api/extent?signal=smart451%2FCOMBI_412h.SPEED_DISP` and, after the view's first `/api/series`, one more `/api/series` whose `target` is 1025 + 256 × n for some n ≥ 0 and whose span covers the extent
 
 #### Scenario: Overview survives eviction
 - **WHEN** the cache's limit is so small that the overview tiles are dropped right after they are stored, and the window then zooms to an uncached view
@@ -240,7 +240,7 @@ When a window's shown range has rested 300 ms with its loads done, it SHALL pref
 - **Evidence:** `apps/web/test/loader.test.ts` › "prefetches after the view rests, never during a gesture"; `apps/web/test/cache.test.ts` › "drops a queued prefetch run nobody wants"
 
 #### Scenario: Zoom out after rest is cached
-- **WHEN** a window on V_ANZ has rested for 2 s and is then zoomed out ×2 with one Ctrl+wheel event at the plot centre
+- **WHEN** a window on SPEED_DISP has rested for 2 s and is then zoomed out ×2 with one Ctrl+wheel event at the plot centre
 - **THEN** no `/api/series` request starts before t0 + 290 ms and there is exactly one stroke burst before t0 + 1,000 ms, within 50 ms (the first frame of the new range draws sharp data)
 - **Evidence:** UI timing check (design T1, step 4)
 
@@ -261,7 +261,7 @@ At most 2 prefetch requests SHALL be in flight per tab; further prefetch request
 On localhost with real data, a fully cached zoom SHALL draw sharp data in the first frame of the new range, within 50 ms of the wheel event; an uncached zoom SHALL draw a placeholder in that frame within 50 ms, start its request within 50 ms and draw sharp data within 200 ms. Origin: D-040 targets („within one frame (~16 ms)", „sharp data within ~150 ms"); bounds with frame wait and measurement: design T1.
 
 #### Scenario: Uncached zoom in
-- **WHEN** a window shows `smart451/COMBI_412h.V_ANZ` from 2026-10-13T09:00:00Z to 10:00:00Z, has rested 2 s, and one Ctrl+wheel event with deltaY −500 arrives at the plot centre
+- **WHEN** a window shows `smart451/ICL_3A2h.SPEED_DISP` from 2026-10-13T09:00:00Z to 10:00:00Z, has rested 2 s, and one Ctrl+wheel event with deltaY −500 arrives at the plot centre
 - **THEN** the first stroke burst is within 50 ms, a `/api/series` request starts within 50 ms, and the last stroke burst before t0 + 290 ms is within 200 ms and after that request's response end
 - **Evidence:** UI timing check (design T1, step 2), median of 3 runs, each on a fresh 1 h range
 

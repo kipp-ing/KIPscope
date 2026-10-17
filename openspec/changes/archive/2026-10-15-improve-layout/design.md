@@ -34,7 +34,7 @@ See proposal.md (Why) and D-025, D-026, D-027. Current state after `add-cursors`
 
 | Number | Value | Half | Double |
 |---|---|---|---|
-| Open width | 240 px | 120 px: names like `CPC_168h.EAC_HV_Volt` cut after ~8 characters, unit hidden | 480 px: more than today's 340 px, defeats D-026 |
+| Open width | 240 px | 120 px: names like `DCU_1F4h.COMP_HV_Volt` cut after ~8 characters, unit hidden | 480 px: more than today's 340 px, defeats D-026 |
 
 Testers proposed ~200 px; at 200 px a 20-character name keeps ~16 characters next to dot, unit and `+`, at 240 px ~21 (12 px monospace ≈ 7.2 px per character). Q5.
 
@@ -101,7 +101,7 @@ The mark lives in App state of one browser tab, like the old select and the zoom
 
 ### M1: Measuring screen use
 
-**Six-window setup.** After a server restart, with no window marked, add from the explorer one by one: `COMBI_412h.V_ANZ`, `BS_200h.DVL`, `MS_608h.T_MOT`, `CPC_448h.PTC_HV_Volt`, `CPC_168h.EAC_HV_Volt`, `AC_A1.T_SOLL` (each Enter makes a new window). Default heights, linked, cursors off, no values window, list scrolled to the top, viewport = `innerWidth × innerHeight`.
+**Six-window setup.** After a server restart, with no window marked, add from the explorer one by one: `ICL_3A2h.SPEED_DISP`, `BRK_1A0h.WSPD_FL`, `ENG_5E0h.T_ENG`, `DCU_2B8h.HTR_HV_Volt`, `DCU_1F4h.COMP_HV_Volt`, `CLIM_A1.T_SET` (each Enter makes a new window). Default heights, linked, cursors off, no values window, list scrolled to the top, viewport = `innerWidth × innerHeight`.
 
 **Snippet** (plot area = uPlot's `.u-over`, the drawing area without axes), run in the page:
 

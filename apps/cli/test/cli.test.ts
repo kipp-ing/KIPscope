@@ -1059,12 +1059,12 @@ describe("views", () => {
       expect(
         (await cli(s, "window", "create", "--title", "Speeds", "--from", "0", "--to", "10")).code,
       ).toBe(0);
-      expect((await cli(s, "view", "save", "Drive 3", "--note", "BLS first")).code).toBe(0);
+      expect((await cli(s, "view", "save", "Drive 3", "--note", "BRK_LMP first")).code).toBe(0);
       const opened = await cli(s, "view", "open", "drive-3");
       expect(opened.code).toBe(0);
 
       const { workspace } = await s.workspace();
-      expect(workspace.view?.note).toBe("BLS first");
+      expect(workspace.view?.note).toBe("BRK_LMP first");
       const link = await cli(s, "view", "link", "--page", page);
       expect(link.code).toBe(0);
       // What the web's "Copy link" calls: viewLinkUrl on GET /api/workspace.
@@ -1075,7 +1075,7 @@ describe("views", () => {
         url.slice(url.indexOf("#view=") + "#view=".length),
       )) as Record<string, unknown>;
       expect(decoded.title).toBe("Drive 3");
-      expect(decoded.note).toBe("BLS first");
+      expect(decoded.note).toBe("BRK_LMP first");
       expect("saved" in decoded).toBe(false);
     } finally {
       await s.close();

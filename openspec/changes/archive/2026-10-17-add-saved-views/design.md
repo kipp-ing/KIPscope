@@ -113,7 +113,7 @@ Example (the canonical form the tests compare against):
 kipscope: view
 version: 1
 title: Hard acceleration, drive 3
-note: BLS brake release 2–4 s before V_ANZ rises
+note: BRK_LMP brake release 2–4 s before SPEED_DISP rises
 saved: 2026-10-17T08:14:03Z
 data:
   - smart451
@@ -128,10 +128,10 @@ measurement:
 events:
   filter: active changes
   signals:
-    - smart451/CPC_168h.IgnCurMode
+    - smart451/DCU_1F4h.IgnMode
 colors:
-  smart451/COMBI_412h.V_ANZ: 0
-  smart451/BS_200h.DVL: 1
+  smart451/ICL_3A2h.SPEED_DISP: 0
+  smart451/BRK_1A0h.WSPD_FL: 1
 windows:
   - kind: timeseries
     title: Speeds
@@ -140,12 +140,12 @@ windows:
     mode: line
     envelope: false
     signals:
-      - smart451/COMBI_412h.V_ANZ
-      - smart451/BS_200h.DVL
+      - smart451/ICL_3A2h.SPEED_DISP
+      - smart451/BRK_1A0h.WSPD_FL
   - kind: values
     mode: step
     signals:
-      - smart451/COMBI_412h.V_ANZ
+      - smart451/ICL_3A2h.SPEED_DISP
 ```
 
 ### V2: Workspace additions and commands (pinned, `packages/shared/src/workspace.ts`, `apply.ts`)
@@ -203,7 +203,7 @@ The whole open is **one** command and one revision; the state push names `view.o
 
 ### V3: References and catalog changes
 
-- Signals by **full ID** `dataRef/name`: the data ref is part of every reference, so a view knows which measurement it reads (concept §8 "Datenreferenz"); display names (`V_ANZ`) are never stored, so a rename in `kipscope.yaml` cannot break a view.
+- Signals by **full ID** `dataRef/name`: the data ref is part of every reference, so a view knows which measurement it reads (concept §8 "Datenreferenz"); display names (`SPEED_DISP`) are never stored, so a rename in `kipscope.yaml` cannot break a view.
 - Time ranges and cursors are **absolute** UTC times, exact to the ns (concept §8 "Originalzeitpräzision").
 - `data` in the document is derived and informational: it tells a reader of the file which measurement it needs. Opening never checks it; signals decide.
 - A signal the catalog does not know on open (renamed DBC message, other data ref, not recorded yet) is left out and listed in `missing`; the file is never changed by an open. Opening again after the catalog has it brings it back. Rebinding to other names is a template feature (out of scope).
@@ -311,7 +311,7 @@ Error codes map as today: 4xx → exit 1 `rejected` (`unknown_view`, `view_exist
 - **STATE_WRITE_DELAY_MS 500:** 250 → about twice the writes during a burst of commands (≤ 4/s, a few KB each: irrelevant); 1,000 → up to 1 s of changes lost on a hard kill (SIGTERM flushes either way).
 - **MAX_VIEW_BYTES 256 KiB:** Jan's 17-window workspace is ~8 KB as JSON, a document at the limits (64 windows, 200 entries each) ~400 KB with long names. 128 KiB still holds 15× Jan's; 512 KiB only matters for documents beyond the workspace limits. Same value as the live frame limit (D-046).
 - **MAX_LINK_CHARS 8,192:** Jan's 17 windows ≈ 1,400 characters; 4,096 would warn at ~50 windows; 16,384 passes most browsers but not every chat or mail client (some cut URLs at 2,000–8,000).
-- **MAX_VIEW_TITLE 120, MAX_VIEW_NOTE 2,000:** title as measurement name (D-051); 60 cuts real titles ("Hard acceleration, drive 3, 13 Oct, BLS vs V_ANZ"); the note is a paragraph, 1,000 still fits, 4,000 makes the tooltip unreadable.
+- **MAX_VIEW_TITLE 120, MAX_VIEW_NOTE 2,000:** title as measurement name (D-051); 60 cuts real titles ("Hard acceleration, drive 3, 13 Oct, BRK_LMP vs SPEED_DISP"); the note is a paragraph, 1,000 still fits, 4,000 makes the tooltip unreadable.
 - **Title width 240 px:** at 1,440 px the top row has ~300 px free; 120 px cuts most titles, 480 px would push the option bar to a second line. At 1,000 px the title shrinks to what is left (possibly only the `•`); the full title stays in the tab title and the menu.
 - **Title minimum 10 characters (round 2):** 5 shows "Hard …", which names nothing; 20 (≈ 140 px) forces the label steps at a wider row and still wraps sooner at 1000 px.
 - **maxAliasCount 100:** see V6 "YAML to value".

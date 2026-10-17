@@ -10,7 +10,7 @@ The catalog SHALL mark a signal `states: "labels"` when its `VAL_` table names a
 
 #### Scenario: States on smart451
 - **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.states) | .states] | group_by(.) | map({(.[0]): length})'` runs against carserver
-- **THEN** `labels` is at most 74 and `text` at most 9 (the text signals minus those whose `diag.kind` is `text`, e.g. a VIN), both reported; `CPC_168h.IgnCurMode` has `"labels"`, `BMS.contactor` `"text"`, `SAM_423h.KL_15` none
+- **THEN** `labels` is at most 74 and `text` at most 9 (the text signals minus those whose `diag.kind` is `text`, e.g. a VIN), both reported; `DCU_1F4h.IgnMode` has `"labels"`, `BMS.contactor` `"text"`, `BCM_42Eh.IGN_15` none
 - **Evidence:** the command
 
 ### Requirement: State name of a value
@@ -46,8 +46,8 @@ In line mode, a value at a time between two points of which at least one has a s
 A, B and L readout cells in legends and in the values window SHALL show the short state name instead of the number, the tooltip giving label and number (text states: label only); L from drawn data names a raw point or a bucket whose minimum and maximum share a name, else shows the number. A Diff cell SHALL show `=` or `≠` when A or B has a name. Origin: D-059; Diff: necessary consequence (states have no difference).
 
 #### Scenario: Readouts on smart451
-- **WHEN** on smart451 window 1 shows `CPC_168h.IgnCurMode` and `BMS.contactor` over 2026-10-13 11:00–11:20 local, a values window shows both, A is at 11:10 and B at 2026-10-13 10:40 local, and then the pointer hovers window 1 at about 11:15
-- **THEN** the legend and values window show A `KEYON` and `closed`, B `NONE` and `open`, Diff `≠` and `≠`; while hovering the L cells show `KEYON` and `closed`; the tooltip of A's IgnCurMode cell names `KEYON` and `3`
+- **WHEN** on smart451 window 1 shows `DCU_1F4h.IgnMode` and `BMS.contactor` over 2026-10-13 11:00–11:20 local, a values window shows both, A is at 11:10 and B at 2026-10-13 10:40 local, and then the pointer hovers window 1 at about 11:15
+- **THEN** the legend and values window show A `KEYON` and `closed`, B `NONE` and `open`, Diff `≠` and `≠`; while hovering the L cells show `KEYON` and `closed`; the tooltip of A's IgnMode cell names `KEYON` and `3`
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot with hover, tooltip text)
 
 #### Scenario: Cell text
@@ -59,7 +59,7 @@ A, B and L readout cells in legends and in the values window SHALL show the shor
 A segment SHALL be drawn as a step when its start or end point has a state name (the start level holds), else as a line, for points, buckets and envelope alike; a view without a point holds the edge level across it. Only text states (diag enums included) SHALL widen a flat y range. Until `add-gap-display` lands, holds may cross logger gaps (D-062). Origin: D-059, "No interpolation into a state" (line and readout agree); design N3.
 
 #### Scenario: Steps, edge hold and y range
-- **WHEN** chart points are built for (a) a contactor-like diag enum polled 30 s apart that goes from open to closed inside the view, and a speed signal with `VAL_ 0 "Stop"` with points 40, 50, 0, (b) an IgnCurMode-like `VAL_` signal without a point in the range whose edge point before it is 3 (`KEYON`), and the y domain is computed for (c) a flat diag enum and a flat numeric signal with `VAL_ 0 "Stop"` at 50 km/h
+- **WHEN** chart points are built for (a) a contactor-like diag enum polled 30 s apart that goes from open to closed inside the view, and a speed signal with `VAL_ 0 "Stop"` with points 40, 50, 0, (b) an IgnMode-like `VAL_` signal without a point in the range whose edge point before it is 3 (`KEYON`), and the y domain is computed for (c) a flat diag enum and a flat numeric signal with `VAL_ 0 "Stop"` at 50 km/h
 - **THEN** (a) the enum is a step (the open level holds until the closed point, no drawn point at a level between them); the speed goes 40 → 50 sloped and 50 → 0 as a step; (b) the line is at 3 across the whole range; (c) the diag enum's domain is widened by its states, the numeric signal's is the normal domain centred on 50
 - **Evidence:** `apps/web/test/build.test.ts` › "draws state signals as steps", "holds the edge level across a range without points", "widens a flat y range only for code-valued states"
 

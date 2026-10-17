@@ -23,7 +23,7 @@ Each signal SHALL have a stable ID built from its data reference and its name in
 The catalog SHALL return for each signal its name and, where available, its description, alias and unit. Metadata the source lacks SHALL come from configured metadata files: DBC files and diagnostic catalogs (manifest plus names file, see "Diagnostic catalog names"). Missing fields SHALL be reported as absent, not as empty strings or invented values. Origin: concept §4 („Vorhandene Metadaten werden angezeigt"); diagnostic catalogs: D-061 („KIPscope reads the diagnostic catalog (manifest + names) like the DBC files").
 
 #### Scenario: Unit from DBC
-- **WHEN** a signal `MS_312h.DNMOT` has data and the DBC defines unit and comment for signal `DNMOT` in message `MS_312h`
+- **WHEN** a signal `ENG_2E8h.MOT_SPD_D` has data and the DBC defines unit and comment for signal `MOT_SPD_D` in message `ENG_2E8h`
 - **THEN** the catalog entry shows that unit and the comment as description
 
 #### Scenario: Signal not in any DBC
@@ -43,8 +43,8 @@ The catalog SHALL support a case-insensitive text search that splits the query a
 - **THEN** the result is limited to one page and indicates that more matches exist
 
 #### Scenario: Match on a part of the name
-- **WHEN** the query is `anz` and the catalog holds `COMBI_412h.V_ANZ`
-- **THEN** `COMBI_412h.V_ANZ` is in the results, although `anz` is neither the whole name nor its start
+- **WHEN** the query is `disp` and the catalog holds `ICL_3A2h.SPEED_DISP`
+- **THEN** `ICL_3A2h.SPEED_DISP` is in the results, although `disp` is neither the whole name nor its start
 - **Evidence:** `packages/shared/test/search.test.ts` › "matches parts of name, description and unit case-insensitively"
 
 #### Scenario: All terms must match
@@ -53,8 +53,8 @@ The catalog SHALL support a case-insensitive text search that splits the query a
 - **Evidence:** `packages/shared/test/search.test.ts` › "requires every term to match"
 
 #### Scenario: Match by shown name only
-- **WHEN** `COMBI_412h.V_ANZ` has the shown name `Speed` (a rename) and the query is `spe`
-- **THEN** `COMBI_412h.V_ANZ` is in the results; the query `combi` still finds it through the full name
+- **WHEN** `ICL_3A2h.SPEED_DISP` has the shown name `Speed` (a rename) and the query is `spe`
+- **THEN** `ICL_3A2h.SPEED_DISP` is in the results; the query `icl` still finds it through the full name
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks the shown name like the name"
 
 ### Requirement: Signal explorer in the UI
@@ -65,9 +65,9 @@ The UI SHALL offer a signal explorer that searches the catalog and lists each re
 - **THEN** the signal appears in that window
 
 #### Scenario: SNA values shown in explorer
-- **WHEN** the user searches for `V_ANZ` on real data with the shipped `kipscope.yaml`
-- **THEN** the row `V_ANZ` (`COMBI_412h.V_ANZ`) shows an SNA dot whose tooltip reads `SNA 511 km/h`, its hover card shows `511 km/h (raw 1FFh)` under SNA, and the row `SZS` (`BS_208h.SZS`, no SNA codes, D-014) shows no dot
-- **Evidence:** UI check (screenshot of the explorer with the V_ANZ card open)
+- **WHEN** the user searches for `SPEED_DISP` on real data with the local `kipscope.yaml`
+- **THEN** the row `SPEED_DISP` (`ICL_3A2h.SPEED_DISP`) shows an SNA dot whose tooltip reads `SNA 511 km/h`, its hover card shows `511 km/h (raw 1FFh)` under SNA, and the row `BRK_SW` (`BRK_21Ch.BRK_SW`, no SNA codes, D-014) shows no dot
+- **Evidence:** UI check (screenshot of the explorer with the SPEED_DISP card open)
 
 #### Scenario: One line per signal
 - **WHEN** the user searches for `temp` on real data
@@ -78,9 +78,9 @@ The UI SHALL offer a signal explorer that searches the catalog and lists each re
 The catalog SHALL return for each signal the values its DBC marks as "signal not available" (SNA): each as raw code and as the physical value the source stores. A signal without SNA definition (no DBC entry, or none defined) SHALL report no SNA values, not an empty list. Origin: D-010, D-012.
 
 #### Scenario: Speed with SNA code 1FFh
-- **WHEN** the catalog lists `smart451/COMBI_412h.V_ANZ` (9 bit, factor 1, offset 0, `GenSigSNA "1FFh"`, `VAL_ 511 "SNV"`)
+- **WHEN** the catalog lists `smart451/ICL_3A2h.SPEED_DISP` (9 bit, factor 1, offset 0, `GenSigSNA "1FFh"`, `VAL_ 511 "SNV"`)
 - **THEN** its entry reports exactly one SNA value: raw 511, physical 511
-- **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc" (runs if the real DBC exists); command `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ'` shows `"sna":[{"raw":511,"value":511,...}]`
+- **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc" (runs if the real DBC exists); command `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP'` shows `"sna":[{"raw":511,"value":511,...}]`
 
 #### Scenario: Signal without DBC entry
 - **WHEN** a signal has data but no DBC entry (`testcar/Nodbc_500h.RAW`)
@@ -91,12 +91,12 @@ The catalog SHALL return for each signal the values its DBC marks as "signal not
 SNA values SHALL be the union of the `GenSigSNA` attribute (raw hex, e.g. `"1FFh"`) and the raw values whose `VAL_` label is `SNA` or `SNV`. When both name different codes, both codes SHALL count as SNA, unless a rule below drops the `GenSigSNA` code. Origin: D-010, D-014.
 
 #### Scenario: Attribute and label disagree
-- **WHEN** a signal has `GenSigSNA "1Fh"` and `VAL_ ... 30 "SNA"`, with no `VAL_` label on 31 (real: `BS_328h.ESP_DSPL`; test DBC: `Sna_800h.MODE` with `"7h"` and `6 "SNV" 1 "ON"`)
-- **THEN** both codes are SNA values of the signal (ESP_DSPL raws {30, 31}; MODE raws {6, 7})
+- **WHEN** a signal has `GenSigSNA "1Fh"` and `VAL_ ... 30 "SNA"`, with no `VAL_` label on 31 (real: `BRK_33Ch.STAB_DISP`; test DBC: `Sna_800h.MODE` with `"7h"` and `6 "SNV" 1 "ON"`)
+- **THEN** both codes are SNA values of the signal (STAB_DISP raws {30, 31}; MODE raws {6, 7})
 - **Evidence:** `apps/server/test/dbc.test.ts` › "unites GenSigSNA and VAL_ SNA/SNV labels"; "derives SNA values from the real h-can.dbc"
 
 #### Scenario: Attribute and label agree
-- **WHEN** `GenSigSNA` and a `VAL_` `SNV` label name the same code (`BS_200h.DVL`: `"3FFFh"` and `16383 "SNV"`)
+- **WHEN** `GenSigSNA` and a `VAL_` `SNV` label name the same code (`BRK_1A0h.WSPD_FL`: `"3FFFh"` and `16383 "SNV"`)
 - **THEN** the code is reported once
 - **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc"
 
@@ -104,17 +104,17 @@ SNA values SHALL be the union of the `GenSigSNA` attribute (raw hex, e.g. `"1FFh
 When the `VAL_` table labels the `GenSigSNA` code with anything other than `SNA` or `SNV`, that code SHALL NOT be an SNA value; the raw value is valid. `VAL_` codes labelled `SNA`/`SNV` stay SNA. Exception: the labels `--`, `NO_TEMP_SENSOR` and `RES` mean "no value" and do NOT beat `GenSigSNA`; the code stays SNA. The list is fixed and grows only by decision. Origin: D-014 (supersedes D-010's "on conflict both count as SNA"), D-015.
 
 #### Scenario: State labelled OK
-- **WHEN** a signal has `GenSigSNA "1h"` and `VAL_ ... 1 "OK"` (real: `BS_208h.SZS`, 100 % of its data is raw 1)
+- **WHEN** a signal has `GenSigSNA "1h"` and `VAL_ ... 1 "OK"` (real: `BRK_21Ch.BRK_SW`, 100 % of its data is raw 1)
 - **THEN** the signal has no SNA values
 - **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc"
 
 #### Scenario: Valid label on the attribute code, SNV label on another code
-- **WHEN** a signal has `GenSigSNA "1h"`, `VAL_ ... 1 "MM37"` and `15 "SNV"` (real: `YRG_156h.CLU_TYPE`; test DBC: `Sna_800h.LEVEL` with `"1h"` and `1 "OK" 7 "SNV"`)
-- **THEN** only the labelled code is SNA (CLU_TYPE raws {15}; LEVEL raws {7})
+- **WHEN** a signal has `GenSigSNA "1h"`, `VAL_ ... 1 "MM37"` and `15 "SNV"` (real: `IMU_15Ch.CLUSTER_TYPE`; test DBC: `Sna_800h.LEVEL` with `"1h"` and `1 "OK" 7 "SNV"`)
+- **THEN** only the labelled code is SNA (CLUSTER_TYPE raws {15}; LEVEL raws {7})
 - **Evidence:** `apps/server/test/dbc.test.ts` › "lets a valid VAL_ label beat GenSigSNA"; "derives SNA values from the real h-can.dbc"
 
 #### Scenario: No-value label does not beat GenSigSNA
-- **WHEN** a signal has `GenSigSNA "FFh"` and a `VAL_` label `--` or `NO_TEMP_SENSOR` on 255 (real: `TPM_A1.TirePress_*`, `COMBI_408h.T_AUSSEN`; `MS_608h.FCOD_MOT` with `RES` on 63)
+- **WHEN** a signal has `GenSigSNA "FFh"` and a `VAL_` label `--` or `NO_TEMP_SENSOR` on 255 (real: `TPS_A1.TirePress_*`, `ICL_3A0h.T_OUTSIDE`; `ENG_5E0h.FCODE_ENG` with `RES` on 63)
 - **THEN** that code stays SNA (raw `FFh` / 63 is not shown as a measurement)
 - **Evidence:** `apps/server/test/dbc.test.ts` › "keeps GenSigSNA when the VAL_ label means no value"; "derives SNA values from the real h-can.dbc"
 
@@ -122,12 +122,12 @@ When the `VAL_` table labels the `GenSigSNA` code with anything other than `SNA`
 `GenSigSNA` SHALL NOT define an SNA value for a signal of bit length 1, nor for a checksum/CRC signal. A signal is a checksum/CRC signal exactly when its `SG_` name (without message name) matches `/^CRC_|(^|_)CHKSUM(_|$)/i`. `VAL_` labels `SNA`/`SNV` still apply to such signals. Origin: D-014.
 
 #### Scenario: 1-bit brake switch
-- **WHEN** a 1-bit signal has `GenSigSNA "1h"` (real: `BS_328h.BS` "Brake switch"; test DBC: `Sna_800h.FLAG` `40|1@1+`)
+- **WHEN** a 1-bit signal has `GenSigSNA "1h"` (real: `BRK_33Ch.BRK_STATE` "Brake switch"; test DBC: `Sna_800h.FLAG` `40|1@1+`)
 - **THEN** the signal has no SNA values
 - **Evidence:** `apps/server/test/dbc.test.ts` › "ignores GenSigSNA on 1-bit and checksum signals"; "derives SNA values from the real h-can.dbc"
 
 #### Scenario: Checksum and CRC signals
-- **WHEN** a checksum/CRC signal has a `GenSigSNA` code (real: `SAS_0C2h.LWS_CHKSUM` `"1h"`, `BS_119h.CRC_0` `"FFh"`; test DBC: `Sna_800h.CRC_800h` `"FFh"`)
+- **WHEN** a checksum/CRC signal has a `GenSigSNA` code (real: `STR_0D4h.STEER_CHKSUM` `"1h"`, `BRK_12Ah.CRC_0` `"FFh"`; test DBC: `Sna_800h.CRC_800h` `"FFh"`)
 - **THEN** the signal has no SNA values
 - **Evidence:** `apps/server/test/dbc.test.ts` › "ignores GenSigSNA on 1-bit and checksum signals"; "derives SNA values from the real h-can.dbc"
 
@@ -135,7 +135,7 @@ When the `VAL_` table labels the `GenSigSNA` code with anything other than `SNA`
 A `GenSigSNA` value of `"0h"` SHALL NOT define an SNA value. Raw 0 SHALL be SNA only if a `VAL_` label marks 0 as `SNA` or `SNV`. Origin: D-010 (260 h-can signals carry `"0h"` on counters and states where 0 is valid).
 
 #### Scenario: Counter with "0h"
-- **WHEN** a signal has `GenSigSNA "0h"` and no `VAL_` table (real: `YRG_156h.MSG_CNT_7`; test DBC and DB: `Sna_800h.COUNTER`, values 0…15)
+- **WHEN** a signal has `GenSigSNA "0h"` and no `VAL_` table (real: `IMU_15Ch.MSG_CNT_7`; test DBC and DB: `Sna_800h.COUNTER`, values 0…15)
 - **THEN** the signal has no SNA values and its value 0 is returned as a valid value by series queries
 - **Evidence:** `apps/server/test/dbc.test.ts` › "treats GenSigSNA 0h as no SNA"; `apps/server/test/series.test.ts` › "returns 0 of a 0h counter as a valid value"
 
@@ -148,12 +148,12 @@ A `GenSigSNA` value of `"0h"` SHALL NOT define an SNA value. Raw 0 SHALL be SNA 
 Each SNA code SHALL be converted to the physical value the source stores: raw (two's complement for signed signals) × factor + offset. Origin: D-012.
 
 #### Scenario: Scaled SNA
-- **WHEN** `BS_200h.DVL` (14 bit, factor 0.5) has SNA code `3FFFh`
+- **WHEN** `BRK_1A0h.WSPD_FL` (14 bit, factor 0.5) has SNA code `3FFFh`
 - **THEN** its SNA physical value is 8191.5
 - **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc"
 
 #### Scenario: Offset SNA
-- **WHEN** `MS_312h.DNMOT` (8 bit, factor 1, offset −127) has SNA code `FFh`
+- **WHEN** `ENG_2E8h.MOT_SPD_D` (8 bit, factor 1, offset −127) has SNA code `FFh`
 - **THEN** its SNA physical value is 128, and −127 (raw 0) is not SNA
 - **Evidence:** `apps/server/test/dbc.test.ts` › "derives SNA values from the real h-can.dbc"
 
@@ -166,18 +166,18 @@ Each SNA code SHALL be converted to the physical value the source stores: raw (t
 Results SHALL be ordered by tier, best first: (0) a term equals the name, its part after the first `.`, or the shown name; (1) one of them starts with the term; (2) the name or the shown name contains it; (3) only description, alias or unit do. A signal's tier is its worst term's tier; within a tier catalog order holds. API and explorer SHALL rank alike. Origin: D-018 ("explorer ranking"); tiers from the power-user report point 5; shown name like the name: D-035.
 
 #### Scenario: Exact before prefix before substring before description
-- **WHEN** the catalog holds `A_100h.DIFF_V_ANZ`, `B_200h.SPEED` (description `copy of V_ANZ`), `C_300h.V_ANZ_RAW` and `COMBI_412h.V_ANZ`, and the query is `v_anz`
-- **THEN** the order is `COMBI_412h.V_ANZ`, `C_300h.V_ANZ_RAW`, `A_100h.DIFF_V_ANZ`, `B_200h.SPEED`
+- **WHEN** the catalog holds `A_100h.DIFF_SPEED_DISP`, `B_200h.SPEED` (description `copy of SPEED_DISP`), `C_300h.SPEED_DISP_RAW` and `ICL_3A2h.SPEED_DISP`, and the query is `speed_disp`
+- **THEN** the order is `ICL_3A2h.SPEED_DISP`, `C_300h.SPEED_DISP_RAW`, `A_100h.DIFF_SPEED_DISP`, `B_200h.SPEED`
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks exact before prefix before name substring before other fields"
 
 #### Scenario: Message prefix and full name
-- **WHEN** the query is `combi_412h.v_anz` or `combi`
-- **THEN** `COMBI_412h.V_ANZ` is tier 0 for the first and tier 1 for the second
+- **WHEN** the query is `icl_3a2h.speed_disp` or `icl`
+- **THEN** `ICL_3A2h.SPEED_DISP` is tier 0 for the first and tier 1 for the second
 - **Evidence:** `packages/shared/test/search.test.ts` › "treats the part after the first dot as the signal name"
 
 #### Scenario: Shown name tiers
-- **WHEN** `COMBI_412h.V_ANZ` has shown name `Speed`, `B_200h.SPEED_RAW` has none, and `C_300h.X` has shown name `V_ANZ (C)`, and the queries are `speed`, `spe` and `(c)`
-- **THEN** for `speed` `COMBI_412h.V_ANZ` is tier 0 and `B_200h.SPEED_RAW` tier 1; for `spe` both are tier 1; for `(c)` `C_300h.X` is tier 2
+- **WHEN** `ICL_3A2h.SPEED_DISP` has shown name `Speed`, `B_200h.SPEED_RAW` has none, and `C_300h.X` has shown name `SPEED_DISP (C)`, and the queries are `speed`, `spe` and `(c)`
+- **THEN** for `speed` `ICL_3A2h.SPEED_DISP` is tier 0 and `B_200h.SPEED_RAW` tier 1; for `spe` both are tier 1; for `(c)` `C_300h.X` is tier 2
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks the shown name like the name"
 
 #### Scenario: Ties keep catalog order
@@ -187,7 +187,7 @@ Results SHALL be ordered by tier, best first: (0) a term equals the name, its pa
 
 #### Scenario: API ranks like the explorer
 - **WHEN** the test catalog is searched for `rpm`
-- **THEN** `testcar/Sna_800h.RPM` (exact) comes before the `Fast_100h.SIG_A` entries (unit `rpm`); on real data `curl -s 'localhost:7310/api/signals?q=volt' | jq -r '.items[0].id'` prints `smart451/CPC_168h.EAC_HV_Volt` (first name match; before ranking it was the description match `smart451/AC_443h.PNHV_Evap_CoolVlv_Rq_HVAC`)
+- **THEN** `testcar/Sna_800h.RPM` (exact) comes before the `Fast_100h.SIG_A` entries (unit `rpm`); on real data `curl -s 'localhost:7310/api/signals?q=volt' | jq -r '.items[0].id'` prints `smart451/DCU_1F4h.COMP_HV_Volt` (first name match; before ranking it was the description match `smart451/CLIM_44Ch.HVM_Evap_Vlv_Rq`)
 - **Evidence:** `apps/server/test/catalog.test.ts` › "ranks search results like the explorer"; the curl command
 
 #### Scenario: API ranks shown names
@@ -212,9 +212,9 @@ The API SHALL return the whole catalog in one response, unpaged, with every fiel
 For a signal with a DBC entry the catalog SHALL return the DBC file it came from, the message name and CAN ID, the message's sender where the `BO_` line names one other than `Vector__XXX` (capability `signal-groups`), and where the `SG_` line parses: factor, offset, min and max as written; plus the `VAL_` table sorted by raw value. A signal without DBC entry SHALL have no DBC details; absent fields stay absent. Origin: concept §4 („Vorhandene Metadaten werden angezeigt"), D-017 (hover infos); sender: D-053.
 
 #### Scenario: Speed signal from the real DBC
-- **WHEN** the catalog lists `smart451/COMBI_412h.V_ANZ` (`BO_ 1042 COMBI_412h: 8 CGW`, `SG_ V_ANZ : 0|9@0+ (1,0) [0|510] "km/h"`, `VAL_ 1042 V_ANZ 511 "SNV"`)
-- **THEN** its DBC details are file `h-can.dbc`, message `COMBI_412h`, ID 1042, sender `CGW`, factor 1, offset 0, min 0, max 510, values `[{raw 511, label SNV}]`
-- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (runs if the file exists; also `MS_608h.T_MOT` 1544, sender `Engine`, factor 1, offset −40, min −40, max 214; `BS_200h.DVL` 512, sender `ESP`, factor 0.5, max 8191); `curl -s 'localhost:7310/api/signals?q=COMBI_412h.V_ANZ' | jq -cS '.items[0].dbc'` prints `{"factor":1,"file":"h-can.dbc","max":510,"message":"COMBI_412h","messageId":1042,"min":0,"offset":0,"sender":"CGW","values":[{"label":"SNV","raw":511}]}`
+- **WHEN** the catalog lists `smart451/ICL_3A2h.SPEED_DISP` (`BO_ 930 ICL_3A2h: 8 CGW`, `SG_ SPEED_DISP : 8|9@1+ (1,0) [0|510] "km/h"`, `VAL_ 930 SPEED_DISP 511 "SNV"`)
+- **THEN** its DBC details are file `h-can.dbc`, message `ICL_3A2h`, ID 930, sender `CGW`, factor 1, offset 0, min 0, max 510, values `[{raw 511, label SNV}]`
+- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (runs if the file exists; also `ENG_5E0h.T_ENG` 1504, sender `Engine`, factor 1, offset −40, min −40, max 214; `BRK_1A0h.WSPD_FL` 416, sender `ESP`, factor 0.5, max 8191); `curl -s 'localhost:7310/api/signals?q=ICL_3A2h.SPEED_DISP' | jq -cS '.items[0].dbc'` prints `{"factor":1,"file":"h-can.dbc","max":510,"message":"ICL_3A2h","messageId":930,"min":0,"offset":0,"sender":"CGW","values":[{"label":"SNV","raw":511}]}`
 
 #### Scenario: Details from the fixture DBCs
 - **WHEN** the test DBCs are loaded (`test-a.dbc` before `test-b.dbc`)
@@ -230,12 +230,12 @@ For a signal with a DBC entry the catalog SHALL return the DBC file it came from
 The explorer SHALL highlight every matched part of the query terms in the shown name and unit of each row, and in the full name and description inside the hover card. Overlapping matches SHALL be shown as one highlight. Origin: D-018 ("match highlighting"); shown name in the row, full name in the card: D-035.
 
 #### Scenario: Highlight in the name
-- **WHEN** the user searches for `volt` on real data with the shipped `kipscope.yaml`
-- **THEN** the row `PTC_HV_Volt` (`CPC_448h.PTC_HV_Volt`) shows `Volt` highlighted (one `<mark>` element) and the rest of the name plain
-- **Evidence:** UI check (screenshot; `document.querySelectorAll('.explorer mark')` text); `packages/shared/test/search.test.ts` › "returns merged highlight ranges for name, unit and description" (`volt` on `CPC_448h.PTC_HV_Volt` → name `[[16, 20]]`; `v_a anz` on `COMBI_412h.V_ANZ` → `[[11, 16]]`) and › "returns highlight ranges in the shown name" (`volt` on `CPC_448h.PTC_HV_Volt` shown `PTC_HV_Volt` → shown `[[7, 11]]`; without `displayName` shown ranges equal name ranges; empty query → `[]`)
+- **WHEN** the user searches for `volt` on real data with the local `kipscope.yaml`
+- **THEN** the row `HTR_HV_Volt` (`DCU_2B8h.HTR_HV_Volt`) shows `Volt` highlighted (one `<mark>` element) and the rest of the name plain
+- **Evidence:** UI check (screenshot; `document.querySelectorAll('.explorer mark')` text); `packages/shared/test/search.test.ts` › "returns merged highlight ranges for name, unit and description" (`volt` on `DCU_2B8h.HTR_HV_Volt` → name `[[16, 20]]`; `v_a disp` on `ICL_3A2h.SPEED_DISP` → `[[11, 16]]`) and › "returns highlight ranges in the shown name" (`volt` on `DCU_2B8h.HTR_HV_Volt` shown `HTR_HV_Volt` → shown `[[7, 11]]`; without `displayName` shown ranges equal name ranges; empty query → `[]`)
 
 #### Scenario: Description match shown in the card
-- **WHEN** the user searches for `temp` on real data and hovers `T_MOT` (`MS_608h.T_MOT`, description `Motortemperatur`)
+- **WHEN** the user searches for `temp` on real data and hovers `T_ENG` (`ENG_5E0h.T_ENG`, description `Motortemperatur`)
 - **THEN** the row has no highlight in the name, rows whose name contains `TEMP` are listed above it, and the card shows `temp` highlighted in `Motortemperatur`
 - **Evidence:** UI check (screenshot of the card)
 
@@ -244,7 +244,7 @@ The explorer SHALL make every match reachable: it shows the total match count an
 
 #### Scenario: Whole catalog reachable
 - **WHEN** the search field is empty on real data
-- **THEN** the count reads the catalog size (e.g. `428 matches`), there is no `showing 100`; without groups, scrolling to the end of the list reaches the alphabetically last signal; with the shipped `kipscope.yaml`, the header counts add up to 428 and opening the last header `Other` and scrolling to the end reaches its alphabetically last signal
+- **THEN** the count reads the catalog size (e.g. `428 matches`), there is no `showing 100`; without groups, scrolling to the end of the list reaches the alphabetically last signal; with the local `kipscope.yaml`, the header counts add up to 428 and opening the last header `Other` and scrolling to the end reaches its alphabetically last signal
 - **Evidence:** UI check (screenshot of the list end and the count)
 
 #### Scenario: Show more beyond one chunk
@@ -268,13 +268,13 @@ The explorer SHALL update its list on every keystroke without a request to the s
 ### Requirement: Signal hover card
 Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal.
 
-#### Scenario: Card for V_ANZ
-- **WHEN** the user hovers `COMBI_412h.V_ANZ` on real data and the signal is shown in one window
-- **THEN** after about a third of a second a card shows `COMBI_412h.V_ANZ`, `Indicated speed`, `COMBI_412h · 0x412`, unit `km/h`, scaling `× 1 + 0`, raw step `1 km/h`, range `0 … 510 km/h`, SNA `511 km/h (raw 1FFh)`, values `511 SNV`, source `smart451 · h-can.dbc`, and under "Shown in" that window's name as its header shows it (its title, or `Window <n>` when untitled)
+#### Scenario: Card for SPEED_DISP
+- **WHEN** the user hovers `ICL_3A2h.SPEED_DISP` on real data and the signal is shown in one window
+- **THEN** after about a third of a second a card shows `ICL_3A2h.SPEED_DISP`, `Indicated speed`, `ICL_3A2h · 0x3A2`, unit `km/h`, scaling `× 1 + 0`, raw step `1 km/h`, range `0 … 510 km/h`, SNA `511 km/h (raw 1FFh)`, values `511 SNV`, source `smart451 · h-can.dbc`, and under "Shown in" that window's name as its header shows it (its title, or `Window <n>` when untitled)
 - **Evidence:** UI check (screenshot of the card)
 
 #### Scenario: Card with offset
-- **WHEN** the user hovers `MS_608h.T_MOT` on real data
+- **WHEN** the user hovers `ENG_5E0h.T_ENG` on real data
 - **THEN** the card shows scaling `× 1 - 40`, raw step `1 °C`, range `-40.0 … 214 °C`, and "Shown in" reads `no window` when no window shows it
 - **Evidence:** UI check (screenshot of the card); `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range"
 
@@ -284,7 +284,7 @@ Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL 
 - **Evidence:** `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range", "formats message IDs as hex", "formats the source line", "lists the windows showing a signal"
 
 #### Scenario: Card on keyboard focus
-- **WHEN** the user types `DVL`, presses ArrowDown once and waits
+- **WHEN** the user types `WSPD_FL`, presses ArrowDown once and waits
 - **THEN** the card for the second row opens without any pointer movement, and moving the active row moves the card
 - **Evidence:** UI check (screenshot)
 
@@ -297,7 +297,7 @@ Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL 
 The hover card's DBC range and SNA physical values SHALL be printed by number-format with the workspace's digits option; scaling and raw step SHALL stay exact. Origin: D-026 („everywhere (… hover card …)"); exact scaling: design N9 (Jan's call Q7).
 
 #### Scenario: Prefixed SNA value
-- **WHEN** the user hovers `BS_200h.DVL` on real data with the digits option at 3, then at 4
+- **WHEN** the user hovers `BRK_1A0h.WSPD_FL` on real data with the digits option at 3, then at 4
 - **THEN** the SNA line reads `8.19 k1/min (raw 3FFFh)`, then `8.192 k1/min (raw 3FFFh)`, and the raw step reads `0.5 1/min` both times
 - **Evidence:** UI check (two screenshots of the card); `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range"
 
@@ -305,31 +305,31 @@ The hover card's DBC range and SNA physical values SHALL be printed by number-fo
 The explorer SHALL support: `/` focuses the search field when focus is not in a text field (the `/` is not typed); Esc in the search field clears the query and closes the card; ArrowDown/ArrowUp move the active item (clamped at the ends) and keep it in view; Enter adds the active row exactly as its add button does. With groups (capability `signal-groups`) the items include the group headers: Enter on a header opens or closes its group and keeps it active. After each query change the active item SHALL be the first signal row shown, or the first item when no row is shown. Origin: D-020 ("The explorer list is keyboard-driven: `/` focuses the search, arrow keys move, Enter adds, Esc clears."); headers: D-053 with design G6.
 
 #### Scenario: Search, Enter adds the top hit
-- **WHEN** focus is on the page body, the user presses `/`, types `V_ANZ` and presses Enter
-- **THEN** the search field contains exactly `V_ANZ` and `COMBI_412h.V_ANZ` is added to the selected "Add to" target (also with the header `CGW 1` above the row)
+- **WHEN** focus is on the page body, the user presses `/`, types `SPEED_DISP` and presses Enter
+- **THEN** the search field contains exactly `SPEED_DISP` and `ICL_3A2h.SPEED_DISP` is added to the selected "Add to" target (also with the header `CGW 1` above the row)
 - **Evidence:** UI check (screenshot of the new window)
 
 #### Scenario: Arrows choose another hit
-- **WHEN** with the shipped `kipscope.yaml` the user types `temp`, presses ArrowDown twice and Enter; then ArrowDown twice more, Enter, ArrowDown once
-- **THEN** `MS_608h.T_LUFT` (third row under `Engine 4`) is added, the active item was visibly marked while moving; then the header `CPC 5` is active and Enter hides its five rows, and the next ArrowDown makes the header `PNHV 1` active
+- **WHEN** with the local `kipscope.yaml` the user types `temp`, presses ArrowDown twice and Enter; then ArrowDown twice more, Enter, ArrowDown once
+- **THEN** `ENG_5E0h.T_AIR` (third row under `Engine 4`) is added, the active item was visibly marked while moving; then the header `DCU 5` is active and Enter hides its five rows, and the next ArrowDown makes the header `HVM 1` active
 - **Evidence:** UI check (screenshot); `apps/web/test/explorer.test.ts` › "groups matches by best hit, Other last, collapsed on an empty query" (item order)
 
 #### Scenario: Esc clears
 - **WHEN** the search field holds `temp` and the user presses Esc
-- **THEN** the field is empty, the full list is shown (with the shipped `kipscope.yaml`: every group header, all collapsed) and the active item is the first one
+- **THEN** the field is empty, the full list is shown (with the local `kipscope.yaml`: every group header, all collapsed) and the active item is the first one
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Explorer rows are a drag source
 Pressing on an explorer row's name and moving the pointer SHALL start the app's pointer drag (design S3). When the row is selected and the selection holds two or more rows, the drag SHALL carry the whole selection in list order and follow timeseries-window "Selection overflows into new windows"; otherwise it SHALL carry that one signal, the selection unchanged, as follows. The ghost SHALL show the signal's shown name. Windows that do not show it and stay within four units SHALL be highlighted with "Drop to add"; one that would reach a fifth unit SHALL be marked not droppable ("At most 4 units per window") and ignore a drop. A drop adds, never moves; Alt/Ctrl change nothing. The add button SHALL NOT start a drag. Origin: D-020 (explorer drag; fifth unit refused as for legend drags); shown name in the ghost: D-035; selection drag: D-066 with lead default L2.
 
 #### Scenario: Drag a row onto a window
-- **WHEN** a window exists that does not show `COMBI_412h.V_ANZ`, and the user drags the `V_ANZ` row onto it with the mouse (shipped `kipscope.yaml`)
-- **THEN** windows not showing V_ANZ are highlighted with "Drop to add" while dragging, a window showing it is not highlighted, the ghost reads `V_ANZ · add` over a valid target, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
+- **WHEN** a window exists that does not show `ICL_3A2h.SPEED_DISP`, and the user drags the `SPEED_DISP` row onto it with the mouse (local `kipscope.yaml`)
+- **THEN** windows not showing SPEED_DISP are highlighted with "Drop to add" while dragging, a window showing it is not highlighted, the ghost reads `SPEED_DISP · add` over a valid target, the hover card is closed, and after the drop the signal appears in that window while the explorer row stays
 - **Evidence:** UI check (screenshot during the drag and after the drop); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
 
 #### Scenario: Fifth unit refused for an explorer drag
-- **WHEN** window A shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h), `MS_608h.T_MOT` (°C) and `BS_200h.DVL` (1/min), and the user drags the `MS_312h.DNMOT` (`rpm/10ms`) row over A and releases
-- **THEN** A is marked not droppable with the hint "At most 4 units per window" while dragging, and the release changes nothing (revision unchanged); dragging `CPC_448h.PTC_HV_Volt` (V) over A highlights it with "Drop to add"
+- **WHEN** window A shows `DCU_1F4h.COMP_HV_Volt` (V), `ICL_3A2h.SPEED_DISP` (km/h), `ENG_5E0h.T_ENG` (°C) and `BRK_1A0h.WSPD_FL` (1/min), and the user drags the `ENG_2E8h.MOT_SPD_D` (`rpm/10ms`) row over A and releases
+- **THEN** A is marked not droppable with the hint "At most 4 units per window" while dragging, and the release changes nothing (revision unchanged); dragging `DCU_2B8h.HTR_HV_Volt` (V) over A highlights it with "Drop to add"
 - **Evidence:** `apps/web/test/drag.test.ts` › "refuses an explorer drop that would make a fifth unit"; UI check (screenshot while dragging, revision before and after)
 
 #### Scenario: Legend drags unchanged
@@ -338,8 +338,8 @@ Pressing on an explorer row's name and moving the pointer SHALL start the app's 
 - **Evidence:** `apps/web/test/drag.test.ts` › "keeps the legend-drag states" and the existing drag tests
 
 #### Scenario: Drag a row onto "+ New window"
-- **WHEN** the user drags the `DVL` row (`BS_200h.DVL`) onto the "+ New window" zone
-- **THEN** a new window `Window <n>` with DVL is created, exactly as with the add button and "New window" selected
+- **WHEN** the user drags the `WSPD_FL` row (`BRK_1A0h.WSPD_FL`) onto the "+ New window" zone
+- **THEN** a new window `Window <n>` with WSPD_FL is created, exactly as with the add button and "New window" selected
 - **Evidence:** UI check (screenshot); `apps/web/test/drag.test.ts` › "adds an explorer signal to windows not showing it and to a new window"
 
 #### Scenario: Click is not a drag
@@ -348,12 +348,12 @@ Pressing on an explorer row's name and moving the pointer SHALL start the app's 
 - **Evidence:** UI check
 
 #### Scenario: Unselected row drags alone
-- **WHEN** under the query `speed` the rows `DVL` and `DVR` are selected and the user drags the unselected `V_ANZ` row onto "+ New window"
-- **THEN** the ghost reads `V_ANZ`, the new window shows only V_ANZ, and `DVL` and `DVR` stay selected
+- **WHEN** under the query `speed` the rows `WSPD_FL` and `WSPD_FR` are selected and the user drags the unselected `SPEED_DISP` row onto "+ New window"
+- **THEN** the ghost reads `SPEED_DISP`, the new window shows only SPEED_DISP, and `WSPD_FL` and `WSPD_FR` stay selected
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after the drop)
 
 #### Scenario: Selected row drags the selection
-- **WHEN** under the query `speed` the rows `DVL`, `DVR` and `DHL` are selected and the user presses the name `DVR` and moves the pointer over a window
+- **WHEN** under the query `speed` the rows `WSPD_FL`, `WSPD_FR` and `WSPD_RL` are selected and the user presses the name `WSPD_FR` and moves the pointer over a window
 - **THEN** the ghost reads `3 signals`, with ` · add` over a valid target
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while dragging)
 
@@ -376,11 +376,11 @@ Creating, renaming or reordering windows, drops, drags, new revisions and query 
 #### Scenario: Target survives window changes
 - **WHEN** windows `w1` and `w2` exist, the user marks `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed
 - **THEN** the target is still `w2`, and the next add (button or Enter) lands in `w2`
-- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SOLL after creating another window; screenshot shows it in the marked window)
+- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SET after creating another window; screenshot shows it in the marked window)
 
 #### Scenario: New window is not the target
-- **WHEN** no window is marked and the user adds `BS_200h.DVL` with Enter
-- **THEN** a new window shows DVL, is scrolled into view and flashes, the "Add to" select still shows "New window" and no window is marked
+- **WHEN** no window is marked and the user adds `BRK_1A0h.WSPD_FL` with Enter
+- **THEN** a new window shows WSPD_FL, is scrolled into view and flashes, the "Add to" select still shows "New window" and no window is marked
 - **Evidence:** UI check on smart451 (screenshot within 1 s of Enter, the select's value)
 
 ### Requirement: Add button names its target
@@ -504,7 +504,7 @@ A diagnostic catalog problem SHALL never stop the server or a catalog load: an u
 A click, double-click, Shift-click or Ctrl/Cmd-click anywhere in the explorer's result list (rows, group headers, "Show more") SHALL NOT select page text, and a press in the list SHALL NOT take the focus; a click on a row or group header SHALL move the focus into the search without selecting its text, so arrows, Shift+Arrow and Enter work after a click. The search field SHALL stay a normal text field. Origin: D-065 (quoted in design.md); focus: Jan's check 2026-10-17 (Shift+Arrow after a click).
 
 #### Scenario: Presses in the list select nothing
-- **WHEN** on smart451 at 1440×900 the user types `speed`, then clicks the padding right of `DVL`'s unit, double-clicks the name `DVR`, Shift-clicks the unit of `DHL`, Ctrl-clicks (Cmd on macOS) the SNA-dot column of `V_ANZ`, and double-clicks the group header `ESP`
+- **WHEN** on smart451 at 1440×900 the user types `speed`, then clicks the padding right of `WSPD_FL`'s unit, double-clicks the name `WSPD_FR`, Shift-clicks the unit of `WSPD_RL`, Ctrl-clicks (Cmd on macOS) the SNA-dot column of `SPEED_DISP`, and double-clicks the group header `ESP`
 - **THEN** after each step `window.getSelection().toString()` is empty and no text is highlighted, and the search field still has focus
 - **Evidence:** UI check on smart451 at 1440×900 (one screenshot after the Shift-click, the selection string after each step)
 
@@ -522,8 +522,8 @@ A click, double-click, Shift-click or Ctrl/Cmd-click anywhere in the explorer's 
 The explorer SHALL keep a selection of signal rows. A plain click on a row SHALL select only that row; Ctrl-click (Windows, Linux) or Cmd-click (macOS) SHALL toggle a row; Shift-click SHALL select the signal rows from the anchor (the last plain- or toggle-clicked row) to the clicked row, in list order across groups, headers excluded. Any click on a row SHALL make it the active row. Origin: D-066 (Jan: „selct multple entries with shift ctrl or so (win )"); keys: lead default L1.
 
 #### Scenario: Ctrl/Cmd and Shift on smart451
-- **WHEN** on smart451 at 1440×900 the user types `speed`, clicks `LWS_SPEED`, Shift-clicks `DVR`, then Ctrl-clicks (Cmd on macOS) `CompSpd_Target_V2` and `V_ANZ`
-- **THEN** after the Shift-click `LWS_SPEED`, `CompSpd_Target_V2`, `DVL`, `DVR` are marked selected and the headers `AC` and `ESP` are not; after the Ctrl/Cmd-clicks `LWS_SPEED`, `DVL`, `DVR`, `V_ANZ` are selected; the active row is always the last clicked one (`V_ANZ` at the end)
+- **WHEN** on smart451 at 1440×900 the user types `speed`, clicks `STEER_SPEED`, Shift-clicks `WSPD_FR`, then Ctrl-clicks (Cmd on macOS) `CompSpd_Target` and `SPEED_DISP`
+- **THEN** after the Shift-click `STEER_SPEED`, `CompSpd_Target`, `WSPD_FL`, `WSPD_FR` are marked selected and the headers `AC` and `ESP` are not; after the Ctrl/Cmd-clicks `STEER_SPEED`, `WSPD_FL`, `WSPD_FR`, `SPEED_DISP` are selected; the active row is always the last clicked one (`SPEED_DISP` at the end)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each of the two steps)
 
 #### Scenario: Click rules
@@ -535,34 +535,34 @@ The explorer SHALL keep a selection of signal rows. A plain click on a row SHALL
 Shift+ArrowDown/ArrowUp in the search SHALL move the active item as the plain arrow does and select the signal rows from the anchor to it; without an anchor the previously active row becomes the anchor. Plain arrows SHALL NOT change the selection. Origin: D-066; keys: lead default L1.
 
 #### Scenario: Shift+Arrow on smart451
-- **WHEN** the user types `speed`, clicks `DVL` and presses Shift+ArrowDown four times
-- **THEN** `DVL`, `DVR`, `TM_DL`, `DHL`, `DHR` are selected and `DHR` is active
+- **WHEN** the user types `speed`, clicks `WSPD_FL` and presses Shift+ArrowDown four times
+- **THEN** `WSPD_FL`, `WSPD_FR`, `TRQ_DL`, `WSPD_RL`, `WSPD_RR` are selected and `WSPD_RR` is active
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot); `apps/web/test/selection.test.ts` › "extends the range with Shift+Arrow"
 
 ### Requirement: Selection lifetime
 A query change (including Esc) SHALL clear the selection; closing a group SHALL drop its rows from it; a click on a group header (with any modifier; it opens or closes the group as before) and a click that ends a drag SHALL NOT change it otherwise. The listbox SHALL be `aria-multiselectable="true"` and a row's `aria-selected` SHALL tell whether it is selected. Origin: D-066; lifetime: lead default L1; ARIA: necessary consequence (a multi-select listbox).
 
 #### Scenario: Query change and closed group
-- **WHEN** under `speed` the rows `DVL` and `LWS_SPEED` are selected and the user Shift-clicks the group header `ESP`, then types a space and deletes it
-- **THEN** the Shift-click closes `ESP` and only `LWS_SPEED` stays selected (a drag of it carries one signal); after the query change nothing is selected
+- **WHEN** under `speed` the rows `WSPD_FL` and `STEER_SPEED` are selected and the user Shift-clicks the group header `ESP`, then types a space and deletes it
+- **THEN** the Shift-click closes `ESP` and only `STEER_SPEED` stays selected (a drag of it carries one signal); after the query change nothing is selected
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each step); `apps/web/test/selection.test.ts` › "lists the selection in list order and drops hidden rows"
 
 ### Requirement: Adding a selection
 The `+` button of a selected row, and Enter in the search while the active row is selected, SHALL add the whole selection (two or more rows) to the "Add to" target, placed as timeseries-window "Selection overflows into new windows" describes; on an unselected row they SHALL add only that row exactly as before. The selection SHALL stay after an add. Origin: D-066 („draw them to one or a new window"); `+` and Enter for a selection: lead default L3, open to Jan's veto.
 
 #### Scenario: `+` on a selection into a new window
-- **WHEN** on smart451 at 1440×900 "Add to" is "New window", the user types `speed`, clicks `DVL`, Shift-clicks `DHR` and clicks the `+` of `DHL`
-- **THEN** one new window `Window <n>` shows `DVL`, `DVR`, `TM_DL`, `DHL`, `DHR` (one axis, `1/min`), the revision rose by six (`window.create` plus five `window.addSignal`), and the five rows stay selected
+- **WHEN** on smart451 at 1440×900 "Add to" is "New window", the user types `speed`, clicks `WSPD_FL`, Shift-clicks `WSPD_RR` and clicks the `+` of `WSPD_RL`
+- **THEN** one new window `Window <n>` shows `WSPD_FL`, `WSPD_FR`, `TRQ_DL`, `WSPD_RL`, `WSPD_RR` (one axis, `1/min`), the revision rose by six (`window.create` plus five `window.addSignal`), and the five rows stay selected
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot and revision after the click)
 
 #### Scenario: `+` on an unselected row
-- **WHEN** after that, the user clicks the `+` of `V_ANZ`, which is not selected
-- **THEN** only `V_ANZ` is added, to a new window, and the revision rose by two, as before this change
+- **WHEN** after that, the user clicks the `+` of `SPEED_DISP`, which is not selected
+- **THEN** only `SPEED_DISP` is added, to a new window, and the revision rose by two, as before this change
 - **Evidence:** UI check on smart451 at 1440×900 (revision before and after)
 
 #### Scenario: Enter adds the selection
-- **WHEN** "Add to" is a window `W` showing `CPC_168h.EAC_HV_Volt`, the user types `speed`, clicks `DVL` and presses Shift+ArrowDown once, then Enter
-- **THEN** `DVL` and `DVR` are added to `W` and the revision rose by two
+- **WHEN** "Add to" is a window `W` showing `DCU_1F4h.COMP_HV_Volt`, the user types `speed`, clicks `WSPD_FL` and presses Shift+ArrowDown once, then Enter
+- **THEN** `WSPD_FL` and `WSPD_FR` are added to `W` and the revision rose by two
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of W)
 
 ### Requirement: Message period from the DBC
@@ -574,7 +574,7 @@ A DBC signal's details SHALL carry its message's cycle time in ms from `BA_ "Gen
 - **Evidence:** `apps/server/test/dbc.test.ts` › "reads GenMsgCycleTime per message"
 
 #### Scenario: Real DBCs
-- **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.dataRef == "smart451" and .dbc.cycleMs != null)] | length, (map(select(.name == "COMBI_412h.V_ANZ"))[0].dbc.cycleMs)'` runs
+- **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.dataRef == "smart451" and .dbc.cycleMs != null)] | length, (map(select(.name == "ICL_3A2h.SPEED_DISP"))[0].dbc.cycleMs)'` runs
 - **THEN** it prints `408` and `100`
 - **Evidence:** the `curl` command against the dev server
 

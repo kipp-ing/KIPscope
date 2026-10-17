@@ -58,7 +58,7 @@ The mean is the plain arithmetic mean of the samples (as stated in the series-qu
 
 The adapter reads one long-format table. Server config names the table and its columns: data reference (`vehicle`), signal name (`signal`), timestamp (`utc`), value (`value`). The default mapping is `sdlog.signals`. Every query filters `utc IS NOT NULL` and on `(vehicle, signal)`, which is the table's sort-key prefix, so range scans stay cheap. Timestamps are read with `toUnixTimestamp64Nano(utc)` regardless of the column's precision.
 
-Signal ID: `<vehicle>/<signal>`, e.g. `smart451/MS_312h.DNMOT`.
+Signal ID: `<vehicle>/<signal>`, e.g. `smart451/ENG_2E8h.MOT_SPD_D`.
 
 The catalog is built at server start from `SELECT DISTINCT vehicle, signal` (428 rows, 0.35 s on carserver; filtering out null `utc` there costs 8 s, so a signal with only null-timestamp rows would be listed but show no data), merged with DBC metadata (D6) and held in server memory; search runs there, case-insensitive across name, description, alias and unit, paged with a more-results flag. A refresh endpoint/command reloads it when new signals appear. This is metadata, not a data cache, so it doesn't conflict with concept §2.
 

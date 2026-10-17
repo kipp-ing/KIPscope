@@ -4,7 +4,7 @@
 The values table SHALL have a column `L` after A | B | Δ. Once L has stayed at one time for 150 ms, each row SHALL show its signal's exact value at L, evaluated and printed like the A cell. While L moves, the cells SHALL keep their last L values, dimmed; while L is not set, they SHALL be empty. Origin: D-032 („The values window also gets an L column"); exact values: D-024, D-029; rest delay: necessary consequence of a time that changes at frame rate (design L7, Q1).
 
 #### Scenario: Live values in the values window
-- **WHEN** a values window ("Between points: linear") lists `COMBI_412h.V_ANZ`, `BS_200h.DVL` and `CPC_448h.PTC_HV_Volt`, and the pointer rests on a timeseries window at 2026-10-13T13:08:00.093Z
+- **WHEN** a values window ("Between points: linear") lists `ICL_3A2h.SPEED_DISP`, `BRK_1A0h.WSPD_FL` and `DCU_2B8h.HTR_HV_Volt`, and the pointer rests on a timeseries window at 2026-10-13T13:08:00.093Z
 - **THEN** within 1 s the `L` column reads `23.0 km/h`, `180 1/min lin` and `363 V lin`, the same as the A cells after a click there without moving
 - **Evidence:** UI check (screenshot after the click)
 

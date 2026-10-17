@@ -66,7 +66,7 @@ For each events-line signal with states, the server SHALL derive events from its
 - **Evidence:** `packages/shared/test/events.test.ts` › "derives state changes of a signal"
 
 #### Scenario: Ignition on smart451
-- **WHEN** `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/CPC_168h.IgnCurMode&signal=smart451/BMS.contactor' | jq -c '[.events[] | select(.kind == "signal")] | length, (map(select(.category == "change")) | length), .skipped'` runs
+- **WHEN** `curl -s 'localhost:7310/api/events?dataRef=smart451&signal=smart451/DCU_1F4h.IgnMode&signal=smart451/BMS.contactor' | jq -c '[.events[] | select(.kind == "signal")] | length, (map(select(.category == "change")) | length), .skipped'` runs
 - **THEN** it prints 17, 16 and `[{"signalId":"smart451/BMS.contactor","reason":"in_events_table"}]`; the first change is `KEYON` at 2026-10-11T13:38:56.879Z
 - **Evidence:** the command
 
@@ -79,7 +79,7 @@ The server SHALL fetch only the changed rows of a signal from the source; a sign
 - **Evidence:** `apps/server/test/events.test.ts` › "skips a signal with more than 2,000 changes"
 
 #### Scenario: Cost on carserver
-- **WHEN** the dev server was restarted and `curl -s -o /dev/null -w '%{time_total}\n' 'localhost:7310/api/events?dataRef=smart451&signal=smart451/SAM_423h.KL_15'` runs twice
+- **WHEN** the dev server was restarted and `curl -s -o /dev/null -w '%{time_total}\n' 'localhost:7310/api/events?dataRef=smart451&signal=smart451/BCM_42Eh.IGN_15'` runs twice
 - **THEN** both answer 200; goal, measured and reported but not pass/fail: the first ≤ 1 s, the second ≤ 0.1 s
 - **Evidence:** the command (both times)
 
@@ -118,11 +118,11 @@ Table events SHALL be loaded once per data ref and catalog load and a signal's c
 - **Evidence:** `apps/server/test/events.test.ts` › "caches per catalog load and prefetches", "keeps the first 100,000 events"
 
 ### Requirement: Events-line signals in the project file
-The project file's `events.signals` (at most 8 signal IDs) SHALL give the start value of the workspace's events-line signals; commands win until restart and nothing writes the file. The shipped file SHALL list `smart451/CPC_168h.IgnCurMode` and `smart451/BMS.contactor`. Origin: D-059 („automatically only two things (yaml define) IGN and contactor state"); D-051 pattern; names: D-058 (Jan's answers).
+The project file's `events.signals` (at most 8 signal IDs) SHALL give the start value of the workspace's events-line signals; commands win until restart and nothing writes the file. The shipped file SHALL list `smart451/DCU_1F4h.IgnMode` and `smart451/BMS.contactor`. Origin: D-059 („automatically only two things (yaml define) IGN and contactor state"); D-051 pattern; names: D-058 (Jan's answers).
 
 #### Scenario: Reading the section
-- **WHEN** project files with `events: {signals: [smart451/CPC_168h.IgnCurMode]}`, with 9 entries, with `signals: [nodataref]` and with `events: {colour: red}` are read
-- **THEN** the first gives `["smart451/CPC_168h.IgnCurMode"]`; the others are problems naming `events.signals` (at most 8; not a signal ID) and `events: unknown key "colour"`, handled like the other project-file problems
+- **WHEN** project files with `events: {signals: [smart451/DCU_1F4h.IgnMode]}`, with 9 entries, with `signals: [nodataref]` and with `events: {colour: red}` are read
+- **THEN** the first gives `["smart451/DCU_1F4h.IgnMode"]`; the others are problems naming `events.signals` (at most 8; not a signal ID) and `events: unknown key "colour"`, handled like the other project-file problems
 - **Evidence:** `apps/server/test/project.test.ts` › "reads events.signals"
 
 ### Requirement: Waiting signals
@@ -138,7 +138,7 @@ The sidebar's Events tab SHALL show the heading `EVENTS` with `<shown> of <total
 
 #### Scenario: Panel on smart451
 - **WHEN** the six-window setup is shown on smart451 at 1440×900 with the shipped project file, and the user opens the Events tab
-- **THEN** the heading shows `51 of 402`, the field `active changes`, the line `Active faults and state changes`; chips Active fault 13, Stored fault 4, Not tested 38, State change 38, Snapshot 305, Request refused 2, Transport error 2 (on: active, change); ECU chips BMS 385 and IgnCurMode 17; the events-line signals IgnCurMode and BMS.contactor; the list starts with a day band and the first ignition `KEYON` of 2026-10-11 at `15:38:56.879`
+- **THEN** the heading shows `51 of 402`, the field `active changes`, the line `Active faults and state changes`; chips Active fault 13, Stored fault 4, Not tested 38, State change 38, Snapshot 305, Request refused 2, Transport error 2 (on: active, change); ECU chips BMS 385 and IgnMode 17; the events-line signals IgnMode and BMS.contactor; the list starts with a day band and the first ignition `KEYON` of 2026-10-11 at `15:38:56.879`
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of the panel, `curl` of `/api/events` for the counts)
 
 ### Requirement: Events list

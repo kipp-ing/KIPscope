@@ -13,8 +13,8 @@ Two UI-user agents drove the app on real carserver data before the spec of the n
 
 ## Bugs and irritations found
 
-- should: `CPC_448h.PTC_HV_Volt` window range reads "1036-01-11 … 3937-05-09" (garbage timestamps).
-- should: T_SOLL showed about −40 °C although SNA-filtered (check SNA rule vs data); DNMOT around −120 with unit `rpm/10ms`.
+- should: `DCU_2B8h.HTR_HV_Volt` window range reads "1036-01-11 … 3937-05-09" (garbage timestamps).
+- should: T_SET showed about −40 °C although SNA-filtered (check SNA rule vs data); MOT_SPD_D around −120 with unit `rpm/10ms`.
 - should: "°C" garbled in the rotated axis title.
 - should: window header wraps with long titles (Remove on its own line).
 - should: window names drift (first signal name, `w6`), no rename; "Add to" lists raw IDs; sticky global "Add to" led to adding to the wrong window.

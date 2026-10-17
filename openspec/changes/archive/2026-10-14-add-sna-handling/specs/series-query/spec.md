@@ -43,9 +43,9 @@ Each aggregated bucket SHALL cover a contiguous time interval and report its sta
 - **Evidence:** `apps/server/test/series.test.ts` › "returns all-SNA buckets without mean, min and max"
 
 #### Scenario: Real speed overview
-- **WHEN** the full extent of `smart451/COMBI_412h.V_ANZ` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) is requested with target 2,000
+- **WHEN** the full extent of `smart451/ICL_3A2h.SPEED_DISP` (2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z) is requested with target 2,000
 - **THEN** no bucket reports a mean, minimum or maximum of 511, and the SNA counts sum to 4,411
-- **Evidence:** command `curl -s 'localhost:7310/api/series?signal=smart451/COMBI_412h.V_ANZ&from=2026-10-11T12:34:24.824Z&to=2026-10-13T13:17:33.220Z&target=2000' | jq '([.max[]|select(.!=null)]|max), (.sna|add)'` prints `71` and `4411`
+- **Evidence:** command `curl -s 'localhost:7310/api/series?signal=smart451/ICL_3A2h.SPEED_DISP&from=2026-10-11T12:34:24.824Z&to=2026-10-13T13:17:33.220Z&target=2000' | jq '([.max[]|select(.!=null)]|max), (.sna|add)'` prints `71` and `4411`
 
 ### Requirement: Raw points
 Raw points SHALL be returned with their original timestamps and SHALL NOT be shifted onto a common sampling grid. Valid values SHALL be returned unmodified. An SNA point SHALL be returned at its timestamp marked as SNA and without a value.
@@ -55,9 +55,9 @@ Raw points SHALL be returned with their original timestamps and SHALL NOT be shi
 - **THEN** the result contains exactly those timestamps
 
 #### Scenario: SNA point in a raw result
-- **WHEN** raw points of `smart451/COMBI_412h.V_ANZ` are requested for 2026-10-13T09:56:59Z to 09:57:01Z (20 points, 3 of them stored as 511)
+- **WHEN** raw points of `smart451/ICL_3A2h.SPEED_DISP` are requested for 2026-10-13T09:56:59Z to 09:57:01Z (20 points, 3 of them stored as 511)
 - **THEN** the result has 20 timestamps; the points at 09:56:59.837, 09:56:59.937 and 09:57:00.037 are marked SNA without value; the other 17 carry their value 0
-- **Evidence:** `apps/server/test/series.test.ts` › "flags SNA raw points without value" (test DB: `Sna_800h.SPEED`); command `curl -s 'localhost:7310/api/series?signal=smart451/COMBI_412h.V_ANZ&from=2026-10-13T09:56:59Z&to=2026-10-13T09:57:01Z' | jq -c '.v'` prints 8 zeros, 3 `null`, 9 zeros
+- **Evidence:** `apps/server/test/series.test.ts` › "flags SNA raw points without value" (test DB: `Sna_800h.SPEED`); command `curl -s 'localhost:7310/api/series?signal=smart451/ICL_3A2h.SPEED_DISP&from=2026-10-13T09:56:59Z&to=2026-10-13T09:57:01Z' | jq -c '.v'` prints 8 zeros, 3 `null`, 9 zeros
 
 #### Scenario: Signed SNA point
 - **WHEN** raw points of `testcar/Sna_800h.TEMP` (signed, SNA −128) are requested

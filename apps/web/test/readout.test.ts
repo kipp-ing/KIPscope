@@ -23,11 +23,11 @@ const T0 = 1_791_896_880_000_000_000n;
 const ms = (n: number) => BigInt(Math.round(n * 1_000_000));
 const at = (offsetMs: number) => T0 + ms(offsetMs);
 
-/** V_ANZ-like raw window 13:08:00 – 13:08:03: 23 at .093 s, 22 at .194 s, 18 at .995 s. */
+/** SPEED_DISP-like raw window 13:08:00 – 13:08:03: 23 at .093 s, 22 at .194 s, 18 at .995 s. */
 function rawSeries(extra: Partial<RawSeries> = {}, omit: ("before" | "after")[] = []): RawSeries {
   const series: RawSeries = {
     kind: "raw",
-    signalId: "c/V_ANZ",
+    signalId: "c/SPEED_DISP",
     from: T0.toString(),
     to: at(3000).toString(),
     t: encodeTimes([at(93), at(194), at(995)]),
@@ -49,7 +49,7 @@ function buckets(
 ): BucketSeries {
   return {
     kind: "buckets",
-    signalId: "c/V_ANZ",
+    signalId: "c/SPEED_DISP",
     from: T0.toString(),
     to: at(3000).toString(),
     width: "1000000000",
@@ -505,7 +505,7 @@ describe("readouts across gaps (add-gap-display)", () => {
     const MS = 1_000_000n;
     const stale: SignalGaps = { logger: [{ from: gapFrom, to: gapTo }] };
 
-    // LWS_ANGLE: 500 buckets of 20 ms from 18:51:11.400 (means alternating -1400 / 1400, so 18:51:15.000
+    // STEER_ANGLE: 500 buckets of 20 ms from 18:51:11.400 (means alternating -1400 / 1400, so 18:51:15.000
     // is bucket 180, even: -1400), period 10 ms.
     const starts = Array.from(
       { length: 500 },
@@ -514,7 +514,7 @@ describe("readouts across gaps (add-gap-display)", () => {
     const mean = starts.map((_, i) => (i % 2 === 0 ? -1400 : 1400));
     const lws: BucketSeries = {
       kind: "buckets",
-      signalId: "smart451/SAS_0C2h.LWS_ANGLE",
+      signalId: "smart451/STR_0D4h.STEER_ANGLE",
       from: viewFrom.toString(),
       to: viewTo.toString(),
       width: (20n * MS).toString(),
@@ -532,12 +532,12 @@ describe("readouts across gaps (add-gap-display)", () => {
       value: -1400,
     });
 
-    // PTC_HV_Volt: 95 points 100 ms apart from the view start; 18:51:15.000 lies 15 ms after point 36
+    // HTR_HV_Volt: 95 points 100 ms apart from the view start; 18:51:15.000 lies 15 ms after point 36
     // (350) towards point 37 (351): 350.15, interpolated, not logger_gap.
     const times = Array.from({ length: 95 }, (_, i) => viewFrom + BigInt(i) * 100n * MS);
     const ptc: RawSeries = {
       kind: "raw",
-      signalId: "smart451/CPC_448h.PTC_HV_Volt",
+      signalId: "smart451/DCU_2B8h.HTR_HV_Volt",
       from: viewFrom.toString(),
       to: viewTo.toString(),
       t: encodeTimes(times),

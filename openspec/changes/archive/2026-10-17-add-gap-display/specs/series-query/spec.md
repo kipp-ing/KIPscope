@@ -9,7 +9,7 @@ The server SHALL evaluate one signal at one time `t` in mode `line` (default) or
 - **Evidence:** `apps/server/test/value.http.test.ts` › "evaluates SPEED at points, between points and in SNA runs"
 
 #### Scenario: Real speed between two points
-- **WHEN** a client requests `/api/value?signal=smart451/COMBI_412h.V_ANZ&t=2026-10-13T13:08:00.1435Z`
+- **WHEN** a client requests `/api/value?signal=smart451/ICL_3A2h.SPEED_DISP&t=2026-10-13T13:08:00.1435Z`
 - **THEN** `jq -c .value` prints `{"kind":"interpolated","value":22.5}` (neighbours 23 at 13:08:00.093Z and 22 at 13:08:00.194Z)
 - **Evidence:** the `curl` command against the dev server
 
@@ -39,8 +39,8 @@ When the neighbours of `t` are split, the value SHALL be `{kind: "none", reason}
 - **Evidence:** `packages/shared/test/cursor.test.ts` › "returns no value across a gap"
 
 #### Scenario: Real signal in a logger gap and in a dropout
-- **WHEN** a client requests `/api/value?signal=smart451/CPC_448h.PTC_HV_Volt&t=2026-10-13T09:27:55Z` and `/api/value?signal=smart451/SAS_0C2h.LWS_ANGLE&t=2026-10-13T09:34:36.6Z&mode=step`
-- **THEN** `jq -c .value` prints `{"kind":"none","reason":"logger_gap"}` and `{"kind":"none","reason":"period_gap"}` (LWS_ANGLE, 10 ms: nothing from 09:34:36.204 to 09:34:37.004 UTC)
+- **WHEN** a client requests `/api/value?signal=smart451/DCU_2B8h.HTR_HV_Volt&t=2026-10-13T09:27:55Z` and `/api/value?signal=smart451/STR_0D4h.STEER_ANGLE&t=2026-10-13T09:34:36.6Z&mode=step`
+- **THEN** `jq -c .value` prints `{"kind":"none","reason":"logger_gap"}` and `{"kind":"none","reason":"period_gap"}` (STEER_ANGLE, 10 ms: nothing from 09:34:36.204 to 09:34:37.004 UTC)
 - **Evidence:** the `curl` commands against the dev server
 
 #### Scenario: Gap info unavailable

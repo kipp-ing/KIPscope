@@ -9,7 +9,7 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Error in the strip
-- **WHEN** the marked window shows four units and the user adds `MS_312h.DNMOT` from the explorer with Enter, then clicks the message
+- **WHEN** the marked window shows four units and the user adds `ENG_2E8h.MOT_SPD_D` from the explorer with Enter, then clicks the message
 - **THEN** the strip shows the `too_many_units` message in the error colour, and the click removes it
 - **Evidence:** UI check on smart451 (screenshot of the strip before and after the click)
 
@@ -19,8 +19,8 @@ There SHALL be no separate top bar. The top row SHALL hold the "Signals" toggle 
 - **Evidence:** UI check (rects read before and during the drag, screenshot during the drag)
 
 #### Scenario: Drop on the attribution
-- **WHEN** the user drags the `BS_200h.DVL` explorer row onto the attribution text in the strip and releases there
-- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows DVL, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
+- **WHEN** the user drags the `BRK_1A0h.WSPD_FL` explorer row onto the attribution text in the strip and releases there
+- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows WSPD_FL, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, revision and tab count after); `apps/web/test/drag.test.ts` › "maps drop elements to targets" stays green
 
 #### Scenario: Compact bars

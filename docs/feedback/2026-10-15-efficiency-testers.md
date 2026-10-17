@@ -2,7 +2,7 @@
 
 Three UI-user agents ran the same four tasks one after another on real smart451 data, each with a strong opinion on efficient UI: a keyboard-first power user, an automotive measurement engineer (CANape/INCA, many short investigations a day) and an interaction designer for expert tools. Condensed by the lead. All ran at a 1000 × 557 px viewport (the browser tool could not resize), so screen-use findings are worst case.
 
-Tasks: T1 V_ANZ + DVL in one window, zoom to the acceleration on 2026-10-13 around 15:08, measure Δt/Δv with A/B; T2 values window with V_ANZ, DVL, T_MOT, read A and B; T3 temperature window, whole day, back; T4 move and copy a signal, undo a mistaken zoom.
+Tasks: T1 SPEED_DISP + WSPD_FL in one window, zoom to the acceleration on 2026-10-13 around 15:08, measure Δt/Δv with A/B; T2 values window with SPEED_DISP, WSPD_FL, T_ENG, read A and B; T3 temperature window, whole day, back; T4 move and copy a signal, undo a mistaken zoom.
 
 ## Counts
 
@@ -39,7 +39,7 @@ Drag-select zoom in one gesture; Back restores range and cursors exactly; drag f
 - should (keyboard): layout breaks horizontally when windows are added; sidebar covers the left axis at 1000 px.
 - could (designer): status colours (green "complete", yellow badge) compete with data colours; legend 12 px below the chart; ~55 px header for one status line.
 - could: Alt+drag copy is not discoverable; no hover/cursor affordance on legend rows.
-- note: T_INNEN −40 °C (raw 0) squashes the temperature axis; valid per D-019's rule, testers would flag it.
+- note: T_CABIN −40 °C (raw 0) squashes the temperature axis; valid per D-019's rule, testers would flag it.
 
 ## Designer's target layout
 

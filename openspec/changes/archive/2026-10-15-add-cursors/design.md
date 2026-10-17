@@ -7,8 +7,8 @@ See proposal.md (Why) and D-023. Current state that shapes the approach:
 - **Workspace.** `Workspace.windows` is `TimeseriesWindow[]` with `kind: "timeseries"`, and `applyCommand` assumes every window has a range, a display and a height. Linked ranges (D-021) map over all windows. `lastZoomed` names the window set last.
 - **Drag.** One pointer drag owned by `App` (D-022). Sources are legend rows (`DragSource {windowId, assignmentId, signalId}`) and explorer rows (`ExplorerDragSource {signalId}`). Drop targets are found by `[data-window-id]` / `[data-drop="new"]`. Auto-scroll already runs in a 48 px band at the edges of `<main>`, at up to 24 px per frame. "+ New window" is rendered after the last window, so it can be off screen.
 - **Plot gestures (uPlot).** A drag of more than 5 px is rectangle zoom (`setSelect`). A double-click resets to the signals' extents through App. The wheel zooms, and Shift or horizontal wheel pans. The crosshair hides after zooms. `legend: {show: false}`, so there is no hover readout today.
-- **Series data.** `DataSource.before(t)` gives the last point `< t` and `after(t)` the first point `≥ t`, each `LIMIT 1`. Every raw `/api/series` request already runs them. Stored values carry float noise (`CPC_448h.PTC_HV_Volt` stores `362.40000000000003`).
-- **Real data for checks.** smart451 on 2026-10-13 around 13:08:00Z (driving). V_ANZ steps every ~100 ms (23, 22, 21 …). DVL changes every 20 ms (179.5 at .083, 180 at .103). The SNA run of V_ANZ is at 09:56:59.837–09:57:00.037.
+- **Series data.** `DataSource.before(t)` gives the last point `< t` and `after(t)` the first point `≥ t`, each `LIMIT 1`. Every raw `/api/series` request already runs them. Stored values carry float noise (`DCU_2B8h.HTR_HV_Volt` stores `362.40000000000003`).
+- **Real data for checks.** smart451 on 2026-10-13 around 13:08:00Z (driving). SPEED_DISP steps every ~100 ms (23, 22, 21 …). WSPD_FL changes every 20 ms (179.5 at .083, 180 at .103). The SNA run of SPEED_DISP is at 09:56:59.837–09:57:00.037.
 
 ## Goals / Non-Goals
 
@@ -201,8 +201,8 @@ Wire example (`GET /api/workspace`):
 ```json
 {"revision": 12, "workspace": {"windows": [
   {"id": "w1", "kind": "timeseries", "range": {"from": "1791896880000000000", "to": "1791896883000000000"},
-   "display": {"mode": "line", "envelope": false}, "signals": [{"id": "a2", "signalId": "smart451/COMBI_412h.V_ANZ"}]},
-  {"id": "w3", "kind": "values", "mode": "line", "signals": [{"id": "a4", "signalId": "smart451/BS_200h.DVL"}]}],
+   "display": {"mode": "line", "envelope": false}, "signals": [{"id": "a2", "signalId": "smart451/ICL_3A2h.SPEED_DISP"}]},
+  {"id": "w3", "kind": "values", "mode": "line", "signals": [{"id": "a4", "signalId": "smart451/BRK_1A0h.WSPD_FL"}]}],
  "nextId": 5, "linkTime": true, "lastZoomed": "w1", "colors": {"…": 0},
  "cursors": {"a": "1791896880093000000", "diff": false}}}
 ```
@@ -250,10 +250,10 @@ export function formatCursorNumber(v: number): string;
 - 200: `CursorValueResult`. `at = source.before(ref, t + 1n)`, `next = source.after(ref, t + 1n)`, both with the catalog's SNA ranges (null = SNA), in parallel through the queue. `value = evaluateAt(t, mode, at, next)`.
 - Errors (`ApiError` body, as `/api/series`): 400 `invalid_request` (bad or out-of-bounds `t`, unknown `mode`), 404 `unknown_signal`, 503 `catalog_unavailable` (checked first, as for series), 502 `source_error`. A client that closes the request aborts its queries.
 
-Example: `curl -s 'localhost:7310/api/value?signal=smart451/BS_200h.DVL&t=2026-10-13T13:08:00.093Z'` →
+Example: `curl -s 'localhost:7310/api/value?signal=smart451/BRK_1A0h.WSPD_FL&t=2026-10-13T13:08:00.093Z'` →
 
 ```json
-{"signalId": "smart451/BS_200h.DVL", "t": "1791896880093000000", "mode": "line",
+{"signalId": "smart451/BRK_1A0h.WSPD_FL", "t": "1791896880093000000", "mode": "line",
  "at": {"t": "1791896880083000000", "v": 179.5}, "next": {"t": "1791896880103000000", "v": 180},
  "value": {"kind": "interpolated", "value": 179.75}}
 ```
@@ -354,7 +354,7 @@ export function defaultCursorTime(range: { from: bigint; to: bigint }, cursor: C
 
 - [A plain drop of a legend row into the values window removes the signal from its chart (D-023 "like any window").] → Alt/Ctrl copies, and the hint says so. Q2 asks Jan whether drops into a values window should copy by default.
 - [Exact raw hits are rare with clicks: values mostly read `lin` or `hold`.] → The CLI sets exact times. Snapping to raw points is out of scope and can be added later.
-- [Interpolation across recording pauses gives values inside a pause (PTC_HV_Volt at 2026-10-13T12:40Z holds 4.1 over about 1.4 h in "hold").] → Consistent with the drawn curve (D-009). The tooltip names both neighbours with their times.
+- [Interpolation across recording pauses gives values inside a pause (HTR_HV_Volt at 2026-10-13T12:40Z holds 4.1 over about 1.4 h in "hold").] → Consistent with the drawn curve (D-009). The tooltip names both neighbours with their times.
 - [`before()` has no lower time bound.] → It already runs for every raw series request without complaint. If a source shows slow `LIMIT 1` scans, that is a DataSource fix, not a spec change.
 - [The 500 ms click gate delays the command.] → The line shows at once; only the values follow later.
 

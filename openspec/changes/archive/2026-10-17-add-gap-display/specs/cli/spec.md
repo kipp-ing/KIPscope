@@ -9,6 +9,6 @@
 - **Evidence:** `apps/cli/test/cli.test.ts` › "reads a value at a time and at a cursor" (gap case added)
 
 #### Scenario: Real dropout
-- **WHEN** `kipscope value smart451/SAS_0C2h.LWS_ANGLE "2026-10-13 11:34:36.6" | jq -c .data.value` runs against the dev server
+- **WHEN** `kipscope value smart451/STR_0D4h.STEER_ANGLE "2026-10-13 11:34:36.6" | jq -c .data.value` runs against the dev server
 - **THEN** it prints `{"kind":"none","reason":"period_gap"}`
 - **Evidence:** the command

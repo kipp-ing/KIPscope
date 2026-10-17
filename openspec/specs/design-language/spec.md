@@ -72,7 +72,7 @@ The explorer heading SHALL be a section label; group headers slate-100 bands, 4 
 Every window SHALL be a white tile with a slate-200 border and 6 px radius; its 24 px header line holds a slate-100 bottom divider, the title in 12 px weight 600 slate-800 and the badge as a pill with slate-100 fill, slate-600 text and no border. The plot grid SHALL be slate-200, neutral tick labels slate-500 at 11 px. Origin: D-055 (mock window); 24 px: `workspace-layout` "Compact window header".
 
 #### Scenario: Header and badge
-- **WHEN** a timeseries window on smart451 shows `COMBI_412h.V_ANZ` aggregated
+- **WHEN** a timeseries window on smart451 shows `ICL_3A2h.SPEED_DISP` aggregated
 - **THEN** its `.window-header` is ≤ 24 px tall with a bottom border colour `rgb(241, 245, 249)`; the window's border colour is `rgb(226, 232, 240)` and radius 6 px; the badge has background `rgb(241, 245, 249)`, colour `rgb(71, 85, 105)` and no border
 - **Evidence:** UI check on smart451 at 1440×900 (computed values, one screenshot)
 
@@ -88,8 +88,8 @@ Cursor lines and flags SHALL be slate-900: A solid with a filled flag, B dashed 
 Legend rows SHALL show a 12 × 3 px line swatch, the name monospace in slate-800, values sans in tabular figures, the load status as a pill (loading slate-100 / slate-600, failed in the error fill and colour) and the SNA share as a pill in the SNA fill and ink; complete shows no pill. The live label SHALL be white with a 1 px signal-colour border, 4 px radius, weight 600. Columns stay. Origin: D-055 (mock legend, "Pills and list"; `ready` is illustration).
 
 #### Scenario: Pills in the legend
-- **WHEN** a window on smart451 shows a signal with a non-zero SNA share (its legend shows `SNA … %` today) and `BS_200h.DVL` while DVL still loads, then after both loaded
-- **THEN** while loading DVL's status pill has background `rgb(241, 245, 249)`; the SNA share has background `rgb(255, 251, 235)` and colour `rgb(146, 64, 14)`; after loading no status pill is shown; each swatch measures 12 × 3 px (±0.5)
+- **WHEN** a window on smart451 shows a signal with a non-zero SNA share (its legend shows `SNA … %` today) and `BRK_1A0h.WSPD_FL` while WSPD_FL still loads, then after both loaded
+- **THEN** while loading WSPD_FL's status pill has background `rgb(241, 245, 249)`; the SNA share has background `rgb(255, 251, 235)` and colour `rgb(146, 64, 14)`; after loading no status pill is shown; each swatch measures 12 × 3 px (±0.5)
 - **Evidence:** UI check on smart451 (computed values, screenshot while loading and after)
 
 #### Scenario: Live cells keep their column
@@ -114,8 +114,8 @@ The series palette SHALL be, in order, Okabe-Ito `#0072B2`, `#E69F00`, `#009E73`
 - **Evidence:** `packages/shared/test/workspace.test.ts` › "uses Okabe-Ito first, ten distinguishable colours"; `packages/shared/test/apply.test.ts` › "assigns stable colours across windows" stays green
 
 #### Scenario: Colours on screen
-- **WHEN** a fresh workspace gets `COMBI_412h.V_ANZ` and then `BS_200h.DVL` in one window
-- **THEN** V_ANZ is drawn, listed and SNA-marked in `#0072B2` and DVL in `#E69F00`
+- **WHEN** a fresh workspace gets `ICL_3A2h.SPEED_DISP` and then `BRK_1A0h.WSPD_FL` in one window
+- **THEN** SPEED_DISP is drawn, listed and SNA-marked in `#0072B2` and WSPD_FL in `#E69F00`
 - **Evidence:** UI check on smart451 (screenshot, swatch background `rgb(0, 114, 178)` and `rgb(230, 159, 0)`)
 
 ### Requirement: Spec numbers kept
@@ -130,8 +130,8 @@ The restyle SHALL keep every size other specs set for the page: sidebar 240 px, 
 A selected explorer row SHALL show a 3 px accent bar on its left edge (`box-shadow: inset 3px 0 0 var(--accent)`) and its name in the accent ink, with its fill unchanged, so the accent soft fill stays the mark of the active row alone; a row both active and selected shows both. Rows stay ≤ 24 px. Origin: lead default L1 (selected style per the design language, active style distinct); tokens: D-055.
 
 #### Scenario: Selected and active rows apart
-- **WHEN** on smart451 at 1440×900 the user types `speed`, clicks `DVL` and Shift-clicks `DHL`
-- **THEN** `DVR` (selected, not active) has a computed `box-shadow` containing `rgb(2, 132, 199) 3px 0px 0px 0px inset`, a transparent background and name colour `rgb(7, 89, 133)`; `DHL` (selected and active) has the same bar and background `rgb(224, 242, 254)`; `DHR` (neither) has neither; every row is ≤ 24 px tall
+- **WHEN** on smart451 at 1440×900 the user types `speed`, clicks `WSPD_FL` and Shift-clicks `WSPD_RL`
+- **THEN** `WSPD_FR` (selected, not active) has a computed `box-shadow` containing `rgb(2, 132, 199) 3px 0px 0px 0px inset`, a transparent background and name colour `rgb(7, 89, 133)`; `WSPD_RL` (selected and active) has the same bar and background `rgb(224, 242, 254)`; `WSPD_RR` (neither) has neither; every row is ≤ 24 px tall
 - **Evidence:** UI check on smart451 at 1440×900 (computed values, one screenshot)
 
 ### Requirement: Gap band look

@@ -4,8 +4,8 @@
 The CLI SHALL offer `view list`, `view save TITLE [--name N] [--note TEXT] [--overwrite]`, `view open NAME`, `view delete NAME` and `view import FILE [--name N] [--overwrite] [--open]`, each printing one JSON line; `view open` SHALL report like a command and honour `--wait`. An unreadable FILE or one over 256 KiB SHALL be a usage error. Origin: concept §7 (everything from the shell); concept §9 („… über CLI").
 
 #### Scenario: Forms
-- **WHEN** the argument lists `view save "Drive 3" --note "BLS first" --overwrite`, `view open drive-3`, `view import x.yaml --name copy --open` and `view save` (no title) are parsed
-- **THEN** the first three give the requests of design V8 (`POST /api/views {title: "Drive 3", note: "BLS first", overwrite: true}`, `POST /api/views/open {name: "drive-3"}`, an import with `name: "copy", open: true`); the last is a usage error
+- **WHEN** the argument lists `view save "Drive 3" --note "BRK_LMP first" --overwrite`, `view open drive-3`, `view import x.yaml --name copy --open` and `view save` (no title) are parsed
+- **THEN** the first three give the requests of design V8 (`POST /api/views {title: "Drive 3", note: "BRK_LMP first", overwrite: true}`, `POST /api/views/open {name: "drive-3"}`, an import with `name: "copy", open: true`); the last is a usage error
 - **Evidence:** `apps/cli/test/args.test.ts` › "maps the view forms"
 
 #### Scenario: Save, list, open over HTTP

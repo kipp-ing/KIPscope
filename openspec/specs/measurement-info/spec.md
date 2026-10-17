@@ -53,14 +53,14 @@ The project file (read once at start, `display-names` "Project file location") M
 - **Evidence:** `apps/server/test/project.test.ts` › "reads the measurement section"; `apps/server/test/workspace.http.test.ts` › "starts with the measurement from the project file"
 
 #### Scenario: Commands win until restart
-- **WHEN** the server started with the shipped `kipscope.yaml` (object `smart451`), `kipscope measurement object testcar` runs, and the server is restarted
+- **WHEN** the server started with a project file whose object is `smart451`, `kipscope measurement object testcar` runs, and the server is restarted
 - **THEN** after the command the object is `testcar`; after the restart it is `smart451` again and the file is unchanged
-- **Evidence:** lead's manual check (`curl -s localhost:7310/api/workspace | jq -r .workspace.measurement.object` before and after `scripts/restart-server.sh`; `git diff --quiet kipscope.yaml`)
+- **Evidence:** lead's manual check (`curl -s localhost:7310/api/workspace | jq -r .workspace.measurement.object` before and after `scripts/restart-server.sh`; the file's checksum before and after)
 
 #### Scenario: Display rules unchanged
-- **WHEN** the shipped `kipscope.yaml` is loaded, and a file with only a `measurement` section is loaded
-- **THEN** the first gives the same display rules as before this change and the measurement info `{object: "smart451"}` (Jan, Q7); the second gives no rules and the measurement info
-- **Evidence:** `apps/server/test/project.test.ts` existing tests stay green, plus › "reads the measurement section"
+- **WHEN** `demo/kipscope.yaml` is loaded, and a file with only a `measurement` section is loaded
+- **THEN** the first gives its display rules and its measurement info; the second gives no rules and the measurement info
+- **Evidence:** `apps/server/test/project.test.ts` › "parses the demo project file: names, measurement and events (D-076)", "reads the measurement section"
 
 ### Requirement: Invalid measurement section stops the server
 A `measurement` section with an unknown key, a text over its limit, a bad meta key, more than 8 meta entries or a value that is not text, a number or a boolean SHALL stop the server before it listens, like an invalid display section: exit code 1 and one line per problem in the form `<path>: <field>: <problem>`. Origin: necessary consequence of `display-names` "Invalid project file stops the server" (one rule for the whole file; a typo must not pass silently).

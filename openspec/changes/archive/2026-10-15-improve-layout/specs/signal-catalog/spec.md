@@ -6,7 +6,7 @@ The explorer's "Add to" target SHALL be the marked window (workspace-layout "Mar
 #### Scenario: Target survives window changes
 - **WHEN** windows `w1` and `w2` exist, the user marks `w2`, then a third window is created (via "New window" add or the CLI) and `w1` is renamed
 - **THEN** the target is still `w2`, and the next add (button or Enter) lands in `w2`
-- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SOLL after creating another window; screenshot shows it in the marked window)
+- **Evidence:** `apps/web/test/explorer.test.ts` › "keeps the Add to target by window ID while windows change"; UI check (add T_SET after creating another window; screenshot shows it in the marked window)
 
 #### Scenario: Removed target falls back
 - **WHEN** the marked window is removed, by its menu or because a move emptied it

@@ -4,7 +4,7 @@
 
 Lets the user reach a point in time without repeated zooming: type a time or range, pick a span, or use keys to zoom, pan and jump to the data extent. Every navigation is an ordinary range change of the target window(s) and can be undone with "Back".
 
-Conventions for the evidence below: real smart451 data, Europe/Berlin (CEST, UTC+2 on 2026-10-13). `COMBI_412h.V_ANZ` has data from 2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z; its extent view is 2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221 local.
+Conventions for the evidence below: real smart451 data, Europe/Berlin (CEST, UTC+2 on 2026-10-13). `ICL_3A2h.SPEED_DISP` has data from 2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z; its extent view is 2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221 local.
 
 ## ADDED Requirements
 
@@ -12,7 +12,7 @@ Conventions for the evidence below: real smart451 data, Europe/Berlin (CEST, UTC
 The option bar SHALL have a "Go to" field. Enter SHALL resolve its text against the bar target's current range ("Navigation targets") and set the resulting range with one command; the field keeps the text, selected. Origin: D-027 („type a time or range").
 
 #### Scenario: Minute from the extent view
-- **WHEN** one window shows `COMBI_412h.V_ANZ` at its extent view and the user types `15:08` into "Go to" and presses Enter
+- **WHEN** one window shows `ICL_3A2h.SPEED_DISP` at its extent view and the user types `15:08` into "Go to" and presses Enter
 - **THEN** the header reads `2026-10-13 15:08:00 – 2026-10-13 15:09:00` and the revision rose by exactly one
 - **Evidence:** UI check (screenshot of header and revision); `packages/shared/test/timenav.test.ts` › "takes the latest occurrence of a time of day inside the view"
 
@@ -33,7 +33,7 @@ The field SHALL accept, in local time unless the text carries `Z` or an offset: 
 A time of day without date SHALL take the date of its latest occurrence inside the target's current range, else of its occurrence nearest the range's centre; in a range of two times of day the end is the first occurrence after the start. Origin: necessary consequence of typing `15:08` into a multi-day view (data fact: the smart451 extent spans three local dates); rule in design N2, Jan's call Q2.
 
 #### Scenario: Date of a time of day
-- **WHEN** `15:08` is resolved against the V_ANZ extent view, against 2026-10-12 10:00 – 11:00, and `23:00 .. 01:00` against 2026-10-12 20:00 – 21:00
+- **WHEN** `15:08` is resolved against the SPEED_DISP extent view, against 2026-10-12 10:00 – 11:00, and `23:00 .. 01:00` against 2026-10-12 20:00 – 21:00
 - **THEN** the first gives 2026-10-13 15:08, the second 2026-10-12 15:08 (nearest the centre), the third 2026-10-12 23:00 – 2026-10-13 01:00
 - **Evidence:** `packages/shared/test/timenav.test.ts` › "takes the latest occurrence of a time of day inside the view"
 
@@ -70,7 +70,7 @@ Outside text fields and selects, without Ctrl, Meta or Alt and while no drag run
 - **Evidence:** `packages/shared/test/timenav.test.ts` › "zooms around the anchor and pans by fractions of the span"; `apps/web/test/keys.test.ts` › "maps navigation keys outside text fields"; UI check (header after each key)
 
 #### Scenario: Home
-- **WHEN** a V_ANZ window is zoomed to 13:08:00Z–13:08:04Z and the user presses `Home` with the pointer over it
+- **WHEN** a SPEED_DISP window is zoomed to 13:08:00Z–13:08:04Z and the user presses `Home` with the pointer over it
 - **THEN** the header reads the extent `2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221`
 - **Evidence:** UI check (screenshot of the header)
 
@@ -101,7 +101,7 @@ Outside text fields and selects, without Ctrl, Meta or Alt and while no drag run
 Each "Go to", preset and key step SHALL push the range shown before it to the target's zoom history, so "Back" and Backspace return to it. Steps of a held key SHALL join the entry of the press that started them and come at most every 100 ms. Each step SHALL start from the previous step's range, even before the server confirmed it. Origin: D-025 (one "Back"); timeseries-window "Zoom history"; rate in design N6.
 
 #### Scenario: Back through typed and key steps
-- **WHEN** a V_ANZ window at its extent view gets `15:08` entered, then `+` pressed twice quickly, then Backspace three times
+- **WHEN** a SPEED_DISP window at its extent view gets `15:08` entered, then `+` pressed twice quickly, then Backspace three times
 - **THEN** after the presses the span is 15 s (15:08:22.5–15:08:37.5), and the three Backspaces show 15:08:15–15:08:45, then 15:08:00–15:09:00, then the extent
 - **Evidence:** UI check (header after each step); `apps/web/test/keys.test.ts` › "joins auto-repeat steps to one history entry"
 

@@ -15,7 +15,7 @@ A signal's period SHALL be its DBC message's cycle time if that is above 0, else
 
 #### Scenario: smart451 periods
 - **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451' | jq -c '[.periods[].source] | group_by(.) | map({(.[0]): length}) | add'` runs against the dev server
-- **THEN** it prints `{"dbc":408,"diag":29,"measured":94}` (553 signals, 22 without a period); `.periods["smart451/MESS_CPC.MESS_CPC"]` is `{"ns":"10000000","source":"measured"}` and `.periods["smart451/D_RS_BMS.D_RS_BMS"]` is `null`
+- **THEN** it prints `{"dbc":408,"diag":29,"measured":94}` (553 signals, 22 without a period); `.periods["smart451/MEAS_DCU.MEAS_DCU"]` is `{"ns":"10000000","source":"measured"}` and `.periods["smart451/DIAG_BMS.DIAG_BMS"]` is `null`
 - **Evidence:** the `curl` commands
 
 ### Requirement: Measured period

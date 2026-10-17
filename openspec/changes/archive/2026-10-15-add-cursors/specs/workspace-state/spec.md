@@ -78,9 +78,9 @@ A move or copy without a target window SHALL create a new untitled timeseries wi
 A timeseries window SHALL show signals of at most four units; a signal without unit counts as its own unit. `window.addSignal` and `window.moveSignal` (move or copy into an existing timeseries window) that would exceed four SHALL be rejected with `too_many_units` and a message naming the window's units. A values window has no unit limit. Origin: D-019 ("up to two per side (at most four units)"); D-023 (the unit limit does not apply to the values window).
 
 #### Scenario: Fifth unit added
-- **WHEN** a window shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h), `MS_608h.T_MOT` (°C), `BS_200h.DVL` (1/min) and `window.addSignal` adds `MS_312h.DNMOT` (rpm/10ms)
-- **THEN** the command is rejected with `too_many_units`, the message lists `V, km/h, °C, 1/min`, and the revision does not change; adding `CPC_448h.PTC_HV_Volt` (V) is accepted
-- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a fifth unit in a window"; `apps/server/test/workspace.http.test.ts` › "answers too_many_units over HTTP"; `curl -s -X POST localhost:7310/api/commands -H 'content-type: application/json' -d '{"type":"window.addSignal","windowId":"<w>","signalId":"smart451/MS_312h.DNMOT"}'` on such a window prints `"code":"too_many_units"`
+- **WHEN** a window shows `DCU_1F4h.COMP_HV_Volt` (V), `ICL_3A2h.SPEED_DISP` (km/h), `ENG_5E0h.T_ENG` (°C), `BRK_1A0h.WSPD_FL` (1/min) and `window.addSignal` adds `ENG_2E8h.MOT_SPD_D` (rpm/10ms)
+- **THEN** the command is rejected with `too_many_units`, the message lists `V, km/h, °C, 1/min`, and the revision does not change; adding `DCU_2B8h.HTR_HV_Volt` (V) is accepted
+- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a fifth unit in a window"; `apps/server/test/workspace.http.test.ts` › "answers too_many_units over HTTP"; `curl -s -X POST localhost:7310/api/commands -H 'content-type: application/json' -d '{"type":"window.addSignal","windowId":"<w>","signalId":"smart451/ENG_2E8h.MOT_SPD_D"}'` on such a window prints `"code":"too_many_units"`
 
 #### Scenario: Unit-less signals
 - **WHEN** a window holds four signals without unit and a fifth one without unit is added or moved in
@@ -126,9 +126,9 @@ A values window SHALL accept rename, remove, add, remove, move or copy of signal
 - **Evidence:** `packages/shared/test/apply.test.ts` › "rejects range, height and envelope commands on a values window"
 
 ### Requirement: No duplicate signal in a window
-`window.addSignal` SHALL reject a signal the target window already shows with `already_in_window`, for every window kind, and leave the workspace unchanged. Origin: power-user bug (feedback 2026-10-15, item 5: V_ANZ twice in one window); values-window "Signals into a values window" (a window already showing the signal refuses it); same code as workspace-state "Move and copy a signal between windows".
+`window.addSignal` SHALL reject a signal the target window already shows with `already_in_window`, for every window kind, and leave the workspace unchanged. Origin: power-user bug (feedback 2026-10-15, item 5: SPEED_DISP twice in one window); values-window "Signals into a values window" (a window already showing the signal refuses it); same code as workspace-state "Move and copy a signal between windows".
 
-#### Scenario: Add V_ANZ twice
-- **WHEN** a timeseries window and a values window each show `COMBI_412h.V_ANZ` and `window.addSignal` adds V_ANZ to each again
+#### Scenario: Add SPEED_DISP twice
+- **WHEN** a timeseries window and a values window each show `ICL_3A2h.SPEED_DISP` and `window.addSignal` adds SPEED_DISP to each again
 - **THEN** both commands are rejected with `already_in_window` and the revision does not change
 - **Evidence:** `packages/shared/test/apply.test.ts` › "rejects adding a signal the window already shows"

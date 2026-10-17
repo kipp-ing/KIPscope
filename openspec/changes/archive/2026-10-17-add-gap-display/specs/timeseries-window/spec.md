@@ -32,12 +32,12 @@ The window SHALL NOT draw a curve segment where no measured point exists on at l
 The window SHALL mark each signal's SNA periods as a thin strip per signal at the bottom of the plot, in the signal's color, so the user sees which signal is unavailable when. Raw: from an SNA point to the next point, or to its hold end where the next point is split off (data-gaps). Aggregated: each bucket that contains at least one SNA point. A period too short to see SHALL still be visible. Origin: D-010, D-014; hold end: D-062.
 
 #### Scenario: Two signals with SNA at engine start
-- **WHEN** a window shows `COMBI_412h.V_ANZ` and `BS_200h.DVL` from 2026-10-13T09:56:59Z to 09:57:01Z
-- **THEN** a mark in the V_ANZ color covers 09:56:59.837 to 09:57:00.138 and a mark in the DVL color covers 09:56:59.791 to 09:57:00.072
+- **WHEN** a window shows `ICL_3A2h.SPEED_DISP` and `BRK_1A0h.WSPD_FL` from 2026-10-13T09:56:59Z to 09:57:01Z
+- **THEN** a mark in the SPEED_DISP color covers 09:56:59.837 to 09:57:00.138 and a mark in the WSPD_FL color covers 09:56:59.791 to 09:57:00.072
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "derives SNA periods from raw points and neighbors"
 
 #### Scenario: SNA in the overview
-- **WHEN** a window shows the full extent of `COMBI_412h.V_ANZ` aggregated
+- **WHEN** a window shows the full extent of `ICL_3A2h.SPEED_DISP` aggregated
 - **THEN** SNA is marked from 2026-10-11 13:41 to 2026-10-13 09:07 UTC wherever the signal has points, and at the other three SNA runs
 - **Evidence:** UI check (screenshot); `apps/web/test/build.test.ts` › "derives SNA periods from buckets"
 
@@ -75,7 +75,7 @@ In a raw view the window SHALL draw no line between two split points (data-gaps)
 - **Evidence:** `apps/web/test/build.test.ts` › "breaks lines and steps at gaps"
 
 #### Scenario: Dropout in a drive
-- **WHEN** on smart451 at 1440×900 a window shows `SAS_0C2h.LWS_ANGLE` and `COMBI_412h.V_ANZ` from 2026-10-13 11:34:34 to 11:34:39 local in line mode
+- **WHEN** on smart451 at 1440×900 a window shows `STR_0D4h.STEER_ANGLE` and `ICL_3A2h.SPEED_DISP` from 2026-10-13 11:34:34 to 11:34:39 local in line mode
 - **THEN** both curves stop at about 11:34:36.2 and resume at about 11:34:37.0, nothing is drawn in between, and no grey band shows there (the logger was not silent for 2 s)
 - **Evidence:** UI check (screenshot)
 
@@ -93,7 +93,7 @@ In an aggregated view the mean curve and the min/max envelope SHALL break betwee
 - **Evidence:** `apps/web/test/build.test.ts` › "breaks buckets only where a gap is certain"
 
 #### Scenario: Day overview
-- **WHEN** on smart451 a window shows `CPC_448h.PTC_HV_Volt` over 2026-10-13 00:00–24:00 local, aggregated, envelope on
+- **WHEN** on smart451 a window shows `DCU_2B8h.HTR_HV_Volt` over 2026-10-13 00:00–24:00 local, aggregated, envelope on
 - **THEN** neither mean nor envelope crosses any of the grey bands (00:00–06:05, 06:05:45–10:30:23, 10:31:12–11:06:56, 12:13:07–12:42:29, 12:42:59–13:42:28, 13:42:58–15:07:03, 15:17:33–24:00 and the thin one at 11:27:54)
 - **Evidence:** UI check (screenshot)
 
@@ -101,7 +101,7 @@ In an aggregated view the mean curve and the min/max envelope SHALL break betwee
 Every timeseries window SHALL paint each logger gap of its signals' data refs that meets its view and holds no drawn sample of that data ref, as a faint grey band over the plot's full height, under the grid, the event marks and the curves, at least 1 CSS px wide. Origin: D-062 („logger gaps also get a faint grey band so "no data" reads as intended"; „in every timeseries window" as a consequence of „every signal"); stale gaps: design G9 (a).
 
 #### Scenario: Band in a drive
-- **WHEN** on smart451 at 1440×900 a window shows `CPC_448h.PTC_HV_Volt` and `SAS_0C2h.LWS_ANGLE` from 2026-10-13 11:27:45 to 11:28:05 local
+- **WHEN** on smart451 at 1440×900 a window shows `DCU_2B8h.HTR_HV_Volt` and `STR_0D4h.STEER_ANGLE` from 2026-10-13 11:27:45 to 11:28:05 local
 - **THEN** a faint grey band covers 11:27:53.936 to 11:27:56.982; both curves end at its left edge and resume at its right edge; grid lines show over the band
 - **Evidence:** UI check (screenshot)
 
@@ -114,13 +114,13 @@ Every timeseries window SHALL paint each logger gap of its signals' data refs th
 A window SHALL draw the curves, envelopes and bands of a stretch whose logger gap holds drawn samples as if the gap were absent: no break and no band there, and the drawn value (L, drags) a value, not `logger_gap`. Origin: Jan 2026-10-17 („same values are cluttered as dots, which should have a hüllkurve instead? looks strange"); design G9 (a).
 
 #### Scenario: Repro of the stale gap
-- **WHEN** with the logger gap 1792176671171000000–1792176763235000000 (2026-10-16 18:51:11.171–18:52:43.235 UTC) the view 18:51:11.385–18:51:20.691 is built from 500 buckets of 20 ms of `SAS_0C2h.LWS_ANGLE` (period 10 ms, means alternating −1,400 and 1,400, all inside the gap) and 95 raw points of `CPC_448h.PTC_HV_Volt` (period 100 ms, 100 ms apart, edge neighbours inside the gap); the bands of the view are listed with and without these results; and the drawn values are read at 18:51:15.000
-- **THEN** mean, min and max hold no inserted null and no bucket is isolated (was 499 breaks, 500 isolated); PTC_HV_Volt has no break (was 94); the bands are `[]` with the results and the one clipped gap without them; LWS_ANGLE reads `aggregated` and PTC_HV_Volt `interpolated`
+- **WHEN** with the logger gap 1792176671171000000–1792176763235000000 (2026-10-16 18:51:11.171–18:52:43.235 UTC) the view 18:51:11.385–18:51:20.691 is built from 500 buckets of 20 ms of `STR_0D4h.STEER_ANGLE` (period 10 ms, means alternating −1,400 and 1,400, all inside the gap) and 95 raw points of `DCU_2B8h.HTR_HV_Volt` (period 100 ms, 100 ms apart, edge neighbours inside the gap); the bands of the view are listed with and without these results; and the drawn values are read at 18:51:15.000
+- **THEN** mean, min and max hold no inserted null and no bucket is isolated (was 499 breaks, 500 isolated); HTR_HV_Volt has no break (was 94); the bands are `[]` with the results and the one clipped gap without them; STEER_ANGLE reads `aggregated` and HTR_HV_Volt `interpolated`
 - **Evidence:** `apps/web/test/build.test.ts` › "draws through a logger gap that holds samples"; `apps/web/test/gaps.test.ts` › "leaves out a band that holds samples"; `apps/web/test/readout.test.ts` › "reads drawn data inside a stale logger gap"
 
 #### Scenario: Steering angle on 2026-10-16
-- **WHEN** on smart451 at 1440×900 a window shows `CPC_448h.PTC_HV_Volt`, `SAS_0C2h.LWS_ANGLE` and `COMBI_412h.V_ANZ` from 2026-10-16 20:51:11.385 to 20:51:20.691 local
-- **THEN** LWS_ANGLE is a mean curve with its min/max envelope (or a line when raw), the other two are lines, no point markers stand alone and no grey band shows
+- **WHEN** on smart451 at 1440×900 a window shows `DCU_2B8h.HTR_HV_Volt`, `STR_0D4h.STEER_ANGLE` and `ICL_3A2h.SPEED_DISP` from 2026-10-16 20:51:11.385 to 20:51:20.691 local
+- **THEN** STEER_ANGLE is a mean curve with its min/max envelope (or a line when raw), the other two are lines, no point markers stand alone and no grey band shows
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Gap info loads with the window
@@ -132,7 +132,7 @@ A window SHALL fetch the gap info of each data ref of its signals once per brows
 - **Evidence:** `apps/web/test/gaps.test.ts` › "fetches gap info once per data ref and retries a failure"
 
 #### Scenario: Settled with breaks
-- **WHEN** on smart451 `kipscope --wait window range <w> "2026-10-13 11:27:45" "2026-10-13 11:28:05"` runs on a window showing `CPC_448h.PTC_HV_Volt` in a fresh browser tab
+- **WHEN** on smart451 `kipscope --wait window range <w> "2026-10-13 11:27:45" "2026-10-13 11:28:05"` runs on a window showing `DCU_2B8h.HTR_HV_Volt` in a fresh browser tab
 - **THEN** it reports `complete`, and a screenshot taken right after shows the band and the break
 - **Evidence:** UI check (CLI output and screenshot)
 

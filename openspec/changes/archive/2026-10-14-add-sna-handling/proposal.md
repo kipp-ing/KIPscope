@@ -2,7 +2,7 @@
 
 ## Why
 
-Values the DBC marks as "signal not available" (SNA) are currently drawn, aggregated and returned like valid measurements. The user's fixed rule (D-010): SNA must never be shown as a valid value. Real data contains SNA: `COMBI_412h.V_ANZ` jumps to 511 km/h (raw `1FFh`), `BS_200h.DVL` reaches 8191.5 1/min (raw `3FFFh` × 0.5).
+Values the DBC marks as "signal not available" (SNA) are currently drawn, aggregated and returned like valid measurements. The user's fixed rule (D-010): SNA must never be shown as a valid value. Real data contains SNA: `ICL_3A2h.SPEED_DISP` jumps to 511 km/h (raw `1FFh`), `BRK_1A0h.WSPD_FL` reaches 8191.5 1/min (raw `3FFFh` × 0.5).
 
 ## What Changes
 

@@ -427,7 +427,7 @@ describe("SNA handling", () => {
       after: { t: at(4).toString(), v: 5 },
     });
     expect(snaShare(r)).toBe(0.5);
-    // Engine start window: V_ANZ 3 SNA of 20 points.
+    // Engine start window: SPEED_DISP 3 SNA of 20 points.
     const times = Array.from({ length: 20 }, (_, i) => at(i));
     const v = times.map((_, i) => (i === 8 || i === 9 || i === 10 ? null : 0));
     expect(snaShare(raw(times, v))).toBe(0.15);
@@ -544,7 +544,7 @@ describe("state signals drawn as steps (N3)", () => {
   });
 
   it("holds the edge level across a range without points", () => {
-    // IgnCurMode-like VAL_ signal: no point in the view [0, 1000], edge point before is 3 (KEYON),
+    // IgnMode-like VAL_ signal: no point in the view [0, 1000], edge point before is 3 (KEYON),
     // the next point (OFF = 0) lies after the view.
     const info = {
       states: "labels",
@@ -560,7 +560,7 @@ describe("state signals drawn as steps (N3)", () => {
       after: { t: (origin + 2000n).toString(), v: 0, label: "OFF" },
     });
     const m = buildModel(
-      [{ key: "a", label: "IgnCurMode", color: "#000", result: r, info }],
+      [{ key: "a", label: "IgnMode", color: "#000", result: r, info }],
       origin,
       line,
     );
@@ -827,7 +827,7 @@ describe("gap breaks (add-gap-display)", () => {
     const logger = [{ from: gapFrom, to: gapTo }];
     const o = viewFrom;
 
-    // LWS_ANGLE: 500 buckets of 20 ms on the 20 ms grid from 18:51:11.400, period 10 ms, means
+    // STEER_ANGLE: 500 buckets of 20 ms on the 20 ms grid from 18:51:11.400, period 10 ms, means
     // alternating -1400 / 1400, all inside the gap. Was: 499 breaks, all 500 isolated.
     const width = 20n * MS;
     const starts = Array.from(
@@ -836,7 +836,7 @@ describe("gap breaks (add-gap-display)", () => {
     );
     const lws: BucketSeries = {
       kind: "buckets",
-      signalId: "smart451/SAS_0C2h.LWS_ANGLE",
+      signalId: "smart451/STR_0D4h.STEER_ANGLE",
       from: viewFrom.toString(),
       to: viewTo.toString(),
       width: width.toString(),
@@ -858,14 +858,14 @@ describe("gap breaks (add-gap-display)", () => {
     expect(isolatedPoints(lwsTable[1] as (number | null)[])).toEqual([]);
     expect(lwsTable[1]?.slice(0, 3)).toEqual([-1400, 1400, -1400]);
 
-    // PTC_HV_Volt: 95 raw points 100 ms apart from the view start (period 100 ms), edge neighbours
+    // HTR_HV_Volt: 95 raw points 100 ms apart from the view start (period 100 ms), edge neighbours
     // 100 ms before and after, all inside the gap. Was: 94 breaks.
     const times = Array.from({ length: 95 }, (_, i) => viewFrom + BigInt(i) * 100n * MS);
     const ptc = raw(
       times,
       times.map((_, i) => 350 + (i % 2)),
       {
-        signalId: "smart451/CPC_448h.PTC_HV_Volt",
+        signalId: "smart451/DCU_2B8h.HTR_HV_Volt",
         from: viewFrom.toString(),
         to: viewTo.toString(),
         before: { t: (viewFrom - 100n * MS).toString(), v: 351 },

@@ -114,9 +114,9 @@ Each signal in the workspace SHALL have one colour, the same in every window, ke
 A window SHALL show signals of at most four units; a signal without unit counts as its own unit. `window.addSignal` and `window.moveSignal` (move or copy into an existing window) that would exceed four SHALL be rejected with `too_many_units` and a message naming the window's units. Origin: D-019 ("up to two per side (at most four units)"); rejection of the fifth unit is a necessary consequence, since every unit needs a drawn axis.
 
 #### Scenario: Fifth unit added
-- **WHEN** a window shows `CPC_168h.EAC_HV_Volt` (V), `COMBI_412h.V_ANZ` (km/h), `MS_608h.T_MOT` (°C), `BS_200h.DVL` (1/min) and `window.addSignal` adds `MS_312h.DNMOT` (rpm/10ms)
-- **THEN** the command is rejected with `too_many_units`, the message lists `V, km/h, °C, 1/min`, and the revision does not change; adding `CPC_448h.PTC_HV_Volt` (V) is accepted
-- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a fifth unit in a window"; `apps/server/test/workspace.http.test.ts` › "answers too_many_units over HTTP"; `curl -s -X POST localhost:7310/api/commands -H 'content-type: application/json' -d '{"type":"window.addSignal","windowId":"<w>","signalId":"smart451/MS_312h.DNMOT"}'` on such a window prints `"code":"too_many_units"`
+- **WHEN** a window shows `DCU_1F4h.COMP_HV_Volt` (V), `ICL_3A2h.SPEED_DISP` (km/h), `ENG_5E0h.T_ENG` (°C), `BRK_1A0h.WSPD_FL` (1/min) and `window.addSignal` adds `ENG_2E8h.MOT_SPD_D` (rpm/10ms)
+- **THEN** the command is rejected with `too_many_units`, the message lists `V, km/h, °C, 1/min`, and the revision does not change; adding `DCU_2B8h.HTR_HV_Volt` (V) is accepted
+- **Evidence:** `packages/shared/test/apply.test.ts` › "rejects a fifth unit in a window"; `apps/server/test/workspace.http.test.ts` › "answers too_many_units over HTTP"; `curl -s -X POST localhost:7310/api/commands -H 'content-type: application/json' -d '{"type":"window.addSignal","windowId":"<w>","signalId":"smart451/ENG_2E8h.MOT_SPD_D"}'` on such a window prints `"code":"too_many_units"`
 
 #### Scenario: Unit-less signals
 - **WHEN** a window holds four signals without unit and a fifth one without unit is added or moved in

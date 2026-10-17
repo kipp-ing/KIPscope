@@ -2,7 +2,7 @@
 
 ## Jan's answers (D-058)
 
-The six open questions are answered in D-058 (last bullet): Q1 default filter `active changes` (on smart451 51 of 402 events: 13 active faults, 22 diag state changes, 16 ignition changes); Q2 the events list is a sidebar tab; Q3 one search-style filter string in UI, CLI and workspace; Q4 ignition is `CPC_168h.IgnCurMode`; Q5 the contactor entry is `BMS.contactor`, used now (the quiet wait for missing signals stays as a general rule); Q6 a snapshot that differs from the previous state counts as a change, marked "seen after a gap". References to Q1–Q6 below point to these answers.
+The six open questions are answered in D-058 (last bullet): Q1 default filter `active changes` (on smart451 51 of 402 events: 13 active faults, 22 diag state changes, 16 ignition changes); Q2 the events list is a sidebar tab; Q3 one search-style filter string in UI, CLI and workspace; Q4 ignition is `DCU_1F4h.IgnMode`; Q5 the contactor entry is `BMS.contactor`, used now (the quiet wait for missing signals stays as a general rule); Q6 a snapshot that differs from the previous state counts as a change, marked "seen after a gap". References to Q1–Q6 below point to these answers.
 
 ## Context
 
@@ -12,9 +12,9 @@ See proposal.md (Why). Facts that shape the approach (smart451 on carserver, rea
 - **DTCs:** 55 rows, all at 2026-10-15 05:27:12.135Z, detail `initial` (one readout). Status values: 41 (0x29 = failing now + confirmed + failed since clear) ×12, 105 (0x69 = 0x29 + not tested this cycle) ×1, 40 (0x28 = confirmed + failed since clear) ×4, 64 (0x40) ×2, 80 (0x50 = not tested since clear + not tested this cycle) ×36. The brief's "40 ×2" is ×4 (`P1614FA`, `P1CA100`, `P1CA300`, `P1D0E00`). Texts up to 164 characters.
 - **States:** 326 rows of 7 names: 315 with detail `initial` (the decoder's first value per chunk, so one per ~90 s chunk while logging, gaps of days between sessions) and 11 with `from <old>`. Per name in time order: 7 first rows, 11 transitions (each `from` equals the previous text), 11 snapshots whose text differs from the previous one, 297 repeats.
 - **NRC / ISO-TP:** 2 × `SID 22` value 49 (0x31) `requestOutOfRange` on 2026-10-14; 2 × `incomplete` (`132 of 403 bytes, then a new message`, `27 of 403 …`).
-- **State signals (`sdlog.signals`):** a `text LowCardinality(String) DEFAULT ''` column exists (not read so far). 9 signals carry text (946 rows, all `BMS.*`; finding them: 0.81 s full scan). The catalog has 553 signals, 180 with a `VAL_` table, 74 with a name other than SNA/SNV (some name special codes of numeric signals, e.g. `AC_A1.T_SOLL` `KURZSCHLUSS`); hybrid-can labels read `CLS: Close`.
-- **Change queries** (window function `lagInFrame` over one signal, rows only where the value or text changes): IgnCurMode 87 k rows → 17 rows in 0.05 s; KL_15 403 k → 16 in 0.10 s; `MS_312h.DNMOT` 874 k → 1 in 0.19 s; `BS_200h.BLS` 156 rows in 0.10 s. The table is ordered by `(vehicle, signal, utc)`, so one signal is read in time order.
-- **Ignition:** `CPC_168h.IgnCurMode` values 0 and 3; 16 changes, the one of 2026-10-15 16:59:05Z after a gap (previous row 2026-10-13 13:17:33Z). `BMS.contactor` value always 0, text `open`/`closed`.
+- **State signals (`sdlog.signals`):** a `text LowCardinality(String) DEFAULT ''` column exists (not read so far). 9 signals carry text (946 rows, all `BMS.*`; finding them: 0.81 s full scan). The catalog has 553 signals, 180 with a `VAL_` table, 74 with a name other than SNA/SNV (some name special codes of numeric signals, e.g. `CLIM_A1.T_SET` `KURZSCHLUSS`); hybrid-can labels read `CLS: Close`.
+- **Change queries** (window function `lagInFrame` over one signal, rows only where the value or text changes): IgnMode 87 k rows → 17 rows in 0.05 s; IGN_15 403 k → 16 in 0.10 s; `ENG_2E8h.MOT_SPD_D` 874 k → 1 in 0.19 s; `BRK_1A0h.BRK_LMP` 156 rows in 0.10 s. The table is ordered by `(vehicle, signal, utc)`, so one signal is read in time order.
+- **Ignition:** `DCU_1F4h.IgnMode` values 0 and 3; 16 changes, the one of 2026-10-15 16:59:05Z after a gap (previous row 2026-10-13 13:17:33Z). `BMS.contactor` value always 0, text `open`/`closed`.
 - **Code today:** strip (`apps/web/src/time/`, archived `add-strip-navigation` S5–S10: track 31 px = bars 24 + drive row 7, `hitZone`, `StripGesture`, 55 px); density cache and prefetch (`apps/server/src/density.ts`, `routes/series.ts`); workspace commands in `packages/shared/src/workspace.ts`/`apply.ts` with `ApplyContext {signalExists, unitOf}`; project file `apps/server/src/project.ts` (`display`, `measurement`); CLI tokenizer: `-<digit>` is a value, other single-dash tokens are unknown options; chart headroom `PLOT_HEADROOM = 6` px above the plot area holds nothing over the plot's x range; cursor lines are DOM in `u.over`, SNA lanes are canvas at the plot bottom.
 
 ## Goals / Non-Goals
@@ -208,7 +208,7 @@ hasStates(signalId: string): boolean;   // catalog: SignalInfo.states present
 events:
   # Signals whose state changes are on the events line from the start (D-059); a signal not recorded yet waits.
   signals:
-    - smart451/CPC_168h.IgnCurMode   # ignition (D-058, Q4)
+    - smart451/DCU_1F4h.IgnMode   # ignition (D-058, Q4)
     - smart451/BMS.contactor         # HV contactor (D-058, Q5)
 ```
 
@@ -370,8 +370,8 @@ EVENTS                       51 of 402    11 px caps label; count muted, tabular
 Active faults and state changes           muted 11 px line, or the error in --error
 (Active & changes)(Faults)(Changes)(Logger)(Everything)(Off)   pills, wrap
 ● Active fault 13  ○ Stored fault 4  ○ Not tested 38 …         chips, wrap
-● BMS 385  ● IgnCurMode 17                                     ECU chips
-ON THE EVENTS LINE   IgnCurMode ×   BMS.contactor ×            muted: "· not recorded yet"
+● BMS 385  ● IgnMode 17                                     ECU chips
+ON THE EVENTS LINE   IgnMode ×   BMS.contactor ×            muted: "· not recorded yet"
 ── Thu 2026-10-15 ───────────────────────────────────────        day band (explorer group look)
 ▮ 07:27:12.135  BMS P0CA700                                     row line 1 (glyph in category colour)
   The discharge current of the high-volt…                       row line 2, muted, ellipsis, title = whole
@@ -456,7 +456,7 @@ Signals (`testcar`, chunk `c11`):
 ## Numbers: what if off by a factor of two
 
 - **MAX_EVENTS 100,000** (smart451: 385): 50 k / 200 k both 130–520× above today; at 200 k the server holds ~60 MB of events per data ref and the browser downloads ~40 MB once (then filter or narrow the range). The cap only guards against a runaway table.
-- **MAX_SIGNAL_CHANGES 2,000** (IgnCurMode 16, BLS 155): 1,000 still covers a brake light over a week of driving; 4,000 lets a fast toggling bit through, which then clutters the strip (grouping keeps it ≤ 240 pins at 1,438 px).
+- **MAX_SIGNAL_CHANGES 2,000** (IgnMode 16, BRK_LMP 155): 1,000 still covers a brake light over a week of driving; 4,000 lets a fast toggling bit through, which then clutters the strip (grouping keeps it ≤ 240 pins at 1,438 px).
 - **STATE_GAP 5 min:** it only labels a change "seen after a gap"; nothing is hidden. 2.5 min: smart451's diag rows pause up to ~5 min inside a drive (chunks 187–189 missing on 2026-10-13 around 09:30Z), so changes there would read as uncertain though the logger ran; 10 min: a logger pause of 5–10 min would not be flagged. Below the 90 s diag cadence every diag change would read as after a gap.
 - **GROUP_PX 6:** 3 → two changes 15 min apart at 5 min/px stay separate but their 8 px hits overlap (nearest-centre rule decides); 12 → one hour of events per pin, fewer pins, more in each tooltip. The 17 DTCs are one pin at any of these.
 - **Pin 6 px tall, 3/5 px wide, hit 8 px, lane 8 px:** 3 px tall → hard to see over grey bars; 12 px → covers half the bars' height and the A/B flags (10 px). Hit 4 px → hard to hit; 16 px → pins swallow clicks meant for the bars and window edges near them (edges are ±4 px).
@@ -485,8 +485,8 @@ None. All payload fields are additive; restart the server; reseed the test DB (`
 
 ## Manual checks (lead)
 
-- Drag `BS_200h.BLS` from the explorer onto the strip on smart451 with a real mouse; check the drop look, the 156 new events, and removing it with `×`. Send Jan one screenshot of the strip and a chart with event marks, and one of the Events tab, .
+- Drag `BRK_1A0h.BRK_LMP` from the explorer onto the strip on smart451 with a real mouse; check the drop look, the 156 new events, and removing it with `×`. Send Jan one screenshot of the strip and a chart with event marks, and one of the Events tab, .
 
 ## Ledger entries on archive (proposed for `docs/decisions.md`)
 
-- D-0xx Events conventions: `GET /api/events` (table events + events-line signal changes), ten categories (E5 status bits, E6 changes vs. snapshots incl. inferred, E7 signal changes: only named-state changes, gap 5 min, ≤ 2,000), cached per catalog load; filter grammar F1–F4 (words, `ecu:`/`name:`/`text:`, quotes, `-`; facets or-within/and-across), default `active changes` (Q1), `eventFilter`/`eventSignals` in the workspace with `events.setFilter`/`addSignal`/`removeSignal`; pins 6 px at the strip top grouped within 6 px, chart lines and headroom glyphs, glyph click places A/B; Events tab in the sidebar (Q2), key `e`; state names: `SignalInfo.states`, `stateLabel`/`shortLabel`, no interpolation into a named state; `events.signals` in `kipscope.yaml` (IgnCurMode Q4, BMS.contactor Q5); CLI `events list|filter|add|remove`, `--table`, single-dash words are arguments.
+- D-0xx Events conventions: `GET /api/events` (table events + events-line signal changes), ten categories (E5 status bits, E6 changes vs. snapshots incl. inferred, E7 signal changes: only named-state changes, gap 5 min, ≤ 2,000), cached per catalog load; filter grammar F1–F4 (words, `ecu:`/`name:`/`text:`, quotes, `-`; facets or-within/and-across), default `active changes` (Q1), `eventFilter`/`eventSignals` in the workspace with `events.setFilter`/`addSignal`/`removeSignal`; pins 6 px at the strip top grouped within 6 px, chart lines and headroom glyphs, glyph click places A/B; Events tab in the sidebar (Q2), key `e`; state names: `SignalInfo.states`, `stateLabel`/`shortLabel`, no interpolation into a named state; `events.signals` in `kipscope.yaml` (IgnMode Q4, BMS.contactor Q5); CLI `events list|filter|add|remove`, `--table`, single-dash words are arguments.
