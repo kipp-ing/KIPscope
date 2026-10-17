@@ -4,6 +4,20 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-075: ClickHouse progress headers fit the header limit (2026-10-17)
+
+Lead fix during `add-adx-source`; details in its `rounds.md`.
+
+- **Decision:** The ClickHouse client accepts response headers up to 1 MiB (`max_response_headers_size`), and the progress interval is `max(100 ms, ceil(2 · timeout / ((1 MiB − 16 KiB) / (2 · 161 B))))`, so twice the query timeout at twice the measured header size fits. An aborted query still stops within 100 ms for timeouts up to 160 s. The progress headers for prompt cancelling (query queue, design D7) stay.
+- **Why:** With progress headers every 100 ms, any query longer than about 10 s exceeded Node's 16 KiB header limit (`Parse Error: Header overflow`). The smart451 logger-gap query on carserver had grown to 10.7 s (105 headers of ~160 B), so gap info failed and `/api/gaps` and `/api/value` answered 502 from 2026-10-17 14:26 until the fix.
+
+## D-074: Data-source contract and ADX source (2026-10-17)
+
+From the archived change `add-adx-source`; details there. Implements the ClickHouse-first decision's „ADX follows behind the same adapter interface".
+
+- **Decision:** An adapter implements 7 required methods (`ping`, `listSignals` with text flags, `raw` with a limit, `before`, `after`, `buckets`, `refBuckets`) plus `info`. The server computes 7 optional fast paths from the core when an adapter leaves them out (`count`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges`); `events` is a capability (absent: no events). An adapter adds a fast path only where the measured fallback costs more than twice as much. One conformance suite runs every adapter natively and core-only. ClickHouse keeps all 15 methods and its queries unchanged. ADX: KQL over the Kusto REST API, neutral layout `signals`/`events` (`dataref`, `timestamp`) or any stored function, times at 100 ns. Jan's answers: A-1 (a) the token comes from `az account get-access-token`, cached in memory, no dependency; A-2 (a) one source per server via `KIPSCOPE_SOURCE`; A-3 (a) the Kusto emulator as compose profile `adx` with its own `test:adx`, `pnpm test` unchanged. Spec owner's defaults (Jan can veto): source settings only in the environment, `KIPSCOPE_ADX_AUTH=none` and `http://` only for a loopback cluster, the emulator image pinned by digest. Docs: `docs/data-sources.md` (adapter authors, "Connect your ADX") and `docs/http-api.md`.
+- **Why:** Jan (2026-10-17): „Next task would be adoptability. if one wants to cennect this to azur cli as data aquisition. the interfaces shall be lean and documented"; then „ADX via az login", „Not yet, emulate", and A-1 … A-3 as recommended.
+
 ## D-073: Events usability (2026-10-17)
 
 From the archived change `improve-events` (E-1 … E-4); details there.

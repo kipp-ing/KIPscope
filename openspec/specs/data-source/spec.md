@@ -1,0 +1,173 @@
+# data-source Specification
+
+## Purpose
+The contract between KIPscope's server and a time-series source: what a source holds, the few methods an adapter must implement, the optional fast paths the server can compute itself, the capabilities a source may lack, and the one conformance suite every adapter passes.
+
+## Requirements
+
+### Requirement: Source data model
+A source SHALL be read as rows of (data ref, signal name, time, value, text) plus optional event rows (data ref, time, source, kind, name, value, text, detail). A signal's ID SHALL be `<dataRef>/<name>`, with a non-empty data ref without `/` and a non-empty name; the catalog SHALL skip other listed entries with one warning per load. Origin: signal-catalog "Signal identity"; concept §3.
+
+#### Scenario: Data refs that would break IDs
+- **WHEN** a stub adapter lists `{dataRef: "a/b", name: "X"}`, `{dataRef: "", name: "Y"}`, `{dataRef: "ok", name: ""}` and `{dataRef: "ok", name: "Z"}` and the catalog loads twice
+- **THEN** the catalog holds only `ok/Z`, and the server logged one warning per load naming the three skipped entries
+- **Evidence:** `apps/server/test/catalog.test.ts` › "skips listed signals whose data ref or name would break the ID"
+
+### Requirement: Times and values
+Times SHALL be int64 nanoseconds since 1970-01-01T00:00:00Z (UTC), exact to the source's own resolution, and SHALL cross every boundary as `bigint` or decimal strings; values are 64-bit floats; text is a string, empty when the row has none. Rows without a time SHALL never appear in any answer. Origin: concept §3 (Originalpräzision); D-011 (int64 ns); series-query "Points without timestamp excluded".
+
+#### Scenario: Rows without time
+- **WHEN** the conformance fixture's row of `conf-a/Lin.RAMP` with a null time (value −1) exists in the source, and `raw`, `count`, `extent`, `refExtent` and `firstTimes` are asked for `conf-a`
+- **THEN** no answer contains value −1, `count` over all time is 10,000 and `refExtent(conf-a).count` is 17,069
+- **Evidence:** conformance suite › "never returns rows without a time" (run by `apps/server/test/conformance/clickhouse.conformance.test.ts` and `adx.conformance.test.ts`, each native and core only)
+
+#### Scenario: Exact times
+- **WHEN** `raw(conf-a/Fine.NS)` over all time, `before(conf-a/Fine.NS, B + 123,456,701 ns)` and `after(conf-a/Fine.NS, B + 123,456,701 ns)` run (B = 2026-10-05T00:00:00Z = 1791158400000000000)
+- **THEN** `raw` returns 1,000 points at exactly B + 123,456,700 + k·1,100 ns (k = 0 … 999) with value k; `before` gives k = 0 and `after` gives k = 1 (B + 123,457,800)
+- **Evidence:** conformance suite › "keeps times exact"
+
+### Requirement: Required source methods
+Every adapter SHALL implement `ping`, `listSignals`, `raw`, `before`, `after`, `buckets` and `refBuckets` and expose `info` (kind, database, table, events table label), with the signatures of design C1. `listSignals` SHALL flag each signal whose rows carry text. Origin: D-006 („ADX follows behind the same adapter interface"); Jan (2026-10-17) „the interfaces shall be lean and documented".
+
+#### Scenario: Signal list
+- **WHEN** `listSignals` runs on the conformance tables
+- **THEN** it returns exactly `conf-a` `Beat.HB`, `Diag.door`, `Fine.NS`, `Lin.RAMP`, `Sna.CODE`, `State.MODE` and `conf-b` `Lin.RAMP`, `Span.FAR`, with `text` true only for `conf-a/Diag.door`
+- **Evidence:** conformance suite › "lists signals with their text flag"
+
+#### Scenario: Unknown signal
+- **WHEN** `raw`, `buckets`, `before`, `after` and `count` run for `conf-a/Nope.X`
+- **THEN** they answer `[]`, `[]`, nothing, nothing and 0, never an error
+- **Evidence:** conformance suite › "answers empty for an unknown signal"
+
+### Requirement: Ranges, order and limits
+Ranges SHALL be half-open `[from, to)` and points SHALL come in ascending time order; `raw` with a limit SHALL return the earliest `limit` points of the range; `before(t)` SHALL be the last point strictly before `t` and `after(t)` the first at or after `t`. Origin: series-query "Raw points", "Edge neighbors"; design C1.
+
+#### Scenario: Half-open ranges and order
+- **WHEN** `raw(conf-a/Lin.RAMP, B + 1 s, B + 2 s)` runs
+- **THEN** it returns 100 points in ascending time, the first at B + 1 s with value 100, the last at B + 1.99 s with value 199; the point at B + 2 s is not included
+- **Evidence:** conformance suite › "reads raw points in a half-open range"
+
+#### Scenario: Limit
+- **WHEN** `raw(conf-a/Lin.RAMP, TIME_MIN, TIME_MAX, limit 1001)` runs
+- **THEN** it returns exactly 1,001 points, B … B + 10 s, ascending
+- **Evidence:** conformance suite › "limits raw to the earliest points"
+
+#### Scenario: Neighbours
+- **WHEN** `before` and `after` run on `conf-a/Lin.RAMP` at B + 1 s, `before` at B and `after` at B + 100 s
+- **THEN** they give B + 0.99 s (value 99), B + 1 s (value 100), nothing and nothing
+- **Evidence:** conformance suite › "finds the neighbours before and after"
+
+### Requirement: Buckets and SNA
+`buckets` SHALL return the non-empty buckets on the floor grid `k · width` (also before 1970) ordered by start, with valid count, SNA count, and mean, min and max over valid points (null iff the valid count is 0); values within the reference's SNA ranges SHALL be reported as null. `refBuckets` SHALL return the non-empty buckets of all timestamped rows of a data ref, with each bucket's first and last row time when asked. Origin: series-query "Aggregated buckets", "SNA matching"; data-gaps.
+
+#### Scenario: Buckets on the floor grid
+- **WHEN** `buckets(conf-a/Lin.RAMP, B + 0.5 s, B + 2.5 s, 1 s)` and `buckets(conf-b/Span.FAR, −2 s, 1 s, 1 s)` run
+- **THEN** the first gives starts B, B + 1 s, B + 2 s with counts 50, 100, 50, means 74.5, 149.5, 224.5, minima 50, 100, 200 and maxima 99, 199, 249; the second starts −2,000,000,000 (value 1) and 0 (value 2)
+- **Evidence:** conformance suite › "aggregates buckets on the floor grid", "floors bucket starts before 1970"
+
+#### Scenario: SNA
+- **WHEN** `raw(conf-a/Sna.CODE)` over all time and `buckets(conf-a/Sna.CODE, B, B + 100 s, 10 s)` run with SNA range [6.5, 7.5], and `before(conf-a/Sna.CODE, B + 45 s)` with the same range
+- **THEN** `raw` gives 100 points whose value is null exactly for n = 40 … 49; the bucket at B + 40 s has count 0, sna 10 and null mean, min and max, the other nine count 10, sna 0, mean 2, min 0, max 4; `before` gives B + 44 s with value null
+- **Evidence:** conformance suite › "reports SNA as null and in bucket counts"
+
+#### Scenario: Row buckets of a data ref
+- **WHEN** `refBuckets(conf-a, 60 s, times)` runs
+- **THEN** it returns 10 buckets whose counts sum to 17,069; the bucket at B + 180 s holds 202 rows from B + 180 s to B + 200 s and the one at B + 240 s 401 rows from B + 260 s to B + 299.9 s
+- **Evidence:** conformance suite › "counts the rows of a data ref per bucket"
+
+### Requirement: Optional methods fall back
+`count`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes` and `stateChanges` SHALL be optional. When an adapter leaves one out, the server SHALL compute it from the required methods (design C2) with the same answer as a native one (`refCount`: a count that changes whenever timestamped rows are added). An adapter MAY implement any of them as a faster path. Origin: Jan (2026-10-17) „the interfaces shall be lean"; the lead's brief (fallbacks where possible, capabilities where not).
+
+#### Scenario: Same answers natively and from the core
+- **WHEN** the conformance suite runs against each adapter twice, once as is and once reduced to its required methods
+- **THEN** every case passes in both runs, including "counts points" (`count(conf-a/Lin.RAMP)` 10,000 over all time and 100 in [B + 1 s, B + 2 s)), "finds the extent", "finds the extent and row count of a data ref" (17,069 rows from B to B + 599.9 s; `refCount` 17,069 or 17,070), "finds logger gaps" (conf-a: B + 200 s → B + 260 s and B + 500 s → B + 502 s, last B + 599.9 s; not the 1.9 s silence at B + 400 s; conf-b: −1.5 s → 0.5 s and 0.5 s → B, last B + 9 s), "samples the first times" (`Lin.RAMP` 1,001 times from B, `Sna.CODE` 100, an unknown name absent) and "finds state changes" (`State.MODE` with labels 0 and 3: B → 0, B + 10 s → 3 after 0 at B + 9.9 s, B + 40 s → 0 after 3 at B + 39.9 s; the SNA run in between is no change; with limit 2 the first two; `Diag.door` by text: closed at B, open at B + 180 s after closed at B + 90 s, closed at B + 360 s after open at B + 270 s)
+- **Evidence:** `apps/server/test/conformance/clickhouse.conformance.test.ts`, `adx.conformance.test.ts` (each `native` and `core only`)
+
+#### Scenario: No query for no names
+- **WHEN** `firstTimes(conf-a, [], 1001)` runs through the fallback and through each native path, with a wrapper counting source queries
+- **THEN** it answers an empty map and no query was sent
+- **Evidence:** conformance suite › "samples the first times"; `apps/server/test/fallbacks.test.ts` › "sends no query for an empty name list"
+
+### Requirement: Sources without events
+`events` SHALL be a capability: an adapter without it, or one that reports its events table missing, gives every data ref no events, and the server logs one warning per catalog load naming the source's events table label. Event rows SHALL come in time order, ties by kind, source and name, at most `limit` of them. Origin: events "Events source" (a missing table means no events); the lead's brief („events table absent → no events").
+
+#### Scenario: Event order and limit
+- **WHEN** `events(conf-a, 100)`, `events(conf-a, 2)` and `events(conf-b, 100)` run
+- **THEN** the first gives exactly 5 rows: `Diag.door` closed at B, `Diag.door` open at B + 180 s, then at B + 300 s dtc BMS `P0AA100`, dtc BMS `P0CA700`, nrc BMS `SID 22`; the second its first two; the third none; the row without a time never appears
+- **Evidence:** conformance suite › "lists events in order"
+
+#### Scenario: Adapter without events
+- **WHEN** a test app runs on an adapter without `events` and `GET /api/events?dataRef=conf-a` is sent twice
+- **THEN** both answer 200 with `total` 0, and one warning was logged
+- **Evidence:** `apps/server/test/fallbacks.test.ts` › "treats a source without events as one without an events table"
+
+### Requirement: Fallback queries are bounded
+Every source query a fallback sends SHALL pass the query queue (series-query "Bounded database load") and SHALL carry the caller's abort signal; an aborted caller SHALL get its abort reason and cause no further queries. Origin: series-query "Bounded database load"; D-011 (D7: at most 4 concurrent queries, aborts cancel).
+
+#### Scenario: Queue holds for a fallback fan-out
+- **WHEN** a stub adapter with only the required methods sits behind a queue of limit 2, and `firstTimes` for 50 names runs
+- **THEN** the stub never sees more than 2 concurrent `raw` calls (queue `peak` 2) and gets 50 calls in all
+- **Evidence:** `apps/server/test/fallbacks.test.ts` › "sends fallback queries through the queue"
+
+#### Scenario: Abort stops a fallback
+- **WHEN** `firstTimes` for 50 names runs through the fallback on a stub whose `raw` takes 50 ms, behind a queue of limit 2, and its abort signal fires after the first two calls started
+- **THEN** the call rejects with the abort reason and the stub received at most 2 calls
+- **Evidence:** `apps/server/test/fallbacks.test.ts` › "stops a fallback on abort"
+
+### Requirement: State-change fallback stops on long signals
+The `stateChanges` fallback SHALL read the signal in pages of `STATE_SCAN_PAGE` (100,000) points and stop after `STATE_SCAN_MAX` (5,000,000) points; such a signal SHALL be skipped as `too_many_changes`, with one warning per catalog load naming the signal and saying that the adapter should implement `stateChanges`. Origin: necessary consequence of the fallback (a 100 Hz state signal over 5 days holds ~43 M rows); server memory per D-007 (carserver 2 GB).
+
+#### Scenario: Scan cap
+- **WHEN** a stub adapter without `stateChanges` holds a state signal with 5,000,001 points of one value and the events-line signal is loaded
+- **THEN** the signal is skipped with reason `too_many_changes`, the stub was asked for at most 50 pages, and the warning names the signal and `stateChanges`
+- **Evidence:** `apps/server/test/fallbacks.test.ts` › "stops the state-change scan after 5,000,000 points"
+
+### Requirement: ClickHouse answers as before
+The ClickHouse adapter SHALL implement every optional method natively and SHALL send the same queries as before this change for every existing path (density, gaps, events, series, values, catalog); `raw` without a limit and `refBuckets` without row times SHALL be unchanged. Origin: the lead's brief („Keep ClickHouse behaviour and performance unchanged"); D-007.
+
+#### Scenario: Existing suite
+- **WHEN** `pnpm --filter @kipscope/server test` runs against the seeded test DB
+- **THEN** every existing test passes with unchanged expected values
+- **Evidence:** the command's output
+
+#### Scenario: Density query unchanged
+- **WHEN** the density of `drivecar` is computed with a client that records query texts
+- **THEN** its two queries are the `refExtent` and the counts-only `refBuckets` query of today (no `min`/`max` of the time column)
+- **Evidence:** `apps/server/test/density.http.test.ts` › "sends the counts-only bucket query"
+
+### Requirement: Source selection
+`KIPSCOPE_SOURCE` SHALL select the server's one source: `clickhouse` (default, the current variables) or `adx` (adx-source "ADX configuration"). An unknown value, or a missing required variable of the selected source, SHALL stop the server with a message naming the variable; variables of the other source are ignored. Origin: Jan (2026-10-17) „ADX via az login"; A-2 (a) one source per server; D-005 (the server holds the adapters and credentials).
+
+#### Scenario: Selecting a source
+- **WHEN** `loadConfig` runs with no `KIPSCOPE_SOURCE` and `CLICKHOUSE_URL` set; with `KIPSCOPE_SOURCE=adx` plus cluster and database but no `CLICKHOUSE_URL`; with `KIPSCOPE_SOURCE=adx` without `KIPSCOPE_ADX_CLUSTER`; and with `KIPSCOPE_SOURCE=postgres`
+- **THEN** the first gives a ClickHouse source with today's defaults; the second an ADX source; the third throws naming `KIPSCOPE_ADX_CLUSTER`; the fourth throws naming `KIPSCOPE_SOURCE` and the allowed values
+- **Evidence:** `apps/server/test/config.test.ts` › "selects the source"
+
+### Requirement: One conformance suite
+The repo SHALL hold one conformance suite that checks any adapter against the portable fixture of design C7, seeded into the ClickHouse test DB (`conf_signals`, `conf_events`) and the Kusto emulator. Each adapter's run SHALL include a core-only run. A new adapter SHALL need only an adapter factory and a seed of the fixture. Origin: the lead's brief („one suite … so a third adapter author gets the same suite"); concept §10.
+
+#### Scenario: Suite against both adapters
+- **WHEN** `pnpm --filter @kipscope/server test` and `pnpm --filter @kipscope/server test:adx` run with the test DB and the emulator seeded
+- **THEN** both report the same case names for `native` and `core only`, all passing
+- **Evidence:** the two commands' output (tester's report: case count per run)
+
+#### Scenario: Fixture seeded identically
+- **WHEN** the seeds ran and `refExtent` and `listSignals` run on both sources
+- **THEN** both give 17,069 rows for `conf-a` and 12 for `conf-b`, and the same 8 signals
+- **Evidence:** conformance suite › "holds the fixture"
+
+### Requirement: Adapter guide
+The repo SHALL hold `docs/data-sources.md` in English (outline: design C9): the data model, every method with its semantics and whether it is required, optional (with its fallback and measured cost) or a capability, the rules for ranges, order, limits, SNA, errors and aborts, how to run the conformance suite on a new adapter, and a step-by-step "Connect your ADX". Origin: Jan (2026-10-17) „the interfaces shall be lean and documented".
+
+#### Scenario: Guide followed on the emulator
+- **WHEN** the lead follows the guide's emulator steps literally (start the profile, seed, set the listed variables, start a second server on port 7311)
+- **THEN** `curl -s localhost:7311/api/meta | jq -c '[.source.kind, .source.database, .source.reachable, .catalog.size]'` prints `["adx","kipscope_test",true,8]`
+- **Evidence:** lead's check: the steps as run and the `curl` output
+
+### Requirement: Source variables documented
+Every configuration variable of the sources SHALL appear in `docs/data-sources.md` and in `.env.example`. Origin: Jan (2026-10-17) „documented"; necessary consequence (an undocumented key cannot be set).
+
+#### Scenario: Variables documented
+- **WHEN** a test collects every `KIPSCOPE_*` and `CLICKHOUSE_*` key that `config.ts` reads
+- **THEN** each one appears in `docs/data-sources.md` and in `.env.example`
+- **Evidence:** `apps/server/test/docs.test.ts` › "documents every source variable"

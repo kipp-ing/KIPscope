@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-17, session 7. Feature work pauses for user feedback; next: adoptability (lean, documented data-source interfaces; Azure as the first case). Twenty-six changes are archived and the main specs describe the running app.
+As of 2026-10-17, session 7. Feature work pauses: waiting for user feedback, also on the ADX source (D-074). Twenty-seven changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -30,9 +30,11 @@ As of 2026-10-17, session 7. Feature work pauses for user feedback; next: adopta
 | CLI | [cli](../openspec/specs/cli/spec.md) | Every command from the shell, `--wait` for the rendered UI |
 | Footer | [app-footer](../openspec/specs/app-footer/spec.md) | Permanent bottom bar: status, measurement info, source/catalog/zone/build items, `KIPscope · kipp.ing · AAL` at the far right |
 | Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
+| Data sources | [data-source](../openspec/specs/data-source/spec.md), [adx-source](../openspec/specs/adx-source/spec.md) | Lean adapter contract (7 required methods, server-side fallbacks, one conformance suite); ClickHouse or Azure Data Explorer via `KIPSCOPE_SOURCE`, ADX signed in with `az login`; guide [data-sources.md](data-sources.md) |
+| HTTP API | [api-reference](../openspec/specs/api-reference/spec.md) | Every route documented in [http-api.md](http-api.md), checked by a test |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
-History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance, events usability). Decisions D-001 … D-073: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
+History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance, events usability, ADX source). Decisions D-001 … D-075: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
 ## Session 4 in brief
 
@@ -73,13 +75,14 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Built and archived `add-guidance` (D-072) in two rounds plus lead fixes: the window last clicked is the "Add to" target, reveal and flash, hints, help panel with `docs/manual.md` and keys, "Start here" card.
 - Crash gate `pnpm smoke` (headless Chrome against the dev server and a preview) is now the last step of every app round. Jan on the three changes: „its good".
 - Built and archived `improve-events` (D-073) in three rounds plus a lead check (the 1000×557 count check, run headless): events in view with `In view | All`, `n`/`p` stepping, fault memory reads as hollow marks, a Refine section, a key line. Jan: „nice. before we upgrade some more we need more user feedback".
+- Built and archived `add-adx-source` (D-074) in two rounds plus lead checks: lean data-source contract, ADX adapter (token from `az login`), conformance suite on ClickHouse and the Kusto emulator, `docs/data-sources.md` and `docs/http-api.md`. Lead fix D-075: ClickHouse progress headers overflowed on queries over ~10 s (gap info failed, 502s since 14:26). Jan: „nice. wrap it up. we will expect user feedback for azzre".
 
 ## Next
 
-1. Jan (2026-10-17): „before we upgrade some more we nee more user feedback": no new features until more user feedback is in. Next: adoptability, „if one wants to connect this to azur cli as data aquisition. the interfaces shall be lean and documented".
+1. Waiting for user feedback before new features (Jan 2026-10-17), including feedback on the ADX source from Azure users (Jan: „we will expect user feedback for azzre"). A real cluster needs `brew install azure-cli`, `az login`, then [data-sources.md](data-sources.md) §6; the ADX path has run only against the emulator so far.
 2. Rest of persistence (concept §8): snapshots, templates, undo. Save and load are done (D-070).
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
-4. Later: sidebar work package (D-026), playback, ADX adapter, state signals from value tables, timezone selection.
+4. Later: sidebar work package (D-026), playback, state signals from value tables, timezone selection.
 5. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): split the data stream into sessions (charging, driving, idle; definitions in D-067); expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
 ## Known limitations
