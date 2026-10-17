@@ -363,3 +363,7 @@ The Keys tab renders the table grouped, with keys in `<kbd>`.
 8. A German manual.
 9. A status-strip tip line for gestures that cannot be hovered (wheel, swipe, Alt-drop).
 10. Better default colours for overlapping lines (novice), and the wheel speeds in 1/min vs km/h (display names).
+
+## Jan's answers (2026-10-17)
+
+Jan: „all recommended“. G-1 to G-4 are decided as recommended in this design; the lead numbers them as D-nnn on archive.

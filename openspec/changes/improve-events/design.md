@@ -194,3 +194,7 @@ No `packages/shared`, `apps/server`, `apps/cli` or `styles.css` edits; no new pa
 ## Ledger entry on archive (proposed for `docs/decisions.md`, number assigned by the lead)
 
 - Events usability: list scoped to the bar target's view (`In view | All`, local storage `kipscope.eventsScope`, default view), `↑ earlier`/`↓ later` jumps, `n`/`p` and row click put A on an event and centre only outside the view; DTCs are fault memory reads (one row per ECU and time, hollow marks, `READ_LINE`); Refine section closed by default; rows wrap; key line; strip count tooltip.
+
+## Jan's answers (2026-10-17)
+
+Jan: „all recommended“. E-1 to E-4 are decided as recommended in this design; the lead numbers them as D-nnn on archive.

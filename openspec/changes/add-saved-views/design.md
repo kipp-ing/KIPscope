@@ -320,3 +320,7 @@ None. Start the server once with the new build; it writes `.kipscope/workspace.j
 ## Ledger entry on archive (proposed; the lead assigns the number)
 
 - Saved views: one versioned document (`kipscope: view`, `version: 1`, YAML on disk, JSON in links), signals by full ID, absolute UTC times to the ns, no data and no credentials; open replaces the workspace as one command `view.open` with a report of missing and skipped signals, IDs continue; `.kipscope/views/<name>.yaml`, names `[a-z0-9-]` ≤ 63 from the title; "Before last open" kept; state file `.kipscope/workspace.json` written 500 ms after the last change and on SIGTERM, restored at start with its revision; `#view=` self-contained links (deflate-raw, base64url), `?view=<name>`; CLI `view list|save|open|delete|export|import`. Plus Jan's answers to S-1 … S-4.
+
+## Jan's answers (2026-10-17)
+
+Jan: „all recommended“. S-1 to S-4 are decided as recommended in this design; the lead numbers them as D-nnn on archive.
