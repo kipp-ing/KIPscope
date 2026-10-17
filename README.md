@@ -59,6 +59,8 @@ pnpm --filter @kipscope/web dev      # UI at http://localhost:5173, proxies /api
 
 The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL` (default `http://127.0.0.1:7310`).
 
+`pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It blocks every write to `/api`, so it never changes the shared workspace.
+
 The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `KIPSCOPE_HOST` logs a warning at start: there is no authentication.
 
 Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the ClickHouse address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.

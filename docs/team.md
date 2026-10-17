@@ -11,6 +11,7 @@ Adopted from the PCB-dev placer team (D-013), slimmed down for KIPscope: the sui
 | UI user | [ks-ui-user](../.claude/agents/ks-ui-user.md) | sonnet | nothing; reports with screenshots |
 | Reviewer | [ks-reviewer](../.claude/agents/ks-reviewer.md) | opus, round diff only | nothing; findings only |
 | Pacer | [ks-pacer](../.claude/agents/ks-pacer.md) | sonnet | `tasks.md` checkboxes, round log `rounds.md` (also does the scenario check) |
+| Crash guard | [ks-smoke](../.claude/agents/ks-smoke.md) | sonnet | nothing; `pnpm build` + `pnpm smoke` (headless Chrome, [scripts/smoke.mjs](../scripts/smoke.mjs)) pass/fail |
 
 ## One change
 
@@ -20,8 +21,9 @@ Adopted from the PCB-dev placer team (D-013), slimmed down for KIPscope: the sui
    - Build: engineers implement, the tester writes the scenario tests in parallel (test-first from the spec).
    - Check: the tester runs `pnpm build && pnpm test && pnpm lint`, the UI user drives the app in Chrome on real data; then the reviewer judges the diff.
    - Pacer: judges every scenario against the evidence, ticks tasks, decides `done`, `continue` (new tasks from open findings only) or `needs_jan`.
+   - Crash guard: last step of every round that touched `apps/web` or `packages/shared`, after the pacer: `pnpm build`, `pnpm smoke` against the running Vite and `pnpm smoke --preview`, before the lead shows Jan anything. A failure turns the round into `continue` with the crash as the first task (`needs_jan` in the last round, or when Vite itself needs the lead's restart).
    - Follow-up rounds check light: the reviewer looks at that round's diff only, and the UI user runs only if the round touched `apps/web` (otherwise the previous UI result carries over).
-3. **Lead:** commits, shows Jan the result. Jan says: good / not good. Then archive.
+3. **Lead:** commits, shows Jan the result. Jan says: good / not good. Then archive. The lead never tells Jan something is ready before `pnpm smoke` passed against the dev server he has open (both crashes of 2026-10-17 had passed `pnpm build`); after a Vite restart or any change outside a round, run it again.
 
 ## Token budget (Jan, 2026-10-14)
 

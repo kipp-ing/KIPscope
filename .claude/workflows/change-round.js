@@ -1,8 +1,8 @@
 export const meta = {
   name: 'change-round',
-  description: 'KIPscope: build rounds for an OpenSpec change (build, test, UI check, review, spec check) until done',
+  description: 'KIPscope: build rounds for an OpenSpec change (build, test, UI check, review, spec check, crash guard) until done',
   whenToUse: 'args: {change: "add-sna-handling", date: "YYYY-MM-DD", maxRounds?: 3, hint?: "..."}. Spec, design and tasks of the change must exist.',
-  phases: [{ title: 'Plan' }, { title: 'Build' }, { title: 'Check' }, { title: 'Judge' }, { title: 'Pace', detail: 'spec check and decision' }],
+  phases: [{ title: 'Plan' }, { title: 'Build' }, { title: 'Check' }, { title: 'Judge' }, { title: 'Pace', detail: 'spec check and decision' }, { title: 'Guard', detail: 'crash guard: build and headless smoke' }],
 }
 
 const CHANGE = args && args.change
@@ -110,6 +110,7 @@ ${t.brief}`,
 
   // Follow-up rounds check light: the UI user runs again only if the round touched the web app.
   const touchesWeb = tasks.some(t => t.role === 'engineer' && /apps\/web/.test(t.area))
+  const touchesApp = touchesWeb || tasks.some(t => t.role === 'engineer' && /packages\/shared/.test(t.area))
   const [test, uiNow] = await parallel([
     () =>
       agent(
@@ -143,6 +144,35 @@ Build reports:\n${buildText}\n\nTester:\n${JSON.stringify(test)}\n\nUI user:\n${
   )
   lastCheck = { test, ui, review, spec: pace && { scenarios: pace.scenarios || [], findings: [] } }
   result = pace || { decision: 'needs_jan', reason: 'pacer gave no answer', tasks: [] }
+
+  // Crash guard (docs/team.md): last step of a round that touched the web app or the shared package.
+  // Both crashes of 2026-10-17 passed `pnpm build`; only the app in a real browser shows them.
+  if (touchesApp) {
+    const guard = await agent(
+      `${ROLE('smoke')}
+Round ${round}, after the pacer: run pnpm build, pnpm smoke and pnpm smoke --preview once each. One scenario per command (pass = fulfilled, fail = missed, not_run); every failure is a blocker finding whose text is the script's output. Write nothing.`,
+      { label: `smoke:r${round}`, phase: 'Guard', schema: CHECK, ...SONNET },
+    )
+    lastCheck.guard = guard
+    if (!guard || guard.scenarios.some(s => s.state !== 'fulfilled')) {
+      const report = cut(open(guard), 1500)
+      // Vite down or holding a stale resolution is the lead's job (restart), not another round's.
+      const leadJob = !guard || /stale resolution|ERR_CONNECTION_REFUSED/.test(report)
+      if (!leadJob && round < MAX) {
+        // The fix joins the pacer's web engineer task if there is one (write areas stay disjoint).
+        const fix = `Crash guard failed after round ${round}; fix this first:\n${report}`
+        const next = result.decision === 'continue' ? result.tasks || [] : []
+        const web = next.find(t => t.role === 'engineer' && /apps\/web/.test(t.area))
+        const fixTasks = web
+          ? next.map(t => (t === web ? { ...t, tasks: [...t.tasks, 'crash guard'], brief: `${t.brief}\n${fix}` } : t))
+          : [...next, { role: 'engineer', area: 'apps/web/src', tasks: ['crash guard'], brief: fix }]
+        result = { ...result, decision: 'continue', reason: `crash guard failed: ${report}\n${result.reason}`, tasks: fixTasks }
+      } else {
+        const why = leadJob ? 'needs the lead (start or restart Vite, then pnpm smoke)' : 'failed in the last round'
+        result = { ...result, decision: 'needs_jan', reason: `crash guard ${why}: ${report}\n${result.reason}` }
+      }
+    }
+  }
   if (result.decision !== 'continue') break
   tasks = result.tasks
 }
