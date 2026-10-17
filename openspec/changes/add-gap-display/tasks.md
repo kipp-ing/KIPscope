@@ -39,9 +39,19 @@ Build after `add-events` (its `evaluateAt` `named`, `label`, `holdAcrossRange`, 
 - [x] 4.4 Web tests: `build.test.ts` ("breaks lines and steps at gaps", "breaks buckets only where a gap is certain", "ends an SNA mark at the hold end", "draws a point between two splits as a marker", "breaks a gap across a tile edge like one request", "ends state signal holds at gaps"); `readout.test.ts` ("reads gaps from the drawn data", "reads gaps as no data, and Δ as —"); `live.test.ts` ("reads SNA and gaps without a number and never highlights them" gains a gap case); `values.test.ts` ("formats gaps as no data"); `gaps.test.ts` ("fetches gap info once per data ref and retries a failure", "lists the logger gaps a view shows"). Verify: `pnpm --filter @kipscope/web test`.
 - [x] 4.5 CLI (G8): stub source `loggerGaps`, `firstTimes`, SPEED point 12 at 02:00:05Z; `cli.test.ts` › "reads a value at a time and at a cursor" gains the gap case. Verify: `pnpm --filter @kipscope/cli test`.
 
+## 5. Stale logger gaps (G9, Jan 2026-10-17; one round)
+
+Four tasks, disjoint files, all against the interfaces pinned in G9; 5.2 and 5.3 may stub 5.1 until it is in; the tester writes 5.4 test-first.
+
+- [ ] 5.1 `packages/shared/src/gaps.ts`, `index.ts`: `GAP_REFRESH_MS`, `loggerGapWithin`, `holdsSample`; `splitPoints` splits by a logger gap only when it lies within `[p, q]`; `splitBuckets` ignores a logger gap that holds either bucket entirely (G9 (a)). Verify: `pnpm --filter @kipscope/shared build && pnpm --filter @kipscope/shared test`; scenario "Points and buckets inside a stale gap".
+- [ ] 5.2 `apps/server/src/datasource.ts`, `clickhouse.ts`, `queue.ts`, `gaps.ts`, `routes/series.ts`: `DataSource.refCount` (plain `count()` on the data-ref column, through the queue); `GapCache` keeps the count taken before each computation and gains `refresh` (old info served until the new one is in, failure keeps it, stopped by a newer load); routes poll every `GAP_REFRESH_MS` after the prefetch or the previous poll ended, never overlapping, stopped on close (G9 (b)). Verify: `pnpm --filter @kipscope/server build`; scenario "New rows refresh the gap info"; on the dev server "smart451 without the stale gap"; lead: "Count on carserver".
+- [ ] 5.3 `apps/web/src/chart/gaps.ts`, `chart/readout.ts`, `chart/TimeseriesWindow.tsx`: `bandsIn(…, results)` leaves out gaps that hold a sample; the window computes bands per data ref from that ref's drawn results; `chartValueAt` on buckets reads `logger_gap` only when the gap holds no sample of the result; `GapInfoStore` refetches loaded infos every `GAP_REFRESH_MS` while asked for, replaces only on a different answer, keeps the old one on failure without an error (G9 (a), (c)). Verify: `pnpm build && pnpm lint`; scenarios "Repro of the stale gap", "Refetch every 5 min"; UI "Steering angle on 2026-10-16".
+- [ ] 5.4 Tests (tester): `packages/shared/test/gaps.test.ts` ("ignores a logger gap that holds a sample"); `apps/server/test/gaps.test.ts` ("recomputes gap info after new rows and keeps the old one meanwhile") and `refCount` in the stub sources of `queue.test.ts`, `signals.http.test.ts`; `apps/cli/test/helpers.ts` stub `refCount`; `apps/web/test/build.test.ts` ("draws through a logger gap that holds samples", fixture shaped like the repro of G9), `gaps.test.ts` ("leaves out a band that holds samples", "refetches gap info every 5 min and keeps it on failure"), `readout.test.ts` ("reads drawn data inside a stale logger gap"). Verify: `pnpm test`.
+
 ## UI check (UI user, smart451, 1440×900, no task)
 
 - timeseries-window: "Dropout in a drive", "Day overview", "Band in a drive", "Settled with breaks".
+- timeseries-window (round of section 5): "Steering angle on 2026-10-16".
 - cursors: "Cursors in a gap"; live-cursor: "Hover over a logger gap band"; values-window: "Inside gaps"; design-language: "Computed look"; state-names: "Readouts on smart451" (moved B).
 
 ## Workflow follow-up

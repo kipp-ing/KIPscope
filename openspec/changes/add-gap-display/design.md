@@ -20,7 +20,7 @@ Measured on carserver (read-only, 2026-10-16, smart451, 131 M timestamped rows, 
 
 ## Goals / Non-Goals
 
-**Goals:** D-062 as quoted, in every timeseries window, raw and aggregated, and in every cursor value (legends, values window, live cursor, `kipscope value`); gaps identical with and without the tile cache; the cost bounded to two light queries per data ref and catalog load.
+**Goals:** D-062 as quoted, in every timeseries window, raw and aggregated, and in every cursor value (legends, values window, live cursor, `kipscope value`); gaps identical with and without the tile cache; the cost bounded to two light queries per data ref and catalog load, plus one metadata count per data ref every 5 min and a recompute after new rows (G9).
 
 **Non-Goals:** see the proposal's Out of scope. In particular no change to SNA classification, to series queries or to the time strip.
 
@@ -225,6 +225,43 @@ Routes (`seriesRoutes`, next to the `DensityCache`): one `GapCache`; after each 
 
 No code: `kipscope value` prints the server's `value`. `apps/cli/test/helpers.ts`'s stub source gains `loggerGaps` (testcar: the gap 02:00:02Z–02:00:04Z) and `firstTimes` (empty map), and the point 12 at 02:00:05Z for `testcar/Sna_800h.SPEED` (tester).
 
+### G9: Stale logger gaps (pinned; Jan's report 2026-10-17, lead's diagnosis)
+
+**Defect.** Jan (2026-10-17): „same values are cluttered as dots, which should have a hüllkurve instead? looks strange. I get more data when i zoom in". The gap cache had a logger gap 1792176671171000000 → 1792176763235000000 (2026-10-16 18:51:11.171–18:52:43.235 UTC) for smart451. Carserver holds ~16,200 rows per 10 s throughout it (1,491,779 rows in two parts, one of them `…_4196_4211_3`): a chunk uploaded after the gap info was computed, older than the newest rows. A fresh logger-gap query no longer finds the gap; a server restart fixed the view. With the stale gap every pair of points or buckets inside it was split (offline repro, window 18:51:11.385–18:51:20.691 UTC: 500 `LWS_ANGLE` buckets → 499 breaks, all 500 isolated → markers; `PTC_HV_Volt` 95 points → 94 breaks). A gap info can go stale whenever the logger backfills older time; the proposal's "until the next load" did not foresee backfill.
+
+**(a) Data beats a stale gap (shared, pure; server and web alike).** A real logger gap holds no row (G2), so a sample strictly inside one proves it stale for that pair:
+
+```ts
+// packages/shared/src/gaps.ts
+/** Refresh interval of the gap info, server poll and web refetch (G9 (b), (c)). */
+export const GAP_REFRESH_MS = 300_000;
+/** The earliest logger gap with p ≤ from and to ≤ q; binary search. Pure. */
+export function loggerGapWithin(p: bigint, q: bigint, logger: readonly LoggerGap[]): LoggerGap | undefined;
+/** A sample of `result` lies strictly inside `gap`: a raw point or edge neighbour with from < t < to, or a non-empty bucket [s, s + w) with from < s and s + w ≤ to. Pure. */
+export function holdsSample(result: SeriesResult, gap: LoggerGap): boolean;
+```
+
+- `splitPoints` (G4): the logger part uses `loggerGapWithin(p, q)` instead of `loggerGapBetween`; a gap that holds `p` or `q` strictly inside does not split them. The period rule is unchanged. `evaluateAt` (server `/api/value`, web raw readouts) follows without change.
+- `splitBuckets` (G5): a logger gap overlapping the centres splits two buckets only if neither bucket lies entirely inside it (`from < s && s + w ≤ to`). A bucket straddling a gap edge proves nothing and keeps today's rule.
+- `chartValueAt`, buckets: `loggerGapAt(t)` gives `logger_gap` only when `!holdsSample(result, gap)`; otherwise it reads the bucket or the empty stretch as today.
+- Bands (`chart/gaps.ts`): `bandsIn(logger, from, to, results: readonly SeriesResult[] = [])` leaves out each gap for which `holdsSample(r, gap)` for some `r` of `results`. `TimeseriesWindow` computes the bands per data ref (its logger gaps, the drawn results of its signals; a sample of another data ref says nothing) and paints their union.
+- `buildModel`, `snaPeriods`, `isolatedPoints`: no change; they follow `splitPoints`/`splitBuckets`.
+
+Residue until (b) and (c) catch up: a signal with no sample inside a stale gap (an event signal) still breaks across it, and `/api/value` agrees with the drawn data (both use the pair rule).
+
+**(b) Server keeps the gap info fresh.** New `DataSource.refCount(dataRef, abort?) → Promise<number>`: `SELECT count() FROM <table> WHERE <dataRef> = {ref:String}` (all rows; with the data ref as partition key ClickHouse answers it from part metadata). Measured on carserver 2026-10-17: 3.4 ms, `read_rows` 3, 1.2 MB, 183,517,530 rows. `GapCache`:
+
+```ts
+/** One poll (G9 (b)): for each data ref with gap info of the current catalog load, in turn: refCount; when it differs from the count taken before that info was computed, compute anew. The old info stays served until the new one is in; a failure goes to `warn` and keeps the old info; a newer catalog load stops the run. */
+refresh(dataRefs: Iterable<string>, warn: (message: string) => void): Promise<void>;
+```
+
+`compute` takes `refCount` first and keeps it with the entry (rows inserted during the 9 s computation cause one more recompute at the next poll, never a missed one). Routes: a poll runs `GAP_REFRESH_MS` after the previous poll or the catalog load's prefetch ended (a `setTimeout` chain, stopped on close), so polls never overlap each other or a prefetch, and the server runs at most one gap recompute at a time. Cost: one count query per data ref and 5 min; a full recompute (logger-gap query 9.4 s, 20.5 MB over 174 M rows, first-times 0.17 s) only after new rows, at most once per 5 min: ≈ 3 % of the time while the car uploads, nothing while it does not.
+
+**(c) Web refetches.** `GapInfoStore` refetches a loaded data ref every `GAP_REFRESH_MS` while a window asks for it. The old info stays until the answer arrives and is replaced only when the answer's JSON differs (no redraw otherwise); a failed refetch keeps the old info, raises no render error and is tried again at the next interval; the window stays settled throughout. Staleness after a backfill: at most 5 min (server poll) + one recompute + 5 min (tab refetch), with (a) covering the drawing meanwhile.
+
+**Out of scope:** the `LWS_ANGLE` values in that stretch (they really jump ±1,400° every 10 ms; the DBC's SNA raw 32768 decodes to 0° = straight ahead: a CarController DBC issue, reported to Jan); the density (time strip) staleness after a backfill; incremental gap computation.
+
 ### T: Test data (pinned, `apps/server/scripts/seed-test-db.ts`, `test/fixtures/test-a.dbc`, `test/fixtures/test-diag.manifest.json`; tester)
 
 New data ref `gapcar` (vehicle `gapcar`, device `test-gap`, chunk `g1`), base G = 2026-10-03T00:00:00Z, all rows in [G, G + 10 min). Rows of no gapcar signal lie in [00:05:00, 00:06:00) (logger pause P1), in the open interval (00:09:30.000, 00:09:31.900) (silence S1, 1.9 s, not a logger gap) or in the open interval (00:09:40.000, 00:09:42.000) (logger pause P2, exactly 2.0 s).
@@ -250,11 +287,12 @@ Expected: logger gaps exactly 00:04:59.980–00:06:00.000 and 00:09:40.000–00:
 - **PERIOD_MAX_LONG_SHARE 5 %:** 2.5 % → all accepted signals have 0 %; 10 % → `D_RS_BMS` (12.4 %) still refused. 
 - **Band at least 1 px, `#f1f5f9`:** 2 px → a 3 s gap in a day view looks like a 10 min one; slate-200 → competes with grid lines (`#e2e8f0` is the border colour).
 - **Retry 30 s:** the density's; 15 s / 60 s change only how fast a recovered server shows breaks.
+- **GAP_REFRESH_MS 5 min (G9):** 2.5 min → count queries 2× (≈ 1.4 ms/min, negligible), recomputes at most 2× while uploading (≈ 6 % of carserver's time in the logger-gap scan); 10 min → a stale band or event-signal break lasts up to ~20 min in an open tab. (a) keeps the curves right either way, so the interval only bounds band and event-signal staleness. A recompute grows with the recording (9.4 s at 174 M rows); if it exceeds 30 s (≥ 10 % at 5 min), report a finding (incremental computation is out of scope).
 
 ## Risks / Trade-offs
 
 - [A DBC cycle time slower than the real sending] → every spacing exceeds 3 P and the line becomes markers. 0 of 42 messages on smart451 (one is faster, which only bridges dropouts of 30–60 ms). A finding goes to Jan if one appears.
-- [Gap info is fixed per catalog load] → rows written later have no logger gaps until the next load (the period rule still applies), as the density. Accepted (proposal).
+- [Gap info is computed per catalog load] → rows written later, even backfilled older ones, were unknown until the next load; G9 polls the row count every 5 min, recomputes on a change, and lets drawn samples void a stale gap meanwhile.
 - [One more full scan per catalog load] → 7 s on carserver, after the density, in the background; a value request before it finishes waits for it (once).
 - [`firstTimes` reads all rows of the sampled signals] → 3.8 M rows today; grows with the recording (≈ 10× in 50 days). Fallback if it ever gets slow: one `ORDER BY time LIMIT 1001` query per signal (read in key order, ~10 ms each).
 - [Line mode next to a state name] → the readout holds up to the hold end (G4), the drawn line stops at the point (no hold drawn in line mode); within one period only.

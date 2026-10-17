@@ -39,7 +39,7 @@ A logger gap SHALL be the time between two consecutive timestamped rows of a dat
 - **Evidence:** the `curl` command
 
 ### Requirement: Gap info per catalog load
-The server SHALL compute a data ref's gap info (logger gaps, periods, `through` = its last row's time) at most once per catalog load, share it between concurrent requests, start computing it for every data ref after each catalog load, and not keep a failed computation. Origin: necessary consequence of D-062 (the rule needs it for every view and value) and D-007 (carserver: 2 GB RAM); same pattern as the density (time-strip, design T7).
+The server SHALL compute a data ref's gap info (logger gaps, periods, `through` = its last row's time) once per catalog load and after new rows ("Gap info follows new rows"), share it between concurrent requests, start computing it for every data ref after each catalog load, and not keep a failed computation. Origin: necessary consequence of D-062 (the rule needs it for every view and value) and D-007 (carserver: 2 GB RAM); same pattern as the density (time-strip, design T7).
 
 #### Scenario: Once, shared, retried after failure
 - **WHEN** a stub source counts its logger-gap and sample queries; two `/api/gaps` requests for one data ref arrive together, a third after them, then the catalog reloads and a fourth arrives; then the source fails once and two more requests arrive one after the other
@@ -48,8 +48,34 @@ The server SHALL compute a data ref's gap info (logger gaps, periods, `through` 
 
 #### Scenario: Load on carserver
 - **WHEN** the gap info of smart451 is computed on carserver
-- **THEN** it runs one logger-gap query (≈ 7 s, ≈ 14 MB server memory for 131 M rows) and one sample query (≈ 0.2 s, ≈ 2 MB for 116 signals), and no other query
+- **THEN** it runs one logger-gap query (≈ 7 s, ≈ 14 MB server memory for 131 M rows) and one sample query (≈ 0.2 s, ≈ 2 MB for 116 signals), one count query (design G9) and no other query
 - **Evidence:** `X-ClickHouse-Summary` of the two queries of design G2/G3 run with `curl` (read-only)
+
+### Requirement: Gap info follows new rows
+Every 5 min after the last poll or prefetch ended, the server SHALL count each data ref's rows and recompute the gap info whose count changed since it was computed, serving the old info until the new one is in and keeping it when the recompute fails; polls and prefetches never overlap. Origin: D-062 as a necessary consequence (a backfilled chunk left a stale gap that split real data, Jan 2026-10-17); design G9 (b).
+
+#### Scenario: New rows refresh the gap info
+- **WHEN** a stub source answers `refCount` 100 and the gap info is computed; a poll runs with the count still 100; the count becomes 101 and the logger gaps change, and a poll runs while a request arrives during its recompute; then the count becomes 102, the next recompute fails, and a request follows
+- **THEN** the second poll sends one count query and no logger-gap query; the third sends one logger-gap query, the request during it gets the old info and requests after it the new one; after the failed recompute the request gets the previous info (answer 200) and the next poll recomputes again
+- **Evidence:** `apps/server/test/gaps.test.ts` › "recomputes gap info after new rows and keeps the old one meanwhile"
+
+#### Scenario: Count on carserver
+- **WHEN** `SELECT count() FROM sdlog.signals WHERE vehicle = 'smart451'` runs on carserver (read-only)
+- **THEN** its `X-ClickHouse-Summary` shows `read_rows` ≤ 10 and `elapsed_ns` < 50 ms (measured 2026-10-17: 3 rows, 3.4 ms)
+- **Evidence:** `curl` with the summary header
+
+#### Scenario: smart451 without the stale gap
+- **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451' | jq '[.logger[] | select(.to > "1792176671171000000" and .from < "1792176763235000000")] | length'` runs on the dev server
+- **THEN** it prints `0` (no logger gap in 2026-10-16 18:51:11.171–18:52:43.235 UTC, where carserver holds 1,491,779 rows)
+- **Evidence:** the `curl` command
+
+### Requirement: A sample voids a logger gap
+A logger gap SHALL split two points of a signal only when it lies within them (`p ≤ from` and `to ≤ q`), and two buckets only when neither bucket lies entirely inside it; a logger gap that holds a point, edge neighbour or non-empty bucket of the signal strictly inside it SHALL count as stale for that pair, and the period rule SHALL still apply. Origin: logger gap definition (it holds no row, "Logger gaps"); Jan 2026-10-17 („same values are cluttered as dots"); design G9 (a).
+
+#### Scenario: Points and buckets inside a stale gap
+- **WHEN** with a logger gap 1 s–61 s and no period the split is computed for points 10 s and 20 s; 0 s and 10 s; 20 s and 70 s; 0 s and 70 s; with P = 10 ms for points 10 s and 10.05 s; for 1 s buckets at 10 s and 11 s; at 0 s and 61 s; and `evaluateAt(15 s, "line", {t: 10 s, v: 1}, {t: 20 s, v: 3}, undefined, gaps)`
+- **THEN** the results are: none, none, none, a logger split with hold end 1 s, a period split, joined, split (logger), and `interpolated` 2
+- **Evidence:** `packages/shared/test/gaps.test.ts` › "ignores a logger gap that holds a sample"
 
 ### Requirement: Gap info over HTTP
 `GET /api/gaps?dataRef=<ref>` SHALL return the data ref's gap info. It SHALL answer 400 `invalid_request` without `dataRef`, 503 `catalog_unavailable` before the catalog was ever loaded, 404 `unknown_data_ref` for a data ref without catalog signals, and 502 `source_error` when the computation fails. Origin: necessary consequence of D-062 (the web draws the gaps; same errors as `/api/density`).

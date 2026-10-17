@@ -98,7 +98,7 @@ In an aggregated view the mean curve and the min/max envelope SHALL break betwee
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Logger gap bands
-Every timeseries window SHALL paint each logger gap of its signals' data refs that meets its view as a faint grey band over the plot's full height, under the grid, the event marks and the curves, at least 1 CSS px wide. Origin: D-062 („logger gaps also get a faint grey band so "no data" reads as intended"; „in every timeseries window" as a consequence of „every signal").
+Every timeseries window SHALL paint each logger gap of its signals' data refs that meets its view and holds no drawn sample of that data ref, as a faint grey band over the plot's full height, under the grid, the event marks and the curves, at least 1 CSS px wide. Origin: D-062 („logger gaps also get a faint grey band so "no data" reads as intended"; „in every timeseries window" as a consequence of „every signal"); stale gaps: design G9 (a).
 
 #### Scenario: Band in a drive
 - **WHEN** on smart451 at 1440×900 a window shows `CPC_448h.PTC_HV_Volt` and `SAS_0C2h.LWS_ANGLE` from 2026-10-13 11:27:45 to 11:28:05 local
@@ -109,6 +109,19 @@ Every timeseries window SHALL paint each logger gap of its signals' data refs th
 - **WHEN** the bands of the view 2026-10-03T00:04:00Z–00:09:41Z are listed from gapcar's logger gaps
 - **THEN** they are 00:04:59.980–00:06:00.000 and 00:09:40.000–00:09:41 (clipped to the view)
 - **Evidence:** `apps/web/test/gaps.test.ts` › "lists the logger gaps a view shows"
+
+### Requirement: Drawn data beats a stale logger gap
+A window SHALL draw the curves, envelopes and bands of a stretch whose logger gap holds drawn samples as if the gap were absent: no break and no band there, and the drawn value (L, drags) a value, not `logger_gap`. Origin: Jan 2026-10-17 („same values are cluttered as dots, which should have a hüllkurve instead? looks strange"); design G9 (a).
+
+#### Scenario: Repro of the stale gap
+- **WHEN** with the logger gap 1792176671171000000–1792176763235000000 (2026-10-16 18:51:11.171–18:52:43.235 UTC) the view 18:51:11.385–18:51:20.691 is built from 500 buckets of 20 ms of `SAS_0C2h.LWS_ANGLE` (period 10 ms, means alternating −1,400 and 1,400, all inside the gap) and 95 raw points of `CPC_448h.PTC_HV_Volt` (period 100 ms, 100 ms apart, edge neighbours inside the gap); the bands of the view are listed with and without these results; and the drawn values are read at 18:51:15.000
+- **THEN** mean, min and max hold no inserted null and no bucket is isolated (was 499 breaks, 500 isolated); PTC_HV_Volt has no break (was 94); the bands are `[]` with the results and the one clipped gap without them; LWS_ANGLE reads `aggregated` and PTC_HV_Volt `interpolated`
+- **Evidence:** `apps/web/test/build.test.ts` › "draws through a logger gap that holds samples"; `apps/web/test/gaps.test.ts` › "leaves out a band that holds samples"; `apps/web/test/readout.test.ts` › "reads drawn data inside a stale logger gap"
+
+#### Scenario: Steering angle on 2026-10-16
+- **WHEN** on smart451 at 1440×900 a window shows `CPC_448h.PTC_HV_Volt`, `SAS_0C2h.LWS_ANGLE` and `COMBI_412h.V_ANZ` from 2026-10-16 20:51:11.385 to 20:51:20.691 local
+- **THEN** LWS_ANGLE is a mean curve with its min/max envelope (or a line when raw), the other two are lines, no point markers stand alone and no grey band shows
+- **Evidence:** UI check (screenshot)
 
 ### Requirement: Gap info loads with the window
 A window SHALL fetch the gap info of each data ref of its signals once per browser tab, draw its data meanwhile without breaks, and count as settled only when every needed gap info has loaded or failed. A failure SHALL be a render error of the window and SHALL be retried every 30 s while the window shows that data ref. Origin: necessary consequence of D-062 (breaks and bands need it) and D-011 (`--wait` reports the drawn state).
@@ -122,3 +135,11 @@ A window SHALL fetch the gap info of each data ref of its signals once per brows
 - **WHEN** on smart451 `kipscope --wait window range <w> "2026-10-13 11:27:45" "2026-10-13 11:28:05"` runs on a window showing `CPC_448h.PTC_HV_Volt` in a fresh browser tab
 - **THEN** it reports `complete`, and a screenshot taken right after shows the band and the break
 - **Evidence:** UI check (CLI output and screenshot)
+
+### Requirement: Gap info refetched
+A loaded gap info SHALL be fetched again every 5 min while a window shows its data ref, replaced only when the answer differs, and kept without a render error when that fetch fails. Origin: necessary consequence of D-062 (the server's gap info follows new rows, data-gaps); design G9 (c).
+
+#### Scenario: Refetch every 5 min
+- **WHEN** a window shows a data ref whose gap info has loaded, 5 min pass with the same answer, 5 min more with one logger gap less, then 5 min more with a failing fetch
+- **THEN** one request is sent at each 5 min mark; the info object stays the same after the first, is replaced after the second, and stays after the third with no render error, the window settled throughout
+- **Evidence:** `apps/web/test/gaps.test.ts` › "refetches gap info every 5 min and keeps it on failure"

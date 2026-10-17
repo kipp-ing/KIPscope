@@ -17,9 +17,10 @@ D-062 (Jan, supersedes D-009):
 - **`GET /api/gaps?dataRef=`:** logger gaps and every signal's period with its source, computed once per catalog load and prefetched like the density.
 - **Display:** split pairs stay blank in every timeseries window, raw and aggregated, mean and envelope; logger gaps get a faint grey band (`--gap-fill`) under grid and curves; an SNA mark ends where the hold ends.
 - **Cursors:** a value inside a split is `{kind: "none", reason: "logger_gap" | "period_gap"}` from `/api/value` (A, B, values window, `kipscope value`) and from the drawn data (L, drags). Cells read `no data` with the reason as tooltip; Δ with it is `—`.
+- **Stale gaps (G9, Jan 2026-10-17):** a logger gap that holds a drawn sample splits nothing and draws no band; the server polls each data ref's row count every 5 min and recomputes its gap info after new rows (backfilled chunks included); the web refetches it every 5 min.
 - **Test data:** a new data ref `gapcar` with a 60 s and a 2 s logger pause, a 1.9 s silence that is not one, a cyclic DBC signal with a dropout and a 3-period spacing that is not one, an event signal, a measured signal and a diag reading with missed polls; test fixtures gain a cycle time and a group interval.
 
-**Out of scope:** SNA classification (D-010, D-014, D-015 unchanged); choices of interpolation mode beyond gaps; showing periods or gaps in the hover card, the time strip or the CLI beyond `value`; a switch to turn gaps off; persisting gap info; per-signal overrides of a period in `kipscope.yaml`; logger gaps in rows written after the catalog load (until the next load).
+**Out of scope:** SNA classification (D-010, D-014, D-015 unchanged); choices of interpolation mode beyond gaps; showing periods or gaps in the hover card, the time strip or the CLI beyond `value`; a switch to turn gaps off; persisting gap info; per-signal overrides of a period in `kipscope.yaml`; the time strip's density after a backfill; incremental gap computation.
 
 ## Depends on
 
