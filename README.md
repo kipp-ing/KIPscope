@@ -1,6 +1,6 @@
 # KIPscope
 
-Interactive workspace for exploring recorded vehicle time series (CAN signals and diagnostic readings in ClickHouse or Azure Data Explorer). Search signals, lay them out in linked chart windows, zoom from a whole recording down to single samples, and read exact values and differences with two cursors. Everything in the UI is also a command, so a CLI (or an agent) can drive the same workspace.
+Interactive workspace for exploring recorded vehicle time series (e.g. CAN bus signals and diagnostic readings in ClickHouse or Azure Data Explorer). Search signals, lay them out in linked chart windows, zoom from a whole recording down to single samples, and read exact values and differences with two cursors. Everything in the UI is also a command, so a CLI (or an agent) can drive the same workspace.
 
 ![KIPscope: a launch from a traffic light in the demo recording, with speed, throttle and pack current, pack voltage and state of charge, cursors A and B with Diff, and a values window](docs/images/hero.png)
 
