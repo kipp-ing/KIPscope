@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-17, session 7. Feature work pauses: waiting for user feedback, also on the ADX source (D-074). Twenty-seven changes are archived and the main specs describe the running app.
+As of 2026-10-19, session 8. New direction after issue #1 and Jan's answers (D-078 … D-080); see Next. Twenty-seven changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -79,11 +79,18 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 
 ## Next
 
-1. Waiting for user feedback before new features (Jan 2026-10-17), including feedback on the ADX source from Azure users (Jan: „we will expect user feedback for azzre"). A real cluster needs `brew install azure-cli`, `az login`, then [data-sources.md](data-sources.md) §6; the ADX path has run only against the emulator so far.
+1. New direction (2026-10-19, D-078 … D-080, issue #1): KI.ping finds sessions, KIPscope shows one case (scope = data ref + time window), runs multiuser on a server, signal books with three priorities and a learned book. Planned changes in order:
+   0. Papercuts from issue #1 item 8 (`.gitattributes`, `--env-file-if-exists`, DBC path warnings).
+   1. `improve-query-priority`: interactive queries before background work; periods only for the signals in view (issue #1 item 7).
+   2. `add-scope`: scope in the source contract and the workspace, scoped catalog, bounded strip, gaps and events, CLI `scope set` (issue #1 items 1–5). Unblocks the Azure users.
+   3. `add-multiuser`: workspaces per user, configurable host, one hook for access control later, CLI against a remote server (D-079).
+   4. `add-case-open`: handoff from the finder (scope, context, book, windows as signal lists; link, CLI, file); neighbouring sessions by one click, preloaded (D-078).
+   5. `add-signal-books`: book files and inline books, P1–P3, lazy metadata, learned book per user, ADX metadata once the Azure users explain it (D-080, issue #1 item 6).
+   The ADX path has run only against the emulator so far; a real cluster needs [data-sources.md](data-sources.md) §6.
 2. Rest of persistence (concept §8): snapshots, templates, undo. Save and load are done (D-070).
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
 4. Later: sidebar work package (D-026), playback, state signals from value tables, timezone selection.
-5. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): split the data stream into sessions (charging, driving, idle; definitions in D-067); expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
+5. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
 ## Known limitations
 

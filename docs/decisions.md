@@ -4,6 +4,33 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-080: Signal books with three priorities and a learned book (2026-10-19)
+
+Jan: „1 a und b und ev. ein "lernbuch"? die meisten nutzer nehmen immer die gleichen signale, nur jeder halt andere. 2: drei sollte reichen“.
+
+- **Decision:** A signal book is a list of signal names (without data ref) with a priority each. It comes from a file in KIPscope (`books/<name>.yaml`, chosen by name) or inline from the finder's handoff. A per-user **learned book** collects the signals each user actually works with and ranks them like a book. Three priorities:
+  - **P1 core:** top of the explorer in book order; existence in the scope and metadata are fetched right when a case opens, in one batched request.
+  - **P2 book:** below P1; metadata when a row becomes visible, is hovered or added.
+  - **P3 rest:** every other name in the scope; last in the search; metadata only on hover or add, never ahead.
+- **Why:** Up to 10,000 signal names per data ref; names in a scope are cheap (issue #1: ~2,300 in 1.6 s for 24 h), metadata for all of them are not. Most users reuse the same few signals, each user different ones.
+- **Consequences:** The learned book needs a user identity (D-079). Where ADX holds units, descriptions and SNA is still open: the Azure users explain it on issue #1 (Jan: „das ist in ADX alles da, aber wie genau müssen adx nutzer erklären“).
+
+## D-079: KIPscope runs on a server, multiuser (2026-10-19)
+
+Jan: „das soll auf einem server laufen, dem gleichen vielleicht wie Ki ping. lokal ist immer nur der browser. Multiuser ist also pflicht. eine zugriffsberechtigung im Server muss später auch einbaubar sein“.
+
+- **Decision:** KIPscope is a server application, possibly on KI.ping's server; locally there is only the browser. Several users work at the same time, each in their own workspaces. Access control is not built now, but the server gets one place where it can be added later (who is asking, which data refs they may read).
+- **Why:** The finder (KI.ping) runs centrally and hands cases to its users' browsers.
+- **Consequences:** Replaces the one server-held workspace (workspace-state "Server-held workspace") and the local-only rule (server-access) with workspaces per user and a configurable host. The CLI then addresses a workspace on a remote server. Source credentials belong to the server (for ADX a service identity instead of `az login`), never to the browser.
+
+## D-078: KI.ping finds, KIPscope shows (2026-10-19)
+
+Jan: „Kipview soll nicht datenabschnitte finden. es soll gefundene Datenabschnitte effizient darstellen. Das KI ping tool ist zum finden. dort sind gefundene Sessions verfügbar. diese sollen hierher effizient übergeben werden.“ Then: „4 ja, erstmal hart. 5 immer nur eins, aber im finder gibt es immer "benachbarte" sessions. wäre toll man kann die mit einem klick wählen. das nachladen muss für die nächste halt auch noch klappen.“
+
+- **Decision:** KIPscope shows one case at a time: a **scope** (one data ref and one time window) handed over by the finder together with context metadata (VIN, session kind, origin), a signal book (D-080) and the signals of its windows. Every source query is bounded by the scope; nothing scans a data ref's whole history. The scope is a hard edge for now: navigation stops there, widening it is an explicit step. The finder may list the case's neighbouring sessions; one click switches to a neighbour (same windows and signals, new scope), and the neighbours are preloaded in the background so the switch is fast. The handoff works as a link, a CLI call and a file, all one command; concept §9 „Untersuchung direkt öffnen“ becomes a requirement.
+- **Why:** On large ADX tables unbounded queries time out (issue #1); finding sessions is KI.ping's job.
+- **Consequences:** Finding sessions leaves KIPscope: the backlog item „split the data stream into sessions“ is dropped and D-067's session kinds belong to KI.ping. Time strip, gaps, events and the catalog cover the scope only. Background preloading must never delay interactive queries (issue #1, item 7).
+
 ## D-077: Real DBC names out of the repo (2026-10-17)
 
 Jan: „clean pls“ (after D-076 listed the files that still named real messages and signals).
