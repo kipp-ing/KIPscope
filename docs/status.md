@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-19, session 8. New direction after issue #1 and Jan's answers (D-078 … D-080); see Next. Twenty-seven changes are archived and the main specs describe the running app.
+As of 2026-10-19, session 8. New direction after issue #1 and Jan's answers (D-078 … D-080); see Next. Twenty-nine changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -81,9 +81,9 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 
 1. New direction (2026-10-19, D-078 … D-080, issue #1): KI.ping finds sessions, KIPscope shows one case (scope = data ref + time window), runs multiuser on a server, signal books with three priorities and a learned book. Planned changes in order:
    0. Done: papercuts from issue #1 item 8 (`.gitattributes`, `--env-file-if-exists`, DBC path warnings).
-   1. `improve-query-priority`: interactive queries before background work; periods only for the signals in view (issue #1 item 7). Built in two rounds, waiting for Jan's check before the archive.
-   2. `add-scope`: scope in the source contract and the workspace, scoped catalog, bounded strip, gaps and events, CLI `scope set` (issue #1 items 1–5). Unblocks the Azure users. Built in four rounds plus a lead fix (bucket width of a range cut to the scope); lead's checks on carserver in scoped mode pass; waiting for Jan's check. Not run: restart with the tunnel down, strip at 1440×900 and 1000×557, Copy link by clipboard.
-   3. `add-multiuser`: workspaces per user, configurable host, one hook for access control later, CLI against a remote server (D-079).
+   1. `improve-query-priority`: interactive queries before background work; periods only for the signals in view (issue #1 item 7). Archived (D-081).
+   2. `add-scope`: scope in the source contract and the workspace, scoped catalog, bounded strip, gaps and events, CLI `scope set` (issue #1 items 1–5). Unblocks the Azure users. Archived (D-082); Jan tests more on 2026-10-20 (not run yet: tunnel-down restart in scoped mode, strip at 1440×900 and 1000×557, Copy link by clipboard).
+   3. `add-multiuser`: SSO hook (KI.ping or authentik), a workspace per session with rights, configurable host, CLI against a remote server; ADX reads as the server (D-079, D-083). Being specced.
    4. `add-case-open`: handoff from the finder (scope, context, book, windows as signal lists; link, CLI, file); neighbouring sessions by one click, preloaded (D-078).
    5. `add-signal-books`: book files and inline books, P1–P3, lazy metadata, learned book per user, ADX metadata once the Azure users explain it (D-080, issue #1 item 6).
    The ADX path has run only against the emulator so far; a real cluster needs [data-sources.md](data-sources.md) §6.

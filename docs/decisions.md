@@ -4,6 +4,30 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-083: Multiuser answers: SSO hook, rights per session, ADX as the server (2026-10-19)
+
+Jan on the questions of D-079: „Ein SSO hook mit ping oder authentik wäre gut. jedes sesseion braucht rechte, ja. ADX rechte sind serverrechte hier keine unterscheidung“.
+
+- **Decision:** KIPscope learns who a user is through an SSO hook, with KI.ping's login („ping“) or authentik as the identity provider; no own user store. Every session (one opened case, its own workspace) carries rights: who may open and change it. Source access is the server's own: on ADX the server's identity reads for every user, with no per-user distinction.
+- **Why:** KIPscope runs on a server next to KI.ping (D-079); users already sign in there.
+- **Consequences:** `add-multiuser` specs the hook (one place that turns a request into a user, as D-079 asked), workspaces per session with an owner and rights, and the CLI against a remote server. Rights on data refs stay out until someone needs them, since ADX makes no distinction.
+
+## D-082: Scope conventions (2026-10-19)
+
+From the archived change `add-scope`; details there.
+
+- **Decision:** A scope (one data ref, `[from, to)`) is an optional workspace field. With it every source query is bounded (contract argument `scope`, „as if the source held only the scope's rows"), the signal list is per scope (4 kept), the strip, gaps and events cover the scope, and range commands are clamped into it (span kept; „Stopped at the scope edge. Widen shows more."). `KIPSCOPE_CATALOG=scoped` drops the start-up catalog and requires a scope; a guard refuses any query without one. A view opens with its `scope` or a derived one (data ref of the first window's first signal, union of the window ranges padded by `KIPSCOPE_SCOPE_PAD`, 1 h); view documents stay v1. „Widen" adds one span on each side (×3), „Clear" drops the scope (not in scoped mode). CLI `scope set|show|widen|clear`. Lead fix: a series range cut to the scope keeps the bucket width of the asked span. Jan's answers: Q-1 (a) opening a view sets the scope in full mode too, Q-2 (a) other data refs' signals are skipped `out_of_scope`, Q-3 (a) ×3.
+- **Why:** D-078; issue #1 items 1–5 (unbounded queries time out on large ADX tables). Jan: „Empfehlungen übernehmen", then „sieht aber gut aus. das archievieren wir so, ich teste morgen mehr".
+- **Consequences:** The source contract gains an optional `scope` on 11 methods (breaking for adapter authors). Not run before the archive: restart with the tunnel down in scoped mode, the strip at 1440×900 and 1000×557 on smart451, „Copy link" by clipboard (task 4.3); Jan tests on 2026-10-20.
+
+## D-081: Query classes (2026-10-19)
+
+From the archived change `improve-query-priority`; details there.
+
+- **Decision:** Every source query runs in one of four classes, highest first: `interactive` (HTTP requests, catalog loads), `metadata` (D-080 P1 batch), `background` (prefetches, polls), `preload` (D-078 neighbours). A free slot goes to the oldest waiting query of the highest class; running queries are never preempted; one slot is kept for `interactive`. Shared work that a request joins is raised to its class and ranks by when it was raised. Measured periods only for the signals a request names (≤ 100) plus the workspace's window and events-line signals. Jan's answers: Q-1 (a) strict priority, Q-2 (a) strip, gaps and events requests are `interactive`.
+- **Why:** Issue #1 item 7: ~2,400 period queries held every slot, plots stayed empty for minutes. Jan: gaps in handed-over sessions are rare, so gap info must never delay the first draw.
+- **Consequences:** `/api/value` and the render acknowledgement still wait for gap info (D-062: no value across a gap); add-scope bounds those queries.
+
 ## D-080: Signal books with three priorities and a learned book (2026-10-19)
 
 Jan: „1 a und b und ev. ein "lernbuch"? die meisten nutzer nehmen immer die gleichen signale, nur jeder halt andere. 2: drei sollte reichen“.
