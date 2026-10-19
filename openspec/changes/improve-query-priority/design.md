@@ -30,7 +30,7 @@ Chosen: **priority classes**, plus the rule that work below `interactive` never 
 
 Cost: background work gets 3 of 4 slots. The prefetches run mostly one or two queries at a time (density and gap info per data ref in turn, events beside them), so they lose little; only fan-outs (a `firstTimes` fallback, now ≤ 100 names) are slowed by ≤ 4/3.
 
-Rule (series-query "Interactive queries first", "A slot kept for interactive queries"): on every pick, the waiting query with the best (class rank, arrival) starts if `running < limit` for `interactive`, or `running < limit − kept` for every other class, where `kept = limit > 1 ? 1 : 0`. If the best waiting query may not start, nothing starts (a lower class has the same or a stricter bound). No preemption; running queries end normally or by abort.
+Rule (series-query "Interactive queries first", "A slot kept for interactive queries"): on every pick, the waiting query with the best (class rank, sequence number) starts (sequence number: given when queued, renewed on each raise, P4) if `running < limit` for `interactive`, or `running < limit − kept` for every other class, where `kept = limit > 1 ? 1 : 0`. If the best waiting query may not start, nothing starts (a lower class has the same or a stricter bound). No preemption; running queries end normally or by abort.
 
 ### P2 One kept slot (spec owner's default, Jan can veto)
 
@@ -46,7 +46,7 @@ Rejected: a priority parameter on every adapter method. It changes the lean cont
 
 ### P4 Shared work is raised, never lowered
 
-The density, gap and events caches share one computation between the prefetch and requests. Each cache entry gets its own `Priority` handle, created with the class of the caller that starts it, and the computation runs under `withPriority(handle, …)`. A caller that joins the entry calls `handle.raise(currentPriority().cls)`. The queue ranks a waiting query by its handle's class at pick time, and `raise` makes every queue re-pick at once (a raised query may now take the kept slot). Raising never lowers a class and does not touch running queries.
+The density, gap and events caches share one computation between the prefetch and requests. Each cache entry gets its own `Priority` handle, created with the class of the caller that starts it, and the computation runs under `withPriority(handle, …)`. A caller that joins the entry calls `handle.raise(currentPriority().cls)`. The queue ranks a waiting query by its handle's class at pick time, and `raise` gives every waiting query of that handle a new sequence number and makes every queue re-pick at once (a raised query may now take the kept slot). So a raised query ranks behind the queries of its new class that were waiting before the raise (lead, after round 1). Raising never lowers a class and does not touch running queries.
 
 Where entries live: `DensityCache` (per data ref), `GapCache` logger part (per data ref) and period batch (per batch, P6), `EventsCache` table (per data ref) and signal (per signal).
 
@@ -99,6 +99,8 @@ Server-internal, pinned so that the tester can write tests in parallel with the 
 export type QueryClass = "interactive" | "metadata" | "background" | "preload";
 /** Highest first; a class's rank is its index. */
 export const QUERY_CLASSES: readonly QueryClass[] = ["interactive", "metadata", "background", "preload"];
+/** Index of `cls` in QUERY_CLASSES (0 = highest); the queue uses this, no copy. */
+export function rank(cls: QueryClass): number;
 export class Priority {
   constructor(cls: QueryClass);
   get cls(): QueryClass;
@@ -183,6 +185,11 @@ Server and web change together; there is no stored state to migrate. A web build
 
 **Jan's answers (2026-10-19):** „Empfehlungen übernehmen“: Q-1 (a), Q-2 (a), and the spec owner's defaults stand. Jan also: handed-over sessions are usually checked for gaps beforehand; gaps can occur but are rare („die Sessions die üblicherweise übergeben [werden] sind vorher auf lücken geprüft. es kann vorkommen, ist aber selten“), so gap info must never delay the first draw of a curve.
 
+## Lead's decisions after round 1
+
+- **Raised work ranks by raise time** (on Jan's note above; no question to Jan): a background query raised to a higher class ranks, within that class, by the time it was raised, not by when it first arrived (P4; series-query "Shared work takes its most urgent class", scenario "Raised query ranks by the time it was raised"). Before, a browser `/api/gaps` or `/api/density` that joined background work could start that work ahead of series queries already waiting; now those series go first, and gap info no longer delays the first draw of a curve through the queue.
+- **Unchanged on purpose:** `/api/value` still waits for the gap info of a cold logger part, and a window's render acknowledgement still waits for its gap info (data-gaps "Gap info covers the window's signals"), because D-062 says a cursor inside a gap shows „no data", never a value across it; `add-scope` bounds those queries to the scope.
+
 ## Spec owner's defaults (Jan can veto)
 
 - One kept slot, not configurable (P2).
@@ -194,5 +201,5 @@ Server and web change together; there is no stored state to migrate. A web build
 
 ## Manual checks (lead)
 
-- Dev server on carserver after `scripts/restart-server.sh`: `curl -X POST localhost:7310/api/catalog/refresh` and right after it `curl -s -o /dev/null -w '%{time_total}\n' 'localhost:7310/api/series?signal=smart451/MEAS_DCU.MEAS_DCU&from=<1 h ago>&to=<now>'` prints under 2 s. On ClickHouse the prefetch seldom fills all 4 slots, so this is a sanity check, not proof; the proof is the stub tests.
+- Dev server on carserver after `scripts/restart-server.sh`: `curl -X POST localhost:7310/api/catalog/refresh` and right after it `curl -s -o /dev/null -w '%{time_total}\n' 'localhost:7310/api/series?signal=smart451/BMS.cell_voltage.001&from=<1 h ago>&to=<now>'` prints under 2 s. On ClickHouse the prefetch seldom fills all 4 slots, so this is a sanity check, not proof; the proof is the stub tests.
 - The two `curl` commands of data-gaps "smart451 periods".

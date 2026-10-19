@@ -35,7 +35,7 @@ With a query limit L above 1, a query below `interactive` SHALL start only while
 - **Evidence:** `apps/server/test/queue.test.ts` › "has no kept slot with a limit of one"
 
 ### Requirement: Shared work takes its most urgent class
-When a request joins a density, gap info or events computation that is already in flight, the computation's waiting and later queries SHALL rank in the request's class if that is higher; a class is never lowered. Origin: necessary consequence of "Interactive queries first" (the shared prefetch would otherwise make the request wait as `background`).
+When a request joins a density, gap info or events computation that is already in flight, the computation's waiting and later queries SHALL rank in the request's class if that is higher; a class is never lowered. A raised waiting query SHALL rank within its new class by the time it was raised, not by when it first arrived. Origin: consequence of "Interactive queries first" (else the request waits as `background`); raise time: lead, on Jan's note (design "Lead's decisions after round 1").
 
 #### Scenario: Request joins the density prefetch
 - **WHEN** a queue of limit 4 holds 3 running `background` tasks that are never released, the density prefetch of data ref `car` waits behind them, and `GET /api/density?dataRef=car` arrives
@@ -46,3 +46,8 @@ When a request joins a density, gap info or events computation that is already i
 - **WHEN** a `background` task waits in a queue of limit 4 with 3 running `background` tasks, and its class is raised to `interactive`
 - **THEN** it starts at once, before any running task ends
 - **Evidence:** `apps/server/test/queue.test.ts` › "starts a raised query at once"
+
+#### Scenario: Raised query ranks by the time it was raised
+- **WHEN** a queue of limit 4 runs 4 `interactive` tasks R1–R4 that each run until released; `background` task B is queued; then `interactive` task S1 is queued; then B's class is raised to `interactive`; then the test releases R1, and after that R2
+- **THEN** neither B nor S1 starts before R1 ends; S1 starts when R1 ends, B when R2 ends
+- **Evidence:** `apps/server/test/queue.test.ts` › "ranks a raised query by the time it was raised"

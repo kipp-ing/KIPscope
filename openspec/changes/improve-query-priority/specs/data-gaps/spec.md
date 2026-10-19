@@ -9,8 +9,8 @@ A signal's period SHALL be its DBC message's cycle time if that is above 0, else
 - **Evidence:** `apps/server/test/gaps.http.test.ts` › "lists the logger gaps and periods of gapcar"
 
 #### Scenario: smart451 periods
-- **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451&signal=smart451/MEAS_DCU.MEAS_DCU&signal=smart451/DIAG_BMS.DIAG_BMS' | jq -c '[.periods[].source] | group_by(.) | map({(.[0]): length}) | add'` runs against the dev server
-- **THEN** it prints `{"dbc":408,"diag":29,"measured":1}`; `.periods["smart451/MEAS_DCU.MEAS_DCU"]` is `{"ns":"10000000","source":"measured"}` and `.periods["smart451/DIAG_BMS.DIAG_BMS"]` is `null`; the same `curl` without the two `signal` parameters prints `{"dbc":408,"diag":29}`
+- **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451&signal=smart451/BMS.cell_voltage.001&signal=smart451/BMS.cell_voltage_max' | jq -c '[.periods[].source] | group_by(.) | map({(.[0]): length}) | add'` runs against the dev server
+- **THEN** it prints `{"dbc":408,"diag":29,"measured":1}`; `.periods["smart451/BMS.cell_voltage.001"].source` is `"measured"` and `.periods["smart451/BMS.cell_voltage_max"].source` is `"diag"`; the same `curl` without the two `signal` parameters prints `{"dbc":408,"diag":29}`
 - **Evidence:** the `curl` commands
 
 ### Requirement: Gap info per catalog load
@@ -22,7 +22,7 @@ The server SHALL compute a data ref's logger gaps and `through` (its last row's 
 - **Evidence:** `apps/server/test/gaps.test.ts` › "computes gap info once per catalog load and drops a failure"
 
 #### Scenario: Load on carserver
-- **WHEN** the gap info of smart451 is computed on carserver for a workspace whose windows hold 8 smart451 signals, 2 of them without a DBC or diag period
+- **WHEN** the gap info of smart451 is computed on carserver for a workspace whose windows hold six signals of the live catalog with a DBC period plus `smart451/BMS.cell_voltage.001` and `smart451/BMS.cell_voltage.002` (no DBC or diag period)
 - **THEN** it runs one logger-gap query (≈ 7 s, ≈ 14 MB server memory for 131 M rows), one count query (design G9), one sample query for those 2 signals (before this change: 116 signals, ≈ 0.2 s, ≈ 2 MB) and no other query
 - **Evidence:** the query count: `apps/server/test/gaps.test.ts` › "measures periods only for asked and workspace signals"; time and memory: `X-ClickHouse-Summary` of the queries of design G2/G3 (add-gap-display) run with `curl` (read-only), unchanged
 
@@ -46,7 +46,7 @@ The server SHALL measure a period only for a signal named in a `/api/gaps` or `/
 
 #### Scenario: Large catalog, small workspace
 - **WHEN** a stub source with a native `firstTimes` that records the names it gets lists 2,400 signals `S0001` … `S2400` of data ref `big`, none with a DBC or diag period; the workspace has a timeseries window with `big/S0001` and `big/S0002`, a values window with `big/S0003`, and `big/S0004` on the events line; the catalog loads and its prefetch ends; then `/api/gaps?dataRef=big`, `/api/gaps?dataRef=big&signal=big/S0001&signal=big/S0100` and `/api/value?signal=big/S0200&t=0` arrive one after the other
-- **THEN** the prefetch sends one `firstTimes` call with exactly `S0001`–`S0004`; the first request sends none and its `periods` is `{}`; the second sends one with exactly `S0100` and lists `big/S0001` and `big/S0100`; the value request sends one with exactly `S0200`: 4 calls and 6 names in all
+- **THEN** the prefetch sends one `firstTimes` call with exactly `S0001`–`S0004`; the first request sends none and its `periods` is `{}`; the second sends one with exactly `S0100` and lists `big/S0001` and `big/S0100`; the value request sends one with exactly `S0200`: 3 calls and 6 names in all
 - **Evidence:** `apps/server/test/gaps.test.ts` › "measures periods only for asked and workspace signals"
 
 #### Scenario: Series right after a large catalog loads
@@ -68,6 +68,6 @@ The browser tab SHALL send its timeseries windows' signal IDs (at most 100 per d
 - **Evidence:** `apps/web/test/gaps.test.ts` › "names at most 100 signals per data ref"
 
 #### Scenario: Adding a signal in the app
-- **WHEN** the UI user, on the dev server with carserver data, adds `smart451/MEAS_DCU.MEAS_DCU` to a timeseries window that did not hold it
-- **THEN** the browser's network log shows one `/api/gaps?dataRef=smart451…` request whose `signal` parameters include `smart451/MEAS_DCU.MEAS_DCU`, the line draws, and the window shows no gap info error
+- **WHEN** the UI user, on the dev server with carserver data, adds `smart451/BMS.cell_voltage.001` to a timeseries window that did not hold it
+- **THEN** the browser's network log shows one `/api/gaps?dataRef=smart451…` request whose `signal` parameters include `smart451/BMS.cell_voltage.001`, the line draws, and the window shows no gap info error
 - **Evidence:** UI check (screenshot of the network entry and the window)
