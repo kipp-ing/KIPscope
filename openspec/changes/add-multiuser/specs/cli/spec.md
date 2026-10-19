@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: CLI client of the open workspace
-The CLI `kipscope` SHALL control a session's workspace only through the server's HTTP API, at `--server <url>`, else `KIPSCOPE_URL`, else `http://localhost:7310`. The session SHALL be `--session <ID or session link>`, else `KIPSCOPE_SESSION`, else the session of a session link given as `--server` (its origin is then the server), else the user's default session (sessions "Default session"). With `--token <T>`, else `KIPSCOPE_TOKEN`, every request SHALL carry `Authorization: Bearer <T>`. Every output of a call that served a session SHALL name it as `session`. The CLI SHALL never read the data source directly. `--help` SHALL print the usage of every form and exit 0. Origin: concept §7 (the CLI controls the open view; „Eine KI verwendet diese reguläre Schnittstelle"); D-005 (the server holds the CLI endpoint); D-011 (D8, commands via `POST /api/commands`); session and token: D-079 („The CLI then addresses a workspace on a remote server"), D-083, Q-2 (a).
+The CLI `kipscope` SHALL control a session's workspace only through the server's HTTP API, at `--server <url>`, else `KIPSCOPE_URL`, else `http://localhost:7310`. The session SHALL be `--session <ID or session link>`, else `KIPSCOPE_SESSION`, else the session of a session link given as `--server` (its origin is then the server), else the user's default session (sessions "Default session"). With a token from `--token <T>`, else `KIPSCOPE_TOKEN`, else the trimmed output of `KIPSCOPE_TOKEN_COMMAND` (run once per call, design M13), every request SHALL carry `Authorization: Bearer <T>`; the token SHALL never be printed. Every output of a call that served a session SHALL name it as `session`. The CLI SHALL never read the data source directly. `--help` SHALL print the usage of every form and exit 0. Origin: concept §7 (the CLI controls the open view; „Eine KI verwendet diese reguläre Schnittstelle"); D-005 (the server holds the CLI endpoint); D-011 (D8, commands via `POST /api/commands`); session and token: D-079 („The CLI then addresses a workspace on a remote server"), D-083, D-084 (CLI callers authenticated through the same adapter; a tool connected to Ping supplies the token).
 
 #### Scenario: Server address
 - **WHEN** `kipscope state` runs once with `--server http://127.0.0.1:<port>`, once with only `KIPSCOPE_URL=http://127.0.0.1:<port>`, and once with both set to different servers
@@ -23,9 +23,9 @@ The CLI `kipscope` SHALL control a session's workspace only through the server's
 - **THEN** the first prints `session` B; the second prints `session` A with A's workspace; the third is accepted on A, and B's revision is unchanged
 - **Evidence:** `apps/cli/test/cli.test.ts` › "addresses a session"
 
-#### Scenario: Token against a server in header mode
-- **WHEN** the test server runs in header mode with alice's token, and `kipscope whoami` runs without a token, with `--token <alice's token>`, and with `KIPSCOPE_TOKEN=kst_wrong`
-- **THEN** the first exits 1 with `error.code` `unauthenticated`; the second exits 0 with `data` `{user: "alice", auth: "header"}`; the third exits 1 with `invalid_token`
+#### Scenario: Token against a server with `oidc`
+- **WHEN** the test server runs `oidc` against a local JWKS server, a test token for `alice` with roles `[testers]` exists, and `kipscope whoami` runs without a token, with `--token <alice's token>`, with `KIPSCOPE_TOKEN=garbage`, with `KIPSCOPE_TOKEN_COMMAND` set to a script printing alice's token, and with `KIPSCOPE_TOKEN_COMMAND` set to `exit 3`
+- **THEN** the first exits 1 with `error.code` `unauthenticated`; the second and fourth exit 0 with `data.user` `alice`, `data.identity` `oidc` and `data.roles` `[testers]`; the third exits 1 with `invalid_token`; the fifth exits 2 with `error.code` `token_command_failed` and the server received no request; no output contains the token
 - **Evidence:** `apps/cli/test/cli.test.ts` › "sends the token"
 
 ## ADDED Requirements
@@ -55,3 +55,11 @@ The CLI SHALL offer `whoami`, `session list`, `session new`, `session share priv
 - **WHEN** `kipscope --help` runs
 - **THEN** the text names `whoami`, `session list`, `session new`, `session share` and `session delete`
 - **Evidence:** `apps/cli/test/cli.test.ts` › "prints the usage with --help" (form list extended)
+
+### Requirement: The CLI sees only what the user may see
+Every CLI call SHALL get exactly the answers the server gives its user (data-access): a data ref the user may not see SHALL fail with exit 1 and `error.code` `forbidden_data`, and searches SHALL list only visible signals. Origin: D-084 („in every query, list, view and CLI call"); concept §7 (the CLI uses the regular interface).
+
+#### Scenario: Keeps a role to its data
+- **WHEN** the test server runs `oidc` with rules giving role `testers` the pattern `test*`, and with alice's token `kipscope search Fast`, `kipscope extent othercar/Fast_100h.SIG_A`, `kipscope value othercar/Fast_100h.SIG_A <t>`, `kipscope events list --ref othercar`, `kipscope signal add <w> othercar/Fast_100h.SIG_A` and `kipscope scope set othercar <from> <to>` run
+- **THEN** the search lists only `test*` signals; the other five exit 1 with `error.code` `forbidden_data`, and the session's revision is unchanged
+- **Evidence:** `apps/cli/test/cli.test.ts` › "keeps a role to its data"

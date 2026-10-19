@@ -1,66 +1,84 @@
 ## ADDED Requirements
 
-### Requirement: Auth modes
-`KIPSCOPE_AUTH` SHALL select `none` (default) or `header`; any other value SHALL stop the server with a message naming the variable and both values. `header` SHALL require a non-empty `KIPSCOPE_ORIGINS`, else the server stops naming that variable. In `none` mode every API request that passes the access guard SHALL be the user `local`, so local use stays as today. Origin: D-083 („Ein SSO hook mit ping oder authentik"); D-079 (access control at one place); keeping today's local use: necessary consequence (local development has no SSO). Design M1, M2.
+### Requirement: Identity adapter
+The server SHALL learn the user of a request only from one identity adapter, selected by `KIPSCOPE_IDENTITY`: `none` (default), `oidc`, or `module:<path>`. An adapter SHALL implement the contract of design M1: `identify(request)` returns `{user, roles}` or a refusal (`unauthenticated` without a credential, `invalid_token` for a bad one). Any other value of the variable, a module that cannot be loaded, or one whose default export does not return an object with `kind` and `identify`, SHALL stop the server with a message naming the variable and the reason. Origin: D-084 („Identity is a pluggable adapter like the data source"; „da darf jeder auch seinen eigenen krams einbauen"). Design M1, M2.
 
-#### Scenario: Configuration
-- **WHEN** `loadConfig` runs without `KIPSCOPE_AUTH`, with `none`, with `header` and `KIPSCOPE_ORIGINS=https://kipscope.example.org`, with `header` alone, and with `oidc`
-- **THEN** the mode is `none`, `none`, `header` (header `x-authentik-username`, trusted proxies `127.0.0.1` and `::1`, origins `["https://kipscope.example.org"]`); the fourth throws naming `KIPSCOPE_ORIGINS`; the fifth throws naming `KIPSCOPE_AUTH`, `none` and `header`
-- **Evidence:** `apps/server/test/config.test.ts` › "reads the auth settings"
+#### Scenario: Selection
+- **WHEN** `loadConfig` runs without `KIPSCOPE_IDENTITY`; with `oidc` plus issuer, audience, `KIPSCOPE_RULES` and `KIPSCOPE_ORIGINS`; with `module:apps/server/examples/forward-header.mjs` plus rules and origins; with `oidc` without `KIPSCOPE_OIDC_AUDIENCE`; with `oidc` and `KIPSCOPE_OIDC_ALGS=HS256`; with `module:x` but no `KIPSCOPE_RULES`; and with `ping`
+- **THEN** the kinds are `none`, `oidc` (user claim `sub`, roles claim `roles`, header `authorization`, algorithms `RS256,PS256,ES256`) and `module` with that path; the last four throw naming `KIPSCOPE_OIDC_AUDIENCE`, `KIPSCOPE_OIDC_ALGS`, `KIPSCOPE_RULES` and `KIPSCOPE_IDENTITY` with its three forms
+- **Evidence:** `apps/server/test/config.test.ts` › "reads the identity settings"
 
-#### Scenario: Local user without SSO
-- **WHEN** the test app runs in `none` mode and `GET /api/me` is sent without any identity header, and once with `X-authentik-username: mallory`
-- **THEN** both answer 200 `{user: "local", auth: "none"}`
-- **Evidence:** `apps/server/test/identity.http.test.ts` › "answers the local user without SSO"
-
-### Requirement: Trusted identity header
-In `header` mode the user of a request SHALL be the value of the header `KIPSCOPE_AUTH_HEADER` (default `X-authentik-username`) when the request's peer address lies in `KIPSCOPE_TRUSTED_PROXIES` (IPs or CIDRs, default `127.0.0.1,::1`, IPv4-mapped IPv6 peers as IPv4) and the value matches the user rule (design M7 `USER_ID`). Every other request to `/api/`, except `GET /api/license`, SHALL answer 401 `unauthenticated` before any route runs, the live channel's upgrade included. `X-Forwarded-For` SHALL never count as the peer. Origin: D-083 (SSO via the proxy, no own user store); Q-1 (a). Design M1.
-
-#### Scenario: Header from trusted and untrusted peers
-- **WHEN** the test app runs in header mode with trusted proxies `127.0.0.1,10.0.0.0/8`, and `GET /api/me` is injected with header `alice` from peer `127.0.0.1`, from `::ffff:127.0.0.1`, from `10.1.2.3`, from `192.168.1.5`, from `192.168.1.5` with `X-Forwarded-For: 127.0.0.1`, from `127.0.0.1` without the header, and from `127.0.0.1` with the value `../x`
-- **THEN** the first three answer 200 `{user: "alice", auth: "header"}`; the other four answer 401 with `error.code` `unauthenticated`
-- **Evidence:** `apps/server/test/identity.http.test.ts` › "takes the user from the trusted header only"
-
-#### Scenario: Nothing runs unauthenticated
-- **WHEN** in header mode, with no identity, `POST /api/commands` with a valid command, `GET /api/series` and the `/api/live` upgrade are sent, and `GET /api/license`
-- **THEN** the first two answer 401 `unauthenticated`, the source receives no call, and alice's sessions keep their revisions; the WebSocket gets no message (handshake 401, or closed before any message); the license answers 200
-- **Evidence:** `apps/server/test/identity.http.test.ts` › "refuses every API route without a user"
-
-### Requirement: One identity hook
-Every route SHALL learn its user from one function (design M1 `identify`); no other server file SHALL read the identity header or the `authorization` header. Origin: D-079 („eine zugriffsberechtigung im Server muss später auch einbaubar sein"): one place to change.
+#### Scenario: Bad module
+- **WHEN** the app is built with `module:` paths of a missing file, a module whose default export is `42`, and one whose factory returns `{kind: "x"}` without `identify`
+- **THEN** each build rejects with a message naming `KIPSCOPE_IDENTITY` and, in order, the missing file, `default export`, and `identify`
+- **Evidence:** `apps/server/test/identity.test.ts` › "refuses a bad identity module"
 
 #### Scenario: One place
-- **WHEN** `grep -rln "authorization\|authHeader\|KIPSCOPE_AUTH_HEADER" apps/server/src` runs
-- **THEN** it prints only `apps/server/src/identity.ts` and `apps/server/src/config.ts`
+- **WHEN** `grep -rln "authorization\|x-forwarded-user\|identify(" apps/server/src` runs
+- **THEN** it prints no file other than `apps/server/src/identity.ts`, `apps/server/src/identity/oidc.ts`, `apps/server/src/guard.ts` and `apps/server/src/config.ts`
 - **Evidence:** the `grep` command
 
-### Requirement: Personal tokens
-In `header` mode a signed-in user SHALL be able to create up to 10 personal tokens with a label (1–60 characters), list them without their secret, and revoke them. A request with `Authorization: Bearer <token>` SHALL be that token's user from any peer, and the identity header SHALL then be ignored. An unknown or revoked token SHALL answer 401 `invalid_token`. The server SHALL store only a hash of each token, under the user's folder, and SHALL keep tokens across a restart. In `none` mode the token routes SHALL answer 409 `auth_disabled`. Origin: concept §7 („Eine KI verwendet diese reguläre Schnittstelle": full control without a browser) with D-083 (identity from the SSO); Q-2 (a). Numbers: design M3.
+### Requirement: Local use without login
+With `KIPSCOPE_IDENTITY=none` every API request that passes the access guard SHALL be the user `local` with every right (data pattern `*`, share), whatever headers it carries; the rules file SHALL not be read. Origin: D-084 („bei mir lokal ohne login, bin mein eigener herr"). Design M1.
 
-#### Scenario: Create, use, revoke
-- **WHEN** in header mode alice (trusted header) posts `/api/tokens {label: "laptop"}`, reads `GET /api/tokens`, then `GET /api/me` is sent from peer `192.168.1.5` with `Authorization: Bearer <token>`, once more from `127.0.0.1` with that token and header `bob`, then alice deletes the token and the bearer request is repeated; and alice creates 10 more tokens
-- **THEN** the create answers 200 with a `token` of 47 characters starting `kst_` and a `summary` `{id, label: "laptop", createdAt}`; the list shows that summary without the token; both bearer requests answer `user` `alice` and the list then shows `lastUsedAt`; after the delete the bearer request answers 401 `invalid_token`; the 10th of the further tokens is accepted and the 11th answers 409 `token_limit`
-- **Evidence:** `apps/server/test/tokens.http.test.ts` › "creates, uses and revokes tokens"
+#### Scenario: Local user
+- **WHEN** the test app runs in `none` mode and `GET /api/me` is sent without any header, and once with `Authorization: Bearer x` and `X-Forwarded-User: mallory`
+- **THEN** both answer 200 `{user: "local", identity: "none", roles: [], rights: {data: ["*"], share: true}}`
+- **Evidence:** `apps/server/test/identity.http.test.ts` › "answers the local user without login"
 
-#### Scenario: Only the hash is stored, kept across a restart
-- **WHEN** alice creates a token, `grep -r <token> <stateDir>` runs, and a new app is built on the same state dir and gets a bearer request with that token
-- **THEN** the grep finds nothing; `<stateDir>/users/alice/tokens.json` holds the token's sha256 hex; the new app answers `user` `alice`
-- **Evidence:** `apps/server/test/tokens.http.test.ts` › "stores only the hash and keeps tokens across a restart"
+### Requirement: Every API request has a user
+With an adapter other than `none`, every request to `/api/` except `GET /api/license` SHALL be identified before any route runs, the live channel's upgrade included: a refusal SHALL answer 401 with its code (`unauthenticated` or `invalid_token`), an adapter that throws SHALL answer 503 `identity_unavailable` without its error text, and a result whose user does not match `USER_ID` or whose roles are not at most 200 strings of 1–128 characters SHALL answer 401 `unauthenticated`. Origin: D-084 („sicher genug sein"); D-079 (access control at one place). Design M1, M6.
 
-#### Scenario: Bad label and none mode
-- **WHEN** in header mode `POST /api/tokens` gets the labels `""`, 61 characters and `a\nb`; and in `none` mode `POST /api/tokens {label: "x"}` is sent
-- **THEN** the three answer 400 `invalid_request`; the last answers 409 `auth_disabled`
-- **Evidence:** `apps/server/test/tokens.http.test.ts` › "refuses bad labels and tokens without SSO"
+#### Scenario: Nothing runs unauthenticated
+- **WHEN** with a test adapter that refuses every request, `POST /api/commands` with a valid command, `GET /api/series` and the `/api/live` upgrade are sent, and `GET /api/license`
+- **THEN** the first two answer 401 `unauthenticated`, the source receives no call and no session's revision changes; the WebSocket gets no message (handshake 401, or closed before any message); the license answers 200
+- **Evidence:** `apps/server/test/identity.http.test.ts` › "refuses every API route without a user"
 
-### Requirement: CLI access in the UI
-In `header` mode the overflow menu SHALL offer "CLI access…": a dialog that lists the user's tokens (label, created, last used, Revoke), creates one from a label, and after a create shows the token once with the lines `export KIPSCOPE_URL=<page origin>` and `export KIPSCOPE_TOKEN=<token>` and a Copy button. In `none` mode the item SHALL be absent. Origin: Q-2 (a) (tokens come from a signed-in browser); concept §7.
+#### Scenario: Adapter failures
+- **WHEN** test adapters that throw `Error("jwks down: secret-detail")`, return user `../x`, and return 201 roles each answer `GET /api/me`
+- **THEN** the first answers 503 `identity_unavailable` and the body does not contain `secret-detail`; the other two answer 401 `unauthenticated`; each logged one warning
+- **Evidence:** `apps/server/test/identity.http.test.ts` › "fails closed on a bad adapter"
 
-#### Scenario: Shell lines
-- **WHEN** `cliAccessLines("https://kipscope.example.org", "kst_abc")` runs
-- **THEN** it returns `export KIPSCOPE_URL=https://kipscope.example.org` and `export KIPSCOPE_TOKEN=kst_abc`, in that order
-- **Evidence:** `apps/web/test/session.test.ts` › "builds the CLI access lines"
+### Requirement: Who am I
+`GET /api/me` SHALL answer the user, the identity kind, the roles and the rights of the request (design M7 `Me`), also for a user without rights. Origin: necessary consequence of D-084 (a user and an administrator must see which roles and rights apply).
 
-#### Scenario: Token from the dialog drives the CLI
-- **WHEN** the server runs in header mode on loopback against carserver, the UI is opened through the Vite dev server with `KIPSCOPE_DEV_USER=alice`, a token is created in "CLI access…", and `KIPSCOPE_TOKEN=<token> kipscope whoami` runs; then the token is revoked and the call is repeated
-- **THEN** the dialog shows the token once and the two export lines; the first call exits 0 with `data.user` `alice`; the second exits 1 with `error.code` `invalid_token`
-- **Evidence:** UI check (screenshot of the dialog after the create, with the token blurred in the report; both CLI outputs)
+#### Scenario: Roles and rights
+- **WHEN** the rules give role `testers` the patterns `test*` with `share: true` and role `viewers` `demo` without share, and users with roles `[testers, viewers]`, `[viewers]` and `[nobody]` send `GET /api/me`
+- **THEN** the answers have `rights` `{data: ["test*", "demo"], share: true}`, `{data: ["demo"], share: false}` and `{data: [], share: false}`, each with its user, `identity` of the test adapter and its roles
+- **Evidence:** `apps/server/test/identity.http.test.ts` › "reports roles and rights"
+
+### Requirement: OIDC tokens from Ping Identity
+The `oidc` adapter SHALL accept a request only with a JWT in `KIPSCOPE_OIDC_HEADER` (default `Authorization: Bearer`) that is signed by a key of the issuer's JWKS with an algorithm of `KIPSCOPE_OIDC_ALGS` (never `none` or `HS*`), whose `iss` equals the issuer, whose `aud` contains the audience, whose `exp` is in the future and `nbf` (if present) in the past within 30 s, and whose user claim matches `USER_ID`; it SHALL take the roles from the roles claim (array, or a space- or comma-separated string; missing: none). An unknown key ID SHALL refetch the JWKS at most once per 30 s. The token SHALL never be logged or echoed. Origin: D-084 („PING id sollte möglich sein mit unterschiedlichen rechten"); design M15 (PingFederate and PingOne issue such tokens). Numbers: design "Numbers".
+
+#### Scenario: Token checks
+- **WHEN** the test app runs `oidc` against a local JWKS server and `GET /api/me` is sent with: a valid RS256 token for `alice` with `roles: ["testers"]`; the same with `roles: "testers viewers"`; no header; `Bearer` + garbage; a token signed by another key; `alg: none`; HS256 signed with the JWKS public key as secret; a wrong `iss`; a wrong `aud`; `exp` 31 s ago; `exp` 29 s ago; `nbf` in 60 s; and user `../x`
+- **THEN** the first two answer 200 for `alice` with roles `[testers]` and `[testers, viewers]`; no header answers 401 `unauthenticated`; `exp` 29 s ago answers 200; every other answers 401 `invalid_token`; no log line contains a token
+- **Evidence:** `apps/server/test/identity/oidc.test.ts` › "validates Ping-style access tokens"
+
+#### Scenario: Key rotation
+- **WHEN** the JWKS server rotates to a new key, a token with the new `kid` arrives, then 20 tokens with random unknown `kid`s within 10 s
+- **THEN** the first is accepted after one JWKS fetch; the 20 cause no further fetch and are refused `invalid_token`
+- **Evidence:** `apps/server/test/identity/oidc.test.ts` › "refetches the key set on rotation, rate-limited"
+
+#### Scenario: Roles claim path
+- **WHEN** `KIPSCOPE_OIDC_ROLES_CLAIM=realm_access.roles` and `KIPSCOPE_OIDC_USER_CLAIM=preferred_username`, and a token holds `{preferred_username: "bob", realm_access: {roles: ["viewers"]}}`
+- **THEN** `GET /api/me` answers user `bob` with roles `[viewers]`
+- **Evidence:** `apps/server/test/identity/oidc.test.ts` › "reads user and roles from configured claims"
+
+#### Scenario: Against a real Ping tenant
+- **WHEN** a KIPscope server runs `oidc` against the company's PingFederate or PingOne and `KIPSCOPE_TOKEN_COMMAND=<company tool> kipscope whoami` runs
+- **THEN** it exits 0 with the user and roles the IdP issued
+- **Evidence:** Jan's deployment check with `docs/deploy.md` (not run in rounds)
+
+### Requirement: One conformance suite for identity adapters
+The repo SHALL hold one identity conformance suite (design M1) that any adapter passes: the signed-in request yields exactly its user and roles; a request without credential is refused `unauthenticated`; forged ones are refused; 1,000 random header sets never yield a user and never throw; the request object stays unchanged. It SHALL run against `oidc` and the example module. Origin: D-084 („like the data source"; „muss halt anpassbar sein"); data-source "One conformance suite".
+
+#### Scenario: Suite against both adapters
+- **WHEN** `pnpm --filter @kipscope/server test` runs
+- **THEN** `apps/server/test/identity/oidc.conformance.test.ts` and `forward-header.conformance.test.ts` pass every case of the suite
+- **Evidence:** the command's output
+
+#### Scenario: Example forward-header module
+- **WHEN** the example module runs with trusted proxies `127.0.0.1,10.0.0.0/8` and requests carry `X-Forwarded-User: alice` and `X-Forwarded-Groups: testers, viewers` from peers `127.0.0.1`, `::ffff:127.0.0.1`, `10.1.2.3`, `192.168.1.5`, and `192.168.1.5` with `X-Forwarded-For: 127.0.0.1`
+- **THEN** the first three give `alice` with roles `[testers, viewers]`; the last two are refused `unauthenticated`
+- **Evidence:** `apps/server/test/identity/forward-header.conformance.test.ts` › "trusts the headers from proxies only"

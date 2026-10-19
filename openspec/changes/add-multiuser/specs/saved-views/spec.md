@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Named views on the server
-The server SHALL save a session's workspace as a named view of the requesting user in `<stateDir>/users/<user>/views/<name>.yaml`, and list, return and delete that user's views; a user SHALL never see or change another user's views. Saving onto an existing name SHALL need `overwrite`, else 409 `view_exists`. The list SHALL show every file, a broken one with its error. Saving SHALL mark the session's open view as saved. Origin: concept §8 („Speichern/Laden"); Jan 2026-10-17; persona test (boss: keep a view); per user: Q-4 (a) (design).
+The server SHALL save a session's workspace as a named view of the requesting user in `<stateDir>/users/<user>/views/<name>.yaml`, and list, return and delete that user's views; a user SHALL never see or change another user's views. Saving onto an existing name SHALL need `overwrite`, else 409 `view_exists`. The list SHALL show every file, a broken one with its error. Saving SHALL mark the session's open view as saved. Origin: concept §8 („Speichern/Laden"); Jan 2026-10-17; persona test (boss: keep a view); per user: D-084 („q4 views je nutzer, ja").
 
 #### Scenario: Save, list, overwrite
 - **WHEN** on a test server with a temp state dir `POST /api/views {title: "Hard acceleration, drive 3"}` is sent twice, then once with `overwrite: true`, then `GET /api/views`
@@ -19,12 +19,12 @@ The server SHALL save a session's workspace as a named view of the requesting us
 - **Evidence:** `apps/server/test/views.http.test.ts` › "deletes a view"
 
 #### Scenario: Views per user
-- **WHEN** in header mode alice saves `speeds` from her session, and bob sends `GET /api/views`, `GET /api/views/speeds`, `DELETE /api/views/speeds`, `POST /api/views/open {name: "speeds"}` and then saves his own `speeds`
+- **WHEN** with the test identity adapter (alice and bob with role `all`) alice saves `speeds` from her session, and bob sends `GET /api/views`, `GET /api/views/speeds`, `DELETE /api/views/speeds`, `POST /api/views/open {name: "speeds"}` and then saves his own `speeds`
 - **THEN** bob's list does not hold alice's view; the get, the delete and the open answer 404 `unknown_view`; bob's save answers 200 without `overwrite`; alice's file is unchanged
 - **Evidence:** `apps/server/test/views.http.test.ts` › "keeps views per user"
 
 ### Requirement: Before last open
-Before a view is opened over a session's workspace with at least one window, the server SHALL keep that workspace as the view `_previous` of the user who opens, titled "Before last open", replacing an older one. It SHALL be listed last and open like any view. Origin: necessary consequence of opening into a workspace other tabs show (design S-4); goal: undo of an open without the general undo of concept §8; per user: Q-4 (a).
+Before a view is opened over a session's workspace with at least one window, the server SHALL keep that workspace as the view `_previous` of the user who opens, titled "Before last open", replacing an older one. It SHALL be listed last and open like any view. Origin: necessary consequence of opening into a workspace other tabs show (design S-4); goal: undo of an open without the general undo of concept §8; per user: D-084 (Q-4).
 
 #### Scenario: Open, then go back
 - **WHEN** the workspace has two windows, view X is opened, then `POST /api/views/open {name: "_previous"}` is sent

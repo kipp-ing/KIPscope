@@ -17,7 +17,7 @@ Every route that reads or changes a workspace (design M5 list) SHALL also answer
 - **Evidence:** `apps/server/test/sessions.http.test.ts` › "addresses a session by its prefix"
 
 ### Requirement: Default session
-A request to a workspace route without the prefix SHALL serve the requester's default session: the session they own with the latest last-active time, or a new empty one when they own none. Origin: spec owner's default (design "Spec owner's defaults"): today's routes, scripts and the CLI without `--session` keep working.
+A request to a workspace route without the prefix SHALL serve the requester's default session: among the sessions they own and may open (data-access "Sharing never widens data access"), the one with the latest last-active time, or a new empty one when there is none. Origin: spec owner's default (design "Spec owner's defaults"): today's routes, scripts and the CLI without `--session` keep working.
 
 #### Scenario: Most recently active
 - **WHEN** on an empty state dir `GET /api/workspace` is sent, then `POST /api/sessions {}`, then `GET /api/workspace`, then `cursor.set` is posted to `/api/s/<first>/commands`, then `GET /api/workspace` again
@@ -25,17 +25,17 @@ A request to a workspace route without the prefix SHALL serve the requester's de
 - **Evidence:** `apps/server/test/sessions.http.test.ts` › "serves the most recently active session without a prefix"
 
 ### Requirement: Rights per session
-The owner SHALL have every right on a session. Other signed-in users SHALL get rights from the share level: `private` none, `read` open, `write` open and change. A session route without the open right SHALL answer 403 `forbidden`. A change route (design M6 table) without the change right SHALL answer 403 `read_only` and change nothing. Only the owner SHALL change the share level or delete the session, else 403 `not_owner`. One function SHALL decide rights (design M6). Origin: D-083 („who may open and change it"); Q-3 (a); D-079 (one place for later access control).
+The owner SHALL have every right on a session. Other signed-in users SHALL get rights from the share level: `private` none, `read` open, `write` open and change. Both hold only while the user may see every data ref of the session (data-access "Sharing never widens data access"). A session route without the open right SHALL answer 403 `forbidden`. A change route (design M6 table) without the change right SHALL answer 403 `read_only` and change nothing. Only the owner SHALL change the share level or delete the session, else 403 `not_owner`. One function SHALL decide session rights (design M6 `sessionRights`). Origin: D-083 („who may open and change it"); D-084 (sessions keep owner and share level; rights limit the data); D-079 (one place for access control).
 
 #### Scenario: Private, read, write
-- **WHEN** in header mode alice owns session A with a scope and one window, and bob sends `GET /api/s/A/workspace` and opens `/api/s/A/live` while A is `private`; alice posts `/api/sessions/A/share {share: "read"}`, and bob reads `/api/s/A/workspace`, `/api/s/A/catalog`, posts `window.create` to `/api/s/A/commands` and `POST /api/s/A/views/open {name: "x"}`; alice sets `write`, and bob posts `window.create`; bob posts `/api/sessions/A/share {share: "private"}` and `DELETE /api/sessions/A`
+- **WHEN** with the test identity adapter (alice and bob both with role `all`: `data: ["*"]`, share) alice owns session A with a scope and one window, and bob sends `GET /api/s/A/workspace` and opens `/api/s/A/live` while A is `private`; alice posts `/api/sessions/A/share {share: "read"}`, and bob reads `/api/s/A/workspace`, `/api/s/A/catalog`, posts `window.create` to `/api/s/A/commands` and `POST /api/s/A/views/open {name: "x"}`; alice sets `write`, and bob posts `window.create`; bob posts `/api/sessions/A/share {share: "private"}` and `DELETE /api/sessions/A`
 - **THEN** while private: 403 `forbidden`, and the WebSocket gets no message; while read: both reads 200, both posts 403 `read_only` with A's revision unchanged; while write: the command is accepted; bob's share and delete answer 403 `not_owner`, and A still exists
 - **Evidence:** `apps/server/test/sessions.http.test.ts` › "enforces session rights"
 
 #### Scenario: Rights function
-- **WHEN** `rightsOf` gets the owner, then another user for a `private`, a `read` and a `write` session
-- **THEN** it returns `{open: true, change: true, owner: true}`, `undefined`, `{open: true, change: false, owner: false}` and `{open: true, change: true, owner: false}`
-- **Evidence:** `apps/server/test/rights.test.ts` › "derives rights from owner and share level"
+- **WHEN** `sessionRights` gets, with rights `*`, the owner, then another user for a `private`, a `read` and a `write` session; then, with rights `test*`, the owner and another user of a `write` session holding `othercar/X`
+- **THEN** it returns `{open: true, change: true, owner: true}`, `undefined`, `{open: true, change: false, owner: false}` and `{open: true, change: true, owner: false}`; then `undefined` twice
+- **Evidence:** `apps/server/test/rights.test.ts` › "derives session rights from owner, share level and data"
 
 ### Requirement: Share changes act at once
 After a share change, every open live connection to the session SHALL get a `session` message with its user's new rights, and a connection whose user lost the open right SHALL be closed with code 4403. Deleting a session SHALL close its connections with code 4404. Origin: necessary consequence of "Rights per session" (a right taken away must not keep working through an open channel).
@@ -46,7 +46,7 @@ After a share change, every open live connection to the session SHALL get a `ses
 - **Evidence:** `apps/server/test/sessions.http.test.ts` › "applies share changes and deletes to open connections"
 
 ### Requirement: Session management
-`GET /api/sessions` SHALL list the requester's own sessions, latest last-active first, as `SessionSummary` (design M7). `GET /api/sessions/:id` SHALL return one summary (open right). `POST /api/sessions` SHALL create one. `POST /api/sessions/:id/share` SHALL set the share level. `DELETE /api/sessions/:id` SHALL delete the session and its state file. Origin: necessary consequence of „a workspace per session" (a user must find and remove their sessions); D-083 (rights per session).
+`GET /api/sessions` SHALL list the requester's own sessions, latest last-active first, as `SessionSummary` (design M7). `GET /api/sessions/:id` SHALL return one summary (open right). `POST /api/sessions` SHALL create one. `POST /api/sessions/:id/share` SHALL set the share level. `DELETE /api/sessions/:id` SHALL delete the session and its state file. A session the requester owns but may not open (hidden data) SHALL be listed without `rights`. Origin: necessary consequence of „a workspace per session" (a user must find and remove their sessions); D-083 (rights per session).
 
 #### Scenario: List, share, delete
 - **WHEN** alice creates two sessions and posts a scope to the first, bob creates one, alice reads `GET /api/sessions`, sets the first to `write`, and deletes the second
@@ -114,12 +114,17 @@ The signal list of the scope of every session with a live client SHALL stay held
 - **Evidence:** `apps/server/test/sessions.http.test.ts` › "measures periods for the open sessions' signals"
 
 ### Requirement: Session in the address of the UI
-The UI SHALL run at `/s/<id>`. `/` SHALL go to the user's latest own session, or a new one, by replacing the address without a reload. An unknown session SHALL show "Session not found" and a forbidden one "No access to this session", both with the buttons "My latest session" and "New session", and the live channel SHALL not reconnect after the codes 4403 and 4404. Origin: Jan's „ja" (own URL per session, old tabs keep their case). Design M12.
+The UI SHALL run at `/s/<id>`. `/` SHALL go to the user's latest own session, or a new one, by replacing the address without a reload. An unknown session SHALL show "Session not found" and a forbidden one "No access to this session", both with the buttons "My latest session" and "New session"; `no_rights` SHALL show "No access rights" naming the user's roles; and the live channel SHALL not reconnect after the codes 4403 and 4404. Origin: Jan's „ja" (own URL per session, old tabs keep their case). Design M12.
 
 #### Scenario: Start-up target
 - **WHEN** `startupTarget` gets the paths `/s/abcdefghij`, `/` with sessions `[X, Y]`, `/` with no sessions, `/#view=<code>`, `/s/abcdefghij?view=demo` and `/s/ABC`
 - **THEN** it returns `{session: "abcdefghij"}`, `{session: X}`, `{create: {}}`, `{create: {open: {view: <decoded>}}}`, `{create: {open: {name: "demo"}}}` and `{latest: true}` (a path that is not a session)
 - **Evidence:** `apps/web/test/session.test.ts` › "chooses the session from the address"
+
+#### Scenario: Gate texts
+- **WHEN** `gateOf` gets the answers 404 `unknown_session`, 403 `forbidden`, close code 4403, 403 `no_rights` with `me.roles` `[nobody]`, 401 `unauthenticated` and 503 `identity_unavailable`
+- **THEN** it returns the titles "Session not found", "No access to this session" (twice), "No access rights" with a text containing `nobody`, "Not signed in" and "Sign-in service unreachable"; only the first three offer "My latest session" and "New session"
+- **Evidence:** `apps/web/test/session.test.ts` › "chooses the gate page"
 
 #### Scenario: API paths of a session
 - **WHEN** `apiPath` with session `abcdefghij` gets `/api/series?x=1`, `/api/live`, `/api/sessions`, `/api/me` and `/api/views`
@@ -132,7 +137,7 @@ The UI SHALL run at `/s/<id>`. `/` SHALL go to the user's latest own session, or
 - **Evidence:** UI check on smart451 (screenshot of each tab)
 
 ### Requirement: Sessions menu
-The top row SHALL offer a Sessions menu listing the user's own sessions, latest first, with a title (view title, else measurement name, else data ref and local scope start, else `New session`), the last active time and a mark when it has clients; the current session is marked. It SHALL offer "New session", "Copy session link", for the owner the share level `Private · Read · Write`, and delete for every session but the current one, with a confirm. Origin: necessary consequence of sessions (find, share and remove them in the UI); D-083 (rights per session).
+The top row SHALL offer a Sessions menu listing the user's own sessions, latest first, with a title (view title, else measurement name, else data ref and local scope start, else `New session`), the last active time and a mark when it has clients; the current session is marked. It SHALL offer "New session", "Copy session link", for the owner the share level `Private · Read · Write` (`Read` and `Write` disabled with the tooltip `Your roles do not allow sharing` without the share right), and delete for every session but the current one, with a confirm. Origin: necessary consequence of sessions (find, share and remove them in the UI); D-083 (rights per session); D-084 (the share right).
 
 #### Scenario: Title rule
 - **WHEN** `sessionTitle` gets summaries with a view titled `Drive 3`, with only measurement `smart451 test`, with only scope `{smart451, 2026-10-13T12:00:00Z, …}` in zone Europe/Berlin, and with nothing
@@ -145,9 +150,9 @@ The top row SHALL offer a Sessions menu listing the user's own sessions, latest 
 - **Evidence:** UI check (one screenshot of the open menu)
 
 ### Requirement: Read-only session in the UI
-When the user may open but not change the session, the top row SHALL show a `Read-only` pill whose tooltip names the owner and says that "Copy link" opens an own copy; rejected commands SHALL show in the message line with code `read_only`. Origin: Q-3 (a) (`read` share level); concept §10 („Fehler … müssen erkennbar bleiben").
+When the user may open but not change the session, the top row SHALL show a `Read-only` pill whose tooltip names the owner and says that "Copy link" opens an own copy; rejected commands SHALL show in the message line with code `read_only`. Origin: D-083, D-084 (share levels stay; `read`); concept §10 („Fehler … müssen erkennbar bleiben").
 
 #### Scenario: Two users on real data
-- **WHEN** the server runs in header mode on loopback against carserver, Vite runs on 5173 with `KIPSCOPE_DEV_USER=alice` and on 5174 with `KIPSCOPE_DEV_USER=bob`; alice opens a session with one smart451 window and sets it to `write`; bob opens alice's session address on 5174 and adds a signal; alice sets `read`; bob zooms; alice sets `private`
+- **WHEN** the server runs the example identity module on loopback against carserver with a rules file giving role `cars` the carserver data ref and share, Vite runs on 5173 with `KIPSCOPE_DEV_USER=alice KIPSCOPE_DEV_ROLES=cars` and on 5174 with `KIPSCOPE_DEV_USER=bob KIPSCOPE_DEV_ROLES=cars`; alice opens a session with one smart451 window and sets it to `write`; bob opens alice's session address on 5174 and adds a signal; alice sets `read`; bob zooms; alice sets `private`
 - **THEN** alice's tab shows bob's signal without a reload; after `read`, bob's top row shows `Read-only` and his zoom shows a `read_only` message while the range stays; after `private`, bob's tab shows "No access to this session"; the footer shows `alice` and `bob` in the two tabs; goal, measured and reported but not pass/fail: the server's RSS with both tabs open
 - **Evidence:** UI check (one screenshot per step on 5174, one of alice's tab after bob's add)
