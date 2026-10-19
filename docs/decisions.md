@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-084: Pluggable identity, roles and rights per data ref (2026-10-19)
+
+Jan on `add-multiuser` Q-1, Q-2, Q-4: „1: bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten. 2. keine Ahnung es gibt rollen,. die bestätigt ein tool in verbindung mit PIng id. not my business. muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauben. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutezer alle platformen sehen. q4 views je nutzer, ja“.
+
+- **Decision:** Supersedes D-083 in part: „ping“ means Ping Identity (PingID), not KI.ping's login. Identity is a pluggable adapter like the data source: it turns a request (browser or CLI) into a user with roles. KIPscope ships `none` (local, no login, one user who may do everything; the default) and a corporate path that works with Ping Identity; an organisation may plug in its own adapter (its own tool confirms the roles). KIPscope itself enforces rules: roles map to rights, and rights limit which data (platforms, data refs) a user can see, in every query, list, view and CLI call, on the server. Saved views are per user (Q-4 (a)). ADX access stays the server's identity (D-083); the data limits are KIPscope's own.
+- **Why:** Jan runs KIPscope alone; in a company not every user may see every platform, and how roles are confirmed differs per company.
+- **Consequences:** `add-multiuser` is revised: identity adapter contract, role-to-rights rules, data-ref filtering at one place on the server, CLI callers authenticated through the same adapter. Open: what a „platform“ is in the data (a data ref pattern, or a column in the source).
+
 ## D-083: Multiuser answers: SSO hook, rights per session, ADX as the server (2026-10-19)
 
 Jan on the questions of D-079: „Ein SSO hook mit ping oder authentik wäre gut. jedes sesseion braucht rechte, ja. ADX rechte sind serverrechte hier keine unterscheidung“.
