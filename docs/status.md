@@ -31,6 +31,7 @@ As of 2026-10-19, session 8. New direction after issue #1 and Jan's answers (D-0
 | Footer | [app-footer](../openspec/specs/app-footer/spec.md) | Permanent bottom bar: status, measurement info, source/catalog/zone/build items, `KIPscope · kipp.ing · AAL` at the far right |
 | Measurement info | [measurement-info](../openspec/specs/measurement-info/spec.md) | Name, object and meta of the measurement from `kipscope.yaml` or `kipscope measurement …` |
 | Data sources | [data-source](../openspec/specs/data-source/spec.md), [adx-source](../openspec/specs/adx-source/spec.md) | Lean adapter contract (7 required methods, server-side fallbacks, one conformance suite); ClickHouse or Azure Data Explorer via `KIPSCOPE_SOURCE`, ADX signed in with `az login`; guide [data-sources.md](data-sources.md) |
+| Scope | [scope](../openspec/specs/scope/spec.md) | One data ref and `[from, to)` bound every query (D-082); `KIPSCOPE_CATALOG=scoped` for large sources; views open with a scope (pad 1 h); clamp at the edge, Widen ×3, Clear; CLI `scope …`; query classes with a slot kept for the UI (D-081) |
 | HTTP API | [api-reference](../openspec/specs/api-reference/spec.md) | Every route documented in [http-api.md](http-api.md), checked by a test |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
 
