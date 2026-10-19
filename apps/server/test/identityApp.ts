@@ -370,7 +370,11 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
     anon: clientWith({}),
     listen,
     async close() {
-      await app.close();
+      // A caller may leave a request in flight (the CLI drops a parallel request after a failed
+      // one); waiting for it would hold the close, so open connections are cut.
+      const closing = app.close();
+      app.server.closeAllConnections();
+      await closing;
       sessions.stop();
       if (own) rmSync(stateDir, { recursive: true, force: true });
     },
