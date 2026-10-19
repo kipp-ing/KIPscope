@@ -253,6 +253,8 @@ With Q-2 (a), window signals of another data ref go to `report.skipped` with rea
 - **Q-2 A view whose signals come from several data refs.** (a) The scope takes the data ref of the first timeseries window's first signal. The other refs' signals are left out and reported as skipped `out_of_scope`. (b) Refuse the open with `invalid_view`. (c) Take the data ref with the most signals. **Recommended (a):** the open still shows something, the report names what is missing, and the views seen so far use one data ref. The spec is written for (a).
 - **Q-3 How far one "Widen" goes.** (a) One scope span on each side (×3: 2 h → 6 h → 18 h → 54 h). (b) ×2 around the centre. (c) Straight to a fixed span such as 7 days. **Recommended (a):** few clicks from a session to days, and every step is a multiple of the case, so its context stays centred. The spec is written for (a).
 
+**Jan's answers (2026-10-19):** „Empfehlungen übernehmen“: Q-1 (a), Q-2 (a), Q-3 (a), and the spec owner's defaults stand. Jan also: handed-over sessions are usually checked for gaps beforehand; gaps can occur but are rare („die Sessions die üblicherweise übergeben [werden] sind vorher auf lücken geprüft. es kann vorkommen, ist aber selten“), so gap info must never delay the first draw of a curve.
+
 ## Spec owner's defaults (Jan can veto)
 
 - Z0: an optional scope plus `KIPSCOPE_CATALOG=full|scoped` (default `full`), rather than a scope that always exists.

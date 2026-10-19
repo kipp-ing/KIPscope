@@ -181,6 +181,8 @@ Server and web change together; there is no stored state to migrate. A web build
 - **Q-1 Strict priority or aging?** (a) strict: background waits as long as interactive queries wait (recommended: bursts are short, and series are what you look at); (b) aging: a background query that has waited 30 s goes ahead of interactive queries arriving after that.
 - **Q-2 Strip, gaps and events requests from the browser: interactive like series?** (a) yes, every browser and CLI request is `interactive` (recommended: they are part of what you look at, and after `add-scope` they cover only the scope); (b) a class between `interactive` and `metadata`, so plots and cursor values always come before the strip and the event pins.
 
+**Jan's answers (2026-10-19):** „Empfehlungen übernehmen“: Q-1 (a), Q-2 (a), and the spec owner's defaults stand. Jan also: handed-over sessions are usually checked for gaps beforehand; gaps can occur but are rare („die Sessions die üblicherweise übergeben [werden] sind vorher auf lücken geprüft. es kann vorkommen, ist aber selten“), so gap info must never delay the first draw of a curve.
+
 ## Spec owner's defaults (Jan can veto)
 
 - One kept slot, not configurable (P2).
