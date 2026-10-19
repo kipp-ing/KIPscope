@@ -92,6 +92,26 @@ describe("aggregated buckets", () => {
     expect((starts[i] as bigint) + BigInt(r.width)).toBeGreaterThan(spike);
   });
 
+  it("keeps the bucket width of the asked span when the range was cut to a scope", async () => {
+    // A tile run reaching past the scope edge: the route cuts it, the grid must stay the run's.
+    const span = 2n * TEN_HOURS;
+    const r = asBuckets(
+      await querySeries(
+        source,
+        ref("Fast_100h.SIG_A"),
+        "testcar/Fast_100h.SIG_A",
+        BASE,
+        BASE + TEN_HOURS,
+        2000,
+        undefined,
+        undefined,
+        span,
+      ),
+    );
+    expect(BigInt(r.width)).toBe(bucketWidth(0n, span, 2000));
+    expect(r.count.reduce((a, b) => a + b, 0)).toBe(7_200_000);
+  });
+
   it("excludes null-timestamp rows from count, mean, min and max", async () => {
     const r = asBuckets(await query("Fast_100h.SIG_A", BASE, BASE + TEN_HOURS, 10));
     expect(Math.max(...valid(r.max))).toBe(1000);

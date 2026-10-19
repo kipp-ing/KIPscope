@@ -47,7 +47,9 @@ export function edgePoint(p: RawPoint, text: boolean): EdgePoint {
  * SNA points (design S4) count towards `target`; they come back as null values and as per-bucket
  * `sna` counts, and never enter mean, min or max. Raw series of a text signal (`ref.text`) carry
  * each point's text (add-events N3); buckets are unchanged. With a scope (add-scope Z10), whose
- * data ref is `ref`'s and which holds [from, to), the edge neighbours stay inside it.
+ * data ref is `ref`'s and which holds [from, to), the edge neighbours stay inside it. `span` is the
+ * length of the range asked for before it was cut to the scope: the bucket width follows it, so a
+ * cut range keeps the grid the caller asked for.
  */
 export async function querySeries(
   source: DataSource,
@@ -58,6 +60,7 @@ export async function querySeries(
   target: number,
   scope?: Scope,
   abort?: AbortSignal,
+  span: bigint = to - from,
 ): Promise<SeriesResult> {
   if (to <= from) throw new RangeError("empty time range: to must be after from");
   const head = { signalId, from: from.toString(), to: to.toString() };
@@ -82,7 +85,7 @@ export async function querySeries(
     return result;
   }
 
-  const width = bucketWidth(from, to, target);
+  const width = bucketWidth(0n, span, target);
   const buckets = await source.buckets(ref, from, to, width, abort);
   const result: BucketSeries = {
     kind: "buckets",

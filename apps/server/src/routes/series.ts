@@ -327,6 +327,7 @@ export const seriesRoutes =
           query.target,
           scope,
           controller.signal,
+          query.to - query.from,
         );
       } catch (error) {
         if (controller.signal.aborted) return reply;
