@@ -15,6 +15,7 @@ import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import { EventsCache } from "../events.ts";
 import { apiError, parseInput } from "../http.ts";
+import { withPriority } from "../priority.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -43,11 +44,14 @@ export const eventsRoutes =
   async (app) => {
     const events = new EventsCache(source, catalog, (message) => app.log.warn(message));
     // After each catalog load: every data ref's table events, then the events-line signals
-    // (design E3). Independent of the density prefetch; both go through the query queue.
+    // (design E3). Independent of the density prefetch; both go through the query queue as
+    // `background` work (series-query design P9).
     const stopPrefetch = catalog.onLoaded(() => {
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
       const signals = workspace.workspace.eventSignals ?? [];
-      void events.prefetch(dataRefs, signals, (message) => app.log.warn(message));
+      void withPriority("background", () =>
+        events.prefetch(dataRefs, signals, (message) => app.log.warn(message)),
+      );
     });
     app.addHook("onClose", async () => {
       stopPrefetch();

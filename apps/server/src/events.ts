@@ -12,6 +12,7 @@ import {
 import type { Catalog } from "./catalog.ts";
 import type { DataSource, StateChangeRule } from "./datasource.ts";
 import { ScanLimitError, STATE_SCAN_MAX } from "./fallbacks.ts";
+import { currentPriority, Priority, withPriority } from "./priority.ts";
 
 /** Table events of one data ref (design E3). */
 export interface TableEvents {
@@ -24,6 +25,8 @@ export interface TableEvents {
 
 interface Entry<T> {
   loadedAt: Date | undefined;
+  /** Class of the load's queries: the starting caller's, raised by each joining one. */
+  priority: Priority;
   promise: Promise<T>;
 }
 
@@ -34,7 +37,8 @@ type EventsCatalog = Pick<Catalog, "loadedAt" | "get" | "snaRanges">;
  * Events of the data refs and of the events-line signals, each loaded at most once per catalog
  * load (spec events, design E3), like the density: concurrent requests share one load, a failed one
  * is dropped, and a new `loadedAt` makes the next request load again. Loads ignore client aborts,
- * since they are shared. Warnings (missing table, waiting or stateless signals) go to `warn` once
+ * since they are shared, and run in the class of the caller that started them, raised to that of
+ * any caller that joins (series-query design P4). Warnings (missing table, waiting or stateless signals) go to `warn` once
  * per catalog load.
  */
 export class EventsCache {
@@ -93,8 +97,12 @@ export class EventsCache {
   private cached<T>(map: Map<string, Entry<T>>, key: string, load: () => Promise<T>): Promise<T> {
     const loadedAt = this.catalog.loadedAt;
     const hit = map.get(key);
-    if (hit && hit.loadedAt === loadedAt) return hit.promise;
-    const entry: Entry<T> = { loadedAt, promise: load() };
+    if (hit && hit.loadedAt === loadedAt) {
+      hit.priority.raise(currentPriority().cls);
+      return hit.promise;
+    }
+    const priority = new Priority(currentPriority().cls);
+    const entry: Entry<T> = { loadedAt, priority, promise: withPriority(priority, load) };
     map.set(key, entry);
     entry.promise.catch(() => {
       if (map.get(key) === entry) map.delete(key);

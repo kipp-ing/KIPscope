@@ -101,9 +101,18 @@ export function fetchDensity(dataRef: string, signal?: AbortSignal): Promise<Den
   return getJson(`/api/density?${new URLSearchParams({ dataRef })}`, signal);
 }
 
-/** Logger gaps and signal periods of one data ref (add-gap-display G6, G7). */
-export function fetchGaps(dataRef: string, signal?: AbortSignal): Promise<GapInfo> {
-  return getJson(`/api/gaps?${new URLSearchParams({ dataRef })}`, signal);
+/**
+ * Logger gaps and signal periods of one data ref (add-gap-display G6, G7), with the measured
+ * periods of the named `signals` (improve-query-priority P7).
+ */
+export function fetchGaps(
+  dataRef: string,
+  signals: readonly string[],
+  abort?: AbortSignal,
+): Promise<GapInfo> {
+  const params = new URLSearchParams({ dataRef });
+  for (const s of signals) params.append("signal", s);
+  return getJson(`/api/gaps?${params}`, abort);
 }
 
 /** All events of one data ref with the state changes of its events-line signals, no filter (add-events V9). */

@@ -1,0 +1,3 @@
+# Rounds
+
+- Round 1: needs_jan - all ten tasks built and ticked, suite green (shared 153, server 305, web 397, cli 70), UI check passed; open: two spec-text errors ("Large catalog, small workspace" says 4 calls, steps give 3; "smart451 periods" and "Load on carserver" name signals absent from the live catalog), and one design question that touches Jan's note (a raised query keeps its arrival rank, so background gap/density work that a browser request joins can start ahead of waiting series queries; /api/value and the render acknowledgement still wait on gap info) - the spec owner must fix the text and settle that question with Jan before round 2.

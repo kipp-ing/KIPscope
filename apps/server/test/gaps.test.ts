@@ -46,7 +46,8 @@ describe("gap info cache over HTTP", () => {
     await catalog.refresh();
     const app = buildApp({ catalog, source, workspace: workspace() });
     try {
-      const get = () => app.inject({ url: "/api/gaps", query: { dataRef: "car" } });
+      const get = () =>
+        app.inject({ url: "/api/gaps", query: { dataRef: "car", signal: ["car/Cyc", "car/Odd"] } });
       const three = await Promise.all([get(), get()]);
       three.push(await get());
       expect(three.map((r) => r.statusCode)).toEqual([200, 200, 200]);
@@ -79,14 +80,15 @@ describe("gap info cache over HTTP", () => {
     const app2 = buildApp({ catalog: catalog2, source: second.source, workspace: workspace() });
     try {
       second.calls.failNext = true;
-      const failed = await app2.inject({ url: "/api/gaps", query: { dataRef: "car" } });
+      const named = { dataRef: "car", signal: ["car/Cyc", "car/Odd"] };
+      const failed = await app2.inject({ url: "/api/gaps", query: named });
       expect(failed.statusCode).toBe(502);
       expect(failed.json().error.code).toBe("source_error");
       expect(failed.json().error.message).toContain("boom");
-      const retry = await app2.inject({ url: "/api/gaps", query: { dataRef: "car" } });
+      const retry = await app2.inject({ url: "/api/gaps", query: named });
       expect(retry.statusCode).toBe(200);
       expect(second.calls.logger).toBe(2);
-      const again = await app2.inject({ url: "/api/gaps", query: { dataRef: "car" } });
+      const again = await app2.inject({ url: "/api/gaps", query: named });
       expect(again.statusCode).toBe(200);
       expect(second.calls.logger).toBe(2);
     } finally {
@@ -117,6 +119,112 @@ describe("gap info cache over HTTP", () => {
       expect(body.error.code).toBe("source_error");
       expect(body.error.signalId).toBe("testcar/Sna_800h.SPEED");
       expect(body).not.toHaveProperty("value");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+/** Lets promise callbacks and the prefetch chain run; not a timer wait. */
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
+};
+
+/** A workspace holding the given windows and events-line signals (no catalog check). */
+function workspaceWith(
+  windows: { kind: "timeseries" | "values"; signals: string[] }[],
+  eventSignals: string[] = [],
+) {
+  const store = new WorkspaceStore(
+    { signalExists: () => true, hasStates: () => false },
+    { eventSignals },
+  );
+  for (const w of windows) {
+    const created = store.execute(
+      w.kind === "timeseries"
+        ? { type: "window.create", from: "0", to: "1000" }
+        : { type: "window.create", kind: "values" },
+    );
+    if (!created.ok || created.created === undefined) throw new Error("window.create failed");
+    for (const signalId of w.signals) {
+      const added = store.execute({
+        type: "window.addSignal",
+        windowId: created.created,
+        signalId,
+      });
+      if (!added.ok) throw new Error(`window.addSignal failed: ${signalId}`);
+    }
+  }
+  return store;
+}
+
+describe("measured periods only for signals in use", () => {
+  it("measures periods only for asked and workspace signals", async () => {
+    // 2,400 signals S0001 ... S2400 of data ref `big`, none with a DBC or diag period.
+    const names = Array.from({ length: 2400 }, (_, i) => `S${String(i + 1).padStart(4, "0")}`);
+    const asked: string[][] = [];
+    const source = {
+      listSignals: async () => names.map((name) => ({ dataRef: "big", name })),
+      refExtent: async () => undefined,
+      events: async () => [],
+      refCount: async () => 100,
+      loggerGaps: async () => ({ gaps: [], last: 9n * S }),
+      before: async () => undefined,
+      after: async () => undefined,
+      // Every asked signal has 1,001 rows 100 ms apart: measurable.
+      firstTimes: async (_ref: string, requested: readonly string[]) => {
+        asked.push([...requested]);
+        return new Map(
+          requested.map((n) => [n, Array.from({ length: 1001 }, (_, i) => BigInt(i) * 100n * MS)]),
+        );
+      },
+    } as unknown as DataSource;
+    const catalog = new Catalog(source, async () => new Map());
+    const workspace = workspaceWith(
+      [
+        { kind: "timeseries", signals: ["big/S0001", "big/S0002"] },
+        { kind: "values", signals: ["big/S0003"] },
+      ],
+      ["big/S0004"],
+    );
+    const app = buildApp({ catalog, source, workspace });
+    const measured = { ns: (100n * MS).toString(), source: "measured" };
+    try {
+      await app.ready();
+      await catalog.refresh();
+      await settle();
+      // The prefetch measures the workspace signals, in one call.
+      expect(asked).toHaveLength(1);
+      expect([...(asked[0] ?? [])].sort()).toEqual(["S0001", "S0002", "S0003", "S0004"]);
+
+      // Nothing named: no query, and the workspace signals measured along are not listed.
+      const bare = await app.inject({ url: "/api/gaps", query: { dataRef: "big" } });
+      expect(bare.statusCode).toBe(200);
+      expect(bare.json().periods).toEqual({});
+      expect(asked).toHaveLength(1);
+
+      // S0001 is measured already and listed because it is named; only S0100 is new.
+      const named = await app.inject({
+        url: "/api/gaps",
+        query: { dataRef: "big", signal: ["big/S0001", "big/S0100"] },
+      });
+      expect(named.statusCode).toBe(200);
+      expect(named.json().periods).toEqual({ "big/S0001": measured, "big/S0100": measured });
+      expect(asked).toHaveLength(2);
+      expect(asked[1]).toEqual(["S0100"]);
+
+      // A value request waits for its own signal's period only.
+      const value = await app.inject({
+        url: "/api/value",
+        query: { signal: "big/S0200", t: "0" },
+      });
+      expect(value.statusCode).toBe(200);
+      expect(asked).toHaveLength(3);
+      expect(asked[2]).toEqual(["S0200"]);
+
+      // In all: 3 calls (prefetch, second request, value request) with 4 + 1 + 1 = 6 names.
+      expect(asked).toHaveLength(3);
+      expect(asked.flat()).toHaveLength(6);
     } finally {
       await app.close();
     }

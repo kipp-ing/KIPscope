@@ -12,6 +12,8 @@ export const LOGGER_GAP_GRID = LOGGER_GAP_MIN / 2n;
 export const GAP_REFRESH_MS = 300_000;
 /** Rows read per signal to measure a period (G3). */
 export const PERIOD_SAMPLE_ROWS = 1001;
+/** Most `signal` parameters of one `/api/gaps` request (design P7). */
+export const MAX_GAP_SIGNALS = 100;
 /** A measured period needs at least this many spacings. */
 export const PERIOD_MIN_SPACINGS = 100;
 /** …and at most this share of spacings longer than GAP_PERIODS medians. */
@@ -35,7 +37,10 @@ export interface GapInfo {
   through?: string;
   /** Time order, not overlapping. */
   logger: LoggerGapJson[];
-  /** Signal ID → period, for every catalog signal of the data ref that has one. */
+  /**
+   * Signal ID → period: the DBC or diag period of every catalog signal of the data ref, and the
+   * measured period of each signal the request named.
+   */
   periods: Record<string, SignalPeriod>;
 }
 

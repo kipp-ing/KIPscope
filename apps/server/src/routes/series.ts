@@ -4,6 +4,7 @@ import {
   type Extent,
   evaluateAt,
   GAP_REFRESH_MS,
+  MAX_GAP_SIGNALS,
   parseSignalId,
   type SignalInfo,
   signalGaps,
@@ -16,8 +17,9 @@ import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import type { RawPoint, SeriesRef } from "../datasource.ts";
 import { DensityCache } from "../density.ts";
-import { GapCache } from "../gaps.ts";
+import { GapCache, workspaceSignals } from "../gaps.ts";
 import { apiError, parseInput } from "../http.ts";
+import { withPriority } from "../priority.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
 
 const Time = TimeInput.transform(BigInt);
@@ -35,7 +37,14 @@ const ExtentQuery = z.object({ signal: z.string().min(1) });
 
 const DensityQuery = z.object({ dataRef: z.string().min(1) });
 
-const GapsQuery = z.object({ dataRef: z.string().min(1) });
+const GapsQuery = z.object({
+  dataRef: z.string().min(1),
+  /** Signals whose measured period the answer lists (design P7); repeated, at most MAX_GAP_SIGNALS. */
+  signal: z
+    .union([z.string(), z.array(z.string()).max(MAX_GAP_SIGNALS)])
+    .optional()
+    .transform((s) => (s === undefined ? [] : Array.isArray(s) ? s : [s])),
+});
 
 const ValueQuery = z.object({
   signal: z.string().min(1),
@@ -44,10 +53,11 @@ const ValueQuery = z.object({
 });
 
 export const seriesRoutes =
-  ({ catalog, source }: AppDeps): FastifyPluginAsync =>
+  ({ catalog, source, workspace }: AppDeps): FastifyPluginAsync =>
   async (app) => {
     const density = new DensityCache(source, () => catalog.loadedAt);
-    const gaps = new GapCache(source, catalog);
+    // Periods are measured for the workspace's signals and the requests' only (design P6).
+    const gaps = new GapCache(source, catalog, () => workspaceSignals(workspace.workspace));
     const warn = (message: string) => app.log.warn(message);
     // Gap info polls (design G9 (b)): a setTimeout chain, each poll GAP_REFRESH_MS after the
     // previous poll or the catalog load's prefetch ended, so polls never overlap each other or a
@@ -64,28 +74,32 @@ export const seriesRoutes =
       timer = undefined;
       const loadedAt = catalog.loadedAt;
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
-      polling = gaps.refresh(dataRefs, warn).then(() => {
+      // Background class (design P9): requests go first and keep a slot of their own.
+      polling = withPriority("background", () => gaps.refresh(dataRefs, warn)).then(() => {
         // A newer load stopped this poll; its prefetch schedules the next one.
         if (catalog.loadedAt === loadedAt) schedule();
       });
     };
     // Warm the caches after each catalog load (design Q4 (b)); the load does not wait for it. The
     // gap info follows the density, so carserver sees one full scan at a time (design G6); a newer
-    // load starts its own run, after a running poll ended.
-    const stopPrefetch = catalog.onLoaded(() => {
-      const loadedAt = catalog.loadedAt;
-      const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
-      if (timer !== undefined) clearTimeout(timer);
-      timer = undefined;
-      void polling
-        .then(() => density.prefetch(dataRefs, warn))
-        .then(() => {
-          if (catalog.loadedAt === loadedAt) return gaps.prefetch(dataRefs, warn);
-        })
-        .then(() => {
-          if (catalog.loadedAt === loadedAt) schedule();
-        });
-    });
+    // load starts its own run, after a running poll ended. The whole chain runs as background
+    // (design P9), so a request never waits for it; a request that joins its work raises that (P4).
+    const stopPrefetch = catalog.onLoaded(() =>
+      withPriority("background", () => {
+        const loadedAt = catalog.loadedAt;
+        const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
+        if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+        void polling
+          .then(() => density.prefetch(dataRefs, warn))
+          .then(() => {
+            if (catalog.loadedAt === loadedAt) return gaps.prefetch(dataRefs, warn);
+          })
+          .then(() => {
+            if (catalog.loadedAt === loadedAt) schedule();
+          });
+      }),
+    );
     app.addHook("onClose", async () => {
       stopPrefetch();
       closed = true;
@@ -111,11 +125,11 @@ export const seriesRoutes =
       }
     });
 
-    /** Logger gaps and periods of a data ref (spec data-gaps, design G6). */
+    /** Logger gaps and periods of a data ref and its named signals (spec data-gaps, design G6, P7). */
     app.get("/api/gaps", async (request, reply) => {
       const query = parseInput(GapsQuery, request.query, reply);
       if (!query) return reply;
-      const { dataRef } = query;
+      const { dataRef, signal } = query;
       // Periods come from the catalog, so there is no gap info without one.
       if (!catalog.loadedAt) {
         return apiError(
@@ -130,7 +144,7 @@ export const seriesRoutes =
       }
       try {
         // Shared and cached, so a client close does not abort it.
-        return await gaps.get(dataRef);
+        return await gaps.get(dataRef, signal);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
@@ -258,7 +272,8 @@ export const seriesRoutes =
         const [at, next, gapInfo] = await Promise.all([
           source.before(ref, query.t + 1n, controller.signal),
           source.after(ref, query.t + 1n, controller.signal),
-          gaps.get(info.dataRef),
+          // Its own period only, not every signal's (design P6).
+          gaps.get(info.dataRef, [query.signal]),
         ]);
         // State names (add-events N2): the row text of a text signal, else the VAL_ label.
         const labelOf = (p: RawPoint | undefined): string | undefined =>

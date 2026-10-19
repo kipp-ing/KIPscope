@@ -800,8 +800,9 @@ export function TimeseriesWindow({
   // Event marks (design V6): read by the drawAxes and draw hooks.
   const eventsRef = useRef<readonly DiagEvent[]>(events ?? []);
   eventsRef.current = events ?? [];
-  // Gap info of the signals' data refs (add-gap-display G7), once per browser tab. Keyed on the
-  // data refs' content: `signals` is a new array on every revision.
+  // Gap info of the signals' data refs (add-gap-display G7), once per browser tab, with the
+  // measured periods of the window's signals (improve-query-priority P8). Keyed on content:
+  // `signals` is a new array on every revision.
   const dataRefsKey = [
     ...new Set(w.signals.flatMap((s) => parseSignalId(s.signalId)?.dataRef ?? [])),
   ].join("\n");
@@ -809,7 +810,12 @@ export function TimeseriesWindow({
     () => (dataRefsKey === "" ? [] : dataRefsKey.split("\n")),
     [dataRefsKey],
   );
-  const gapInfo = useGapInfo(dataRefs);
+  const signalIdsKey = w.signals.map((s) => s.signalId).join("\n");
+  const signalIds = useMemo(
+    () => (signalIdsKey === "" ? [] : signalIdsKey.split("\n")),
+    [signalIdsKey],
+  );
+  const gapInfo = useGapInfo(signalIds);
   const gapsOf = (signalId: string): SignalGaps => {
     const dataRef = parseSignalId(signalId)?.dataRef;
     return signalGaps(dataRef === undefined ? undefined : gapInfo.infos.get(dataRef), signalId);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DataSource, SourceAdapter, SourceInfo } from "../src/datasource.ts";
+import { Priority, type QueryClass, withPriority } from "../src/priority.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
 
 const tick = () => new Promise((r) => setTimeout(r, 1));
@@ -24,6 +25,14 @@ function fakeSource() {
 
 const ref = (name: string) => ({ dataRef: "car", name });
 
+/** Per-class stats of a queue with nothing running or waiting (design Interfaces: `byClass`). */
+const idle = () => ({
+  interactive: { running: 0, waiting: 0 },
+  metadata: { running: 0, waiting: 0 },
+  background: { running: 0, waiting: 0 },
+  preload: { running: 0, waiting: 0 },
+});
+
 /** The stubs below implement the optional methods they call, so the queued adapter has them too. */
 const queuedSource = (stub: DataSource, queue: QueryQueue) =>
   queuedAdapter(stub, queue) as DataSource;
@@ -40,7 +49,7 @@ describe("QueryQueue", () => {
     expect(fake.calls).toHaveLength(50);
     expect(fake.maxConcurrent()).toBe(4);
     expect(queue.peak).toBe(4);
-    expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 4 });
+    expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 4, byClass: idle() });
   });
 
   it("never sends an already aborted request to the source", async () => {
@@ -162,7 +171,13 @@ describe("queuedAdapter shape", () => {
     // The only slot is busy, a second query waits, and ping still answers at once.
     const busy = queued.listSignals();
     const waiting = queued.listSignals();
-    expect(queue.stats).toEqual({ running: 1, waiting: 1, peak: 1 });
+    // No priority context: both queries count as interactive.
+    expect(queue.stats).toEqual({
+      running: 1,
+      waiting: 1,
+      peak: 1,
+      byClass: { ...idle(), interactive: { running: 1, waiting: 1 } },
+    });
     await expect(queued.ping(new AbortController().signal)).resolves.toBeUndefined();
     release();
     await Promise.all([busy, waiting]);
@@ -190,5 +205,239 @@ describe("queuedAdapter shape", () => {
     expect(seen[0]?.[4]).toBe(controller.signal);
     expect(seen[1]?.slice(0, 3)).toEqual(["car", 5n, true]);
     expect(seen[1]?.[3]).toBe(controller.signal);
+  });
+});
+
+/** A task the test holds open until it releases it (no wall-clock waits). */
+interface Held {
+  name: string;
+  cls: QueryClass;
+  started: boolean;
+  released: boolean;
+  release: () => void;
+  /** Settles when the queue ran the task to its end, or rejected it. */
+  done: Promise<void>;
+}
+
+/** Lets promise callbacks and the queue's follow-up picks run; not a timer wait. */
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+};
+
+/** Queues a task of class `cls` that records its start in `order` and runs until `release`. */
+function hold(
+  queue: QueryQueue,
+  order: string[],
+  name: string,
+  cls: QueryClass | Priority,
+  abort?: AbortSignal,
+): Held {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const held: Held = {
+    name,
+    cls: typeof cls === "string" ? cls : cls.cls,
+    started: false,
+    released: false,
+    release: () => {
+      held.released = true;
+      release();
+    },
+    done: Promise.resolve(),
+  };
+  held.done = withPriority(cls, () =>
+    queue.run(async () => {
+      held.started = true;
+      order.push(name);
+      await gate;
+    }, abort),
+  );
+  return held;
+}
+
+/** Releases the started, not yet released tasks one at a time (oldest start first) until all ended. */
+async function drain(tasks: readonly Held[], order: readonly string[]) {
+  for (;;) {
+    const next = order
+      .map((name) => tasks.find((t) => t.name === name))
+      .find((t) => t?.started && !t.released);
+    if (!next) break;
+    next.release();
+    await settle();
+  }
+  await Promise.all(tasks.map((t) => t.done));
+}
+
+describe("QueryQueue classes", () => {
+  /** Setup of series-query "Start order by class": limit 4, B1-B20, then P, M, I1-I3. */
+  function classSetup(abortI3?: AbortSignal) {
+    const queue = new QueryQueue(4);
+    const order: string[] = [];
+    const tasks: Held[] = [];
+    const add = (name: string, cls: QueryClass, abort?: AbortSignal) => {
+      const task = hold(queue, order, name, cls, abort);
+      tasks.push(task);
+      return task;
+    };
+    for (let i = 1; i <= 20; i++) add(`B${i}`, "background");
+    add("P", "preload");
+    add("M", "metadata");
+    add("I1", "interactive");
+    add("I2", "interactive");
+    add("I3", "interactive", abortI3);
+    const by = (name: string) => tasks.find((t) => t.name === name) as Held;
+    return { queue, order, tasks, by };
+  }
+
+  const releaseAndSettle = async (task: Held) => {
+    task.release();
+    await settle();
+  };
+
+  it("starts waiting queries by class, oldest first", async () => {
+    const { queue, order, tasks, by } = classSetup();
+    await settle();
+    // Background takes 3 of 4 slots; I1 finds the kept slot free.
+    expect(order).toEqual(["B1", "B2", "B3", "I1"]);
+    expect(queue.stats.running).toBe(4);
+
+    for (const name of ["B1", "I1", "I2", "I3", "M"]) await releaseAndSettle(by(name));
+    expect(order).toEqual(["B1", "B2", "B3", "I1", "I2", "I3", "M", "B4"]);
+
+    await drain(tasks, order);
+    const expected = [
+      "B1",
+      "B2",
+      "B3",
+      "I1",
+      "I2",
+      "I3",
+      "M",
+      ...Array.from({ length: 17 }, (_, i) => `B${i + 4}`),
+      "P",
+    ];
+    expect(order).toEqual(expected);
+    expect(order).toHaveLength(25);
+    expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 4, byClass: idle() });
+  });
+
+  it("drops an aborted query from its class", async () => {
+    const controller = new AbortController();
+    const { queue, order, tasks, by } = classSetup(controller.signal);
+    await settle();
+    // B1 ends: I2 takes the freed slot, so I3 is the only interactive query left waiting.
+    await releaseAndSettle(by("B1"));
+    expect(order).toEqual(["B1", "B2", "B3", "I1", "I2"]);
+    expect(queue.stats.byClass.interactive).toEqual({ running: 2, waiting: 1 });
+
+    const reason = new Error("client went away");
+    controller.abort(reason);
+    await expect(by("I3").done).rejects.toBe(reason);
+    expect(queue.stats.byClass.interactive).toEqual({ running: 2, waiting: 0 });
+
+    // M (metadata) may start only below the kept slot: after I1 ended it still must not.
+    await releaseAndSettle(by("I1"));
+    expect(order).not.toContain("M");
+    await releaseAndSettle(by("I2"));
+    expect(order.slice(5)).toEqual(["M"]);
+    expect(order).not.toContain("I3");
+
+    // The rest runs to its end; I3 stays unstarted.
+    const rest = tasks.filter((t) => t.name !== "I3");
+    await drain(rest, order);
+    expect(order).not.toContain("I3");
+    expect(order).toHaveLength(24);
+  });
+
+  it("keeps one slot for interactive queries", async () => {
+    const queue = new QueryQueue(4);
+    expect(queue.kept).toBe(1);
+    const order: string[] = [];
+    const tasks: Held[] = [];
+    for (let i = 1; i <= 2400; i++) tasks.push(hold(queue, order, `B${i}`, "background"));
+    await settle();
+    expect(queue.stats.byClass.background).toEqual({ running: 3, waiting: 2397 });
+    expect(queue.stats.running).toBe(3);
+
+    // No background task has ended: the interactive query starts into the kept slot.
+    const interactive = hold(queue, order, "I", "interactive");
+    tasks.push(interactive);
+    await settle();
+    expect(interactive.started).toBe(true);
+    expect(order).toEqual(["B1", "B2", "B3", "I"]);
+    expect(queue.stats.byClass).toEqual({
+      ...idle(),
+      background: { running: 3, waiting: 2397 },
+      interactive: { running: 1, waiting: 0 },
+    });
+    expect(queue.stats.peak).toBe(4);
+
+    // Clean up: release in start order until all 2,401 tasks ended.
+    await drain(tasks, order);
+    expect(order).toHaveLength(2401);
+  });
+
+  it("has no kept slot with a limit of one", async () => {
+    const queue = new QueryQueue(1);
+    expect(queue.kept).toBe(0);
+    const order: string[] = [];
+    const b1 = hold(queue, order, "B1", "background");
+    const b2 = hold(queue, order, "B2", "background");
+    const i1 = hold(queue, order, "I1", "interactive");
+    await settle();
+    // Background still runs (else it would starve); no preemption for I1.
+    expect(order).toEqual(["B1"]);
+    await releaseAndSettle(b1);
+    expect(order).toEqual(["B1", "I1"]);
+    await releaseAndSettle(i1);
+    expect(order).toEqual(["B1", "I1", "B2"]);
+    await releaseAndSettle(b2);
+    await Promise.all([b1.done, b2.done, i1.done]);
+    expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 1, byClass: idle() });
+  });
+
+  it("gives background work one slot with a limit of two", async () => {
+    const queue = new QueryQueue(2);
+    expect(queue.kept).toBe(1);
+    const order: string[] = [];
+    const b1 = hold(queue, order, "B1", "background");
+    const b2 = hold(queue, order, "B2", "background");
+    const i1 = hold(queue, order, "I1", "interactive");
+    await settle();
+    expect(order).toEqual(["B1", "I1"]);
+    await releaseAndSettle(i1);
+    // B2 may not start while B1 runs: background keeps to limit - kept = 1.
+    expect(order).toEqual(["B1", "I1"]);
+    await releaseAndSettle(b1);
+    expect(order).toEqual(["B1", "I1", "B2"]);
+    await releaseAndSettle(b2);
+    await Promise.all([b1.done, b2.done, i1.done]);
+  });
+
+  it("starts a raised query at once", async () => {
+    const queue = new QueryQueue(4);
+    const order: string[] = [];
+    const running = [1, 2, 3].map((i) => hold(queue, order, `B${i}`, "background"));
+    const priority = new Priority("background");
+    const waiting = hold(queue, order, "W", priority);
+    await settle();
+    expect(order).toEqual(["B1", "B2", "B3"]);
+    expect(queue.stats.byClass.background).toEqual({ running: 3, waiting: 1 });
+
+    // Raising never lowers: a raise to a lower class changes nothing.
+    priority.raise("preload");
+    await settle();
+    expect(waiting.started).toBe(false);
+
+    priority.raise("interactive");
+    await settle();
+    // Before any running task ended.
+    expect(waiting.started).toBe(true);
+    expect(order).toEqual(["B1", "B2", "B3", "W"]);
+    expect(running.every((t) => !t.released)).toBe(true);
+    expect(queue.stats).toMatchObject({ running: 4, waiting: 0 });
+    await drain([...running, waiting], order);
   });
 });

@@ -8,6 +8,7 @@ const REFRESH_MS = 300_000;
 const S = 1_000_000_000n;
 // gapcar: G = 2026-10-03T00:00:00Z.
 const G = 1_790_985_600n * S;
+const CYC = "gapcar/Cyc_B10h.CYC";
 const INFO: GapInfo = {
   dataRef: "gapcar",
   through: "1790986199980000000",
@@ -24,23 +25,23 @@ describe("gap info in the tab", () => {
 
   it("fetches gap info once per data ref and retries a failure", async () => {
     const fetchInfo = vi
-      .fn<(dataRef: string) => Promise<GapInfo>>()
+      .fn<(dataRef: string, signals: readonly string[]) => Promise<GapInfo>>()
       .mockRejectedValueOnce(new Error("connect ECONNREFUSED"))
       .mockResolvedValue(INFO);
     const store = new GapInfoStore(fetchInfo);
     const first = vi.fn();
     const second = vi.fn();
     // Two windows of one data ref ask: one request.
-    const releaseFirst = store.ask(["gapcar"], first);
-    const releaseSecond = store.ask(["gapcar"], second);
+    const releaseFirst = store.ask([CYC], first);
+    const releaseSecond = store.ask([CYC], second);
     expect(fetchInfo).toHaveBeenCalledTimes(1);
-    expect(fetchInfo).toHaveBeenCalledWith("gapcar");
-    expect(store.state(["gapcar"]).settled).toBe(false);
+    expect(fetchInfo).toHaveBeenCalledWith("gapcar", [CYC]);
+    expect(store.state([CYC]).settled).toBe(false);
 
     await vi.advanceTimersByTimeAsync(0);
     // The failure is an error for both windows, and the data ref counts as settled.
     for (const listener of [first, second]) expect(listener).toHaveBeenCalled();
-    const failed = store.state(["gapcar"]);
+    const failed = store.state([CYC]);
     expect(failed.errors).toEqual([{ dataRef: "gapcar", message: "connect ECONNREFUSED" }]);
     expect(failed.infos.size).toBe(0);
     expect(failed.settled).toBe(true);
@@ -51,13 +52,13 @@ describe("gap info in the tab", () => {
     expect(fetchInfo).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchInfo).toHaveBeenCalledTimes(2);
-    const ok = store.state(["gapcar"]);
+    const ok = store.state([CYC]);
     expect(ok.errors).toEqual([]);
     expect(ok.infos.get("gapcar")).toEqual(INFO);
     expect(ok.settled).toBe(true);
 
     // A loaded info is kept for the tab: a third window asks, no request.
-    const releaseThird = store.ask(["gapcar"], vi.fn());
+    const releaseThird = store.ask([CYC], vi.fn());
     await vi.advanceTimersByTimeAsync(GAP_RETRY_MS * 2);
     expect(fetchInfo).toHaveBeenCalledTimes(2);
     releaseFirst();
@@ -67,10 +68,10 @@ describe("gap info in the tab", () => {
 
   it("stops retrying when no window shows the data ref any more", async () => {
     const fetchInfo = vi
-      .fn<(dataRef: string) => Promise<GapInfo>>()
+      .fn<(dataRef: string, signals: readonly string[]) => Promise<GapInfo>>()
       .mockRejectedValue(new Error("down"));
     const store = new GapInfoStore(fetchInfo);
-    const release = store.ask(["gapcar"], vi.fn());
+    const release = store.ask([CYC], vi.fn());
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchInfo).toHaveBeenCalledTimes(1);
     release();
@@ -80,13 +81,95 @@ describe("gap info in the tab", () => {
     // Still asked: it keeps retrying every 30 s.
     const again = new GapInfoStore(fetchInfo);
     fetchInfo.mockClear();
-    again.ask(["gapcar", "othercar"], vi.fn());
+    again.ask([CYC, "othercar/Other"], vi.fn());
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchInfo).toHaveBeenCalledTimes(2); // one per data ref
+    expect(fetchInfo).toHaveBeenCalledWith("gapcar", [CYC]);
+    expect(fetchInfo).toHaveBeenCalledWith("othercar", ["othercar/Other"]);
     await vi.advanceTimersByTimeAsync(GAP_RETRY_MS);
     expect(fetchInfo).toHaveBeenCalledTimes(4);
     await vi.advanceTimersByTimeAsync(GAP_RETRY_MS);
     expect(fetchInfo).toHaveBeenCalledTimes(6);
+  });
+
+  it("asks for the windows' signals and fetches again for a new one", async () => {
+    const answer: GapInfo = { dataRef: "car", logger: [], periods: {} };
+    const asked: string[][] = [];
+    let finishThird: () => void = () => {};
+    // The second fetch (for car/z) is held open so that the test sees the state meanwhile.
+    const fetchInfo = vi.fn(async (_dataRef: string, signals: readonly string[]) => {
+      asked.push([...signals]);
+      if (asked.length === 2) await new Promise<void>((resolve) => (finishThird = resolve));
+      return structuredClone(answer);
+    });
+    const store = new GapInfoStore(fetchInfo);
+
+    // Window A asks for car/x and car/y: one fetch naming both.
+    const releaseA = store.ask(["car/x", "car/y"], vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual([["car/x", "car/y"]]);
+    expect(store.state(["car/x", "car/y"]).settled).toBe(true);
+
+    // Window B asks for car/y: the last fetch named it, so nothing is fetched.
+    const releaseB1 = store.ask(["car/y"], vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toHaveLength(1);
+    expect(store.state(["car/y"]).settled).toBe(true);
+
+    // B now shows car/y and car/z (React drops the old ask, then asks anew): one fetch with all
+    // three, and B is not settled until its answer is in, even though the answer will be equal.
+    releaseB1();
+    const listenerB = vi.fn();
+    const releaseB2 = store.ask(["car/y", "car/z"], listenerB);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual([
+      ["car/x", "car/y"],
+      ["car/x", "car/y", "car/z"],
+    ]);
+    expect(store.state(["car/y", "car/z"]).settled).toBe(false);
+    listenerB.mockClear();
+    finishThird();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.state(["car/y", "car/z"]).settled).toBe(true);
+    expect(listenerB).toHaveBeenCalled();
+
+    // 5 min later the refetch names the three signals asked at that time, once.
+    await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    expect(asked).toHaveLength(3);
+    expect(asked[2]).toEqual(["car/x", "car/y", "car/z"]);
+
+    // A releases its ask: the next refetch no longer names car/x.
+    releaseA();
+    await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    expect(asked).toHaveLength(4);
+    expect(asked[3]).toEqual(["car/y", "car/z"]);
+    releaseB2();
+  });
+
+  it("names at most 100 signals per data ref", async () => {
+    const ids = Array.from({ length: 120 }, (_, i) => `car/S${String(i).padStart(3, "0")}`);
+    const fetchInfo = vi.fn(
+      async (_dataRef: string, _signals: readonly string[]): Promise<GapInfo> => ({
+        dataRef: "car",
+        logger: [],
+        periods: {},
+      }),
+    );
+    const store = new GapInfoStore(fetchInfo);
+    const release = store.ask(ids, vi.fn());
+    expect(store.state(ids).settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    // One fetch naming the first 100 in the window's order.
+    expect(fetchInfo).toHaveBeenCalledTimes(1);
+    expect(fetchInfo).toHaveBeenCalledWith("car", ids.slice(0, 100));
+    expect(store.state(ids).settled).toBe(true);
+
+    // The 20 signals beyond the limit cannot be named: another window asking for them fetches nothing.
+    const releaseOther = store.ask(ids, vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchInfo).toHaveBeenCalledTimes(1);
+    release();
+    releaseOther();
   });
 });
 
@@ -165,7 +248,7 @@ describe("gap info refetch", () => {
   it("refetches gap info every 5 min and keeps it on failure", async () => {
     const fewer: GapInfo = { ...INFO, logger: INFO.logger.slice(0, 1) };
     const fetchInfo = vi
-      .fn<(dataRef: string) => Promise<GapInfo>>()
+      .fn<(dataRef: string, signals: readonly string[]) => Promise<GapInfo>>()
       .mockResolvedValueOnce(INFO)
       // The same answer again (a new object with equal content), then one logger gap less, then a failure.
       .mockResolvedValueOnce(structuredClone(INFO))
@@ -173,10 +256,10 @@ describe("gap info refetch", () => {
       .mockRejectedValue(new Error("connect ECONNREFUSED"));
     const store = new GapInfoStore(fetchInfo);
     const listener = vi.fn();
-    const release = store.ask(["gapcar"], listener);
+    const release = store.ask([CYC], listener);
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchInfo).toHaveBeenCalledTimes(1);
-    const first = store.state(["gapcar"]);
+    const first = store.state([CYC]);
     expect(first.settled).toBe(true);
     const loaded = first.infos.get("gapcar");
     expect(loaded).toEqual(INFO);
@@ -186,7 +269,7 @@ describe("gap info refetch", () => {
     expect(fetchInfo).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchInfo).toHaveBeenCalledTimes(2);
-    const same = store.state(["gapcar"]);
+    const same = store.state([CYC]);
     expect(same.infos.get("gapcar")).toBe(loaded);
     expect(same.settled).toBe(true);
     expect(same.errors).toEqual([]);
@@ -195,7 +278,7 @@ describe("gap info refetch", () => {
     const calls = listener.mock.calls.length;
     await vi.advanceTimersByTimeAsync(REFRESH_MS);
     expect(fetchInfo).toHaveBeenCalledTimes(3);
-    const changed = store.state(["gapcar"]);
+    const changed = store.state([CYC]);
     expect(changed.infos.get("gapcar")).toEqual(fewer);
     expect(changed.infos.get("gapcar")).not.toBe(loaded);
     expect(listener.mock.calls.length).toBeGreaterThan(calls);
@@ -203,7 +286,7 @@ describe("gap info refetch", () => {
     // 5 min more, the fetch fails: the old info stays, no error, the window stays settled.
     await vi.advanceTimersByTimeAsync(REFRESH_MS);
     expect(fetchInfo).toHaveBeenCalledTimes(4);
-    const kept = store.state(["gapcar"]);
+    const kept = store.state([CYC]);
     expect(kept.infos.get("gapcar")).toEqual(fewer);
     expect(kept.errors).toEqual([]);
     expect(kept.settled).toBe(true);
@@ -213,7 +296,7 @@ describe("gap info refetch", () => {
     expect(fetchInfo).toHaveBeenCalledTimes(4);
     await vi.advanceTimersByTimeAsync(REFRESH_MS);
     expect(fetchInfo).toHaveBeenCalledTimes(5);
-    expect(store.state(["gapcar"]).errors).toEqual([]);
+    expect(store.state([CYC]).errors).toEqual([]);
 
     // Released: no more requests.
     release();

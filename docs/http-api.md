@@ -25,7 +25,7 @@ The routes of the KIPscope server (default `http://127.0.0.1:7310`), for your ow
 | `GET /api/series` | points or buckets of a signal for a range, sized to the target | `signal`, `from`, `to`, `target` (default 2000) | [series-query](../openspec/specs/series-query/spec.md) |
 | `GET /api/value` | a signal's value at a time (cursor reading) | `signal`, `t`, `mode` (`line` or `step`) | [series-query](../openspec/specs/series-query/spec.md) |
 | `GET /api/density` | row counts of a data ref over its whole extent, drive grid and drives (time strip) | `dataRef` | [time-strip](../openspec/specs/time-strip/spec.md) |
-| `GET /api/gaps` | logger gaps of a data ref | `dataRef` | [data-gaps](../openspec/specs/data-gaps/spec.md) |
+| `GET /api/gaps` | logger gaps and periods of a data ref | `dataRef`, `signal` (repeated, at most 100) | [data-gaps](../openspec/specs/data-gaps/spec.md) |
 | `GET /api/events` | events of a data ref plus the state changes of listed signals | `dataRef`, `signal` (repeated), `filter`, `from` and `to` (together) | [events](../openspec/specs/events/spec.md) |
 | `POST /api/commands` | apply one workspace command (what the UI and the CLI send) | a command `{type, …}` | [workspace-state](../openspec/specs/workspace-state/spec.md) |
 | `GET /api/workspace` | the current workspace and its revision | — | [workspace-state](../openspec/specs/workspace-state/spec.md) |

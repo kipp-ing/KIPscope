@@ -1,54 +1,86 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { SourceAdapter } from "./datasource.ts";
+import { currentPriority, type Priority, QUERY_CLASSES, type QueryClass } from "./priority.ts";
 
 interface Waiting {
+  /** Arrival order; the oldest of the best class starts first. */
+  seq: number;
+  priority: Priority;
   start: () => void;
-  fail: (reason: unknown) => void;
   abort: AbortSignal | undefined;
 }
 
 const abortReason = (abort: AbortSignal) =>
   abort.reason ?? new DOMException("The operation was aborted", "AbortError");
 
+const rank = (cls: QueryClass) => QUERY_CLASSES.indexOf(cls);
+
+const perClass = <T>(value: () => T) =>
+  Object.fromEntries(QUERY_CLASSES.map((cls) => [cls, value()])) as Record<QueryClass, T>;
+
 /**
- * Runs at most `limit` source queries at once and queues the rest (design D7). A queued query
- * whose request was aborted is dropped before it reaches the source; a running one gets the abort
- * signal, which closes its HTTP request and makes ClickHouse cancel it.
+ * Runs at most `limit` source queries at once and queues the rest (design D7). The waiting query
+ * of the highest class starts first, the oldest within a class, and a query below `interactive`
+ * never takes one of the `kept` slots (improve-query-priority P1). A queued query whose request
+ * was aborted is dropped before it reaches the source; a running one gets the abort signal, which
+ * closes its HTTP request and makes ClickHouse cancel it.
  */
 export class QueryQueue {
   readonly limit: number;
+  /** Slots only `interactive` queries may take: 1 when limit > 1, else 0 (design P2). */
+  readonly kept: number;
   private running = 0;
+  private readonly runningByClass = perClass(() => 0);
   private readonly waiting: Waiting[] = [];
+  private seq = 0;
   /** Highest number of concurrently running queries seen; for tests and diagnostics. */
   peak = 0;
 
   constructor(limit: number) {
     if (!Number.isInteger(limit) || limit < 1) throw new RangeError(`invalid limit: ${limit}`);
     this.limit = limit;
+    this.kept = limit > 1 ? 1 : 0;
   }
 
   get stats() {
-    return { running: this.running, waiting: this.waiting.length, peak: this.peak };
+    const byClass = perClass(() => ({ running: 0, waiting: 0 }));
+    for (const cls of QUERY_CLASSES) byClass[cls].running = this.runningByClass[cls];
+    for (const entry of this.waiting) byClass[entry.priority.cls].waiting++;
+    return { running: this.running, waiting: this.waiting.length, peak: this.peak, byClass };
   }
 
+  /** Queues `task` in the class of `currentPriority()` at call time, inside the caller's async context. */
   run<T>(task: (abort?: AbortSignal) => Promise<T>, abort?: AbortSignal): Promise<T> {
     if (abort?.aborted) return Promise.reject(abortReason(abort));
+    const priority = currentPriority();
+    // Without it the task would run in the context of whichever query freed its slot (design P3).
+    const context = AsyncLocalStorage.snapshot();
     return new Promise<T>((resolve, reject) => {
+      const leave = () => {
+        abort?.removeEventListener("abort", onAbort);
+        unsubscribe();
+      };
       const entry: Waiting = {
+        seq: this.seq++,
+        priority,
         abort,
-        fail: reject,
         start: () => {
-          abort?.removeEventListener("abort", onAbort);
+          leave();
           if (abort?.aborted) {
             reject(abortReason(abort));
             this.next();
             return;
           }
+          // A raise after this point leaves the running query alone (design P4).
+          const cls = priority.cls;
           this.running++;
+          this.runningByClass[cls]++;
           this.peak = Math.max(this.peak, this.running);
-          task(abort)
+          context(() => task(abort))
             .then(resolve, reject)
             .finally(() => {
               this.running--;
+              this.runningByClass[cls]--;
               this.next();
             });
         },
@@ -57,9 +89,12 @@ export class QueryQueue {
         const index = this.waiting.indexOf(entry);
         if (index >= 0) {
           this.waiting.splice(index, 1);
+          leave();
           reject(abortReason(abort as AbortSignal));
         }
       };
+      // A raised query may now go first or take the kept slot.
+      const unsubscribe = priority.onRaise(() => this.next());
       abort?.addEventListener("abort", onAbort, { once: true });
       this.waiting.push(entry);
       this.next();
@@ -67,8 +102,20 @@ export class QueryQueue {
   }
 
   private next() {
-    while (this.running < this.limit && this.waiting.length > 0) {
-      this.waiting.shift()?.start();
+    while (this.waiting.length > 0) {
+      let best = 0;
+      for (let i = 1; i < this.waiting.length; i++) {
+        const a = this.waiting[i] as Waiting;
+        const b = this.waiting[best] as Waiting;
+        const order = rank(a.priority.cls) - rank(b.priority.cls) || a.seq - b.seq;
+        if (order < 0) best = i;
+      }
+      const entry = this.waiting[best] as Waiting;
+      // A lower class has the same or a stricter bound, so nothing else may start either.
+      const bound = entry.priority.cls === "interactive" ? this.limit : this.limit - this.kept;
+      if (this.running >= bound) return;
+      this.waiting.splice(best, 1);
+      entry.start();
     }
   }
 }

@@ -7,16 +7,21 @@ import {
   type GridBucket,
 } from "@kipscope/shared";
 import type { DataSource } from "./datasource.ts";
+import { currentPriority, Priority, withPriority } from "./priority.ts";
 
 interface Entry {
   loadedAt: Date | undefined;
+  /** Class of the computation's queries: the starting caller's, raised by each joining one. */
+  priority: Priority;
   promise: Promise<Density | undefined>;
 }
 
 /**
  * Density of a data ref, computed at most once per catalog load (spec time-strip, design T7):
  * concurrent requests share one computation, a failed one is dropped, and a new `loadedAt` makes
- * the next request compute again. The computation ignores client aborts, since it is shared.
+ * the next request compute again. The computation ignores client aborts, since it is shared. Its
+ * queries run in the class of the caller that started it, raised to that of any caller that joins
+ * (series-query design P4), so a request never waits behind the prefetch it joins.
  */
 export class DensityCache {
   private readonly source: Pick<DataSource, "refExtent" | "refBuckets">;
@@ -34,8 +39,16 @@ export class DensityCache {
   get(dataRef: string): Promise<Density | undefined> {
     const loadedAt = this.loadedAt();
     const cached = this.entries.get(dataRef);
-    if (cached && cached.loadedAt === loadedAt) return cached.promise;
-    const entry: Entry = { loadedAt, promise: this.compute(dataRef) };
+    if (cached && cached.loadedAt === loadedAt) {
+      cached.priority.raise(currentPriority().cls);
+      return cached.promise;
+    }
+    const priority = new Priority(currentPriority().cls);
+    const entry: Entry = {
+      loadedAt,
+      priority,
+      promise: withPriority(priority, () => this.compute(dataRef)),
+    };
     this.entries.set(dataRef, entry);
     entry.promise.catch(() => {
       if (this.entries.get(dataRef) === entry) this.entries.delete(dataRef);
