@@ -13,9 +13,18 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
+import type { Scope } from "../datasource.ts";
 import { EventsCache } from "../events.ts";
-import { apiError, parseInput } from "../http.ts";
+import {
+  apiError,
+  catalogsOf,
+  chainPrefetch,
+  outOfScope,
+  parseInput,
+  routeScope,
+} from "../http.ts";
 import { withPriority } from "../priority.ts";
+import { sourceScope } from "../scope.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -40,9 +49,22 @@ const EventsQuery = z
   });
 
 export const eventsRoutes =
-  ({ catalog, source, workspace }: AppDeps): FastifyPluginAsync =>
+  (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    const events = new EventsCache(source, catalog, (message) => app.log.warn(message));
+    const { catalog, source, workspace } = deps;
+    const catalogs = catalogsOf(deps);
+    // A scope's events follow that scope's signal list (add-scope Z9).
+    const events = new EventsCache(
+      source,
+      catalog,
+      (message) => app.log.warn(message),
+      (scope: Scope) =>
+        catalogs.get({
+          dataRef: scope.dataRef,
+          from: scope.from.toString(),
+          to: scope.to.toString(),
+        }),
+    );
     // After each catalog load: every data ref's table events, then the events-line signals
     // (design E3). Independent of the density prefetch; both go through the query queue as
     // `background` work (series-query design P9).
@@ -53,8 +75,22 @@ export const eventsRoutes =
         events.prefetch(dataRefs, signals, (message) => app.log.warn(message)),
       );
     });
+    // After a scope's list loads: its table events and events-line signals, after its density and
+    // gap info (add-scope Z9), as background work.
+    const stopScopePrefetch = catalogs.onLoaded((scope) => {
+      const s = sourceScope(scope);
+      const signals = (workspace.workspace.eventSignals ?? []).filter(
+        (id) => parseSignalId(id)?.dataRef === s.dataRef,
+      );
+      chainPrefetch(deps, () =>
+        withPriority("background", () =>
+          events.prefetch([s.dataRef], signals, (message) => app.log.warn(message), s),
+        ),
+      );
+    });
     app.addHook("onClose", async () => {
       stopPrefetch();
+      stopScopePrefetch();
     });
 
     /** Table events of a data ref plus the state changes of listed signals (spec events). */
@@ -68,7 +104,13 @@ export const eventsRoutes =
         if (!parsed.ok) return apiError(reply, 400, "invalid_filter", parsed.message);
         filter = parsed.filter;
       }
-      if (catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)) {
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const scope = scoped.source;
+      if (scope && dataRef !== scope.dataRef) {
+        return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
+      }
+      if (!scope && catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       // Signals of other data refs are ignored; each listed one counts once.
@@ -78,8 +120,8 @@ export const eventsRoutes =
       try {
         // Shared and cached, so a client close does not abort them (design E3).
         const [table, results] = await Promise.all([
-          events.table(dataRef),
-          Promise.all(signals.map((id) => events.signal(id))),
+          events.table(dataRef, scope),
+          Promise.all(signals.map((id) => events.signal(id, scope))),
         ]);
         const lists: DiagEvent[][] = [table.events];
         const skipped: EventList["skipped"] = [];
@@ -89,6 +131,7 @@ export const eventsRoutes =
           else lists.push(result);
         });
         let merged = mergeEvents(...lists);
+        // With a scope the loads hold only its events; `from`/`to` narrow them further.
         const { from, to } = query;
         if (from !== undefined && to !== undefined) {
           merged = merged.filter((e) => {

@@ -69,6 +69,8 @@ export class SeriesCache {
   private readonly queue: Run[] = [];
   private prefetchRunning = 0;
   private weight = 0;
+  /** Counts `clear()` calls: a run started before the last one stores nothing (add-scope Z12). */
+  private generation = 0;
   private readonly recoverListeners = new Set<(reason: RecoverReason) => void>();
 
   constructor(fetch: FetchSeries, options: CacheOptions = {}) {
@@ -105,6 +107,16 @@ export class SeriesCache {
     return () => {
       this.recoverListeners.delete(listener);
     };
+  }
+
+  /**
+   * Forgets every stored tile and every run in flight, so later loads fetch again; a run in flight
+   * still answers its owners but stores nothing (add-scope Z12: the workspace's scope changed).
+   */
+  clear(): void {
+    for (const id of [...this.tiles.keys()]) this.remove(id);
+    this.inFlight.clear();
+    this.generation++;
   }
 
   /** Tells listeners the source may be reachable again (live channel opened). */
@@ -233,6 +245,7 @@ export class SeriesCache {
     last: bigint,
   ): Map<bigint, Promise<Tile>> {
     const { signal } = run.controller;
+    const generation = this.generation;
     // An abort rejects the run's promises at once, even if the fetch never settles.
     const aborted = new Promise<never>((_, reject) =>
       signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
@@ -253,7 +266,7 @@ export class SeriesCache {
       if (signal.aborted) throw signal.reason;
       const tiles = new Map<bigint, Tile>();
       for (const tile of splitRun(result, level, first, last)) {
-        this.store(tile);
+        if (generation === this.generation) this.store(tile);
         tiles.set(tile.index, tile);
       }
       return tiles;

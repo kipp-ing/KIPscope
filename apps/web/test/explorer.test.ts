@@ -1,5 +1,13 @@
-import type { SignalInfo, SignalMatch, TimeseriesWindow } from "@kipscope/shared";
-import { describe, expect, it } from "vitest";
+import type {
+  CatalogSnapshot,
+  SignalInfo,
+  SignalMatch,
+  TimeseriesWindow,
+  WorkspaceScope,
+} from "@kipscope/shared";
+import { describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "../src/api.ts";
+import { CatalogLoader, type CatalogReport } from "../src/explorer/catalogLoader.ts";
 import {
   CHUNK,
   formatDbcRange,
@@ -220,5 +228,115 @@ describe("explorer groups", () => {
     console.log(`explorerItems: 10,000 matches in 101 groups, median ${median.toFixed(2)} ms`);
     // Goal 10 ms; the hard limit is the 50 ms of the filtering goal.
     expect(median).toBeLessThan(50);
+  });
+});
+
+describe("explorer catalog per scope (add-scope)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const H = 3_600_000_000_000n;
+  const scope = (from: bigint, to: bigint): WorkspaceScope => ({
+    dataRef: "testcar",
+    from: from.toString(),
+    to: to.toString(),
+  });
+  const snapshot = (id: string, s?: WorkspaceScope): CatalogSnapshot => ({
+    items: [{ id: `testcar/${id}`, dataRef: "testcar", name: id }],
+    loadedAt: "2026-10-19T08:00:00.000Z",
+    ...(s ? { scope: s } : {}),
+  });
+
+  /** A fetch whose every call waits for the test to answer it. */
+  function harness(retryMs = 5000) {
+    const pending: {
+      resolve: (s: CatalogSnapshot) => void;
+      reject: (e: unknown) => void;
+      abort: AbortSignal;
+    }[] = [];
+    const reports: CatalogReport[] = [];
+    const loader = new CatalogLoader(
+      (abort) =>
+        new Promise<CatalogSnapshot>((resolve, reject) => {
+          pending.push({ resolve, reject, abort });
+        }),
+      (r) => reports.push(r),
+      retryMs,
+    );
+    return { loader, pending, reports };
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("reloads the catalog when the scope changes", async () => {
+    const { loader, pending, reports } = harness();
+    const second = scope(T1, T2);
+    const third = scope(T1 - H, T2 + H);
+    loader.setScope(undefined);
+    loader.setScope(second);
+    // The same scope again is no change: no fetch.
+    loader.setScope(scope(T1, T2));
+    loader.setScope(third);
+    expect(pending).toHaveLength(3);
+
+    // The answer for the second scope arrives after the third scope was set: dropped.
+    pending[1]?.resolve(snapshot("Second", second));
+    await settle();
+    expect(reports).toEqual([]);
+    pending[2]?.resolve(snapshot("Third", third));
+    await settle();
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({ kind: "loaded" });
+    expect((reports[0] as { snapshot: CatalogSnapshot }).snapshot.items[0]?.name).toBe("Third");
+    // The older fetches were aborted by the newer scope.
+    expect(pending[0]?.abort.aborted).toBe(true);
+    expect(pending[1]?.abort.aborted).toBe(true);
+    expect(pending[2]?.abort.aborted).toBe(false);
+  });
+
+  it("drops an answer whose own scope is not the current one", async () => {
+    const { loader, pending, reports } = harness();
+    const current = scope(T1, T2);
+    loader.setScope(current);
+    pending[0]?.resolve(snapshot("Wrong", scope(T1, T2 + H)));
+    await settle();
+    expect(reports).toEqual([]);
+    // Without a scope the full catalog (no `scope` field) is what counts.
+    const { loader: plain, pending: plainPending, reports: plainReports } = harness();
+    plain.setScope(undefined);
+    plainPending[0]?.resolve(snapshot("Full"));
+    await settle();
+    expect(plainReports).toHaveLength(1);
+  });
+
+  it("shows no scope without retrying until the scope changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { loader, pending, reports } = harness(1000);
+      loader.setScope(undefined);
+      pending[0]?.reject(new ApiRequestError(409, "scope_required", "set a scope first"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reports).toEqual([{ kind: "no_scope" }]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(pending).toHaveLength(1);
+
+      // A scope arrives: one fetch, no reload of the page.
+      loader.setScope(scope(T1, T2));
+      expect(pending).toHaveLength(2);
+      pending[1]?.resolve(snapshot("Listed", scope(T1, T2)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reports.at(-1)).toMatchObject({ kind: "loaded" });
+
+      // Another failure is retried while the scope stays.
+      const { loader: failing, pending: failPending, reports: failReports } = harness(1000);
+      failing.setScope(scope(T1, T2));
+      failPending[0]?.reject(new ApiRequestError(503, "catalog_unavailable", "still loading"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(failReports[0]).toMatchObject({ kind: "failed" });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(failPending).toHaveLength(2);
+      failing.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

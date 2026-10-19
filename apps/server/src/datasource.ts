@@ -1,5 +1,12 @@
 import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
 
+/** One data ref and a half-open window [from, to), from < to (D-078, issue #1 item 1). */
+export interface Scope {
+  dataRef: string;
+  from: Timestamp;
+  to: Timestamp;
+}
+
 /** A signal as the source knows it, without metadata. */
 export interface SignalRef {
   dataRef: string;
@@ -79,12 +86,19 @@ export interface SourceInfo {
  * ns; rows without a time never appear in any result. Value-returning queries take a `SeriesRef`
  * and report values within its SNA ranges as SNA (design S3, S6). `abort` is always the last
  * parameter; an aborted call rejects with the signal's reason and leaves no work running.
+ *
+ * `scope` (design Z1 of add-scope): with a scope, a method answers exactly as if the source held
+ * only the rows (and event rows) of `scope.dataRef` with `scope.from ≤ time < scope.to`; without
+ * one, as before. Where the method also takes a data ref or a signal, the server never passes a
+ * scope of another data ref: an adapter may ignore `scope.dataRef` there and must apply the time
+ * bounds. `raw`, `buckets` and `count` take no scope; the server sends them ranges inside it.
  */
 export interface SourceAdapter {
   readonly info: SourceInfo;
   /** Resolves when the source answers; never through the query queue. */
   ping(abort: AbortSignal): Promise<void>;
-  listSignals(abort?: AbortSignal): Promise<SourceSignal[]>;
+  /** With a scope: the signals of `scope.dataRef` with ≥ 1 row in it, `text` from those rows. */
+  listSignals(scope?: Scope, abort?: AbortSignal): Promise<SourceSignal[]>;
   /** Points in [from, to), ascending; with `limit` the earliest `limit` of them. */
   raw(
     ref: SeriesRef,
@@ -93,10 +107,20 @@ export interface SourceAdapter {
     limit?: number,
     abort?: AbortSignal,
   ): Promise<RawPoint[]>;
-  /** Last point strictly before `t`. */
-  before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
-  /** First point at or after `t`. */
-  after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
+  /** Last point strictly before `t`; with a scope, in [scope.from, min(t, scope.to)). */
+  before(
+    ref: SeriesRef,
+    t: Timestamp,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ): Promise<RawPoint | undefined>;
+  /** First point at or after `t`; with a scope, in [max(t, scope.from), scope.to). */
+  after(
+    ref: SeriesRef,
+    t: Timestamp,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ): Promise<RawPoint | undefined>;
   /** Non-empty buckets on the floor grid `k * width` (also before 1970), ordered by start. */
   buckets(
     ref: SeriesRef,
@@ -110,6 +134,7 @@ export interface SourceAdapter {
     dataRef: string,
     width: bigint,
     times: boolean,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<RefBucket[]>;
 
@@ -118,15 +143,17 @@ export interface SourceAdapter {
   /** First and last timestamp of the signal's data, or undefined if it has none. */
   extent?(
     ref: SignalRef,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
   /** Rows of the data ref with a timestamp: count, first and last; undefined if none. */
   refExtent?(
     dataRef: string,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
   /** A row count that changes whenever rows are added; rows without time may count, consistently (design G9 (b)). */
-  refCount?(dataRef: string, abort?: AbortSignal): Promise<number>;
+  refCount?(dataRef: string, scope?: Scope, abort?: AbortSignal): Promise<number>;
   /**
    * Consecutive timestamped rows of the data ref at least `minGap` apart, exact, time order, found
    * on the floor grid `grid` (≤ minGap / 2) (design G2).
@@ -135,6 +162,7 @@ export interface SourceAdapter {
     dataRef: string,
     grid: bigint,
     minGap: bigint,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<LoggerGaps>;
   /**
@@ -145,6 +173,7 @@ export interface SourceAdapter {
     dataRef: string,
     names: readonly string[],
     rows: number,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<Map<string, Timestamp[]>>;
   /** Rows of one signal (SNA left out) where the state changes, plus its first row; at most `limit` rows (E7). */
@@ -152,12 +181,18 @@ export interface SourceAdapter {
     ref: SeriesRef,
     by: StateChangeRule,
     limit: number,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<StateRow[]>;
 
   // Capability without fallback: absent, or `undefined` from it, means "no events table".
   /** The data ref's event rows with a time, time order (ties kind, source, name), at most `limit` (design E4). */
-  events?(dataRef: string, limit: number, abort?: AbortSignal): Promise<EventRow[] | undefined>;
+  events?(
+    dataRef: string,
+    limit: number,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ): Promise<EventRow[] | undefined>;
 }
 
 /** What the server uses: every method present (`completeSource`, design C2). */

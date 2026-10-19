@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MAX_FILTER_LENGTH } from "./eventFilter.ts";
 import { fromIso, parseTimestamp, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
+import { MIN_SPAN_NS } from "./timenav.ts";
 
 /** Maximum number of distinct signals across all windows (spec workspace-state). */
 export const MAX_SIGNALS = 50;
@@ -169,6 +170,13 @@ export interface OpenView {
   modified: boolean;
 }
 
+/** The workspace's scope (D-078); decimal-ns strings like TimeRange; to − from ≥ MIN_SPAN_NS. */
+export interface WorkspaceScope {
+  dataRef: string;
+  from: string;
+  to: string;
+}
+
 export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
 
 export interface Workspace {
@@ -195,6 +203,8 @@ export interface Workspace {
   eventSignals?: string[];
   /** Open view (saved-views, design V2); absent for a fresh workspace. */
   view?: OpenView;
+  /** One data ref and one time window that bound every source query (D-078); absent = none. */
+  scope?: WorkspaceScope;
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -237,6 +247,19 @@ export function windowUnits(
 }
 
 const Id = z.string().min(1).max(200);
+
+/** A data ref: non-empty, no "/" (the separator of signal IDs). */
+const DataRef = Id.refine((s) => !s.includes("/"), { message: "a data ref holds no /" });
+
+/** to − from ≥ MIN_SPAN_NS for decimal-ns strings (scope.set, view.open scope). */
+const scopeSpanOk = (s: { from: string; to: string }) =>
+  BigInt(s.to) - BigInt(s.from) >= MIN_SPAN_NS;
+const SCOPE_SPAN_MESSAGE = `to must be at least ${MIN_SPAN_NS} ns after from`;
+
+/** Scope of scope.set and view.open (design Z5). */
+const ScopeInput = z
+  .object({ dataRef: DataRef, from: TimeInput, to: TimeInput })
+  .refine(scopeSpanOk, { message: SCOPE_SPAN_MESSAGE });
 
 /** Trimmed text of at most `max` characters without control characters; "" clears. */
 const MeasurementText = (max: number) =>
@@ -324,11 +347,15 @@ export const Command = z.discriminatedUnion("type", [
   z.object({ type: z.literal("events.setFilter"), filter: z.string().max(MAX_FILTER_LENGTH) }),
   z.object({ type: z.literal("events.addSignal"), signalId: Id }),
   z.object({ type: z.literal("events.removeSignal"), signalId: Id }),
-  /** Replaces the workspace with a view document (design V2); `name` when it is a saved view. */
+  /**
+   * Replaces the workspace with a view document (design V2); `name` when it is a saved view;
+   * `scope` resolved by the server or given by the caller (design Z5, Z10).
+   */
   z.object({
     type: z.literal("view.open"),
     view: z.record(z.string(), z.unknown()),
     name: z.string().regex(VIEW_NAME).optional(),
+    scope: ScopeInput.optional(),
   }),
   /** Marks the open view as saved under `name`; changes nothing but `view`. */
   z.object({
@@ -337,6 +364,11 @@ export const Command = z.discriminatedUnion("type", [
     title: z.string().trim().min(1).max(MAX_VIEW_TITLE),
     note: z.string().max(MAX_VIEW_NOTE).optional(),
   }),
+  /** Sets the scope (design Z6): windows clamped into it, cursors outside it removed. */
+  z
+    .object({ type: z.literal("scope.set"), dataRef: DataRef, from: TimeInput, to: TimeInput })
+    .refine(scopeSpanOk, { message: SCOPE_SPAN_MESSAGE }),
+  z.object({ type: z.literal("scope.clear") }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -363,6 +395,10 @@ export type CommandErrorCode =
   | "invalid_view"
   | "unsupported_version"
   | "catalog_unavailable"
+  /** Scoped mode: the command needs a scope and the workspace has none (design Z6). */
+  | "scope_required"
+  /** A cursor time outside the scope (design Z6). */
+  | "out_of_scope"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */
@@ -377,6 +413,8 @@ export type CommandResult =
       removedWindow?: string;
       /** view.open only. */
       report?: OpenReport;
+      /** The command moved a range into the scope (design Z6). */
+      clamped?: true;
     }
   | { ok: false; code: CommandErrorCode; message: string };
 
@@ -388,7 +426,8 @@ export interface OpenReport {
   skipped: {
     signalId: string;
     window: number;
-    reason: "too_many_units" | "signal_limit" | "already_in_window";
+    /** out_of_scope: a signal of another data ref than the scope's (design Q-2 (a)). */
+    reason: "too_many_units" | "signal_limit" | "already_in_window" | "out_of_scope";
   }[];
   warnings: string[];
 }
@@ -502,4 +541,5 @@ export const WorkspaceSchema: z.ZodType<Workspace> = z.strictObject({
       modified: z.boolean(),
     })
     .exactOptional(),
+  scope: z.strictObject({ dataRef: Id, from: NsTime, to: NsTime }).exactOptional(),
 });

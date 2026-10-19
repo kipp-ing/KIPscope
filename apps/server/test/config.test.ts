@@ -26,6 +26,33 @@ describe("loadConfig", () => {
     expect(config.port).toBe(7310);
   });
 
+  it("reads the catalog mode and the scope pad", () => {
+    // KIPSCOPE_CATALOG: full by default, scoped on request, anything else stops the server.
+    expect(loadConfig(base, "/repo/kipscope").catalogMode).toBe("full");
+    expect(loadConfig({ ...base, KIPSCOPE_CATALOG: "scoped" }, "/repo/kipscope").catalogMode).toBe(
+      "scoped",
+    );
+    expect(loadConfig({ ...base, KIPSCOPE_CATALOG: "full" }, "/repo/kipscope").catalogMode).toBe(
+      "full",
+    );
+    expect(() => loadConfig({ ...base, KIPSCOPE_CATALOG: "lazy" }, "/repo/kipscope")).toThrow(
+      /KIPSCOPE_CATALOG.*full.*scoped|KIPSCOPE_CATALOG.*scoped.*full/,
+    );
+
+    // KIPSCOPE_SCOPE_PAD: a CLI duration of at least 0, 1 h by default.
+    const pad = (value?: string) =>
+      loadConfig(
+        value === undefined ? base : { ...base, KIPSCOPE_SCOPE_PAD: value },
+        "/repo/kipscope",
+      ).scopePad;
+    expect(pad()).toBe(3_600_000_000_000n);
+    expect(pad("30min")).toBe(1_800_000_000_000n);
+    expect(pad("0s")).toBe(0n);
+    for (const bad of ["-1h", "1d"]) {
+      expect(() => pad(bad), bad).toThrow(/KIPSCOPE_SCOPE_PAD/);
+    }
+  });
+
   it("applies overrides", () => {
     const config = loadConfig(
       {

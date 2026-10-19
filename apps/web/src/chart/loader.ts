@@ -223,6 +223,38 @@ export class SeriesLoader {
   }
 
   /**
+   * The workspace's scope changed (add-scope Z12): every key loads its overview again; a key that
+   * failed or is still loading loads its current request again at once, keeping what it shows
+   * meanwhile, and its failures in a row start over. A complete key keeps its result.
+   */
+  rescope(): void {
+    const loads: LoadRequest[] = [];
+    for (const request of this.order) {
+      const { key, signalId } = request;
+      this.dropOverview(key);
+      const state = this.states.get(key);
+      if (state?.status === "complete") {
+        this.firstViewDone(key, signalId);
+      } else if (state?.request === requestId(request)) {
+        this.clearRetry(key);
+        this.failures.delete(key);
+        this.beginRetry(key, state);
+        loads.push(request);
+      }
+    }
+    if (loads.length > 0) {
+      if (this.interval !== undefined) {
+        for (const request of loads) this.pending.set(request.key, request);
+      } else {
+        for (const request of loads) this.load(request);
+        this.beginInterval();
+      }
+    }
+    this.maybeUnsubscribe();
+    this.onChange();
+  }
+
+  /**
    * Releases every tile and aborts every request and forgets every state, so a later update starts
    * all of them again (React's StrictMode disposes and remounts once; a kept "loading" state would
    * never fill). Also clears the timers and releases the overview and prefetch owners.

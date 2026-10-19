@@ -246,3 +246,39 @@
 .time-strip-drop.refused {
   color: var(--error);
 }
+
+/* Scope head (add-scope Z12): the scope text truncates after the range; the buttons are pills of
+   the events count's height, so the strip stays 55 px. */
+.time-strip-scope {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.time-strip-head .time-strip-range {
+  flex: 0 10 auto;
+  min-width: 0;
+}
+
+.time-strip-button {
+  flex: none;
+  box-sizing: border-box;
+  height: 16px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--band);
+  color: var(--text);
+  font: 11px / 14px var(--font-sans);
+  cursor: pointer;
+}
+
+.time-strip-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.time-strip-button:disabled {
+  color: var(--muted);
+  cursor: default;
+}

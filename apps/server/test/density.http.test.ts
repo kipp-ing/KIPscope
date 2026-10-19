@@ -5,6 +5,7 @@ import { ClickHouseSource } from "../src/clickhouse.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { DensityCache } from "../src/density.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { scopeApp } from "./scopeApp.ts";
 import { testClient, testEventMapping, testMapping, testSource } from "./testdb.ts";
 
 const real = testSource();
@@ -13,7 +14,7 @@ let failing = false;
 const extentCalls: string[] = [];
 /** The test source, whose density queries fail on demand ("source unreachable"). */
 const source = {
-  listSignals: (abort?: AbortSignal) => real.listSignals(abort),
+  listSignals: (...args: Parameters<typeof real.listSignals>) => real.listSignals(...args),
   refExtent: (...args: Parameters<typeof real.refExtent>) => {
     extentCalls.push(args[0]);
     return failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refExtent(...args);
@@ -199,5 +200,50 @@ describe("density queries", () => {
       "WITH toUnixTimestamp64Nano(utc) AS x SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count() FROM sdlog.signals WHERE vehicle = {ref:String} AND utc IS NOT NULL GROUP BY b",
     );
     expect(flat[1]).not.toMatch(/\b(min|max)\(/);
+  });
+});
+
+describe("GET /api/density with a scope (add-scope)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+
+  it("covers only the scope", async () => {
+    const t = await scopeApp({ adapter: testSource() });
+    try {
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T02:00:00Z",
+      });
+      expect(set.status).toBe(200);
+      const res = await t.get("/api/density?dataRef=testcar");
+      expect(res.status).toBe(200);
+      const body = res.body;
+      expect(body.dataRef).toBe("testcar");
+      expect(body.first).toBe("1790816400000000000");
+      expect(body.last).toBe("1790819999999999999");
+      expect(body.scope).toEqual({ from: "1790816400000000000", to: "1790820000000000000" });
+      // 15 s would need 240 bars, over the limit.
+      expect(body.width).toBe("30000000000");
+      expect(body.counts).toHaveLength(120);
+      const expected = await testClient().query({
+        query: `SELECT count() FROM sdlog.signals WHERE vehicle = 'testcar'
+                AND utc >= toDateTime64('2026-10-01 01:00:00', 3, 'UTC')
+                AND utc < toDateTime64('2026-10-01 02:00:00', 3, 'UTC')`,
+        format: "TabSeparated",
+      });
+      const rows = Number((await expected.text()).trim());
+      expect(rows).toBeGreaterThan(0);
+      expect((body.counts as number[]).reduce((a, b) => a + b, 0)).toBe(rows);
+      for (const drive of body.drives as { from: string; to: string }[]) {
+        expect(BigInt(drive.from) >= T1 && BigInt(drive.to) <= T2).toBe(true);
+      }
+      // A data ref other than the scope's is out of scope.
+      expect((await t.get("/api/density?dataRef=othercar")).status).toBe(409);
+    } finally {
+      await t.close();
+    }
   });
 });

@@ -39,6 +39,8 @@ export type Invocation =
       to?: TimeArg;
       table: boolean;
     }
+  /** scope show reads workspace and meta; scope widen sends one scope.set (add-scope Z13). */
+  | { kind: "scope"; action: "show" | "widen" }
   /** raw: a `command JSON`, sent as parsed without resolving anything. */
   | { kind: "command"; template: CommandTemplate; raw?: true }
   | ViewInvocation;
@@ -71,10 +73,14 @@ Commands (each sends one command to the open workspace):
   events filter FILTER...          (filter of the events line and list; "" for no filter words)
   events add SIGNAL                (state changes of SIGNAL on the events line)
   events remove SIGNAL
+  scope set REF FROM TO            (bounds every query to one data ref and [FROM, TO))
+  scope widen                      (one scope.set with the span added on each side)
+  scope clear                      (removes the scope; refused in scoped catalog mode)
   command JSON                     (one command of the shared command model, sent as is)
 
 Reads:
   state
+  scope show                       (the scope and the catalog's mode, state and size)
   search QUERY... [--limit N]
   extent SIGNAL
   value SIGNAL TIME [--mode line|step]
@@ -108,7 +114,7 @@ TIME     decimal ns; YYYY-MM-DD[T| ]HH:MM[:SS[.f{1,9}]] with Z or +HH:MM, or wit
          as local time (TZ); a or b, optionally +DURATION or -DURATION (cursor anchor)
 DURATION [+|-]<decimal><unit>, unit ns|us|µs|ms|s|min|h (e.g. +500ms, -1.5s)
 SIGNAL   full ID (dataRef/name) or a unique bare name (SPEED_DISP)
-REF      assignment ID (a3) or a SIGNAL shown in window W
+REF      assignment ID (a3) or a SIGNAL shown in window W; of scope set: a data ref (testcar)
 FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes
 
 Output: one JSON line on stdout (except events list --table and view export without --out).
@@ -287,7 +293,9 @@ export function parseArgs(
 function invocation(pos: string[], opts: Map<string, string | true>, server: string): Invocation {
   const [first, second] = pos;
   if (first === undefined) usage("no command given (see --help)");
-  const group = ["window", "signal", "cursor", "measurement", "events", "view"].includes(first);
+  const group = ["window", "signal", "cursor", "measurement", "events", "view", "scope"].includes(
+    first,
+  );
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
 
@@ -530,6 +538,24 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       }
       return { kind: "view", action: "link", page };
     }
+    case "scope set":
+      take(3);
+      if (arg(0) === "") usage("REF is empty");
+      return command({
+        type: "scope.set",
+        dataRef: arg(0),
+        from: time(arg(1), "FROM"),
+        to: time(arg(2), "TO"),
+      });
+    case "scope show":
+      take(0);
+      return { kind: "scope", action: "show" };
+    case "scope widen":
+      take(0);
+      return { kind: "scope", action: "widen" };
+    case "scope clear":
+      take(0);
+      return command({ type: "scope.clear" });
     case "command": {
       take(1);
       try {

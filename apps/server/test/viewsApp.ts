@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Workspace } from "@kipscope/shared";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { DataSource, SignalRef } from "../src/datasource.ts";
+import type { DataSource, Scope, SignalRef } from "../src/datasource.ts";
 import { ViewStore } from "../src/views.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
@@ -14,13 +14,22 @@ export const SIGNALS: SignalRef[] = [
   { dataRef: "testcar", name: "Fast_100h.SIG_A" },
 ];
 
-/** Source with the signal list only; the catalog refresh needs nothing else here. */
-const source = {
-  info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
-  ping: async () => {},
-  listSignals: async () => SIGNALS,
-  extent: async () => undefined,
-} as unknown as DataSource;
+/**
+ * Source with the signal list only; the catalog refresh needs nothing else here. A scope's list is
+ * the signals of its data ref (design Z1); `fail` makes every scoped list fail.
+ */
+function stubSource(listCalls: (Scope | undefined)[], fail: () => boolean): DataSource {
+  return {
+    info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
+    ping: async () => {},
+    listSignals: async (scope?: Scope) => {
+      listCalls.push(scope);
+      if (scope && fail()) throw new Error("connect ECONNREFUSED");
+      return scope ? SIGNALS.filter((s) => s.dataRef === scope.dataRef) : SIGNALS;
+    },
+    extent: async () => undefined,
+  } as unknown as DataSource;
+}
 
 // biome-ignore lint/suspicious/noExplicitAny: tests read arbitrary fields of the JSON answers
 export type Answer = { status: number; body: any };
@@ -33,6 +42,8 @@ export interface ViewsApp {
   /** Temp state dir; views live in `<stateDir>/views`. */
   stateDir: string;
   viewsDir: string;
+  /** The `scope` argument of every `listSignals` call, in order (undefined: the full list). */
+  listCalls: (Scope | undefined)[];
   /** Every (revision, command type) the store pushed, like a live client would see. */
   pushes: { revision: number; command: string }[];
   get(url: string): Promise<Answer & { headers: Record<string, unknown>; text: string }>;
@@ -48,8 +59,15 @@ export interface ViewsApp {
  * The `beforeOpen` hook is wired like `main.ts` does it (design V5): `views.beforeOpen`.
  */
 export async function viewsApp(
-  options: { loadCatalog?: boolean; initial?: { revision: number; workspace: Workspace } } = {},
+  options: {
+    loadCatalog?: boolean;
+    initial?: { revision: number; workspace: Workspace };
+    /** Every scoped `listSignals` fails (the full list still loads). */
+    failScopeList?: boolean;
+  } = {},
 ): Promise<ViewsApp> {
+  const listCalls: (Scope | undefined)[] = [];
+  const source = stubSource(listCalls, () => options.failScopeList === true);
   const stateDir = mkdtempSync(join(tmpdir(), "kipscope-views-"));
   const viewsDir = join(stateDir, "views");
   mkdirSync(viewsDir, { recursive: true });
@@ -86,6 +104,7 @@ export async function viewsApp(
     stateDir,
     viewsDir,
     pushes,
+    listCalls,
     async get(url) {
       const res = await app.inject({ method: "GET", url });
       return {

@@ -1231,3 +1231,314 @@ describe("view.open and view.markSaved (add-saved-views)", () => {
     expect(() => Command.parse({ type: "view.markSaved", name: "Abc", title: "x" })).toThrow();
   });
 });
+
+describe("scope commands (add-scope)", () => {
+  const MIN = 60n * 1_000_000_000n;
+  /** 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand (1790816400 s and 1790820000 s). */
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const ns = (t: bigint) => t.toString();
+  const known = (id: string) => id.startsWith("testcar/") || id.startsWith("othercar/");
+  const scopeCtx = { signalExists: known, hasStates: () => false };
+  const scoped = { ...scopeCtx, scopeRequired: true };
+
+  /** Runs one command and demands success. */
+  function go(state: Workspace, input: CommandInput, context = scopeCtx) {
+    const result = applyCommand(state, Command.parse(input), context);
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    return result;
+  }
+
+  /** A workspace with one window at [T1 + 10 min, T1 + 20 min), with or without scope [T1, T2). */
+  function withWindow(scope: boolean): Workspace {
+    const created = go(EMPTY_WORKSPACE, {
+      type: "window.create",
+      from: ns(T1 + 10n * MIN),
+      to: ns(T1 + 20n * MIN),
+    });
+    return scope
+      ? go(created.workspace, { type: "scope.set", dataRef: "testcar", from: ns(T1), to: ns(T2) })
+          .workspace
+      : created.workspace;
+  }
+
+  it("sets and clears the scope", () => {
+    const set = go(EMPTY_WORKSPACE, {
+      type: "scope.set",
+      dataRef: "testcar",
+      from: ns(T1),
+      to: ns(T2),
+    });
+    expect(set.workspace.scope).toEqual({ dataRef: "testcar", from: ns(T1), to: ns(T2) });
+    const cleared = go(set.workspace, { type: "scope.clear" });
+    expect(cleared.workspace.scope).toBeUndefined();
+    expect("scope" in cleared.workspace).toBe(false);
+
+    // Bad input is refused as invalid_command, whether the schema or applyCommand sees it first.
+    const bad = [
+      { dataRef: "testcar", from: ns(T1), to: ns(T1) }, // empty
+      { dataRef: "testcar", from: ns(T2), to: ns(T1) }, // reversed
+      { dataRef: "testcar", from: ns(T1), to: ns(T1 + 99n) }, // 99 ns
+      { dataRef: "a/b", from: ns(T1), to: ns(T2) }, // a data ref holds no /
+    ];
+    for (const fields of bad) {
+      const raw = { type: "scope.set", ...fields };
+      expect(Command.safeParse(raw).success).toBe(false);
+      const result = applyCommand(set.workspace, raw as never, scopeCtx);
+      expect(result).toMatchObject({ ok: false, code: "invalid_command" });
+    }
+    // 100 ns is the smallest span.
+    expect(
+      go(EMPTY_WORKSPACE, {
+        type: "scope.set",
+        dataRef: "testcar",
+        from: ns(T1),
+        to: ns(T1 + 100n),
+      }).workspace.scope,
+    ).toEqual({ dataRef: "testcar", from: ns(T1), to: ns(T1 + 100n) });
+  });
+
+  it("keeps windows and cursors inside the scope", () => {
+    const state = withWindow(true);
+    const range = (w: Workspace) => (w.windows[0] as TimeseriesWindow).range;
+
+    // A range partly before the scope is shifted in with its span kept.
+    const first = go(state, {
+      type: "window.setRange",
+      windowId: "w1",
+      from: ns(T1 - 5n * MIN),
+      to: ns(T1 + 5n * MIN),
+    });
+    expect(range(first.workspace)).toEqual({ from: ns(T1), to: ns(T1 + 10n * MIN) });
+    expect(first.clamped).toBe(true);
+
+    // A range wider than the scope becomes the scope.
+    const second = go(first.workspace, {
+      type: "window.setRange",
+      windowId: "w1",
+      from: ns(T1),
+      to: ns(T2 + 60n * MIN),
+    });
+    expect(range(second.workspace)).toEqual({ from: ns(T1), to: ns(T2) });
+    expect(second.clamped).toBe(true);
+
+    // A range inside is applied as given, without `clamped`.
+    const inside = go(second.workspace, {
+      type: "window.setRange",
+      windowId: "w1",
+      from: ns(T1 + MIN),
+      to: ns(T1 + 2n * MIN),
+    });
+    expect(range(inside.workspace)).toEqual({ from: ns(T1 + MIN), to: ns(T1 + 2n * MIN) });
+    expect("clamped" in inside).toBe(false);
+
+    // A cursor at the scope's open end is outside: [from, to).
+    const refused = applyCommand(
+      second.workspace,
+      Command.parse({ type: "cursor.set", cursor: "a", t: ns(T2) }),
+      scopeCtx,
+    );
+    expect(refused).toMatchObject({ ok: false, code: "out_of_scope" });
+    const moved = applyCommand(
+      go(second.workspace, { type: "cursor.set", cursor: "a", t: ns(T1 + MIN) }).workspace,
+      Command.parse({ type: "cursor.move", cursor: "a", by: ns(T2 - T1) }),
+      scopeCtx,
+    );
+    expect(moved).toMatchObject({ ok: false, code: "out_of_scope" });
+
+    // A cursor set inside, then a narrower scope: cursor A is gone, the window range clamped.
+    const withCursor = go(second.workspace, { type: "cursor.set", cursor: "a", t: ns(T1 + MIN) });
+    const narrower = go(withCursor.workspace, {
+      type: "scope.set",
+      dataRef: "testcar",
+      from: ns(T1 + 30n * MIN),
+      to: ns(T2),
+    });
+    expect(narrower.workspace.cursors.a).toBeUndefined();
+    expect(range(narrower.workspace)).toEqual({ from: ns(T1 + 30n * MIN), to: ns(T2) });
+    expect(narrower.clamped).toBe(true);
+  });
+
+  it("keeps windows and cursors inside the scope: no scope, no change", () => {
+    const state = withWindow(false);
+    const range = (w: Workspace) => (w.windows[0] as TimeseriesWindow).range;
+    const first = go(state, {
+      type: "window.setRange",
+      windowId: "w1",
+      from: ns(T1 - 5n * MIN),
+      to: ns(T1 + 5n * MIN),
+    });
+    expect(range(first.workspace)).toEqual({ from: ns(T1 - 5n * MIN), to: ns(T1 + 5n * MIN) });
+    expect("clamped" in first).toBe(false);
+    const second = go(first.workspace, {
+      type: "window.setRange",
+      windowId: "w1",
+      from: ns(T1),
+      to: ns(T2 + 60n * MIN),
+    });
+    expect(range(second.workspace)).toEqual({ from: ns(T1), to: ns(T2 + 60n * MIN) });
+    expect("clamped" in second).toBe(false);
+    const cursor = go(second.workspace, { type: "cursor.set", cursor: "a", t: ns(T2) });
+    expect(cursor.workspace.cursors.a).toBe(ns(T2));
+    expect("clamped" in cursor).toBe(false);
+  });
+
+  it("clamps a new window's range into the scope", () => {
+    const created = go(withWindow(true), {
+      type: "window.create",
+      from: ns(T2 - 10n * MIN),
+      to: ns(T2 + 20n * MIN),
+    });
+    expect((created.workspace.windows[1] as TimeseriesWindow).range).toEqual({
+      from: ns(T2 - 30n * MIN),
+      to: ns(T2),
+    });
+    expect(created.clamped).toBe(true);
+  });
+
+  it("refuses catalog commands without a scope in scoped mode", () => {
+    const base = withWindow(false);
+    const values = {
+      kipscope: "view",
+      version: 1,
+      title: "T",
+      data: ["testcar"],
+      linkTime: true,
+      cursors: { diff: false },
+      digits: 3,
+      windows: [{ kind: "values", mode: "line", signals: ["testcar/Fast_100h.SIG_A"] }],
+    };
+    const attempts: CommandInput[] = [
+      { type: "scope.clear" },
+      { type: "window.addSignal", windowId: "w1", signalId: "testcar/Fast_100h.SIG_A" },
+      { type: "events.addSignal", signalId: "testcar/Ign_A20h.MODE" },
+      { type: "view.open", view: values },
+    ];
+    for (const input of attempts) {
+      const result = applyCommand(base, Command.parse(input), scoped);
+      expect(result, input.type).toMatchObject({ ok: false, code: "scope_required" });
+    }
+    // Other commands are unaffected.
+    const renamed = applyCommand(
+      base,
+      Command.parse({ type: "window.rename", windowId: "w1", title: "Renamed" }),
+      scoped,
+    );
+    expect(renamed.ok).toBe(true);
+    // With a scope, the same add is accepted, and scope.clear is refused in scoped mode.
+    const inScope = withWindow(true);
+    expect(
+      applyCommand(
+        inScope,
+        Command.parse({ type: "window.addSignal", windowId: "w1", signalId: "testcar/A.X" }),
+        scoped,
+      ).ok,
+    ).toBe(true);
+    expect(applyCommand(inScope, Command.parse({ type: "scope.clear" }), scoped)).toMatchObject({
+      ok: false,
+      code: "scope_required",
+    });
+  });
+
+  describe("view.open with a scope", () => {
+    const viewDoc = (windows: unknown[], over: Record<string, unknown> = {}) => ({
+      kipscope: "view",
+      version: 1,
+      title: "T",
+      data: ["testcar"],
+      linkTime: true,
+      cursors: { diff: false },
+      digits: 3,
+      windows,
+      ...over,
+    });
+    const series = (from: string, to: string, signals: string[] = []) => ({
+      kind: "timeseries",
+      from,
+      to,
+      mode: "line",
+      envelope: false,
+      signals,
+    });
+    const open = (state: Workspace, view: unknown, extra: Record<string, unknown> = {}) =>
+      applyCommand(state, Command.parse({ type: "view.open", view, ...extra }), scopeCtx);
+
+    it("opens a view into its scope", () => {
+      // The window starts 30 min before the scope and cursor B lies 1 min after its end.
+      const view = viewDoc([series("2026-10-01T00:30:00Z", "2026-10-01T01:10:00Z")], {
+        scope: { dataRef: "testcar", from: "2026-10-01T01:00:00Z", to: "2026-10-01T02:00:00Z" },
+        cursors: { b: "2026-10-01T02:01:00Z", diff: false },
+      });
+      const result = open(EMPTY_WORKSPACE, view);
+      if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+      expect(result.workspace.scope).toEqual({ dataRef: "testcar", from: ns(T1), to: ns(T2) });
+      expect((result.workspace.windows[0] as TimeseriesWindow).range).toEqual({
+        from: ns(T1),
+        to: ns(T1 + 40n * MIN),
+      });
+      expect(result.workspace.cursors.b).toBeUndefined();
+      expect(result.report?.warnings).toContain("ranges clamped to the scope");
+      expect(result.report?.warnings).toContain("cursor B outside the scope dropped");
+    });
+
+    it("opens a view into its scope: the scope of the command wins over the document's", () => {
+      const view = viewDoc([series("2026-10-01T01:10:00Z", "2026-10-01T01:20:00Z")], {
+        scope: { dataRef: "othercar", from: "2026-10-01T00:00:00Z", to: "2026-10-01T03:00:00Z" },
+      });
+      const result = open(EMPTY_WORKSPACE, view, {
+        scope: { dataRef: "testcar", from: ns(T1), to: ns(T2) },
+      });
+      if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+      expect(result.workspace.scope).toEqual({ dataRef: "testcar", from: ns(T1), to: ns(T2) });
+    });
+
+    it("opens a view into its scope: open replaces the scope", () => {
+      const state = withWindow(true);
+      expect(state.scope?.dataRef).toBe("testcar");
+      const other = open(
+        state,
+        viewDoc([series("2026-10-01T01:10:00Z", "2026-10-01T01:20:00Z")], {
+          scope: { dataRef: "othercar", from: "2026-10-01T01:00:00Z", to: "2026-10-01T02:00:00Z" },
+        }),
+      );
+      if (!other.ok) throw new Error(`${other.code}: ${other.message}`);
+      expect(other.workspace.scope).toEqual({ dataRef: "othercar", from: ns(T1), to: ns(T2) });
+
+      // A view with only a values window and no cursor resolves no scope: the workspace has none.
+      const bare = open(
+        other.workspace,
+        viewDoc([{ kind: "values", mode: "line", signals: ["testcar/Fast_100h.SIG_A"] }]),
+      );
+      if (!bare.ok) throw new Error(`${bare.code}: ${bare.message}`);
+      expect(bare.workspace.scope).toBeUndefined();
+      expect("scope" in bare.workspace).toBe(false);
+    });
+
+    it("skips window signals of another data ref on open", () => {
+      const view = viewDoc(
+        [
+          series("2026-10-01T01:10:00Z", "2026-10-01T01:20:00Z", [
+            "testcar/Fast_100h.SIG_A",
+            "othercar/Fast_100h.SIG_A",
+          ]),
+        ],
+        { events: { signals: ["othercar/Ign_A20h.MODE", "testcar/Ign_A20h.MODE"] } },
+      );
+      const result = open(EMPTY_WORKSPACE, view, {
+        scope: { dataRef: "testcar", from: ns(T1), to: ns(T2) },
+      });
+      if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+      expect(result.workspace.windows[0]?.signals.map((s) => s.signalId)).toEqual([
+        "testcar/Fast_100h.SIG_A",
+      ]);
+      expect(result.report?.skipped).toEqual([
+        { signalId: "othercar/Fast_100h.SIG_A", window: 0, reason: "out_of_scope" },
+      ]);
+      expect(result.workspace.eventSignals).toEqual(["testcar/Ign_A20h.MODE"]);
+      // One warning for the events-line signal of another data ref.
+      expect(
+        result.report?.warnings.filter((w) => w.includes("othercar/Ign_A20h.MODE")),
+      ).toHaveLength(1);
+    });
+  });
+});

@@ -578,3 +578,57 @@ describe("view forms (add-saved-views)", () => {
     }
   });
 });
+
+describe("scope forms (add-scope Z13)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const T1 = "1790816400000000000";
+  const T2 = "1790820000000000000";
+
+  it("maps the scope forms", async () => {
+    expect(
+      await commandOf(["scope", "set", "testcar", "2026-10-01T01:00:00Z", "2026-10-01T02:00:00Z"]),
+    ).toEqual({ type: "scope.set", dataRef: "testcar", from: T1, to: T2 });
+    // Local times (TZ Europe/Berlin, +02:00) and decimal ns are TIME arguments like everywhere.
+    expect(
+      await commandOf(["scope", "set", "testcar", "2026-10-01 03:00", "2026-10-01 04:00"]),
+    ).toEqual({ type: "scope.set", dataRef: "testcar", from: T1, to: T2 });
+    expect(await commandOf(["scope", "set", "testcar", T1, T2])).toEqual({
+      type: "scope.set",
+      dataRef: "testcar",
+      from: T1,
+      to: T2,
+    });
+    expect(await commandOf(["scope", "clear"])).toEqual({ type: "scope.clear" });
+
+    // scope show and scope widen read the server; they are no plain commands.
+    expect(parseArgs(["scope", "show"], {}).invocation).toMatchObject({
+      kind: "scope",
+      action: "show",
+    });
+    expect(parseArgs(["scope", "widen"], {}).invocation).toMatchObject({
+      kind: "scope",
+      action: "widen",
+    });
+
+    // A missing or extra argument is a usage error (outcome usage, exit 2, nothing sent).
+    for (const argv of [
+      ["scope", "set", "testcar", "2026-10-01T01:00:00Z"],
+      ["scope", "set", "testcar"],
+      ["scope", "set"],
+      ["scope", "set", "testcar", "2026-10-01T01:00:00Z", "2026-10-01T02:00:00Z", "extra"],
+      ["scope", "show", "extra"],
+      ["scope", "widen", "extra"],
+      ["scope", "clear", "extra"],
+      ["scope"],
+      ["scope", "nope"],
+    ]) {
+      expect(usageError(argv).outcome, argv.join(" ")).toBe("usage");
+    }
+  });
+
+  it("lists the scope forms in the usage text", () => {
+    for (const form of ["scope set", "scope show", "scope widen", "scope clear"]) {
+      expect(USAGE, form).toContain(form);
+    }
+  });
+});

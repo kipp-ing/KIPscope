@@ -2,7 +2,7 @@ import type { SignalInfo } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { RawPoint, SourceAdapter, SourceInfo } from "../src/datasource.ts";
+import type { RawPoint, Scope, SourceAdapter, SourceInfo } from "../src/datasource.ts";
 import { EventsCache } from "../src/events.ts";
 import { completeSource, STATE_SCAN_MAX, STATE_SCAN_PAGE } from "../src/fallbacks.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
@@ -58,6 +58,83 @@ function requiredOnly(delayMs = 0, extra: Partial<SourceAdapter> = {}) {
 
 const names = (n: number) => Array.from({ length: n }, (_, i) => `S${i}`);
 
+describe("fallbacks keep the scope", () => {
+  // Scope {conf-a, B + 5 s, B + 35 s} of the conformance fixture (B = 2026-10-05T00:00:00Z).
+  const B = 1791158400000000000n;
+  const SEC = 1_000_000_000n;
+  const scope: Scope = { dataRef: "conf-a", from: B + 5n * SEC, to: B + 35n * SEC };
+
+  it("passes the scope to every core call", async () => {
+    // A recording stub with only the required methods; every call keeps its arguments.
+    const before: unknown[][] = [];
+    const after: unknown[][] = [];
+    const refBuckets: unknown[][] = [];
+    const raw: unknown[][] = [];
+    const point = (n: number): RawPoint => ({ t: B + 5n * SEC + BigInt(n) * SEC, v: n });
+    const adapter: SourceAdapter = {
+      info,
+      ping: async () => {},
+      listSignals: async () => [],
+      raw: async (...args) => {
+        raw.push(args);
+        return [point(0), point(1), point(2)];
+      },
+      before: async (...args) => {
+        before.push(args);
+        return point(29);
+      },
+      after: async (...args) => {
+        after.push(args);
+        return point(0);
+      },
+      buckets: async () => [],
+      refBuckets: async (...args) => {
+        refBuckets.push(args);
+        return [{ start: B, count: 3, first: B + 5n * SEC, last: B + 7n * SEC }];
+      },
+    };
+    const source = completeSource(adapter);
+    const ref = { dataRef: "conf-a", name: "Lin.RAMP" };
+
+    expect(await source.extent(ref, scope)).toEqual({ first: point(0).t, last: point(29).t });
+    expect((await source.refExtent("conf-a", scope))?.count).toBe(3);
+    expect(await source.refCount("conf-a", scope)).toBe(3);
+    expect((await source.loggerGaps("conf-a", SEC, 2n * SEC, scope)).last).toBe(B + 7n * SEC);
+    const times = await source.firstTimes("conf-a", ["A", "B", "C"], 100, scope);
+    expect(times.size).toBe(3);
+    await source.stateChanges({ ...ref, sna: [] }, { kind: "text" }, 10, scope);
+
+    // Each core method was reached by at least one fallback ...
+    expect(before.length).toBeGreaterThanOrEqual(1);
+    expect(after.length).toBeGreaterThanOrEqual(1);
+    expect(refBuckets.length).toBeGreaterThanOrEqual(3);
+    // 3 names of firstTimes, at least one page of stateChanges.
+    expect(raw.length).toBeGreaterThanOrEqual(4);
+    // ... and carries the scope: before (ref, t, scope, abort), after the same, refBuckets
+    // (dataRef, width, times, scope, abort).
+    for (const args of [...before, ...after]) expect(args[2]).toEqual(scope);
+    for (const args of refBuckets) expect(args[3]).toEqual(scope);
+    // raw (ref, from, to, limit, abort): the scope's bounds replace the whole time axis.
+    for (const args of raw) {
+      expect(args[1]).toBe(scope.from);
+      expect(args[2]).toBe(scope.to);
+    }
+  });
+
+  it("calls the core without a scope when none is given", async () => {
+    const before: unknown[][] = [];
+    const adapter: SourceAdapter = {
+      ...requiredOnly().adapter,
+      before: async (...args) => {
+        before.push(args);
+        return undefined;
+      },
+    };
+    await completeSource(adapter).extent({ dataRef: "conf-a", name: "Lin.RAMP" });
+    expect(before[0]?.[2]).toBeUndefined();
+  });
+});
+
 describe("fallbacks of a source with the required methods only", () => {
   it("sends no query for an empty name list", async () => {
     const { adapter, calls } = requiredOnly();
@@ -84,7 +161,7 @@ describe("fallbacks of a source with the required methods only", () => {
     const source = completeSource(queuedAdapter(adapter, new QueryQueue(2)));
     const controller = new AbortController();
     const reason = new Error("client went away");
-    const pending = source.firstTimes("conf-a", names(50), 1001, controller.signal);
+    const pending = source.firstTimes("conf-a", names(50), 1001, undefined, controller.signal);
     const outcome = pending.then(
       () => "resolved" as unknown,
       (error: unknown) => error,

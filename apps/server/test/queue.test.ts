@@ -115,9 +115,12 @@ describe("queuedAdapter gaps", () => {
     });
     expect(await source.firstTimes("car", ["x"], 2)).toEqual(new Map([["x", [1n, 2n]]]));
     const controller = new AbortController();
-    expect(await source.refCount("car", controller.signal)).toBe(42);
+    // The scope sits before `abort` (add-scope Z1) and reaches the wrapped source unchanged.
+    const scope = { dataRef: "car", from: 1n, to: 9n };
+    expect(await source.refCount("car", scope, controller.signal)).toBe(42);
     expect(seen.map((a) => a[0])).toEqual(["car", "car", "car"]);
-    expect(seen[2]?.[1]).toBe(controller.signal);
+    expect(seen[2]?.[1]).toEqual(scope);
+    expect(seen[2]?.[2]).toBe(controller.signal);
   });
 });
 
@@ -200,12 +203,107 @@ describe("queuedAdapter shape", () => {
     );
     const controller = new AbortController();
     await queued.raw({ dataRef: "car", name: "S", sna: [] }, 1n, 2n, 7, controller.signal);
-    await queued.refBuckets("car", 5n, true, controller.signal);
+    const scope = { dataRef: "car", from: 1n, to: 9n };
+    await queued.refBuckets("car", 5n, true, scope, controller.signal);
     expect(seen[0]?.slice(1, 4)).toEqual([1n, 2n, 7]);
     expect(seen[0]?.[4]).toBe(controller.signal);
-    expect(seen[1]?.slice(0, 3)).toEqual(["car", 5n, true]);
-    expect(seen[1]?.[3]).toBe(controller.signal);
+    expect(seen[1]?.slice(0, 4)).toEqual(["car", 5n, true, scope]);
+    expect(seen[1]?.[4]).toBe(controller.signal);
   });
+});
+
+describe("queuedAdapter scope", () => {
+  const info: SourceInfo = { kind: "memory", database: "fixture", table: "rows" };
+  const scope = { dataRef: "car", from: 1000n, to: 9000n };
+  const sig = { dataRef: "car", name: "S", sna: [] };
+  const rule = { kind: "text" } as const;
+
+  /** A stub with every method; each records the exact arguments it received, under its name. */
+  function stub() {
+    const seen = new Map<string, unknown[]>();
+    const record =
+      (name: string, result: unknown) =>
+      async (...a: unknown[]) => {
+        seen.set(name, a);
+        return result;
+      };
+    const adapter: DataSource = {
+      info,
+      ping: async () => {},
+      listSignals: record("listSignals", []),
+      raw: record("raw", []),
+      before: record("before", undefined),
+      after: record("after", undefined),
+      buckets: record("buckets", []),
+      refBuckets: record("refBuckets", []),
+      count: record("count", 0),
+      extent: record("extent", undefined),
+      refExtent: record("refExtent", undefined),
+      refCount: record("refCount", 0),
+      loggerGaps: record("loggerGaps", { gaps: [] }),
+      firstTimes: record("firstTimes", new Map()),
+      stateChanges: record("stateChanges", []),
+      events: record("events", []),
+    } as DataSource;
+    return { adapter, seen };
+  }
+
+  /**
+   * The 11 methods that take a scope (design Z1 of add-scope): the call with scope and abort, and
+   * the arguments the wrapped method must receive, `abort` always last. Written from the Z1 table.
+   */
+  const calls: [string, (q: DataSource, abort?: AbortSignal) => Promise<unknown>, unknown[]][] = [
+    ["listSignals", (q, a) => q.listSignals(scope, a), [scope]],
+    ["extent", (q, a) => q.extent(sig, scope, a), [sig, scope]],
+    ["refExtent", (q, a) => q.refExtent("car", scope, a), ["car", scope]],
+    ["refCount", (q, a) => q.refCount("car", scope, a), ["car", scope]],
+    ["before", (q, a) => q.before(sig, 5000n, scope, a), [sig, 5000n, scope]],
+    ["after", (q, a) => q.after(sig, 5000n, scope, a), [sig, 5000n, scope]],
+    ["events", (q, a) => q.events("car", 100, scope, a), ["car", 100, scope]],
+    ["refBuckets", (q, a) => q.refBuckets("car", 60n, true, scope, a), ["car", 60n, true, scope]],
+    ["loggerGaps", (q, a) => q.loggerGaps("car", 2n, 5n, scope, a), ["car", 2n, 5n, scope]],
+    ["firstTimes", (q, a) => q.firstTimes("car", ["S"], 3, scope, a), ["car", ["S"], 3, scope]],
+    ["stateChanges", (q, a) => q.stateChanges(sig, rule, 100, scope, a), [sig, rule, 100, scope]],
+  ];
+
+  it("covers the 11 methods of the contract that take a scope", () => {
+    expect(calls.map(([name]) => name).sort()).toEqual(
+      [
+        "listSignals",
+        "extent",
+        "refExtent",
+        "refCount",
+        "before",
+        "after",
+        "events",
+        "refBuckets",
+        "loggerGaps",
+        "firstTimes",
+        "stateChanges",
+      ].sort(),
+    );
+  });
+
+  for (const [name, call, args] of calls) {
+    it(`${name} passes the scope on to the wrapped method`, async () => {
+      const { adapter, seen } = stub();
+      const queued = queuedAdapter(adapter, new QueryQueue(2)) as DataSource;
+      const controller = new AbortController();
+      await call(queued, controller.signal);
+      // Scope in its place, then the abort signal: nothing shifted, nothing lost.
+      expect(seen.get(name)).toEqual([...args, controller.signal]);
+      expect(seen.get(name)?.[args.length]).toBe(controller.signal);
+    });
+
+    it(`${name} passes the scope on without an abort signal`, async () => {
+      const { adapter, seen } = stub();
+      const queued = queuedAdapter(adapter, new QueryQueue(2)) as DataSource;
+      await call(queued);
+      const received = seen.get(name) ?? [];
+      expect(received.slice(0, args.length)).toEqual(args);
+      expect(received[args.length]).toBeUndefined();
+    });
+  }
 });
 
 /** A task the test holds open until it releases it (no wall-clock waits). */

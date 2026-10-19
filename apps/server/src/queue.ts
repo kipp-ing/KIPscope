@@ -146,41 +146,45 @@ export function queuedAdapter(adapter: SourceAdapter, queue: QueryQueue): Source
   const queued: SourceAdapter = {
     info: adapter.info,
     ping: (abort) => adapter.ping(abort),
-    listSignals: (abort) => queue.run((a) => adapter.listSignals(a), abort),
+    listSignals: (scope, abort) => queue.run((a) => adapter.listSignals(scope, a), abort),
     raw: (ref, from, to, limit, abort) =>
       queue.run((a) => adapter.raw(ref, from, to, limit, a), abort),
-    before: (ref, t, abort) => queue.run((a) => adapter.before(ref, t, a), abort),
-    after: (ref, t, abort) => queue.run((a) => adapter.after(ref, t, a), abort),
+    before: (ref, t, scope, abort) => queue.run((a) => adapter.before(ref, t, scope, a), abort),
+    after: (ref, t, scope, abort) => queue.run((a) => adapter.after(ref, t, scope, a), abort),
     buckets: (ref, from, to, width, abort) =>
       queue.run((a) => adapter.buckets(ref, from, to, width, a), abort),
-    refBuckets: (dataRef, width, times, abort) =>
-      queue.run((a) => adapter.refBuckets(dataRef, width, times, a), abort),
+    refBuckets: (dataRef, width, times, scope, abort) =>
+      queue.run((a) => adapter.refBuckets(dataRef, width, times, scope, a), abort),
   };
   // Optional methods only where the adapter has them, so the fallbacks see what is native.
   const count = adapter.count?.bind(adapter);
   if (count)
     queued.count = (ref, from, to, abort) => queue.run((a) => count(ref, from, to, a), abort);
   const extent = adapter.extent?.bind(adapter);
-  if (extent) queued.extent = (ref, abort) => queue.run((a) => extent(ref, a), abort);
+  if (extent) queued.extent = (ref, scope, abort) => queue.run((a) => extent(ref, scope, a), abort);
   const refExtent = adapter.refExtent?.bind(adapter);
   if (refExtent)
-    queued.refExtent = (dataRef, abort) => queue.run((a) => refExtent(dataRef, a), abort);
+    queued.refExtent = (dataRef, scope, abort) =>
+      queue.run((a) => refExtent(dataRef, scope, a), abort);
   const refCount = adapter.refCount?.bind(adapter);
-  if (refCount) queued.refCount = (dataRef, abort) => queue.run((a) => refCount(dataRef, a), abort);
+  if (refCount)
+    queued.refCount = (dataRef, scope, abort) =>
+      queue.run((a) => refCount(dataRef, scope, a), abort);
   const loggerGaps = adapter.loggerGaps?.bind(adapter);
   if (loggerGaps)
-    queued.loggerGaps = (dataRef, grid, minGap, abort) =>
-      queue.run((a) => loggerGaps(dataRef, grid, minGap, a), abort);
+    queued.loggerGaps = (dataRef, grid, minGap, scope, abort) =>
+      queue.run((a) => loggerGaps(dataRef, grid, minGap, scope, a), abort);
   const firstTimes = adapter.firstTimes?.bind(adapter);
   if (firstTimes)
-    queued.firstTimes = (dataRef, names, rows, abort) =>
-      queue.run((a) => firstTimes(dataRef, names, rows, a), abort);
+    queued.firstTimes = (dataRef, names, rows, scope, abort) =>
+      queue.run((a) => firstTimes(dataRef, names, rows, scope, a), abort);
   const stateChanges = adapter.stateChanges?.bind(adapter);
   if (stateChanges)
-    queued.stateChanges = (ref, by, limit, abort) =>
-      queue.run((a) => stateChanges(ref, by, limit, a), abort);
+    queued.stateChanges = (ref, by, limit, scope, abort) =>
+      queue.run((a) => stateChanges(ref, by, limit, scope, a), abort);
   const events = adapter.events?.bind(adapter);
   if (events)
-    queued.events = (dataRef, limit, abort) => queue.run((a) => events(dataRef, limit, a), abort);
+    queued.events = (dataRef, limit, scope, abort) =>
+      queue.run((a) => events(dataRef, limit, scope, a), abort);
   return queued;
 }

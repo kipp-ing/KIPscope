@@ -33,10 +33,11 @@ export function metaLoader(
 }
 
 /**
- * Server meta for the footer (design F3): fetched on mount, every META_POLL_MS and when `connected`
- * turns true. Keeps the last meta; `stale` after a failed fetch until the next one succeeds.
+ * Server meta for the footer (design F3): fetched on mount, every META_POLL_MS, when `connected`
+ * turns true and when `scopeKey` changes. Keeps the last meta; `stale` after a failed fetch until
+ * the next one succeeds.
  */
-export function useMeta(connected: boolean): MetaState {
+export function useMeta(connected: boolean, scopeKey = ""): MetaState {
   const [state, setState] = useState<MetaState>({ stale: false });
   const load = useRef<() => void>(() => {});
 
@@ -56,6 +57,15 @@ export function useMeta(connected: boolean): MetaState {
   useEffect(() => {
     if (connected) load.current();
   }, [connected]);
+
+  // The catalog the footer counts is the scope's (add-scope Z12); the server has loaded it before
+  // the workspace shows the new scope. Not on mount, which fetched already.
+  const seenScope = useRef(scopeKey);
+  useEffect(() => {
+    if (seenScope.current === scopeKey) return;
+    seenScope.current = scopeKey;
+    load.current();
+  }, [scopeKey]);
 
   return state;
 }

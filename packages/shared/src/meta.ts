@@ -1,3 +1,5 @@
+import type { WorkspaceScope } from "./workspace.ts";
+
 /** Attribution of footer, CLI help and server log (design F1; text per LICENSE). */
 export const ATTRIBUTION = {
   product: "KIPscope",
@@ -16,7 +18,8 @@ export function attributionText(): string {
   return `${a.product} © ${a.year} ${a.author}, ${a.identification}, ${a.url} · ${a.license.name} (${a.license.spdx})`;
 }
 
-export type CatalogState = "loaded" | "loading" | "failed";
+/** no_scope: scoped mode without a scope, so no signal list is loaded (design Z5). */
+export type CatalogState = "loaded" | "loading" | "failed" | "no_scope";
 
 /** Answer of `GET /api/meta` (design F2). */
 export interface ServerMeta {
@@ -32,5 +35,14 @@ export interface ServerMeta {
     /** When not reachable. */
     error?: string;
   };
-  catalog: { state: CatalogState; size: number; loadedAt?: string; reason?: string };
+  catalog: {
+    /** KIPSCOPE_CATALOG: full start-up catalog, or a signal list per scope only. */
+    mode: "full" | "scoped";
+    state: CatalogState;
+    size: number;
+    loadedAt?: string;
+    reason?: string;
+    /** The scope the state and size refer to; absent for the full catalog. */
+    scope?: WorkspaceScope;
+  };
 }

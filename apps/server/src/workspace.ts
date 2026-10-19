@@ -11,6 +11,25 @@ import {
   type RenderStatus,
   type Workspace,
 } from "@kipscope/shared";
+import type { Catalog } from "./catalog.ts";
+
+/**
+ * Apply context of a signal list (add-scope Z10): the scope's list, the full catalog, or none
+ * (every signal unknown, not ready). `scopeRequired` in scoped mode.
+ */
+export function catalogContext(
+  catalog: Pick<Catalog, "get" | "loadedAt"> | undefined,
+  scopeRequired = false,
+): ApplyContext {
+  const ctx: ApplyContext = {
+    signalExists: (id) => catalog?.get(id) !== undefined,
+    unitOf: (id) => catalog?.get(id)?.unit,
+    hasStates: (id) => catalog?.get(id)?.states !== undefined,
+    catalogReady: () => catalog?.loadedAt !== undefined,
+  };
+  if (scopeRequired) ctx.scopeRequired = true;
+  return ctx;
+}
 
 type Listener = (revision: number, workspace: Workspace, command: CommandType) => void;
 
@@ -67,8 +86,12 @@ export class WorkspaceStore {
     return this.rev;
   }
 
-  /** Validates and applies one command. A rejected command changes nothing. */
-  execute(input: unknown): CommandResult {
+  /**
+   * Validates and applies one command against `ctx` (default: the store's own), e.g. the signal
+   * list of the scope the command leaves in effect (add-scope Z10). A rejected command changes
+   * nothing.
+   */
+  execute(input: unknown, ctx: ApplyContext = this.ctx): CommandResult {
     const parsed = Command.safeParse(input);
     if (!parsed.success) {
       const message = parsed.error.issues
@@ -76,7 +99,7 @@ export class WorkspaceStore {
         .join("; ");
       return { ok: false, code: "invalid_command", message };
     }
-    const result = applyCommand(this.state, parsed.data, this.ctx);
+    const result = applyCommand(this.state, parsed.data, ctx);
     if (!result.ok) return result;
     if (parsed.data.type === "view.open" && this.beforeOpen) {
       // A failing hook (e.g. the `_previous` write) never fails the open.
@@ -101,6 +124,7 @@ export class WorkspaceStore {
     if (result.createdWindow !== undefined) answer.createdWindow = result.createdWindow;
     if (result.removedWindow !== undefined) answer.removedWindow = result.removedWindow;
     if (result.report !== undefined) answer.report = result.report;
+    if (result.clamped) answer.clamped = true;
     return answer;
   }
 

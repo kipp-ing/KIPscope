@@ -4,6 +4,7 @@ import {
   type SignalInfo,
   searchSignals,
   shownName,
+  type WorkspaceScope,
   type WorkspaceWindow,
   windowTitle,
 } from "@kipscope/shared";
@@ -14,6 +15,7 @@ import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
 import { HINTS } from "../help/hints.ts";
 import { isSearchKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
+import { CatalogLoader, NO_SCOPE_TEXT } from "./catalogLoader.ts";
 import {
   CHUNK,
   formatSnaPhysical,
@@ -40,10 +42,9 @@ import {
 
 export { NEW_WINDOW };
 
-/** Retry interval while the catalog is not loaded yet (design E3). */
-const RETRY_MS = 5000;
-
 interface Props {
+  /** The workspace's scope; a change loads that scope's catalog (add-scope Z12). */
+  scope?: WorkspaceScope | undefined;
   /** All windows; "Add to" lists timeseries and values windows by windowTitle. */
   windows: WorkspaceWindow[];
   onAdd: (signal: SignalInfo, target: string) => void;
@@ -85,6 +86,7 @@ interface Card {
  * groups, a header per group that opens and closes (signal-groups, design G6).
  */
 export function SignalExplorer({
+  scope,
   windows,
   onAdd,
   onAddMany,
@@ -103,6 +105,8 @@ export function SignalExplorer({
 }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
+  /** Scoped mode without a scope: the server answered 409 scope_required. */
+  const [noScope, setNoScope] = useState(false);
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(CHUNK);
   /** Item index; undefined after a query change means firstSignal(items) (design G6). */
@@ -135,30 +139,27 @@ export function SignalExplorer({
   const cardId = `${ids}-card`;
   const optionId = (i: number) => `${ids}-opt-${i}`;
 
-  // Load the whole catalog once; it loads asynchronously at server start, so retry until it is there.
-  useEffect(() => {
-    const controller = new AbortController();
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const load = () => {
-      fetchCatalog(controller.signal).then(
-        (snapshot) => {
-          setCatalog(snapshot.items);
+  // The catalog of the workspace's scope, loaded again whenever the scope changes; it loads
+  // asynchronously at server start, so a failure is retried until it is there.
+  const [loader] = useState(
+    () =>
+      new CatalogLoader(fetchCatalog, (r) => {
+        if (r.kind === "loaded") {
+          setCatalog(r.snapshot.items);
           setError(undefined);
-          onSeenRef.current(snapshot.items);
-        },
-        (e: unknown) => {
-          if (controller.signal.aborted) return;
-          setError(e instanceof Error ? e.message : String(e));
-          retry = setTimeout(load, RETRY_MS);
-        },
-      );
-    };
-    load();
-    return () => {
-      controller.abort();
-      clearTimeout(retry);
-    };
-  }, []);
+          setNoScope(false);
+          onSeenRef.current(r.snapshot.items);
+        } else if (r.kind === "no_scope") {
+          setCatalog(undefined);
+          setError(undefined);
+          setNoScope(true);
+        } else setError(r.message);
+      }),
+  );
+  useEffect(() => {
+    loader.setScope(scope);
+  }, [loader, scope]);
+  useEffect(() => () => loader.dispose(), [loader]);
 
   const index = useMemo(() => buildSearchIndex(catalog ?? []), [catalog]);
   const matches = useMemo(() => searchSignals(index, query), [index, query]);
@@ -427,6 +428,8 @@ export function SignalExplorer({
             </>
           )}
         </p>
+      ) : noScope ? (
+        <p className="count">{NO_SCOPE_TEXT}</p>
       ) : (
         !error && <p className="count">Loading catalog…</p>
       )}

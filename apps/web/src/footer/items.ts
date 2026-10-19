@@ -119,6 +119,15 @@ export function footerItems(
       tone: "plain",
       rank: RANK_CATALOG,
     });
+  } else if (catalog.state === "no_scope") {
+    // Scoped mode without a scope: no signal list is loaded (add-scope Z12).
+    items.push({
+      key: "catalog",
+      text: "No scope",
+      title: "scoped catalog: no scope set; open a view link or run kipscope scope set REF FROM TO",
+      tone: "muted",
+      rank: RANK_CATALOG,
+    });
   } else {
     const loading = catalog.state === "loading";
     const text = loading ? "catalog loading" : "catalog unavailable";

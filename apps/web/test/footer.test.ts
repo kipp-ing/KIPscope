@@ -26,7 +26,7 @@ function metaOf(over: Partial<ServerMeta> = {}): ServerMeta {
       reachable: true,
       checkedAt: "2026-10-16T13:08:01.000Z",
     },
-    catalog: { state: "loaded", size: 1234, loadedAt: "2026-10-16T13:07:12.000Z" },
+    catalog: { mode: "full", state: "loaded", size: 1234, loadedAt: "2026-10-16T13:07:12.000Z" },
     ...over,
   };
 }
@@ -153,7 +153,12 @@ describe("automatic meta items (app-footer)", () => {
         checkedAt: "2026-10-16T13:08:01.000Z",
         error: "connect ECONNREFUSED",
       },
-      catalog: { state: "loading", size: 0, reason: "still loading: the first refresh" },
+      catalog: {
+        mode: "full",
+        state: "loading",
+        size: 0,
+        reason: "still loading: the first refresh",
+      },
     });
     const items = footerItems(down, false, ZONE);
     expect(find(items, "source")).toMatchObject({
@@ -166,7 +171,12 @@ describe("automatic meta items (app-footer)", () => {
 
     const failed = footerItems(
       metaOf({
-        catalog: { state: "failed", size: 0, reason: "source unreachable: connect ECONNREFUSED" },
+        catalog: {
+          mode: "full",
+          state: "failed",
+          size: 0,
+          reason: "source unreachable: connect ECONNREFUSED",
+        },
       }),
       false,
       ZONE,
@@ -176,6 +186,30 @@ describe("automatic meta items (app-footer)", () => {
       tone: "error",
       title: "source unreachable: connect ECONNREFUSED",
     });
+  });
+
+  it("shows No scope for a scoped catalog without a scope (add-scope)", () => {
+    const items = footerItems(
+      metaOf({ catalog: { mode: "scoped", state: "no_scope", size: 0 } }),
+      false,
+      ZONE,
+    );
+    expect(find(items, "catalog")).toMatchObject({ text: "No scope" });
+    // With a scope the list's size shows as for any loaded catalog.
+    const scoped = footerItems(
+      metaOf({
+        catalog: {
+          mode: "scoped",
+          state: "loaded",
+          size: 2300,
+          loadedAt: "2026-10-16T13:07:12.000Z",
+          scope: { dataRef: "smart451", from: "1", to: "2" },
+        },
+      }),
+      false,
+      ZONE,
+    );
+    expect(find(scoped, "catalog").text).toContain("2300");
   });
 
   it("marks stale meta and shows none before the first answer", () => {

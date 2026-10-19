@@ -1,4 +1,13 @@
-import type { Density, DiagEvent, Workspace } from "@kipscope/shared";
+import {
+  type CommandInput,
+  type CommandResult,
+  type Density,
+  type DiagEvent,
+  scopeKey,
+  type Workspace,
+  type WorkspaceScope,
+  widenScope,
+} from "@kipscope/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
@@ -8,6 +17,7 @@ import { groupMarks, type Mark, markStyle, markTitle } from "../events/marks.ts"
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
+import { NO_SCOPE, SCOPE_HINTS, scopeRange, scopeText } from "./scope.ts";
 import { formatSpan, RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
 import {
   barTitle,
@@ -35,48 +45,67 @@ import "./strip.css";
 /** App → TimeStrip (S9): runs one strip step on the bar target; `next` maps its current view (pending or server) to the new range. Returns whether a command was sent. */
 export type StripNavigate = (next: (view: Range) => Range | undefined, push: boolean) => boolean;
 
-/** Densities loaded so far, per data ref, for the page's life (design T8): one fetch per data ref. */
+/** Densities loaded so far, per data ref or scope (densityKey), for the page's life (design T8):
+ *  one fetch per data ref, and one per scope (add-scope Z9). */
 const densities = new Map<string, Density>();
 
-/** The density of `dataRef` if the strip loaded it (design S9: the drive keys read it). */
-export function loadedDensity(dataRef: string): Density | undefined {
-  return densities.get(dataRef);
+/** Cache key of a density: the scope's key while the workspace has a scope, else the data ref. */
+function densityKey(dataRef: string, scope: WorkspaceScope | undefined): string {
+  return scope ? scopeKey(scope) : dataRef;
+}
+
+/** The key an answer belongs to: the scope it was computed for, else its data ref. */
+function answerKey(d: Density): string {
+  return d.scope ? scopeKey({ dataRef: d.dataRef, ...d.scope }) : d.dataRef;
+}
+
+/** The density of `dataRef` (within `scope`) if the strip loaded it (design S9: the drive keys read it). */
+export function loadedDensity(dataRef: string, scope?: WorkspaceScope): Density | undefined {
+  return densities.get(densityKey(dataRef, scope));
 }
 
 type Load =
-  | { dataRef: string; state: "loading" }
-  | { dataRef: string; state: "failed"; message: string }
-  | { dataRef: string; state: "loaded"; density: Density };
+  | { key: string; state: "loading" }
+  | { key: string; state: "failed"; message: string }
+  | { key: string; state: "loaded"; density: Density };
 
-/** Fetches the density of `dataRef`, retrying a failure every RETRY_MS while the data ref stays. */
-function useDensity(dataRef: string | undefined): Load | undefined {
+/** Fetches the density of `dataRef` (of the scope, when set), retrying a failure every RETRY_MS while the key stays. */
+function useDensity(
+  dataRef: string | undefined,
+  scope: WorkspaceScope | undefined,
+): Load | undefined {
   const [load, setLoad] = useState<Load>();
-  // Bumped by the retry timer; a changed data ref fetches at once through its own dependency.
+  // Bumped by the retry timer; a changed key fetches at once through its own dependency.
   const [attempt, setAttempt] = useState(0);
+  const key = dataRef === undefined ? undefined : densityKey(dataRef, scope);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; key stands for dataRef and scope
   useEffect(() => {
-    if (dataRef === undefined) return;
-    const cached = densities.get(dataRef);
+    if (dataRef === undefined || key === undefined) return;
+    const cached = densities.get(key);
     if (cached) {
-      setLoad({ dataRef, state: "loaded", density: cached });
+      setLoad({ key, state: "loaded", density: cached });
       return;
     }
     // A retry keeps "Recording unavailable" until it succeeds, so the strip does not flicker.
     setLoad((prev) =>
-      prev?.dataRef === dataRef && prev.state === "failed" ? prev : { dataRef, state: "loading" },
+      prev?.key === key && prev.state === "failed" ? prev : { key, state: "loading" },
     );
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     fetchDensity(dataRef, abort.signal).then(
       (density) => {
-        densities.set(dataRef, density);
-        setLoad({ dataRef, state: "loaded", density });
+        // The server answers for its scope at that moment; an answer for another scope is kept
+        // for its own key, and this key is asked again later.
+        densities.set(answerKey(density), density);
+        if (answerKey(density) === key) setLoad({ key, state: "loaded", density });
+        else if (!abort.signal.aborted)
+          timer = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
       },
       (error: unknown) => {
         if (abort.signal.aborted) return;
         const message = error instanceof Error ? error.message : String(error);
-        setLoad({ dataRef, state: "failed", message });
+        setLoad({ key, state: "failed", message });
         timer = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
       },
     );
@@ -84,9 +113,9 @@ function useDensity(dataRef: string | undefined): Load | undefined {
       abort.abort();
       clearTimeout(timer);
     };
-  }, [dataRef, attempt]);
+  }, [key, attempt]);
 
-  return dataRef !== undefined && load?.dataRef === dataRef ? load : undefined;
+  return key !== undefined && load?.key === key ? load : undefined;
 }
 
 /** The shown events of the strip's data ref and their total before the filter (add-events V3, V5). */
@@ -189,6 +218,8 @@ export function TimeStrip({
   events,
   onOpenEvents,
   drop,
+  mode,
+  onScopeCommand,
 }: {
   workspace: Workspace;
   navigate?: StripNavigate | undefined;
@@ -198,9 +229,16 @@ export function TimeStrip({
   onOpenEvents?: (() => void) | undefined;
   /** Set while a signal is dragged over the strip. */
   drop?: StripDrop | undefined;
+  /** The server's catalog mode (meta); Clear shows in full mode only, `No scope set` in scoped mode (add-scope Z12). */
+  mode?: "full" | "scoped" | undefined;
+  /** Sends Widen's `scope.set` and Clear's `scope.clear`; absent → no scope buttons. */
+  onScopeCommand?: ((command: CommandInput) => Promise<CommandResult>) | undefined;
 }) {
+  const scope = workspace.scope;
   const dataRef = stripDataRef(workspace);
-  const load = useDensity(dataRef);
+  const load = useDensity(dataRef, scope);
+  // A scope command on its way: Widen and Clear wait for its result.
+  const [scopePending, setScopePending] = useState(false);
   const targetWindow = barTarget(workspace);
   const target = targetWindow?.range;
   const range = target ? { from: BigInt(target.from), to: BigInt(target.to) } : undefined;
@@ -265,7 +303,7 @@ export function TimeStrip({
     drag?.kind === "brush" && tr ? (brushRange(tr, drag.x0, drag.x1) ?? shown) : shown;
 
   let info: string;
-  if (dataRef === undefined) info = "No signal shown";
+  if (dataRef === undefined) info = mode === "scoped" ? NO_SCOPE : "No signal shown";
   else if (density) info = stripLabel(density, labelRange);
   else if (load?.state === "failed") info = "Recording unavailable";
   else info = "Loading recording…";
@@ -302,7 +340,11 @@ export function TimeStrip({
       return out.range;
     }, push);
     // App's navigate sends the clamped range; show exactly that.
-    setCommitted(sent && out.range ? { range: clampRange(out.range), base: targetKey } : undefined);
+    setCommitted(
+      sent && out.range
+        ? { range: scopeRange(clampRange(out.range), scope), base: targetKey }
+        : undefined,
+    );
     return sent;
   };
 
@@ -411,6 +453,13 @@ export function TimeStrip({
   const xa = cursorX(workspace.cursors.a);
   const xb = cursorX(workspace.cursors.b);
 
+  /** Sends one scope command; the buttons stay disabled until its result arrives. */
+  const sendScope = (command: CommandInput) => {
+    if (!onScopeCommand || scopePending) return;
+    setScopePending(true);
+    onScopeCommand(command).finally(() => setScopePending(false));
+  };
+
   return (
     <div
       className={`time-strip${drop ? (drop.ok ? " drop-target" : " drop-refused") : ""}`}
@@ -422,7 +471,38 @@ export function TimeStrip({
         : {})}
     >
       <div className="time-strip-head">
-        <span className="section-label">TIME</span>
+        {scope ? (
+          <>
+            <span className="section-label">SCOPE</span>
+            <span className="time-strip-scope" title={scopeText(scope)}>
+              {scopeText(scope)}
+            </span>
+            {onScopeCommand && (
+              <button
+                type="button"
+                className="time-strip-button"
+                title={SCOPE_HINTS.widen}
+                disabled={scopePending}
+                onClick={() => sendScope({ type: "scope.set", ...widenScope(scope) })}
+              >
+                Widen
+              </button>
+            )}
+            {onScopeCommand && mode === "full" && (
+              <button
+                type="button"
+                className="time-strip-button"
+                title={SCOPE_HINTS.clear}
+                disabled={scopePending}
+                onClick={() => sendScope({ type: "scope.clear" })}
+              >
+                Clear
+              </button>
+            )}
+          </>
+        ) : (
+          <span className="section-label">TIME</span>
+        )}
         {drop ? (
           <span className={`time-strip-drop${drop.ok ? "" : " refused"}`}>
             {stripDropText(drop)}
@@ -446,10 +526,15 @@ export function TimeStrip({
           className="time-strip-info"
           {...(density
             ? {
-                title: HINTS.stripInfo(
-                  formatSpan(BigInt(density.last) - BigInt(density.first)),
-                  formatSpan(BigInt(density.width)),
-                ),
+                title: density.scope
+                  ? SCOPE_HINTS.info(
+                      formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)),
+                      formatSpan(BigInt(density.width)),
+                    )
+                  : HINTS.stripInfo(
+                      formatSpan(BigInt(density.last) - BigInt(density.first)),
+                      formatSpan(BigInt(density.width)),
+                    ),
               }
             : load?.state === "failed"
               ? { title: load.message }

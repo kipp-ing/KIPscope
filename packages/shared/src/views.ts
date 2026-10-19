@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { parseSignalId } from "./signals.ts";
-import { fromIso, toIso } from "./time.ts";
+import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
+import { MIN_SPAN_NS } from "./timenav.ts";
 import {
   Digits,
   DisplayMode,
@@ -19,6 +20,7 @@ import {
   TimeInput,
   ValuesMode,
   type Workspace,
+  type WorkspaceScope,
 } from "./workspace.ts";
 
 export { MAX_VIEW_NOTE, MAX_VIEW_TITLE, VIEW_NAME } from "./workspace.ts";
@@ -58,6 +60,8 @@ export interface ViewDoc {
   saved?: string;
   /** Data refs of all signals, sorted, unique; informational (V3). */
   data: string[];
+  /** The scope the view opens with (design Z5, Z8); ISO-8601 UTC exact to the ns. */
+  scope?: { dataRef: string; from: string; to: string };
   linkTime: boolean;
   /** ISO-8601 UTC. */
   cursors: { a?: string; b?: string; diff: boolean };
@@ -163,6 +167,17 @@ const ViewDocBody = z.object({
   note: ViewNote.optional(),
   saved: IsoTime.optional(),
   data: z.array(Id).max(MAX_VIEW_WINDOW_SIGNALS).optional(),
+  scope: z
+    .object({
+      dataRef: Id.refine((s) => !s.includes("/"), { message: "a data ref holds no /" }),
+      from: IsoTime,
+      to: IsoTime,
+    })
+    .refine((s) => fromIso(s.to) - fromIso(s.from) >= MIN_SPAN_NS, {
+      message: `to must be at least ${MIN_SPAN_NS} ns after from`,
+      path: ["to"],
+    })
+    .optional(),
   linkTime: z.boolean().default(true),
   cursors: z
     .object({ a: IsoTime.optional(), b: IsoTime.optional(), diff: z.boolean().default(false) })
@@ -203,6 +218,7 @@ const KNOWN_TOP = [
   "note",
   "saved",
   "data",
+  "scope",
   "linkTime",
   "cursors",
   "digits",
@@ -219,6 +235,7 @@ const KNOWN_NESTED: Record<string, string[]> = {
   cursors: ["a", "b", "diff"],
   events: ["filter", "signals"],
   measurement: ["name", "object", "meta"],
+  scope: ["dataRef", "from", "to"],
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -243,6 +260,7 @@ function canonical(d: ViewDoc): ViewDoc {
     ...(d.note ? { note: d.note } : {}),
     ...(d.saved !== undefined && { saved: d.saved }),
     data: [...new Set(d.data)].sort(),
+    ...(d.scope && { scope: { dataRef: d.scope.dataRef, from: d.scope.from, to: d.scope.to } }),
     linkTime: d.linkTime,
     cursors: {
       ...(d.cursors.a !== undefined && { a: d.cursors.a }),
@@ -371,6 +389,13 @@ export function workspaceToView(
     ...(meta.note !== undefined && { note: meta.note }),
     ...(meta.saved !== undefined && { saved: meta.saved }),
     data: dataRefs(windows, ws.eventSignals),
+    ...(ws.scope && {
+      scope: {
+        dataRef: ws.scope.dataRef,
+        from: viewIso(BigInt(ws.scope.from)),
+        to: viewIso(BigInt(ws.scope.to)),
+      },
+    }),
     linkTime: ws.linkTime,
     cursors: {
       ...(a !== undefined && { a }),
@@ -386,6 +411,43 @@ export function workspaceToView(
     colors,
     windows,
   });
+}
+
+/**
+ * The scope a view opens with (design Z8): `doc.scope` unpadded; else the data ref of the first
+ * signal (timeseries windows first, then any window, then the events line) and the union of the
+ * timeseries ranges and cursors, padded by `pad` on each side within the time bounds. Undefined
+ * without a data ref or a time.
+ */
+export function viewScope(doc: ViewDoc, pad: bigint): WorkspaceScope | undefined {
+  const ns = (iso: string) => fromIso(iso);
+  if (doc.scope) {
+    const { dataRef, from, to } = doc.scope;
+    return { dataRef, from: ns(from).toString(), to: ns(to).toString() };
+  }
+  const firstRef = (ids: string[]) =>
+    ids.map((id) => parseSignalId(id)?.dataRef).find((r) => r !== undefined);
+  const dataRef =
+    firstRef(
+      doc.windows.find((w) => w.kind === "timeseries" && w.signals.length > 0)?.signals ?? [],
+    ) ??
+    firstRef(doc.windows.find((w) => w.signals.length > 0)?.signals ?? []) ??
+    firstRef(doc.events?.signals ?? []);
+  if (dataRef === undefined) return undefined;
+  const spans: [bigint, bigint][] = doc.windows.flatMap((w) =>
+    w.kind === "timeseries" ? [[ns(w.from), ns(w.to)] as [bigint, bigint]] : [],
+  );
+  for (const t of [doc.cursors.a, doc.cursors.b]) {
+    if (t !== undefined) spans.push([ns(t), ns(t) + 1n]);
+  }
+  if (spans.length === 0) return undefined;
+  let from = spans.reduce((m, [f]) => (f < m ? f : m), TIME_MAX) - pad;
+  let to = spans.reduce((m, [, t]) => (t > m ? t : m), TIME_MIN) + pad;
+  if (from < TIME_MIN) from = TIME_MIN;
+  if (to > TIME_MAX) to = TIME_MAX;
+  // A lone cursor without pad: keep the scope's minimum span.
+  if (to - from < MIN_SPAN_NS) to = from + MIN_SPAN_NS;
+  return { dataRef, from: from.toString(), to: to.toString() };
 }
 
 /** File name from a title: NFKD, diacritics dropped, lower case, runs of other characters → "-", trimmed, ≤ 63; "" → "view". */

@@ -1,3 +1,5 @@
+import type { WorkspaceScope } from "./workspace.ts";
+
 /** Where an SNA code is defined (D-010). */
 export type SnaSource = "GenSigSNA" | "VAL_";
 
@@ -121,6 +123,8 @@ export interface CatalogSnapshot {
   items: SignalInfo[];
   /** ISO time of the catalog load. */
   loadedAt: string;
+  /** The scope this list belongs to; absent for the full catalog. */
+  scope?: WorkspaceScope;
 }
 
 export interface SignalPage {

@@ -8,7 +8,7 @@ import {
   signalId,
   valueLabels,
 } from "@kipscope/shared";
-import type { DataSource, SnaRange, SourceSignal } from "./datasource.ts";
+import type { DataSource, Scope, SnaRange, SourceSignal } from "./datasource.ts";
 import type { DbcSignal } from "./dbc.ts";
 import type { DiagSignal } from "./diag.ts";
 import { assignGroup } from "./groups.ts";
@@ -40,7 +40,8 @@ type LoadDiag = (warn: (message: string) => void) => Promise<Map<string, DiagSig
 /**
  * In-memory signal catalog (design D5): the signals that have data in the source, merged with
  * DBC metadata, else diagnostic catalog metadata, by signal name (design M5). This is metadata
- * only, not a data cache.
+ * only, not a data cache. With a `scope` it lists only the signals with rows in that scope
+ * (add-scope Z10).
  */
 export class Catalog {
   private entries: SignalInfo[] = [];
@@ -61,6 +62,8 @@ export class Catalog {
   private readonly loadDiag: LoadDiag;
   private readonly rules: DisplayRules;
   private readonly log: CatalogLog | undefined;
+  /** The scope whose signals this catalog lists; undefined for the full catalog. */
+  readonly scope: Scope | undefined;
   /** The load in progress; further refreshes share it (single flight). */
   private running: Promise<void> | undefined;
   /** Called after each successful load (density prefetch, design Q4). */
@@ -72,8 +75,10 @@ export class Catalog {
     rules: DisplayRules = NO_RULES,
     log?: CatalogLog,
     loadDiag: LoadDiag = async () => new Map(),
+    scope?: Scope,
   ) {
     this.source = source;
+    this.scope = scope;
     this.loadMetadata = loadMetadata;
     this.loadDiag = loadDiag;
     this.rules = rules;
@@ -100,7 +105,7 @@ export class Catalog {
     try {
       [listed, metadata, diag] = await Promise.all([
         // Each listed signal carries whether its rows have text (add-events N1).
-        this.source.listSignals(),
+        this.scope ? this.source.listSignals(this.scope) : this.source.listSignals(),
         this.loadMetadata(warn),
         this.loadDiag(warnDiag),
       ]);

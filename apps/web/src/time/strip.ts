@@ -6,8 +6,10 @@ export const BAR_PX = 24;
 /** Delay before a failed density fetch is retried (time-strip "Time strip states"). */
 export const RETRY_MS = 30_000;
 
-/** Data ref of the first signal of barTarget(ws), else of the first signal of any window in order. */
+/** The scope's data ref while the workspace has a scope (add-scope Z12); else the data ref of the
+ *  first signal of barTarget(ws), else of the first signal of any window in order. */
 export function stripDataRef(ws: Workspace): string | undefined {
+  if (ws.scope) return ws.scope.dataRef;
   const first =
     barTarget(ws)?.signals[0] ?? ws.windows.find((w) => w.signals.length > 0)?.signals[0];
   return first && parseSignalId(first.signalId)?.dataRef;
@@ -30,9 +32,14 @@ export function stripBars(
   });
 }
 
-/** "<shown> of <recorded> recorded · 1 bar = <width>"; without range "<recorded> recorded · 1 bar = <width>". recorded = last − first. */
+/**
+ * "<shown> of <recorded> recorded · 1 bar = <width>"; without range "<recorded> recorded · 1 bar = <width>".
+ * recorded = last − first. A density of a scope reads "<shown> of <span> in scope · …" (add-scope Z12).
+ */
 export function stripLabel(d: Density, range?: { from: bigint; to: bigint }): string {
-  const recorded = `${formatSpan(BigInt(d.last) - BigInt(d.first))} recorded`;
+  const recorded = d.scope
+    ? `${formatSpan(BigInt(d.scope.to) - BigInt(d.scope.from))} in scope`
+    : `${formatSpan(BigInt(d.last) - BigInt(d.first))} recorded`;
   const shown = range ? `${formatSpan(range.to - range.from)} of ` : "";
   return `${shown}${recorded} · 1 bar = ${formatSpan(BigInt(d.width))}`;
 }

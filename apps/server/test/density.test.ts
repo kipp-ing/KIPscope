@@ -4,6 +4,7 @@ import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { DensityCache } from "../src/density.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { memoryAdapter, scopeApp } from "./scopeApp.ts";
 
 const MS = 1_000_000n;
 
@@ -176,6 +177,106 @@ describe("GET /api/density cache over HTTP", () => {
       expect(queries(calls)).toBe(before + 2);
     } finally {
       await app.close();
+    }
+  });
+});
+
+describe("DensityCache with a scope (add-scope Z9)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const scope = { dataRef: "testcar", from: T1, to: T2 };
+
+  /** A source that records the scope of each query; rows at T1 + 10 s (2) and T1 + 31 min (1). */
+  function scopedSource() {
+    const calls: { method: string; scope: unknown }[] = [];
+    const source = {
+      refExtent: async (_ref: string, s?: unknown) => {
+        calls.push({ method: "refExtent", scope: s });
+        return { count: 3, first: 0n, last: 5n * MS };
+      },
+      refBuckets: async (_ref: string, width: bigint, times: boolean, s?: unknown) => {
+        calls.push({ method: "refBuckets", scope: s });
+        expect(times).toBe(false);
+        // Grid buckets (width / 400): one at T1 + 10 s and one 31 min in.
+        const grid = width / 400n;
+        const at = (t: bigint) => t - (t % grid);
+        return [
+          { start: at(T1 + 10_000_000_000n), count: 2 },
+          { start: at(T1 + 31n * 60n * 1_000_000_000n), count: 1 },
+        ];
+      },
+    } as unknown as DataSource;
+    return { source, calls };
+  }
+
+  it("computes a scope's density from one bucket query", async () => {
+    const { source, calls } = scopedSource();
+    let loadedAt = new Date(1000);
+    const cache = new DensityCache(source, () => loadedAt);
+    const [a, b] = await Promise.all([cache.get("testcar", scope), cache.get("testcar", scope)]);
+    expect(await cache.get("testcar", scope)).toBe(a);
+    expect(b).toBe(a);
+    // One refBuckets with the scope and no refExtent at all.
+    expect(calls).toEqual([{ method: "refBuckets", scope }]);
+
+    // The bars span the whole scope, empty stretches included: first = from, last = to - 1 ns.
+    expect(a?.first).toBe(T1.toString());
+    expect(a?.last).toBe((T2 - 1n).toString());
+    expect(a?.scope).toEqual({ from: T1.toString(), to: T2.toString() });
+    // 1 h: width 30 s (15 s would need 240 bars, over the limit of 200), 120 bars.
+    expect(a?.width).toBe("30000000000");
+    expect(a?.counts).toHaveLength(120);
+    expect(a?.counts.reduce((x, y) => x + y, 0)).toBe(3);
+    // The rows at 10 s (two) and at 31 min land in bars 0 and 62 (31 min / 30 s); the rest is empty.
+    expect(a?.counts[0]).toBe(2);
+    expect(a?.counts[62]).toBe(1);
+
+    // Another scope has its own entry; an unscoped request has its own, with the old two queries.
+    await cache.get("testcar", { ...scope, to: T2 - 60n * 1_000_000_000n });
+    expect(calls.filter((c) => c.method === "refBuckets")).toHaveLength(2);
+    await cache.get("testcar");
+    expect(calls.map((c) => c.method)).toEqual([
+      "refBuckets",
+      "refBuckets",
+      "refExtent",
+      "refBuckets",
+    ]);
+
+    // It is computed again after that scope's list loads again (a new loadedAt).
+    loadedAt = new Date(2000);
+    await cache.get("testcar", scope);
+    expect(calls.filter((c) => c.method === "refBuckets" && c.scope === scope)).toHaveLength(2);
+  });
+
+  it("computes a scope's density from one bucket query over HTTP", async () => {
+    const adapter = memoryAdapter([
+      { dataRef: "testcar", name: "S", rows: [[T1 + 10_000_000_000n, 1]] },
+      { dataRef: "othercar", name: "S", rows: [[T1 + 10_000_000_000n, 1]] },
+    ]);
+    const t = await scopeApp({ adapter });
+    try {
+      const start = t.calls.length;
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: T1.toString(),
+        to: T2.toString(),
+      });
+      expect(set.status).toBe(200);
+      const first = await t.get("/api/density?dataRef=testcar");
+      const second = await t.get("/api/density?dataRef=testcar");
+      expect(first.status).toBe(200);
+      expect(second.text).toBe(first.text);
+      // Let the scope's own prefetch finish too: it shares the one computation.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const calls = t.calls.slice(start);
+      expect(calls.filter((c) => c.method === "refExtent")).toEqual([]);
+      const buckets = calls.filter((c) => c.method === "refBuckets");
+      expect(buckets).toHaveLength(1);
+      expect(buckets[0]?.args[3]).toEqual(scope);
+    } finally {
+      await t.close();
     }
   });
 });

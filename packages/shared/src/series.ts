@@ -77,6 +77,8 @@ export interface Density {
   grid: string;
   /** In time order, not overlapping; [] when none. */
   drives: Drive[];
+  /** Present when computed for a scope: then first = scope.from and last = scope.to − 1 ns (Z9). */
+  scope?: { from: string; to: string };
 }
 
 export interface ApiError {

@@ -77,6 +77,42 @@ describe("formatSpan", () => {
   });
 });
 
+describe("strip label and data ref with a scope (add-scope)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const scopeOf = (dataRef: string) => ({ dataRef, from: T1.toString(), to: T2.toString() });
+
+  it("labels the shown span within the scope", () => {
+    const d = density({
+      first: T1.toString(),
+      last: (T2 - 1n).toString(),
+      width: (30n * S).toString(),
+      start: T1.toString(),
+      counts: [1],
+      scope: { from: T1.toString(), to: T2.toString() },
+    });
+    expect(stripLabel(d, { from: T1 + 10n * MIN, to: T1 + 20n * MIN })).toBe(
+      "10 min of 1 h in scope · 1 bar = 30 s",
+    );
+    expect(stripLabel(d)).toBe("1 h in scope · 1 bar = 30 s");
+    // Without `scope` the label is the existing "recorded" text (last - first = 59 min 59.999999999 s).
+    const { scope: _scope, ...plain } = d;
+    expect(stripLabel(plain, { from: T1 + 10n * MIN, to: T1 + 20n * MIN })).toBe(
+      "10 min of 60 min recorded · 1 bar = 30 s",
+    );
+  });
+
+  it("takes the scope's data ref", () => {
+    // The only window shows another data ref than the scope's.
+    const windows = [ts("w1", ["othercar/Fast_100h.SIG_A"])];
+    expect(stripDataRef(ws(windows, { scope: scopeOf("testcar") }))).toBe("testcar");
+    expect(stripDataRef(ws(windows))).toBe("othercar");
+    // A scope gives the data ref even with no window at all.
+    expect(stripDataRef(ws([], { scope: scopeOf("testcar") }))).toBe("testcar");
+  });
+});
+
 describe("stripLabel", () => {
   it("labels the shown and recorded spans", () => {
     const d = density({

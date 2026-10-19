@@ -1,4 +1,4 @@
-import { fromIso, NS_PER_MS } from "@kipscope/shared";
+import { type CommandResult, fromIso, NS_PER_MS } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   clampRange,
@@ -13,6 +13,8 @@ import {
   ZOOM_HISTORY_LIMIT,
   ZoomHistory,
 } from "../src/chart/zoom.ts";
+import { CLAMP_MESSAGE, resultStripEvents } from "../src/time/scope.ts";
+import { nextStrip, type StripItem } from "../src/views/notice.ts";
 
 const MIN = -2_208_988_800_000_000_000n; // 1900-01-01T00:00:00Z
 const MAX = 9_223_286_400_000_000_000n; // 2262-04-11T00:00:00Z
@@ -389,5 +391,35 @@ describe("RangePreview", () => {
     await p.commit(p.range, async () => ({ ok: true }));
     p.settle(server, false);
     expect(p.view(server)).toBe(server);
+  });
+});
+
+describe("range stopped at the scope edge (add-scope)", () => {
+  /** The message slot after the strip events of one command result, like App's `command` handler. */
+  const slotAfter = (slot: StripItem | undefined, result: CommandResult) =>
+    resultStripEvents(result).reduce(nextStrip, slot);
+
+  it("reports a range stopped at the scope edge", () => {
+    expect(CLAMP_MESSAGE).toBe("Stopped at the scope edge. Widen shows more.");
+    const clamped = slotAfter(undefined, { ok: true, revision: 9, clamped: true });
+    expect(clamped?.text).toBe("Stopped at the scope edge. Widen shows more.");
+    expect(clamped?.tone).toBe("info");
+    // The next accepted command without `clamped` clears the message ...
+    expect(slotAfter(clamped, { ok: true, revision: 10 })).toBeUndefined();
+    // ... and sets none of its own.
+    expect(slotAfter(undefined, { ok: true, revision: 10 })).toBeUndefined();
+  });
+
+  it("keeps an open notice and shows a refusal", () => {
+    const opened: StripItem = { tone: "info", text: 'Opened "Drive 3"' };
+    expect(slotAfter(opened, { ok: true, revision: 11 })).toBe(opened);
+    const refused = slotAfter(opened, {
+      ok: false,
+      code: "out_of_scope",
+      message: "cursor A outside the scope",
+    });
+    expect(refused).toEqual({ tone: "error", text: "out_of_scope: cursor A outside the scope" });
+    // A clamp replaces an older error.
+    expect(slotAfter(refused, { ok: true, revision: 12, clamped: true })?.text).toBe(CLAMP_MESSAGE);
   });
 });

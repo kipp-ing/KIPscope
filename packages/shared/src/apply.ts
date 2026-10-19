@@ -1,5 +1,8 @@
 import { DEFAULT_EVENT_FILTER, formatEventFilter, parseEventFilter } from "./eventFilter.ts";
+import { clampToScope } from "./scope.ts";
+import { parseSignalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
+import { MIN_SPAN_NS } from "./timenav.ts";
 import { parseViewDoc } from "./views.ts";
 import {
   type Command,
@@ -20,6 +23,7 @@ import {
   unitKey,
   type ValuesWindow,
   type Workspace,
+  type WorkspaceScope,
   type WorkspaceWindow,
   windowUnits,
 } from "./workspace.ts";
@@ -33,6 +37,8 @@ export interface ApplyContext {
   hasStates(signalId: string): boolean;
   /** Whether the catalog has loaded; view.open needs it (absent = ready). */
   catalogReady?(): boolean;
+  /** Scoped mode (KIPSCOPE_CATALOG=scoped): scope.clear and catalog-checked commands need a scope. */
+  scopeRequired?: boolean;
 }
 
 export type ApplyResult =
@@ -44,6 +50,8 @@ export type ApplyResult =
       removedWindow?: string;
       /** view.open only. */
       report?: OpenReport;
+      /** The command moved a range into the scope (design Z6). */
+      clamped?: true;
     }
   | { ok: false; code: CommandErrorCode; message: string };
 
@@ -113,6 +121,33 @@ function checkUnits(
   );
 }
 
+const scopeRequired = (): ApplyResult =>
+  fail("scope_required", "set a scope first: no signal list is loaded without one");
+
+/** Whether `t` (decimal ns) lies in the scope's [from, to); true without a scope. */
+function inScope(t: string | bigint, scope: WorkspaceScope | undefined): boolean {
+  if (!scope) return true;
+  const n = BigInt(t);
+  return n >= BigInt(scope.from) && n < BigInt(scope.to);
+}
+
+/** A range moved into the scope (design Z6); unchanged without one. */
+function clampRange(range: TimeRange, scope: WorkspaceScope | undefined) {
+  return scope ? clampToScope(range, scope) : { range, clamped: false };
+}
+
+/** Every timeseries window clamped into the scope; `clamped` when one range changed. */
+function clampWindows(windows: WorkspaceWindow[], scope: WorkspaceScope) {
+  let clamped = false;
+  const next = windows.map((w) => {
+    if (!isTimeseries(w)) return w;
+    const c = clampToScope(w.range, scope);
+    clamped ||= c.clamped;
+    return c.clamped ? { ...w, range: c.range } : w;
+  });
+  return { windows: next, clamped };
+}
+
 /** Sets `measurement` normalised: empty fields, an empty meta and an empty measurement absent. */
 function withMeasurement(state: Workspace, measurement: Measurement): Workspace {
   const next: Measurement = {};
@@ -138,15 +173,25 @@ function openView(
   command: Extract<Command, { type: "view.open" }>,
   ctx: ApplyContext,
 ): ApplyResult {
-  if (ctx.catalogReady?.() === false) {
-    return fail("catalog_unavailable", "the signal catalog has not loaded yet");
-  }
+  const notReady = ctx.catalogReady?.() === false;
+  const catalogUnavailable = () =>
+    fail("catalog_unavailable", "the signal catalog has not loaded yet");
+  // In scoped mode a missing scope is the answer, not the missing full catalog.
+  if (notReady && !ctx.scopeRequired) return catalogUnavailable();
   const parsed = parseViewDoc(command.view);
   if (!parsed.ok) return fail(parsed.code, parsed.message);
   const { doc } = parsed;
+  const ns = (iso: string) => fromIso(iso).toString();
+  // The command's scope (resolved by the server, design Z10), else the document's.
+  const scope: WorkspaceScope | undefined =
+    command.scope ??
+    (doc.scope && { dataRef: doc.scope.dataRef, from: ns(doc.scope.from), to: ns(doc.scope.to) });
+  if (!scope && ctx.scopeRequired) return scopeRequired();
+  if (notReady) return catalogUnavailable();
   const report: OpenReport = { missing: [], skipped: [], warnings: [...parsed.warnings] };
   let nextId = state.nextId;
-  const ns = (iso: string) => fromIso(iso).toString();
+  const otherRef = (signalId: string) =>
+    scope !== undefined && parseSignalId(signalId)?.dataRef !== scope.dataRef;
 
   // IDs in document order: all windows first, then the assignments.
   let windows: WorkspaceWindow[] = doc.windows.map((d) => {
@@ -171,7 +216,8 @@ function openView(
     for (const signalId of doc.windows[index]?.signals ?? []) {
       const skip = (reason: OpenReport["skipped"][number]["reason"]) =>
         report.skipped.push({ signalId, window: index, reason });
-      if (!ctx.signalExists(signalId)) missing.add(signalId);
+      if (otherRef(signalId)) skip("out_of_scope");
+      else if (!ctx.signalExists(signalId)) missing.add(signalId);
       else if (w.signals.some((s) => s.signalId === signalId)) skip("already_in_window");
       else if (!kept.has(signalId) && kept.size >= MAX_SIGNALS) skip("signal_limit");
       else if (checkUnits(w, signalId, ctx)) skip("too_many_units");
@@ -192,6 +238,19 @@ function openView(
   ) {
     windows = linkRange(windows, first);
     report.warnings.push("time axes are linked: ranges aligned to the first window");
+  }
+  let cursors = doc.cursors;
+  if (scope) {
+    const c = clampWindows(windows, scope);
+    windows = c.windows;
+    if (c.clamped) report.warnings.push("ranges clamped to the scope");
+    for (const name of ["a", "b"] as const) {
+      const t = cursors[name];
+      if (t === undefined || inScope(fromIso(t), scope)) continue;
+      const { [name]: _dropped, ...rest } = cursors;
+      cursors = rest;
+      report.warnings.push(`cursor ${name.toUpperCase()} outside the scope dropped`);
+    }
   }
 
   // The document's colours first, so the others take the least used of what remains.
@@ -216,9 +275,9 @@ function openView(
     linkTime: doc.linkTime,
     colors,
     cursors: {
-      ...(doc.cursors.a !== undefined && { a: ns(doc.cursors.a) }),
-      ...(doc.cursors.b !== undefined && { b: ns(doc.cursors.b) }),
-      diff: doc.cursors.diff,
+      ...(cursors.a !== undefined && { a: ns(cursors.a) }),
+      ...(cursors.b !== undefined && { b: ns(cursors.b) }),
+      diff: cursors.diff,
     },
     options: { digits: doc.digits },
   };
@@ -234,7 +293,14 @@ function openView(
       if (normal !== DEFAULT_EVENT_FILTER) workspace.eventFilter = normal;
     }
   }
-  const eventSignals = [...new Set(doc.events?.signals ?? [])];
+  let eventSignals = [...new Set(doc.events?.signals ?? [])];
+  const outside = eventSignals.filter(otherRef);
+  if (outside.length > 0) {
+    report.warnings.push(
+      `events-line signals of another data ref than the scope's left out: ${outside.join(", ")}`,
+    );
+    eventSignals = eventSignals.filter((id) => !otherRef(id));
+  }
   if (eventSignals.length > MAX_EVENT_SIGNALS) {
     report.warnings.push(
       `the events line holds at most ${MAX_EVENT_SIGNALS} signals: ${eventSignals.length - MAX_EVENT_SIGNALS} left out`,
@@ -248,6 +314,7 @@ function openView(
     ...(doc.note !== undefined && { note: doc.note }),
     modified: false,
   };
+  if (scope) workspace.scope = scope;
   return { ok: true, workspace, report };
 }
 
@@ -278,6 +345,14 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
     return { ok: true, workspace: { ...state, windows } };
   };
 
+  const cursorOutside = (cursor: string): ApplyResult => {
+    const scope = state.scope as WorkspaceScope;
+    return fail(
+      "out_of_scope",
+      `cursor ${cursor.toUpperCase()} outside the scope ${toIso(BigInt(scope.from))} … ${toIso(BigInt(scope.to))}`,
+    );
+  };
+
   const notOnValues = (w: ValuesWindow): ApplyResult =>
     fail("invalid_command", `${command.type} does not apply to values window ${w.id}`);
 
@@ -304,10 +379,11 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
       }
       let range: TimeRange;
       const hasRange = command.from !== undefined && command.to !== undefined;
+      let clamped = false;
       if (command.from !== undefined && command.to !== undefined) {
         const invalid = checkRange(command.from, command.to);
         if (invalid) return invalid;
-        range = { from: command.from, to: command.to };
+        ({ range, clamped } = clampRange({ from: command.from, to: command.to }, state.scope));
       } else {
         const shared = state.linkTime ? state.windows.find(isTimeseries)?.range : undefined;
         if (!shared) return fail("invalid_range", "from and to are required");
@@ -331,7 +407,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
         nextId: state.nextId + 1,
       };
       if (hasRange) workspace.lastZoomed = id;
-      return { ok: true, workspace, created: id };
+      return { ok: true, workspace, created: id, ...(clamped && { clamped: true }) };
     }
 
     case "window.remove": {
@@ -347,6 +423,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
     }
 
     case "window.addSignal": {
+      if (ctx.scopeRequired && !state.scope) return scopeRequired();
       if (!ctx.signalExists(command.signalId)) {
         return fail("unknown_signal", `unknown signal: ${command.signalId}`);
       }
@@ -481,11 +558,15 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
       if (!isTimeseries(target)) return notOnValues(target);
       const invalid = checkRange(command.from, command.to);
       if (invalid) return invalid;
-      const range = { from: command.from, to: command.to };
+      const { range, clamped } = clampRange({ from: command.from, to: command.to }, state.scope);
       const windows = state.linkTime
         ? linkRange(state.windows, range)
         : state.windows.with(state.windows.indexOf(target), { ...target, range });
-      return { ok: true, workspace: { ...state, windows, lastZoomed: target.id } };
+      return {
+        ok: true,
+        workspace: { ...state, windows, lastZoomed: target.id },
+        ...(clamped && { clamped: true }),
+      };
     }
 
     case "workspace.setLinkTime": {
@@ -526,6 +607,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
       });
 
     case "cursor.set":
+      if (!inScope(command.t, state.scope)) return cursorOutside(command.cursor);
       return {
         ok: true,
         workspace: { ...state, cursors: { ...state.cursors, [command.cursor]: command.t } },
@@ -540,6 +622,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
       if (t < TIME_MIN || t > TIME_MAX) {
         return fail("invalid_command", `time outside ${toIso(TIME_MIN)} … ${toIso(TIME_MAX)}`);
       }
+      if (!inScope(t, state.scope)) return cursorOutside(command.cursor);
       return {
         ok: true,
         workspace: { ...state, cursors: { ...state.cursors, [command.cursor]: t.toString() } },
@@ -599,6 +682,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
     }
 
     case "events.addSignal": {
+      if (ctx.scopeRequired && !state.scope) return scopeRequired();
       const id = command.signalId;
       const listed = state.eventSignals ?? [];
       if (!ctx.signalExists(id)) return fail("unknown_signal", `unknown signal: ${id}`);
@@ -624,6 +708,32 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
 
     case "view.open":
       return openView(state, command, ctx);
+
+    case "scope.set": {
+      const { dataRef, from, to } = command;
+      if (!dataRef || dataRef.includes("/"))
+        return fail("invalid_command", "a data ref is non-empty and holds no /");
+      if (BigInt(to) - BigInt(from) < MIN_SPAN_NS)
+        return fail("invalid_command", `to must be at least ${MIN_SPAN_NS} ns after from`);
+      const scope = { dataRef, from, to };
+      const { windows, clamped } = clampWindows(state.windows, scope);
+      const cursors = { ...state.cursors };
+      for (const name of ["a", "b"] as const) {
+        const t = cursors[name];
+        if (t !== undefined && !inScope(t, scope)) delete cursors[name];
+      }
+      return {
+        ok: true,
+        workspace: { ...state, windows, cursors, scope },
+        ...(clamped && { clamped: true }),
+      };
+    }
+
+    case "scope.clear": {
+      if (ctx.scopeRequired) return scopeRequired();
+      const { scope: _removed, ...rest } = state;
+      return { ok: true, workspace: rest };
+    }
 
     case "view.markSaved":
       return {

@@ -112,6 +112,10 @@ describe("server address and usage", () => {
       "measurement object",
       "measurement meta",
       "measurement clear",
+      "scope set",
+      "scope show",
+      "scope widen",
+      "scope clear",
       "command",
       "state",
       "search",
@@ -1240,5 +1244,74 @@ describe("views", () => {
       rmSync(dir, { recursive: true, force: true });
       await s.close();
     }
+  });
+});
+
+describe("scope", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand; TZ Europe/Berlin is +02:00 then.
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const H = 3_600_000_000_000n;
+
+  it("sets, shows, widens and clears the scope", async () => {
+    await withServer(async (s) => {
+      // Widen without a scope: rejected, nothing sent.
+      const revision = await revisionOf(s);
+      const before = s.requests.filter((r) => r.startsWith("POST")).length;
+      const none = await cli(s, "scope", "widen");
+      expect(none.code).toBe(1);
+      expect(none.out).toMatchObject({ ok: false, error: { code: "scope_required" } });
+      expect(await revisionOf(s)).toBe(revision);
+      expect(s.requests.filter((r) => r.startsWith("POST")).length).toBe(before);
+
+      // Set: one new revision.
+      const set = await cli(s, "scope", "set", "testcar", "2026-10-01 03:00", "2026-10-01 04:00");
+      expect(set.code).toBe(0);
+      expect(set.out.ok).toBe(true);
+      expect(await revisionOf(s)).toBe(revision + 1);
+
+      // Show: the scope, the catalog's mode and the scope's time in local time.
+      const shown = await cli(s, "scope", "show");
+      expect(shown.code).toBe(0);
+      expect(shown.out.data.scope).toEqual({
+        dataRef: "testcar",
+        from: T1.toString(),
+        to: T2.toString(),
+      });
+      expect(shown.out.data.catalog.mode).toBe("full");
+      expect(shown.out.data.catalog.state).toBe("loaded");
+      expect(shown.out.local.from).toBe("2026-10-01 03:00:00+02:00");
+      expect(shown.out.local.to).toBe("2026-10-01 04:00:00+02:00");
+
+      // Widen: one span on each side, one new revision.
+      const widened = await cli(s, "scope", "widen");
+      expect(widened.code).toBe(0);
+      expect(await revisionOf(s)).toBe(revision + 2);
+      const again = await cli(s, "scope", "show");
+      expect(again.out.data.scope).toEqual({
+        dataRef: "testcar",
+        from: (T1 - H).toString(),
+        to: (T2 + H).toString(),
+      });
+
+      // Clear: the state shows no scope any more.
+      const cleared = await cli(s, "scope", "clear");
+      expect(cleared.code).toBe(0);
+      expect(await revisionOf(s)).toBe(revision + 3);
+      const state = await cli(s, "state");
+      expect(state.out.data.workspace).not.toHaveProperty("scope");
+      const empty = await cli(s, "scope", "show");
+      expect(empty.out.data).not.toHaveProperty("scope");
+    });
+  });
+
+  it("refuses a cursor outside the scope with out_of_scope", async () => {
+    await withServer(async (s) => {
+      // A cursor beyond the scope's end is refused with the server's code (exit 1).
+      expect((await cli(s, "scope", "set", "testcar", T1.toString(), T2.toString())).code).toBe(0);
+      const refused = await cli(s, "cursor", "set", "a", (T2 + 1n).toString());
+      expect(refused.code).toBe(1);
+      expect(refused.out).toMatchObject({ ok: false, error: { code: "out_of_scope" } });
+    });
   });
 });

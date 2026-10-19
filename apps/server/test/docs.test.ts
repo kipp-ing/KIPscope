@@ -38,6 +38,36 @@ describe("documents", () => {
     expect(missingInExample, "missing in .env.example").toEqual([]);
   });
 
+  it("documents the scope argument", () => {
+    const guide = read("docs/data-sources.md");
+    // The section "Scope" (a heading line that is just that word).
+    const start = guide.search(/^#{1,6}\s+Scope\s*$/m);
+    expect(start, 'docs/data-sources.md has a section "Scope"').toBeGreaterThanOrEqual(0);
+    const rest = guide.slice(start);
+    const level = (/^(#{1,6})\s/.exec(rest)?.[1] ?? "##").length;
+    // Search the end only after the heading line itself.
+    const headingEnd = rest.indexOf("\n") + 1;
+    const next = rest.slice(headingEnd).search(new RegExp(`^#{1,${level}}\\s`, "m"));
+    const section = next === -1 ? rest : rest.slice(0, headingEnd + next);
+    // The 11 methods that take a scope (design Z1) and the rule's wording.
+    for (const method of [
+      "listSignals",
+      "before",
+      "after",
+      "refBuckets",
+      "extent",
+      "refExtent",
+      "refCount",
+      "loggerGaps",
+      "firstTimes",
+      "stateChanges",
+      "events",
+    ]) {
+      expect(section, `section "Scope" names ${method}`).toContain(method);
+    }
+    expect(section).toContain("as if the source held only");
+  });
+
   it("documents every HTTP route", async () => {
     const source = {} as DataSource;
     const app = buildApp({

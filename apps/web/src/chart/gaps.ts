@@ -38,6 +38,8 @@ interface Entry {
   asks: Map<string, number>;
   /** Signals named by the last successful fetch. */
   named: ReadonlySet<string>;
+  /** The scope changed while a fetch was in flight: its answer is dropped and fetched again. */
+  again?: true;
 }
 
 /** The IDs once each, first occurrence first. */
@@ -120,6 +122,22 @@ export class GapInfoStore {
     };
   }
 
+  /**
+   * The workspace's scope changed (add-scope Z12): every asked data ref is fetched again now (a
+   * fetch in flight drops its answer first), and data refs nobody asks for are forgotten.
+   */
+  reload(): void {
+    for (const [ref, entry] of this.entries) {
+      if (entry.asks.size === 0) {
+        clearTimeout(entry.retry);
+        clearTimeout(entry.refresh);
+        this.entries.delete(ref);
+        this.invalidate(ref);
+      } else if (entry.loading) entry.again = true;
+      else this.load(ref, entry);
+    }
+  }
+
   /** The state of `signalIds`' data refs; the same object until one of them changes. */
   state(signalIds: readonly string[]): GapInfoState {
     const key = keyOf(signalIds);
@@ -167,9 +185,17 @@ export class GapInfoStore {
     const names = toName(entry);
     const named = new Set(names);
     entry.loading = true;
+    // An answer of the scope before a `reload` is dropped and fetched again.
+    const stale = () => {
+      if (!entry.again) return false;
+      delete entry.again;
+      if (this.entries.get(ref) === entry && entry.asks.size > 0) this.load(ref, entry);
+      return true;
+    };
     this.fetchInfo(ref, names).then(
       (info) => {
         entry.loading = false;
+        if (stale()) return;
         const json = JSON.stringify(info);
         const fresh = !entry.info || json !== entry.json;
         const settledChanged =
@@ -187,6 +213,7 @@ export class GapInfoStore {
       },
       (error: unknown) => {
         entry.loading = false;
+        if (stale()) return;
         // A failed refetch of the signals named before keeps the loaded info and tries again at
         // the next interval; a failure for a new signal is an error for its window.
         if (entry.info && names.every((id) => entry.named.has(id))) {

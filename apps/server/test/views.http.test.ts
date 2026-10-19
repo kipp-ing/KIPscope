@@ -246,7 +246,12 @@ describe("views over HTTP", () => {
 
   it("refuses to open before the catalog loads", async () => {
     t = await viewsApp({ loadCatalog: false });
-    t.views.write("v", doc([[RPM]]));
+    // A view with only a values window and no cursors resolves no scope, so it needs the full catalog.
+    const noScope: ViewDoc = {
+      ...doc([]),
+      windows: [{ kind: "values", mode: "line", signals: [RPM] }],
+    };
+    t.views.write("v", noScope);
     const res = await t.post("/api/views/open", { name: "v" });
     expect(res.status).toBe(503);
     expect(codeOf(res.body)).toBe("catalog_unavailable");
@@ -537,5 +542,108 @@ describe("views over HTTP", () => {
     const expected = workspaceToView(snapshot, { title: "Snap", saved: stored.saved });
     expect(stored).toEqual(JSON.parse(JSON.stringify(expected)));
     mkdirSync(t.viewsDir, { recursive: true });
+  });
+});
+
+describe("views and scopes over HTTP (add-scope)", () => {
+  // 2026-10-01T01:00:00Z in ns, by hand; the pad defaults to 1 h.
+  const T1 = 1790816400000000000n;
+  const MIN = 60n * 1_000_000_000n;
+  const window = (signals: string[]) => ({
+    kind: "timeseries" as const,
+    from: "2026-10-01T01:10:00Z",
+    to: "2026-10-01T01:20:00Z",
+    mode: "line" as const,
+    envelope: false,
+    signals,
+  });
+  const scoped = (signals: string[]): ViewDoc => ({ ...doc([]), windows: [window(signals)] });
+
+  it("loads the scope's list before checking the view", async () => {
+    // The full catalog never loaded; the open loads the list of its derived scope instead.
+    t = await viewsApp({ loadCatalog: false });
+    const res = await t.post("/api/commands", {
+      type: "view.open",
+      view: scoped([RPM, "testcar/Gone_1h.X"]),
+    });
+    expect(res.status).toBe(200);
+    // The window [T1 + 10 min, T1 + 20 min) padded by 1 h on each side.
+    expect(t.listCalls).toEqual([{ dataRef: "testcar", from: T1 - 50n * MIN, to: T1 + 80n * MIN }]);
+    // Signals are checked against that list.
+    expect(res.body.report.missing).toEqual(["testcar/Gone_1h.X"]);
+    const state = (await t.get("/api/workspace")).body.workspace;
+    expect(state.scope).toEqual({
+      dataRef: "testcar",
+      from: (T1 - 50n * MIN).toString(),
+      to: (T1 + 80n * MIN).toString(),
+    });
+
+    // The same open while the source fails the scope's list: 503, nothing changes.
+    const failing = await viewsApp({ loadCatalog: false, failScopeList: true });
+    try {
+      const refused = await failing.post("/api/commands", {
+        type: "view.open",
+        view: scoped([RPM]),
+      });
+      expect(refused.status).toBe(503);
+      expect(codeOf(refused.body)).toBe("catalog_unavailable");
+      expect(failing.store.revision).toBe(0);
+      expect(failing.store.workspace.windows).toEqual([]);
+      expect(failing.store.workspace.scope).toBeUndefined();
+      expect(failing.pushes).toEqual([]);
+    } finally {
+      await failing.close();
+    }
+  });
+
+  it("opens a saved view and an import through the same scope path", async () => {
+    t = await viewsApp({ loadCatalog: false });
+    t.views.write("scoped", scoped([RPM]));
+    const opened = await t.post("/api/views/open", { name: "scoped" });
+    expect(opened.status).toBe(200);
+    expect(t.listCalls).toEqual([{ dataRef: "testcar", from: T1 - 50n * MIN, to: T1 + 80n * MIN }]);
+    expect((await t.get("/api/workspace")).body.workspace.scope.dataRef).toBe("testcar");
+
+    // An explicit scope of the document is used without pad.
+    const explicit: ViewDoc = {
+      ...scoped([RPM]),
+      scope: { dataRef: "testcar", from: "2026-10-01T01:00:00Z", to: "2026-10-01T02:00:00Z" },
+    };
+    t.listCalls.length = 0;
+    const second = await t.post("/api/views/open", { view: explicit });
+    expect(second.status).toBe(200);
+    expect(t.listCalls).toEqual([{ dataRef: "testcar", from: T1, to: T1 + 60n * MIN }]);
+  });
+
+  it("skips signals of another data ref", async () => {
+    t = await viewsApp();
+    const res = await t.post("/api/commands", {
+      type: "view.open",
+      view: scoped(["testcar/Fast_100h.SIG_A", "othercar/Fast_100h.SIG_A"]),
+    });
+    expect(res.status).toBe(200);
+    const state = (await t.get("/api/workspace")).body.workspace;
+    expect(state.scope.dataRef).toBe("testcar");
+    expect(state.windows[0].signals.map((s: { signalId: string }) => s.signalId)).toEqual([
+      "testcar/Fast_100h.SIG_A",
+    ]);
+    expect(res.body.report.skipped).toEqual([
+      { signalId: "othercar/Fast_100h.SIG_A", window: 0, reason: "out_of_scope" },
+    ]);
+  });
+
+  it("opens a view without a data ref or a time with no scope", async () => {
+    t = await viewsApp();
+    // A first open sets a scope; a second view with only a values window removes it again.
+    expect((await t.post("/api/commands", { type: "view.open", view: scoped([RPM]) })).status).toBe(
+      200,
+    );
+    expect((await t.get("/api/workspace")).body.workspace.scope).toBeDefined();
+    const bare: ViewDoc = {
+      ...doc([]),
+      windows: [{ kind: "values", mode: "line", signals: [RPM] }],
+    };
+    expect((await t.post("/api/commands", { type: "view.open", view: bare })).status).toBe(200);
+    expect((await t.get("/api/workspace")).body.workspace.scope).toBeUndefined();
   });
 });

@@ -126,6 +126,43 @@ describe("ViewStore", () => {
     }
   });
 
+  it("writes the scope right after data and reads it back (add-scope)", () => {
+    const store = new ViewStore(dir);
+    const scope = {
+      dataRef: "smart451",
+      from: "2026-10-13T13:00:00Z",
+      to: "2026-10-13T14:00:00Z",
+    };
+    // The document is written in the key order it has (shared `workspaceToView` puts scope after data).
+    const { kipscope, version, title, note, saved, data, ...rest } = DOC;
+    const ordered: ViewDoc = {
+      kipscope,
+      version,
+      title,
+      note,
+      saved,
+      data,
+      scope,
+      ...rest,
+    } as ViewDoc;
+    store.write("scoped", ordered);
+    const text = store.read("scoped") ?? "";
+    // The canonical example, with `scope:` inserted between `data:` and `linkTime:`.
+    const withScope = CANONICAL.replace(
+      "data:\n  - smart451\nlinkTime: true",
+      `data:\n  - smart451\nscope:\n  dataRef: smart451\n  from: 2026-10-13T13:00:00Z\n  to: 2026-10-13T14:00:00Z\nlinkTime: true`,
+    );
+    expect(withScope).not.toBe(CANONICAL);
+    expect(text).toBe(withScope);
+    const read = store.get("scoped");
+    expect(read?.ok).toBe(true);
+    if (read?.ok) {
+      expect(read.doc.scope).toEqual(scope);
+      expect(read.doc.version).toBe(1);
+      expect(read.warnings).toEqual([]);
+    }
+  });
+
   it("checks names before building any path", () => {
     const store = new ViewStore(dir);
     for (const name of ["../x", "a.b", "-x", "A", "a/b", ""]) {

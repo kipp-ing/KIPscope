@@ -5,8 +5,15 @@ import { join, resolve } from "node:path";
 import type { EventRow, StateRow } from "@kipscope/shared";
 import { buildApp } from "../../server/src/app.ts";
 import { Catalog } from "../../server/src/catalog.ts";
-import type { DataSource, RawPoint, SignalRef, SourceSignal } from "../../server/src/datasource.ts";
+import type {
+  DataSource,
+  RawPoint,
+  Scope,
+  SignalRef,
+  SourceSignal,
+} from "../../server/src/datasource.ts";
 import { loadDbcFiles } from "../../server/src/dbc.ts";
+import { CatalogStore } from "../../server/src/scope.ts";
 import { ViewStore } from "../../server/src/views.ts";
 import { WorkspaceStore } from "../../server/src/workspace.ts";
 import type { Io } from "../src/run.ts";
@@ -121,7 +128,9 @@ export function stubSource(): DataSource {
   return {
     info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
     ping: async () => {},
-    listSignals: async () => SIGNALS,
+    // A scope's list is the signals of its data ref (the stub keeps no per-row times for the rest).
+    listSignals: async (scope?: Scope) =>
+      scope ? SIGNALS.filter((s) => s.dataRef === scope.dataRef) : SIGNALS,
     extent: async (ref) => EXTENTS.get(id(ref)),
     before: async (ref, t) => [...(POINTS.get(id(ref)) ?? [])].reverse().find((p) => p.t < t),
     after: async (ref, t) => (POINTS.get(id(ref)) ?? []).find((p) => p.t >= t),
@@ -195,6 +204,7 @@ export interface Workspace {
   cursors: { a?: string; b?: string; diff: boolean };
   options: { digits: number };
   view?: { name?: string; title: string; note?: string; modified: boolean };
+  scope?: { dataRef: string; from: string; to: string };
 }
 
 /**
@@ -216,7 +226,22 @@ export async function startServer(options: { loadCatalog?: boolean } = {}): Prom
     },
     { beforeOpen: (previous) => views.beforeOpen(previous) },
   );
-  const app = buildApp({ catalog, source, workspace: store, views });
+  // The signal lists of scopes carry the same DBC metadata as the full catalog (add-scope Z10).
+  const catalogs = new CatalogStore({
+    mode: "full",
+    full: catalog,
+    create: (scope: Scope) =>
+      new Catalog(source, loadStubDbc, undefined, undefined, undefined, scope),
+  });
+  // `scope show` reads /api/meta, so the harness serves it (the source answers every ping).
+  const meta = {
+    build: { commit: null, dirty: false, startedAt: new Date("2026-10-19T08:00:00Z") },
+    source: source.info,
+    ping: async () => {},
+  };
+  const app = buildApp({ catalog, catalogs, source, workspace: store, views, meta } as Parameters<
+    typeof buildApp
+  >[0]);
   const requests: string[] = [];
   app.addHook("onRequest", async (request) => {
     requests.push(`${request.method} ${request.url.split("?")[0]}`);

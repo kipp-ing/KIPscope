@@ -1,5 +1,4 @@
 import {
-  type CommandResult,
   ImportViewRequest,
   MAX_VIEW_BYTES,
   PREVIOUS_VIEW,
@@ -14,9 +13,9 @@ import {
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
-import { apiError, commandStatus, parseInput } from "../http.ts";
+import { apiError, parseInput } from "../http.ts";
 import { parseViewText, savedNow, validViewName, viewSummary } from "../views.ts";
-import type { WorkspaceStore } from "../workspace.ts";
+import { type CommandAnswer, runCommand } from "./workspace.ts";
 
 const OpenBody = z.union([
   z.object({ name: z.string() }),
@@ -36,26 +35,26 @@ function viewExists(reply: FastifyReply, existing: ViewSummary) {
   });
 }
 
+/** Opens a view like POST /api/commands, its scope's signal list loaded first (add-scope Z10). */
 function open(
-  workspace: WorkspaceStore,
+  deps: AppDeps,
   reply: FastifyReply,
   view: unknown,
   name?: string,
-): CommandResult {
+): Promise<CommandAnswer> {
   // Opening `_previous` names no view, so a save afterwards asks for a title instead of failing.
   const command =
     name === undefined || name === PREVIOUS_VIEW
       ? { type: "view.open", view }
       : { type: "view.open", name, view };
-  const result = workspace.execute(command);
-  reply.code(commandStatus(result));
-  return result;
+  return runCommand(deps, command, reply);
 }
 
 /** Saved views (design V6); registered only when the app has a `ViewStore`. */
 export const viewRoutes =
-  ({ workspace, views }: AppDeps): FastifyPluginAsync =>
+  (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
+    const { workspace, views } = deps;
     if (!views) return;
 
     app.get("/api/views", async () => ({ views: views.list() }));
@@ -104,14 +103,14 @@ export const viewRoutes =
     app.post("/api/views/open", async (request, reply) => {
       const body = parseInput(OpenBody, request.body, reply);
       if (!body) return reply;
-      if ("view" in body) return open(workspace, reply, body.view);
+      if ("view" in body) return open(deps, reply, body.view);
       const { name } = body;
       if (!validViewName(name)) return invalidName(reply, name);
       // Read before executing: opening `_previous` reads it before the hook replaces it.
       const data = views.data(name);
       if (data === undefined) return apiError(reply, 404, "unknown_view", `no view ${name}`);
       if (!data.ok) return apiError(reply, 422, "invalid_view", `view ${name}: ${data.message}`);
-      return open(workspace, reply, data.data, name);
+      return open(deps, reply, data.data, name);
     });
 
     app.delete("/api/views/:name", async (request, reply) => {
@@ -155,12 +154,17 @@ export const viewRoutes =
       } catch (error) {
         return apiError(reply, 500, "view_io_failed", `view ${name} not written: ${String(error)}`);
       }
-      const answer: { view: ViewSummary; warnings: string[]; opened?: CommandResult } = {
+      const answer: { view: ViewSummary; warnings: string[]; opened?: CommandAnswer } = {
         view: viewSummary(name, doc),
         warnings: parsed.warnings,
       };
-      if (body.open === true)
-        answer.opened = workspace.execute({ type: "view.open", name, view: doc });
+      // The view is stored either way; `opened` tells whether it opened (503 when its scope's list
+      // did not load).
+      if (body.open === true) {
+        const opened = await runCommand(deps, { type: "view.open", name, view: doc }, reply);
+        answer.opened = opened;
+        reply.code(!opened.ok && "reason" in opened ? 503 : 200);
+      }
       return answer;
     });
   };

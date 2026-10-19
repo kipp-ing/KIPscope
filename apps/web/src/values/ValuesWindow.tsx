@@ -16,6 +16,7 @@ import "./values.css";
 import { fetchCursorValue } from "../api.ts";
 import type { DragSource, DropState } from "../chart/drag.ts";
 import { LIVE_REST_MS, useLiveCursor } from "../chart/live.ts";
+import { useScopeChange } from "../chart/rescope.ts";
 import { HINTS } from "../help/hints.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
@@ -73,6 +74,8 @@ function measureRoom(header: HTMLElement): TimesRoom {
 interface Props {
   window: WindowState;
   revision: number;
+  /** `scopeKey` of the workspace's scope: a change loads the values again (add-scope Z12). */
+  scopeKey: string;
   /** Committed state, not the preview. */
   cursors: CursorState;
   /** A cursor line is being dragged: dim the cells. */
@@ -163,6 +166,7 @@ function CellView({ cell }: { cell: Cell }) {
 export function ValuesWindow({
   window: w,
   revision,
+  scopeKey,
   cursors,
   dragging,
   digits,
@@ -232,6 +236,11 @@ export function ValuesWindow({
     [w.signals, rested, w.mode],
   );
   useEffect(() => liveLoader.update(lRequests), [liveLoader, lRequests]);
+  // A new scope: every value again, a value next to the old scope's edge may differ (add-scope Z12).
+  useScopeChange(scopeKey, () => {
+    loader.rescope();
+    liveLoader.rescope();
+  });
   const liveRequestOf = new Map(lRequests.map((r) => [r.key, r]));
 
   // --- view -----------------------------------------------------------------------------------

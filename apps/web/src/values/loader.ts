@@ -35,6 +35,8 @@ export class ValueLoader {
   private readonly controllers = new Map<string, AbortController>();
   private readonly latest = new Map<string, number>();
   private seq = 0;
+  /** The requests of the last update. */
+  private order: ValueRequest[] = [];
 
   constructor(fetch: FetchValue, onChange: () => void) {
     this.fetch = fetch;
@@ -65,12 +67,22 @@ export class ValueLoader {
         changed = true;
       }
     }
+    this.order = requests;
     for (const request of requests) {
       if (this.states.get(request.key)?.request === requestId(request)) continue;
       this.start(request);
       changed = true;
     }
     if (changed) this.onChange();
+  }
+
+  /**
+   * The workspace's scope changed (add-scope Z12): every request starts again, a value next to the
+   * old scope's edge may differ; each row keeps showing its result meanwhile.
+   */
+  rescope(): void {
+    for (const request of this.order) this.start(request);
+    if (this.order.length > 0) this.onChange();
   }
 
   /**
@@ -82,6 +94,7 @@ export class ValueLoader {
     this.controllers.clear();
     this.states.clear();
     this.latest.clear();
+    this.order = [];
   }
 
   private start(request: ValueRequest): void {

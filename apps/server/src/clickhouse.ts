@@ -17,6 +17,7 @@ import type {
   DataSource,
   RawPoint,
   RefBucket,
+  Scope,
   SeriesRef,
   SignalRef,
   SourceInfo,
@@ -137,6 +138,19 @@ export class ClickHouseSource implements DataSource {
   }
 
   /**
+   * Both time bounds of a scoped call (design Z3), appended to a WHERE that already selects the
+   * data ref; empty without a scope, so unscoped query texts stay as they were.
+   */
+  private inScope(scope: Scope | undefined): { sql: string; params: Params } {
+    if (!scope) return { sql: "", params: {} };
+    const { time } = this.c;
+    return {
+      sql: ` AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")}`,
+      params: { from: scope.from, to: scope.to },
+    };
+  }
+
+  /**
    * SNA predicate on the value column (design S3) with its parameters: true when the value lies in
    * one of the ref's closed SNA ranges; the constant 0 with no parameters when it has none.
    */
@@ -163,8 +177,9 @@ export class ClickHouseSource implements DataSource {
     text === undefined ? { t: BigInt(t), v } : { t: BigInt(t), v, text };
 
   // The signal list, then the signals with text (state names, design N2); a missing text column
-  // means none has text.
-  async listSignals(abort?: AbortSignal): Promise<SourceSignal[]> {
+  // means none has text. A scope's list is one grouped query with the text flag (design Z3).
+  async listSignals(scope?: Scope, abort?: AbortSignal): Promise<SourceSignal[]> {
+    if (scope) return this.scopeSignals(scope, abort);
     const { dataRef, signal, text } = this.c;
     const rows = await this.rows<[string, string]>(
       `SELECT DISTINCT ${dataRef}, ${signal} FROM ${this.table} ORDER BY ${dataRef}, ${signal}`,
@@ -189,13 +204,42 @@ export class ClickHouseSource implements DataSource {
     );
   }
 
-  async extent(ref: SignalRef, abort?: AbortSignal) {
+  private async scopeSignals(scope: Scope, abort?: AbortSignal): Promise<SourceSignal[]> {
+    const { dataRef, signal, text } = this.c;
+    const filter = this.inScope(scope);
+    const where = `WHERE ${dataRef} = {ref:String}${filter.sql}`;
+    const params = { ref: scope.dataRef, ...filter.params };
+    let rows: [string, string?][];
+    try {
+      rows = await this.rows<[string, string]>(
+        `SELECT ${signal}, countIf(${text} != '') FROM ${this.table} ${where}
+         GROUP BY ${signal} ORDER BY ${signal}`,
+        params,
+        abort,
+      );
+    } catch (error) {
+      if (!hasCode(error, MISSING_COLUMN)) throw error;
+      rows = await this.rows<[string]>(
+        `SELECT ${signal} FROM ${this.table} ${where} GROUP BY ${signal} ORDER BY ${signal}`,
+        params,
+        abort,
+      );
+    }
+    return rows.map(([name, withText]) =>
+      Number(withText ?? 0) > 0
+        ? { dataRef: scope.dataRef, name, text: true }
+        : { dataRef: scope.dataRef, name },
+    );
+  }
+
+  async extent(ref: SignalRef, scope?: Scope, abort?: AbortSignal) {
     const { time } = this.c;
+    const filter = this.inScope(scope);
     const [row] = await this.rows<[string, string, string]>(
       `SELECT count(), toString(toUnixTimestamp64Nano(min(${time}))),
               toString(toUnixTimestamp64Nano(max(${time})))
-       FROM ${this.table} WHERE ${this.signalFilter}`,
-      { ref: ref.dataRef, sig: ref.name },
+       FROM ${this.table} WHERE ${this.signalFilter}${filter.sql}`,
+      { ref: ref.dataRef, sig: ref.name, ...filter.params },
       abort,
     );
     if (!row || Number(row[0]) === 0) return undefined;
@@ -233,27 +277,29 @@ export class ClickHouseSource implements DataSource {
     return rows.map(this.point);
   }
 
-  async before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
+  async before(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal) {
     const { time } = this.c;
     const { columns, params } = this.pointColumns(ref);
+    const filter = this.inScope(scope);
     const [row] = await this.rows<PointRow>(
       `SELECT ${columns} FROM ${this.table}
-       WHERE ${this.signalFilter} AND ${time} < ${this.ns("t")}
+       WHERE ${this.signalFilter} AND ${time} < ${this.ns("t")}${filter.sql}
        ORDER BY ${time} DESC LIMIT 1`,
-      { ref: ref.dataRef, sig: ref.name, t, ...params },
+      { ref: ref.dataRef, sig: ref.name, t, ...params, ...filter.params },
       abort,
     );
     return row && this.point(row);
   }
 
-  async after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
+  async after(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal) {
     const { time } = this.c;
     const { columns, params } = this.pointColumns(ref);
+    const filter = this.inScope(scope);
     const [row] = await this.rows<PointRow>(
       `SELECT ${columns} FROM ${this.table}
-       WHERE ${this.signalFilter} AND ${time} >= ${this.ns("t")}
+       WHERE ${this.signalFilter} AND ${time} >= ${this.ns("t")}${filter.sql}
        ORDER BY ${time} ASC LIMIT 1`,
-      { ref: ref.dataRef, sig: ref.name, t, ...params },
+      { ref: ref.dataRef, sig: ref.name, t, ...params, ...filter.params },
       abort,
     );
     return row && this.point(row);
@@ -295,13 +341,14 @@ export class ClickHouseSource implements DataSource {
 
   // The two density queries read only the data-ref column (partition and first sort key, so other
   // refs are pruned) and the time column; no per-row sort (design T7, D-007).
-  async refExtent(dataRef: string, abort?: AbortSignal) {
+  async refExtent(dataRef: string, scope?: Scope, abort?: AbortSignal) {
     const { dataRef: refColumn, time } = this.c;
+    const filter = this.inScope(scope);
     const [row] = await this.rows<[string, string, string]>(
       `SELECT count(), toString(toUnixTimestamp64Nano(min(${time}))),
               toString(toUnixTimestamp64Nano(max(${time})))
-       FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL`,
-      { ref: dataRef },
+       FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL${filter.sql}`,
+      { ref: dataRef, ...filter.params },
       abort,
     );
     if (!row || Number(row[0]) === 0) return undefined;
@@ -309,11 +356,12 @@ export class ClickHouseSource implements DataSource {
   }
 
   // A plain count() with only the data-ref filter: ClickHouse answers it from part metadata, since
-  // the data ref is the partition key (design G9 (b)).
-  async refCount(dataRef: string, abort?: AbortSignal) {
+  // the data ref is the partition key (design G9 (b)). In a scope it counts the rows in scope.
+  async refCount(dataRef: string, scope?: Scope, abort?: AbortSignal) {
+    const filter = this.inScope(scope);
     const [row] = await this.rows<[string]>(
-      `SELECT count() FROM ${this.table} WHERE ${this.c.dataRef} = {ref:String}`,
-      { ref: dataRef },
+      `SELECT count() FROM ${this.table} WHERE ${this.c.dataRef} = {ref:String}${filter.sql}`,
+      { ref: dataRef, ...filter.params },
       abort,
     );
     return Number(row?.[0] ?? 0);
@@ -324,15 +372,17 @@ export class ClickHouseSource implements DataSource {
     dataRef: string,
     width: bigint,
     times: boolean,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<RefBucket[]> {
     const { dataRef: refColumn, time } = this.c;
+    const filter = this.inScope(scope);
     const rows = await this.rows<[string, string, string?, string?]>(
       `WITH toUnixTimestamp64Nano(${time}) AS x
        SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count()${times ? ", toString(min(x)), toString(max(x))" : ""}
-       FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL
+       FROM ${this.table} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL${filter.sql}
        GROUP BY b`,
-      { ref: dataRef, w: width },
+      { ref: dataRef, w: width, ...filter.params },
       abort,
     );
     return rows.map(([b, count, first, last]) =>
@@ -345,20 +395,27 @@ export class ClickHouseSource implements DataSource {
   // One scan of the data-ref and time columns on a fixed floor grid: the bounding rows of every
   // silence of at least two grid widths are the `hi` and `lo` of consecutive non-empty buckets.
   // The first bucket's row only carries `last` and is never a gap (design G2).
-  async loggerGaps(dataRef: string, grid: bigint, minGap: bigint, abort?: AbortSignal) {
+  async loggerGaps(
+    dataRef: string,
+    grid: bigint,
+    minGap: bigint,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ) {
     const { dataRef: refColumn, time } = this.c;
+    const filter = this.inScope(scope);
     const rows = await this.rows<[string, string, string, string]>(
       `SELECT toString(prev_hi), toString(lo), toString(last), rn FROM (
          SELECT lo, lagInFrame(hi) OVER w AS prev_hi, row_number() OVER w AS rn, max(hi) OVER () AS last
          FROM (
            SELECT x - positiveModulo(x, {g:Int64}) AS b, min(x) AS lo, max(x) AS hi
            FROM (SELECT toUnixTimestamp64Nano(${time}) AS x FROM ${this.table}
-                 WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL)
+                 WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL${filter.sql})
            GROUP BY b)
          WINDOW w AS (ORDER BY b ROWS BETWEEN 1 PRECEDING AND CURRENT ROW))
        WHERE rn = 1 OR lo - prev_hi >= {min:Int64}
        ORDER BY lo`,
-      { ref: dataRef, g: grid, min: minGap },
+      { ref: dataRef, g: grid, min: minGap, ...filter.params },
       abort,
     );
     const gaps: { from: Timestamp; to: Timestamp }[] = [];
@@ -371,33 +428,41 @@ export class ClickHouseSource implements DataSource {
   }
 
   // Reads the listed signals in key order, at most `rows` per signal (design G3).
-  async firstTimes(dataRef: string, names: readonly string[], rows: number, abort?: AbortSignal) {
+  async firstTimes(
+    dataRef: string,
+    names: readonly string[],
+    rows: number,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ) {
     const times = new Map<string, Timestamp[]>();
     if (names.length === 0) return times;
     const { dataRef: refColumn, signal, time } = this.c;
+    const filter = this.inScope(scope);
     const result = await this.rows<[string, string[]]>(
       `SELECT ${signal}, groupArray(toString(toUnixTimestamp64Nano(${time}))) FROM (
          SELECT ${signal}, ${time} FROM ${this.table}
-         WHERE ${refColumn} = {ref:String} AND ${signal} IN {names:Array(String)} AND ${time} IS NOT NULL
+         WHERE ${refColumn} = {ref:String} AND ${signal} IN {names:Array(String)} AND ${time} IS NOT NULL${filter.sql}
          ORDER BY ${signal}, ${time} LIMIT {rows:UInt32} BY ${signal})
        GROUP BY ${signal}`,
-      { ref: dataRef, names: [...names], rows },
+      { ref: dataRef, names: [...names], rows, ...filter.params },
       abort,
     );
     for (const [name, ts] of result) times.set(name, ts.map(BigInt));
     return times;
   }
 
-  async events(dataRef: string, limit: number, abort?: AbortSignal) {
+  async events(dataRef: string, limit: number, scope?: Scope, abort?: AbortSignal) {
     const { dataRef: refColumn, time } = this.c;
+    const filter = this.inScope(scope);
     const { source, kind, name, value, text, detail } = this.e;
     try {
       const rows = await this.rows<[string, string, string, string, number | null, string, string]>(
         `SELECT toString(toUnixTimestamp64Nano(${time})), ${source}, ${kind}, ${name}, ${value},
                 ${text}, ${detail}
-         FROM ${this.eventsTable} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL
+         FROM ${this.eventsTable} WHERE ${refColumn} = {ref:String} AND ${time} IS NOT NULL${filter.sql}
          ORDER BY ${time}, ${kind}, ${source}, ${name} LIMIT {limit:UInt32}`,
-        { ref: dataRef, limit },
+        { ref: dataRef, limit, ...filter.params },
         abort,
       );
       return rows.map(
@@ -417,9 +482,16 @@ export class ClickHouseSource implements DataSource {
     }
   }
 
-  async stateChanges(ref: SeriesRef, by: StateChangeRule, limit: number, abort?: AbortSignal) {
+  async stateChanges(
+    ref: SeriesRef,
+    by: StateChangeRule,
+    limit: number,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ) {
     const { time, value, text } = this.c;
     const sna = this.isSna(ref);
+    const filter = this.inScope(scope);
     // A labels signal is named by its value, so it does not need the text column (design E7).
     const textColumn = by.kind === "text" ? text : "''";
     const changed =
@@ -440,12 +512,12 @@ export class ClickHouseSource implements DataSource {
                 lagInFrame(t_) OVER w AS pt, lagInFrame(v_) OVER w AS pv,
                 lagInFrame(x_) OVER w AS ptext, row_number() OVER w AS rn
          FROM ${this.table}
-         WHERE ${this.signalFilter} AND NOT ${sna.expr}
+         WHERE ${this.signalFilter} AND NOT ${sna.expr}${filter.sql}
          WINDOW w AS (ORDER BY t_ ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
        )
        WHERE rn = 1 OR ${changed}
        ORDER BY t_ LIMIT {limit:UInt32}`,
-      { ref: ref.dataRef, sig: ref.name, limit, ...sna.params, ...ruleParams },
+      { ref: ref.dataRef, sig: ref.name, limit, ...sna.params, ...ruleParams, ...filter.params },
       abort,
     );
     return rows.map(([t, v, x, pt, pv, ptext]): StateRow => {

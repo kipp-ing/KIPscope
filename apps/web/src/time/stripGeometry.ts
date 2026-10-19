@@ -320,6 +320,8 @@ export function resizeRange(tr: Track, view: Range, side: "from" | "to", dx: num
 
 /** extentRange([{ first, last }]): first to just after last, rounded up to the next ms. */
 export function wholeRange(d: Density): Range {
+  // A density of a scope spans exactly the scope (add-scope Z9).
+  if (d.scope) return { from: BigInt(d.scope.from), to: BigInt(d.scope.to) };
   return extentRange([{ first: d.first, last: d.last }]) as Range;
 }
 

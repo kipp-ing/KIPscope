@@ -76,7 +76,7 @@ describe("GET /api/extent over a real connection", () => {
   const source = {
     info: { kind: "clickhouse", database: "sdlog", table: "signals" },
     listSignals: async () => [{ dataRef: "car", name: "S" }],
-    extent: (_ref: unknown, abort?: AbortSignal) =>
+    extent: (_ref: unknown, _scope?: unknown, abort?: AbortSignal) =>
       new Promise((_resolve, reject) => {
         const entry = { aborted: false };
         seen.push(entry);

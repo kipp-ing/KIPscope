@@ -15,11 +15,19 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
-import type { RawPoint, SeriesRef } from "../datasource.ts";
+import type { RawPoint, Scope, SeriesRef } from "../datasource.ts";
 import { DensityCache } from "../density.ts";
 import { GapCache, workspaceSignals } from "../gaps.ts";
-import { apiError, parseInput } from "../http.ts";
+import {
+  apiError,
+  catalogsOf,
+  chainPrefetch,
+  outOfScope,
+  parseInput,
+  routeScope,
+} from "../http.ts";
 import { withPriority } from "../priority.ts";
+import { scopeOf, sourceScope } from "../scope.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
 
 const Time = TimeInput.transform(BigInt);
@@ -52,12 +60,30 @@ const ValueQuery = z.object({
   mode: ValuesMode.default("line"),
 });
 
+/** The workspace form of a source scope, for the catalog store. */
+const workspaceScope = (scope: Scope) => ({
+  dataRef: scope.dataRef,
+  from: scope.from.toString(),
+  to: scope.to.toString(),
+});
+
 export const seriesRoutes =
-  ({ catalog, source, workspace }: AppDeps): FastifyPluginAsync =>
+  (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    const density = new DensityCache(source, () => catalog.loadedAt);
+    const { catalog, source, workspace } = deps;
+    const catalogs = catalogsOf(deps);
+    // A scope's caches follow that scope's signal list (add-scope Z9).
+    const scopeCatalog = (scope: Scope) => catalogs.get(workspaceScope(scope));
+    const density = new DensityCache(source, (scope) =>
+      scope ? scopeCatalog(scope)?.loadedAt : catalog.loadedAt,
+    );
     // Periods are measured for the workspace's signals and the requests' only (design P6).
-    const gaps = new GapCache(source, catalog, () => workspaceSignals(workspace.workspace));
+    const gaps = new GapCache(
+      source,
+      catalog,
+      () => workspaceSignals(workspace.workspace),
+      scopeCatalog,
+    );
     const warn = (message: string) => app.log.warn(message);
     // Gap info polls (design G9 (b)): a setTimeout chain, each poll GAP_REFRESH_MS after the
     // previous poll or the catalog load's prefetch ended, so polls never overlap each other or a
@@ -70,8 +96,19 @@ export const seriesRoutes =
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(poll, GAP_REFRESH_MS);
     };
+    // With a scope only the active scope's gap info is polled (add-scope Z9); without one in
+    // scoped mode nothing is.
     const poll = () => {
       timer = undefined;
+      const scope = scopeOf(undefined, workspace);
+      if (scope) {
+        const s = sourceScope(scope);
+        polling = withPriority("background", () => gaps.refresh([s.dataRef], warn, s)).then(
+          schedule,
+        );
+        return;
+      }
+      if (catalogs.mode === "scoped") return schedule();
       const loadedAt = catalog.loadedAt;
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
       // Background class (design P9): requests go first and keep a slot of their own.
@@ -100,8 +137,26 @@ export const seriesRoutes =
           });
       }),
     );
+    // After a scope's list loads: its density, then its gap info, one after another and before the
+    // scope's events (add-scope Z9), as background work; then the poll is scheduled.
+    const stopScopePrefetch = catalogs.onLoaded((scope) => {
+      const s = sourceScope(scope);
+      chainPrefetch(deps, () =>
+        withPriority("background", async () => {
+          try {
+            await density.get(s.dataRef, s);
+          } catch (error) {
+            warn(`density prefetch for ${s.dataRef} failed: ${String(error)}`);
+          }
+          await polling;
+          await gaps.prefetch([s.dataRef], warn, s);
+          if (timer === undefined) schedule();
+        }),
+      );
+    });
     app.addHook("onClose", async () => {
       stopPrefetch();
+      stopScopePrefetch();
       closed = true;
       if (timer !== undefined) clearTimeout(timer);
     });
@@ -111,12 +166,18 @@ export const seriesRoutes =
       const query = parseInput(DensityQuery, request.query, reply);
       if (!query) return reply;
       const { dataRef } = query;
-      if (catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)) {
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const scope = scoped.source;
+      if (scope && dataRef !== scope.dataRef) {
+        return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
+      }
+      if (!scope && catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
         // Shared and cached, so a client close does not abort it (design T7).
-        const body = await density.get(dataRef);
+        const body = await density.get(dataRef, scope);
         if (!body) return apiError(reply, 404, "no_data", `no data for data ref: ${dataRef}`);
         return body;
       } catch (error) {
@@ -130,8 +191,14 @@ export const seriesRoutes =
       const query = parseInput(GapsQuery, request.query, reply);
       if (!query) return reply;
       const { dataRef, signal } = query;
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const scope = scoped.source;
+      if (scope && dataRef !== scope.dataRef) {
+        return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
+      }
       // Periods come from the catalog, so there is no gap info without one.
-      if (!catalog.loadedAt) {
+      if (!scoped.catalog?.loadedAt) {
         return apiError(
           reply,
           503,
@@ -139,12 +206,13 @@ export const seriesRoutes =
           "signal catalog not loaded yet; gaps cannot be computed",
         );
       }
-      if (!catalog.all().some((s) => s.dataRef === dataRef)) {
+      // A scope's list may be empty while the scope itself is valid.
+      if (!scope && !catalog.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
         // Shared and cached, so a client close does not abort it.
-        return await gaps.get(dataRef, signal);
+        return await gaps.get(dataRef, signal, scope);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
@@ -155,8 +223,21 @@ export const seriesRoutes =
     app.get("/api/extent", async (request, reply) => {
       const query = parseInput(ExtentQuery, request.query, reply);
       if (!query) return reply;
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const { catalog } = scoped;
+      const scope = scoped.source;
       const ref = parseSignalId(query.signal);
-      if (!ref || (catalog.loadedAt && !catalog.get(query.signal))) {
+      if (ref && scope && ref.dataRef !== scope.dataRef) {
+        return outOfScope(
+          reply,
+          `signal ${query.signal} is outside the scope on ${scope.dataRef}`,
+          {
+            signalId: query.signal,
+          },
+        );
+      }
+      if (!ref || (catalog?.loadedAt && !catalog.get(query.signal))) {
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -167,7 +248,7 @@ export const seriesRoutes =
       });
 
       try {
-        const extent = await source.extent(ref, controller.signal);
+        const extent = await source.extent(ref, scope, controller.signal);
         if (!extent) {
           return apiError(reply, 404, "no_data", `no data for signal: ${query.signal}`, {
             signalId: query.signal,
@@ -190,13 +271,31 @@ export const seriesRoutes =
     app.get("/api/series", async (request, reply) => {
       const query = parseInput(SeriesQuery, request.query, reply);
       if (!query) return reply;
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const scope = scoped.source;
       const range = {
         signalId: query.signal,
         from: query.from.toString(),
         to: query.to.toString(),
       };
+      // The range within the scope (add-scope Z10): never a query outside it.
+      let { from, to } = query;
+      if (scope) {
+        if (parseSignalId(query.signal)?.dataRef !== scope.dataRef) {
+          return outOfScope(
+            reply,
+            `signal ${query.signal} is outside the scope on ${scope.dataRef}`,
+            range,
+          );
+        }
+        if (from < scope.from) from = scope.from;
+        if (to > scope.to) to = scope.to;
+        if (to <= from) return outOfScope(reply, "the range lies outside the scope", range);
+      }
+      const catalog = scoped.catalog;
       // Without a catalog the server cannot tell SNA from valid values (spec series-query).
-      if (!catalog.loadedAt) {
+      if (!catalog?.loadedAt) {
         return apiError(
           reply,
           503,
@@ -223,9 +322,10 @@ export const seriesRoutes =
           source,
           seriesRef(catalog.get(query.signal) as SignalInfo, catalog.snaRanges(query.signal)),
           query.signal,
-          query.from,
-          query.to,
+          from,
+          to,
           query.target,
+          scope,
           controller.signal,
         );
       } catch (error) {
@@ -243,7 +343,21 @@ export const seriesRoutes =
       const query = parseInput(ValueQuery, request.query, reply);
       if (!query) return reply;
       const details = { signalId: query.signal };
-      if (!catalog.loadedAt) {
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const scope = scoped.source;
+      if (scope && parseSignalId(query.signal)?.dataRef !== scope.dataRef) {
+        return outOfScope(
+          reply,
+          `signal ${query.signal} is outside the scope on ${scope.dataRef}`,
+          details,
+        );
+      }
+      if (scope && (query.t < scope.from || query.t >= scope.to)) {
+        return outOfScope(reply, "the time lies outside the scope", details);
+      }
+      const catalog = scoped.catalog;
+      if (!catalog?.loadedAt) {
         return apiError(
           reply,
           503,
@@ -270,10 +384,10 @@ export const seriesRoutes =
         // before(t + 1) is the last point at or before t, after(t + 1) the first point after t.
         // Without gap info there is no value: it could lie across a gap (design G6).
         const [at, next, gapInfo] = await Promise.all([
-          source.before(ref, query.t + 1n, controller.signal),
-          source.after(ref, query.t + 1n, controller.signal),
+          source.before(ref, query.t + 1n, scope, controller.signal),
+          source.after(ref, query.t + 1n, scope, controller.signal),
           // Its own period only, not every signal's (design P6).
-          gaps.get(info.dataRef, [query.signal]),
+          gaps.get(info.dataRef, [query.signal], scope),
         ]);
         // State names (add-events N2): the row text of a text signal, else the VAL_ label.
         const labelOf = (p: RawPoint | undefined): string | undefined =>

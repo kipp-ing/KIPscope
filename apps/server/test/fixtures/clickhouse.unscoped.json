@@ -1,0 +1,128 @@
+{
+  "listSignals": [
+    {
+      "query": "SELECT DISTINCT vehicle, signal FROM sdlog.conf_signals ORDER BY vehicle, signal",
+      "params": {}
+    },
+    {
+      "query": "SELECT DISTINCT vehicle, signal FROM sdlog.conf_signals WHERE text != ''",
+      "params": {}
+    }
+  ],
+  "before": [
+    {
+      "query": "SELECT toString(toUnixTimestamp64Nano(utc)), if(0, NULL, value) FROM sdlog.conf_signals\n       WHERE vehicle = {ref:String} AND signal = {sig:String} AND utc IS NOT NULL AND utc < fromUnixTimestamp64Nano({t:Int64}, 'UTC')\n       ORDER BY utc DESC LIMIT 1",
+      "params": {
+        "ref": "conf-a",
+        "sig": "Lin.RAMP",
+        "t": "1791158440000000000"
+      }
+    }
+  ],
+  "after": [
+    {
+      "query": "SELECT toString(toUnixTimestamp64Nano(utc)), if(0, NULL, value) FROM sdlog.conf_signals\n       WHERE vehicle = {ref:String} AND signal = {sig:String} AND utc IS NOT NULL AND utc >= fromUnixTimestamp64Nano({t:Int64}, 'UTC')\n       ORDER BY utc ASC LIMIT 1",
+      "params": {
+        "ref": "conf-a",
+        "sig": "Lin.RAMP",
+        "t": "1791158400000000000"
+      }
+    }
+  ],
+  "refBuckets with times": [
+    {
+      "query": "WITH toUnixTimestamp64Nano(utc) AS x\n       SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count(), toString(min(x)), toString(max(x))\n       FROM sdlog.conf_signals WHERE vehicle = {ref:String} AND utc IS NOT NULL\n       GROUP BY b",
+      "params": {
+        "ref": "conf-a",
+        "w": "60000000000"
+      }
+    }
+  ],
+  "refBuckets counts": [
+    {
+      "query": "WITH toUnixTimestamp64Nano(utc) AS x\n       SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count()\n       FROM sdlog.conf_signals WHERE vehicle = {ref:String} AND utc IS NOT NULL\n       GROUP BY b",
+      "params": {
+        "ref": "conf-a",
+        "w": "60000000000"
+      }
+    }
+  ],
+  "refCount": [
+    {
+      "query": "SELECT count() FROM sdlog.conf_signals WHERE vehicle = {ref:String}",
+      "params": {
+        "ref": "conf-a"
+      }
+    }
+  ],
+  "loggerGaps": [
+    {
+      "query": "SELECT toString(prev_hi), toString(lo), toString(last), rn FROM (\n         SELECT lo, lagInFrame(hi) OVER w AS prev_hi, row_number() OVER w AS rn, max(hi) OVER () AS last\n         FROM (\n           SELECT x - positiveModulo(x, {g:Int64}) AS b, min(x) AS lo, max(x) AS hi\n           FROM (SELECT toUnixTimestamp64Nano(utc) AS x FROM sdlog.conf_signals\n                 WHERE vehicle = {ref:String} AND utc IS NOT NULL)\n           GROUP BY b)\n         WINDOW w AS (ORDER BY b ROWS BETWEEN 1 PRECEDING AND CURRENT ROW))\n       WHERE rn = 1 OR lo - prev_hi >= {min:Int64}\n       ORDER BY lo",
+      "params": {
+        "ref": "conf-a",
+        "g": "1000000000",
+        "min": "2000000000"
+      }
+    }
+  ],
+  "stateChanges by labels": [
+    {
+      "query": "SELECT toString(toUnixTimestamp64Nano(t_)), v_, x_,\n              if(rn = 1, '', toString(toUnixTimestamp64Nano(pt))), pv, ptext\n       FROM (\n         SELECT utc AS t_, value AS v_, '' AS x_,\n                lagInFrame(t_) OVER w AS pt, lagInFrame(v_) OVER w AS pv,\n                lagInFrame(x_) OVER w AS ptext, row_number() OVER w AS rn\n         FROM sdlog.conf_signals\n         WHERE vehicle = {ref:String} AND signal = {sig:String} AND utc IS NOT NULL AND NOT arrayExists((lo, hi) -> value >= lo AND value <= hi,\n                         {snaLo:Array(Float64)}, {snaHi:Array(Float64)})\n         WINDOW w AS (ORDER BY t_ ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)\n       )\n       WHERE rn = 1 OR abs(v_ - pv) > {tol:Float64} AND (arrayExists(l -> abs(v_ - l) <= {tol:Float64}, {labels:Array(Float64)})\n             OR arrayExists(l -> abs(pv - l) <= {tol:Float64}, {labels:Array(Float64)}))\n       ORDER BY t_ LIMIT {limit:UInt32}",
+      "params": {
+        "ref": "conf-a",
+        "sig": "State.MODE",
+        "limit": "100",
+        "snaLo": "14.5",
+        "snaHi": "15.5",
+        "tol": "0.5",
+        "labels": "0,3"
+      }
+    }
+  ],
+  "stateChanges by text": [
+    {
+      "query": "SELECT toString(toUnixTimestamp64Nano(t_)), v_, x_,\n              if(rn = 1, '', toString(toUnixTimestamp64Nano(pt))), pv, ptext\n       FROM (\n         SELECT utc AS t_, value AS v_, text AS x_,\n                lagInFrame(t_) OVER w AS pt, lagInFrame(v_) OVER w AS pv,\n                lagInFrame(x_) OVER w AS ptext, row_number() OVER w AS rn\n         FROM sdlog.conf_signals\n         WHERE vehicle = {ref:String} AND signal = {sig:String} AND utc IS NOT NULL AND NOT 0\n         WINDOW w AS (ORDER BY t_ ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)\n       )\n       WHERE rn = 1 OR x_ != ptext\n       ORDER BY t_ LIMIT {limit:UInt32}",
+      "params": {
+        "ref": "conf-a",
+        "sig": "Diag.door",
+        "limit": "100"
+      }
+    }
+  ],
+  "events": [
+    {
+      "query": "SELECT toString(toUnixTimestamp64Nano(utc)), source, kind, name, value,\n                text, detail\n         FROM sdlog.conf_events WHERE vehicle = {ref:String} AND utc IS NOT NULL\n         ORDER BY utc, kind, source, name LIMIT {limit:UInt32}",
+      "params": {
+        "ref": "conf-a",
+        "limit": "100"
+      }
+    }
+  ],
+  "extent": [
+    {
+      "query": "SELECT count(), toString(toUnixTimestamp64Nano(min(utc))),\n              toString(toUnixTimestamp64Nano(max(utc)))\n       FROM sdlog.conf_signals WHERE vehicle = {ref:String} AND signal = {sig:String} AND utc IS NOT NULL",
+      "params": {
+        "ref": "conf-a",
+        "sig": "Lin.RAMP"
+      }
+    }
+  ],
+  "refExtent": [
+    {
+      "query": "SELECT count(), toString(toUnixTimestamp64Nano(min(utc))),\n              toString(toUnixTimestamp64Nano(max(utc)))\n       FROM sdlog.conf_signals WHERE vehicle = {ref:String} AND utc IS NOT NULL",
+      "params": {
+        "ref": "conf-a"
+      }
+    }
+  ],
+  "firstTimes": [
+    {
+      "query": "SELECT signal, groupArray(toString(toUnixTimestamp64Nano(utc))) FROM (\n         SELECT signal, utc FROM sdlog.conf_signals\n         WHERE vehicle = {ref:String} AND signal IN {names:Array(String)} AND utc IS NOT NULL\n         ORDER BY signal, utc LIMIT {rows:UInt32} BY signal)\n       GROUP BY signal",
+      "params": {
+        "ref": "conf-a",
+        "names": "Lin.RAMP,Sna.CODE",
+        "rows": "1001"
+      }
+    }
+  ]
+}

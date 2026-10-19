@@ -2,11 +2,11 @@
 
 How KIPscope reads recorded time series, what an adapter for a new database implements, and how to connect Azure Data Explorer (ADX). Specs: [data-source](../openspec/specs/data-source/spec.md), [adx-source](../openspec/specs/adx-source/spec.md). HTTP routes: [http-api.md](http-api.md).
 
-## 1. What a source is
+## What a source is
 
 A source is the database the server reads signals and events from. The server talks to it through one adapter (`apps/server/src/datasource.ts`); the browser and the CLI never see it, and the credentials stay on the server. Two adapters ship: ClickHouse (`clickhouse.ts`, the default) and ADX (`adx.ts`). One server reads one source, chosen by `KIPSCOPE_SOURCE`; to see two sources side by side, run two servers. Every adapter passes the same conformance suite (`apps/server/test/conformance/`), natively and "core only".
 
-## 2. Data model
+## Data model
 
 - **Signal rows:** (data ref, signal name, time, value, text). A **data ref** is one recording, e.g. a vehicle (`smart451`); the **signal name** is unique within it (`BMS.SOC`).
 - **ID:** a signal's ID is `<dataRef>/<name>`. A data ref must be non-empty and contain no `/`; the name must be non-empty. The catalog skips other listed entries with one warning per load.
@@ -17,7 +17,7 @@ A source is the database the server reads signals and events from. The server ta
 - **Events** (optional table): rows (data ref, time, source, kind, name, value, text, detail). Kinds KIPscope knows: `dtc` (a fault code; `value` is its ISO 14229 status byte), `state` (a state of a source, `detail` `from <state>` on a change), `nrc` (a refused diagnostic request), `isotp` (transport). From them the server derives a category per event (DTC `active`, `pending`, `stored`, …; state `change` or `snapshot`; `refused`, `transport`, `other`), see the [events spec](../openspec/specs/events/spec.md). A source without an events table has no events; nothing else changes.
 - **Rows without a time** are never returned by any method.
 
-## 3. The interface
+## The interface
 
 What an adapter author implements (`SourceAdapter` in `apps/server/src/datasource.ts`):
 
@@ -29,31 +29,38 @@ export interface SourceInfo {
   eventsTable?: string;  // label for log lines, e.g. `sdlog.events`
 }
 
+/** One data ref and a half-open window [from, to), from < to (section "Scope"). */
+export interface Scope {
+  dataRef: string;
+  from: Timestamp; // bigint ns
+  to: Timestamp;
+}
+
 export interface SourceAdapter {
   readonly info: SourceInfo;
   ping(abort: AbortSignal): Promise<void>;
-  listSignals(abort?: AbortSignal): Promise<SourceSignal[]>;
+  listSignals(scope?: Scope, abort?: AbortSignal): Promise<SourceSignal[]>;
   raw(ref: SeriesRef, from: Timestamp, to: Timestamp, limit?: number, abort?: AbortSignal): Promise<RawPoint[]>;
-  before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
-  after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal): Promise<RawPoint | undefined>;
+  before(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal): Promise<RawPoint | undefined>;
+  after(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal): Promise<RawPoint | undefined>;
   buckets(ref: SeriesRef, from: Timestamp, to: Timestamp, width: bigint, abort?: AbortSignal): Promise<Bucket[]>;
-  refBuckets(dataRef: string, width: bigint, times: boolean, abort?: AbortSignal): Promise<RefBucket[]>;
+  refBuckets(dataRef: string, width: bigint, times: boolean, scope?: Scope, abort?: AbortSignal): Promise<RefBucket[]>;
 
   // Optional fast paths; the server computes a missing one from the methods above.
   count?(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<number>;
-  extent?(ref: SignalRef, abort?: AbortSignal): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
-  refExtent?(dataRef: string, abort?: AbortSignal): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
-  refCount?(dataRef: string, abort?: AbortSignal): Promise<number>;
-  loggerGaps?(dataRef: string, grid: bigint, minGap: bigint, abort?: AbortSignal): Promise<LoggerGaps>;
-  firstTimes?(dataRef: string, names: readonly string[], rows: number, abort?: AbortSignal): Promise<Map<string, Timestamp[]>>;
-  stateChanges?(ref: SeriesRef, by: StateChangeRule, limit: number, abort?: AbortSignal): Promise<StateRow[]>;
+  extent?(ref: SignalRef, scope?: Scope, abort?: AbortSignal): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
+  refExtent?(dataRef: string, scope?: Scope, abort?: AbortSignal): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
+  refCount?(dataRef: string, scope?: Scope, abort?: AbortSignal): Promise<number>;
+  loggerGaps?(dataRef: string, grid: bigint, minGap: bigint, scope?: Scope, abort?: AbortSignal): Promise<LoggerGaps>;
+  firstTimes?(dataRef: string, names: readonly string[], rows: number, scope?: Scope, abort?: AbortSignal): Promise<Map<string, Timestamp[]>>;
+  stateChanges?(ref: SeriesRef, by: StateChangeRule, limit: number, scope?: Scope, abort?: AbortSignal): Promise<StateRow[]>;
 
   // Capability without fallback: absent, or `undefined` from it, means "no events table".
-  events?(dataRef: string, limit: number, abort?: AbortSignal): Promise<EventRow[] | undefined>;
+  events?(dataRef: string, limit: number, scope?: Scope, abort?: AbortSignal): Promise<EventRow[] | undefined>;
 }
 ```
 
-The server uses `DataSource = Required<SourceAdapter>`: `completeSource` (`fallbacks.ts`) fills in every optional method the adapter lacks, and the start log names the native ones (`source adx kipscope_test: native refCount, loggerGaps, stateChanges, events`).
+Eleven methods take an optional `scope` before `abort`; section "Scope" below says what it means. The server uses `DataSource = Required<SourceAdapter>`: `completeSource` (`fallbacks.ts`) fills in every optional method the adapter lacks, and the start log names the native ones (`source adx kipscope_test: native refCount, loggerGaps, stateChanges, events`).
 
 | Method | Kind | Semantics | Fallback | Measured cost, native → fallback | Native in |
 |---|---|---|---|---|---|
@@ -87,7 +94,7 @@ ClickHouse implements all 15 natively and sends the same queries as before the c
 | `stateChanges`, Ign MODE (63 k rows) | 8 ms / 225 B → 6 ms / 1.7 MB | 44 ms / 3 rows → reads all 63 k rows | 0.05–0.19 s / 17 rows → ≈ 5 MB | no: native on both |
 | `refBuckets` 9 s with row times (density) | 72 → 90 ms | 30 ms (counts only) | 5.7 s → ≈ +25 % | ClickHouse density keeps `times: false` |
 
-## 4. Rules
+## Rules
 
 - **Ranges** are half-open `[from, to)`; points come in ascending time order; bucket grids are `k · width` from the epoch, floored, also for negative times.
 - **Limits:** `raw` with `limit` returns the earliest `limit` points; `stateChanges` and `events` stop at `limit` rows. An adapter never returns fewer rows than asked because of an internal cap.
@@ -98,17 +105,60 @@ ClickHouse implements all 15 natively and sends the same queries as before the c
 - **The queue:** every method except `ping` and `info` runs through the server's query queue, at most `KIPSCOPE_QUERY_CONCURRENCY` (default 4) at once, each with `KIPSCOPE_QUERY_TIMEOUT_S` (default 30). Every query runs in one of four classes, highest first: `interactive` (HTTP requests, the catalog load), `metadata` (the metadata batch at case open), `background` (the prefetches after a catalog load, the gap polls), `preload` (neighbour preloading). A free slot goes to the oldest waiting query of the highest class; running queries are never preempted. Shared work that a higher-class request joins is raised to that class and ranks by when it was raised. One slot is kept for `interactive` queries (none with a limit of 1), so background work never takes the last free slot. Fallbacks sit outside the queue, so each of their inner queries takes its own slot, runs in its caller's class and carries the caller's abort.
 - **Time bounds:** callers send bounds within `TIME_MIN` … `TIME_MAX`; `extent` and `firstTimes` fallbacks use them as "all". A source with coarser resolution rounds bounds up to its next tick, so `[from, to)`, `before` and `after` hold for any nanosecond bound.
 
-## 5. Write an adapter
+## Scope
+
+A scope is one data ref and one half-open time window `[from, to)`, `from < to` (D-078). The workspace may hold one (`scope set` in the CLI, a view's scope, or the strip's **Widen**); while it does, the server passes it to every source call, and navigation, the catalog, the time strip, gaps and events stay inside it. Without a scope everything works as before.
+
+**The rule for every method that takes `scope`:** with a scope, the method answers exactly as if the source held only the timestamped rows (and event rows) of `scope.dataRef` with `scope.from ≤ time < scope.to`. Without a scope it answers as before. Where the method also takes a data ref or a `SignalRef`, the server never sends a scope of another data ref; an adapter may ignore `scope.dataRef` there, and must apply the time bounds. `abort` stays the last parameter.
+
+| Method | Signature | With a scope |
+|---|---|---|
+| `listSignals` (required) | `listSignals(scope?, abort?)` | signals of `scope.dataRef` with at least one row in the scope; `text` from those rows |
+| `before` (required) | `before(ref, t, scope?, abort?)` | last point in `[scope.from, min(t, scope.to))` |
+| `after` (required) | `after(ref, t, scope?, abort?)` | first point in `[max(t, scope.from), scope.to)` |
+| `refBuckets` (required) | `refBuckets(dataRef, width, times, scope?, abort?)` | non-empty buckets of the rows in the scope (an edge may cut a bucket) |
+| `extent` | `extent(ref, scope?, abort?)` | first and last point in the scope |
+| `refExtent` | `refExtent(dataRef, scope?, abort?)` | count, first and last of the rows in the scope |
+| `refCount` | `refCount(dataRef, scope?, abort?)` | rows in the scope (exact; no rows without time) |
+| `loggerGaps` | `loggerGaps(dataRef, grid, minGap, scope?, abort?)` | gaps between consecutive rows in the scope; `last` is the last row in the scope |
+| `firstTimes` | `firstTimes(dataRef, names, rows, scope?, abort?)` | up to `rows` times per name, from the rows in the scope; no query for `[]` |
+| `stateChanges` | `stateChanges(ref, by, limit, scope?, abort?)` | the first row in the scope, then each change within it |
+| `events` (capability) | `events(dataRef, limit, scope?, abort?)` | event rows in the scope |
+
+`raw`, `buckets` and `count` keep their signatures: they already take a range, and the server only sends ranges inside the active scope. `ping` reads no rows; it is the only query without a data ref and a time filter. In scoped mode (below) the server wraps the source in a guard: a data call without a scope, or a `raw`, `buckets` or `count` outside a loaded scope, fails before it reaches the adapter and is logged as a bug.
+
+**Fallbacks** (`fallbacks.ts`) pass the scope on and use `scope.from … scope.to` where they used `TIME_MIN … TIME_MAX`: `extent` is `after(ref, TIME_MIN, scope)` and `before(ref, TIME_MAX, scope)`; `refExtent` is `refBuckets(dataRef, 2^62, true, scope)`; `refCount` is `refExtent(dataRef, scope)`; `loggerGaps` is `refBuckets(dataRef, grid, true, scope)`; `firstTimes` is `raw(name, scope.from, scope.to, rows)` per name; the `stateChanges` page scan runs from `scope.from` to `scope.to`; `count` is unchanged. Queue classes, aborts and the scan limits stay as they are.
+
+**Filter shapes.** An adapter applies the scope as one filter on the data-ref column and both bounds of the time column, all as query parameters:
+
+- ClickHouse: every query of a scoped call adds `AND <data-ref column> = {ref} AND <time column> >= {from} AND <time column> < {to}`. `listSignals(scope)` is one `GROUP BY` signal query over the scoped rows with the text flag. Unscoped calls send the same query texts as before.
+- ADX: one helper builds the scoped table expression `<table> | where <data-ref column> == sref and <time column> >= sfrom and <time column> < sto` with the parameters `sref`, `sfrom`, `sto` (bounds rounded up to the tick as before); every scoped query starts from it instead of the bare table, and the events table uses the same helper. A native `firstTimes` must take the scope too.
+
+**Conformance.** The suite (`apps/server/test/conformance/suite.ts`) runs five scoped cases, natively and core only, over its fixture with three scopes: one that holds part of a heartbeat signal on both sides of a logger gap plus two door events, one early window over several signals of one data ref while a second data ref has rows in the same times, and one that starts inside the logger gap.
+
+| Case | What it checks |
+|---|---|
+| "lists the signals of a scope" | `listSignals` lists exactly the signals with rows in the scope, with the text flag from those rows, and none of the other data ref |
+| "bounds the data-ref methods by a scope" | `refExtent`, `refCount`, `refBuckets` (buckets cut by the edges), `loggerGaps` (a gap inside the scope; none when the scope starts in the gap), `events` (only the event rows in the scope) |
+| "bounds the signal methods by a scope" | `extent` of a signal in and of one without rows in the scope; `before` and `after` stop at the scope's edges |
+| "samples the first times in a scope" | `firstTimes` counts per name start at `scope.from`; an unknown name is absent |
+| "finds state changes in a scope" | `stateChanges` starts with the first row in the scope and lists only the changes within it, by value labels and by text |
+
+Every unscoped case keeps passing unchanged.
+
+**Catalog modes.** `KIPSCOPE_CATALOG=full` (default) loads the whole signal catalog at start, as before; a scope then narrows everything to it. `KIPSCOPE_CATALOG=scoped` loads no catalog at start and runs no prefetch or poll over all data refs: the catalog, signal search and data routes answer 409 `scope_required` until the workspace has a scope, and the signal list is loaded per scope (`listSignals(scope)`, at most four kept). Use it for a source too large to list or scan whole, such as a big ADX table. A view opened without its own scope gets one derived from its first signal's data ref and the union of its window ranges and cursors, widened by `KIPSCOPE_SCOPE_PAD` (default `1h`) on each side.
+
+## Write an adapter
 
 1. Implement `info`, `ping` and the 7 required methods of `SourceAdapter` in a new file under `apps/server/src/`.
-2. Add a kind to `createAdapter` (`apps/server/src/sources.ts`) and its settings to `SourceConfig` and `loadConfig` (`apps/server/src/config.ts`); list every new variable in `.env.example` and in section 8 below (`docs.test.ts` checks both).
+2. Add a kind to `createAdapter` (`apps/server/src/sources.ts`) and its settings to `SourceConfig` and `loadConfig` (`apps/server/src/config.ts`); list every new variable in `.env.example` and in section "All variables" below (`docs.test.ts` checks both).
 3. Seed the conformance fixture (`apps/server/test/conformance/fixture.ts`: 8 signals in two data refs, 17,082 rows, events) into a test instance of your database.
 4. Add a runner `apps/server/test/conformance/<kind>.conformance.test.ts` that calls `describeConformance({name, adapter, eventsMissing})`. It runs every case twice: `<kind> native` and `<kind> core only` (your adapter reduced to the 7 required methods, everything else from the fallbacks).
 5. Add a fast path only where the fallback measurably costs more than twice the native query, or moves megabytes; measure both on realistic data and keep the conformance run green.
 
 The footer shows a new kind as given (`memory fixture`); `adx` and `clickhouse` have labels.
 
-## 6. Connect your ADX
+## Connect your ADX
 
 1. Install the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) on the machine that runs the server, so `az` is on its `PATH`.
 2. `az login` (add `--tenant <tenant id>` when your account has several tenants). KIPscope runs `az account get-access-token --resource <cluster>` and keeps the token in memory only, until 5 minutes before it expires; nothing is stored.
@@ -152,7 +202,7 @@ Troubleshooting, by message:
 | `LimitsExceeded`, `LowMemoryCondition` | an answer exceeded ADX's result limits (500,000 rows, 64 MB) or memory; KIPscope shows an error instead of partial data. |
 | timeout | the query ran longer than `KIPSCOPE_QUERY_TIMEOUT_S` (sent as `servertimeout`). |
 
-## 7. Try it on the emulator
+## Try it on the emulator
 
 The Kusto emulator (Kustainer, image pinned in `docker-compose.yml`, amd64, emulated on arm64; 1.2 GB) runs on `127.0.0.1:8125` without authentication:
 
@@ -175,7 +225,7 @@ pnpm --filter @kipscope/server start
 
 Then `curl -s localhost:7311/api/meta | jq -c '[.source.kind, .source.database, .source.reachable, .catalog.size]'` prints `["adx","kipscope_test",true,8]`. The ADX conformance run: `pnpm --filter @kipscope/server test:adx` (`TEST_ADX_URL`, default `http://127.0.0.1:8125`).
 
-## 8. All variables
+## All variables
 
 Every variable `apps/server/src/config.ts` reads. The server reads them from the environment or `.env` (see `.env.example`); nothing reaches the browser. Table and column names must match `^[A-Za-z_][A-Za-z0-9_]*$`.
 
@@ -215,5 +265,7 @@ Server settings, independent of the source:
 | `KIPSCOPE_DIAG_CATALOGS` | smart451 `bms-live.manifest.json` | comma list, relative to the repo root |
 | `KIPSCOPE_PROJECT_FILE` | `kipscope.yaml` (optional) | must exist when set |
 | `KIPSCOPE_STATE_DIR` | `.kipscope` | workspace state and saved views |
+| `KIPSCOPE_CATALOG` | `full` | `full` (catalog of all data refs at start) or `scoped` (a signal list per scope only, section "Scope"); any other value stops the server |
+| `KIPSCOPE_SCOPE_PAD` | `1h` | a CLI duration ≥ 0 (`30min`, `1h`, `0s`): padding on each side of a scope derived from a view (section "Scope") |
 
 Test-only: `TEST_CLICKHOUSE_URL`, `TEST_CLICKHOUSE_USER`, `TEST_CLICKHOUSE_PASSWORD` (ClickHouse test DB on 8124) and `TEST_ADX_URL` (emulator, default `http://127.0.0.1:8125`).

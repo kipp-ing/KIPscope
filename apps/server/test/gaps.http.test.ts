@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { scopeApp } from "./scopeApp.ts";
 import { testCatalog, testSource } from "./testdb.ts";
 
 const workspace = () => new WorkspaceStore({ signalExists: () => true, hasStates: () => false });
@@ -112,6 +113,34 @@ describe("GET /api/gaps (test DB)", () => {
       expect(res.json().error.code).toBe("catalog_unavailable");
     } finally {
       await cold.close();
+    }
+  });
+});
+
+describe("GET /api/gaps with a scope (add-scope)", () => {
+  it("lists the logger gaps of a scope", async () => {
+    const t = await scopeApp({ adapter: testSource() });
+    try {
+      // G = 2026-10-03T00:00:00Z: the scope is 00:05:00 - 00:10:00. The pause P1 (00:04:59.98 -
+      // 00:06:00.00) starts before the scope's first row, so it is no gap in it; P2 (00:09:40 -
+      // 00:09:42) is.
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "gapcar",
+        from: "1790985900000000000",
+        to: "1790986200000000000",
+      });
+      expect(set.status).toBe(200);
+      const res = await t.get("/api/gaps?dataRef=gapcar");
+      expect(res.status).toBe(200);
+      expect(res.body.logger).toEqual([{ from: "1790986180000000000", to: "1790986182000000000" }]);
+      expect(res.body.through).toBe("1790986199980000000");
+      // Another data ref than the scope's is out of scope.
+      const other = await t.get("/api/gaps?dataRef=testcar");
+      expect(other.status).toBe(409);
+      expect(other.body.error.code).toBe("out_of_scope");
+    } finally {
+      await t.close();
     }
   });
 });

@@ -5,6 +5,7 @@ import type {
   LoggerGaps,
   RawPoint,
   RefBucket,
+  Scope,
   SeriesRef,
   SourceAdapter,
   SourceInfo,
@@ -51,6 +52,8 @@ const str = (value: string): KustoParam => ({ type: "string", value });
 const time = (value: Timestamp): KustoParam => ({ type: "datetime", value });
 const long = (value: bigint | number): KustoParam => ({ type: "long", value });
 
+type Params = Record<string, KustoParam>;
+
 /**
  * Azure Data Explorer adapter (design C6) over the Kusto REST client. The configured signals and
  * events names may be tables or stored functions without parameters; all values go in as query
@@ -85,6 +88,20 @@ export class AdxSource implements SourceAdapter {
     return this.client.ping(abort);
   }
 
+  /**
+   * `table` (signals or events) reduced to the rows of a scope (design Z3): the data-ref and both
+   * time filters come before any other operator, as parameters `sref`, `sfrom` and `sto` (bounds
+   * rounded up to the tick like every time parameter); the bare table without a scope.
+   */
+  private scoped(table: string, scope: Scope | undefined): { src: string; params: Params } {
+    if (!scope) return { src: table, params: {} };
+    const t = q(this.c.time);
+    return {
+      src: `${table} | where ${q(this.c.dataRef)} == sref and ${t} >= sfrom and ${t} < sto`,
+      params: { sref: str(scope.dataRef), sfrom: time(scope.from), sto: time(scope.to) },
+    };
+  }
+
   /** Rows of one signal with a time; binds `ref` and `sig`. */
   private get signalFilter(): string {
     return `${q(this.c.dataRef)} == ref and ${q(this.c.signal)} == sig and isnotnull(${q(this.c.time)})`;
@@ -103,26 +120,23 @@ export class AdxSource implements SourceAdapter {
     return p;
   };
 
-  async listSignals(abort?: AbortSignal): Promise<SourceSignal[]> {
+  async listSignals(scope?: Scope, abort?: AbortSignal): Promise<SourceSignal[]> {
+    const { src, params } = this.scoped(this.table, scope);
     const ref = q(this.c.dataRef);
     const sig = q(this.c.signal);
     const order = `order by ${ref} asc, ${sig} asc`;
     let rows: unknown[][];
     try {
       rows = await this.client.query(
-        `${this.table} | summarize n_ = countif(isnotempty(${q(this.c.text)})) by ${ref}, ${sig}
+        `${src} | summarize n_ = countif(isnotempty(${q(this.c.text)})) by ${ref}, ${sig}
          | project ${ref}, ${sig}, x_ = n_ > 0 | ${order}`,
-        {},
+        params,
         abort,
       );
     } catch (error) {
       // A missing text column means no text signals (design C6).
       if (!isMissing(error, this.c.text)) throw error;
-      rows = await this.client.query(
-        `${this.table} | distinct ${ref}, ${sig} | ${order}`,
-        {},
-        abort,
-      );
+      rows = await this.client.query(`${src} | distinct ${ref}, ${sig} | ${order}`, params, abort);
     }
     return rows.map(([dataRef, name, text]): SourceSignal => {
       const s: SourceSignal = { dataRef: dataRef as string, name: name as string };
@@ -155,24 +169,31 @@ export class AdxSource implements SourceAdapter {
     return rows.map(this.point);
   }
 
-  private async edge(ref: SeriesRef, at: Timestamp, side: "before" | "after", abort?: AbortSignal) {
+  private async edge(
+    ref: SeriesRef,
+    at: Timestamp,
+    side: "before" | "after",
+    scope?: Scope,
+    abort?: AbortSignal,
+  ) {
     const t = q(this.c.time);
     const [cond, dir] = side === "before" ? ["<", "desc"] : [">=", "asc"];
+    const { src, params } = this.scoped(this.table, scope);
     const [row] = await this.client.query(
-      `${this.table} | where ${this.signalFilter} and ${t} ${cond} at_
+      `${src} | where ${this.signalFilter} and ${t} ${cond} at_
        | extend v_ = todouble(${q(this.c.value)}) | top 1 by ${t} ${dir} | ${this.pointProjection(ref)}`,
-      { ref: str(ref.dataRef), sig: str(ref.name), at_: time(at) },
+      { ref: str(ref.dataRef), sig: str(ref.name), at_: time(at), ...params },
       abort,
     );
     return row && this.point(row);
   }
 
-  before(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
-    return this.edge(ref, t, "before", abort);
+  before(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal) {
+    return this.edge(ref, t, "before", scope, abort);
   }
 
-  after(ref: SeriesRef, t: Timestamp, abort?: AbortSignal) {
-    return this.edge(ref, t, "after", abort);
+  after(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal) {
+    return this.edge(ref, t, "after", scope, abort);
   }
 
   async buckets(
@@ -210,14 +231,16 @@ export class AdxSource implements SourceAdapter {
     dataRef: string,
     width: bigint,
     times: boolean,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<RefBucket[]> {
     const t = q(this.c.time);
+    const { src, params } = this.scoped(this.table, scope);
     const rows = await this.client.query(
-      `${this.table} | where ${q(this.c.dataRef)} == ref and isnotnull(${t}) | extend x_ = ${ns(t)}
+      `${src} | where ${q(this.c.dataRef)} == ref and isnotnull(${t}) | extend x_ = ${ns(t)}
        | summarize c_ = count()${times ? ", f_ = min(x_), l_ = max(x_)" : ""} by b_ = ${grid("x_", "w")}
        | project tostring(b_), c_${times ? ", tostring(f_), tostring(l_)" : ""}`,
-      { ref: str(dataRef), w: long(width) },
+      { ref: str(dataRef), w: long(width), ...params },
       abort,
     );
     return rows.map(([b, count, first, last]) => {
@@ -231,10 +254,11 @@ export class AdxSource implements SourceAdapter {
   }
 
   // Native: the fallback would scan the time column every gap refresh (design C2).
-  async refCount(dataRef: string, abort?: AbortSignal): Promise<number> {
+  async refCount(dataRef: string, scope?: Scope, abort?: AbortSignal): Promise<number> {
+    const { src, params } = this.scoped(this.table, scope);
     const [row] = await this.client.query(
-      `${this.table} | where ${q(this.c.dataRef)} == ref | count`,
-      { ref: str(dataRef) },
+      `${src} | where ${q(this.c.dataRef)} == ref | count`,
+      { ref: str(dataRef), ...params },
       abort,
     );
     return Number(row?.[0] ?? 0);
@@ -246,17 +270,19 @@ export class AdxSource implements SourceAdapter {
     dataRef: string,
     gridWidth: bigint,
     minGap: bigint,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<LoggerGaps> {
     const t = q(this.c.time);
+    const { src, params } = this.scoped(this.table, scope);
     const rows = await this.client.query(
-      `let g_ = ${this.table} | where ${q(this.c.dataRef)} == ref and isnotnull(${t})
+      `let g_ = ${src} | where ${q(this.c.dataRef)} == ref and isnotnull(${t})
          | extend x_ = ${ns(t)} | summarize lo_ = min(x_), hi_ = max(x_) by b_ = ${grid("x_", "g")};
        union
          (g_ | order by b_ asc | extend p_ = prev(hi_) | where isnotnull(p_) and lo_ - p_ >= m
              | project k_ = "gap", a_ = tostring(p_), z_ = tostring(lo_)),
          (g_ | summarize l_ = max(hi_) | where isnotnull(l_) | project k_ = "last", a_ = tostring(l_), z_ = "")`,
-      { ref: str(dataRef), g: long(gridWidth), m: long(minGap) },
+      { ref: str(dataRef), g: long(gridWidth), m: long(minGap), ...params },
       abort,
     );
     const gaps: { from: Timestamp; to: Timestamp }[] = [];
@@ -274,9 +300,11 @@ export class AdxSource implements SourceAdapter {
     ref: SeriesRef,
     by: StateChangeRule,
     limit: number,
+    scope?: Scope,
     abort?: AbortSignal,
   ): Promise<StateRow[]> {
     const t = q(this.c.time);
+    const { src, params } = this.scoped(this.table, scope);
     // A labels signal is named by its value, so it does not need the text column (design E7).
     const text = by.kind === "text" ? `tostring(${q(this.c.text)})` : `""`;
     let changed = "x_ != px_";
@@ -287,13 +315,13 @@ export class AdxSource implements SourceAdapter {
       changed = `abs(v_ - pv_) > ${tol} and (${near("v_")} or ${near("pv_")})`;
     }
     const rows = await this.client.query(
-      `${this.table} | where ${this.signalFilter} | extend v_ = todouble(${q(this.c.value)})
+      `${src} | where ${this.signalFilter} | extend v_ = todouble(${q(this.c.value)})
        | where not(${isSna(ref)}) | order by ${t} asc
        | extend t_ = ${t}, x_ = ${text}
        | extend pt_ = prev(t_), pv_ = prev(v_), px_ = prev(x_), rn_ = row_number()
        | where rn_ == 1 or ${changed} | take lim
        | project tostring(${ns("t_")}), v_, x_, iff(rn_ == 1, "", tostring(${ns("pt_")})), pv_, px_`,
-      { ref: str(ref.dataRef), sig: str(ref.name), lim: long(limit) },
+      { ref: str(ref.dataRef), sig: str(ref.name), lim: long(limit), ...params },
       abort,
     );
     return rows.map(([rt, v, x, pt, pv, px]): StateRow => {
@@ -303,16 +331,17 @@ export class AdxSource implements SourceAdapter {
     });
   }
 
-  async events(dataRef: string, limit: number, abort?: AbortSignal) {
+  async events(dataRef: string, limit: number, scope?: Scope, abort?: AbortSignal) {
     const t = q(this.c.time);
     const { table, source, kind, name, value, text, detail } = this.e;
+    const { src, params } = this.scoped(q(table), scope);
     try {
       const rows = await this.client.query(
-        `${q(table)} | where ${q(this.c.dataRef)} == ref and isnotnull(${t})
+        `${src} | where ${q(this.c.dataRef)} == ref and isnotnull(${t})
          | order by ${t} asc, ${q(kind)} asc, ${q(source)} asc, ${q(name)} asc | take lim
          | project tostring(${ns(t)}), tostring(${q(source)}), tostring(${q(kind)}),
              tostring(${q(name)}), todouble(${q(value)}), tostring(${q(text)}), tostring(${q(detail)})`,
-        { ref: str(dataRef), lim: long(limit) },
+        { ref: str(dataRef), lim: long(limit), ...params },
         abort,
       );
       return rows.map(

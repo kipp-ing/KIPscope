@@ -3,6 +3,7 @@ import type {
   DataSource,
   LoggerGaps,
   RawPoint,
+  Scope,
   SeriesRef,
   SignalRef,
   SourceAdapter,
@@ -99,19 +100,19 @@ export function completeSource(adapter: SourceAdapter): DataSource {
 
     extent:
       adapter.extent?.bind(adapter) ??
-      (async (ref, abort) => {
+      (async (ref, scope, abort) => {
         const signal = plain(ref.dataRef, ref.name);
         const [first, last] = await Promise.all([
-          adapter.after(signal, TIME_MIN, abort),
-          adapter.before(signal, TIME_MAX, abort),
+          adapter.after(signal, TIME_MIN, scope, abort),
+          adapter.before(signal, TIME_MAX, scope, abort),
         ]);
         return first && last ? { first: first.t, last: last.t } : undefined;
       }),
 
     refExtent:
       adapter.refExtent?.bind(adapter) ??
-      (async (dataRef, abort) => {
-        const buckets = await adapter.refBuckets(dataRef, MAX_BUCKET_WIDTH, true, abort);
+      (async (dataRef, scope, abort) => {
+        const buckets = await adapter.refBuckets(dataRef, MAX_BUCKET_WIDTH, true, scope, abort);
         let count = 0;
         let first: Timestamp | undefined;
         let last: Timestamp | undefined;
@@ -128,12 +129,13 @@ export function completeSource(adapter: SourceAdapter): DataSource {
     // The completed refExtent: native if the adapter has one.
     refCount:
       adapter.refCount?.bind(adapter) ??
-      (async (dataRef, abort) => (await source.refExtent(dataRef, abort))?.count ?? 0),
+      (async (dataRef, scope, abort) =>
+        (await source.refExtent(dataRef, scope, abort))?.count ?? 0),
 
     loggerGaps:
       adapter.loggerGaps?.bind(adapter) ??
-      (async (dataRef, grid, minGap, abort) => {
-        const buckets = (await adapter.refBuckets(dataRef, grid, true, abort))
+      (async (dataRef, grid, minGap, scope, abort) => {
+        const buckets = (await adapter.refBuckets(dataRef, grid, true, scope, abort))
           .filter((b) => b.first !== undefined && b.last !== undefined)
           .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
         const result: LoggerGaps = { gaps: [] };
@@ -152,12 +154,14 @@ export function completeSource(adapter: SourceAdapter): DataSource {
     // One `raw` per name; with a queued adapter at most `limit` of them run at once.
     firstTimes:
       adapter.firstTimes?.bind(adapter) ??
-      (async (dataRef, names, rows, abort) => {
+      (async (dataRef, names, rows, scope, abort) => {
         const times = new Map<string, Timestamp[]>();
         if (names.length === 0) return times;
         checkAbort(abort);
+        const from = scope?.from ?? TIME_MIN;
+        const to = scope?.to ?? TIME_MAX;
         const answers = await Promise.all(
-          names.map((name) => adapter.raw(plain(dataRef, name), TIME_MIN, TIME_MAX, rows, abort)),
+          names.map((name) => adapter.raw(plain(dataRef, name), from, to, rows, abort)),
         );
         for (const [i, name] of names.entries()) {
           const points = answers[i] as RawPoint[];
@@ -172,7 +176,7 @@ export function completeSource(adapter: SourceAdapter): DataSource {
 
     stateChanges:
       adapter.stateChanges?.bind(adapter) ??
-      ((ref, by, limit, abort) => scanStateChanges(adapter, ref, by, limit, abort)),
+      ((ref, by, limit, scope, abort) => scanStateChanges(adapter, ref, by, limit, scope, abort)),
 
     events: adapter.events?.bind(adapter) ?? (async () => undefined),
   };
@@ -189,8 +193,8 @@ function changed(by: StateChangeRule, point: RawPoint, prev: RawPoint): boolean 
 }
 
 /**
- * The stateChanges fallback: reads the signal page by page in time order, skips SNA points, and
- * keeps the first valid point plus every change, up to `limit` rows. Beyond STATE_SCAN_MAX points
+ * The stateChanges fallback: reads the signal page by page in time order (within the scope, if
+ * any), skips SNA points, and keeps the first valid point plus every change, up to `limit` rows. Beyond STATE_SCAN_MAX points
  * it throws ScanLimitError (the last page asks for one point more to tell).
  */
 async function scanStateChanges(
@@ -198,6 +202,7 @@ async function scanStateChanges(
   ref: SeriesRef,
   by: StateChangeRule,
   limit: number,
+  scope?: Scope,
   abort?: AbortSignal,
 ): Promise<StateRow[]> {
   // A labels signal is named by its value, so it does not need the text (design E7).
@@ -206,13 +211,14 @@ async function scanStateChanges(
   const textOf = (p: RawPoint) => (by.kind === "text" ? (p.text ?? "") : "");
   const rows: StateRow[] = [];
   let prev: RawPoint | undefined;
-  let from = TIME_MIN;
+  let from = scope?.from ?? TIME_MIN;
+  const to = scope?.to ?? TIME_MAX;
   let scanned = 0;
   while (rows.length < limit) {
     checkAbort(abort);
     const want = Math.min(STATE_SCAN_PAGE, STATE_SCAN_MAX - scanned);
     const last = scanned + want === STATE_SCAN_MAX;
-    const page = await adapter.raw(signal, from, TIME_MAX, last ? want + 1 : want, abort);
+    const page = await adapter.raw(signal, from, to, last ? want + 1 : want, abort);
     for (const point of page.slice(0, want)) {
       if (point.v === null) continue;
       if (!prev || changed(by, point, prev)) {

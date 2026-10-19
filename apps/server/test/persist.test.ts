@@ -61,6 +61,37 @@ describe("state file", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("restores workspace and revision with a scope (add-scope)", () => {
+    // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+    const T1 = "1790816400000000000";
+    const T2 = "1790820000000000000";
+    const a = new WorkspaceStore(ctx);
+    const persister = new StatePersister(path);
+    persister.subscribe(a);
+    expect(a.execute({ type: "window.create", from: T1, to: "1790817000000000000" }).ok).toBe(true);
+    expect(a.execute({ type: "scope.set", dataRef: "car", from: T1, to: T2 }).ok).toBe(true);
+    expect(a.execute({ type: "cursor.set", cursor: "a", t: "1790817000000000000" }).ok).toBe(true);
+    persister.flush();
+
+    const loaded = loadState(path);
+    expect(loaded?.revision).toBe(3);
+    expect(loaded?.workspace.scope).toEqual({ dataRef: "car", from: T1, to: T2 });
+    const b = new WorkspaceStore(ctx, {
+      initial: loaded as { revision: number; workspace: Workspace },
+    });
+    expect(b.workspace).toEqual(a.workspace);
+    expect(b.workspace.scope).toEqual({ dataRef: "car", from: T1, to: T2 });
+    // The restored scope still bounds commands: a cursor outside is refused.
+    expect(b.execute({ type: "cursor.set", cursor: "b", t: T2 })).toMatchObject({
+      ok: false,
+      code: "out_of_scope",
+    });
+    // Clearing it is saved and restored too.
+    expect(a.execute({ type: "scope.clear" }).ok).toBe(true);
+    persister.flush();
+    expect(loadState(path)?.workspace.scope).toBeUndefined();
+  });
+
   it("restores workspace and revision", () => {
     const a = new WorkspaceStore(ctx);
     const persister = new StatePersister(path);

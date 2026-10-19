@@ -1,9 +1,7 @@
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type AccessOptions, hostAllowed, originAllowed } from "./access.ts";
-import type { Catalog } from "./catalog.ts";
-import type { DataSource } from "./datasource.ts";
-import { apiError } from "./http.ts";
+import { apiError, type ScopeDeps } from "./http.ts";
 import { type MetaDeps, metaRoutes } from "./meta.ts";
 import { eventsRoutes } from "./routes/events.ts";
 import { seriesRoutes } from "./routes/series.ts";
@@ -16,10 +14,7 @@ import type { WorkspaceStore } from "./workspace.ts";
 /** Largest live channel message in bytes (design H4). */
 export const MAX_LIVE_PAYLOAD = 262_144;
 
-export interface AppDeps {
-  catalog: Catalog;
-  /** Source for series queries; in production wrapped by the query queue. */
-  source: DataSource;
+export interface AppDeps extends ScopeDeps {
   workspace: WorkspaceStore;
   /** Build and source labels plus the ping for `/api/meta`; without it the route answers 404 (tests only). */
   meta?: MetaDeps;

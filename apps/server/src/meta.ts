@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import type { CatalogState, ServerMeta } from "@kipscope/shared";
+import type { CatalogState, ServerMeta, Workspace } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { SourceInfo } from "./datasource.ts";
 import { apiError } from "./http.ts";
+import { type CatalogStore, scopeOf } from "./scope.ts";
 
 /** The repo's commit when the server started (design F2). */
 export interface BuildInfo {
@@ -75,20 +76,50 @@ async function pingOnce(ping: MetaDeps["ping"]): Promise<PingResult> {
   }
 }
 
-function catalogMeta(catalog: Catalog): ServerMeta["catalog"] {
+type CatalogStatus = Omit<ServerMeta["catalog"], "mode" | "scope">;
+
+function catalogStatus(catalog: Catalog): CatalogStatus {
   if (catalog.loadedAt)
     return { state: "loaded", size: catalog.size, loadedAt: catalog.loadedAt.toISOString() };
   const state: CatalogState = catalog.lastError !== undefined ? "failed" : "loading";
   return { state, size: catalog.size, reason: catalog.unavailableReason };
 }
 
+/**
+ * The catalog the workspace uses (add-scope Z5, Z10): with a scope that scope's list, else the
+ * full catalog in full mode and `no_scope` in scoped mode. Without a store: full mode.
+ */
+function catalogMeta(
+  catalogs: CatalogStore | undefined,
+  full: Catalog,
+  scope: ServerMeta["catalog"]["scope"],
+): ServerMeta["catalog"] {
+  const mode = catalogs?.mode ?? "full";
+  if (!scope) {
+    if (mode === "scoped") return { mode, state: "no_scope", size: 0 };
+    return { mode, ...catalogStatus(catalogs?.full ?? full) };
+  }
+  const catalog = catalogs?.get(scope);
+  const status: CatalogStatus = catalog
+    ? catalogStatus(catalog)
+    : {
+        state: "loading",
+        size: 0,
+        reason: "still loading: the scope's signal list has not loaded",
+      };
+  return { mode, ...status, scope };
+}
+
 /** `GET /api/meta` (build, source reachability, catalog state) and `GET /api/license` (design F2, F4). */
 export function metaRoutes(deps: {
   meta?: MetaDeps;
   catalog: Catalog;
+  /** Catalog mode and scope lists (add-scope Z10); absent: full mode with `catalog`. */
+  catalogs?: CatalogStore;
+  workspace?: { readonly workspace: Workspace };
   licenseText?: string;
 }): FastifyPluginAsync {
-  const { meta, catalog, licenseText } = deps;
+  const { meta, catalog, catalogs, workspace, licenseText } = deps;
   /** The ping in progress; concurrent requests share it (single flight), no cache beyond it. */
   let running: Promise<PingResult> | undefined;
   const check = (ping: MetaDeps["ping"]) => {
@@ -99,7 +130,7 @@ export function metaRoutes(deps: {
   };
 
   return async (app) => {
-    app.get("/api/meta", async (_request, reply) => {
+    app.get("/api/meta", async (request, reply) => {
       if (!meta) return apiError(reply, 404, "not_configured", "server meta not configured");
       const ping = await check(meta.ping);
       const body: ServerMeta = {
@@ -114,7 +145,11 @@ export function metaRoutes(deps: {
           table: meta.source.table,
           ...ping,
         },
-        catalog: catalogMeta(catalog),
+        catalog: catalogMeta(
+          catalogs,
+          catalog,
+          workspace ? scopeOf(request, workspace) : undefined,
+        ),
       };
       return body;
     });

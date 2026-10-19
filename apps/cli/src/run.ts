@@ -10,8 +10,10 @@ import {
   parseEventFilter,
   parseSignalId,
   type RenderStatus,
+  type ServerMeta,
   type SignalPage,
   type Workspace,
+  widenScope,
 } from "@kipscope/shared";
 import { type GlobalOptions, type Invocation, parseArgs, USAGE } from "./args.ts";
 import { type Client, createClient, type Deadline } from "./client.ts";
@@ -172,6 +174,40 @@ async function execute(
       }
       case "command":
         return await runCommand(invocation, options, client, lookups, deadline, body);
+      case "scope": {
+        const { revision, workspace } = await lookups.workspace();
+        if (invocation.action === "show") {
+          const meta = await client.get<ServerMeta>("/api/meta");
+          const { mode, state, size } = meta.catalog;
+          body.revision = revision;
+          body.data = {
+            ...(workspace.scope && { scope: workspace.scope }),
+            catalog: { mode, state, size },
+          };
+          if (workspace.scope) {
+            body.local = { from: local(workspace.scope.from), to: local(workspace.scope.to) };
+          }
+          return result("ok", body);
+        }
+        // widen: one absolute scope.set (design Z7), so two callers never widen twice by accident.
+        if (!workspace.scope) {
+          body.accepted = false;
+          throw new CliError(
+            "rejected",
+            "scope_required",
+            "the workspace has no scope; set one with scope set REF FROM TO",
+          );
+        }
+        const template = { type: "scope.set", ...widenScope(workspace.scope) } as const;
+        return await runCommand(
+          { kind: "command", template, raw: true },
+          options,
+          client,
+          lookups,
+          deadline,
+          body,
+        );
+      }
       case "view": {
         const opened = await runView(invocation, client, body);
         if (opened === undefined || !options.wait) return result("ok", body);

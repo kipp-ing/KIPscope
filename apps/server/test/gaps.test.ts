@@ -3,6 +3,7 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { memoryAdapter, scopeApp } from "./scopeApp.ts";
 import { testSource } from "./testdb.ts";
 
 const MS = 1_000_000n;
@@ -340,6 +341,78 @@ describe("gap info follows new rows", () => {
       expect(await loggerOf()).toEqual(gapAt(9n * S, 12n * S));
     } finally {
       await app.close();
+    }
+  });
+});
+
+describe("gap info of a scope (add-scope)", () => {
+  const F = 1790985900000000000n;
+  const T = 1790986200000000000n;
+  const scope = { dataRef: "gapcar", from: F, to: T };
+  const POLL_MS = 300_000;
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
+  afterEach(() => vi.useRealTimers());
+
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(0);
+  };
+
+  it("computes and polls the gap info of a scope", async () => {
+    // 1,001 rows of Cyc, 100 ms apart, from F + 1 s; Odd has one row; the pause F + 61 s - F + 63 s.
+    const cyc = Array.from({ length: 1001 }, (_, i) => F + 1_000_000_000n + BigInt(i) * 100n * MS);
+    const rows = cyc.filter((t) => t < F + 61n * S || t >= F + 63n * S);
+    const t = await scopeApp({
+      adapter: memoryAdapter([
+        { dataRef: "gapcar", name: "Cyc", rows: rows.map((x) => [x, 1]) },
+        { dataRef: "gapcar", name: "Odd", rows: [[F + 5n * S, 1]] },
+        { dataRef: "othercar", name: "Cyc", rows: [[F + 5n * S, 1]] },
+      ]),
+    });
+    try {
+      const start = t.calls.length;
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "gapcar",
+        from: F.toString(),
+        to: T.toString(),
+      });
+      expect(set.status).toBe(200);
+      await flush();
+      const ask = () => t.get("/api/gaps?dataRef=gapcar&signal=gapcar/Cyc");
+      const [one, two] = [await ask(), await ask()];
+      await flush();
+      expect(one.status).toBe(200);
+      expect(two.text).toBe(one.text);
+      // The logger gap of the pause, and the period measured from the scope's rows.
+      expect(one.body.logger).toEqual([
+        { from: (F + 60n * S + 900n * MS).toString(), to: (F + 63n * S).toString() },
+      ]);
+      expect(one.body.periods["gapcar/Cyc"]).toEqual({
+        ns: (100n * MS).toString(),
+        source: "measured",
+      });
+
+      const count = (name: string) => t.calls.slice(start).filter((c) => c.method === name);
+      expect(count("loggerGaps")).toHaveLength(1);
+      expect(count("firstTimes")).toHaveLength(1);
+      const countsBeforePoll = count("refCount").length;
+
+      // One poll, 5 min after the scope's prefetch: it counts the rows of the scope only.
+      await vi.advanceTimersByTimeAsync(POLL_MS + 1000);
+      await flush();
+      expect(count("refCount").length).toBe(countsBeforePoll + 1);
+      // The count did not change, so the poll computes nothing more.
+      expect(count("loggerGaps")).toHaveLength(1);
+      expect(count("firstTimes")).toHaveLength(1);
+
+      // Every call of the scope carries the scope, and none is made without one.
+      for (const name of ["loggerGaps", "firstTimes", "refCount"]) {
+        for (const call of count(name))
+          expect(call.args[name === "refCount" ? 1 : 3], name).toEqual(scope);
+      }
+      expect(t.calls.slice(start).filter((c) => c.method === "refExtent")).toEqual([]);
+    } finally {
+      await t.close();
     }
   });
 });

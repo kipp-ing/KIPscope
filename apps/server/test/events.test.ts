@@ -6,7 +6,7 @@ import {
   type StateRow,
 } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
-import type { SeriesRef, StateChangeRule } from "../src/datasource.ts";
+import type { Scope, SeriesRef, StateChangeRule } from "../src/datasource.ts";
 import { EventsCache } from "../src/events.ts";
 
 const s = (n: number) => String(BigInt(n) * 1_000_000_000n);
@@ -48,16 +48,21 @@ function fakeSource(
   changesOf: (ref: SeriesRef, limit: number) => StateRow[] = () => [],
 ) {
   return {
-    eventCalls: [] as { dataRef: string; limit: number }[],
-    changeCalls: [] as { ref: SeriesRef; by: StateChangeRule; limit: number }[],
+    eventCalls: [] as { dataRef: string; limit: number; scope?: Scope | undefined }[],
+    changeCalls: [] as {
+      ref: SeriesRef;
+      by: StateChangeRule;
+      limit: number;
+      scope?: Scope | undefined;
+    }[],
     info: { kind: "clickhouse", database: "sdlog", table: "signals", eventsTable: "sdlog.events" },
-    async events(dataRef: string, limit: number) {
-      this.eventCalls.push({ dataRef, limit });
+    async events(dataRef: string, limit: number, scope?: Scope) {
+      this.eventCalls.push({ dataRef, limit, scope });
       await Promise.resolve();
       return rowsOf(dataRef, limit);
     },
-    async stateChanges(ref: SeriesRef, by: StateChangeRule, limit: number) {
-      this.changeCalls.push({ ref, by, limit });
+    async stateChanges(ref: SeriesRef, by: StateChangeRule, limit: number, scope?: Scope) {
+      this.changeCalls.push({ ref, by, limit, scope });
       await Promise.resolve();
       return changesOf(ref, limit);
     },
@@ -242,5 +247,48 @@ describe("EventsCache", () => {
     expect(await cache.signal(lock.id)).toBe("in_events_table");
     // Neither asked the source for signal changes.
     expect(source.changeCalls).toHaveLength(0);
+  });
+});
+
+describe("EventsCache with a scope (add-scope)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const scope: Scope = { dataRef: "testcar", from: 1790816400000000000n, to: 1790820000000000000n };
+
+  it("loads table events and signal changes of a scope", async () => {
+    const source = fakeSource(
+      () => [note(1)],
+      () => [{ t: s(1), value: 0, text: "closed" }],
+    );
+    const catalog = fakeCatalog(door);
+    const cache = new EventsCache(source, catalog, vi.fn());
+    const answers = await Promise.all([
+      cache.table("testcar", scope),
+      cache.signal(door.id, scope),
+      cache.table("testcar", scope),
+    ]);
+    expect(Array.isArray((answers[1] as unknown[]) ?? [])).toBe(true);
+    // The table load is shared and the signal's own load found it ("in the events table" check):
+    // events and stateChanges were each called once, with the scope, and never without one.
+    expect(source.eventCalls).toHaveLength(1);
+    expect(source.changeCalls).toHaveLength(1);
+    expect(source.eventCalls[0]?.scope).toEqual(scope);
+    expect(source.changeCalls[0]?.scope).toEqual(scope);
+    expect([...source.eventCalls, ...source.changeCalls].every((c) => c.scope !== undefined)).toBe(
+      true,
+    );
+
+    // Cached per scope: the same scope loads nothing again, another scope loads again.
+    await cache.table("testcar", scope);
+    await cache.signal(door.id, scope);
+    expect(source.eventCalls).toHaveLength(1);
+    expect(source.changeCalls).toHaveLength(1);
+    const narrower = { ...scope, to: scope.to - 60_000_000_000n };
+    await cache.table("testcar", narrower);
+    expect(source.eventCalls).toHaveLength(2);
+    expect(source.eventCalls[1]?.scope).toEqual(narrower);
+
+    // Without a scope the source is asked without one, as before.
+    await cache.table("testcar");
+    expect(source.eventCalls[2]?.scope).toBeUndefined();
   });
 });

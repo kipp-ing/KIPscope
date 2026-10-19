@@ -6,7 +6,7 @@ import {
   type SeriesResult,
   type Timestamp,
 } from "@kipscope/shared";
-import type { DataSource, RawPoint, SeriesRef } from "./datasource.ts";
+import type { DataSource, RawPoint, Scope, SeriesRef } from "./datasource.ts";
 
 export const MIN_TARGET = 2;
 export const MAX_TARGET = 20_000;
@@ -46,7 +46,8 @@ export function edgePoint(p: RawPoint, text: boolean): EdgePoint {
  * with edge neighbors if the range holds at most `target` points, aggregated buckets otherwise.
  * SNA points (design S4) count towards `target`; they come back as null values and as per-bucket
  * `sna` counts, and never enter mean, min or max. Raw series of a text signal (`ref.text`) carry
- * each point's text (add-events N3); buckets are unchanged.
+ * each point's text (add-events N3); buckets are unchanged. With a scope (add-scope Z10), whose
+ * data ref is `ref`'s and which holds [from, to), the edge neighbours stay inside it.
  */
 export async function querySeries(
   source: DataSource,
@@ -55,6 +56,7 @@ export async function querySeries(
   from: Timestamp,
   to: Timestamp,
   target: number,
+  scope?: Scope,
   abort?: AbortSignal,
 ): Promise<SeriesResult> {
   if (to <= from) throw new RangeError("empty time range: to must be after from");
@@ -64,8 +66,8 @@ export async function querySeries(
   if (count <= target) {
     const [points, before, after] = await Promise.all([
       source.raw(ref, from, to, undefined, abort),
-      source.before(ref, from, abort),
-      source.after(ref, to, abort),
+      source.before(ref, from, scope, abort),
+      source.after(ref, to, scope, abort),
     ]);
     const result: RawSeries = {
       kind: "raw",

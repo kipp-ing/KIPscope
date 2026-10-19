@@ -10,7 +10,8 @@ import { KustoClient } from "../src/kusto.ts";
 import { type BuildInfo, type MetaDeps, PING_TIMEOUT_MS, readBuildInfo } from "../src/meta.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { adxEventMapping, adxMapping } from "./adxdb.ts";
-import { testDbcFiles, testSource } from "./testdb.ts";
+import { scopeApp } from "./scopeApp.ts";
+import { testClient, testDbcFiles, testSource } from "./testdb.ts";
 
 const LICENSE = readFileSync(resolve(import.meta.dirname, "../../../LICENSE"), "utf8");
 const STARTED = new Date("2026-10-16T13:07:10.000Z");
@@ -389,6 +390,60 @@ describe("credentials", () => {
       } finally {
         await app.close();
       }
+    }
+  });
+});
+
+describe("GET /api/meta with a scope (add-scope)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z.
+  const FROM = "2026-10-01 01:00:00";
+  const TO = "2026-10-01 02:00:00";
+
+  it("reports the scope and its signal list", async () => {
+    const t = await scopeApp({ adapter: testSource() });
+    try {
+      // Full mode before a scope: the full catalog, no scope.
+      const plain = (await t.get("/api/meta")).body.catalog;
+      expect(plain).toMatchObject({ mode: "full", state: "loaded" });
+      expect(plain).not.toHaveProperty("scope");
+
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T02:00:00Z",
+      });
+      expect(set.status).toBe(200);
+      const res = await t.get("/api/meta");
+      expect(res.status).toBe(200);
+      const catalog = res.body.catalog;
+      expect(catalog).toEqual({
+        mode: "full",
+        state: "loaded",
+        size: expect.any(Number),
+        loadedAt: expect.any(String),
+        scope: {
+          dataRef: "testcar",
+          from: "1790816400000000000",
+          to: "1790820000000000000",
+        },
+      });
+      expect(Number.isNaN(Date.parse(catalog.loadedAt))).toBe(false);
+      // Its size: the testcar signals with at least one row in [T1, T2), counted in the test DB.
+      const count = await testClient().query({
+        query: `SELECT count() FROM (SELECT DISTINCT signal FROM sdlog.signals
+                WHERE vehicle = 'testcar' AND utc >= toDateTime64('${FROM}', 3, 'UTC')
+                  AND utc < toDateTime64('${TO}', 3, 'UTC'))`,
+        format: "TabSeparated",
+      });
+      const expected = Number((await count.text()).trim());
+      expect(expected).toBeGreaterThan(0);
+      // The full catalog lists a thousand more (Many_700h and others outside the hour).
+      expect(catalog.size).toBe(expected);
+      expect(catalog.size).toBe(((await t.get("/api/catalog")).body.items as unknown[]).length);
+      expect(plain.size).toBeGreaterThan(catalog.size);
+    } finally {
+      await t.close();
     }
   });
 });

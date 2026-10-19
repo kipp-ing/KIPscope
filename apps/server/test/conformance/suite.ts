@@ -7,6 +7,7 @@ import { TIME_MAX, TIME_MIN } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import type {
   DataSource,
+  Scope,
   SeriesRef,
   SnaRange,
   SourceAdapter,
@@ -34,6 +35,19 @@ const ref = (
   text?: boolean,
 ): SeriesRef => (text === undefined ? { dataRef, name, sna } : { dataRef, name, sna, text });
 const ramp = ref("conf-a", "Lin.RAMP");
+
+/**
+ * The three scopes of design Z4 of add-scope over the C7 fixture, all on `conf-a`.
+ * SC (B + 170 s … 280 s) cuts the `Beat.HB` run on both sides and holds the logger gap (200 s … 260 s)
+ * and two `Diag.door` rows. SC2 (B + 5 s … 35 s) holds four signals, and `conf-b/Lin.RAMP` lies in the
+ * same times but is another data ref. SC3 (B + 230 s … 280 s) starts inside the logger gap.
+ */
+const SC: Scope = { dataRef: "conf-a", from: B + 170n * S, to: B + 280n * S };
+const SC2: Scope = { dataRef: "conf-a", from: B + 5n * S, to: B + 35n * S };
+const SC3: Scope = { dataRef: "conf-a", from: B + 230n * S, to: B + 280n * S };
+
+const sortedTimes = (list: bigint[] | undefined) =>
+  [...(list ?? [])].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
 
 const byId = (a: { dataRef: string; name: string }, b: { dataRef: string; name: string }) =>
   a.dataRef === b.dataRef ? (a.name < b.name ? -1 : 1) : a.dataRef < b.dataRef ? -1 : 1;
@@ -319,6 +333,137 @@ export function describeConformance(target: ConformanceTarget): void {
         );
       });
 
+      // The scoped cases (design Z4 of add-scope): the answer is as if the source held only the rows
+      // of the scope's data ref with from <= time < to. Expected values come from the fixture definition.
+
+      it("lists the signals of a scope", async () => {
+        const listed = (scope: Scope) =>
+          source
+            .listSignals(scope)
+            .then((list) =>
+              list
+                .map((s) => ({ dataRef: s.dataRef, name: s.name, text: s.text === true }))
+                .sort(byId),
+            );
+        expect(await listed(SC)).toEqual([
+          { dataRef: "conf-a", name: "Beat.HB", text: false },
+          { dataRef: "conf-a", name: "Diag.door", text: true },
+        ]);
+        // No `conf-b/Lin.RAMP`, although it has rows at the same times.
+        expect(await listed(SC2)).toEqual([
+          { dataRef: "conf-a", name: "Beat.HB", text: false },
+          { dataRef: "conf-a", name: "Lin.RAMP", text: false },
+          { dataRef: "conf-a", name: "Sna.CODE", text: false },
+          { dataRef: "conf-a", name: "State.MODE", text: false },
+        ]);
+      });
+
+      it("bounds the data-ref methods by a scope", async () => {
+        // SC holds Beat.HB k = 1700 … 2000 (301 rows) and 2600 … 2799 (200) and Diag.door at 180, 270 s.
+        expect(await source.refExtent("conf-a", SC)).toEqual({
+          count: 503,
+          first: B + 170n * S,
+          last: B + 279n * S + 900n * MS,
+        });
+        expect(await source.refCount("conf-a", SC)).toBe(503);
+        const buckets = (await source.refBuckets("conf-a", 60n * S, true, SC)).sort((x, y) =>
+          x.start < y.start ? -1 : 1,
+        );
+        expect(buckets).toEqual([
+          { start: B + 120n * S, count: 100, first: B + 170n * S, last: B + 179n * S + 900n * MS },
+          { start: B + 180n * S, count: 202, first: B + 180n * S, last: B + 200n * S },
+          { start: B + 240n * S, count: 201, first: B + 260n * S, last: B + 279n * S + 900n * MS },
+        ]);
+        const gaps = await source.loggerGaps("conf-a", S, 2n * S, SC);
+        expect(gaps.gaps).toEqual([{ from: B + 200n * S, to: B + 260n * S }]);
+        expect(gaps.last).toBe(B + 279n * S + 900n * MS);
+        // SC3 starts inside the logger gap: the pause is no gap in it.
+        const inside = await source.loggerGaps("conf-a", S, 2n * S, SC3);
+        expect(inside.gaps).toEqual([]);
+        expect(inside.last).toBe(B + 279n * S + 900n * MS);
+
+        const expected = fixtureEvents()
+          .filter((e) => e.dataRef === "conf-a" && e.t !== null && e.t >= SC.from && e.t < SC.to)
+          .map((e) => ({
+            t: String(e.t),
+            source: e.source,
+            kind: e.kind,
+            name: e.name,
+            value: e.value,
+            text: e.text,
+            detail: e.detail,
+          }));
+        expect(expected.map((e) => [e.name, e.text, e.t])).toEqual([
+          ["Diag.door", "open", String(B + 180n * S)],
+        ]);
+        const inScope = await source.events("conf-a", 100, SC);
+        const none = await source.events("conf-a", 100, SC2);
+        if (mode === "core only") {
+          expect(inScope).toBeUndefined();
+          expect(none).toBeUndefined();
+        } else {
+          expect(inScope).toEqual(expected);
+          expect(none).toEqual([]);
+        }
+      });
+
+      it("bounds the signal methods by a scope", async () => {
+        // SC2 holds Lin.RAMP n = 500 … 3,499 at B + n·10 ms.
+        expect(await source.extent(ramp, SC2)).toEqual({
+          first: B + 5n * S,
+          last: B + 34n * S + 990n * MS,
+        });
+        expect(await source.extent(ref("conf-a", "Fine.NS"), SC2)).toBeUndefined();
+        expect(await source.before(ramp, B + 5n * S, SC2)).toBeUndefined();
+        expect(await source.before(ramp, B + 40n * S, SC2)).toEqual({
+          t: B + 34n * S + 990n * MS,
+          v: 3499,
+        });
+        expect(await source.after(ramp, B, SC2)).toEqual({ t: B + 5n * S, v: 500 });
+        expect(await source.after(ramp, B + 35n * S, SC2)).toBeUndefined();
+      });
+
+      it("samples the first times in a scope", async () => {
+        const times = await source.firstTimes(
+          "conf-a",
+          ["Lin.RAMP", "Sna.CODE", "Beat.HB", "Nope.X"],
+          1001,
+          SC2,
+        );
+        expect([...times.keys()].sort()).toEqual(["Beat.HB", "Lin.RAMP", "Sna.CODE"]);
+        expect(sortedTimes(times.get("Lin.RAMP"))).toEqual(
+          Array.from({ length: 1001 }, (_, n) => B + 5n * S + BigInt(n) * 10n * MS),
+        );
+        // Sna.CODE n = 5 … 34 (30 rows), Beat.HB k = 50 … 349 (300 rows).
+        expect(sortedTimes(times.get("Sna.CODE"))).toEqual(
+          Array.from({ length: 30 }, (_, n) => B + BigInt(n + 5) * S),
+        );
+        expect(sortedTimes(times.get("Beat.HB"))).toEqual(
+          Array.from({ length: 300 }, (_, k) => B + BigInt(k + 50) * 100n * MS),
+        );
+      });
+
+      it("finds state changes in a scope", async () => {
+        const t = (ns: bigint) => ns.toString();
+        // State.MODE n = 50 … 349: 0 (n < 100), 3 (< 300), 15 = SNA (< 305), 3 after; the SNA run is no change.
+        const mode = ref("conf-a", "State.MODE", [{ lo: 14.5, hi: 15.5 }]);
+        const by: StateChangeRule = { kind: "labels", values: [0, 3], tolerance: 0.5 };
+        expect(await source.stateChanges(mode, by, 100, SC2)).toEqual([
+          { t: t(B + 5n * S), value: 0, text: "" },
+          {
+            t: t(B + 10n * S),
+            value: 3,
+            text: "",
+            prev: { t: t(B + 9n * S + 900n * MS), value: 0, text: "" },
+          },
+        ]);
+        // Diag.door is open at both of its rows in SC: the first row, and no change after it.
+        const door = ref("conf-a", "Diag.door", [], true);
+        expect(await source.stateChanges(door, { kind: "text" }, 100, SC)).toEqual([
+          { t: t(B + 180n * S), value: 0, text: "open" },
+        ]);
+      });
+
       it("lists events in order", async () => {
         const expected = fixtureEvents()
           .filter((e) => e.dataRef === "conf-a" && e.t !== null)
@@ -374,7 +519,7 @@ export function describeConformance(target: ConformanceTarget): void {
         await expect(source.raw(ramp, TIME_MIN, TIME_MAX, undefined, signal)).rejects.toBe(reason);
         await expect(source.buckets(ramp, TIME_MIN, TIME_MAX, S, signal)).rejects.toBe(reason);
         await expect(
-          source.firstTimes("conf-a", ["Lin.RAMP", "Sna.CODE"], 1001, signal),
+          source.firstTimes("conf-a", ["Lin.RAMP", "Sna.CODE"], 1001, undefined, signal),
         ).rejects.toBe(reason);
       });
     });

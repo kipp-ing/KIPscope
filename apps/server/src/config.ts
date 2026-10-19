@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
+import { parseDuration } from "@kipscope/shared";
 
 /** Column names of the long-format table (design D5). */
 export interface TableMapping {
@@ -61,7 +62,18 @@ export interface Config {
   projectFile: { path: string; required: boolean };
   /** Views and the state file (design V4); `KIPSCOPE_STATE_DIR`, default `<repo root>/.kipscope`. */
   stateDir: string;
+  /** `KIPSCOPE_CATALOG` (add-scope Z11): `full` loads the whole catalog at start, `scoped` only a scope's list. */
+  catalogMode: CatalogMode;
+  /** `KIPSCOPE_SCOPE_PAD` in ns, ≥ 0: padding on each side of a scope derived from a view (Z8, Z11). */
+  scopePad: bigint;
 }
+
+export const CATALOG_MODES = ["full", "scoped"] as const;
+export type CatalogMode = (typeof CATALOG_MODES)[number];
+
+const DEFAULT_SCOPE_PAD_TEXT = "1h";
+/** `KIPSCOPE_SCOPE_PAD` default (add-scope Z11), in ns. */
+export const DEFAULT_SCOPE_PAD = parseDuration(DEFAULT_SCOPE_PAD_TEXT);
 
 export const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -135,6 +147,28 @@ function positiveInt(env: Env, key: string, fallback: number): number {
   if (!Number.isInteger(value) || value <= 0)
     throw new Error(`${key}: not a positive integer: ${raw}`);
   return value;
+}
+
+function catalogMode(env: Env): CatalogMode {
+  const raw = env.KIPSCOPE_CATALOG || "full";
+  if (!(CATALOG_MODES as readonly string[]).includes(raw))
+    throw new Error(`KIPSCOPE_CATALOG: ${CATALOG_MODES.join(" or ")}, not ${raw}`);
+  return raw as CatalogMode;
+}
+
+/** A CLI duration (`30min`, `1h`, `0s`) of at least 0. */
+function scopePad(env: Env): bigint {
+  const key = "KIPSCOPE_SCOPE_PAD";
+  const raw = env[key] || DEFAULT_SCOPE_PAD_TEXT;
+  let pad: bigint;
+  try {
+    pad = parseDuration(raw);
+  } catch {
+    pad = -1n;
+  }
+  if (pad < 0n)
+    throw new Error(`${key}: a duration of at least 0 (e.g. 30min, 1h, 0s), not ${raw}`);
+  return pad;
 }
 
 function required(env: Env, key: string): string {
@@ -224,5 +258,7 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }
       : { path: resolve(root, "kipscope.yaml"), required: false },
     stateDir: resolve(root, env.KIPSCOPE_STATE_DIR || ".kipscope"),
+    catalogMode: catalogMode(env),
+    scopePad: scopePad(env),
   };
 }

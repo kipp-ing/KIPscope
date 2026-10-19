@@ -9,6 +9,7 @@ import { KustoClient } from "../src/kusto.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { adxEventMapping, adxMapping, adxMgmt, TEST_ADX_DATABASE, testAdxUrl } from "./adxdb.ts";
 import { B, FIXTURE_SIGNALS } from "./conformance/fixture.ts";
+import { SCOPE_S2, SCOPED_CALLS } from "./scopeCalls.ts";
 
 const S = 1_000_000_000n;
 
@@ -160,5 +161,64 @@ describe("ADX adapter on the emulator", () => {
       table: "signals",
       eventsTable: "kipscope_test.events",
     });
+  });
+});
+
+describe("ADX queries with a scope (add-scope Z3)", () => {
+  /** A client that records each query text and its parameters and answers no rows. */
+  function recordingAdapter() {
+    const sent: { csl: string; params: Record<string, { type: string; value: unknown }> }[] = [];
+    const fake = {
+      query: async (csl: string, params: Record<string, { type: string; value: unknown }>) => {
+        sent.push({ csl, params });
+        return [];
+      },
+      ping: async () => {},
+    };
+    return { source: new AdxSource(fake as never, adxMapping, adxEventMapping), sent };
+  }
+
+  it("scopes every query by data ref and time", async () => {
+    const { source, sent } = recordingAdapter();
+    // The adapter's own methods: extent, refExtent and firstTimes are the server's fallbacks (scoped
+    // by "passes the scope to every core call"), so the adapter sends nothing for them.
+    const fallbacks = ["extent", "refExtent", "firstTimes"];
+    let covered = 0;
+    for (const [method, call] of Object.entries(SCOPED_CALLS)) {
+      const before = sent.length;
+      await call(source, SCOPE_S2);
+      if (fallbacks.includes(method)) {
+        expect(sent.length, `${method} is no native method`).toBe(before);
+        continue;
+      }
+      covered++;
+      expect(sent.length, `${method} sent a query`).toBeGreaterThan(before);
+      for (const { csl, params } of sent.slice(before)) {
+        const text = csl.replace(/\s+/g, " ");
+        // Both filters are the first operator on the table (signals or events), as parameters.
+        expect(text, `${method}: ${text}`).toMatch(
+          /(signals|events)'\] \| where \['dataref'\] == sref and \['timestamp'\] >= sfrom and \['timestamp'\] < sto\b/,
+        );
+        expect(params.sref, method).toEqual({ type: "string", value: "conf-a" });
+        expect(params.sfrom, method).toEqual({ type: "datetime", value: B + 5n * S });
+        expect(params.sto, method).toEqual({ type: "datetime", value: B + 35n * S });
+        // No other operator sits between the table and the filter.
+        const first = text.search(/(signals|events)'\]/);
+        expect(text.slice(first), method).toMatch(
+          /^(signals|events)'\] \| where \['dataref'\] == sref/,
+        );
+      }
+    }
+    expect(covered).toBe(Object.keys(SCOPED_CALLS).length - fallbacks.length);
+  });
+
+  it("leaves unscoped queries without the scope parameters", async () => {
+    const { source, sent } = recordingAdapter();
+    for (const call of Object.values(SCOPED_CALLS)) await call(source, undefined);
+    expect(sent.length).toBeGreaterThan(0);
+    for (const { csl, params } of sent) {
+      expect(csl).not.toMatch(/\b(sref|sfrom|sto)\b/);
+      expect(Object.keys(params)).not.toContain("sref");
+    }
   });
 });

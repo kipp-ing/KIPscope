@@ -375,3 +375,67 @@ describe("link document", () => {
     );
   });
 });
+
+describe("scope in a view document (add-scope)", () => {
+  /** 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand. */
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const MIN = 60n * 1_000_000_000n;
+  const scoped: Workspace = {
+    ...EMPTY_WORKSPACE,
+    windows: [
+      {
+        id: "w1",
+        kind: "timeseries",
+        range: { from: NS(T1 + 10n * MIN), to: NS(T1 + 20n * MIN) },
+        display: { mode: "line", envelope: false },
+        signals: [{ id: "a2", signalId: "car/A" }],
+      },
+    ],
+    nextId: 3,
+    scope: { dataRef: "car", from: NS(T1), to: NS(T2) },
+  };
+
+  it("round-trips the scope of a view", () => {
+    const doc = workspaceToView(scoped, { title: "Scoped" });
+    expect(doc.version).toBe(1);
+    expect(doc.scope).toEqual({
+      dataRef: "car",
+      from: "2026-10-01T01:00:00Z",
+      to: "2026-10-01T02:00:00Z",
+    });
+    // Written right after `data`, so the YAML and the link hold it in that place.
+    const keys = Object.keys(doc);
+    expect(keys[keys.indexOf("data") + 1]).toBe("scope");
+
+    const parsed = parseViewDoc(JSON.parse(JSON.stringify(doc)));
+    if (!parsed.ok) throw new Error(parsed.message);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.doc.scope).toEqual(doc.scope);
+    const opened = openView(EMPTY_WORKSPACE, parsed.doc);
+    if (!opened.ok) throw new Error(`${opened.code}: ${opened.message}`);
+    expect(opened.workspace.scope).toEqual(scoped.scope);
+
+    // A link carries it too.
+    expect(linkViewDoc(scoped).scope).toEqual(doc.scope);
+    // Without a scope the document has no `scope` key at all.
+    const { scope: _scope, ...bare } = scoped;
+    expect("scope" in workspaceToView(bare, { title: "Bare" })).toBe(false);
+  });
+
+  it("refuses a scope whose end is not after its start", () => {
+    for (const to of ["2026-10-01T01:00:00Z", "2026-10-01T00:00:00Z"]) {
+      const result = parseViewDoc(
+        validDoc({ scope: { dataRef: "car", from: "2026-10-01T01:00:00Z", to } }),
+      );
+      expect(result).toMatchObject({ ok: false, code: "invalid_view" });
+    }
+    // The key is known: no unknown-key warning for a good scope.
+    const good = parseViewDoc(
+      validDoc({
+        scope: { dataRef: "car", from: "2026-10-01T01:00:00Z", to: "2026-10-01T02:00:00Z" },
+      }),
+    );
+    expect(good).toMatchObject({ ok: true, warnings: [] });
+  });
+});

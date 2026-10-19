@@ -17,6 +17,7 @@ import {
   type RenderError,
   resolveTimeNav,
   type SignalInfo,
+  scopeKey,
   shownName,
   signalColor,
   spanAround,
@@ -80,6 +81,7 @@ import {
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
 import { FLASH_MS, markTarget, revealDelta } from "./reveal.ts";
+import { resultStripEvents, scopeRange } from "./time/scope.ts";
 import { stripDataRef } from "./time/strip.ts";
 import { centreRange, stepDrive } from "./time/stripGeometry.ts";
 import {
@@ -314,7 +316,9 @@ export function App() {
   const unitOf = useCallback((id: string) => infos.current.get(id)?.unit, []);
 
   const workspace = live.workspace;
-  const meta = useMeta(live.connected);
+  // The scope's identity: windows load again and the footer's meta follows on a change (add-scope Z12).
+  const workspaceScope = scopeKey(workspace?.scope);
+  const meta = useMeta(live.connected, workspaceScope);
 
   // Next-step hints (H7, S1) retire for good once the workspace has shown B on, or Diff on.
   const [learned, setLearned] = useState(() => ({ b: hasLearned("b"), diff: hasLearned("diff") }));
@@ -433,12 +437,9 @@ export function App() {
   const command = useCallback(
     async (input: CommandInput): Promise<CommandResult> => {
       const result = await sendCommand(input);
-      // An accepted command ends an older error; a notice stays.
-      toStrip(
-        result.ok
-          ? { kind: "dismiss", tone: "error" }
-          : { kind: "error", text: `${result.code}: ${result.message}` },
-      );
+      // An accepted command ends an older error; a notice stays. A range moved into the scope
+      // says so (add-scope Z12).
+      for (const event of resultStripEvents(result)) toStrip(event);
       return result;
     },
     [toStrip],
@@ -625,11 +626,18 @@ export function App() {
       const view = pending?.range ?? toRange(w.range);
       const next = clampRange(r);
       if (sameRange(next, view)) return false;
-      if (push) {
+      // The server moves the range into the scope (add-scope Z6); the step expects that range and
+      // still sends `next`, so a step at the edge reports `clamped` (the message, Z12).
+      const expected = scopeRange(next, liveRef.current.workspace?.scope);
+      if (push && !sameRange(expected, view)) {
         historyOf(key).push(view);
         setHistoryVersion((v) => v + 1);
       }
-      const entry = { windowId, range: next, chain: [...(pending?.chain ?? [view]), next] };
+      const entry = {
+        windowId,
+        range: expected,
+        chain: [...(pending?.chain ?? [view]), expected],
+      };
       pendingNav.current.set(key, entry);
       const drop = () => {
         if (pendingNav.current.get(key) === entry) pendingNav.current.delete(key);
@@ -859,7 +867,7 @@ export function App() {
         e.preventDefault();
         if (e.repeat) return;
         const dataRef = stripDataRef(ws);
-        const density = dataRef ? loadedDensity(dataRef) : undefined;
+        const density = dataRef ? loadedDensity(dataRef, ws.scope) : undefined;
         const drives = density?.drives;
         const view = navView(target.id);
         const drive = drives && view && stepDrive(drives, view, key === "nextDrive" ? 1 : -1);
@@ -1400,6 +1408,7 @@ export function App() {
           />
         ))}
       <SignalExplorer
+        scope={workspace?.scope}
         windows={windows}
         onAdd={addSignal}
         onAddMany={addSignals}
@@ -1470,6 +1479,8 @@ export function App() {
               events={stripEvents}
               onOpenEvents={openEvents}
               drop={stripDrop}
+              mode={meta.meta?.catalog.mode}
+              onScopeCommand={command}
             />
           </div>
           {/* Hidden during a drag but kept in place, so nothing below it moves (B1, B2). */}
@@ -1499,6 +1510,7 @@ export function App() {
                     window={w}
                     revision={live.revision}
                     rangeSets={live.rangeSets}
+                    scopeKey={workspaceScope}
                     info={info}
                     colorOf={colorOf}
                     onCommand={command}
@@ -1526,6 +1538,7 @@ export function App() {
                   <ValuesWindow
                     window={w}
                     revision={live.revision}
+                    scopeKey={workspaceScope}
                     cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
                     dragging={cursorPreview !== undefined}
                     digits={digits}

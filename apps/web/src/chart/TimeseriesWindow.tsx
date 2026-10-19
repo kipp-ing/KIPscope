@@ -101,6 +101,7 @@ import {
   sourceCell,
   sourceDelta,
 } from "./readout.ts";
+import { useScopeChange } from "./rescope.ts";
 import { clampRange, type Range, RangePreview, WheelFrame, wheelAction } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
@@ -141,6 +142,8 @@ interface Props {
   revision: number;
   /** The tab's count of `window.setRange` pushes (live.rangeSets): a rise hands the requests to the loader again (H7). */
   rangeSets: number;
+  /** `scopeKey` of the workspace's scope: a change loads the window's failed signals again (add-scope Z12). */
+  scopeKey: string;
   info: (signalId: string) => SignalInfo | undefined;
   /** From signalColor(workspace, id). */
   colorOf: (signalId: string) => string;
@@ -706,6 +709,7 @@ export function TimeseriesWindow({
   window: w,
   revision,
   rangeSets,
+  scopeKey,
   info,
   colorOf,
   onCommand,
@@ -910,13 +914,18 @@ export function TimeseriesWindow({
     () => loadRequests(w.range.from, w.range.to),
     [signalsKey, w.range.from, w.range.to, target, width],
   );
-  // Before paint, so a cached view is drawn in the frame that applied the step.
-  useLayoutEffect(() => loader.update(requests), [loader, requests]);
-
   // Readout values (D-031): the exact value at each committed cursor from the server, like the
   // values window, inside or outside the zoom (readoutSource). Markers evaluate as line.
   const values = useMemo(() => new ValueLoader(fetchValue, rerender), []);
   useEffect(() => () => values.dispose(), [values]);
+  // A new scope: the tab's caches first, then failed or loading series and every value again.
+  useScopeChange(scopeKey, () => {
+    loader.rescope();
+    values.rescope();
+  });
+  // Before paint, so a cached view is drawn in the frame that applied the step.
+  useLayoutEffect(() => loader.update(requests), [loader, requests]);
+
   const valueMode: ValuesMode = w.display.mode === "step" ? "step" : "line";
   const exactRequests = useMemo(
     () =>

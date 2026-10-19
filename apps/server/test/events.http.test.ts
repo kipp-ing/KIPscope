@@ -6,6 +6,7 @@ import type { ClickHouseSource } from "../src/clickhouse.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { scopeApp } from "./scopeApp.ts";
 import { testDbcFiles, testEventMapping, testSource } from "./testdb.ts";
 
 /** Decimal ns of 2026-10-01T00:00:00Z + h:m:s.ms (design T base B). */
@@ -380,8 +381,8 @@ describe("GET /api/events with a signal that is recorded later", () => {
   let loads = 0;
   const later = { dataRef: "testcar", name: "Later.X" };
   const source = Object.create(real) as ClickHouseSource;
-  source.listSignals = async (abort) => {
-    const list = await real.listSignals(abort);
+  source.listSignals = async (scope, abort) => {
+    const list = await real.listSignals(scope, abort);
     loads++;
     // From the second load on the list holds it, with text rows (the text flag of the list).
     return loads >= 2 ? [...list, { ...later, text: true }] : list;
@@ -416,5 +417,59 @@ describe("GET /api/events with a signal that is recorded later", () => {
     expect(second.status).toBe(200);
     expect(second.body.skipped).toEqual([]);
     expect(lines()).toHaveLength(1);
+  });
+});
+
+describe("GET /api/events with a scope (add-scope)", () => {
+  it("lists the events of a scope", async () => {
+    const t = await scopeApp({ adapter: testSource(), dbc: true });
+    try {
+      // The unscoped answer for the same hour is the reference.
+      const hour = await t.get(
+        "/api/events?dataRef=testcar&from=2026-10-01T01:00:00Z&to=2026-10-01T02:00:00Z",
+      );
+      expect(hour.status).toBe(200);
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T02:00:00Z",
+      });
+      expect(set.status).toBe(200);
+
+      const scoped = await t.get("/api/events?dataRef=testcar");
+      expect(scoped.status).toBe(200);
+      // The four VCU.door rows at 01:00:00, 01:01:30, 01:03:00 and 01:04:30; DIAG.lock and the 02:00
+      // door row lie at the open end, the DTCs and later events are outside.
+      expect(scoped.body.total).toBe(4);
+      expect(scoped.body.events).toEqual(hour.body.events);
+      expect((scoped.body.events as EventList["events"]).map((e) => e.name)).toEqual([
+        "VCU.door",
+        "VCU.door",
+        "VCU.door",
+        "VCU.door",
+      ]);
+
+      // With the events-line signal: its first row in the scope is a snapshot, then its change.
+      const withSignal = await t.get("/api/events?dataRef=testcar&signal=testcar/Ign_A20h.MODE");
+      expect(withSignal.status).toBe(200);
+      const list = withSignal.body as EventList;
+      const of = list.events
+        .filter((e) => e.kind === "signal" && e.name === "Ign_A20h.MODE")
+        .map((e) => ({ t: e.t, category: e.category, text: e.text, from: e.from }));
+      expect(of).toEqual([
+        { t: ns(1, 0, 0), category: "snapshot", text: "NONE", from: undefined },
+        {
+          t: ns(1, 10, 0),
+          category: "change",
+          text: "KEYON: Ignition on",
+          from: { text: "NONE", t: ns(1, 9, 59, 900) },
+        },
+      ]);
+      // The change at 02:00:00 and later ones lie outside the scope.
+      expect(list.events.some((e) => BigInt(e.t) >= BigInt(ns(2, 0, 0)))).toBe(false);
+    } finally {
+      await t.close();
+    }
   });
 });

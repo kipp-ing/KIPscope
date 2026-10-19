@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { attributionText, type Measurement } from "@kipscope/shared";
+import { attributionText, type Measurement, scopeKey } from "@kipscope/shared";
 import { isLoopbackHost } from "./access.ts";
 import { buildApp } from "./app.ts";
 import { Catalog, keepCatalogLoaded, warnDisplayFallbacks } from "./catalog.ts";
 import { loadConfig, REPO_ROOT } from "./config.ts";
+import type { Scope } from "./datasource.ts";
 import { loadDbcFiles } from "./dbc.ts";
 import { loadDiagCatalogs } from "./diag.ts";
 import { completeSource, nativeMethods } from "./fallbacks.ts";
@@ -13,6 +14,7 @@ import { NO_RULES } from "./names.ts";
 import { loadState, STATE_FILE, StatePersister } from "./persist.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
 import { QueryQueue, queuedAdapter } from "./queue.ts";
+import { CatalogStore, guardScoped } from "./scope.ts";
 import { createAdapter } from "./sources.ts";
 import { ViewStore } from "./views.ts";
 import { WorkspaceStore } from "./workspace.ts";
@@ -45,7 +47,15 @@ try {
 
 // Fallbacks outside the queue: each inner query of a fallback takes its own slot (design C3).
 const adapter = createAdapter(config);
-const source = completeSource(queuedAdapter(adapter, new QueryQueue(config.queryConcurrency)));
+const completed = completeSource(queuedAdapter(adapter, new QueryQueue(config.queryConcurrency)));
+// Scoped mode (add-scope Z10): a data call without a scope, or a range outside every held scope,
+// is refused before the queue and logged once per method as a bug.
+const source =
+  config.catalogMode === "scoped"
+    ? guardScoped(completed, () => catalogs.scopes(), {
+        error: (message) => app.log.error(message),
+      })
+    : completed;
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 const loopback = isLoopbackHost(config.host);
@@ -64,13 +74,25 @@ const metadataPaths = (key: string, paths: string[]): string[] => {
 const dbcFiles = metadataPaths("KIPSCOPE_DBC_FILES", config.dbcFiles);
 const diagCatalogs = metadataPaths("KIPSCOPE_DIAG_CATALOGS", config.diagCatalogs);
 
-const catalog = new Catalog(
-  source,
-  (warn) => loadDbcFiles(dbcFiles, (path, error) => warn(`${path}: ${error}`)),
-  rules,
-  { warn: (message) => app.log.warn(message) },
-  (warn) => loadDiagCatalogs(diagCatalogs, warn),
-);
+// The full catalog, or with a scope that scope's signal list, each with the same metadata.
+const newCatalog = (scope?: Scope) =>
+  new Catalog(
+    source,
+    (warn) => loadDbcFiles(dbcFiles, (path, error) => warn(`${path}: ${error}`)),
+    rules,
+    { warn: (message) => app.log.warn(message) },
+    (warn) => loadDiagCatalogs(diagCatalogs, warn),
+    scope,
+  );
+// In scoped mode this catalog never loads: there is no start-up list (add-scope Z10).
+const catalog = newCatalog();
+const catalogs = new CatalogStore({
+  mode: config.catalogMode,
+  full: catalog,
+  create: newCatalog,
+  // The workspace's scope list stays held however many other scopes load (design Z10).
+  keep: () => workspace.workspace.scope,
+});
 // Views and the state file (design V4, V5); the warnings wait for the logger.
 const views = new ViewStore(join(config.stateDir, "views"));
 const statePath = join(config.stateDir, STATE_FILE);
@@ -90,22 +112,25 @@ const workspace = new WorkspaceStore(
     beforeOpen: (previous) => views.beforeOpen(previous),
   },
 );
-const app = buildApp(
-  {
-    catalog,
-    source,
-    workspace,
-    meta: {
-      build,
-      // Labels only: URLs, users, passwords and tokens stay in the adapter.
-      source: source.info,
-      // Outside the query queue, so a busy queue does not read as an unreachable source.
-      // Aborted on the 2 s timeout, so a hung tunnel does not hold a socket per poll.
-      ping: (signal) => source.ping(signal),
-    },
-    ...(licenseText === undefined ? {} : { licenseText }),
-    views,
+const deps = {
+  catalog,
+  catalogs,
+  scopePad: config.scopePad,
+  source,
+  workspace,
+  meta: {
+    build,
+    // Labels only: URLs, users, passwords and tokens stay in the adapter.
+    source: source.info,
+    // Outside the query queue, so a busy queue does not read as an unreachable source.
+    // Aborted on the 2 s timeout, so a hung tunnel does not hold a socket per poll.
+    ping: (signal: AbortSignal) => source.ping(signal),
   },
+  ...(licenseText === undefined ? {} : { licenseText }),
+  views,
+};
+const app = buildApp(
+  deps,
   extraHost === undefined ? { logger: true } : { logger: true, extraHost },
 );
 // loadProjectFile returns NO_RULES itself only for a missing optional file.
@@ -132,17 +157,36 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
   });
 
 app.log.info(attributionText());
+app.log.info(`catalog mode ${config.catalogMode}`);
 app.log.info(
   `source ${source.info.kind} ${source.info.database}: native ${nativeMethods(adapter).join(", ") || "none"}`,
 );
-await app.listen({ host: config.host, port: config.port });
-// Retries in the background until the source answers once (design H5).
-keepCatalogLoaded(catalog, {
-  loaded() {
-    app.log.info({ signals: catalog.size }, "catalog loaded");
-    warnDisplayFallbacks(app.log, catalog);
-  },
-  failed(error, retryInMs) {
-    app.log.error({ error: String(error), retryInMs }, "catalog not loaded; retrying");
-  },
+catalogs.onLoaded((scope, loaded) => {
+  app.log.info({ signals: loaded.size, scope: scopeKey(scope) }, "scope catalog loaded");
+  warnDisplayFallbacks(app.log, loaded);
 });
+await app.listen({ host: config.host, port: config.port });
+// Retries in the background until the source answers once (design H5); full mode only.
+const full = catalogs.full;
+if (full)
+  keepCatalogLoaded(full, {
+    loaded() {
+      app.log.info({ signals: full.size }, "catalog loaded");
+      warnDisplayFallbacks(app.log, full);
+    },
+    failed(error, retryInMs) {
+      app.log.error({ error: String(error), retryInMs }, "catalog not loaded; retrying");
+    },
+  });
+// A restored scope's list is kept loaded the same way, in both modes (signal-catalog H5).
+const restored = workspace.workspace.scope;
+if (restored)
+  keepCatalogLoaded(catalogs.entry(restored), {
+    loaded() {},
+    failed(error, retryInMs) {
+      app.log.error(
+        { error: String(error), retryInMs, scope: scopeKey(restored) },
+        "scope catalog not loaded; retrying",
+      );
+    },
+  });

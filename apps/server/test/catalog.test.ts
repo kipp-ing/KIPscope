@@ -446,3 +446,47 @@ describe("Catalog states (stubbed source)", () => {
     expect(text.get("car/X.MODE")?.states).toBe("text");
   });
 });
+
+describe("Catalog of a scope (add-scope)", () => {
+  // 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand.
+  const T1 = 1790816400000000000n;
+  const T2 = 1790820000000000000n;
+  const MIN = 60n * 1_000_000_000n;
+  const rows = [
+    { dataRef: "testcar", name: "A.X", t: T1 - 10n * MIN },
+    { dataRef: "testcar", name: "B.Y", t: T1 + 10n * MIN },
+    { dataRef: "othercar", name: "B.Y", t: T1 + 10n * MIN },
+  ];
+
+  it("lists the signals of a scope", async () => {
+    const asked: unknown[] = [];
+    // A stub that answers as if it held only the rows of the scope's data ref in [from, to).
+    const source = {
+      listSignals: async (scope?: { dataRef: string; from: bigint; to: bigint }) => {
+        asked.push(scope);
+        return rows
+          .filter(
+            (r) => !scope || (r.dataRef === scope.dataRef && r.t >= scope.from && r.t < scope.to),
+          )
+          .map(({ dataRef, name }) => ({ dataRef, name }));
+      },
+    } as unknown as DataSource;
+    const dbc = new Map<string, DbcSignal>([["B.Y", { message: "B", messageId: 7, unit: "V" }]]);
+    const scope = { dataRef: "testcar", from: T1, to: T2 };
+    const catalog = new Catalog(source, async () => dbc, undefined, undefined, undefined, scope);
+    await catalog.refresh();
+    expect(catalog.all().map((s) => s.id)).toEqual(["testcar/B.Y"]);
+    // The metadata of the full catalog applies.
+    expect(catalog.get("testcar/B.Y")?.unit).toBe("V");
+    expect(catalog.get("testcar/A.X")).toBeUndefined();
+    expect(catalog.get("othercar/B.Y")).toBeUndefined();
+    expect(asked).toEqual([scope]);
+
+    // The same source and no scope: all three, and the source is asked without a scope.
+    asked.length = 0;
+    const full = new Catalog(source, async () => dbc);
+    await full.refresh();
+    expect(full.size).toBe(3);
+    expect(asked).toEqual([undefined]);
+  });
+});

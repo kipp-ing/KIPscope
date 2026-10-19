@@ -17,6 +17,11 @@ export function signalExtent(signalId: string): Promise<Extent> {
   return extent;
 }
 
+/** Forgets every extent: they answer for the scope they were fetched in (add-scope Z12). */
+export function forgetExtents(): void {
+  extents.clear();
+}
+
 /** Options of every timeseries window's loader. */
 export const WINDOW_LOADER_OPTIONS: LoaderOptions = {
   loadIntervalMs: LOAD_INTERVAL_MS,
