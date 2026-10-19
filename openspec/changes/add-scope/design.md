@@ -247,6 +247,10 @@ With Q-2 (a), window signals of another data ref go to `report.skipped` with rea
 
 `docs/data-sources.md` gains a section "Scope": the Z1 rule and table, "the server never sends a scope of another data ref", the Z2 fallbacks, the Z4 cases, and the ClickHouse and ADX filter shapes of Z3. The two variables of Z11 go in its variables table and in `.env.example`. `docs/http-api.md` gains a shared rule "Scope": routes are bounded by the workspace's scope, 409 `scope_required` and `out_of_scope` on routes, 422 for rejected commands. The README CLI list adds the `scope` forms.
 
+### Z15: Width of a cut series range (lead fix, commit 585a830)
+
+`querySeries` takes an optional `span` (default `to − from`); the series route passes the asked `query.to − query.from`, and the width is `bucketWidth(0n, span, target)`. Without it a range cut to the scope got the width of the cut span, and the web's tile grid refused the answer (`run answered with width …`, zooming out to the whole scope on carserver). Spec: series-query "A range cut to the scope keeps its bucket width". No HTTP payload changes.
+
 ## Questions for Jan
 
 - **Q-1 Does opening a view set the scope in full mode too?** (a) Yes, in both modes: every open has a scope (explicit or derived and padded), so after an open no query is unbounded and navigation stops at the edge, also on ClickHouse; "Clear" in the strip returns to today's whole-history view. (b) Only in scoped mode, or when the view carries `scope`; full mode opens as today. **Recommended (a):** it is what D-078 says („shows one case at a time … every source query is bounded"), it is one code path, and it is testable on the ClickHouse test DB. The cost: your local views open with a 1 h pad and need "Widen" or "Clear" to go further. The spec is written for (a).

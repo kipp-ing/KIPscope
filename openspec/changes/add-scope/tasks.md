@@ -64,7 +64,7 @@ Write areas (disjoint):
 - [x] 8.1 (should) `apps/web/src/chart/loader.ts` `rescope()` reloads every key whose state matches its request, complete keys included, through `beginRetry` (new sequence number, late old answer dropped). Verify: `rescope.test.ts` › "loads a complete key's request again, the late old answer does not overwrite".
 - [x] 8.2 (should) Web regression tests `apps/web/test/rescope.test.ts` for `enterScope`, `scopeChangeWatcher` (seam of `useScopeChange` and `useMeta`), the cache generation guard, gap store reload and `again` drop, `SeriesLoader.rescope`, `ValueLoader.rescope`, `useMeta` refetch on a scope change. Verify: `pnpm --filter @kipscope/web test` (20 new tests). The hooks themselves run in no test (no hook renderer); the wiring is reviewed by reading.
 - [x] 8.3 (could) `apps/web/src/chart/cache.ts` `clear()` aborts queued prefetch runs. Verify: `rescope.test.ts` › "never fetches the queued prefetch runs after a clear".
-- [ ] 8.4 (spec owner, lead calls) Scenarios "Footer count follows the scope" (signal-catalog) and "Windows recover after Widen, Clear or open" (time-navigation) so the tests and the UI check of this round trace to the spec; UI check of both held on smart451 (415, 551, 553, 415).
+- [x] 8.4 (spec owner, lead calls) Scenarios "Footer count follows the scope" (signal-catalog) and "Windows recover after Widen, Clear or open" (time-navigation) so the tests and the UI check of this round trace to the spec; UI check of both held on smart451 (415, 551, 553, 415).
 
 ## Workflow follow-up
 

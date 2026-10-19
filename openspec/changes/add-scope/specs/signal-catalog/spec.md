@@ -48,3 +48,11 @@ The explorer SHALL load the catalog again whenever the workspace's scope changes
 - **WHEN** the dev server runs a second instance with `KIPSCOPE_CATALOG=scoped` and no state file, the UI is opened against it, and then `kipscope scope set smart451 "2026-10-13 14:00" "2026-10-13 16:00"` runs
 - **THEN** the explorer first shows the "No scope set" text, then, without a reload, the scope's signals; searching `volt` finds `DCU_1F4h.COMP_HV_Volt`
 - **Evidence:** UI check (two screenshots of the explorer)
+
+### Requirement: Footer count follows the scope
+The footer's catalog count SHALL show the size of the catalog in use and SHALL be fetched again (`/api/meta`) whenever the workspace's scope key changes (Widen, Clear, open, `scope set`), not on a re-render with the same key. Origin: necessary consequence of "Catalog contents" (the catalog in use is the scope's list, D-078) and of the footer showing that catalog's size; finding of round 2 (stale footer count).
+
+#### Scenario: Footer count follows the scope
+- **WHEN** the meta loader runs on mount (answer size 2,300), the scope key is fed again unchanged, then changed to a wider scope (answer 9,100), then cleared (answer mode `full`, size 120,000)
+- **THEN** the unchanged key fetches nothing, each change fetches once, and the footer state holds 2,300, then 9,100, then `full` with 120,000; in the UI on smart451 the footer count changes with each scope change without a page reload (follow-up round 1 saw 415, 551, 553, 415)
+- **Evidence:** `apps/web/test/rescope.test.ts` › "footer count follows the scope"; UI check on smart451 (footer count after each step)
