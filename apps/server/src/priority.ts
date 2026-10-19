@@ -11,7 +11,10 @@ export const QUERY_CLASSES: readonly QueryClass[] = [
   "preload",
 ];
 
-const rank = (cls: QueryClass) => QUERY_CLASSES.indexOf(cls);
+/** Index of `cls` in QUERY_CLASSES (0 = highest); the queue uses this, no copy. */
+export function rank(cls: QueryClass): number {
+  return QUERY_CLASSES.indexOf(cls);
+}
 
 /**
  * The class of one piece of work, shared by every query it sends. Work that a request joins is

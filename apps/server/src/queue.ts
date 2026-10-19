@@ -1,10 +1,18 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SourceAdapter } from "./datasource.ts";
-import { currentPriority, type Priority, QUERY_CLASSES, type QueryClass } from "./priority.ts";
+import {
+  currentPriority,
+  type Priority,
+  QUERY_CLASSES,
+  type QueryClass,
+  rank,
+} from "./priority.ts";
 
 interface Waiting {
-  /** Arrival order; the oldest of the best class starts first. */
+  /** Arrival order, renewed on each raise; the oldest of the best class starts first. */
   seq: number;
+  /** The class `seq` was given in; differs from `priority.cls` after a raise until renumbered. */
+  seqCls: QueryClass;
   priority: Priority;
   start: () => void;
   abort: AbortSignal | undefined;
@@ -12,8 +20,6 @@ interface Waiting {
 
 const abortReason = (abort: AbortSignal) =>
   abort.reason ?? new DOMException("The operation was aborted", "AbortError");
-
-const rank = (cls: QueryClass) => QUERY_CLASSES.indexOf(cls);
 
 const perClass = <T>(value: () => T) =>
   Object.fromEntries(QUERY_CLASSES.map((cls) => [cls, value()])) as Record<QueryClass, T>;
@@ -62,6 +68,7 @@ export class QueryQueue {
       };
       const entry: Waiting = {
         seq: this.seq++,
+        seqCls: priority.cls,
         priority,
         abort,
         start: () => {
@@ -94,11 +101,25 @@ export class QueryQueue {
         }
       };
       // A raised query may now go first or take the kept slot.
-      const unsubscribe = priority.onRaise(() => this.next());
+      const unsubscribe = priority.onRaise(() => this.raised(priority));
       abort?.addEventListener("abort", onAbort, { once: true });
       this.waiting.push(entry);
       this.next();
     });
+  }
+
+  /**
+   * Gives every waiting query of `priority` a new sequence number, in their old order, then
+   * re-picks: a raised query ranks behind the queries of its new class already waiting (design
+   * P4). Each waiting query of the handle has its own listener; the first renumbers them all.
+   */
+  private raised(priority: Priority) {
+    for (const entry of this.waiting) {
+      if (entry.priority !== priority || entry.seqCls === priority.cls) continue;
+      entry.seq = this.seq++;
+      entry.seqCls = priority.cls;
+    }
+    this.next();
   }
 
   private next() {

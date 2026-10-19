@@ -257,14 +257,12 @@ function hold(
   return held;
 }
 
-/** Releases the started, not yet released tasks one at a time (oldest start first) until all ended. */
-async function drain(tasks: readonly Held[], order: readonly string[]) {
+/** Releases every started, not yet released task per round until all ended. */
+async function drain(tasks: readonly Held[]) {
   for (;;) {
-    const next = order
-      .map((name) => tasks.find((t) => t.name === name))
-      .find((t) => t?.started && !t.released);
-    if (!next) break;
-    next.release();
+    const running = tasks.filter((t) => t.started && !t.released);
+    if (running.length === 0) break;
+    for (const task of running) task.release();
     await settle();
   }
   await Promise.all(tasks.map((t) => t.done));
@@ -306,7 +304,7 @@ describe("QueryQueue classes", () => {
     for (const name of ["B1", "I1", "I2", "I3", "M"]) await releaseAndSettle(by(name));
     expect(order).toEqual(["B1", "B2", "B3", "I1", "I2", "I3", "M", "B4"]);
 
-    await drain(tasks, order);
+    await drain(tasks);
     const expected = [
       "B1",
       "B2",
@@ -346,7 +344,7 @@ describe("QueryQueue classes", () => {
 
     // The rest runs to its end; I3 stays unstarted.
     const rest = tasks.filter((t) => t.name !== "I3");
-    await drain(rest, order);
+    await drain(rest);
     expect(order).not.toContain("I3");
     expect(order).toHaveLength(24);
   });
@@ -374,8 +372,8 @@ describe("QueryQueue classes", () => {
     });
     expect(queue.stats.peak).toBe(4);
 
-    // Clean up: release in start order until all 2,401 tasks ended.
-    await drain(tasks, order);
+    // Clean up: release every running task per round until all 2,401 tasks ended.
+    await drain(tasks);
     expect(order).toHaveLength(2401);
   });
 
@@ -438,6 +436,35 @@ describe("QueryQueue classes", () => {
     expect(order).toEqual(["B1", "B2", "B3", "W"]);
     expect(running.every((t) => !t.released)).toBe(true);
     expect(queue.stats).toMatchObject({ running: 4, waiting: 0 });
-    await drain([...running, waiting], order);
+    await drain([...running, waiting]);
+  });
+
+  it("ranks a raised query by the time it was raised", async () => {
+    const queue = new QueryQueue(4);
+    const order: string[] = [];
+    const running = [1, 2, 3, 4].map((i) => hold(queue, order, `R${i}`, "interactive"));
+    const priority = new Priority("background");
+    // B is queued first, S1 after it; B is raised only then.
+    const b = hold(queue, order, "B", priority);
+    const s1 = hold(queue, order, "S1", "interactive");
+    await settle();
+    expect(order).toEqual(["R1", "R2", "R3", "R4"]);
+    expect(queue.stats.byClass.background).toEqual({ running: 0, waiting: 1 });
+
+    priority.raise("interactive");
+    await settle();
+    // All slots are taken: raising starts nothing.
+    expect(order).toEqual(["R1", "R2", "R3", "R4"]);
+    expect(queue.stats.byClass.interactive).toEqual({ running: 4, waiting: 2 });
+
+    await releaseAndSettle(running[0] as Held);
+    // S1 was waiting before the raise, so it goes first although B arrived earlier.
+    expect(order).toEqual(["R1", "R2", "R3", "R4", "S1"]);
+    expect(b.started).toBe(false);
+
+    await releaseAndSettle(running[1] as Held);
+    expect(order).toEqual(["R1", "R2", "R3", "R4", "S1", "B"]);
+    await drain([...running, b, s1]);
+    expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 4, byClass: idle() });
   });
 });
