@@ -4,7 +4,10 @@ import {
   type CursorName,
   DisplayMode,
   parseDuration,
+  parseSessionLink,
   parseTime,
+  SESSION_ID,
+  SessionShare,
   ValuesMode,
 } from "@kipscope/shared";
 import { CliError } from "./output.ts";
@@ -22,6 +25,12 @@ export interface GlobalOptions {
   wait: boolean;
   timeoutMs: number;
   pretty: boolean;
+  /** --session, else KIPSCOPE_SESSION, else the session of a session link given as server (M13). */
+  session?: string;
+  /** --token, else KIPSCOPE_TOKEN; sent as `Authorization: Bearer`, never printed. */
+  token?: string;
+  /** KIPSCOPE_TOKEN_COMMAND when no token is given; run once per call (M13). */
+  tokenCommand?: string;
 }
 export type Invocation =
   | { kind: "help" }
@@ -43,6 +52,11 @@ export type Invocation =
   | { kind: "scope"; action: "show" | "widen" }
   /** raw: a `command JSON`, sent as parsed without resolving anything. */
   | { kind: "command"; template: CommandTemplate; raw?: true }
+  | { kind: "whoami" }
+  /** Sessions (add-multiuser M13); share acts on the call's session. */
+  | { kind: "session"; action: "list" | "new" }
+  | { kind: "session"; action: "share"; share: SessionShare }
+  | { kind: "session"; action: "delete"; id: string }
   | ViewInvocation;
 
 export const DEFAULT_SERVER = "http://localhost:7310";
@@ -89,6 +103,13 @@ Reads:
                                    (no FILTER: the workspace's; DATAREF: default that of the
                                    first signal shown; --table prints lines instead of JSON)
 
+Sessions (each a workspace with its own link; the default is your latest one):
+  whoami                           (your user, identity, roles and rights)
+  session list                     (your sessions, latest first)
+  session new                      (a new empty session; local.url is its link)
+  session share private|read|write (who else may open the call's session)
+  session delete ID
+
 Views (saved workspaces, stored by the server):
   view list
   view save TITLE [--name N] [--note TEXT] [--overwrite]
@@ -102,7 +123,13 @@ Views (saved workspaces, stored by the server):
                                    URL: the UI page, default the server address)
 
 Options (anywhere on the line; "--" ends options):
-  --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER})
+  --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER});
+                      a session link (URL/s/ID) also names the session
+  --session ID|LINK   the session every request of the call goes to (default:
+                      $KIPSCOPE_SESSION, else the session of a --server link, else your
+                      latest session, kept for the whole call)
+  --token T           access token, sent as Authorization: Bearer (default: $KIPSCOPE_TOKEN,
+                      else the output of $KIPSCOPE_TOKEN_COMMAND, run once per call, 10 s)
   --wait              after an accepted command, wait until an open UI has rendered it
   --timeout DURATION  deadline of the whole call (default ${DEFAULT_TIMEOUT})
   --pretty            indent the JSON output
@@ -118,8 +145,9 @@ REF      assignment ID (a3) or a SIGNAL shown in window W; of scope set: a data 
 FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes
 
 Output: one JSON line on stdout (except events list --table and view export without --out).
-Exit codes: 0 ok, 1 rejected, 2 usage, 3 unreachable,
-4 timeout, 5 render_error, 6 no_ui, 7 unavailable.
+Exit codes: 0 ok, 1 rejected (also unauthenticated, invalid_token, forbidden_data),
+2 usage (also token_command_failed), 3 unreachable, 4 timeout, 5 render_error, 6 no_ui,
+7 unavailable (also identity_unavailable).
 
 ${attributionText()}
 `;
@@ -138,6 +166,8 @@ const VALUE_OPTIONS = new Set([
   "--note",
   "--out",
   "--page",
+  "--session",
+  "--token",
 ]);
 const FLAG_OPTIONS = new Set([
   "--wait",
@@ -149,7 +179,15 @@ const FLAG_OPTIONS = new Set([
   "--overwrite",
   "--open",
 ]);
-const GLOBAL_OPTIONS = new Set(["--server", "--timeout", "--wait", "--pretty", "--help"]);
+const GLOBAL_OPTIONS = new Set([
+  "--server",
+  "--session",
+  "--token",
+  "--timeout",
+  "--wait",
+  "--pretty",
+  "--help",
+]);
 
 function usage(message: string): never {
   throw new CliError("usage", "usage", message);
@@ -248,15 +286,37 @@ function valuesMode(text: string): ValuesMode {
   return mode.success ? mode.data : usage(`--mode must be line or step, got "${text}"`);
 }
 
+/** A session ID, or the ID of a session link; anything else is a usage error. */
+function sessionOf(text: string, what: string): string {
+  if (SESSION_ID.test(text)) return text;
+  const link = parseSessionLink(text);
+  if (link === undefined) usage(`${what} is neither a session ID nor a session link: "${text}"`);
+  return link.session;
+}
+
 function globalOptions(
   opts: Map<string, string | true>,
   env: Record<string, string | undefined>,
 ): GlobalOptions {
-  const server = (opts.get("--server") as string | undefined) ?? env.KIPSCOPE_URL ?? DEFAULT_SERVER;
+  let server = (opts.get("--server") as string | undefined) ?? env.KIPSCOPE_URL ?? DEFAULT_SERVER;
   // `localhost:7310` parses as a URL with protocol "localhost:", so the protocol is checked too.
   if (!URL.canParse(server) || !["http:", "https:"].includes(new URL(server).protocol)) {
     usage(`server address is not an http(s) URL: "${server}"`);
   }
+  // A session link as the server: its origin is the server, its ID the default session.
+  const link = parseSessionLink(server);
+  if (link !== undefined) server = link.origin;
+  const sessionOption = opts.get("--session") as string | undefined;
+  const session =
+    sessionOption !== undefined
+      ? sessionOf(sessionOption, "--session")
+      : env.KIPSCOPE_SESSION
+        ? sessionOf(env.KIPSCOPE_SESSION, "KIPSCOPE_SESSION")
+        : link?.session;
+  const tokenOption = opts.get("--token") as string | undefined;
+  if (tokenOption !== undefined && tokenOption.trim() === "") usage("--token is empty");
+  const token = tokenOption ?? (env.KIPSCOPE_TOKEN?.trim() || undefined);
+  const tokenCommand = token === undefined ? env.KIPSCOPE_TOKEN_COMMAND || undefined : undefined;
   const timeout = (opts.get("--timeout") as string | undefined) ?? DEFAULT_TIMEOUT;
   const ns = duration(timeout, "--timeout");
   if (ns <= 0n) usage("--timeout must be greater than 0");
@@ -265,6 +325,9 @@ function globalOptions(
     wait: opts.has("--wait"),
     timeoutMs: Number(ns) / 1e6,
     pretty: opts.has("--pretty"),
+    ...(session !== undefined && { session }),
+    ...(token !== undefined && { token: token.trim() }),
+    ...(tokenCommand !== undefined && { tokenCommand }),
   };
 }
 
@@ -293,9 +356,16 @@ export function parseArgs(
 function invocation(pos: string[], opts: Map<string, string | true>, server: string): Invocation {
   const [first, second] = pos;
   if (first === undefined) usage("no command given (see --help)");
-  const group = ["window", "signal", "cursor", "measurement", "events", "view", "scope"].includes(
-    first,
-  );
+  const group = [
+    "window",
+    "signal",
+    "cursor",
+    "measurement",
+    "events",
+    "view",
+    "scope",
+    "session",
+  ].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
 
@@ -556,6 +626,25 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
     case "scope clear":
       take(0);
       return command({ type: "scope.clear" });
+    case "whoami":
+      take(0);
+      return { kind: "whoami" };
+    case "session list":
+      take(0);
+      return { kind: "session", action: "list" };
+    case "session new":
+      take(0);
+      return { kind: "session", action: "new" };
+    case "session share": {
+      take(1);
+      const share = SessionShare.safeParse(arg(0));
+      if (!share.success) usage(`session share takes private, read or write, got "${arg(0)}"`);
+      return { kind: "session", action: "share", share: share.data };
+    }
+    case "session delete":
+      take(1);
+      if (!SESSION_ID.test(arg(0))) usage(`not a session ID: "${arg(0)}"`);
+      return { kind: "session", action: "delete", id: arg(0) };
     case "command": {
       take(1);
       try {

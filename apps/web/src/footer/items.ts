@@ -1,4 +1,4 @@
-import type { Measurement, ServerMeta } from "@kipscope/shared";
+import type { Me, Measurement, ServerMeta } from "@kipscope/shared";
 
 export type Tone = "plain" | "ok" | "error" | "muted";
 
@@ -19,6 +19,8 @@ const RANK_BUILD = 1;
 const RANK_ZONE = 2;
 const RANK_CATALOG = 3;
 const RANK_META = 4;
+// Who the user acts as stays longer than build, zone and catalog (add-multiuser M12).
+const RANK_USER = 19;
 const RANK_SOURCE = 20;
 const RANK_OBJECT = 21;
 const RANK_NAME = 22;
@@ -85,12 +87,16 @@ function utcOffset(minutes: number): string {
   return `UTC${minutes < 0 ? "-" : "+"}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
-/** Items `source`, `catalog`, `zone`, `build` in that order; [] when meta is undefined (design F3). */
+/**
+ * Items `source`, `catalog`, `zone`, `build` in that order, then `user` unless the identity is
+ * `none` (add-multiuser M12); [] when meta is undefined (design F3).
+ */
 export function footerItems(
   meta: ServerMeta | undefined,
   stale: boolean,
   zone: { name: string; offsetMinutes: number },
   now: Date = new Date(),
+  me?: Me,
 ): FooterItem[] {
   if (!meta) return [];
   const items: FooterItem[] = [];
@@ -163,6 +169,17 @@ export function footerItems(
       ].join(" · "),
       tone: "plain",
       rank: RANK_BUILD,
+    });
+  }
+
+  if (me && me.identity !== "none") {
+    const roles = me.roles.length > 0 ? me.roles.join(", ") : "none";
+    items.push({
+      key: "user",
+      text: me.user,
+      title: `Signed in as ${me.user} (${me.identity}) · roles: ${roles}`,
+      tone: "plain",
+      rank: RANK_USER,
     });
   }
   return items;

@@ -1,5 +1,7 @@
+import { spawn } from "node:child_process";
 import {
   type CommandInput,
+  type CreateSessionAnswer,
   type CursorValueResult,
   DEFAULT_EVENT_FILTER,
   describeEventFilter,
@@ -7,11 +9,15 @@ import {
   type Extent,
   formatLocal,
   isTimeseries,
+  type Me,
   parseEventFilter,
   parseSignalId,
   type RenderStatus,
   type ServerMeta,
+  type SessionAnswer,
+  type SessionList,
   type SignalPage,
+  sessionPath,
   type Workspace,
   widenScope,
 } from "@kipscope/shared";
@@ -53,7 +59,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       return 0;
     }
     pretty = options.pretty;
-    out = await execute(invocation, options);
+    out = await execute(invocation, options, io.env);
     if (invocation.kind === "events" && invocation.table && out.ok) {
       text = eventTable(out.data as EventListData, out.local?.t as string[]);
     }
@@ -81,12 +87,91 @@ function prettyRequested(argv: string[]): boolean {
   return (end < 0 ? argv : argv.slice(0, end)).includes("--pretty");
 }
 
+/** KIPSCOPE_TOKEN_COMMAND's limit (design "Numbers"). */
+export const TOKEN_COMMAND_TIMEOUT_MS = 10_000;
+
+/**
+ * The trimmed stdout of KIPSCOPE_TOKEN_COMMAND, run once through the shell (M13). A non-zero exit,
+ * a timeout or empty output is a usage error `token_command_failed` naming the command's last
+ * stderr line; the token itself is never part of a message.
+ */
+export function runTokenCommand(
+  command: string,
+  env: Record<string, string | undefined>,
+  timeoutMs = TOKEN_COMMAND_TIMEOUT_MS,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fail = (why: string) =>
+      reject(new CliError("usage", "token_command_failed", `KIPSCOPE_TOKEN_COMMAND ${why}`));
+    const child = spawn(command, {
+      shell: true,
+      env: env as NodeJS.ProcessEnv,
+      stdio: ["inherit", "pipe", "pipe"],
+    });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+      // A grandchild may hold the pipes open: settle now and let go of the child.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      child.unref();
+      fail(`timed out after ${timeoutMs / 1000} s`);
+    }, timeoutMs);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      fail(`could not run: ${error.message}`);
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      const lines = Buffer.concat(err).toString("utf8").trim().split("\n");
+      const last = lines[lines.length - 1]?.trim();
+      const detail = last ? `: ${last}` : "";
+      if (timedOut) return;
+      if (code !== 0) return fail(`exited with ${code ?? signal}${detail}`);
+      const token = Buffer.concat(out).toString("utf8").trim();
+      if (token === "") return fail(`printed no token${detail}`);
+      resolve(token);
+    });
+  });
+}
+
 async function execute(
   invocation: Exclude<Invocation, { kind: "help" }>,
   options: GlobalOptions,
+  env: Record<string, string | undefined>,
 ): Promise<CliOutput> {
   const deadline = createDeadline(options.timeoutMs);
-  const client = createClient(options.server, deadline);
+  let token = options.token;
+  if (token === undefined && options.tokenCommand !== undefined) {
+    try {
+      token = await runTokenCommand(options.tokenCommand, env);
+    } catch (e) {
+      return failure({}, e);
+    }
+  }
+  const client = createClient(options.server, deadline, {
+    ...(options.session !== undefined && { session: options.session }),
+    ...(token !== undefined && { token }),
+  });
+  const out = await executeWith(invocation, options, client, deadline);
+  const session = client.session();
+  // The session right after exitCode (S2 key order).
+  if (session === undefined) return out;
+  const { ok, outcome, exitCode, ...rest } = out;
+  return { ok, outcome, exitCode, session, ...rest };
+}
+
+async function executeWith(
+  invocation: Exclude<Invocation, { kind: "help" }>,
+  options: GlobalOptions,
+  client: Client,
+  deadline: Deadline,
+): Promise<CliOutput> {
   const lookups = createLookups(client);
   const body: Body = {};
   try {
@@ -208,6 +293,12 @@ async function execute(
           body,
         );
       }
+      case "whoami":
+        body.data = await client.get<Me>("/api/me");
+        return result("ok", body);
+      case "session":
+        await runSession(invocation, options, client, body);
+        return result("ok", body);
       case "view": {
         const opened = await runView(invocation, client, body);
         if (opened === undefined || !options.wait) return result("ok", body);
@@ -216,6 +307,40 @@ async function execute(
     }
   } catch (e) {
     return failure(body, e);
+  }
+}
+
+/** The session forms (M13); `share` acts on the call's session, pinned first when none was given. */
+async function runSession(
+  invocation: Extract<Invocation, { kind: "session" }>,
+  options: GlobalOptions,
+  client: Client,
+  body: Body,
+): Promise<void> {
+  switch (invocation.action) {
+    case "list":
+      body.data = await client.get<SessionList>("/api/sessions");
+      return;
+    case "new": {
+      const answer = await client.post<CreateSessionAnswer>("/api/sessions", {});
+      body.data = answer;
+      body.local = { url: new URL(sessionPath(answer.session.id), options.server).href };
+      return;
+    }
+    case "share": {
+      // No session given: the default one, named by the header of a session-resolving answer.
+      if (client.session() === undefined) await client.get<RenderStatus>("/api/render-status");
+      const id = client.session();
+      if (id === undefined)
+        throw new CliError("unavailable", "unavailable", "the server named no session");
+      body.data = await client.post<SessionAnswer>(`/api/sessions/${id}/share`, {
+        share: invocation.share,
+      });
+      return;
+    }
+    case "delete":
+      body.data = await client.delete<{ deleted: string }>(`/api/sessions/${invocation.id}`);
+      return;
   }
 }
 

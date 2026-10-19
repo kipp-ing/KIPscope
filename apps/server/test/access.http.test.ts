@@ -1,11 +1,15 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { RenderStatus } from "@kipscope/shared";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { isLoopbackHost } from "../src/access.ts";
+import { accessLog, hostAllowed, isLoopbackHost, originAllowed } from "../src/access.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
+import type { IdentityAdapter } from "../src/identity.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { type MultiApp, multiApp } from "./identityApp.ts";
 
 const source = {
   listSignals: async () => [{ dataRef: "car", name: "S" }],
@@ -170,5 +174,175 @@ describe("configured non-loopback host", () => {
     });
     expect(other.statusCode).toBe(403);
     expect(other.json().error.code).toBe("forbidden_host");
+  });
+});
+
+describe("configured origins (add-multiuser M10)", () => {
+  const ORIGIN = "https://kipscope.example.org";
+  let t: MultiApp | undefined;
+  afterEach(async () => {
+    await t?.close();
+    t = undefined;
+  });
+
+  it("accepts the host of a configured origin", async () => {
+    t = await multiApp({ identity: "none", origins: [ORIGIN] });
+    const statusOf = async (host: string) =>
+      (await t?.anon.get("/api/workspace", { host }))?.status;
+    expect(await statusOf("kipscope.example.org")).toBe(200);
+    expect(await statusOf("KIPSCOPE.example.org:443")).toBe(200);
+    const other = await t.anon.get("/api/workspace", { host: "other.example.org" });
+    expect(other.status).toBe(403);
+    expect(other.body.error.code).toBe("forbidden_host");
+    // Without the origin configured the same host is foreign.
+    const plain = await multiApp({ identity: "none" });
+    const refused = await plain.anon.get("/api/workspace", { host: "kipscope.example.org" });
+    expect(refused.status).toBe(403);
+    await plain.close();
+  });
+
+  it("accepts a configured origin only exactly", async () => {
+    t = await multiApp({ identity: "none", origins: [ORIGIN] });
+    const session = t.sessions.create("local");
+    const before = session.store.revision;
+    const send = (origin: string) =>
+      t?.anon.request("POST", `/api/s/${session.record.id}/commands`, command, { origin });
+    expect((await send("https://kipscope.example.org"))?.status).toBe(200);
+    expect((await send("https://kipscope.example.org:443"))?.status).toBe(200);
+    for (const origin of [
+      "http://kipscope.example.org",
+      "https://kipscope.example.org:8443",
+      "https://kipscope.example.org.evil.example",
+      "https://evilkipscope.example.org",
+      "https://evil.example",
+      "null",
+    ]) {
+      const res = await send(origin);
+      expect(res?.status, origin).toBe(403);
+      expect(res?.body.error.code, origin).toBe("forbidden_origin");
+    }
+    expect(session.store.revision).toBe(before + 2);
+  });
+
+  it("checks origins before it identifies anyone", async () => {
+    const refuseAll: IdentityAdapter = {
+      kind: "t",
+      identify: async () => ({ refused: "unauthenticated" }),
+    };
+    t = await multiApp({ identity: refuseAll, origins: [ORIGIN] });
+    const foreign = await t.anon.get("/api/me", { origin: "https://evil.example" });
+    expect([foreign.status, foreign.body.error.code]).toEqual([403, "forbidden_origin"]);
+    const host = await t.anon.get("/api/me", { host: "evil.example" });
+    expect([host.status, host.body.error.code]).toEqual([403, "forbidden_host"]);
+    const own = await t.anon.get("/api/me", { origin: ORIGIN, host: "kipscope.example.org" });
+    expect([own.status, own.body.error.code]).toEqual([401, "unauthenticated"]);
+  });
+
+  it("refuses a foreign origin on the live channel and accepts a configured one", async () => {
+    t = await multiApp({ origins: [ORIGIN] });
+    const alice = t.as("alice", ["all"]);
+    const id = (await alice.post("/api/sessions", {})).body.session.id as string;
+    const foreign = await alice.live(id, { origin: "https://evil.example" });
+    expect(foreign.messages).toEqual([]);
+    expect(foreign.status === 403 || foreign.closeCode === 1008).toBe(true);
+    const own = await alice.live(id, { origin: ORIGIN, host: "kipscope.example.org" });
+    await own.next((m) => m.type === "state");
+    expect(own.messages.map((m) => m.type)).toEqual(["hello", "session", "state"]);
+    own.close();
+  });
+
+  it("compares scheme, host and port of an origin after normalisation", () => {
+    const options = { origins: ["https://h.example", "http://b.example:8080"] };
+    const yes = [
+      "https://h.example",
+      "https://h.example:443",
+      "HTTPS://H.EXAMPLE",
+      "http://b.example:8080",
+    ];
+    const no = [
+      "http://h.example",
+      "https://h.example:8443",
+      "http://b.example",
+      "https://b.example:8080",
+      "ftp://h.example",
+      "null",
+      "https://h.example.evil.example",
+    ];
+    for (const origin of yes) expect(originAllowed(origin, options), origin).toBe(true);
+    for (const origin of no) expect(originAllowed(origin, options), origin).toBe(false);
+    expect(originAllowed(undefined, options)).toBe(true);
+    // Loopback pages stay allowed whatever is configured.
+    expect(originAllowed("http://localhost:5173", options)).toBe(true);
+    expect(hostAllowed("h.example:1234", options)).toBe(true);
+    expect(hostAllowed("B.Example", options)).toBe(true);
+    expect(hostAllowed("c.example", options)).toBe(false);
+    expect(hostAllowed(undefined, options)).toBe(false);
+  });
+
+  it("logs the access settings per mode", () => {
+    const none = { identity: { kind: "none" } as const, origins: [] as string[] };
+    expect(accessLog({ ...none, host: "127.0.0.1" })).toEqual([]);
+    const open = accessLog({ ...none, host: "0.0.0.0" });
+    expect(open).toHaveLength(1);
+    expect(open[0]?.level).toBe("warn");
+    expect(open[0]?.message).toContain("every machine that reaches it");
+
+    const lines = accessLog(
+      {
+        host: "0.0.0.0",
+        identity: {
+          kind: "oidc",
+          oidc: {
+            issuer: "https://idp.example.org",
+            audience: "kipscope",
+            userClaim: "sub",
+            rolesClaim: "roles",
+            header: "authorization",
+            algs: ["RS256"],
+          },
+        },
+        rulesFile: "/etc/kipscope/rules.yaml",
+        origins: [ORIGIN],
+      },
+      {
+        roles: [
+          { role: "a", data: ["*"], share: false },
+          { role: "b", data: ["*"], share: false },
+          { role: "c", data: ["*"], share: false },
+        ],
+      },
+    );
+    const info = lines.filter((l) => l.level === "info");
+    const warn = lines.filter((l) => l.level === "warn");
+    expect(info).toHaveLength(1);
+    for (const part of [
+      "oidc",
+      "https://idp.example.org",
+      "kipscope",
+      "/etc/kipscope/rules.yaml",
+      "3 roles",
+      ORIGIN,
+    ])
+      expect(info[0]?.message).toContain(part);
+    expect(warn).toHaveLength(1);
+    expect(warn[0]?.message).toContain("only the proxy");
+    // A loopback host with an identity: the info line only.
+    const local = accessLog(
+      {
+        host: "127.0.0.1",
+        identity: { kind: "module", path: "/srv/id.mjs" },
+        rulesFile: "/r.yaml",
+        origins: [ORIGIN],
+      },
+      { roles: [] },
+    );
+    expect(local.map((l) => l.level)).toEqual(["info"]);
+    expect(local[0]?.message).toContain("/srv/id.mjs");
+  });
+
+  it("logs the access lines at start", () => {
+    // main.ts calls accessLog; a refactor that drops the call would hide the start lines.
+    const main = readFileSync(resolve(import.meta.dirname, "../src/main.ts"), "utf8");
+    expect(main).toContain("accessLog(");
   });
 });

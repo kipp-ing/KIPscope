@@ -27,7 +27,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
 import { runPlan } from "./addSignals.ts";
-import { ApiRequestError, fetchExtent, openView, sendCommand, signalInfo } from "./api.ts";
+import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
@@ -81,6 +81,9 @@ import {
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
 import { FLASH_MS, markTarget, revealDelta } from "./reveal.ts";
+import { GatePage } from "./session/Gate.tsx";
+import { gateOf } from "./session/gate.ts";
+import type { Startup } from "./session/startup.ts";
 import { resultStripEvents, scopeRange } from "./time/scope.ts";
 import { stripDataRef } from "./time/strip.ts";
 import { centreRange, stepDrive } from "./time/stripGeometry.ts";
@@ -92,7 +95,6 @@ import {
   TimeStrip,
 } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
-import { cleanAddress, startupView } from "./views/link.ts";
 import {
   documentTitle,
   nextStrip,
@@ -114,10 +116,6 @@ interface Drag {
   copy: boolean;
   target?: DropTarget | undefined;
 }
-
-/** Start-up open from the address (add-saved-views V7): retry pause while the catalog loads, and how long to wait for it. */
-const STARTUP_RETRY_MS = 1000;
-const STARTUP_CATALOG_WAIT_MS = 60_000;
 
 /** Auto-scroll band below the top row and above the status strip (design C7, L3), and its top speed per frame. */
 const EDGE_PX = 48;
@@ -218,8 +216,9 @@ function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undef
   }
 }
 
-export function App() {
-  const [live, send] = useLive();
+/** The workspace page of one session, after the start-up chose it (add-multiuser M12). */
+export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
+  const [live, send] = useLive(start.session);
   // The strip's message slot (add-saved-views V7 round 2): one error or info notice; any new one
   // replaces it, so an open clears an older error.
   const [strip, setStrip] = useState<StripItem | undefined>();
@@ -1320,51 +1319,15 @@ export function App() {
     document.title = tabTitle;
   }, [tabTitle]);
 
-  // Start-up from the address (V7): `#view=` or `?view=` opens once the live channel is connected;
-  // until the catalog's first load the server refuses with `catalog_unavailable` and the open is
-  // retried. Then the address loses that part, so a reload does not open it again.
+  // Start-up from the address (add-multiuser M12): the start-up opened a `#view=` or `?view=` link
+  // in a new session, or fell back to the latest one with the open's error.
   const startup = useRef(false);
   useEffect(() => {
-    if (!live.connected || startup.current) return;
+    if (startup.current) return;
     startup.current = true;
-    void (async () => {
-      let asked: Awaited<ReturnType<typeof startupView>>;
-      try {
-        asked = await startupView(location);
-      } catch (e) {
-        setMessage(`Cannot read the view link: ${e instanceof Error ? e.message : String(e)}`);
-        history.replaceState(null, "", cleanAddress(location));
-        return;
-      }
-      if (!asked) return;
-      const body = "name" in asked ? asked : { view: asked.view as object };
-      const deadline = Date.now() + STARTUP_CATALOG_WAIT_MS;
-      for (;;) {
-        let result: CommandResult;
-        try {
-          result = await trackOpen(
-            () => openView(body),
-            (r) => (r.ok ? r.revision : undefined),
-          );
-        } catch (e) {
-          const waiting = e instanceof ApiRequestError && e.code === "catalog_unavailable";
-          if (waiting && Date.now() < deadline) {
-            await new Promise((r) => setTimeout(r, STARTUP_RETRY_MS));
-            continue;
-          }
-          setMessage(e instanceof Error ? e.message : String(e));
-          break;
-        }
-        if (!result.ok && result.code === "catalog_unavailable" && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, STARTUP_RETRY_MS));
-          continue;
-        }
-        onOpened(result);
-        break;
-      }
-      history.replaceState(null, "", cleanAddress(location));
-    })();
-  }, [live.connected, onOpened, setMessage, trackOpen]);
+    if (start.message !== undefined) setMessage(start.message);
+    if (start.opened) onOpened(start.opened);
+  }, [start, onOpened, setMessage]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -1390,6 +1353,10 @@ export function App() {
   ]
     .filter(Boolean)
     .join(" ");
+
+  // The live channel closed for good (4403, 4404): the gate page replaces the workspace (M12).
+  const gate = live.closed !== undefined ? gateOf(live.closed) : undefined;
+  if (gate) return <GatePage gate={gate} />;
 
   return (
     <div
@@ -1469,6 +1436,9 @@ export function App() {
                     trackOpen={trackOpen}
                     onNotice={setNotice}
                     onMessage={setMessage}
+                    sessionId={start.session}
+                    session={live.session}
+                    me={start.me}
                   />
                 </OverflowTailContext.Provider>
               )}
@@ -1578,6 +1548,7 @@ export function App() {
           onDismissMessage={dismissMessage}
           measurement={workspace?.measurement}
           meta={meta.meta}
+          me={start.me}
           metaStale={meta.stale}
           dragging={activeDrag !== undefined}
           over={stripOver}

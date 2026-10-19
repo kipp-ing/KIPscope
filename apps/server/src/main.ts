@@ -1,7 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { attributionText, type Measurement, scopeKey } from "@kipscope/shared";
-import { isLoopbackHost } from "./access.ts";
+import { resolve } from "node:path";
+import {
+  attributionText,
+  EMPTY_WORKSPACE,
+  type Measurement,
+  scopeKey,
+  type Workspace,
+} from "@kipscope/shared";
+import { accessLog, isLoopbackHost } from "./access.ts";
 import { buildApp } from "./app.ts";
 import { Catalog, keepCatalogLoaded, warnDisplayFallbacks } from "./catalog.ts";
 import { loadConfig, REPO_ROOT } from "./config.ts";
@@ -9,18 +15,45 @@ import type { Scope } from "./datasource.ts";
 import { loadDbcFiles } from "./dbc.ts";
 import { loadDiagCatalogs } from "./diag.ts";
 import { completeSource, nativeMethods } from "./fallbacks.ts";
+import { type IdentityAdapter, type IdentityLog, loadIdentity } from "./identity.ts";
 import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
-import { loadState, STATE_FILE, StatePersister } from "./persist.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
 import { QueryQueue, queuedAdapter } from "./queue.ts";
-import { CatalogStore, guardScoped } from "./scope.ts";
+import { loadRules, type Rules } from "./rights.ts";
+import { CatalogStore, guardScoped, openScopes } from "./scope.ts";
+import { SessionStore } from "./sessions.ts";
 import { createAdapter } from "./sources.ts";
-import { ViewStore } from "./views.ts";
-import { WorkspaceStore } from "./workspace.ts";
+import { userViews } from "./views.ts";
 
 const config = loadConfig();
 const build = readBuildInfo(REPO_ROOT);
+
+// Log lines from before the logger exists (an adapter's factory, the session store's start) wait
+// for it; later ones go straight to it.
+const early: { level: "info" | "warn" | "debug"; message: string }[] = [];
+let ready: IdentityLog | undefined;
+const log: Required<IdentityLog> = {
+  info: (message) => (ready ? ready.info(message) : early.push({ level: "info", message })),
+  warn: (message) => (ready ? ready.warn(message) : early.push({ level: "warn", message })),
+  debug: (message) => (ready ? ready.debug?.(message) : early.push({ level: "debug", message })),
+};
+
+// Before listen: the identity adapter and the rules file, or `none` (add-multiuser M1, M3). A bad
+// adapter or rules file stops the server naming the variable or file and the reason.
+let identity: IdentityAdapter | undefined;
+let accessRules: Rules | undefined;
+try {
+  identity = await loadIdentity(config.identity, { log });
+  if (config.identity.kind !== "none") {
+    if (config.rulesFile === undefined)
+      throw new Error("KIPSCOPE_RULES: required unless KIPSCOPE_IDENTITY is none");
+    accessRules = loadRules(config.rulesFile);
+  }
+} catch (error) {
+  process.stderr.write(`kipscope: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}
 
 // Before listen: an invalid project file stops the server (design N6).
 let rules = NO_RULES;
@@ -86,38 +119,39 @@ const newCatalog = (scope?: Scope) =>
   );
 // In scoped mode this catalog never loads: there is no start-up list (add-scope Z10).
 const catalog = newCatalog();
+// Every session, each in `<stateDir>/sessions/<id>.json` (add-multiuser M4). A new one starts from
+// the project file's measurement and events-line signals, as a fresh workspace did; `start()`
+// first moves an old `workspace.json` and `views/` to the user `local`.
+const seed = (): Workspace => ({
+  ...EMPTY_WORKSPACE,
+  ...(measurement ? { measurement } : {}),
+  ...(eventSignals.length > 0 ? { eventSignals: [...eventSignals] } : {}),
+});
+const sessions = new SessionStore({
+  dir: config.stateDir,
+  seed,
+  idleDays: config.sessionIdleDays,
+  log,
+});
+sessions.start();
 const catalogs = new CatalogStore({
   mode: config.catalogMode,
   full: catalog,
   create: newCatalog,
-  // The workspace's scope list stays held however many other scopes load (design Z10).
-  keep: () => workspace.workspace.scope,
+  // The lists of sessions with a live client stay held however many other scopes load (M9).
+  keep: () => openScopes(sessions),
 });
-// Views and the state file (design V4, V5); the warnings wait for the logger.
-const views = new ViewStore(join(config.stateDir, "views"));
-const statePath = join(config.stateDir, STATE_FILE);
-const restoreWarnings: string[] = [];
-const initial = loadState(statePath, (message) => restoreWarnings.push(message));
-const workspace = new WorkspaceStore(
-  {
-    signalExists: (id) => catalog.get(id) !== undefined,
-    unitOf: (id) => catalog.get(id)?.unit,
-    hasStates: (id) => catalog.get(id)?.states !== undefined,
-    catalogReady: () => catalog.loadedAt !== undefined,
-  },
-  {
-    onListenerError: (error) => app.log.error({ error: String(error) }, "live listener failed"),
-    // A restored workspace is used whole; the project file seeds only a fresh one (V4, S-3 (b)).
-    ...(initial ? { initial } : { ...(measurement ? { measurement } : {}), eventSignals }),
-    beforeOpen: (previous) => views.beforeOpen(previous),
-  },
-);
 const deps = {
   catalog,
   catalogs,
   scopePad: config.scopePad,
   source,
-  workspace,
+  sessions,
+  // Each user's saved views in `<stateDir>/users/<user>/views/` (add-multiuser M9).
+  viewsOf: userViews(config.stateDir),
+  ...(identity ? { identity } : {}),
+  ...(accessRules ? { rules: accessRules } : {}),
+  ...(config.webDir === undefined ? {} : { webDir: config.webDir }),
   meta: {
     build,
     // Labels only: URLs, users, passwords and tokens stay in the adapter.
@@ -127,7 +161,6 @@ const deps = {
     ping: (signal: AbortSignal) => source.ping(signal),
   },
   ...(licenseText === undefined ? {} : { licenseText }),
-  views,
 };
 const app = buildApp(
   deps,
@@ -139,21 +172,26 @@ if (rules === NO_RULES)
 if (licenseMissing) app.log.warn("LICENSE not found; /api/license answers 404");
 if (skippedDefaults.length > 0)
   app.log.info(`default metadata files not found, skipped: ${skippedDefaults.join(", ")}`);
-if (!loopback)
-  app.log.warn(
-    `KIPSCOPE_HOST ${config.host} is not loopback: every machine that reaches it can read signals and change the workspace` +
-      (wildcard ? "; only loopback names pass the Host check" : ""),
-  );
+// Identity, rules and origins, or the loopback warning of `none` (add-multiuser M10).
+for (const line of accessLog(config, accessRules)) app.log[line.level](line.message);
 
-for (const message of restoreWarnings) app.log.warn(message);
-if (initial) app.log.info({ revision: initial.revision }, `workspace restored from ${statePath}`);
-const persister = new StatePersister(statePath, { warn: (message) => app.log.warn(message) });
-persister.subscribe(workspace);
-// node --watch restarts with SIGTERM: write the last changes, then exit as the signal would.
+ready = {
+  info: (message) => app.log.info(message),
+  warn: (message) => app.log.warn(message),
+  debug: (message) => app.log.debug(message),
+};
+for (const { level, message } of early.splice(0)) app.log[level](message);
+
+/** How long shutdown waits for the adapter to close. */
+const CLOSE_ADAPTER_MS = 2_000;
+// node --watch restarts with SIGTERM: write every session's last changes, close the adapter, then
+// exit as the signal would.
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => {
-    persister.flush();
-    process.kill(process.pid, signal);
+    sessions.stop();
+    const closing = identity?.close?.().catch(() => {}) ?? Promise.resolve();
+    const timeout = new Promise((done) => setTimeout(done, CLOSE_ADAPTER_MS).unref());
+    void Promise.race([closing, timeout]).finally(() => process.kill(process.pid, signal));
   });
 
 app.log.info(attributionText());
@@ -178,15 +216,4 @@ if (full)
       app.log.error({ error: String(error), retryInMs }, "catalog not loaded; retrying");
     },
   });
-// A restored scope's list is kept loaded the same way, in both modes (signal-catalog H5).
-const restored = workspace.workspace.scope;
-if (restored)
-  keepCatalogLoaded(catalogs.entry(restored), {
-    loaded() {},
-    failed(error, retryInMs) {
-      app.log.error(
-        { error: String(error), retryInMs, scope: scopeKey(restored) },
-        "scope catalog not loaded; retrying",
-      );
-    },
-  });
+// No scope list loads at start: a session's loads when a live client connects (add-multiuser M9).

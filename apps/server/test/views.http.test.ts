@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { type ViewDoc, type Workspace, workspaceToView } from "@kipscope/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { type Client, type MultiApp, multiApp, viewDoc } from "./identityApp.ts";
 import { codeOf, type ViewsApp, viewsApp } from "./viewsApp.ts";
 
 const RPM = "testcar/Sna_800h.RPM";
@@ -645,5 +646,132 @@ describe("views and scopes over HTTP (add-scope)", () => {
     };
     expect((await t.post("/api/commands", { type: "view.open", view: bare })).status).toBe(200);
     expect((await t.get("/api/workspace")).body.workspace.scope).toBeUndefined();
+  });
+});
+
+describe("views per user (add-multiuser)", () => {
+  let m: MultiApp | undefined;
+  afterEach(async () => {
+    await m?.close();
+    m = undefined;
+  });
+
+  const SIG = "testcar/Fast_100h.SIG_A";
+  const range = { from: "1790816400000000000", to: "1790817000000000000" };
+  /** A session of `client` with one window holding SIG. */
+  async function withWindow(client: Client): Promise<string> {
+    const id = (await client.post("/api/sessions", {})).body.session.id as string;
+    const w = await client.command({ type: "window.create", ...range }, id);
+    await client.command({ type: "window.addSignal", windowId: w.body.created, signalId: SIG }, id);
+    return id;
+  }
+
+  it("writes a user's views under users/<user>/views", async () => {
+    await seeded();
+    expect(t.viewsDir).toBe(join(t.stateDir, "users", "local", "views"));
+    expect((await t.post("/api/views", { title: "Hard acceleration, drive 3" })).status).toBe(200);
+    expect(
+      existsSync(join(t.stateDir, "users", "local", "views", "hard-acceleration-drive-3.yaml")),
+    ).toBe(true);
+    expect(existsSync(join(t.stateDir, "views"))).toBe(false);
+  });
+
+  it("keeps views per user", async () => {
+    m = await multiApp();
+    const alice = m.as("alice", ["all"]);
+    const bob = m.as("bob", ["all"]);
+    const aliceSession = await withWindow(alice);
+    expect((await alice.post(`/api/s/${aliceSession}/views`, { title: "speeds" })).status).toBe(
+      200,
+    );
+    const file = join(m.stateDir, "users", "alice", "views", "speeds.yaml");
+    const text = readFileSync(file, "utf8");
+    expect((await alice.get("/api/views")).body.views.map((v: { name: string }) => v.name)).toEqual(
+      ["speeds"],
+    );
+
+    expect((await bob.get("/api/views")).body.views).toEqual([]);
+    for (const res of [
+      await bob.get("/api/views/speeds"),
+      await bob.del("/api/views/speeds"),
+      await bob.post("/api/views/open", { name: "speeds" }),
+    ]) {
+      expect([res.status, codeOf(res.body)]).toEqual([404, "unknown_view"]);
+    }
+    // His own `speeds` does not clash with hers.
+    const bobSession = await withWindow(bob);
+    const own = await bob.post(`/api/s/${bobSession}/views`, { title: "speeds" });
+    expect(own.status).toBe(200);
+    expect(readFileSync(file, "utf8")).toBe(text);
+    expect(existsSync(join(m.stateDir, "users", "bob", "views", "speeds.yaml"))).toBe(true);
+    // Hers is still there for her.
+    expect((await alice.get("/api/views/speeds")).status).toBe(200);
+  });
+
+  it("saves a shared session as a view of the one who saves it", async () => {
+    m = await multiApp();
+    const alice = m.as("alice", ["all"]);
+    const bob = m.as("bob", ["all"]);
+    const id = await withWindow(alice);
+    await alice.post(`/api/sessions/${id}/share`, { share: "write" });
+    expect((await bob.post(`/api/s/${id}/views`, { title: "bobs copy" })).status).toBe(200);
+    expect(existsSync(join(m.stateDir, "users", "bob", "views", "bobs-copy.yaml"))).toBe(true);
+    expect((await alice.get("/api/views")).body.views).toEqual([]);
+    // A reader may not save: that marks the shared session's open view.
+    await alice.post(`/api/sessions/${id}/share`, { share: "read" });
+    const refused = await bob.post(`/api/s/${id}/views`, { title: "again" });
+    expect([refused.status, codeOf(refused.body)]).toEqual([403, "read_only"]);
+  });
+
+  it("imports into the importing user's store only", async () => {
+    m = await multiApp();
+    const alice = m.as("alice", ["all"]);
+    const bob = m.as("bob", ["all"]);
+    const text = JSON.stringify(viewDoc([[SIG]], { title: "Imported" }));
+    expect((await alice.post("/api/views/import", { text })).status).toBe(200);
+    expect(existsSync(join(m.stateDir, "users", "alice", "views", "imported.yaml"))).toBe(true);
+    expect(existsSync(join(m.stateDir, "users", "bob", "views", "imported.yaml"))).toBe(false);
+    expect((await bob.get("/api/views")).body.views).toEqual([]);
+  });
+
+  it("keeps the workspace before the last open per user", async () => {
+    m = await multiApp();
+    const alice = m.as("alice", ["all"]);
+    const bob = m.as("bob", ["all"]);
+    const aliceSession = await withWindow(alice);
+    const bobSession = await withWindow(bob);
+    expect(
+      (
+        await alice.post("/api/views/import", {
+          text: JSON.stringify(viewDoc([[SIG]], { title: "X" })),
+        })
+      ).status,
+    ).toBe(200);
+
+    expect((await alice.post(`/api/s/${aliceSession}/views/open`, { name: "x" })).status).toBe(200);
+    const list = (await alice.get("/api/views")).body.views as { name: string; title: string }[];
+    expect(list.at(-1)).toMatchObject({ name: "_previous", title: "Before last open" });
+    // Bob has none, and alice's open did not touch his session.
+    expect((await bob.get("/api/views")).body.views).toEqual([]);
+    expect(m.sessions.get(bobSession)?.store.revision).toBe(2);
+
+    // Bob opens a view of his own in alice's shared session: the replaced workspace is HIS `_previous`.
+    await alice.post(`/api/sessions/${aliceSession}/share`, { share: "write" });
+    const before = readFileSync(
+      join(m.stateDir, "users", "alice", "views", "_previous.yaml"),
+      "utf8",
+    );
+    expect(
+      (
+        await bob.post("/api/views/import", {
+          text: JSON.stringify(viewDoc([[SIG], [SIG]], { title: "Y" })),
+        })
+      ).status,
+    ).toBe(200);
+    expect((await bob.post(`/api/s/${aliceSession}/views/open`, { name: "y" })).status).toBe(200);
+    expect((await bob.get("/api/views")).body.views.at(-1).name).toBe("_previous");
+    expect(
+      readFileSync(join(m.stateDir, "users", "alice", "views", "_previous.yaml"), "utf8"),
+    ).toBe(before);
   });
 });

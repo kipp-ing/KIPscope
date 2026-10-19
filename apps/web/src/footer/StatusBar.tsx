@@ -1,4 +1,4 @@
-import { ATTRIBUTION, type Measurement, type ServerMeta } from "@kipscope/shared";
+import { ATTRIBUTION, type Me, type Measurement, type ServerMeta } from "@kipscope/shared";
 import { type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DROP_NEW } from "../chart/drag.ts";
 import { fitFooter } from "./fit.ts";
@@ -16,6 +16,8 @@ export interface StatusBarProps {
   measurement?: Measurement | undefined;
   meta?: ServerMeta | undefined;
   metaStale: boolean;
+  /** The signed-in user; shown unless the identity is `none` (add-multiuser M12). */
+  me?: Me | undefined;
   dragging: boolean;
   /** The pointer is over the strip during a drag. */
   over: boolean;
@@ -99,8 +101,18 @@ function Item({ item, title }: { item: FooterItem; title: string }) {
  * attribution stays, so nothing moves when a drag starts (workspace-layout "Top row and status strip").
  */
 export function StatusBar(props: StatusBarProps) {
-  const { connected, revision, message, measurement, meta, metaStale, dragging, over, dropRef } =
-    props;
+  const {
+    connected,
+    revision,
+    message,
+    measurement,
+    meta,
+    metaStale,
+    me,
+    dragging,
+    over,
+    dropRef,
+  } = props;
   const statusRef = useRef<HTMLSpanElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const attributionRef = useRef<HTMLSpanElement>(null);
@@ -114,7 +126,10 @@ export function StatusBar(props: StatusBarProps) {
   // The zone is read again with each meta answer, so a DST change shows within one poll.
   // biome-ignore lint/correctness/useExhaustiveDependencies: meta is the refresh trigger
   const zone = useMemo(() => browserZone(), [meta]);
-  const automatic = useMemo(() => footerItems(meta, metaStale, zone), [meta, metaStale, zone]);
+  const automatic = useMemo(
+    () => footerItems(meta, metaStale, zone, new Date(), me),
+    [meta, metaStale, zone, me],
+  );
   const all = useMemo(() => [...measured.items, ...automatic], [measured, automatic]);
 
   const fit = fitFooter({

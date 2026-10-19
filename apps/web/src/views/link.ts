@@ -20,12 +20,16 @@ export function cleanAddress(location: Address): string {
   return location.pathname;
 }
 
-/** Link to the open workspace as a self-contained view: the shared `viewLinkUrl`, the CLI's `view link` too. */
+/**
+ * Link to the open workspace as a self-contained view: the shared `viewLinkUrl`, the CLI's `view
+ * link` too. It is built on the page's origin, not its `/s/<id>` path, so it opens a new session
+ * wherever it is opened, for whoever may see its data (add-multiuser M12).
+ */
 export function viewLink(
   workspace: Workspace,
-  page: Pick<Location, "origin" | "pathname">,
+  page: Pick<Location, "origin"> & Partial<Pick<Location, "pathname">>,
 ): Promise<string> {
-  return viewLinkUrl(workspace, page.origin + page.pathname);
+  return viewLinkUrl(workspace, `${page.origin}/`);
 }
 
 /** The notice after "Copy link". */
@@ -41,7 +45,8 @@ export async function copyViewLink(workspace: Workspace): Promise<string> {
   return linkCopiedText(link.length);
 }
 
-async function writeClipboard(text: string): Promise<void> {
+/** Copies `text`; also the Sessions menu's "Copy session link". */
+export async function writeClipboard(text: string): Promise<void> {
   // The Clipboard API needs a secure context; a tunnel host over http has none.
   if (navigator.clipboard && window.isSecureContext) {
     await navigator.clipboard.writeText(text);

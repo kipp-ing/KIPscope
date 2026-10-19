@@ -3,12 +3,16 @@ import {
   type CommandResult,
   type CursorName,
   type Digits,
+  type Me,
+  type SessionSummary,
   type TimeseriesWindow,
   type Workspace,
   windowTitle,
 } from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
 import { HINTS } from "../help/hints.ts";
+import { ReadOnlyPill } from "../session/ReadOnlyPill.tsx";
+import { SessionsMenu } from "../session/SessionsMenu.tsx";
 import { formatRange } from "../time/axis.ts";
 import { type TrackOpen, ViewsMenu } from "../views/ViewsMenu.tsx";
 import "./bar.css";
@@ -40,10 +44,17 @@ interface OptionBarProps {
   onNotice: (text: string, title?: string) => void;
   /** Error in the strip. */
   onMessage: (text: string) => void;
+  /** The page's session (add-multiuser M12). */
+  sessionId: string;
+  /** The page's session from the live channel, with this user's rights and its owner. */
+  session: SessionSummary | undefined;
+  /** The signed-in user, read once at start. */
+  me: Me;
 }
 
 /**
- * Sticky bar above the windows (D-023): Views menu and the open view's title, cursors, link, Go to, span presets, Back, Reset, digits,
+ * Sticky bar above the windows (D-023): Sessions and Views menus, the open view's title and the
+ * Read-only pill (add-multiuser M12), cursors, link, Go to, span presets, Back, Reset, digits,
  * new values window; on a short row digits, new values window and span move into the "⋯" menu (V7).
  */
 export function OptionBar({
@@ -60,6 +71,9 @@ export function OptionBar({
   trackOpen,
   onNotice,
   onMessage,
+  sessionId,
+  session,
+  me,
 }: OptionBarProps) {
   const { cursors, linkTime } = workspace;
   const digits = workspace.options?.digits ?? 3;
@@ -179,6 +193,13 @@ export function OptionBar({
 
   return (
     <div className="option-bar">
+      <SessionsMenu
+        current={sessionId}
+        session={session}
+        me={me}
+        onNotice={onNotice}
+        onMessage={onMessage}
+      />
       <ViewsMenu
         workspace={workspace}
         trackOpen={trackOpen}
@@ -186,6 +207,7 @@ export function OptionBar({
         onNotice={onNotice}
         onMessage={onMessage}
       />
+      <ReadOnlyPill session={session} />
       <span className="separator" />
       {cursorToggle("a")}
       {cursorToggle("b")}

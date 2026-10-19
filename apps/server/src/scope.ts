@@ -1,10 +1,12 @@
-import { scopeKey, type Workspace, type WorkspaceScope } from "@kipscope/shared";
+import { scopeKey, type WorkspaceScope } from "@kipscope/shared";
 import type { FastifyRequest } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { CatalogMode } from "./config.ts";
 import type { DataSource, Scope, SignalRef } from "./datasource.ts";
+import { sessionOf } from "./http.ts";
+import type { Sessions } from "./sessions.ts";
 
-/** Scope catalogs the store keeps; the least recently used one is dropped (design Z10). */
+/** Scope catalogs the store keeps besides the kept ones; the least recently used one is dropped (design Z10). */
 export const MAX_SCOPE_CATALOGS = 4;
 
 /** A workspace scope (decimal-ns strings) as the source takes it. */
@@ -14,15 +16,14 @@ export const sourceScope = (scope: WorkspaceScope): Scope => ({
   to: BigInt(scope.to),
 });
 
-/**
- * The scope of the workspace a request serves (design Z10). Today that is the one workspace's;
- * `add-multiuser` replaces this function.
- */
-export function scopeOf(
-  _request: FastifyRequest | undefined,
-  workspace: { readonly workspace: Workspace },
-): WorkspaceScope | undefined {
-  return workspace.workspace.scope;
+/** The scope of the session a request serves (design Z10, add-multiuser M5). */
+export function scopeOf(request: FastifyRequest): WorkspaceScope | undefined {
+  return sessionOf(request).store.workspace.scope;
+}
+
+/** The scopes of every session with a live client (add-multiuser M9): the lists a store keeps. */
+export function openScopes(sessions: Pick<Sessions, "open">): WorkspaceScope[] {
+  return sessions.open().flatMap((s) => (s.store.workspace.scope ? [s.store.workspace.scope] : []));
 }
 
 /** Waits for `promise`, or rejects with the abort reason once `abort` fires; the work goes on. */
@@ -49,15 +50,16 @@ type LoadedListener = (scope: WorkspaceScope, catalog: Catalog) => void;
 
 /**
  * The signal lists the server holds (design Z10): the full catalog (full mode only) and one
- * catalog per scope, at most MAX_SCOPE_CATALOGS, the least recently used dropped first; the
- * catalog of the scope `keep` returns (the workspace's current one) is never dropped.
+ * catalog per scope. The catalogs of the scopes `keep` returns (those of the sessions with a live
+ * client, add-multiuser M9) are never dropped; of the others at most MAX_SCOPE_CATALOGS stay, the
+ * least recently used dropped first.
  */
 export class CatalogStore {
   readonly mode: CatalogMode;
   /** The start-up catalog of full mode; undefined in scoped mode. */
   readonly full: Catalog | undefined;
   private readonly create: (scope: Scope) => Catalog;
-  private readonly keep: () => WorkspaceScope | undefined;
+  private readonly keep: () => Iterable<WorkspaceScope>;
   /** Scope catalogs by `scopeKey`, least recently used first. */
   private readonly scoped = new Map<string, { scope: WorkspaceScope; catalog: Catalog }>();
   private readonly listeners = new Set<LoadedListener>();
@@ -66,12 +68,12 @@ export class CatalogStore {
     mode: CatalogMode;
     full?: Catalog;
     create: (scope: Scope) => Catalog;
-    keep?: () => WorkspaceScope | undefined;
+    keep?: () => Iterable<WorkspaceScope>;
   }) {
     this.mode = options.mode;
     this.full = options.mode === "full" ? options.full : undefined;
     this.create = options.create;
-    this.keep = options.keep ?? (() => undefined);
+    this.keep = options.keep ?? (() => []);
   }
 
   /** The scope's catalog, loaded or not, else without a scope the full catalog; if any. */
@@ -95,11 +97,13 @@ export class CatalogStore {
       for (const listener of this.listeners) listener(own, catalog);
     });
     this.scoped.set(scopeKey(own), { scope: own, catalog });
-    const kept = this.keep();
-    const keptKey = kept && scopeKey(kept);
+    const kept = new Set([...this.keep()].map(scopeKey));
+    let others = [...this.scoped.keys()].filter((key) => !kept.has(key)).length;
     for (const key of this.scoped.keys()) {
-      if (this.scoped.size <= MAX_SCOPE_CATALOGS) break;
-      if (key !== keptKey) this.scoped.delete(key);
+      if (others <= MAX_SCOPE_CATALOGS) break;
+      if (kept.has(key)) continue;
+      this.scoped.delete(key);
+      others--;
     }
     return catalog;
   }

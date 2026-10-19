@@ -5,7 +5,7 @@ import type { Workspace } from "@kipscope/shared";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource, Scope, SignalRef } from "../src/datasource.ts";
-import { ViewStore } from "../src/views.ts";
+import { userViews, type ViewStore } from "../src/views.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
 export const SIGNALS: SignalRef[] = [
@@ -39,7 +39,7 @@ export interface ViewsApp {
   store: WorkspaceStore;
   views: ViewStore;
   catalog: Catalog;
-  /** Temp state dir; views live in `<stateDir>/views`. */
+  /** Temp state dir; the views of the user `local` live in `<stateDir>/users/local/views`. */
   stateDir: string;
   viewsDir: string;
   /** The `scope` argument of every `listSignals` call, in order (undefined: the full list). */
@@ -56,7 +56,9 @@ export interface ViewsApp {
  * The real app on a temp state dir. `initial`: workspace and revision the store starts with.
  * `loadCatalog: false` leaves the catalog never loaded (503 `catalog_unavailable` on open).
  *
- * The `beforeOpen` hook is wired like `main.ts` does it (design V5): `views.beforeOpen`.
+ * Wired like `main.ts` does it (add-multiuser M9): per-user view stores under `<stateDir>/users/`, and the
+ * `_previous` hook passed by the routes per call, not set on the workspace store. The app runs
+ * without an identity, so every request is the user `local`.
  */
 export async function viewsApp(
   options: {
@@ -69,9 +71,10 @@ export async function viewsApp(
   const listCalls: (Scope | undefined)[] = [];
   const source = stubSource(listCalls, () => options.failScopeList === true);
   const stateDir = mkdtempSync(join(tmpdir(), "kipscope-views-"));
-  const viewsDir = join(stateDir, "views");
+  const viewsDir = join(stateDir, "users", "local", "views");
   mkdirSync(viewsDir, { recursive: true });
-  const views = new ViewStore(viewsDir);
+  const viewsOf = userViews(stateDir);
+  const views = viewsOf("local");
   const catalog = new Catalog(source, async () => new Map());
   if (options.loadCatalog !== false) await catalog.refresh();
   const store = new WorkspaceStore(
@@ -80,14 +83,11 @@ export async function viewsApp(
       hasStates: () => false,
       catalogReady: () => catalog.loadedAt !== undefined,
     },
-    {
-      ...(options.initial ? { initial: options.initial } : {}),
-      beforeOpen: (previous: Workspace) => views.beforeOpen(previous),
-    },
+    options.initial ? { initial: options.initial } : {},
   );
   const pushes: { revision: number; command: string }[] = [];
   store.subscribe((revision, _ws, command) => pushes.push({ revision, command }));
-  const app = buildApp({ catalog, source, workspace: store, views });
+  const app = buildApp({ catalog, source, workspace: store, viewsOf });
   await app.ready();
   const parse = (text: string) => {
     try {

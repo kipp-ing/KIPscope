@@ -46,6 +46,7 @@ scripts/demo.sh                               # UI http://localhost:5183, server
 | Manual (also in the app, `?`) | [docs/manual.md](docs/manual.md) |
 | Data sources and adapters | [docs/data-sources.md](docs/data-sources.md) |
 | HTTP API | [docs/http-api.md](docs/http-api.md) |
+| Server deployment: sign-in (Ping), rules, sessions | [docs/deploy.md](docs/deploy.md) |
 | Requirements (German) | [docs/concept.md](docs/concept.md) |
 | Specs, one per capability | [openspec/specs/](openspec/specs/) |
 | Changes in flight and archived | [openspec/changes/](openspec/changes/) |
@@ -117,7 +118,22 @@ The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL`
 
 `pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It blocks every write to `/api`, so it never changes the shared workspace.
 
-The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`) and whose `Origin`, if any, is such a host; other requests get 403. A non-loopback `KIPSCOPE_HOST` logs a warning at start: there is no authentication.
+The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`, or a host of `KIPSCOPE_ORIGINS`) and whose `Origin`, if any, is such a host; other requests get 403. Locally there is no login (`KIPSCOPE_IDENTITY=none`, the default): every request is the user `local` with every right, and a non-loopback `KIPSCOPE_HOST` logs a warning at start.
+
+**Sessions:** each workspace is a session with its own address `/s/<id>`; `/` opens your latest session (or a new one), and a `#view=` or `?view=` link opens the view in a new session, so old tabs keep their case. The Sessions menu in the top row lists, starts, shares and deletes them. The CLI and scripts without a session use the latest one. On first start a state dir from before sessions is migrated to the user `local` (`workspace.json` becomes a session, `views/` moves to `users/local/views/`).
+
+**On a server** for several users ([docs/deploy.md](docs/deploy.md)): behind a TLS proxy, with an identity adapter (`oidc` for Ping Identity, or your own module), a rules file that maps roles to the data refs they may see, and the built UI served by the server:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KIPSCOPE_IDENTITY` | `none` | `none`, `oidc` or `module:<path>` |
+| `KIPSCOPE_RULES` | — | rules file (roles → data-ref patterns, share right); required unless `none` |
+| `KIPSCOPE_ORIGINS` | — | public origins, comma-separated; required unless `none` |
+| `KIPSCOPE_OIDC_ISSUER`, `KIPSCOPE_OIDC_AUDIENCE` | — | required with `oidc` |
+| `KIPSCOPE_OIDC_JWKS_URL`, `KIPSCOPE_OIDC_USER_CLAIM`, `KIPSCOPE_OIDC_ROLES_CLAIM`, `KIPSCOPE_OIDC_HEADER`, `KIPSCOPE_OIDC_ALGS` | discovered, `sub`, `roles`, `authorization`, `RS256,PS256,ES256` | token details |
+| `KIPSCOPE_SESSION_IDLE_DAYS` | `30` | untouched sessions without an open tab are deleted after this |
+| `KIPSCOPE_WEB_DIR` | — | the built UI (`apps/web/dist` after `pnpm build`) the server serves |
+| `KIPSCOPE_DEV_USER`, `KIPSCOPE_DEV_ROLES` | — | dev only: the UI's Vite proxy sends them as `X-Forwarded-User` and `X-Forwarded-Groups` (for the example module) |
 
 Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the source address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
 
@@ -231,7 +247,7 @@ node apps/cli/src/main.ts --help
 node apps/cli/src/main.ts state
 ```
 
-Server: `--server URL` (an `http://` or `https://` URL), else `KIPSCOPE_URL`, else `http://localhost:7310`. Global options anywhere on the line: `--wait` (block until an open UI rendered the command), `--timeout DURATION` (default `30s`), `--pretty`, `--help`; `--` ends options.
+Server: `--server URL` (an `http://` or `https://` URL, or a session link `<UI>/s/<id>`), else `KIPSCOPE_URL`, else `http://localhost:7310`. Session: `--session ID|LINK`, else `KIPSCOPE_SESSION`, else the session of a link given as server; without one the call uses your latest session and keeps the one the first answer names (`X-KIPscope-Session`) for its later requests; the output names it as `session`. Token (on a server with sign-in, [docs/deploy.md](docs/deploy.md#cli-and-ai-callers)): `--token T`, else `KIPSCOPE_TOKEN`, else the output of `KIPSCOPE_TOKEN_COMMAND` (run once per call, 10 s timeout; a failure exits 2 with `token_command_failed`); sent as `Authorization: Bearer`, never printed. Global options anywhere on the line: `--wait` (block until an open UI of the same session rendered the command), `--timeout DURATION` (default `30s`), `--pretty`, `--help`; `--` ends options.
 
 W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/`±HH:MM`, local wall time `YYYY-MM-DD[T ]HH:MM[:SS[.fffffffff]]` in the process's zone (`TZ`), or a cursor anchor `a`, `b+500ms`, `a-1s`. DURATION is `[+-]<number><unit>` with `ns us µs ms s min h`. SIGNAL is a full ID (`smart-ed/VEH_200h.VehSpeed`) or a unique bare name (`VehSpeed`); REF is an assignment ID (`a7`) or a signal in window W.
 
@@ -263,6 +279,11 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `view open NAME` | `POST /api/views/open`: one command (`accepted`, `revision`, `data.report` of missing or left-out signals); honours `--wait` |
 | `view delete NAME` | `DELETE /api/views/NAME` |
 | `view import FILE [--name N] [--overwrite] [--open]` | `POST /api/views/import` with FILE's text (YAML or JSON, at most 256 KiB; an unreadable or larger FILE is a usage error) |
+| `whoami` | `GET /api/me`: `data {user, identity, roles, rights}` |
+| `session list` | `GET /api/sessions`: your sessions, latest first |
+| `session new` | `POST /api/sessions`: a new empty session; `local.url` is its link `<server>/s/<id>` |
+| `session share private\|read\|write` | `POST /api/sessions/<id>/share` for the call's session (owner only; `read` and `write` need the share right) |
+| `session delete ID` | `DELETE /api/sessions/ID` |
 
 Reads: `state`, `scope show` (`data {scope, catalog {mode, state, size}}`, `local {from, to}`), `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]`, `wait [REVISION]`, `view list`, `view export NAME [--out FILE]` (prints the view's YAML text; with `--out` writes FILE and prints `data {name, path, bytes}`), `view link [--page URL]` (the `#view=` link of the open workspace that the UI's "Copy link" gives, as `data {url, chars}`; `--page` is the UI page address, default the server address).
 
@@ -271,13 +292,13 @@ Each call prints one JSON line (`ok`, `outcome`, `exitCode`, and where they appl
 | Exit | Outcome | When |
 |---|---|---|
 | 0 | `ok` | read answered, or command accepted (with `--wait`: and rendered) |
-| 1 | `rejected` | the server or a lookup refused it (`cursor_off`, `unknown_signal`, `ambiguous_signal`, …) |
+| 1 | `rejected` | the server or a lookup refused it (`cursor_off`, `unknown_signal`, `ambiguous_signal`, `unauthenticated`, `forbidden_data`, `read_only`, …) |
 | 2 | `usage` | arguments do not parse; nothing was sent |
 | 3 | `unreachable` | no connection to the server |
 | 4 | `timeout` | `--timeout` ran out during a request or the wait |
 | 5 | `render_error` | the UI rendered with data errors |
 | 6 | `no_ui` | waiting, and no UI connected for 2 s |
-| 7 | `unavailable` | the server answered 5xx (e.g. `catalog_unavailable`) |
+| 7 | `unavailable` | the server answered 5xx (e.g. `catalog_unavailable`, `identity_unavailable`) |
 
 Examples, against the demo (window IDs come from `created`):
 

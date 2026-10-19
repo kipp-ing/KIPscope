@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_FILTER_LENGTH } from "./eventFilter.ts";
+import type { SessionSummary } from "./session.ts";
 import { fromIso, parseTimestamp, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
 
@@ -395,6 +396,8 @@ export type CommandErrorCode =
   | "invalid_view"
   | "unsupported_version"
   | "catalog_unavailable"
+  /** A data ref the requester may not see (add-multiuser M6, M7). */
+  | "forbidden_data"
   /** Scoped mode: the command needs a scope and the workspace has none (design Z6). */
   | "scope_required"
   /** A cursor time outside the scope (design Z6). */
@@ -435,6 +438,8 @@ export interface OpenReport {
 /** Messages on `WS /api/live`. */
 export type LiveServerMessage =
   | { type: "hello"; clientId: string }
+  /** The session this connection serves, with this connection's user's rights (add-multiuser M8). */
+  | { type: "session"; session: SessionSummary }
   | {
       type: "state";
       revision: number;
@@ -460,6 +465,8 @@ export type RenderedMessage = z.infer<typeof RenderedMessage>;
 
 export interface ClientRenderStatus {
   clientId: string;
+  /** The user of the connection (add-multiuser M4). */
+  user?: string;
   connectedAt: string;
   rendered?: { revision: number; status: "complete" | "error"; errors: RenderError[]; at: string };
 }

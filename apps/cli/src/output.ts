@@ -37,6 +37,8 @@ export interface CliOutput {
   outcome: Outcome;
   /** EXIT[outcome] */
   exitCode: number;
+  /** The session the call served (add-multiuser M13). */
+  session?: string;
   /** Commands only. */
   accepted?: boolean;
   /** As sent (times as decimal ns). */

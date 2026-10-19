@@ -287,4 +287,167 @@ describe("loadConfig", () => {
     expect(mapped.mapping.time).toBe("EventTime");
     expect(mapped.events.table).toBe("KIPscopeEvents");
   });
+
+  // add-multiuser M2: the identity adapter, the rules file, the origins, the idle days, the web dir.
+  const corp = {
+    ...base,
+    KIPSCOPE_RULES: "/etc/kipscope/rules.yaml",
+    KIPSCOPE_ORIGINS: "https://kipscope.example.org",
+  };
+  const oidcEnv = {
+    ...corp,
+    KIPSCOPE_IDENTITY: "oidc",
+    KIPSCOPE_OIDC_ISSUER: "https://idp.example.org",
+    KIPSCOPE_OIDC_AUDIENCE: "kipscope",
+  };
+
+  it("reads the identity settings", () => {
+    // Without the variable: no login, no rules file needed.
+    expect(loadConfig(base, "/repo/kipscope").identity).toEqual({ kind: "none" });
+
+    const oidc = loadConfig(oidcEnv, "/repo/kipscope");
+    expect(oidc.identity).toMatchObject({
+      kind: "oidc",
+      oidc: {
+        issuer: "https://idp.example.org",
+        audience: "kipscope",
+        userClaim: "sub",
+        rolesClaim: "roles",
+        header: "authorization",
+      },
+    });
+    // The default algorithms, in the order of the contract.
+    const algs = (oidc.identity as { oidc: { algs: string[] | string } }).oidc.algs;
+    expect(Array.isArray(algs) ? algs.join(",") : algs).toBe("RS256,PS256,ES256");
+    expect(oidc.rulesFile).toBe("/etc/kipscope/rules.yaml");
+
+    const module_ = loadConfig(
+      { ...corp, KIPSCOPE_IDENTITY: "module:apps/server/examples/forward-header.mjs" },
+      "/repo/kipscope",
+    );
+    expect(module_.identity.kind).toBe("module");
+    expect((module_.identity as { path: string }).path).toMatch(
+      /apps\/server\/examples\/forward-header\.mjs$/,
+    );
+
+    // Overrides of the oidc claims, header and algorithms.
+    const custom = loadConfig(
+      {
+        ...oidcEnv,
+        KIPSCOPE_OIDC_USER_CLAIM: "preferred_username",
+        KIPSCOPE_OIDC_ROLES_CLAIM: "realm_access.roles",
+        KIPSCOPE_OIDC_HEADER: "x-forwarded-access-token",
+        KIPSCOPE_OIDC_ALGS: "ES256",
+        KIPSCOPE_OIDC_JWKS_URL: "https://idp.example.org/keys",
+      },
+      "/repo/kipscope",
+    );
+    expect(custom.identity).toMatchObject({
+      kind: "oidc",
+      oidc: {
+        userClaim: "preferred_username",
+        rolesClaim: "realm_access.roles",
+        header: "x-forwarded-access-token",
+        jwksUrl: "https://idp.example.org/keys",
+      },
+    });
+
+    // Missing audience, forbidden algorithms, no rules file, an unknown kind: each names its variable.
+    const { KIPSCOPE_OIDC_AUDIENCE: _a, ...noAudience } = oidcEnv;
+    expect(() => loadConfig(noAudience, "/repo/kipscope")).toThrow(/KIPSCOPE_OIDC_AUDIENCE/);
+    const { KIPSCOPE_OIDC_ISSUER: _i, ...noIssuer } = oidcEnv;
+    expect(() => loadConfig(noIssuer, "/repo/kipscope")).toThrow(/KIPSCOPE_OIDC_ISSUER/);
+    for (const bad of ["HS256", "none", "RS256,HS384", "RS256,PS999"]) {
+      expect(
+        () => loadConfig({ ...oidcEnv, KIPSCOPE_OIDC_ALGS: bad }, "/repo/kipscope"),
+        bad,
+      ).toThrow(/KIPSCOPE_OIDC_ALGS/);
+    }
+    const { KIPSCOPE_RULES: _r, ...noRules } = { ...corp, KIPSCOPE_IDENTITY: "module:x" };
+    expect(() => loadConfig(noRules, "/repo/kipscope")).toThrow(/KIPSCOPE_RULES/);
+    const ping = () => loadConfig({ ...corp, KIPSCOPE_IDENTITY: "ping" }, "/repo/kipscope");
+    expect(ping).toThrow(/KIPSCOPE_IDENTITY/);
+    expect(ping).toThrow(/none/);
+    expect(ping).toThrow(/oidc/);
+    expect(ping).toThrow(/module:/);
+  });
+
+  it("refuses an insecure or malformed oidc issuer", () => {
+    for (const bad of [
+      "http://idp.example.org",
+      "idp.example.org",
+      "ftp://idp.example.org",
+      "https://",
+    ]) {
+      expect(
+        () => loadConfig({ ...oidcEnv, KIPSCOPE_OIDC_ISSUER: bad }, "/repo/kipscope"),
+        bad,
+      ).toThrow(/KIPSCOPE_OIDC_ISSUER/);
+    }
+    // http only for a loopback host (tests with a local JWKS server).
+    for (const ok of ["http://127.0.0.1:41234", "http://localhost:41234/as"]) {
+      expect(
+        loadConfig({ ...oidcEnv, KIPSCOPE_OIDC_ISSUER: ok }, "/repo/kipscope").identity.kind,
+        ok,
+      ).toBe("oidc");
+    }
+  });
+
+  it("ignores the rules file and needs no origins with identity none", () => {
+    const config = loadConfig(
+      { ...base, KIPSCOPE_RULES: "/does/not/exist.yaml" },
+      "/repo/kipscope",
+    );
+    expect(config.identity).toEqual({ kind: "none" });
+    expect(config.origins).toEqual([]);
+  });
+
+  it("reads the auth settings", () => {
+    // Origins: a comma list of http(s) origins without a path, trimmed.
+    const origins = (value: string) =>
+      loadConfig({ ...oidcEnv, KIPSCOPE_ORIGINS: value }, "/repo/kipscope").origins;
+    expect(origins("https://a.example, http://b.example:8080")).toEqual([
+      "https://a.example",
+      "http://b.example:8080",
+    ]);
+    for (const bad of [
+      "https://a.example/app",
+      "ftp://a.example",
+      "a.example",
+      "https://a.example, x",
+    ]) {
+      expect(() => origins(bad), bad).toThrow(/KIPSCOPE_ORIGINS/);
+    }
+    expect(() => origins("https://a.example/app")).toThrow(/https:\/\/a\.example\/app/);
+    // Required unless none.
+    const { KIPSCOPE_ORIGINS: _o, ...noOrigins } = oidcEnv;
+    expect(() => loadConfig(noOrigins, "/repo/kipscope")).toThrow(/KIPSCOPE_ORIGINS/);
+    expect(() => origins("")).toThrow(/KIPSCOPE_ORIGINS/);
+    // With none they may be set (the Origin guard then also admits them) or left out.
+    expect(
+      loadConfig({ ...base, KIPSCOPE_ORIGINS: "https://a.example" }, "/repo/kipscope").origins,
+    ).toEqual(["https://a.example"]);
+
+    // Idle days of a session: 30 by default, an integer of at least 1.
+    const idle = (value?: string) =>
+      loadConfig(
+        value === undefined ? base : { ...base, KIPSCOPE_SESSION_IDLE_DAYS: value },
+        "/repo/kipscope",
+      ).sessionIdleDays;
+    expect(idle()).toBe(30);
+    expect(idle("7")).toBe(7);
+    for (const bad of ["0", "x", "-3", "1.5"]) {
+      expect(() => idle(bad), bad).toThrow(/KIPSCOPE_SESSION_IDLE_DAYS/);
+    }
+  });
+
+  it("reads the web directory", () => {
+    expect(loadConfig(base, "/repo/kipscope").webDir).toBeUndefined();
+    expect(
+      loadConfig({ ...base, KIPSCOPE_WEB_DIR: "/srv/kipscope/web" }, "/repo/kipscope").webDir,
+    ).toBe("/srv/kipscope/web");
+    expect(
+      loadConfig({ ...base, KIPSCOPE_WEB_DIR: "apps/web/dist" }, "/repo/kipscope").webDir,
+    ).toBe("/repo/kipscope/apps/web/dist");
+  });
 });

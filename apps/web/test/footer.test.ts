@@ -1,4 +1,4 @@
-import type { Measurement, ServerMeta } from "@kipscope/shared";
+import type { Me, Measurement, ServerMeta } from "@kipscope/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -81,6 +81,65 @@ describe("measurement items (app-footer)", () => {
     const only = measurementItems({ object: "smart451" });
     expect(only.items.map((i) => i.text)).toEqual(["smart451"]);
     expect(only.title).toBe("Object: smart451");
+  });
+});
+
+describe("signed-in user item (app-footer)", () => {
+  const alice: Me = {
+    user: "alice",
+    identity: "oidc",
+    roles: ["testers", "viewers"],
+    rights: { data: ["test*"], share: false },
+  };
+
+  it("shows the signed-in user", () => {
+    const base = footerItems(metaOf(), false, ZONE);
+    expect(base.map((i) => i.key)).toEqual(["source", "catalog", "zone", "build"]);
+
+    const withAlice = footerItems(metaOf(), false, ZONE, new Date(), alice);
+    // The four items of "Items from meta", then the user.
+    expect(withAlice.slice(0, 4).map((i) => i.text)).toEqual(base.map((i) => i.text));
+    expect(withAlice).toHaveLength(5);
+    const user = withAlice.at(-1);
+    expect(user?.text).toBe("alice");
+    expect(user?.title).toBe("Signed in as alice (oidc) · roles: testers, viewers");
+
+    const bob = footerItems(metaOf(), false, ZONE, new Date(), {
+      ...alice,
+      user: "bob",
+      roles: [],
+    });
+    expect(bob.at(-1)?.text).toBe("bob");
+    expect(bob.at(-1)?.title).toBe("Signed in as bob (oidc) · roles: none");
+
+    // No user item with the identity none, and none without `me`.
+    const local: Me = {
+      user: "local",
+      identity: "none",
+      roles: [],
+      rights: { data: ["*"], share: true },
+    };
+    expect(footerItems(metaOf(), false, ZONE, new Date(), local).map((i) => i.key)).toEqual(
+      base.map((i) => i.key),
+    );
+    expect(footerItems(metaOf(), false, ZONE, new Date(), undefined)).toHaveLength(4);
+  });
+
+  it("shows a module adapter's kind in the tooltip", () => {
+    const items = footerItems(metaOf(), false, ZONE, new Date(), {
+      ...alice,
+      identity: "forward-header",
+      roles: ["cars"],
+    });
+    expect(items.at(-1)?.title).toBe("Signed in as alice (forward-header) · roles: cars");
+  });
+
+  it("keeps the user item longer than build, zone and catalog when the line is short", () => {
+    const items = footerItems(metaOf(), false, ZONE, new Date(), alice);
+    const rank = (key: string) => items.find((i) => i.key === key)?.rank ?? -1;
+    expect(rank("user")).toBeGreaterThan(rank("build"));
+    expect(rank("user")).toBeGreaterThan(rank("zone"));
+    expect(rank("user")).toBeGreaterThan(rank("catalog"));
   });
 });
 

@@ -12,6 +12,7 @@ export * from "./placement.ts";
 export * from "./scope.ts";
 export * from "./search.ts";
 export * from "./series.ts";
+export * from "./session.ts";
 export * from "./signals.ts";
 export * from "./states.ts";
 export * from "./time.ts";

@@ -6,6 +6,7 @@ import {
   PREVIOUS_VIEW,
   PREVIOUS_VIEW_TITLE,
   parseViewDoc,
+  USER_ID,
   VIEW_NAME,
   type ViewDoc,
   type ViewSummary,
@@ -177,4 +178,24 @@ export class ViewStore {
       workspaceToView(previous, { title: PREVIOUS_VIEW_TITLE, saved: savedNow() }),
     );
   }
+}
+
+/** The view store of one user (add-multiuser M9). */
+export type ViewsOf = (user: string) => ViewStore;
+
+/**
+ * One cached `ViewStore` per user on `<stateDir>/users/<user>/views/` (add-multiuser M9). The user
+ * is checked against `USER_ID` before a path is built, so no user names a folder outside `users/`.
+ */
+export function userViews(stateDir: string): ViewsOf {
+  const stores = new Map<string, ViewStore>();
+  return (user) => {
+    if (!USER_ID.test(user)) throw new Error(`invalid user: ${user}`);
+    let store = stores.get(user);
+    if (!store) {
+      store = new ViewStore(join(stateDir, "users", user, "views"));
+      stores.set(user, store);
+    }
+    return store;
+  };
 }

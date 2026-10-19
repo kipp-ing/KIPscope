@@ -18,6 +18,7 @@ import type { AppDeps } from "../app.ts";
 import type { RawPoint, Scope, SeriesRef } from "../datasource.ts";
 import { DensityCache } from "../density.ts";
 import { GapCache, workspaceSignals } from "../gaps.ts";
+import { type Access, queryDataRefs } from "../guard.ts";
 import {
   apiError,
   catalogsOf,
@@ -27,8 +28,9 @@ import {
   routeScope,
 } from "../http.ts";
 import { withPriority } from "../priority.ts";
-import { scopeOf, sourceScope } from "../scope.ts";
+import { sourceScope } from "../scope.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
+import type { Sessions } from "../sessions.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -60,6 +62,38 @@ const ValueQuery = z.object({
   mode: ValuesMode.default("line"),
 });
 
+/** Window and events-line signals of every session with a live client, united (add-multiuser M9). */
+export function openSignals(sessions: Sessions): string[] {
+  return [...new Set(sessions.open().flatMap((s) => workspaceSignals(s.store.workspace)))];
+}
+
+/**
+ * Scopes of the sessions with a live client, one per scope key; `unscoped` when one of them has
+ * none or no session has a client (add-multiuser M9).
+ */
+function openScopeList(sessions: Sessions): { scopes: Scope[]; unscoped: boolean } {
+  const open = sessions.open();
+  const scopes = new Map<string, Scope>();
+  let unscoped = open.length === 0;
+  for (const session of open) {
+    const scope = session.store.workspace.scope;
+    if (!scope) unscoped = true;
+    else scopes.set(`${scope.dataRef} ${scope.from} ${scope.to}`, sourceScope(scope));
+  }
+  return { scopes: [...scopes.values()], unscoped };
+}
+
+/** Access of the data routes (add-multiuser M6): the data refs each request names. */
+const SIGNAL_ACCESS: Access = { level: "session", dataRefs: queryDataRefs({ signal: "signal" }) };
+const DENSITY_ACCESS: Access = {
+  level: "session",
+  dataRefs: queryDataRefs({ dataRef: "dataRef" }),
+};
+const GAPS_ACCESS: Access = {
+  level: "session",
+  dataRefs: queryDataRefs({ dataRef: "dataRef", signal: "signal" }),
+};
+
 /** The workspace form of a source scope, for the catalog store. */
 const workspaceScope = (scope: Scope) => ({
   dataRef: scope.dataRef,
@@ -70,20 +104,15 @@ const workspaceScope = (scope: Scope) => ({
 export const seriesRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    const { catalog, source, workspace } = deps;
+    const { catalog, source, sessions } = deps;
     const catalogs = catalogsOf(deps);
     // A scope's caches follow that scope's signal list (add-scope Z9).
     const scopeCatalog = (scope: Scope) => catalogs.get(workspaceScope(scope));
     const density = new DensityCache(source, (scope) =>
       scope ? scopeCatalog(scope)?.loadedAt : catalog.loadedAt,
     );
-    // Periods are measured for the workspace's signals and the requests' only (design P6).
-    const gaps = new GapCache(
-      source,
-      catalog,
-      () => workspaceSignals(workspace.workspace),
-      scopeCatalog,
-    );
+    // Periods are measured for the open sessions' signals and the requests' only (design P6, M9).
+    const gaps = new GapCache(source, catalog, () => openSignals(sessions), scopeCatalog);
     const warn = (message: string) => app.log.warn(message);
     // Gap info polls (design G9 (b)): a setTimeout chain, each poll GAP_REFRESH_MS after the
     // previous poll or the catalog load's prefetch ended, so polls never overlap each other or a
@@ -96,23 +125,25 @@ export const seriesRoutes =
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(poll, GAP_REFRESH_MS);
     };
-    // With a scope only the active scope's gap info is polled (add-scope Z9); without one in
-    // scoped mode nothing is.
+    // The gap info of the open sessions' scopes is polled (add-scope Z9, add-multiuser M9); the
+    // full catalog's only in full mode while an open session has no scope or none is open.
     const poll = () => {
       timer = undefined;
-      const scope = scopeOf(undefined, workspace);
-      if (scope) {
-        const s = sourceScope(scope);
-        polling = withPriority("background", () => gaps.refresh([s.dataRef], warn, s)).then(
-          schedule,
-        );
+      const { scopes, unscoped } = openScopeList(sessions);
+      if (scopes.length > 0 && !(unscoped && catalogs.mode === "full")) {
+        polling = withPriority("background", async () => {
+          for (const s of scopes) await gaps.refresh([s.dataRef], warn, s);
+        }).then(schedule);
         return;
       }
       if (catalogs.mode === "scoped") return schedule();
       const loadedAt = catalog.loadedAt;
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
       // Background class (design P9): requests go first and keep a slot of their own.
-      polling = withPriority("background", () => gaps.refresh(dataRefs, warn)).then(() => {
+      polling = withPriority("background", async () => {
+        for (const s of scopes) await gaps.refresh([s.dataRef], warn, s);
+        await gaps.refresh(dataRefs, warn);
+      }).then(() => {
         // A newer load stopped this poll; its prefetch schedules the next one.
         if (catalog.loadedAt === loadedAt) schedule();
       });
@@ -162,7 +193,7 @@ export const seriesRoutes =
     });
 
     /** Rows per bucket of a data ref over its whole extent (spec time-strip). */
-    app.get("/api/density", async (request, reply) => {
+    app.get("/api/density", { config: { access: DENSITY_ACCESS } }, async (request, reply) => {
       const query = parseInput(DensityQuery, request.query, reply);
       if (!query) return reply;
       const { dataRef } = query;
@@ -172,7 +203,8 @@ export const seriesRoutes =
       if (scope && dataRef !== scope.dataRef) {
         return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
       }
-      if (!scope && catalog.loadedAt && !catalog.all().some((s) => s.dataRef === dataRef)) {
+      const visible = scoped.catalog;
+      if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
@@ -187,7 +219,7 @@ export const seriesRoutes =
     });
 
     /** Logger gaps and periods of a data ref and its named signals (spec data-gaps, design G6, P7). */
-    app.get("/api/gaps", async (request, reply) => {
+    app.get("/api/gaps", { config: { access: GAPS_ACCESS } }, async (request, reply) => {
       const query = parseInput(GapsQuery, request.query, reply);
       if (!query) return reply;
       const { dataRef, signal } = query;
@@ -207,7 +239,7 @@ export const seriesRoutes =
         );
       }
       // A scope's list may be empty while the scope itself is valid.
-      if (!scope && !catalog.all().some((s) => s.dataRef === dataRef)) {
+      if (!scope && !scoped.catalog.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
@@ -220,7 +252,7 @@ export const seriesRoutes =
     });
 
     /** First and last timestamp of a signal (spec series-query, signal extent). */
-    app.get("/api/extent", async (request, reply) => {
+    app.get("/api/extent", { config: { access: SIGNAL_ACCESS } }, async (request, reply) => {
       const query = parseInput(ExtentQuery, request.query, reply);
       if (!query) return reply;
       const scoped = routeScope(deps, request, reply);
@@ -268,7 +300,7 @@ export const seriesRoutes =
     });
 
     /** Signal data for a time range at a target resolution (spec series-query). */
-    app.get("/api/series", async (request, reply) => {
+    app.get("/api/series", { config: { access: SIGNAL_ACCESS } }, async (request, reply) => {
       const query = parseInput(SeriesQuery, request.query, reply);
       if (!query) return reply;
       const scoped = routeScope(deps, request, reply);
@@ -340,7 +372,7 @@ export const seriesRoutes =
     });
 
     /** Value of a signal at one time from its raw neighbours (spec series-query, design C4/S3). */
-    app.get("/api/value", async (request, reply) => {
+    app.get("/api/value", { config: { access: SIGNAL_ACCESS } }, async (request, reply) => {
       const query = parseInput(ValueQuery, request.query, reply);
       if (!query) return reply;
       const details = { signalId: query.signal };

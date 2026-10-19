@@ -1,0 +1,151 @@
+/* Sessions (add-multiuser M12): gate page, Sessions menu, Read-only pill. D-055 tokens; the menu's
+   popover, rows and items reuse the Views menu's (views/views.css). */
+
+.gate {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100vh;
+  padding-top: 18vh;
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+.gate-card {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.08);
+}
+
+.gate-card h1 {
+  margin: 0 0 8px;
+  color: var(--name);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gate-card p {
+  margin: 0 0 8px;
+  color: var(--label);
+  line-height: 1.5;
+}
+
+.gate-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.gate-actions button {
+  height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+/* One dark primary per surface (D-055). */
+.gate-actions button.primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
+}
+
+.gate-card .gate-error {
+  margin-top: 10px;
+  color: var(--error);
+}
+
+/* Sessions button and menu (M12): next to Views, the same box and popover. */
+.option-bar .sessions-menu {
+  position: relative;
+  flex: none;
+}
+
+.option-bar .sessions-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.option-bar .sessions-icon {
+  display: none;
+}
+
+/* The Views button's step 3 (bar.css): the label goes, the glyph stays. */
+@container top-row (max-width: 910px) {
+  .option-bar .sessions-label {
+    display: none;
+  }
+
+  .option-bar .sessions-icon {
+    display: block;
+  }
+}
+
+.views-popover a.views-open {
+  box-sizing: border-box;
+  color: inherit;
+  text-decoration: none;
+}
+
+.views-popover .views-row.current {
+  background: var(--accent-soft);
+}
+
+.views-popover .sessions-clients {
+  color: var(--ok-dot);
+}
+
+.sessions-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 0;
+  padding: 5px 10px;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.sessions-share legend {
+  float: left;
+  padding: 0;
+  color: var(--label);
+  font-weight: 500;
+}
+
+.sessions-share label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.sessions-share label.disabled {
+  color: var(--disabled);
+  cursor: not-allowed;
+}
+
+.sessions-share input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Read-only (M12): an outlined pill, not a control. */
+.option-bar .read-only-pill {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--control-h);
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--sna);
+  border-radius: 999px;
+  background: var(--sna-fill);
+  color: var(--sna-ink);
+  font-weight: 500;
+}

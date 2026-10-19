@@ -1,6 +1,6 @@
 /**
  * The app of the scope tests (add-scope): wired like `main.ts` does it (a `CatalogStore` of the full
- * catalog and the scope lists, `guardScoped` in scoped mode, the restored scope's list kept loaded),
+ * catalog and the scope lists, `guardScoped` in scoped mode, the scopes of open sessions kept),
  * over an adapter that records every call it receives. This is the one place that mirrors main.ts's
  * wiring; if main.ts changes, change it here.
  */
@@ -80,7 +80,7 @@ export interface ScopeAppOptions {
   loadFullCatalog?: boolean;
   /** Read the test DBC files into the catalogs (state labels, units). */
   dbc?: boolean;
-  /** Keep a restored scope's list loaded and the full catalog in full mode, like main.ts at start. */
+  /** Keep the full catalog in full mode loaded, like main.ts at start. */
   startup?: boolean;
   /** Wire the saved-view routes (default true). */
   views?: boolean;
@@ -148,12 +148,10 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
 
   const stops: (() => void)[] = [];
   if (options.startup) {
-    // As main.ts after listen: the full catalog in full mode, and a restored scope's list, kept
-    // loading until they load once (signal-catalog H5).
+    // As main.ts after listen: the full catalog in full mode, kept loading until it loads once
+    // (signal-catalog H5). A scope's list loads when a live client connects to its session
+    // (add-multiuser M9), not at start.
     if (catalogs.full) stops.push(keepCatalogLoaded(catalogs.full, { loaded() {}, failed() {} }));
-    const restored = store.workspace.scope;
-    if (restored)
-      stops.push(keepCatalogLoaded(catalogs.entry(restored), { loaded() {}, failed() {} }));
   }
 
   const parse = (text: string) => {

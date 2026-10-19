@@ -1,23 +1,31 @@
 import type {
   ApiError,
   CatalogSnapshot,
+  CommandErrorCode,
   CommandInput,
   CommandResult,
+  CreateSessionAnswer,
+  CreateSessionRequest,
   CursorValueResult,
   Density,
   EventList,
   Extent,
   GapInfo,
   ImportViewRequest,
+  Me,
   SaveViewRequest,
   SeriesResult,
   ServerMeta,
+  SessionAnswer,
+  SessionList,
+  SessionShare,
   SignalInfo,
   SignalPage,
   ValuesMode,
   ViewSummary,
 } from "@kipscope/shared";
 import type { SeriesRequest } from "./chart/tiles.ts";
+import { apiPath, withSession } from "./session/apiPath.ts";
 
 /** A response that is not ok, with its HTTP status and error code (design R4). */
 export class ApiRequestError extends Error {
@@ -49,8 +57,9 @@ function requestError(res: Response, body: unknown): ApiRequestError {
   return new ApiRequestError(res.status, `http_${res.status}`, res.statusText);
 }
 
+/** GET of an API path; session-resolving paths go to the page's session (add-multiuser M12). */
 async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
-  const res = await fetch(url, abort ? { signal: abort } : {});
+  const res = await fetch(apiPath(url), abort ? { signal: abort } : {});
   if (!res.ok) throw requestError(res, await res.json().catch(() => undefined));
   return (await res.json()) as T;
 }
@@ -146,7 +155,7 @@ function isCommandResult(body: unknown): body is CommandResult {
 export async function sendCommand(command: CommandInput): Promise<CommandResult> {
   let res: Response;
   try {
-    res = await fetch("/api/commands", {
+    res = await fetch(apiPath("/api/commands"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(command),
@@ -155,9 +164,16 @@ export async function sendCommand(command: CommandInput): Promise<CommandResult>
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, code: "network", message: message || "request failed" };
   }
-  if (res.status === 200 || res.status === 400 || res.status === 422) {
-    const body: unknown = await res.json().catch(() => undefined);
-    if (isCommandResult(body)) return body;
+  const body: unknown = await res.json().catch(() => undefined);
+  if ((res.status === 200 || res.status === 400 || res.status === 422) && isCommandResult(body)) {
+    return body;
+  }
+  // The guard refuses before the command runs (add-multiuser M6): `read_only`, `forbidden`,
+  // `forbidden_data`, … as an ApiError; the strip shows its code like a command's.
+  const error = !res.ok ? requestError(res, body) : undefined;
+  if (error && !error.code.startsWith("http_")) {
+    const message = String(error.details?.message ?? error.message);
+    return { ok: false, code: error.code as CommandErrorCode, message };
   }
   return { ok: false, code: "bad_response", message: `HTTP ${res.status}: ${res.statusText}` };
 }
@@ -165,7 +181,7 @@ export async function sendCommand(command: CommandInput): Promise<CommandResult>
 // Saved views (add-saved-views V6, V7).
 
 async function sendJson<T>(url: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(apiPath(url), {
     method,
     ...(body === undefined
       ? {}
@@ -197,12 +213,13 @@ export async function listViews(abort?: AbortSignal): Promise<ViewSummary[]> {
 
 /** Saves the open workspace; 409 `view_exists` (with `details.existing`) unless `overwrite`. */
 export function saveView(req: SaveViewRequest): Promise<SaveViewResult> {
-  return sendJson("/api/views", "POST", req);
+  // Saving reads the session's workspace; the path alone is also the session-independent list.
+  return sendJson(withSession("/api/views"), "POST", req);
 }
 
 /** Opens a view as one `view.open` command; a refused open resolves to its command result. */
 export async function openView(body: OpenViewBody): Promise<CommandResult> {
-  const res = await fetch("/api/views/open", {
+  const res = await fetch(apiPath("/api/views/open"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -224,4 +241,47 @@ export function importView(req: ImportViewRequest): Promise<ImportViewResult> {
 /** Address of a view's YAML file; `download` makes the browser save it as `<name>.kipscope.yaml`. */
 export function viewFileUrl(name: string, download: boolean): string {
   return `/api/views/${encodeURIComponent(name)}${download ? "?download=1" : ""}`;
+}
+
+// Identity and sessions (add-multiuser M7); session-independent, never prefixed.
+
+/** The signed-in user with roles and rights; read once at start (M12). */
+export function fetchMe(abort?: AbortSignal): Promise<Me> {
+  return getJson("/api/me", abort);
+}
+
+/** The user's own sessions, latest first. */
+export async function listSessions(abort?: AbortSignal): Promise<SessionList> {
+  return getJson("/api/sessions", abort);
+}
+
+/** One session; 404 `unknown_session`, 403 `forbidden` without the open right. */
+export function fetchSession(id: string, abort?: AbortSignal): Promise<SessionAnswer> {
+  return getJson(`/api/sessions/${encodeURIComponent(id)}`, abort);
+}
+
+/**
+ * Creates a session, with a view opened in it. A refused open answers no session and the open's
+ * command result (M7); a refused request (403 `forbidden_data`, 409 `session_limit`) rejects.
+ */
+export async function createSession(
+  req: CreateSessionRequest = {},
+): Promise<{ session?: CreateSessionAnswer["session"]; result?: CommandResult }> {
+  const res = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  const data: unknown = await res.json().catch(() => undefined);
+  if (res.ok) return data as CreateSessionAnswer;
+  if (isCommandResult(data)) return { result: data };
+  throw requestError(res, data);
+}
+
+export function shareSession(id: string, share: SessionShare): Promise<SessionAnswer> {
+  return sendJson(`/api/sessions/${encodeURIComponent(id)}/share`, "POST", { share });
+}
+
+export function deleteSession(id: string): Promise<{ deleted: string }> {
+  return sendJson(`/api/sessions/${encodeURIComponent(id)}`, "DELETE");
 }

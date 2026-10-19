@@ -1,17 +1,19 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type BucketSeries,
   decodeTimes,
   EMPTY_WORKSPACE,
   type RawSeries,
-  type Workspace,
   type WorkspaceScope,
 } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Scope, SourceAdapter } from "../src/datasource.ts";
 import { loadState, StatePersister } from "../src/persist.ts";
+import { SessionStore } from "../src/sessions.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { multiApp, realSleep } from "./identityApp.ts";
 import {
   type Call,
   codeOf,
@@ -420,9 +422,23 @@ describe("scoped mode", () => {
     });
   }
 
-  it("keeps the restored scope's list loaded", async () => {
-    const t0 = Date.now();
-    const starts: number[] = [];
+  it("keeps an open session's scope list loaded", async () => {
+    // Two stored sessions, one on testcar and one on othercar, both of alice.
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-sessions-"));
+    const store = new SessionStore({
+      dir,
+      seed: () => EMPTY_WORKSPACE,
+      idleDays: 30,
+      now: () => Date.now(),
+      log: { info() {}, warn() {} },
+    });
+    store.start();
+    const first = store.create("alice", { ...EMPTY_WORKSPACE, scope: SCOPE });
+    store.create("alice", { ...EMPTY_WORKSPACE, scope: { ...SCOPE, dataRef: "othercar" } });
+    store.flush();
+    store.stop();
+
+    const loads: { at: number; scope: Scope | undefined }[] = [];
     let failures = 2;
     const memory = memoryAdapter(MEMORY);
     const adapter: SourceAdapter = {
@@ -435,25 +451,39 @@ describe("scoped mode", () => {
       buckets: (...a) => memory.buckets(...a),
       refBuckets: (...a) => memory.refBuckets(...a),
       listSignals: async (scope, abort) => {
-        // Only scoped calls are expected; an unscoped one is recorded as -1.
-        starts.push(scope ? Date.now() - t0 : -1);
+        loads.push({ at: Date.now(), scope });
         if (failures-- > 0) throw new Error("connect ECONNREFUSED");
         return memory.listSignals(scope, abort);
       },
     };
-    const initial: { revision: number; workspace: Workspace } = {
-      revision: 7,
-      workspace: { ...EMPTY_WORKSPACE, scope: SCOPE },
-    };
-    const t = await open({ adapter, mode: "scoped", initial, startup: true });
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(starts).toEqual([0, 1000, 3000]);
-    const catalog = await t.get("/api/catalog");
-    expect(catalog.status).toBe(200);
-    expect(catalog.body.scope).toEqual(SCOPE);
-    // Nothing else loads afterwards, and never without a scope.
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(starts).toEqual([0, 1000, 3000]);
+    const t = await multiApp({ adapter, mode: "scoped", stateDir: dir });
+    try {
+      // Nothing loads at start, however many sessions are stored.
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(loads).toEqual([]);
+
+      // A live client connects to the first session: its scope's list loads, retried until it does.
+      const alice = t.as("alice", ["all"]);
+      const connectedAt = Date.now();
+      const live = await alice.live(first.record.id);
+      for (let i = 0; i < 200 && loads.length === 0; i++) await realSleep(10);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(loads.map((l) => l.at - connectedAt)).toEqual([0, 1000, 3000]);
+      // Always with the first session's scope: never without one, never othercar's.
+      for (const load of loads)
+        expect(load.scope).toEqual({ dataRef: "testcar", from: T1, to: T2 });
+
+      const catalog = await alice.get(`/api/s/${first.record.id}/catalog`);
+      expect(catalog.status).toBe(200);
+      expect(catalog.body.scope).toEqual(SCOPE);
+      // Nothing else loads afterwards.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(loads).toHaveLength(3);
+      live.close();
+    } finally {
+      await t.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -622,17 +652,39 @@ describe("commands that do not change the scope never wait for a scope list", ()
     expect(t.store.workspace.scope).toEqual(SCOPE);
   });
 
-  it("answers cursor.set while the restored scope's list is still loading (scoped mode)", async () => {
+  it("answers cursor.set while an open session's scope list is still loading (scoped mode)", async () => {
+    vi.useRealTimers();
     const { adapter, release } = gatedMemory();
-    const initial = { revision: 7, workspace: { ...EMPTY_WORKSPACE, scope: SCOPE } };
-    const t = await open({ adapter, mode: "scoped", initial, startup: true });
-    await vi.waitFor(() =>
-      expect(t.calls.some((c) => c.method === "listSignals" && c.args[0] !== undefined)).toBe(true),
-    );
-    const cursor = await within(t.command(CURSOR), 2000, "cursor.set");
-    expect(cursor.status).toBe(200);
-    expect(cursor.body.ok).toBe(true);
-    release();
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-sessions-"));
+    const store = new SessionStore({
+      dir,
+      seed: () => EMPTY_WORKSPACE,
+      idleDays: 30,
+      log: { info() {}, warn() {} },
+    });
+    store.start();
+    const session = store.create("alice", { ...EMPTY_WORKSPACE, scope: SCOPE });
+    store.flush();
+    store.stop();
+    const t = await multiApp({ adapter, mode: "scoped", stateDir: dir });
+    try {
+      const alice = t.as("alice", ["all"]);
+      const live = await alice.live(session.record.id);
+      await vi.waitFor(() =>
+        expect(t.calls.some((c) => c.method === "listSignals" && c.args[0] !== undefined)).toBe(
+          true,
+        ),
+      );
+      const cursor = await within(alice.command(CURSOR, session.record.id), 2000, "cursor.set");
+      expect(cursor.status).toBe(200);
+      expect(cursor.body.ok).toBe(true);
+      release();
+      live.close();
+    } finally {
+      release();
+      await t.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

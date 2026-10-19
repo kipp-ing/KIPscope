@@ -1,4 +1,11 @@
-import type { ApiError, CommandInput, CommandResult } from "@kipscope/shared";
+import {
+  type ApiError,
+  type CommandInput,
+  type CommandResult,
+  SESSION_HEADER,
+  SESSION_ID,
+  sessionApi,
+} from "@kipscope/shared";
 import { CliError } from "./output.ts";
 
 /** The end of the call's --timeout; every request gets what is left of it. */
@@ -20,16 +27,48 @@ export interface Client {
   postCommand(command: CommandInput): Promise<CommandResult>;
   /** As postCommand, for an endpoint that answers like POST /api/commands (POST /api/views/open). */
   postCommandAt(path: string, body: unknown): Promise<CommandResult>;
+  /** The call's session: the given one, else the first answer's `X-KIPscope-Session` (M13). */
+  session(): string | undefined;
 }
 
-export function createClient(baseUrl: string, deadline: Deadline): Client {
+export interface ClientOptions {
+  /** Every request goes to `/api/s/<session>/…`; the server ignores the prefix where no session applies. */
+  session?: string;
+  /** Sent as `Authorization: Bearer <token>`; never part of a message. */
+  token?: string;
+}
+
+export function createClient(
+  baseUrl: string,
+  deadline: Deadline,
+  options: ClientOptions = {},
+): Client {
+  let session = options.session;
+  const auth: Record<string, string> =
+    options.token === undefined ? {} : { authorization: `Bearer ${options.token}` };
+
+  /** `/api/x` → `/api/s/<id>/x` once the call has a session. */
+  const address = (path: string) =>
+    session !== undefined && path.startsWith("/api/")
+      ? `${sessionApi(session)}${path.slice("/api".length)}`
+      : path;
+
   async function request(method: "GET" | "POST" | "DELETE", path: string, init: RequestInit) {
     const what = `${method} ${path}`;
     const remaining = deadline.remainingMs();
     if (remaining <= 0) throw new CliError("timeout", "timeout", `${what}: --timeout ran out`);
     const signal = AbortSignal.timeout(remaining);
     try {
-      const response = await fetch(new URL(path, baseUrl), { ...init, method, signal });
+      const headers = { ...(init.headers as Record<string, string> | undefined), ...auth };
+      const response = await fetch(new URL(address(path), baseUrl), {
+        ...init,
+        headers,
+        method,
+        signal,
+      });
+      // One session per call: a default session the server chose stays the call's session.
+      const served = response.headers.get(SESSION_HEADER);
+      if (session === undefined && served !== null && SESSION_ID.test(served)) session = served;
       // Read the body under the same deadline; a server can stall after the headers.
       const text = await response.text();
       return { status: response.status, text, body: parseJson(text), what };
@@ -77,6 +116,7 @@ export function createClient(baseUrl: string, deadline: Deadline): Client {
 
     postCommand: (command: CommandInput) => postCommandAt("/api/commands", command),
     postCommandAt,
+    session: () => session,
   };
 }
 

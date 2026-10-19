@@ -1,6 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { type Workspace, WorkspaceSchema } from "@kipscope/shared";
+import { basename, dirname, join } from "node:path";
+import {
+  SESSION_ID,
+  SessionShare,
+  USER_ID,
+  type Workspace,
+  WorkspaceSchema,
+} from "@kipscope/shared";
 import type { WorkspaceStore } from "./workspace.ts";
 
 /** Trailing debounce of state writes after the last accepted command (design V4). */
@@ -84,12 +90,11 @@ export function loadState(path: string, warn: Warn = consoleWarn): RestoredState
 }
 
 /**
- * Writes the workspace and its revision to the state file (design V4): `STATE_WRITE_DELAY_MS`
- * after the last accepted command, or at once on `flush()`. A failed write never affects
- * commands and warns once per failure streak.
+ * One file written `delayMs` after the last `schedule`, or at once on `flush()`, atomically
+ * (design V4). A failed write never reaches the caller and warns once per failure streak.
  */
-export class StatePersister {
-  private pending: RestoredState | undefined;
+export class DebouncedFile {
+  private pending: (() => string) | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private failing = false;
   readonly path: string;
@@ -102,34 +107,158 @@ export class StatePersister {
     this.delayMs = options.delayMs ?? STATE_WRITE_DELAY_MS;
   }
 
-  subscribe(store: WorkspaceStore): () => void {
-    return store.subscribe((revision, workspace) => {
-      this.pending = { revision, workspace };
-      if (this.timer !== undefined) clearTimeout(this.timer);
-      this.timer = setTimeout(() => this.flush(), this.delayMs);
-    });
+  /** Writes `text()` after the delay; a later call restarts the delay and replaces the text. */
+  schedule(text: () => string): void {
+    this.pending = text;
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), this.delayMs);
   }
 
   /** Writes a pending change now; nothing pending → no write. */
   flush(): void {
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.timer = undefined;
-    const state = this.pending;
-    if (!state) return;
-    this.pending = undefined;
-    const file = {
-      kipscope: "workspace",
-      version: 1,
-      revision: state.revision,
-      written: new Date().toISOString(),
-      workspace: state.workspace,
-    };
+    const text = this.pending;
+    this.cancel();
+    if (!text) return;
     try {
-      writeAtomic(this.path, `${JSON.stringify(file, null, 2)}\n`);
+      writeAtomic(this.path, text());
       this.failing = false;
     } catch (error) {
       if (!this.failing) this.warn(`state file ${this.path} not written: ${String(error)}`);
       this.failing = true;
     }
   }
+
+  /** Drops a pending write. */
+  cancel(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.timer = undefined;
+    this.pending = undefined;
+  }
+}
+
+/**
+ * Writes the workspace and its revision to the state file (design V4): `STATE_WRITE_DELAY_MS`
+ * after the last accepted command, or at once on `flush()`. A failed write never affects
+ * commands and warns once per failure streak.
+ */
+export class StatePersister {
+  private readonly file: DebouncedFile;
+  readonly path: string;
+
+  constructor(path: string, options: { warn?: Warn; delayMs?: number } = {}) {
+    this.path = path;
+    this.file = new DebouncedFile(path, options);
+  }
+
+  subscribe(store: WorkspaceStore): () => void {
+    return store.subscribe((revision, workspace) => {
+      this.file.schedule(() => {
+        const file = {
+          kipscope: "workspace",
+          version: 1,
+          revision,
+          written: new Date().toISOString(),
+          workspace,
+        };
+        return `${JSON.stringify(file, null, 2)}\n`;
+      });
+    });
+  }
+
+  /** Writes a pending change now; nothing pending → no write. */
+  flush(): void {
+    this.file.flush();
+  }
+}
+
+/** Folder of the session files below the state dir (add-multiuser M4). */
+export const SESSIONS_DIR = "sessions";
+
+/** What a session file holds besides its envelope (add-multiuser M4). */
+export interface SessionFile {
+  id: string;
+  owner: string;
+  share: SessionShare;
+  createdAt: string;
+  lastActiveAt: string;
+  revision: number;
+  workspace: Workspace;
+}
+
+/** The text of `<stateDir>/sessions/<id>.json` (add-multiuser M4). */
+export function sessionFileText(file: SessionFile): string {
+  const { id, owner, share, createdAt, lastActiveAt, revision, workspace } = file;
+  const json = {
+    kipscope: "session",
+    version: 1,
+    id,
+    owner,
+    share,
+    createdAt,
+    lastActiveAt,
+    revision,
+    workspace,
+  };
+  return `${JSON.stringify(json, null, 2)}\n`;
+}
+
+const isTime = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value));
+
+function sessionError(json: unknown, id: string): string | undefined {
+  if (typeof json !== "object" || json === null || Array.isArray(json)) return "not an object";
+  const file = json as Record<string, unknown>;
+  if (file.kipscope !== "session") return "not a KIPscope session file";
+  if (file.version !== 1) return `session version ${String(file.version)}; this KIPscope reads 1`;
+  if (file.id !== id || !SESSION_ID.test(id)) return "id: not the file's session ID";
+  if (typeof file.owner !== "string" || !USER_ID.test(file.owner)) return "owner: not a user ID";
+  if (!SessionShare.safeParse(file.share).success) return "share: not private, read or write";
+  if (!isTime(file.createdAt)) return "createdAt: not a time";
+  if (!isTime(file.lastActiveAt)) return "lastActiveAt: not a time";
+  const { revision } = file;
+  if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0)
+    return "revision: not a non-negative integer";
+  const parsed = WorkspaceSchema.safeParse(file.workspace);
+  if (!parsed.success)
+    return parsed.error.issues.map((i) => `workspace.${i.path.join(".")}: ${i.message}`).join("; ");
+  return undefined;
+}
+
+/**
+ * Reads one session file (add-multiuser M4); `<id>` is its name without `.json`. Valid → its
+ * fields, unchecked against any catalog; anything else is moved to `<id>.bad.json` with one
+ * warning and gives undefined.
+ */
+export function loadSessionFile(path: string, warn: Warn = consoleWarn): SessionFile | undefined {
+  const id = basename(path, ".json");
+  let reason: string | undefined;
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(path, "utf8"));
+    reason = sessionError(json, id);
+  } catch (error) {
+    reason =
+      error instanceof SyntaxError
+        ? `not JSON: ${error.message}`
+        : `not readable: ${String(error)}`;
+  }
+  if (reason === undefined) {
+    const file = json as SessionFile;
+    return {
+      id,
+      owner: file.owner,
+      share: file.share,
+      createdAt: file.createdAt,
+      lastActiveAt: file.lastActiveAt,
+      revision: file.revision,
+      workspace: WorkspaceSchema.parse(file.workspace),
+    };
+  }
+  const bad = join(dirname(path), `${id}.bad.json`);
+  try {
+    renameSync(path, bad);
+    warn(`session file ${path} not restored (${reason}); moved to ${bad}`);
+  } catch (error) {
+    warn(`session file ${path} not restored (${reason}); move to ${bad} failed: ${String(error)}`);
+  }
+  return undefined;
 }

@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import type { CatalogState, ServerMeta, Workspace } from "@kipscope/shared";
+import type { CatalogState, ServerMeta } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { SourceInfo } from "./datasource.ts";
-import { apiError } from "./http.ts";
+import { apiError, userOf } from "./http.ts";
+import { type CatalogView, catalogView, type Rights } from "./rights.ts";
 import { type CatalogStore, scopeOf } from "./scope.ts";
 
 /** The repo's commit when the server started (design F2). */
@@ -78,7 +79,7 @@ async function pingOnce(ping: MetaDeps["ping"]): Promise<PingResult> {
 
 type CatalogStatus = Omit<ServerMeta["catalog"], "mode" | "scope">;
 
-function catalogStatus(catalog: Catalog): CatalogStatus {
+function catalogStatus(catalog: CatalogView): CatalogStatus {
   if (catalog.loadedAt)
     return { state: "loaded", size: catalog.size, loadedAt: catalog.loadedAt.toISOString() };
   const state: CatalogState = catalog.lastError !== undefined ? "failed" : "loading";
@@ -86,20 +87,23 @@ function catalogStatus(catalog: Catalog): CatalogStatus {
 }
 
 /**
- * The catalog the workspace uses (add-scope Z5, Z10): with a scope that scope's list, else the
- * full catalog in full mode and `no_scope` in scoped mode. Without a store: full mode.
+ * The catalog the session uses (add-scope Z5, Z10) as the requester sees it (add-multiuser M9):
+ * with a scope that scope's list, else the full catalog in full mode and `no_scope` in scoped
+ * mode. Without a store: full mode.
  */
 function catalogMeta(
   catalogs: CatalogStore | undefined,
   full: Catalog,
   scope: ServerMeta["catalog"]["scope"],
+  rights: Rights,
 ): ServerMeta["catalog"] {
   const mode = catalogs?.mode ?? "full";
   if (!scope) {
     if (mode === "scoped") return { mode, state: "no_scope", size: 0 };
-    return { mode, ...catalogStatus(catalogs?.full ?? full) };
+    return { mode, ...catalogStatus(catalogView(catalogs?.full ?? full, rights)) };
   }
-  const catalog = catalogs?.get(scope);
+  const held = catalogs?.get(scope);
+  const catalog = held && catalogView(held, rights);
   const status: CatalogStatus = catalog
     ? catalogStatus(catalog)
     : {
@@ -110,16 +114,18 @@ function catalogMeta(
   return { mode, ...status, scope };
 }
 
-/** `GET /api/meta` (build, source reachability, catalog state) and `GET /api/license` (design F2, F4). */
+/**
+ * `GET /api/meta` (build, source reachability, the session's catalog state) and `GET /api/license`
+ * (design F2, F4; add-multiuser M6, M9).
+ */
 export function metaRoutes(deps: {
   meta?: MetaDeps;
   catalog: Catalog;
   /** Catalog mode and scope lists (add-scope Z10); absent: full mode with `catalog`. */
   catalogs?: CatalogStore;
-  workspace?: { readonly workspace: Workspace };
   licenseText?: string;
 }): FastifyPluginAsync {
-  const { meta, catalog, catalogs, workspace, licenseText } = deps;
+  const { meta, catalog, catalogs, licenseText } = deps;
   /** The ping in progress; concurrent requests share it (single flight), no cache beyond it. */
   let running: Promise<PingResult> | undefined;
   const check = (ping: MetaDeps["ping"]) => {
@@ -130,7 +136,7 @@ export function metaRoutes(deps: {
   };
 
   return async (app) => {
-    app.get("/api/meta", async (request, reply) => {
+    app.get("/api/meta", { config: { access: { level: "session" } } }, async (request, reply) => {
       if (!meta) return apiError(reply, 404, "not_configured", "server meta not configured");
       const ping = await check(meta.ping);
       const body: ServerMeta = {
@@ -145,19 +151,19 @@ export function metaRoutes(deps: {
           table: meta.source.table,
           ...ping,
         },
-        catalog: catalogMeta(
-          catalogs,
-          catalog,
-          workspace ? scopeOf(request, workspace) : undefined,
-        ),
+        catalog: catalogMeta(catalogs, catalog, scopeOf(request), userOf(request).rights),
       };
       return body;
     });
 
-    app.get("/api/license", async (_request, reply) => {
-      if (licenseText === undefined)
-        return apiError(reply, 404, "license_missing", "LICENSE not found at server start");
-      return reply.type("text/plain; charset=utf-8").send(licenseText);
-    });
+    app.get(
+      "/api/license",
+      { config: { access: { level: "public" } } },
+      async (_request, reply) => {
+        if (licenseText === undefined)
+          return apiError(reply, 404, "license_missing", "LICENSE not found at server start");
+        return reply.type("text/plain; charset=utf-8").send(licenseText);
+      },
+    );
   };
 }

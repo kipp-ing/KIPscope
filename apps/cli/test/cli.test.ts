@@ -1,11 +1,14 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decodeViewLink, type Workspace as SharedWorkspace, viewLinkUrl } from "@kipscope/shared";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { oidcAdapter, tokenClaims } from "../../server/test/identity/oidcKit.ts";
+import { type JwksServer, jwksServer, makeKey, signToken } from "../../server/test/jwks.ts";
 import { parseArgs } from "../src/args.ts";
 import type { EventListData } from "../src/output.ts";
 import { eventTable } from "../src/output.ts";
+import { runTokenCommand } from "../src/run.ts";
 import {
   type CliResult,
   cli,
@@ -16,6 +19,7 @@ import {
   startHangingServer,
   startServer,
 } from "./helpers.ts";
+import { type MultiServer, startMulti } from "./multi.ts";
 
 // Tests run with TZ=Europe/Berlin (see package.json): 2026-10-13 is CEST (+02:00).
 const RPM = "testcar/Sna_800h.RPM";
@@ -122,7 +126,14 @@ describe("server address and usage", () => {
       "extent",
       "value",
       "wait",
+      "whoami",
+      "session list",
+      "session new",
+      "session share",
+      "session delete",
       "--server",
+      "--session",
+      "--token",
       "--wait",
       "--timeout",
       "--pretty",
@@ -196,6 +207,8 @@ describe("server address and usage", () => {
         accepted: true,
         command: { type: "cursor.setDiff", diff: true },
         revision: 1,
+        // The session the call served (add-multiuser M13): the harness has the one, `0000000000`.
+        session: expect.stringMatching(/^[a-z0-9]{10}$/),
       });
       const pretty = await cli(s, "--pretty", "diff", "off");
       expect(pretty.code).toBe(0);
@@ -1313,5 +1326,372 @@ describe("scope", () => {
       expect(refused.code).toBe(1);
       expect(refused.out).toMatchObject({ ok: false, error: { code: "out_of_scope" } });
     });
+  });
+});
+
+describe("sessions (add-multiuser M13)", () => {
+  let m: MultiServer | undefined;
+  afterEach(async () => {
+    await m?.close();
+    m = undefined;
+  });
+  const sessionCli = (server: MultiServer, ...argv: string[]) =>
+    runCli(["--server", server.url, ...argv]);
+  const start = async (options?: Parameters<typeof startMulti>[0]) => {
+    m = await startMulti({ identity: "none", ...options });
+    return m;
+  };
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it("addresses a session", async () => {
+    const s = await start();
+    const a = s.app.sessions.create("local");
+    await wait(5);
+    const b = s.app.sessions.create("local");
+    await wait(5);
+
+    const dflt = await sessionCli(s, "state");
+    expect(dflt.code).toBe(0);
+    expect(dflt.out.session).toBe(b.record.id);
+
+    const named = await sessionCli(s, "--session", a.record.id, "state");
+    expect(named.out.session).toBe(a.record.id);
+    expect(named.out.data.revision).toBe(0);
+
+    const created = await sessionCli(
+      s,
+      "--session",
+      a.record.id,
+      "window",
+      "create",
+      "--from",
+      "0",
+      "--to",
+      "10",
+    );
+    expect(created.code, created.stderr.join("")).toBe(0);
+    expect(created.out.session).toBe(a.record.id);
+    expect(a.store.revision).toBe(1);
+    expect(b.store.revision).toBe(0);
+    // The session of the environment and a session link work alike.
+    const viaEnv = await runCli(["--server", s.url, "state"], { KIPSCOPE_SESSION: a.record.id });
+    expect(viaEnv.out.session).toBe(a.record.id);
+    expect(viaEnv.out.data.revision).toBe(1);
+    const viaLink = await runCli(["--server", `${s.url}/s/${a.record.id}`, "state"]);
+    expect(viaLink.out.session).toBe(a.record.id);
+    // A session that does not exist is rejected with the server's code.
+    const unknown = await sessionCli(s, "--session", "zzzzzzzzzz", "state");
+    expect(unknown.code).toBe(1);
+    expect(unknown.out).toMatchObject({ ok: false, error: { code: "unknown_session" } });
+  });
+
+  it("keeps every request of one call on one session", async () => {
+    const s = await start();
+    const a = s.app.sessions.create("local");
+    await wait(5);
+    s.app.sessions.create("local");
+    // `window create --from/--to` and a signal add read the workspace and send commands: more than
+    // one request. Without --session the call's session is the first answer's, for all of them.
+    const first = await sessionCli(s, "window", "create", "--from", "0", "--to", "10");
+    const id = first.out.session as string;
+    expect(id).not.toBe(a.record.id);
+    const added = await sessionCli(
+      s,
+      "--session",
+      id,
+      "signal",
+      "add",
+      "w1",
+      "testcar/Sna_800h.RPM",
+    );
+    expect(added.code, added.stderr.join("")).toBe(0);
+    expect(s.app.sessions.get(id)?.store.workspace.windows[0]?.signals).toHaveLength(1);
+    expect(a.store.revision).toBe(0);
+  });
+
+  it("waits for a UI of the same session", async () => {
+    const s = await start();
+    const a = s.app.sessions.create("local");
+    await wait(5);
+    const b = s.app.sessions.create("local");
+    // A browser is connected to A only; B is the default session.
+    const browser = await s.browser(a.record.id, { autoAckMs: 5 });
+    // The live connect made A the latest session; B becomes the default again.
+    await wait(5);
+    s.app.sessions.touch(b.record.id);
+    try {
+      const other = await sessionCli(s, "--wait", "diff", "on");
+      expect(other.code).toBe(6);
+      expect(other.out.render.status).toBe("no_ui");
+      expect(other.out.session).toBe(b.record.id);
+
+      const same = await sessionCli(s, "--session", a.record.id, "--wait", "diff", "on");
+      expect(same.code, same.stderr.join("")).toBe(0);
+      expect(same.out.render.status).toBe("complete");
+      expect(same.out.session).toBe(a.record.id);
+    } finally {
+      await browser.close();
+    }
+  }, 20_000);
+
+  it("manages sessions", async () => {
+    const s = await start();
+    const created = await sessionCli(s, "session", "new");
+    expect(created.code, created.stderr.join("")).toBe(0);
+    const id = created.out.data.session.id as string;
+    expect(id).toMatch(/^[a-z0-9]{10}$/);
+    expect(created.out.local.url).toBe(`${s.url}/s/${id}`);
+    expect(created.out.session).toBeUndefined();
+
+    const listed = await sessionCli(s, "session", "list");
+    expect(listed.out.data.sessions[0].id).toBe(id);
+
+    const shared = await sessionCli(s, "--session", id, "session", "share", "write");
+    expect(shared.code, shared.stderr.join("")).toBe(0);
+    expect(shared.out.data.session).toMatchObject({ id, share: "write" });
+    expect(s.app.sessions.get(id)?.record.share).toBe("write");
+
+    const deleted = await sessionCli(s, "session", "delete", id);
+    expect(deleted.out.data).toEqual({ deleted: id });
+    const after = await sessionCli(s, "session", "list");
+    expect(after.out.data.sessions.map((x: { id: string }) => x.id)).not.toContain(id);
+    const again = await sessionCli(s, "session", "delete", id);
+    expect(again.code).toBe(1);
+    expect(again.out.error.code).toBe("unknown_session");
+  });
+
+  it("tells who is signed in without a login", async () => {
+    const s = await start();
+    const me = await sessionCli(s, "whoami");
+    expect(me.code).toBe(0);
+    expect(me.out.data).toEqual({
+      user: "local",
+      identity: "none",
+      roles: [],
+      rights: { data: ["*"], share: true },
+    });
+  });
+});
+
+describe("identity over the CLI (add-multiuser M13)", () => {
+  let m: MultiServer | undefined;
+  let jwks: JwksServer | undefined;
+  afterEach(async () => {
+    await m?.close();
+    await jwks?.close();
+    m = undefined;
+    jwks = undefined;
+  });
+  const dir = mkdtempSync(join(tmpdir(), "kipscope-cli-token-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  /** A server with `oidc` against a local key set, and a token factory. */
+  async function oidcServer() {
+    const key = makeKey("RS256");
+    jwks = await jwksServer([key]);
+    const identity = await oidcAdapter(jwks);
+    m = await startMulti({ identity });
+    const token = (over: Record<string, unknown> = {}) =>
+      signToken(key, tokenClaims(jwks as JwksServer, over));
+    return { server: m, token };
+  }
+
+  it("sends the token", async () => {
+    const { server, token } = await oidcServer();
+    const alice = token();
+    const call = (argv: string[], env: Record<string, string> = {}) =>
+      runCli(["--server", server.url, ...argv], env);
+    const noLeak = (r: CliResult, ...tokens: string[]) => {
+      const text = [...r.stdout, ...r.stderr].join("\n");
+      for (const t of tokens) expect(text).not.toContain(t);
+    };
+
+    const none = await call(["whoami"]);
+    expect(none.code).toBe(1);
+    expect(none.out).toMatchObject({ ok: false, error: { code: "unauthenticated" } });
+
+    const flag = await call(["--token", alice, "whoami"]);
+    expect(flag.code, flag.stderr.join("")).toBe(0);
+    expect(flag.out.data).toMatchObject({ user: "alice", identity: "oidc", roles: ["testers"] });
+    noLeak(flag, alice);
+
+    const garbage = await call(["whoami"], { KIPSCOPE_TOKEN: "garbage" });
+    expect(garbage.code).toBe(1);
+    expect(garbage.out.error.code).toBe("invalid_token");
+    noLeak(garbage, "garbage");
+
+    const viaCommand = await call(["whoami"], { KIPSCOPE_TOKEN_COMMAND: `echo '${alice}'` });
+    expect(viaCommand.code, viaCommand.stderr.join("")).toBe(0);
+    expect(viaCommand.out.data.user).toBe("alice");
+    noLeak(viaCommand, alice);
+
+    // A failing token command: usage error, nothing sent.
+    const before = server.identified();
+    const failing = await call(["whoami"], {
+      KIPSCOPE_TOKEN_COMMAND: "echo 'no luck' >&2; exit 3",
+    });
+    expect(failing.code).toBe(2);
+    expect(failing.out.error.code).toBe("token_command_failed");
+    expect(JSON.stringify(failing.out)).toContain("no luck");
+    expect(server.identified()).toBe(before);
+
+    // A command that prints nothing is a failure, too.
+    const empty = await call(["whoami"], { KIPSCOPE_TOKEN_COMMAND: "true" });
+    expect([empty.code, empty.out.error.code]).toEqual([2, "token_command_failed"]);
+    expect(server.identified()).toBe(before);
+
+    // --token wins over the environment; the command does not run when a token is given.
+    const marker = join(dir, "ran");
+    const given = await call(["--token", alice, "whoami"], {
+      KIPSCOPE_TOKEN: "garbage",
+      KIPSCOPE_TOKEN_COMMAND: `touch ${marker}`,
+    });
+    expect(given.code).toBe(0);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("runs the token command once per call", async () => {
+    const { server, token } = await oidcServer();
+    const alice = token();
+    const counter = join(dir, "count");
+    writeFileSync(counter, "");
+    const command = `echo x >> '${counter}'; echo '${alice}'`;
+    // `--wait` after a command makes several requests (the command, the render status polls).
+    const waited = await runCli(
+      ["--server", server.url, "--wait", "--timeout", "3s", "diff", "on"],
+      {
+        KIPSCOPE_TOKEN_COMMAND: command,
+      },
+    );
+    expect([0, 6]).toContain(waited.code);
+    expect(readFileSync(counter, "utf8").trim().split("\n")).toHaveLength(1);
+    expect(server.identified()).toBeGreaterThan(1);
+  }, 15_000);
+
+  it("times a token command out", async () => {
+    await expect(runTokenCommand("sleep 5", {}, 200)).rejects.toMatchObject({
+      outcome: "usage",
+      code: "token_command_failed",
+    });
+    await expect(runTokenCommand("echo '  tok  '", {})).resolves.toBe("tok");
+  });
+
+  it("never prints a token, not even when the call fails", async () => {
+    const { server, token } = await oidcServer();
+    const secret = token();
+    const down = await closedUrl();
+    for (const argv of [
+      ["--server", server.url, "--token", secret, "window", "create", "--bogus"],
+      ["--server", server.url, "--token", secret, "--session", "zzzzzzzzzz", "state"],
+      ["--server", down, "--token", secret, "state"],
+      ["--server", server.url, "--token", `${secret}x`, "state"],
+    ]) {
+      const r = await runCli(argv);
+      expect([...r.stdout, ...r.stderr].join("\n"), argv.join(" ")).not.toContain(
+        secret.slice(0, 40),
+      );
+    }
+  });
+
+  it("keeps a role to its data", async () => {
+    const { server, token } = await oidcServer();
+    const alice = token();
+    const call = (...argv: string[]) => runCli(["--server", server.url, "--token", alice, ...argv]);
+
+    // She has a window of her own with a visible signal; its revision must not move.
+    const made = await call("window", "create", "--from", "0", "--to", "10");
+    expect(made.code, made.stderr.join("")).toBe(0);
+    const id = made.out.session as string;
+    const revision = server.app.sessions.get(id)?.store.revision;
+
+    const search = await call("--session", id, "search", "Fast");
+    expect(search.code).toBe(0);
+    expect(search.out.data.items.length).toBeGreaterThan(0);
+    for (const item of search.out.data.items)
+      expect(item.dataRef.startsWith("test"), item.id).toBe(true);
+    expect(search.out.data.total).toBe(search.out.data.items.length);
+
+    const hidden = "othercar/Fast_100h.SIG_A";
+    const forbidden = [
+      await call("--session", id, "extent", hidden),
+      await call("--session", id, "value", hidden, "2026-10-01T02:00:01Z"),
+      await call("--session", id, "events", "list", "--ref", "othercar"),
+      await call("--session", id, "signal", "add", "w1", hidden),
+      await call(
+        "--session",
+        id,
+        "scope",
+        "set",
+        "othercar",
+        "2026-10-01T01:00:00Z",
+        "2026-10-01T02:00:00Z",
+      ),
+    ];
+    for (const r of forbidden) {
+      expect(r.code, r.stdout.join("")).toBe(1);
+      expect(r.out.error.code).toBe("forbidden_data");
+    }
+    expect(server.app.sessions.get(id)?.store.revision).toBe(revision);
+
+    // A name that two data refs share is not ambiguous for her: only one of them is hers.
+    const bare = await call("--session", id, "signal", "add", "w1", "Fast_100h.SIG_A");
+    expect(bare.code, bare.stdout.join("")).toBe(0);
+    expect(server.app.sessions.get(id)?.store.workspace.windows[0]?.signals[0]?.signalId).toBe(
+      "testcar/Fast_100h.SIG_A",
+    );
+    // For an administrator the same name is ambiguous.
+    const admin = token({ sub: "root", roles: ["admins"] });
+    const first = await runCli([
+      "--server",
+      server.url,
+      "--token",
+      admin,
+      "window",
+      "create",
+      "--from",
+      "0",
+      "--to",
+      "10",
+    ]);
+    const adminId = first.out.session as string;
+    const ambiguous = await runCli([
+      "--server",
+      server.url,
+      "--token",
+      admin,
+      "--session",
+      adminId,
+      "signal",
+      "add",
+      "w1",
+      "Fast_100h.SIG_A",
+    ]);
+    expect(ambiguous.code).toBe(1);
+  });
+
+  it("maps a server that cannot reach its identity provider to exit 7", async () => {
+    m = await startMulti({
+      identity: {
+        kind: "test-down",
+        identify: async () => {
+          throw new Error("idp unreachable");
+        },
+      },
+    });
+    const r = await runCli(["--server", m.url, "--token", "anything", "whoami"]);
+    expect(r.code).toBe(7);
+    expect(r.out.error.code).toBe("identity_unavailable");
+    expect(JSON.stringify(r.out)).not.toContain("idp unreachable");
+  });
+
+  it("is rejected by a server without rights for the roles, with the server's code", async () => {
+    const { server, token } = await oidcServer();
+    const nobody = token({ roles: ["nobody"] });
+    const me = await runCli(["--server", server.url, "--token", nobody, "whoami"]);
+    expect(me.code).toBe(0);
+    expect(me.out.data.rights).toEqual({ data: [], share: false });
+    const state = await runCli(["--server", server.url, "--token", nobody, "state"]);
+    expect(state.code).toBe(1);
+    expect(state.out.error.code).toBe("no_rights");
   });
 });

@@ -88,3 +88,37 @@ describe("copy link", () => {
     expect("saved" in doc).toBe(false);
   });
 });
+
+describe("copy link on a session page (add-multiuser M12)", () => {
+  const ws: Workspace = {
+    ...EMPTY_WORKSPACE,
+    windows: [
+      { id: "w1", kind: "values", mode: "line", signals: [{ id: "a2", signalId: "car/A" }] },
+    ],
+    nextId: 3,
+  };
+
+  it("copies the shared link", async () => {
+    // The link is built on the page's origin: the session in the path is not part of it.
+    const link = await viewLink(ws, {
+      origin: "http://127.0.0.1:5173",
+      pathname: "/s/abcdefghij",
+    });
+    expect(link.startsWith("http://127.0.0.1:5173/#view=")).toBe(true);
+    expect(link).not.toContain("/s/");
+    expect(link).not.toContain("abcdefghij");
+    expect(link).toBe(await viewLinkUrl(ws, "http://127.0.0.1:5173/"));
+    // The same on a server behind its public name.
+    const behind = await viewLink(ws, {
+      origin: "https://kipscope.example.org",
+      pathname: "/s/zzzzzzzzzz",
+    });
+    expect(behind.startsWith("https://kipscope.example.org/#view=")).toBe(true);
+  });
+
+  it("cleans a session address of the view part and keeps the session", async () => {
+    expect(cleanAddress(at("/s/abcdefghij?view=demo"))).toBe("/s/abcdefghij");
+    expect(await startupView(at("/s/abcdefghij?view=demo"))).toEqual({ name: "demo" });
+    expect(await startupView(at("/s/abcdefghij"))).toBeUndefined();
+  });
+});

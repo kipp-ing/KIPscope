@@ -6,6 +6,7 @@ import {
   type CommandResult,
   type CommandType,
   EMPTY_WORKSPACE,
+  LOCAL_USER,
   type Measurement,
   type RenderedMessage,
   type RenderStatus,
@@ -45,12 +46,15 @@ export interface WorkspaceStoreOptions {
   eventSignals?: readonly string[];
   /** Restored state file (saved-views V4): start at this revision with this workspace, unchecked. */
   initial?: { revision: number; workspace: Workspace };
-  /** Gets the workspace an accepted `view.open` is about to replace (saved-views V5). */
+  /**
+   * Gets the workspace an accepted `view.open` is about to replace (saved-views V5); a hook passed
+   * to `execute` replaces it for that call (add-multiuser M4).
+   */
   beforeOpen?(previous: Workspace): void;
 }
 
 /**
- * The one open workspace (spec workspace-state), held in memory. Changes only through commands;
+ * One session's workspace (spec workspace-state, add-multiuser M4), held in memory. Changes only through commands;
  * each accepted command increases the revision by one. Browsers report what they have rendered.
  */
 export class WorkspaceStore {
@@ -89,9 +93,14 @@ export class WorkspaceStore {
   /**
    * Validates and applies one command against `ctx` (default: the store's own), e.g. the signal
    * list of the scope the command leaves in effect (add-scope Z10). A rejected command changes
-   * nothing.
+   * nothing. `beforeOpen` (default: the store's own) gets the workspace an accepted `view.open`
+   * replaces, e.g. for the requester's `_previous` view (add-multiuser M9).
    */
-  execute(input: unknown, ctx: ApplyContext = this.ctx): CommandResult {
+  execute(
+    input: unknown,
+    ctx: ApplyContext = this.ctx,
+    beforeOpen: ((previous: Workspace) => void) | undefined = this.beforeOpen,
+  ): CommandResult {
     const parsed = Command.safeParse(input);
     if (!parsed.success) {
       const message = parsed.error.issues
@@ -101,10 +110,10 @@ export class WorkspaceStore {
     }
     const result = applyCommand(this.state, parsed.data, ctx);
     if (!result.ok) return result;
-    if (parsed.data.type === "view.open" && this.beforeOpen) {
+    if (parsed.data.type === "view.open" && beforeOpen) {
       // A failing hook (e.g. the `_previous` write) never fails the open.
       try {
-        this.beforeOpen(this.state);
+        beforeOpen(this.state);
       } catch (error) {
         this.onListenerError(error);
       }
@@ -133,9 +142,10 @@ export class WorkspaceStore {
     return () => this.listeners.delete(listener);
   }
 
-  connect(): string {
+  /** Adds a live client of `user`, listed by `renderStatus()` (add-multiuser M4). */
+  connect(user: string = LOCAL_USER): string {
     const clientId = `c${this.nextClient++}`;
-    this.clients.set(clientId, { clientId, connectedAt: new Date().toISOString() });
+    this.clients.set(clientId, { clientId, user, connectedAt: new Date().toISOString() });
     return clientId;
   }
 

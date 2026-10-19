@@ -1,6 +1,14 @@
-import type { LiveServerMessage, RenderedMessage, Workspace } from "@kipscope/shared";
+import {
+  CLOSE_NO_ACCESS,
+  CLOSE_SESSION_GONE,
+  type LiveServerMessage,
+  type RenderedMessage,
+  type SessionSummary,
+  type Workspace,
+} from "@kipscope/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tabSeriesCache } from "./chart/cache.ts";
+import { apiPath } from "./session/apiPath.ts";
 
 export interface LiveState {
   connected: boolean;
@@ -14,11 +22,16 @@ export interface LiveState {
    * React batch cannot hide it (add-saved-views V7 round 3). The state sent on connect never sets it.
    */
   lastOpen?: Extract<LiveServerMessage, { type: "state" }>;
+  /** The session with this connection's rights and owner, from the `session` messages (add-multiuser M8). */
+  session?: SessionSummary;
+  /** Close code 4403 or 4404: the channel stays shut and the page shows its gate (M12). */
+  closed?: number;
 }
 
 /** The live state after one server message (design H7). */
 export function applyLiveMessage(state: LiveState, message: LiveServerMessage): LiveState {
   if (message.type === "hello") return { ...state, clientId: message.clientId };
+  if (message.type === "session") return { ...state, session: message.session };
   return {
     ...state,
     revision: message.revision,
@@ -28,20 +41,28 @@ export function applyLiveMessage(state: LiveState, message: LiveServerMessage): 
   };
 }
 
+/** Close codes after which the channel does not reconnect (add-multiuser M8). */
+export const FINAL_CLOSES: readonly number[] = [CLOSE_NO_ACCESS, CLOSE_SESSION_GONE];
+
 /**
- * Connection to `WS /api/live`: receives the workspace after every accepted command and sends
- * render acknowledgements. Reconnects after a second when the connection drops. `send` returns
- * whether the socket took the message (design H6).
+ * Connection to `WS /api/live` of `session` (none until the start-up chose it): receives the
+ * workspace after every accepted command and sends render acknowledgements. Reconnects after a
+ * second when the connection drops, except after 4403 and 4404. `send` returns whether the socket
+ * took the message (design H6).
  */
-export function useLive(): [LiveState, (message: RenderedMessage) => boolean] {
+export function useLive(
+  session: string | undefined,
+): [LiveState, (message: RenderedMessage) => boolean] {
   const [state, setState] = useState<LiveState>({ connected: false, revision: -1, rangeSets: 0 });
   const socket = useRef<WebSocket | undefined>(undefined);
 
   useEffect(() => {
+    if (session === undefined) return;
     let closed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const open = () => {
-      const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live`;
+      const path = apiPath("/api/live", session);
+      const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
       const ws = new WebSocket(url);
       socket.current = ws;
       ws.onopen = () => {
@@ -53,9 +74,10 @@ export function useLive(): [LiveState, (message: RenderedMessage) => boolean] {
         const message = JSON.parse(event.data) as LiveServerMessage;
         setState((s) => applyLiveMessage(s, message));
       };
-      ws.onclose = () => {
-        setState((s) => ({ ...s, connected: false }));
-        if (!closed) timer = setTimeout(open, 1000);
+      ws.onclose = (event) => {
+        const final = FINAL_CLOSES.includes(event.code);
+        setState((s) => ({ ...s, connected: false, ...(final ? { closed: event.code } : {}) }));
+        if (!closed && !final) timer = setTimeout(open, 1000);
       };
     };
     open();
@@ -64,7 +86,7 @@ export function useLive(): [LiveState, (message: RenderedMessage) => boolean] {
       clearTimeout(timer);
       socket.current?.close();
     };
-  }, []);
+  }, [session]);
 
   const send = useCallback((message: RenderedMessage): boolean => {
     const ws = socket.current;

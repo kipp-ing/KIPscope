@@ -18,6 +18,7 @@
     "@fastify/websocket": "11.3.4",
     "@kipscope/shared": "workspace:*",
     "fastify": "5.12.7",
+    "jose": "6.2.12",
     "smol-toml": "1.9.1",
     "yaml": "2.8.4",
     "zod": "4.6.7"

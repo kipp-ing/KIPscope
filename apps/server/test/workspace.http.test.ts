@@ -5,6 +5,7 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
+import type { LiveOptions } from "../src/routes/workspace.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { testDbcFiles, testSource } from "./testdb.ts";
 
@@ -403,6 +404,15 @@ describe("WS /api/live and GET /api/render-status", () => {
     const hello = await client.next((m) => m.type === "hello");
     expect(hello).toEqual({ type: "hello", clientId: expect.stringMatching(/^c\d+$/) });
     expect(await client.next((m) => m.type === "state" && m.revision === 0)).toBeTruthy();
+    // After the hello and before the state: the session this channel serves, with the user's rights.
+    expect(client.messages.map((m) => m.type).slice(0, 3)).toEqual(["hello", "session", "state"]);
+    const served = client.messages[1];
+    expect(served?.type === "session" && served.session).toMatchObject({
+      owner: "local",
+      share: "private",
+      revision: 0,
+      rights: { open: true, change: true, owner: true },
+    });
     await post({ type: "window.create", from: "0", to: "10" });
     const pushed = await client.next((m) => m.type === "state" && m.revision === 1);
     expect(pushed.type === "state" && pushed.workspace.windows).toHaveLength(1);
@@ -414,6 +424,8 @@ describe("WS /api/live and GET /api/render-status", () => {
     const hello = await client.next((m) => m.type === "hello");
     const clientId = hello.type === "hello" ? hello.clientId : "";
     const { revision } = await post({ type: "window.create", from: "0", to: "10" });
+    // Each client is listed with its user (add-multiuser M4); without an identity that is `local`.
+    expect((await renderStatus()).clients.find((c) => c.clientId === clientId)?.user).toBe("local");
 
     client.ws.send(JSON.stringify({ type: "rendered", revision, status: "complete" }));
     await expect
@@ -447,6 +459,64 @@ describe("WS /api/live and GET /api/render-status", () => {
     await expect
       .poll(async () => (await renderStatus()).clients.some((c) => c.clientId === clientId))
       .toBe(false);
+  });
+});
+
+describe("live channel heartbeat (add-multiuser M8)", () => {
+  const workspace = new WorkspaceStore({
+    signalExists: (id) => id.startsWith("car/"),
+    hasStates: () => false,
+  });
+  // A short interval: the server pings every 50 ms and drops a client that missed the last pong.
+  // (Spread, because `AppDeps` does not list the option yet; `LiveOptions` types it.)
+  const live: LiveOptions = { liveHeartbeatMs: 50 };
+  const app = buildApp({
+    catalog: new Catalog(source, async () => new Map()),
+    source,
+    workspace,
+    ...live,
+  });
+  let base = "";
+  beforeAll(async () => {
+    base = await app.listen({ port: 0, host: "127.0.0.1" });
+  });
+  afterAll(() => app.close());
+
+  const clientIds = async (): Promise<string[]> =>
+    ((await (await fetch(`${base}/api/render-status`)).json()) as RenderStatus).clients.map(
+      (c) => c.clientId,
+    );
+  const open = async (autoPong: boolean) => {
+    const ws = new WebSocket(`${base.replace("http", "ws")}/api/live`, { autoPong });
+    const pings: number[] = [];
+    ws.on("ping", () => pings.push(Date.now()));
+    const hello = new Promise<string>((resolve) =>
+      ws.on("message", (data) => {
+        const m = JSON.parse(data.toString()) as LiveServerMessage;
+        if (m.type === "hello") resolve(m.clientId);
+      }),
+    );
+    ws.on("error", () => {});
+    return { ws, pings, clientId: await hello };
+  };
+
+  it("drops a client that never answers ping from render-status and keeps one that does", async () => {
+    const silent = await open(false);
+    const alive = await open(true);
+    expect(await clientIds()).toEqual(expect.arrayContaining([silent.clientId, alive.clientId]));
+
+    // The silent one is dropped within a few intervals: ping, a missed pong, then terminate.
+    await expect.poll(clientIds, { timeout: 2000, interval: 25 }).not.toContain(silent.clientId);
+    expect(silent.pings.length).toBeGreaterThanOrEqual(1);
+    await expect.poll(() => silent.ws.readyState, { timeout: 2000 }).toBe(WebSocket.CLOSED);
+
+    // The client that answers stays, long after the silent one went.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(alive.pings.length).toBeGreaterThan(2);
+    expect(await clientIds()).toContain(alive.clientId);
+    expect(alive.ws.readyState).toBe(WebSocket.OPEN);
+    alive.ws.close();
+    await expect.poll(clientIds, { timeout: 2000 }).not.toContain(alive.clientId);
   });
 });
 

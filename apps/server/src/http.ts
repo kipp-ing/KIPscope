@@ -1,9 +1,18 @@
-import type { ApiError, CommandResult, Workspace, WorkspaceScope } from "@kipscope/shared";
+import type { IncomingMessage } from "node:http";
+import {
+  type ApiError,
+  type CommandResult,
+  SESSION_ID,
+  type WorkspaceScope,
+} from "@kipscope/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { z } from "zod";
 import { Catalog } from "./catalog.ts";
 import type { DataSource, Scope } from "./datasource.ts";
-import { CatalogStore, scopeOf, sourceScope } from "./scope.ts";
+import { type RequestUser, requestSession, requestUser } from "./guard.ts";
+import { type CatalogView, catalogView } from "./rights.ts";
+import { CatalogStore, openScopes, scopeOf, sourceScope } from "./scope.ts";
+import type { Session, Sessions } from "./sessions.ts";
 
 export function apiError(
   reply: FastifyReply,
@@ -37,7 +46,8 @@ export interface ScopeDeps {
   catalog: Catalog;
   /** Source for series queries; in production wrapped by the query queue. */
   source: DataSource;
-  workspace: { readonly workspace: Workspace };
+  /** Every session (add-multiuser M4); routes reach the request's one through `sessionOf`. */
+  sessions: Sessions;
   /** The signal lists (add-scope Z10); without it a full-mode store over `catalog` (tests). */
   catalogs?: CatalogStore;
   /** `KIPSCOPE_SCOPE_PAD` in ns; default config's DEFAULT_SCOPE_PAD. */
@@ -59,7 +69,7 @@ export function catalogsOf(deps: ScopeDeps): CatalogStore {
       full: deps.catalog,
       create: (scope) =>
         new Catalog(deps.source, async () => new Map(), undefined, undefined, undefined, scope),
-      keep: () => deps.workspace.workspace.scope,
+      keep: () => openScopes(deps.sessions),
     });
     defaultStores.set(deps, store);
   }
@@ -80,20 +90,62 @@ export function chainPrefetch(deps: ScopeDeps, job: () => Promise<unknown>): voi
   prefetchChains.set(deps, next);
 }
 
+/** Session IDs of `/api/s/<id>/…` requests, recorded by `rewriteUrl` (add-multiuser M5). */
+const prefixes = new WeakMap<IncomingMessage, string>();
+const PREFIX = /^\/api\/s\/([^/?]*)(?=[/?]|$)/;
+
+/**
+ * Fastify's `rewriteUrl` (add-multiuser M5): `/api/s/<id>/<rest>` → `/api/<rest>` when `<id>`
+ * matches SESSION_ID, recording `<id>` on the raw request. Any other URL stays as it is.
+ */
+export function rewriteUrl(raw: IncomingMessage): string {
+  const url = raw.url ?? "/";
+  const match = PREFIX.exec(url);
+  const id = match?.[1];
+  if (match === null || id === undefined || !SESSION_ID.test(id)) return url;
+  prefixes.set(raw, id);
+  const rest = url.slice(match[0].length);
+  return rest.startsWith("/") ? `/api${rest}` : `/api/${rest}`;
+}
+
+/** The session ID of the request's `/api/s/<id>/` prefix, if it had one. */
+export function sessionPrefixOf(request: FastifyRequest): string | undefined {
+  return prefixes.get(request.raw);
+}
+
+/** The user of a guarded request and their rights (add-multiuser M5), set by the guard's onRequest. */
+export function userOf(request: FastifyRequest): RequestUser {
+  const user = requestUser(request);
+  // A route that reads the user without the guard having set one is a server bug: fail closed.
+  if (!user) throw new Error(`no user for ${request.method} ${request.url}`);
+  return user;
+}
+
+/** The session a `session` or `change` route serves (add-multiuser M5), set by the guard's preHandler. */
+export function sessionOf(request: FastifyRequest): Session {
+  const admitted = requestSession<Session>(request);
+  if (!admitted) throw new Error(`no session for ${request.method} ${request.url}`);
+  return admitted.session;
+}
+
 /** What a route reads within (add-scope Z10). */
 export interface RouteScope {
-  /** The workspace's scope; undefined in full mode without one. */
+  /** The session's scope; undefined in full mode without one. */
   scope?: WorkspaceScope;
   /** Its source form. */
   source?: Scope;
-  /** The scope's signal list (loaded or not), else the full catalog. */
-  catalog: Catalog | undefined;
+  /**
+   * The scope's signal list (loaded or not), else the full catalog, as the requester may see it
+   * (add-multiuser M6).
+   */
+  catalog: CatalogView | undefined;
 }
 
 /**
- * The scope of the workspace a request serves and its signal list (add-scope Z10). In scoped mode
- * without a scope it answers 409 `scope_required` and returns undefined. A scope's list that is
- * not loaded starts loading, so the caller's 503 `catalog_unavailable` lasts only until it has.
+ * The scope of the session a request serves and its signal list, filtered by the requester's
+ * rights (add-scope Z10, add-multiuser M6). In scoped mode without a scope it answers 409
+ * `scope_required` and returns undefined. A scope's list that is not loaded starts loading, so the
+ * caller's 503 `catalog_unavailable` lasts only until it has.
  */
 export function routeScope(
   deps: ScopeDeps,
@@ -101,16 +153,18 @@ export function routeScope(
   reply: FastifyReply,
 ): RouteScope | undefined {
   const catalogs = catalogsOf(deps);
-  const scope = scopeOf(request, deps.workspace);
+  const { rights } = userOf(request);
+  const view = (catalog: Catalog | undefined) => catalog && catalogView(catalog, rights);
+  const scope = scopeOf(request);
   if (!scope) {
     if (catalogs.mode === "scoped") {
       scopeRequired(reply);
       return undefined;
     }
-    return { catalog: catalogs.full ?? deps.catalog };
+    return { catalog: view(catalogs.full ?? deps.catalog) };
   }
   if (!catalogs.get(scope)?.loadedAt) catalogs.load(scope).catch(() => {});
-  return { scope, source: sourceScope(scope), catalog: catalogs.get(scope) };
+  return { scope, source: sourceScope(scope), catalog: view(catalogs.get(scope)) };
 }
 
 /** 409 of a route in scoped mode without a scope (add-scope Z10). */
@@ -133,12 +187,13 @@ export function outOfScope(
 }
 
 /**
- * HTTP status of a command result: 400 invalid command, 503 catalog not loaded, else 422
- * (`scope_required` and `out_of_scope` included, add-scope Z10).
+ * HTTP status of a command result: 400 invalid command, 503 catalog not loaded, 403 hidden data
+ * (add-multiuser M7), else 422 (`scope_required` and `out_of_scope` included, add-scope Z10).
  */
 export function commandStatus(result: CommandResult): number {
   if (result.ok) return 200;
   if (result.code === "invalid_command") return 400;
   if (result.code === "catalog_unavailable") return 503;
+  if (result.code === "forbidden_data") return 403;
   return 422;
 }

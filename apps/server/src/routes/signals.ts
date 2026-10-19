@@ -8,7 +8,9 @@ import {
   MAX_PAGE_SIZE,
   warnDisplayFallbacks,
 } from "../catalog.ts";
-import { apiError, catalogsOf, parseInput, routeScope } from "../http.ts";
+import type { Access } from "../guard.ts";
+import { apiError, catalogsOf, parseInput, routeScope, userOf } from "../http.ts";
+import { type CatalogView, catalogView } from "../rights.ts";
 
 const SearchQuery = z.object({
   q: z.string().max(200).default(""),
@@ -17,18 +19,21 @@ const SearchQuery = z.object({
 });
 
 /** 503 before the first load; `reason` says still loading vs. source unreachable. */
-function catalogUnavailable(reply: FastifyReply, catalog: Catalog | undefined) {
+function catalogUnavailable(reply: FastifyReply, catalog: CatalogView | undefined) {
   return apiError(reply, 503, "catalog_unavailable", catalog?.lastError ?? "catalog not loaded", {
     reason: catalog?.unavailableReason ?? "still loading: the scope's signal list",
   });
 }
 
-/** The workspace's scope's signal list, else the full catalog (add-scope Z10). */
+/** The session's lists, filtered by the requester's rights (add-multiuser M6): no data ref named. */
+const ACCESS: Access = { level: "session" };
+
+/** The session's scope's signal list, else the full catalog (add-scope Z10). */
 export const signalRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
     /** Searches the catalog (spec signal-catalog). */
-    app.get("/api/signals", async (request, reply) => {
+    app.get("/api/signals", { config: { access: ACCESS } }, async (request, reply) => {
       const query = parseInput(SearchQuery, request.query, reply);
       if (!query) return reply;
       const scoped = routeScope(deps, request, reply);
@@ -42,7 +47,7 @@ export const signalRoutes =
     });
 
     /** Full catalog, unpaged, for clients that search locally (design E3). */
-    app.get("/api/catalog", async (request, reply) => {
+    app.get("/api/catalog", { config: { access: ACCESS } }, async (request, reply) => {
       const scoped = routeScope(deps, request, reply);
       if (!scoped) return reply;
       const { catalog, scope } = scoped;
@@ -58,7 +63,7 @@ export const signalRoutes =
     });
 
     /** Reloads signals from the source (of the scope, if any) and metadata from the DBC files. */
-    app.post("/api/catalog/refresh", async (request, reply) => {
+    app.post("/api/catalog/refresh", { config: { access: ACCESS } }, async (request, reply) => {
       const scoped = routeScope(deps, request, reply);
       if (!scoped) return reply;
       const { scope } = scoped;
@@ -72,7 +77,7 @@ export const signalRoutes =
             await catalog.refresh();
           } else catalog = await catalogsOf(deps).load(scope);
         } else {
-          catalog = scoped.catalog ?? deps.catalog;
+          catalog = catalogsOf(deps).full ?? deps.catalog;
           await catalog.refresh();
         }
       } catch (error) {
@@ -80,6 +85,8 @@ export const signalRoutes =
         return apiError(reply, 502, "source_error", message);
       }
       warnDisplayFallbacks(app.log, catalog);
-      return { size: catalog.size, loadedAt: catalog.loadedAt?.toISOString() };
+      // The count of what the requester may see (add-multiuser M6).
+      const visible = catalogView(catalog, userOf(request).rights);
+      return { size: visible.size, loadedAt: visible.loadedAt?.toISOString() };
     });
   };

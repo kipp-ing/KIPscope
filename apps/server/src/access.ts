@@ -1,4 +1,8 @@
-/** Access guard: only requests addressed to this machine and from local pages (design H3). */
+/**
+ * Access guard: only requests addressed to this machine or a configured origin, and from local
+ * pages or a configured origin (design H3, add-multiuser M10).
+ */
+import type { IdentityConfig } from "./config.ts";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -10,6 +14,8 @@ export function isLoopbackHost(host: string): boolean {
 export interface AccessOptions {
   /** KIPSCOPE_HOST when neither loopback nor 0.0.0.0/::. */
   extraHost?: string;
+  /** KIPSCOPE_ORIGINS, normalised by `parseOrigins` (`https://h`, `http://h:8080`). */
+  origins?: readonly string[];
 }
 
 /** Host name without port and IPv6 brackets, lower case. */
@@ -24,15 +30,24 @@ function hostName(host: string): string {
   return colon >= 0 && colon === lower.lastIndexOf(":") ? lower.slice(0, colon) : lower;
 }
 
-/** Host header without port: loopback name or extraHost. Undefined → false. */
-export function hostAllowed(host: string | undefined, options: AccessOptions): boolean {
-  if (!host) return false;
-  const name = hostName(host);
+/** Loopback name or extraHost, any port. */
+function localHost(name: string, options: AccessOptions): boolean {
   if (isLoopbackHost(name)) return true;
   return options.extraHost !== undefined && name === hostName(options.extraHost);
 }
 
-/** Undefined → true. Else http:/https: URL whose hostname passes hostAllowed. "null" → false. */
+/** Host header, port ignored: loopback name, extraHost or the host of a configured origin. Undefined → false. */
+export function hostAllowed(host: string | undefined, options: AccessOptions): boolean {
+  if (!host) return false;
+  const name = hostName(host);
+  if (localHost(name, options)) return true;
+  return (options.origins ?? []).some((origin) => hostName(new URL(origin).host) === name);
+}
+
+/**
+ * Undefined → true. Else an http:/https: URL with a loopback or extraHost name, any port, or
+ * exactly a configured origin (scheme, host, port; default ports normalised). "null" → false.
+ */
 export function originAllowed(origin: string | undefined, options: AccessOptions): boolean {
   if (origin === undefined) return true;
   let url: URL;
@@ -42,5 +57,58 @@ export function originAllowed(origin: string | undefined, options: AccessOptions
     return false;
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  return hostAllowed(url.hostname, options);
+  if (localHost(hostName(url.host), options)) return true;
+  return (options.origins ?? []).includes(url.origin);
+}
+
+/** What the start log needs of the config (a `Config` fits). */
+export interface AccessLogConfig {
+  host: string;
+  port?: number;
+  identity: IdentityConfig;
+  rulesFile?: string;
+  origins: readonly string[];
+}
+
+const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
+
+/** The access lines logged at start (add-multiuser M10); pure, so tests read them. */
+export function accessLog(
+  config: AccessLogConfig,
+  rules?: { readonly roles: readonly unknown[] },
+): { level: "info" | "warn"; message: string }[] {
+  const lines: { level: "info" | "warn"; message: string }[] = [];
+  const loopback = isLoopbackHost(config.host);
+  const wildcard = WILDCARD_HOSTS.has(config.host);
+  const { identity } = config;
+  if (identity.kind === "none") {
+    if (config.rulesFile !== undefined)
+      lines.push({
+        level: "info",
+        message: `KIPSCOPE_RULES ${config.rulesFile} ignored: identity none`,
+      });
+    if (!loopback)
+      lines.push({
+        level: "warn",
+        message:
+          `KIPSCOPE_HOST ${config.host} is not loopback: every machine that reaches it can read signals and change the workspace` +
+          (wildcard ? "; only loopback names pass the Host check" : ""),
+      });
+    return lines;
+  }
+  const who =
+    identity.kind === "oidc"
+      ? `identity oidc (issuer ${identity.oidc.issuer}, audience ${identity.oidc.audience})`
+      : `identity module ${identity.path}`;
+  const roles = rules?.roles.length ?? 0;
+  lines.push({
+    level: "info",
+    message: `${who}; rules ${config.rulesFile ?? "(none)"} with ${roles} ${roles === 1 ? "role" : "roles"}; origins ${config.origins.join(", ")}`,
+  });
+  if (!loopback)
+    lines.push({
+      level: "warn",
+      message: `KIPSCOPE_HOST ${config.host} is not loopback: only the proxy should reach ${config.host}:${config.port ?? "its port"}`,
+    });
+  return lines;
 }

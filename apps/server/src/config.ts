@@ -66,7 +66,52 @@ export interface Config {
   catalogMode: CatalogMode;
   /** `KIPSCOPE_SCOPE_PAD` in ns, ≥ 0: padding on each side of a scope derived from a view (Z8, Z11). */
   scopePad: bigint;
+  /** `KIPSCOPE_IDENTITY` (add-multiuser M1). */
+  identity: IdentityConfig;
+  /** `KIPSCOPE_RULES`, absolute; required unless identity `none`, where it is ignored (M3). */
+  rulesFile?: string;
+  /** `KIPSCOPE_ORIGINS`, normalised origins; required (non-empty) unless identity `none` (M10). */
+  origins: string[];
+  /** `KIPSCOPE_SESSION_IDLE_DAYS` (M4). */
+  sessionIdleDays: number;
+  /** `KIPSCOPE_WEB_DIR`, absolute: the built UI the server serves (M11); unset serves none. */
+  webDir?: string;
 }
+
+/** A JWS algorithm `KIPSCOPE_OIDC_ALGS` may name; never `none` or `HS*` (add-multiuser M15). */
+export const OIDC_ALGORITHMS = [
+  "RS256",
+  "RS384",
+  "RS512",
+  "PS256",
+  "PS384",
+  "PS512",
+  "ES256",
+  "ES384",
+  "ES512",
+  "EdDSA",
+] as const;
+export type OidcAlgorithm = (typeof OIDC_ALGORITHMS)[number];
+
+/** The built-in `oidc` adapter (add-multiuser M2, M15). */
+export interface OidcConfig {
+  issuer: string;
+  audience: string;
+  /** Unset: `jwks_uri` of the issuer's discovery document. */
+  jwksUrl?: string;
+  userClaim: string;
+  /** A claim name or dotted path (`realm_access.roles`). */
+  rolesClaim: string;
+  /** Lower-case header name; `authorization` carries `Bearer <jwt>`, any other the bare JWT. */
+  header: string;
+  algs: OidcAlgorithm[];
+}
+
+/** `KIPSCOPE_IDENTITY` (add-multiuser M1, M2). A module path is as given, resolved against the working directory when loaded. */
+export type IdentityConfig =
+  | { kind: "none" }
+  | { kind: "oidc"; oidc: OidcConfig }
+  | { kind: "module"; path: string };
 
 export const CATALOG_MODES = ["full", "scoped"] as const;
 export type CatalogMode = (typeof CATALOG_MODES)[number];
@@ -223,11 +268,113 @@ function sourceConfig(env: Env): { source: SourceConfig; database: string } {
   throw new Error(`KIPSCOPE_SOURCE: ${SOURCE_KINDS.join(" or ")}, not ${kind}`);
 }
 
+const IDENTITY_FORMS = "none, oidc or module:<path>";
+
+/** `https:` URL, or `http:` for a loopback host (tests). */
+function httpsUrl(key: string, raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`${key}: not a URL: ${raw}`);
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)))
+    throw new Error(`${key}: must be https:// (http:// only for a loopback host): ${raw}`);
+  return raw;
+}
+
+/** A claim name, or a dotted path of names. */
+function claim(env: Env, key: string, fallback: string): string {
+  const value = env[key] || fallback;
+  if (!/^[^.\s]+(\.[^.\s]+)*$/.test(value))
+    throw new Error(`${key}: not a claim name or path: ${value}`);
+  return value;
+}
+
+function oidcAlgorithms(env: Env): OidcAlgorithm[] {
+  const key = "KIPSCOPE_OIDC_ALGS";
+  const raw = env[key] || "RS256,PS256,ES256";
+  const names = raw
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
+  if (names.length === 0) throw new Error(`${key}: no algorithm named`);
+  for (const name of names)
+    if (!(OIDC_ALGORITHMS as readonly string[]).includes(name))
+      throw new Error(`${key}: ${name} is not allowed; use some of ${OIDC_ALGORITHMS.join(" ")}`);
+  return [...new Set(names)] as OidcAlgorithm[];
+}
+
+function oidcConfig(env: Env): OidcConfig {
+  const jwks = env.KIPSCOPE_OIDC_JWKS_URL;
+  const header = (env.KIPSCOPE_OIDC_HEADER || "authorization").toLowerCase();
+  if (!/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(header))
+    throw new Error(`KIPSCOPE_OIDC_HEADER: not a header name: ${header}`);
+  return {
+    issuer: httpsUrl("KIPSCOPE_OIDC_ISSUER", required(env, "KIPSCOPE_OIDC_ISSUER")),
+    audience: required(env, "KIPSCOPE_OIDC_AUDIENCE"),
+    ...(jwks ? { jwksUrl: httpsUrl("KIPSCOPE_OIDC_JWKS_URL", jwks) } : {}),
+    userClaim: claim(env, "KIPSCOPE_OIDC_USER_CLAIM", "sub"),
+    rolesClaim: claim(env, "KIPSCOPE_OIDC_ROLES_CLAIM", "roles"),
+    header,
+    algs: oidcAlgorithms(env),
+  };
+}
+
+function identityConfig(env: Env): IdentityConfig {
+  const raw = env.KIPSCOPE_IDENTITY || "none";
+  if (raw === "none") return { kind: "none" };
+  if (raw === "oidc") return { kind: "oidc", oidc: oidcConfig(env) };
+  if (raw.startsWith("module:") && raw.length > "module:".length)
+    return { kind: "module", path: raw.slice("module:".length) };
+  throw new Error(`KIPSCOPE_IDENTITY: ${IDENTITY_FORMS}, not ${raw}`);
+}
+
+/** Comma list of `http(s)://host[:port]` origins without path, normalised (`https://h:443` → `https://h`). */
+export function parseOrigins(raw: string | undefined): string[] {
+  const key = "KIPSCOPE_ORIGINS";
+  const origins: string[] = [];
+  for (const entry of (raw ?? "").split(",").map((e) => e.trim())) {
+    if (!entry) continue;
+    let url: URL | undefined;
+    try {
+      url = new URL(entry);
+    } catch {
+      url = undefined;
+    }
+    if (
+      url === undefined ||
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/" ||
+      /[/?#]/.test(entry.slice(url.protocol.length + 2).replace(/\/$/, ""))
+    )
+      throw new Error(`${key}: an http(s)://host[:port] origin without path, not ${entry}`);
+    if (!origins.includes(url.origin)) origins.push(url.origin);
+  }
+  return origins;
+}
+
 /** Reads the server config from environment variables (see .env.example). */
 export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
   const { source, database } = sourceConfig(env);
   const columns = DEFAULT_COLUMNS[source.kind];
   const project = env.KIPSCOPE_PROJECT_FILE;
+  const identity = identityConfig(env);
+  const rules = env.KIPSCOPE_RULES;
+  if (identity.kind !== "none" && !rules)
+    throw new Error(
+      `KIPSCOPE_RULES is not set; it is required with KIPSCOPE_IDENTITY=${identity.kind}`,
+    );
+  const origins = parseOrigins(env.KIPSCOPE_ORIGINS);
+  if (identity.kind !== "none" && origins.length === 0)
+    throw new Error(
+      `KIPSCOPE_ORIGINS is not set; it is required with KIPSCOPE_IDENTITY=${identity.kind}`,
+    );
+  const webDir = env.KIPSCOPE_WEB_DIR;
   return {
     host: env.KIPSCOPE_HOST || "127.0.0.1",
     port: positiveInt(env, "KIPSCOPE_PORT", 7310),
@@ -260,5 +407,10 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     stateDir: resolve(root, env.KIPSCOPE_STATE_DIR || ".kipscope"),
     catalogMode: catalogMode(env),
     scopePad: scopePad(env),
+    identity,
+    ...(rules ? { rulesFile: isAbsolute(rules) ? rules : resolve(root, rules) } : {}),
+    origins,
+    sessionIdleDays: positiveInt(env, "KIPSCOPE_SESSION_IDLE_DAYS", 30),
+    ...(webDir ? { webDir: isAbsolute(webDir) ? webDir : resolve(root, webDir) } : {}),
   };
 }
