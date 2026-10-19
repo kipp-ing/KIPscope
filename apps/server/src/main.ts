@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { attributionText, type Measurement } from "@kipscope/shared";
 import { isLoopbackHost } from "./access.ts";
@@ -53,12 +53,23 @@ const wildcard = WILDCARD_HOSTS.has(config.host);
 // A configured LAN address is the one other name the Host check admits (design H3).
 const extraHost = loopback || wildcard ? undefined : config.host;
 
+// Default metadata paths that don't exist are skipped with one info line; set paths still warn per load (issue #1).
+const skippedDefaults: string[] = [];
+const metadataPaths = (key: string, paths: string[]): string[] => {
+  if (process.env[key]) return paths;
+  const present = paths.filter((path) => existsSync(path));
+  skippedDefaults.push(...paths.filter((path) => !present.includes(path)));
+  return present;
+};
+const dbcFiles = metadataPaths("KIPSCOPE_DBC_FILES", config.dbcFiles);
+const diagCatalogs = metadataPaths("KIPSCOPE_DIAG_CATALOGS", config.diagCatalogs);
+
 const catalog = new Catalog(
   source,
-  (warn) => loadDbcFiles(config.dbcFiles, (path, error) => warn(`${path}: ${error}`)),
+  (warn) => loadDbcFiles(dbcFiles, (path, error) => warn(`${path}: ${error}`)),
   rules,
   { warn: (message) => app.log.warn(message) },
-  (warn) => loadDiagCatalogs(config.diagCatalogs, warn),
+  (warn) => loadDiagCatalogs(diagCatalogs, warn),
 );
 // Views and the state file (design V4, V5); the warnings wait for the logger.
 const views = new ViewStore(join(config.stateDir, "views"));
@@ -101,6 +112,8 @@ const app = buildApp(
 if (rules === NO_RULES)
   app.log.info(`project file ${config.projectFile.path} not found; signals show their full names`);
 if (licenseMissing) app.log.warn("LICENSE not found; /api/license answers 404");
+if (skippedDefaults.length > 0)
+  app.log.info(`default metadata files not found, skipped: ${skippedDefaults.join(", ")}`);
 if (!loopback)
   app.log.warn(
     `KIPSCOPE_HOST ${config.host} is not loopback: every machine that reaches it can read signals and change the workspace` +
