@@ -59,6 +59,13 @@ Write areas (disjoint):
 - [x] 7.5 Web tests: `explorer.test.ts`, `strip.test.ts`, `zoom.test.ts` per the scenarios naming them. Verify: `pnpm --filter @kipscope/web test`.
 - [x] 7.6 CLI tests: `args.test.ts` › "maps the scope forms", `cli.test.ts` › "sets, shows, widens and clears the scope" and the help list. Verify: `pnpm --filter @kipscope/cli test`.
 
+## 8. Follow-up after rounds 1-3 (lead's call, 2026-10-19)
+
+- [x] 8.1 (should) `apps/web/src/chart/loader.ts` `rescope()` reloads every key whose state matches its request, complete keys included, through `beginRetry` (new sequence number, late old answer dropped). Verify: `rescope.test.ts` › "loads a complete key's request again, the late old answer does not overwrite".
+- [x] 8.2 (should) Web regression tests `apps/web/test/rescope.test.ts` for `enterScope`, `scopeChangeWatcher` (seam of `useScopeChange` and `useMeta`), the cache generation guard, gap store reload and `again` drop, `SeriesLoader.rescope`, `ValueLoader.rescope`, `useMeta` refetch on a scope change. Verify: `pnpm --filter @kipscope/web test` (20 new tests). The hooks themselves run in no test (no hook renderer); the wiring is reviewed by reading.
+- [x] 8.3 (could) `apps/web/src/chart/cache.ts` `clear()` aborts queued prefetch runs. Verify: `rescope.test.ts` › "never fetches the queued prefetch runs after a clear".
+- [ ] 8.4 (spec owner, lead calls) Scenarios "Footer count follows the scope" (signal-catalog) and "Windows recover after Widen, Clear or open" (time-navigation) so the tests and the UI check of this round trace to the spec; UI check of both held on smart451 (415, 551, 553, 415).
+
 ## Workflow follow-up
 
 - Lead: Jan's answers to Q-1 … Q-3 before round 1; manual checks of design "Manual checks (lead)" and scope "carserver in scoped mode"; `pnpm build && pnpm test && pnpm lint`, `test:adx`, `pnpm smoke`.

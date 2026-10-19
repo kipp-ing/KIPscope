@@ -1,6 +1,7 @@
 import type { ServerMeta } from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
 import { fetchMeta } from "../api.ts";
+import { scopeChangeWatcher } from "../chart/rescope.ts";
 
 /** Interval of the meta refresh (app-footer "Meta refresh"). */
 export const META_POLL_MS = 30_000;
@@ -60,12 +61,10 @@ export function useMeta(connected: boolean, scopeKey = ""): MetaState {
 
   // The catalog the footer counts is the scope's (add-scope Z12); the server has loaded it before
   // the workspace shows the new scope. Not on mount, which fetched already.
-  const seenScope = useRef(scopeKey);
+  const [scopeChanged] = useState(() => scopeChangeWatcher(scopeKey));
   useEffect(() => {
-    if (seenScope.current === scopeKey) return;
-    seenScope.current = scopeKey;
-    load.current();
-  }, [scopeKey]);
+    if (scopeChanged(scopeKey)) load.current();
+  }, [scopeKey, scopeChanged]);
 
   return state;
 }

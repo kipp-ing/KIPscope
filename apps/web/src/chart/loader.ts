@@ -223,19 +223,18 @@ export class SeriesLoader {
   }
 
   /**
-   * The workspace's scope changed (add-scope Z12): every key loads its overview again; a key that
-   * failed or is still loading loads its current request again at once, keeping what it shows
-   * meanwhile, and its failures in a row start over. A complete key keeps its result.
+   * The workspace's scope changed (add-scope Z12): every key loads its current request again at
+   * once, keeping what it shows meanwhile, and its overview after that; its failures in a row start
+   * over. A complete key reloads too: its tiles and the value lines at its edges were bounded by the
+   * old scope. A new sequence number drops any late answer of the old scope.
    */
   rescope(): void {
     const loads: LoadRequest[] = [];
     for (const request of this.order) {
-      const { key, signalId } = request;
+      const { key } = request;
       this.dropOverview(key);
       const state = this.states.get(key);
-      if (state?.status === "complete") {
-        this.firstViewDone(key, signalId);
-      } else if (state?.request === requestId(request)) {
+      if (state?.request === requestId(request)) {
         this.clearRetry(key);
         this.failures.delete(key);
         this.beginRetry(key, state);

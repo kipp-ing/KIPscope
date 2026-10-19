@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { tabSeriesCache } from "./cache.ts";
 import { gapInfoStore } from "./gaps.ts";
 import { forgetExtents } from "./overview.ts";
@@ -22,19 +22,32 @@ export function enterScope(key: string): boolean {
   return true;
 }
 
+/** Test seam: forgets the tab's scope key, so the next `enterScope` is a first call again. */
+export function resetScopeForTest(): void {
+  current = undefined;
+}
+
+/** True, and remembers `key`, when it differs from the last key seen (starts at `initialKey`). */
+export function scopeChangeWatcher(initialKey: string): (key: string) => boolean {
+  let seen = initialKey;
+  return (key) => {
+    if (key === seen) return false;
+    seen = key;
+    return true;
+  };
+}
+
 /**
  * A window's part of a scope change: before its loads of the commit, the tab's caches follow
  * `key` (`enterScope`), then `rescope` runs when `key` differs from the last commit's (not on
  * mount), so the window's failed loads ask again under the new scope (add-scope Z12).
  */
 export function useScopeChange(key: string, rescope: () => void): void {
-  const seen = useRef(key);
+  const [changed] = useState(() => scopeChangeWatcher(key));
   const latest = useRef(rescope);
   latest.current = rescope;
   useLayoutEffect(() => {
     enterScope(key);
-    if (seen.current === key) return;
-    seen.current = key;
-    latest.current();
-  }, [key]);
+    if (changed(key)) latest.current();
+  }, [key, changed]);
 }

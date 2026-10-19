@@ -110,11 +110,18 @@ export class SeriesCache {
   }
 
   /**
-   * Forgets every stored tile and every run in flight, so later loads fetch again; a run in flight
-   * still answers its owners but stores nothing (add-scope Z12: the workspace's scope changed).
+   * Forgets every stored tile and every run in flight, so later loads fetch again; a run being
+   * fetched still answers its owners but stores nothing, a waiting prefetch run is aborted unfetched
+   * so no query of the old scope starts (add-scope Z12: the workspace's scope changed).
    */
   clear(): void {
     for (const id of [...this.tiles.keys()]) this.remove(id);
+    // The abort rejects the waiting runs' promises, as a release does; their owners ask again.
+    for (const run of this.queue.splice(0)) {
+      run.begin = undefined;
+      run.controller.abort();
+      for (const owner of run.owners) this.owned.get(owner)?.delete(run);
+    }
     this.inFlight.clear();
     this.generation++;
   }
