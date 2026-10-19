@@ -107,7 +107,7 @@ function identityRequest(request: FastifyRequest): IdentityRequest {
     headers,
     peer: peer.startsWith("::ffff:") ? peer.slice("::ffff:".length) : peer,
     method: request.method,
-    path: pathOf(request.url),
+    path: routerPath(request.url),
   };
 }
 
@@ -130,7 +130,7 @@ function levelOf(request: FastifyRequest): Level | undefined {
 const KEPT_ESCAPES = new Set(["2f", "3f", "23", "25"]);
 
 /** The path as the router matches it: percent escapes decoded, except the ones it keeps. */
-function routerPath(url: string): string {
+export function routerPath(url: string): string {
   return pathOf(url).replace(/%([0-9a-f]{2})/gi, (kept, hex: string) =>
     KEPT_ESCAPES.has(hex.toLowerCase()) ? kept : String.fromCharCode(Number.parseInt(hex, 16)),
   );

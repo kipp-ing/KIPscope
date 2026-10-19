@@ -120,6 +120,45 @@ describe("built UI served by the server", () => {
     expect(bare.text).not.toContain("KIPscope index");
   });
 
+  it("answers an encoded or query-carrying API path with 404, never the SPA", async () => {
+    t = await multiApp({ webDir });
+    const alice = t.as("alice", ["all"]);
+    for (const path of [
+      "/%61pi/nosuch",
+      "/%61pi",
+      "/a%70i/nosuch",
+      "/api?x=1",
+      "/api/nosuch?x=1",
+    ]) {
+      const res = await alice.get(path);
+      expect(res.status, path).toBe(404);
+      expect(res.headers["content-type"], path).toContain("application/json");
+      expect(res.body, path).toMatchObject({ statusCode: 404, error: "Not Found" });
+      expect(res.text, path).not.toContain("KIPscope index");
+    }
+    // Without a user: below /api/ the answer is 401, the bare /api a plain 404; never the index.
+    const refused = await multiApp({ identity: refuseAll, webDir });
+    try {
+      for (const path of ["/%61pi/nosuch", "/api/nosuch?x=1"]) {
+        const res = await refused.anon.get(path);
+        expect([res.status, codeOf(res.body)], path).toEqual([401, "unauthenticated"]);
+      }
+      for (const path of ["/%61pi", "/api?x=1"]) {
+        const res = await refused.anon.get(path);
+        expect(res.status, path).toBe(404);
+        expect(res.text, path).not.toContain("KIPscope index");
+      }
+    } finally {
+      await refused.close();
+    }
+    // The SPA route itself still gets the index, also with a query string.
+    for (const path of ["/s/abcdefghij", "/s/abcdefghij?x=1"]) {
+      const page = await alice.get(path);
+      expect(page.status, path).toBe(200);
+      expect(page.text, path).toContain("KIPscope index");
+    }
+  });
+
   it("gives each file its content type", async () => {
     t = await multiApp({ webDir });
     const types: [string, string][] = [

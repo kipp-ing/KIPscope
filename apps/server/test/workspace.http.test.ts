@@ -5,7 +5,6 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
-import type { LiveOptions } from "../src/routes/workspace.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { testDbcFiles, testSource } from "./testdb.ts";
 
@@ -468,13 +467,11 @@ describe("live channel heartbeat (add-multiuser M8)", () => {
     hasStates: () => false,
   });
   // A short interval: the server pings every 50 ms and drops a client that missed the last pong.
-  // (Spread, because `AppDeps` does not list the option yet; `LiveOptions` types it.)
-  const live: LiveOptions = { liveHeartbeatMs: 50 };
   const app = buildApp({
     catalog: new Catalog(source, async () => new Map()),
     source,
     workspace,
-    ...live,
+    liveHeartbeatMs: 50,
   });
   let base = "";
   beforeAll(async () => {

@@ -1,4 +1,7 @@
 import type { CursorValueResult, RenderError, ValuesMode } from "@kipscope/shared";
+import { isCatalogLoading } from "../api.ts";
+import { GAP_LOADING_RETRY_MS } from "../chart/gaps.ts";
+import { RETRY_DELAYS_MS } from "../chart/loader.ts";
 
 export interface ValueRequest {
   /** One row and cursor of a values window, e.g. `${assignmentId}|a`. */
@@ -26,7 +29,8 @@ const requestId = (r: ValueRequest) => `${r.signalId}|${r.t}|${r.mode}`;
  * Loads the values of one values window per row and cursor (design C8), the counterpart of
  * SeriesLoader: a changed cursor time or mode aborts the previous request, and a response is
  * applied only if it belongs to the latest request for its key, so an older answer can never
- * replace a newer one.
+ * replace a newer one. A 503 `catalog_unavailable` keeps the request loading and starts it again
+ * after the next delay of RETRY_DELAYS_MS, at most GAP_LOADING_RETRY_MS.
  */
 export class ValueLoader {
   private readonly fetch: FetchValue;
@@ -34,6 +38,11 @@ export class ValueLoader {
   private readonly states = new Map<string, ValueState>();
   private readonly controllers = new Map<string, AbortController>();
   private readonly latest = new Map<string, number>();
+  /** Per key: a request waiting for the server's catalog, its tries so far and its retry. */
+  private readonly waits = new Map<
+    string,
+    { request: string; count: number; timer: ReturnType<typeof setTimeout> }
+  >();
   private seq = 0;
   /** The requests of the last update. */
   private order: ValueRequest[] = [];
@@ -64,6 +73,8 @@ export class ValueLoader {
         this.controllers.delete(key);
         this.states.delete(key);
         this.latest.delete(key);
+        clearTimeout(this.waits.get(key)?.timer);
+        this.waits.delete(key);
         changed = true;
       }
     }
@@ -94,6 +105,8 @@ export class ValueLoader {
     this.controllers.clear();
     this.states.clear();
     this.latest.clear();
+    for (const wait of this.waits.values()) clearTimeout(wait.timer);
+    this.waits.clear();
     this.order = [];
   }
 
@@ -106,6 +119,10 @@ export class ValueLoader {
     this.latest.set(key, seq);
     const previous = this.states.get(key)?.result;
     const id = requestId(request);
+    const wait = this.waits.get(key);
+    clearTimeout(wait?.timer);
+    // Tries of the same request count on; another request starts over.
+    if (wait && wait.request !== id) this.waits.delete(key);
     this.states.set(key, {
       status: "loading",
       request: id,
@@ -116,11 +133,24 @@ export class ValueLoader {
     this.fetch(request, controller.signal).then(
       (result) => {
         if (!isCurrent()) return;
+        this.waits.delete(key);
         this.states.set(key, { status: "complete", request: id, result });
         this.onChange();
       },
       (error: unknown) => {
         if (!isCurrent() || controller.signal.aborted) return;
+        if (isCatalogLoading(error)) {
+          // The server still loads its catalog: the request stays loading and starts again.
+          const count = (this.waits.get(key)?.count ?? 0) + 1;
+          const backoff = RETRY_DELAYS_MS[Math.min(count, RETRY_DELAYS_MS.length) - 1] as number;
+          const delay = Math.min(backoff, GAP_LOADING_RETRY_MS);
+          const timer = setTimeout(() => {
+            if (isCurrent()) this.start(request);
+          }, delay);
+          this.waits.set(key, { request: id, count, timer });
+          return;
+        }
+        this.waits.delete(key);
         const message = error instanceof Error ? error.message : String(error);
         this.states.set(key, { status: "error", request: id, error: message });
         this.onChange();

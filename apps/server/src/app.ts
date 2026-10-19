@@ -42,6 +42,8 @@ export interface AppDeps extends ScopeDeps {
   rules?: Rules;
   /** `KIPSCOPE_WEB_DIR` (add-multiuser M11); absent: no static files. */
   webDir?: string;
+  /** Ping interval of the live channel in ms; default LIVE_HEARTBEAT_MS (tests use a short one). */
+  liveHeartbeatMs?: number;
 }
 
 /**

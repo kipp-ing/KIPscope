@@ -1,6 +1,7 @@
 import type { Extent, SeriesResult } from "@kipscope/shared";
-import { ApiRequestError } from "../api.ts";
+import { ApiRequestError, isCatalogLoading } from "../api.ts";
 import type { RecoverReason, SeriesCache } from "./cache.ts";
+import { GAP_LOADING_RETRY_MS } from "./gaps.ts";
 import {
   emptyTile,
   levelFor,
@@ -31,7 +32,11 @@ export interface LoaderOptions {
   extent?: (signalId: string) => Promise<Extent>;
   /** Prefetch at rest (Z7); absent or false: none. */
   prefetch?: boolean;
-  /** Retry failed loads with backoff and on recovery (R1); absent or false: a failed request stays failed. */
+  /**
+   * Retry failed loads with backoff and on recovery (R1); absent or false: a failed request stays
+   * failed. With it, a 503 `catalog_unavailable` keeps the key loading until a retry succeeds,
+   * retried after GAP_LOADING_RETRY_MS at most.
+   */
   retry?: boolean;
 }
 
@@ -158,6 +163,8 @@ export class SeriesLoader {
     string,
     { timer: ReturnType<typeof setTimeout>; at: number }
   >();
+  /** Keys whose last load met a server still loading its catalog: loading, a retry is due. */
+  private readonly waiting = new Set<string>();
   /** Set while subscribed to the cache's recovery signal: while a key holds an error (R3, R7). */
   private unsubscribe: (() => void) | undefined;
 
@@ -273,6 +280,7 @@ export class SeriesLoader {
     this.stopPrefetch();
     for (const key of [...this.retries.keys()]) this.clearRetry(key);
     this.failures.clear();
+    this.waiting.clear();
     this.maybeUnsubscribe();
   }
 
@@ -284,6 +292,7 @@ export class SeriesLoader {
     this.latest.delete(key);
     this.clearRetry(key);
     this.failures.delete(key);
+    this.waiting.delete(key);
   }
 
   /** Lets go of the key's tiles and aborts its exact request. */
@@ -314,6 +323,7 @@ export class SeriesLoader {
     const { key, signalId } = request;
     this.latest.set(key, ++this.seq);
     this.clearRetry(key);
+    this.waiting.delete(key);
     const id = requestId(request);
     const view = viewOf(request);
     if (view.tileable) {
@@ -461,6 +471,7 @@ export class SeriesLoader {
     this.states.set(key, { status: "complete", request: id, result });
     this.failures.delete(key);
     this.clearRetry(key);
+    this.waiting.delete(key);
     this.maybeUnsubscribe();
   }
 
@@ -470,13 +481,20 @@ export class SeriesLoader {
    */
   private fail(key: string, id: string, error: unknown): void {
     const shown = this.states.get(key);
+    // The server still loads its catalog: with `retry` the key stays loading, without an error.
+    const waits = this.options.retry === true && isCatalogLoading(error);
     this.states.set(key, {
-      status: "error",
-      request: id,
-      error: error instanceof Error ? error.message : String(error),
+      ...(waits
+        ? { status: "loading", request: id }
+        : {
+            status: "error",
+            request: id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
       ...(shown?.result ? { result: shown.result } : {}),
       ...(shown?.placeholder ? { placeholder: true } : {}),
     });
+    if (waits) this.waiting.add(key);
     if (!this.options.retry) return;
     const previous = this.failures.get(key);
     const count = (previous?.count ?? 0) + 1;
@@ -491,7 +509,9 @@ export class SeriesLoader {
     });
     this.unsubscribe ??= this.cache.onRecover((reason) => this.recovered(reason));
     if (!again) return;
-    const delay = RETRY_DELAYS_MS[Math.min(count, RETRY_DELAYS_MS.length) - 1] as number;
+    const backoff = RETRY_DELAYS_MS[Math.min(count, RETRY_DELAYS_MS.length) - 1] as number;
+    // While the catalog loads, poll as fast as the gap store does.
+    const delay = waits ? Math.min(backoff, GAP_LOADING_RETRY_MS) : backoff;
     this.retryAt(key, at + delay);
   }
 
@@ -501,7 +521,9 @@ export class SeriesLoader {
    */
   private recovered(reason: RecoverReason): void {
     const now = Date.now();
-    const keys = [...this.states].filter(([, s]) => s.status === "error").map(([key]) => key);
+    const keys = [...this.states]
+      .filter(([key, s]) => s.status === "error" || this.waiting.has(key))
+      .map(([key]) => key);
     for (const key of keys) {
       const failures = this.failures.get(key);
       if (!failures?.retryable) continue;
@@ -531,12 +553,16 @@ export class SeriesLoader {
     this.retries.delete(key);
   }
 
-  /** Loads the key's current request again, like a throttled visible load, if it is still failed. */
+  /**
+   * Loads the key's current request again, like a throttled visible load, if it is still failed or
+   * waiting for the catalog.
+   */
   private retry(key: string): void {
     this.clearRetry(key);
     const request = this.order.find((r) => r.key === key);
     const state = this.states.get(key);
-    if (!request || state?.status !== "error" || state.request !== requestId(request)) return;
+    const due = state?.status === "error" || this.waiting.has(key);
+    if (!request || !state || !due || state.request !== requestId(request)) return;
     this.beginRetry(key, state);
     if (this.interval !== undefined) this.pending.set(key, request);
     else if (this.load(request)) this.beginInterval();
@@ -545,13 +571,14 @@ export class SeriesLoader {
 
   /** A retry loads under a new sequence number and keeps the failed state's result and error (R5). */
   private beginRetry(key: string, state: LoadState): void {
+    this.waiting.delete(key);
     this.latest.set(key, ++this.seq);
     this.states.set(key, { ...state, status: "loading" });
   }
 
-  /** Drops the recovery subscription once no key holds an error. */
+  /** Drops the recovery subscription once no key holds an error or waits for the catalog. */
   private maybeUnsubscribe(): void {
-    if (this.unsubscribe === undefined) return;
+    if (this.unsubscribe === undefined || this.waiting.size > 0) return;
     for (const state of this.states.values()) if (state.error !== undefined) return;
     this.unsubscribe();
     this.unsubscribe = undefined;

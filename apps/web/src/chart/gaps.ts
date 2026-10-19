@@ -8,10 +8,12 @@ import {
   type SeriesResult,
 } from "@kipscope/shared";
 import { useCallback, useSyncExternalStore } from "react";
-import { fetchGaps } from "../api.ts";
+import { fetchGaps, isCatalogLoading } from "../api.ts";
 
 /** A failed gap info is fetched again after this long while a window still asks for it (G7). */
 export const GAP_RETRY_MS = 30_000;
+/** While the server still loads its catalog, gap info is fetched again after this long at most. */
+export const GAP_LOADING_RETRY_MS = 2_000;
 
 /** The gap info of a window's data refs (design G7). */
 export interface GapInfoState {
@@ -67,7 +69,8 @@ const toName = (entry: Entry) => [...entry.asks.keys()].slice(0, MAX_GAP_SIGNALS
  * flight per data ref, shared by every window, naming the first MAX_GAP_SIGNALS signals the
  * windows ask for; a newly asked signal starts a fetch at once (or right after the one in
  * flight). A failure is kept as an error and fetched again every `retryMs` while any window still
- * asks for that data ref. A loaded info is fetched again every `refreshMs` while asked for
+ * asks for that data ref; a 503 `catalog_unavailable` is no error but loading, fetched again
+ * within GAP_LOADING_RETRY_MS. A loaded info is fetched again every `refreshMs` while asked for
  * (G9 (c)): replaced only by a different answer, kept on a failure without an error.
  */
 export class GapInfoStore {
@@ -220,12 +223,20 @@ export class GapInfoStore {
           this.next(ref, entry);
           return;
         }
-        entry.error = error instanceof Error ? error.message : String(error);
-        entry.retry = setTimeout(() => {
-          delete entry.retry;
-          if (entry.asks.size > 0) this.load(ref, entry);
-        }, this.retryMs);
-        this.changed(ref);
+        // The server still loads its catalog: not an error, the data ref stays unsettled and is
+        // fetched again soon.
+        const loading = isCatalogLoading(error);
+        const hadError = entry.error !== undefined;
+        if (loading) delete entry.error;
+        else entry.error = error instanceof Error ? error.message : String(error);
+        entry.retry = setTimeout(
+          () => {
+            delete entry.retry;
+            if (entry.asks.size > 0) this.load(ref, entry);
+          },
+          loading ? Math.min(this.retryMs, GAP_LOADING_RETRY_MS) : this.retryMs,
+        );
+        if (!loading || hadError) this.changed(ref);
       },
     );
   }

@@ -158,17 +158,11 @@ const CHANGE: { access: Access } = { access: { level: "change", dataRefs: comman
 /** Default interval of the live channel's ping; a client that misses one pong is dropped. */
 export const LIVE_HEARTBEAT_MS = 30_000;
 
-/** Options of the live channel. */
-export interface LiveOptions {
-  /** Ping interval in ms; default LIVE_HEARTBEAT_MS (tests use a short one). */
-  liveHeartbeatMs?: number;
-}
-
 const sameRights = (a: SessionRights | undefined, b: SessionRights | undefined) =>
   a?.open === b?.open && a?.change === b?.change && a?.owner === b?.owner;
 
 export const workspaceRoutes =
-  (deps: AppDeps & LiveOptions): FastifyPluginAsync =>
+  (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
     const { sessions } = deps;
     const heartbeatMs = deps.liveHeartbeatMs ?? LIVE_HEARTBEAT_MS;

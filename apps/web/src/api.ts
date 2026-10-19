@@ -43,6 +43,16 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * The server is still loading its catalog or the scope's signal list (503 `catalog_unavailable`):
+ * a loading state to retry soon, not an error.
+ */
+export function isCatalogLoading(error: unknown): boolean {
+  return (
+    error instanceof ApiRequestError && error.status === 503 && error.code === "catalog_unavailable"
+  );
+}
+
 /** The error of a response that is not ok, from its parsed body (a proxy or a crashed server may answer without an ApiError body). */
 function requestError(res: Response, body: unknown): ApiRequestError {
   const error = (body as Partial<ApiError> | undefined)?.error;

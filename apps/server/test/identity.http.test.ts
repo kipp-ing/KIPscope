@@ -266,4 +266,32 @@ describe("identity over HTTP", () => {
     const again = await t.as("alice", ["all"]).get("/api/me");
     expect(again.body.user).toBe("alice");
   });
+
+  it("hands the adapter the path as the router reads it, without the query string", async () => {
+    const paths: string[] = [];
+    const recorder: IdentityAdapter = {
+      kind: "test-record",
+      identify: async (request) => {
+        paths.push(request.path);
+        return { user: "alice", roles: ["all"] };
+      },
+    };
+    t = await multiApp({ identity: recorder });
+    const cases: [string, string][] = [
+      ["/%61pi/me", "/api/me"],
+      ["/a%70i/me?x=1&y=%61", "/api/me"],
+      ["/%61%70%69/me", "/api/me"],
+      ["/api/me?x=1", "/api/me"],
+      // A plain session prefix is rewritten away before the guard runs; an encoded session ID is
+      // not (no such route), and the adapter sees it decoded.
+      ["/api/s/abcdefghij/workspace?rev=3", "/api/workspace"],
+      ["/api/s/%61bcdefghij/workspace", "/api/s/abcdefghij/workspace"],
+      ["/api/s/abcdefghij/%77orkspace?rev=3", "/api/workspace"],
+    ];
+    for (const [url, routed] of cases) {
+      paths.length = 0;
+      await t.anon.get(url);
+      expect(paths, url).toEqual([routed]);
+    }
+  });
 });

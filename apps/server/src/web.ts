@@ -2,6 +2,7 @@ import { realpathSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { FastifyPluginAsync } from "fastify";
+import { routerPath } from "./guard.ts";
 
 /** Content types of the built UI's files (design M11); anything else is octet-stream. */
 const TYPES: Record<string, string> = {
@@ -58,7 +59,9 @@ export const webRoutes =
     const root = realpathSync(resolve(dir));
     const index = join(root, INDEX);
     app.get("/*", async (request, reply) => {
-      if (request.url === "/api" || request.url.startsWith("/api/")) return reply.callNotFound();
+      // The path as the router reads it, so an encoded `/%61pi/…` is an API path too.
+      const routed = routerPath(request.url);
+      if (routed === "/api" || routed.startsWith("/api/")) return reply.callNotFound();
       const path = fileOf(root, request.url);
       if (path === undefined) return reply.callNotFound();
       const file = servable(root, path) ? path : index;
