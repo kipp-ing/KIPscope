@@ -8,8 +8,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Scope, SeriesRef, StateChangeRule } from "../src/datasource.ts";
 import { EventsCache } from "../src/events.ts";
-import { closeApps, unlink, unlinked } from "./caseApp.ts";
-import { scopeOfCall } from "./caseKit.ts";
+import { closeApps, gated, quiet, unlink, unlinked } from "./caseApp.ts";
+import { at, sameScope, scopeNs, scopeOfCall } from "./caseKit.ts";
 import { scopeApp } from "./scopeApp.ts";
 import { testSource } from "./testdb.ts";
 
@@ -322,6 +322,9 @@ describe("EventsCache with a work window (add-case-open)", () => {
     }
 
     const { t, id, calls } = await unlinked();
+    // The scope prefetch of the linked session (queued when its list loaded) has run out before the
+    // unlink, so every events call after the mark is the ask's own.
+    await quiet(calls);
     await unlink(t.anon, id);
     const mark = calls.length;
     const ask = () =>
@@ -343,5 +346,144 @@ describe("EventsCache with a work window (add-case-open)", () => {
       expect(named, name).toHaveLength(1);
       expect(scopeOfCall(named[0] as (typeof read)[number]), name).toEqual(window);
     }
+  });
+
+  // The linked session of C4's entry 0 with its pad, 00:59:00 to 01:11:00 (by hand: 01:00:00 - 60 s,
+  // 01:10:00 + 60 s).
+  const session = scopeNs("testcar", at(0, 59), at(1, 11));
+  const holdsSession = (method: string, args: unknown[]) =>
+    method === "refBuckets" && sameScope(scopeOfCall({ method, args }), session);
+  const eventCalls = (calls: readonly { method: string }[]) =>
+    calls.filter((c) => c.method === "events" || c.method === "stateChanges");
+
+  it("runs the session's events prefetch while the workspace stays linked", async () => {
+    // The control of the next test: with the chain held at its first job and then released, the
+    // linked session's table events are loaded with the session as their scope.
+    const hold = gated(testSource(), holdsSession);
+    const { t, id, calls } = await unlinked({ adapter: hold.adapter });
+    const live = await (await t.anon.live(id)).connected();
+    await vi.waitFor(() => expect(hold.held).toContain("refBuckets"));
+    const mark = calls.length;
+    hold.release();
+    await quiet(calls);
+    live.close();
+    const events = calls.slice(mark).filter((c) => c.method === "events");
+    expect(events.map((c) => scopeOfCall(c))).toEqual([session]);
+  });
+
+  it("does not load session events for a prefetch job that runs after the unlink", async () => {
+    // Opening the catalog queues the session's density, gap and events prefetch behind one another
+    // (chainPrefetch). The first job is held inside its source call; the workspace unlinks; then the
+    // chain goes on. The events job starts after the unlink and must not call the source at all:
+    // an unlinked workspace's events follow the asked work windows (K11).
+    const hold = gated(testSource(), holdsSession);
+    const { t, id, calls } = await unlinked({ adapter: hold.adapter });
+    // A tab holds the workspace, as in use: the prefetch is for workspaces with a live client.
+    const live = await (await t.anon.live(id)).connected();
+    await vi.waitFor(() => expect(hold.held).toContain("refBuckets"));
+    expect(eventCalls(calls)).toEqual([]);
+    await unlink(t.anon, id);
+    const mark = calls.length;
+    hold.release();
+    await quiet(calls);
+    live.close();
+    expect(eventCalls(calls.slice(mark))).toEqual([]);
+    expect(eventCalls(calls)).toEqual([]);
+  });
+
+  describe("concurrent asks while the vehicle's list replaces the session's", () => {
+    // 2026-10-01T01:00:00Z .. 02:00:00Z in ns, by hand (1790816400 s and 1790820000 s).
+    const scope: Scope = {
+      dataRef: "testcar",
+      from: 1790816400000000000n,
+      to: 1790820000000000000n,
+    };
+    const window: Scope = {
+      dataRef: "testcar",
+      from: 1790817000000000000n,
+      to: 1790818800000000000n,
+    };
+    // The scope the cache keys the asks by; `object` marks the vehicle's own scope.
+    const object = { ...scope, object: true as const };
+
+    /** A source whose `events` waits for `release()`; counts its calls like fakeSource. */
+    function heldSource() {
+      const source = fakeSource(
+        () => [note(1)],
+        () => [{ t: s(1), value: 0, text: "closed" }],
+      );
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const events = source.events.bind(source);
+      source.events = async (dataRef, limit, sc) => {
+        const rows = await events(dataRef, limit, sc);
+        await gate;
+        return rows;
+      };
+      return { source, release };
+    }
+
+    it("loads once when the first load is still running as the new list arrives", async () => {
+      const { source, release } = heldSource();
+      const catalog = fakeCatalog(door);
+      const cache = new EventsCache(source, catalog, vi.fn());
+      const first = cache.signal(door.id, object, window);
+      await vi.waitFor(() => expect(source.eventCalls).toHaveLength(1));
+      // The vehicle's own list replaces the session's: a new load time, the signal still in it.
+      catalog.load();
+      const second = cache.signal(door.id, object, window);
+      release();
+      const [a, b] = await Promise.all([first, second]);
+      expect(Array.isArray(a) && Array.isArray(b)).toBe(true);
+      expect(b).toEqual(a);
+      // One table load and one change load, both with the window as their scope.
+      expect(source.eventCalls).toHaveLength(1);
+      expect(source.changeCalls).toHaveLength(1);
+      expect(source.eventCalls[0]?.scope).toEqual({
+        dataRef: "testcar",
+        from: window.from,
+        to: window.to,
+      });
+      expect(source.changeCalls[0]?.scope).toEqual({
+        dataRef: "testcar",
+        from: window.from,
+        to: window.to,
+      });
+      // Settled, the same ask again finds it.
+      await cache.signal(door.id, object, window);
+      expect(source.eventCalls).toHaveLength(1);
+      expect(source.changeCalls).toHaveLength(1);
+    });
+
+    it("asks the new list once when the first load did not find the signal in the old one", async () => {
+      const source = fakeSource(
+        () => [note(1)],
+        () => [{ t: s(1), value: 0, text: "closed" }],
+      );
+      // The session's list lacks the signal; the vehicle's list has it.
+      let vehicle = false;
+      const catalog = {
+        loadedAt: new Date(1_000) as Date | undefined,
+        get: (id: string) => (vehicle && id === door.id ? door : undefined),
+        snaRanges: () => [] as { lo: number; hi: number }[],
+      };
+      const cache = new EventsCache(source, catalog, vi.fn());
+      const first = cache.signal(door.id, object, window);
+      // The list arrives before the first load has answered.
+      vehicle = true;
+      catalog.loadedAt = new Date(2_000);
+      const second = cache.signal(door.id, object, window);
+      const found = await second;
+      await first;
+      expect(Array.isArray(found), String(found)).toBe(true);
+      // Exactly one re-run against the new list: one table load and one change load, no more.
+      expect(source.eventCalls).toHaveLength(1);
+      expect(source.changeCalls).toHaveLength(1);
+      await cache.signal(door.id, object, window);
+      expect(source.eventCalls).toHaveLength(1);
+      expect(source.changeCalls).toHaveLength(1);
+    });
   });
 });

@@ -31,13 +31,14 @@ import {
   outOfScope,
   parseInput,
   routeScope,
+  scopeHolders,
   withRequestClass,
 } from "../http.ts";
 import { WorkWindowError, workWindowOf } from "../objectScope.ts";
 import { withPriority } from "../priority.ts";
-import { openScopes, sourceScope } from "../scope.ts";
+import { linkedScopeOf, openScopes, sourceScope } from "../scope.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
-import type { Workspaces } from "../workspaces.ts";
+import type { WorkspaceEntry, Workspaces } from "../workspaces.ts";
 import { addScopeWarmer } from "./case.ts";
 
 const Time = TimeInput.transform(BigInt);
@@ -132,6 +133,21 @@ export function isObjectScope(scope: WorkspaceScope, workspaces: Workspaces): bo
   );
 }
 
+/**
+ * Whether a scope's queued prefetch still runs, checked when the job starts (add-case-open K11):
+ * not when `holders` (scopeHolders) now hold the scope as an object scope, or only as the session
+ * list an unlinked workspace left, none of them as its own scope.
+ */
+export function wantsScopePrefetch(scope: WorkspaceScope, holders: WorkspaceEntry[]): boolean {
+  if (scope.object) return false;
+  const same = (s: WorkspaceScope | undefined) =>
+    s !== undefined && s.dataRef === scope.dataRef && s.from === scope.from && s.to === scope.to;
+  const held = holders.map((w) => w.store.workspace);
+  if (held.some((w) => w.scope?.object === true && same(w.scope))) return false;
+  if (!held.some((w) => same(linkedScopeOf(w)))) return true;
+  return held.some((w) => w.scope?.object !== true && same(w.scope));
+}
+
 /** Access of the data routes (add-multiuser M6): the data refs each request names. */
 const SIGNAL_ACCESS: Access = { level: "workspace", dataRefs: queryDataRefs({ signal: "signal" }) };
 const DENSITY_ACCESS: Access = {
@@ -167,6 +183,7 @@ export const seriesRoutes =
   async (app) => {
     const { catalog, source, workspaces } = deps;
     const catalogs = catalogsOf(deps);
+    const holders = scopeHolders(deps);
     // A scope's caches follow that scope's signal list (add-scope Z9).
     const scopeCatalog = (scope: CacheScope) => catalogs.get(workspaceScope(scope));
     // An object scope's density follows the vehicle's own list, not the session's that stands in
@@ -252,6 +269,8 @@ export const seriesRoutes =
       const s: CacheScope = sourceScope(scope);
       if (object) s.object = true;
       chainPrefetch(deps, async () => {
+        // Checked again when the job runs: the workspace may have unlinked meanwhile (K11).
+        if (!object && !wantsScopePrefetch(scope, holders())) return;
         try {
           await density.get(s.dataRef, s, object ? { coarse: true } : undefined);
         } catch (error) {
@@ -259,6 +278,8 @@ export const seriesRoutes =
         }
         if (object) return;
         await polling;
+        // The scope may have turned into an unlinked workspace's stand-in list meanwhile (K11).
+        if (!wantsScopePrefetch(scope, holders())) return;
         await gaps.prefetch([s.dataRef], warn, s);
         if (timer === undefined) schedule();
       });

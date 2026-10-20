@@ -12,6 +12,7 @@ import {
   type WorkspaceScope,
 } from "@kipscope/shared";
 import { formatDate, formatFull, formatTime } from "../time/axis.ts";
+import { caseNotice, endedEvents } from "../time/scope.ts";
 import { formatSpan } from "../time/strip.ts";
 import type { StripEvent } from "../views/notice.ts";
 
@@ -93,8 +94,8 @@ export interface SessionBarText {
 
 /**
  * The session bar's text (design K14). Linked: `<title or object> · <kind> · <local from> – <local
- * to> (<duration>) · <up to 3 meta>`; unlinked: `<title or object> · whole series · <scope from> –
- * <scope to> (<span>)`.
+ * to> (<duration>) · <up to 3 meta>`; unlinked: `<object> · whole series · <scope from> – <scope
+ * to> (<span>)`, the vehicle, never the dropped session's title.
  */
 export function sessionBarText(
   c: WorkspaceCase,
@@ -111,7 +112,7 @@ export function sessionBarText(
   if (!c.linked) {
     const from = BigInt(scope?.from ?? e.from);
     const to = BigInt(scope?.to ?? e.to);
-    const text = `${entryName(e)} · whole series · ${localSpan(from, to, false)} (${formatSpan(to - from)})`;
+    const text = `${e.object} · whole series · ${localSpan(from, to, false)} (${formatSpan(to - from)})`;
     return { label: "VEHICLE", text, position, tooltip };
   }
   const from = BigInt(e.from);
@@ -292,7 +293,8 @@ export const caseClampMessage = (c: Pick<WorkspaceCase, "linked">): string =>
 /**
  * What a case command's result does to the message line (K14): a refusal shows its code and
  * message; an accepted one shows its clamp, fallback and missing parts joined by " · " (the case
- * after the command decides the texts), else ends an older error and older case message.
+ * after the command decides the texts), else ends an older error, scope-edge message and every
+ * case notice, combined texts included (`endedEvents`).
  */
 export function caseResultEvents(
   result: CommandResult,
@@ -309,10 +311,6 @@ export function caseResultEvents(
     );
   }
   if (result.missing && result.missing.length > 0) parts.push(missingText(result.missing, nameOf));
-  if (parts.length > 0) return [{ kind: "notice", text: parts.join(" · ") }];
-  return [
-    { kind: "dismiss", tone: "error" },
-    { kind: "dismiss", text: CASE_MESSAGES.clampedLinked },
-    { kind: "dismiss", text: CASE_MESSAGES.clampedObject },
-  ];
+  if (parts.length > 0) return [caseNotice(parts.join(" · "))];
+  return endedEvents();
 }

@@ -55,6 +55,13 @@ describe("session bar text", () => {
     expect(unlinked.text).toBe(
       "testcar · whole series · 2026-10-01 02:00 – 2026-10-01 12:00 (10 h)",
     );
+
+    // A titled session: once unlinked the bar names the vehicle (`object`), never the title.
+    const titled = { ...caseAt(0, false), entry: { ...entryAt(0), title: "F-104" } };
+    const bar = sessionBarText(titled, scope);
+    expect(bar.label).toBe("VEHICLE");
+    expect(bar.text).toBe("testcar · whole series · 2026-10-01 02:00 – 2026-10-01 12:00 (10 h)");
+    expect(bar.text).not.toContain("F-104");
   });
 
   it("shows a title instead of the object and at most three meta values", () => {

@@ -33,6 +33,8 @@ interface Entry<T> {
   window?: true;
   /** The loaded value, once there. */
   value?: T;
+  /** The current promise has settled. */
+  settled?: true;
   /** Class of the load's queries: the starting caller's, raised by each joining one. */
   priority: Priority;
   promise: Promise<T>;
@@ -135,9 +137,18 @@ export class EventsCache {
     const loadedAt = this.catalogFor(scope).loadedAt;
     const hit = map.get(key);
     // A work window's load keeps across a new list of its object scope (the vehicle's own list
-    // replacing the session's, K11): rows decide it, unless the signal was not in the old list.
-    if (hit?.window && hit.loadedAt !== loadedAt && hit.value !== undefined) {
-      if (hit.value !== "not_in_catalog") hit.loadedAt = loadedAt;
+    // replacing the session's, K11), settled or still in flight: rows decide it, unless the signal
+    // was not in the old list. A load still in flight read the old list, so a signal it did not
+    // find there is looked up again in the new one once it settles.
+    if (hit?.window && hit.loadedAt !== loadedAt && hit.value !== "not_in_catalog") {
+      hit.loadedAt = loadedAt;
+      if (!hit.settled) {
+        const entry = hit;
+        entry.promise = entry.promise.then((value) =>
+          value === "not_in_catalog" ? withPriority(entry.priority, load) : value,
+        );
+        track(map, key, entry);
+      }
     }
     if (hit && hit.loadedAt === loadedAt) {
       hit.priority.raise(currentPriority().cls);
@@ -149,20 +160,10 @@ export class EventsCache {
     }
     const priority = new Priority(currentPriority().cls);
     const entry: Entry<T> = { loadedAt, priority, promise: withPriority(priority, load) };
-    if (window) {
-      entry.window = true;
-      entry.promise.then(
-        (value) => {
-          entry.value = value;
-        },
-        () => {},
-      );
-    }
+    if (window) entry.window = true;
     map.delete(key);
     map.set(key, entry);
-    entry.promise.catch(() => {
-      if (map.get(key) === entry) map.delete(key);
-    });
+    track(map, key, entry);
     if (window) {
       const windows = [...map].filter(([, e]) => e.window).map(([k]) => k);
       for (const old of windows.slice(0, Math.max(0, windows.length - MAX_EVENT_WINDOWS)))
@@ -243,6 +244,26 @@ export class EventsCache {
     if (rows.length > MAX_SIGNAL_CHANGES + 1) return "too_many_changes";
     return signalEvents(info, rows);
   }
+}
+
+/**
+ * Follows the entry's current promise: its value once there, the entry dropped on a failure. A
+ * promise the entry has since replaced (a load chained to a new list, K11) is ignored.
+ */
+function track<T>(map: Map<string, Entry<T>>, key: string, entry: Entry<T>) {
+  const promise = entry.promise;
+  promise.then(
+    (value) => {
+      if (entry.promise !== promise) return;
+      entry.value = value;
+      entry.settled = true;
+    },
+    () => {
+      if (entry.promise !== promise) return;
+      entry.settled = true;
+      if (map.get(key) === entry) map.delete(key);
+    },
+  );
 }
 
 /** Cache key of a load: data ref, scope key, plus the work window when there is one. */

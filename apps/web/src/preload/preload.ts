@@ -15,6 +15,7 @@ import {
   TILE_BUCKETS,
   TILE_OVERHEAD,
   tileable,
+  tileId,
   tileWeight,
   touchedTiles,
 } from "../chart/tiles.ts";
@@ -23,8 +24,6 @@ import {
 export const PRELOAD_DELAY_MS = 500;
 /** Weight preloaded at most since the last step: 25 % of the cache (K13). */
 export const PRELOAD_BUDGET = CACHE_LIMIT / 4;
-/** Bucket target of a window whose width the preload does not know yet. */
-const DEFAULT_TARGET = 1000;
 /** A tile's weight before any preloaded tile was seen: a full bucket tile. */
 const FIRST_TILE_WEIGHT = TILE_OVERHEAD + BUCKET_WEIGHT * TILE_BUCKETS;
 /** Keys that are no gesture on their own (K13: "other than a lone modifier"). */
@@ -36,17 +35,20 @@ export interface PreloadOptions {
   preview?: (index: number, abort: AbortSignal) => Promise<CasePreview>;
   delayMs?: number;
   budget?: number;
-  /** A window's bucket target (its plot width); default the windows' own (windowTargets). */
+  /** A window's bucket target (its plot width); default the windows' own (windowTargets). A window
+   * without one is not preloaded (K13: no guessed width). */
   targetOf?: (windowId: string) => number | undefined;
 }
 
 /**
  * Neighbour preload of one tab (add-case-open K13). While the workspace has a linked case, 500 ms
  * after the tab's render acknowledgement for the current revision was `complete` and no visible
- * load is in flight, it previews the next entry, then the previous one, and fetches for each the
- * tiles every timeseries window will request there (ranges by `caseRanges`, signals rebound by
- * `rebindSignalId`) with `case=<n>` and the preload class, one run after another, within
- * PRELOAD_BUDGET since the last step. Any gesture, command of the tab and new revision aborts it;
+ * load is in flight, it previews the next entry, then the previous one, and fetches for each exactly
+ * the tiles every timeseries window will request there after the step ("plan equals the step":
+ * ranges by `caseRanges`, signals rebound by `rebindSignalId`, level and tiles by the loader's
+ * `levelFor` and `touchedTiles` at the window's own target, edge tiles of the neighbour's scope
+ * included) with `case=<n>` and the preload class, each tile at most once, one run after another,
+ * within PRELOAD_BUDGET since the last step. Any gesture, command of the tab and new revision aborts it;
  * tiles already stored stay; it starts again after the next complete acknowledgement.
  */
 export class NeighbourPreload {
@@ -134,7 +136,7 @@ export class NeighbourPreload {
         w.id,
         w.range.from,
         w.range.to,
-        this.targetOf(w.id) ?? DEFAULT_TARGET,
+        this.targetOf(w.id) ?? null,
         ...w.signals.map((s) => s.signalId),
       ]);
     return JSON.stringify([c?.catalogId, c?.current, c?.alignAt, workspace.scope, windows]);
@@ -215,13 +217,17 @@ export class NeighbourPreload {
     const target = { case: preview.index, scope };
     const ranges = caseRanges(workspace, preview.alignAt, scope);
     const fromRef = workspace.scope?.dataRef;
+    // One step asks each tile at most once, also when two windows touch it (K13).
+    const asked = new Set<string>();
     for (const w of workspace.windows) {
       if (!isTimeseries(w)) continue;
       const range = ranges[w.id]?.range;
-      if (!range) continue;
+      // No known width: the step's level is unknown, so nothing is guessed (K13).
+      const targetWidth = this.targetOf(w.id);
+      if (!range || targetWidth === undefined) continue;
       const from = BigInt(range.from);
       const to = BigInt(range.to);
-      const level = levelFor(from, to, this.targetOf(w.id) ?? DEFAULT_TARGET);
+      const level = levelFor(from, to, targetWidth);
       const { first, last } = touchedTiles(from, to, level);
       if (!tileable(level, first, last)) continue;
       for (const s of w.signals) {
@@ -231,8 +237,14 @@ export class NeighbourPreload {
         if (parseSignalId(signalId)?.dataRef !== scope.dataRef) continue;
         const missing: bigint[] = [];
         for (let i = first; i <= last; i++) {
+          const id = tileId(signalId, level, i);
+          if (asked.has(id)) continue;
+          asked.add(id);
+          // A recent tile is never stored (C6): preloading it would not spare the step's request.
           if (!this.cache.storable(level, i)) continue;
-          if (!this.cache.find(signalId, level, i, scope)) missing.push(i);
+          // A tile the cache answers under the neighbour's scope, its edge tiles included (K12),
+          // is not asked again; the pure lookup marks nothing as used.
+          if (!this.cache.hasTile(signalId, level, i, scope)) missing.push(i);
         }
         if (missing.length === 0) continue;
         if (this.spent + missing.length * this.tileEstimate > this.budget) return false;

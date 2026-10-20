@@ -3,8 +3,8 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource, SourceAdapter } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { closeApps, stateOf, unlink, unlinked } from "./caseApp.ts";
-import { c4, scopeOfCall } from "./caseKit.ts";
+import { closeApps, gated, quiet, stateOf, unlink, unlinked } from "./caseApp.ts";
+import { at, c4, sameScope, scopeNs, scopeOfCall } from "./caseKit.ts";
 import { memoryAdapter, scopeApp } from "./scopeApp.ts";
 import { testSource } from "./testdb.ts";
 
@@ -459,6 +459,9 @@ describe("gap info of a work window (add-case-open)", () => {
       { adapter: adapter as unknown as SourceAdapter, dbc: false },
       doc,
     );
+    // The linked session's queued prefetch (density, gaps) has run out before the unlink, so the
+    // calls after the mark are the ask's own.
+    await quiet(calls);
     await unlink(t.anon, id);
     const { workspace } = await stateOf(t.anon, id);
     expect(workspace.scope).toMatchObject({
@@ -502,5 +505,50 @@ describe("gap info of a work window (add-case-open)", () => {
         .some((c) => scopeOfCall(c)?.from === G - 2n * DAY && scopeOfCall(c)?.to === G + 3n * DAY),
     ).toBe(false);
     expect(count("refExtent")).toEqual([]);
+  });
+  // The linked session of C4's entry 0 with its pad, 00:59:00 to 01:11:00 (by hand: 01:00:00 - 60 s,
+  // 01:10:00 + 60 s).
+  const session = scopeNs("testcar", at(0, 59), at(1, 11));
+  const holdsSession = (method: string, args: unknown[]) =>
+    method === "refBuckets" && sameScope(scopeOfCall({ method, args }), session);
+  const gapCalls = (calls: readonly { method: string; args: unknown[] }[]) =>
+    calls.filter(
+      (c) =>
+        ["refCount", "loggerGaps", "firstTimes"].includes(c.method) &&
+        sameScope(scopeOfCall(c), session),
+    );
+
+  it("runs the session's gap prefetch while the workspace stays linked", async () => {
+    // The control of the next test: the chain held at its density job and then released goes on to
+    // the linked session's gap info.
+    const hold = gated(testSource(), holdsSession);
+    const { t, id, calls } = await unlinked({ adapter: hold.adapter });
+    const live = await (await t.anon.live(id)).connected();
+    await vi.waitFor(() => expect(hold.held).toContain("refBuckets"));
+    const mark = calls.length;
+    hold.release();
+    await quiet(calls);
+    live.close();
+    expect(gapCalls(calls.slice(mark)).map((c) => c.method)).toContain("loggerGaps");
+  });
+
+  it("does not load the session's gap info for a prefetch job that runs after the unlink", async () => {
+    // Opening the catalog queues the session's density, then its gap info (chainPrefetch). The
+    // density job is held inside its source call; the workspace unlinks; the chain goes on. The gap
+    // info of the session is not asked any more: an unlinked workspace's gap info follows the asked
+    // work windows (K11).
+    const hold = gated(testSource(), holdsSession);
+    const { t, id, calls } = await unlinked({ adapter: hold.adapter });
+    // A tab holds the workspace, as in use: the prefetch is for workspaces with a live client.
+    const live = await (await t.anon.live(id)).connected();
+    await vi.waitFor(() => expect(hold.held).toContain("refBuckets"));
+    expect(gapCalls(calls)).toEqual([]);
+    await unlink(t.anon, id);
+    const mark = calls.length;
+    hold.release();
+    await quiet(calls);
+    live.close();
+    expect(gapCalls(calls.slice(mark)).map((c) => c.method)).toEqual([]);
+    expect(gapCalls(calls)).toEqual([]);
   });
 });

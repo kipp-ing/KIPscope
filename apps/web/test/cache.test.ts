@@ -284,21 +284,101 @@ describe("SeriesCache across scopes (add-case-open)", () => {
     expect(calls).toHaveLength(2); // no third fetch
   });
 
-  it("stores only tiles inside the scope they were fetched under", async () => {
+  /**
+   * Asks the tiles as a window does: what `find` answers is used, the rest is loaded (and answered
+   * by the fake server). Returns the first index of each run the cache fetched.
+   */
+  async function ask(
+    cache: SeriesCache,
+    calls: { request: { from: string }; answer: () => void }[],
+    indices: bigint[],
+  ): Promise<bigint[]> {
+    const before = calls.length;
+    const missing = indices.filter((i) => cache.find(sig, 10, i) === undefined);
+    const loading = cache.load("w", sig, 10, missing);
+    const fetched = calls.slice(before);
+    for (const call of fetched) call.answer();
+    await Promise.all(loading);
+    return fetched.map((call) => BigInt(call.request.from) / S);
+  }
+
+  // Scope A [1.5 S, 3.5 S): tile 1 and tile 3 stick out on one side, tile 2 lies inside.
+  const A = scope(S + S / 2n, 3n * S + S / 2n);
+  /** A scope that cuts the same three tiles at both ends again. */
+  const shifted = (by: bigint) => scope(S + S / 2n + by, 3n * S + S / 2n + by);
+
+  it("stores edge tiles under the scope that fetched them", async () => {
     const { fetch, calls } = fakeFetch(tiles(0, 5));
     const cache = new SeriesCache(fetch, { now: OLD_NOW });
-    // Scope [1.5 S, 3.5 S): tile 1 and tile 3 stick out on one side, tile 2 lies inside.
-    cache.setScope(scope((3n * S) / 2n, (7n * S) / 2n));
-    const run = cache.load("w", sig, 10, [1n, 2n, 3n]);
+    cache.setScope(A);
+    expect(await ask(cache, calls, [1n, 2n, 3n])).toEqual([1n]); // one run for the three tiles
     expect(calls).toHaveLength(1);
-    calls[0]?.answer();
-    expect(await Promise.all(run)).toHaveLength(3); // the window still draws all three
-    expect(cache.peek(sig, 10, 1n)).toBeUndefined();
-    expect(cache.peek(sig, 10, 2n)).toBeDefined();
-    expect(cache.peek(sig, 10, 3n)).toBeUndefined();
-    // A later request for the edge tile fetches again.
-    cache.load("w", sig, 10, [1n]);
-    expect(calls).toHaveLength(2);
+    // The same three tiles under A again: no fetch, the window draws all of them.
+    expect(await ask(cache, calls, [1n, 2n, 3n])).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(cache.find(sig, 10, 1n)).toBeDefined();
+    expect(cache.find(sig, 10, 3n)).toBeDefined();
+
+    // The middle tile is stored for every scope, the outer ones under A's key only: even a scope
+    // holding all three tiles asks the two edge tiles again.
+    cache.setScope(scope(0n, 6n * S));
+    expect(cache.find(sig, 10, 2n)).toBeDefined();
+    expect(cache.find(sig, 10, 1n)).toBeUndefined();
+    expect(cache.find(sig, 10, 3n)).toBeUndefined();
+  });
+
+  it("weighs edge tiles in the tile limit and drops them with the memory LRU", async () => {
+    const weigh = async (limit?: number) => {
+      const { fetch, calls } = fakeFetch(tiles(0, 5));
+      const cache = new SeriesCache(fetch, { now: OLD_NOW, ...(limit && { limit }) });
+      cache.setScope(A);
+      await ask(cache, calls, [1n, 2n, 3n]);
+      return { cache, calls };
+    };
+    const full = await weigh();
+    expect(full.cache.size).toBeGreaterThan(0);
+    // A limit one unit short of the three tiles: the least recently used one (the edge tile
+    // stored first) goes, the other two stay.
+    const tight = await weigh(full.cache.size - 1);
+    expect(tight.cache.size).toBeLessThan(full.cache.size);
+    expect(await ask(tight.cache, tight.calls, [1n, 2n, 3n])).toEqual([1n]);
+  });
+
+  it("uses an edge tile only in the scope that fetched it", async () => {
+    const { fetch, calls } = fakeFetch(tiles(0, 5));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    cache.setScope(A);
+    await ask(cache, calls, [1n, 2n, 3n]);
+
+    // B cuts the same tiles at both ends again: the middle tile comes from memory, the outer ones
+    // are fetched (two runs, tile 1 and tile 3).
+    cache.setScope(shifted(1000n));
+    expect(await ask(cache, calls, [1n, 2n, 3n])).toEqual([1n, 3n]);
+    // Back under A: nothing is fetched, B's edge tiles did not replace A's.
+    cache.setScope(A);
+    expect(await ask(cache, calls, [1n, 2n, 3n])).toEqual([]);
+
+    // B, C, D, E (four keys other than A's) are entered in turn: A's key leaves the LRU of 4.
+    for (const by of [1000n, 2000n, 3000n, 4000n]) cache.setScope(shifted(by));
+    cache.setScope(A);
+    expect(await ask(cache, calls, [1n, 2n, 3n])).toEqual([1n, 3n]); // the middle tile stays
+  });
+
+  it("lets a case run touch its scope key in the LRU of four", async () => {
+    const { fetch, calls } = fakeFetch(tiles(0, 5));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    cache.setScope(A);
+    await ask(cache, calls, [1n, 2n, 3n]);
+    // A is the least recently used of four keys after B, C and D ...
+    for (const by of [1000n, 2000n, 3000n]) cache.setScope(shifted(by));
+    // ... until a preload run for the entry whose scope A it is touches the key.
+    const target = { case: 3, scope: A };
+    const loading = cache.load("p", sig, 10, [4n], "preload", target);
+    loading.forEach((p) => void p.catch(() => {}));
+    cache.setScope(shifted(4000n)); // the fifth key drops B, the least recently used, not A
+    cache.setScope(A);
+    expect(await ask(cache, calls, [1n, 2n, 3n])).toEqual([]);
+    cache.release("p");
   });
 
   it("refetches a cut raw tile under a wider scope", async () => {

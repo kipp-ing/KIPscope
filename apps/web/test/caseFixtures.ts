@@ -74,6 +74,8 @@ export function caseWorkspace(
     alignAt?: string;
     windows?: { from: string; to: string; signals: string[] }[];
     catalog?: CaseCatalog;
+    /** Windows keep their own ranges (no time link while the layout is built). */
+    unlinkedTime?: boolean;
   } = {},
 ): Workspace {
   const catalog = options.catalog ?? C4;
@@ -83,6 +85,10 @@ export function caseWorkspace(
   const alignAt = options.alignAt ?? entry.from;
   let layout: Workspace = EMPTY_WORKSPACE;
   const ctx = { signalExists: known, hasStates: () => false };
+  if (options.unlinkedTime) {
+    const result = applyCommand(layout, { type: "workspace.setLinkTime", linked: false }, ctx);
+    if (result.ok) layout = result.workspace;
+  }
   for (const w of options.windows ?? []) {
     const run = (input: CommandInput) => {
       const result = applyCommand(layout, input as Command, ctx);

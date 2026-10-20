@@ -89,6 +89,32 @@ export function catalogsOf(deps: ScopeDeps): CatalogStore {
   return store;
 }
 
+const changedWorkspaces = new WeakMap<object, Map<string, WorkspaceEntry>>();
+
+/**
+ * The workspaces a queued scope prefetch is judged by when it runs (add-case-open K11): those with
+ * a live client and those a change touched since the first call, one per ID (a deleted one gone).
+ * Call it when the routes register, so every later change is seen.
+ */
+export function scopeHolders(deps: ScopeDeps): () => WorkspaceEntry[] {
+  let changed = changedWorkspaces.get(deps);
+  if (!changed) {
+    const map = new Map<string, WorkspaceEntry>();
+    deps.workspaces.onChange((event) => {
+      if (event.type === "delete") map.delete(event.entry.record.id);
+      else map.set(event.entry.record.id, event.entry);
+    });
+    changedWorkspaces.set(deps, map);
+    changed = map;
+  }
+  const seen = changed;
+  return () => {
+    const all = new Map(seen);
+    for (const entry of deps.workspaces.open()) all.set(entry.record.id, entry);
+    return [...all.values()];
+  };
+}
+
 const prefetchChains = new WeakMap<object, Promise<void>>();
 
 /**

@@ -25,13 +25,14 @@ import {
   outOfScope,
   parseInput,
   routeScope,
+  scopeHolders,
 } from "../http.ts";
 import { WorkWindowError, workWindowOf } from "../objectScope.ts";
 import { withPriority } from "../priority.ts";
 import { sourceScope } from "../scope.ts";
 import type { Workspaces } from "../workspaces.ts";
 import { addScopeWarmer } from "./case.ts";
-import { isObjectScope, workspaceScope } from "./series.ts";
+import { isObjectScope, wantsScopePrefetch, workspaceScope } from "./series.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -71,6 +72,7 @@ export const eventsRoutes =
   async (app) => {
     const { catalog, source, workspaces } = deps;
     const catalogs = catalogsOf(deps);
+    const holders = scopeHolders(deps);
     // A scope's events follow that scope's signal list (add-scope Z9).
     const events = new EventsCache(
       source,
@@ -97,9 +99,11 @@ export const eventsRoutes =
       const signals = openEventSignals(workspaces).filter(
         (id) => parseSignalId(id)?.dataRef === s.dataRef,
       );
-      chainPrefetch(deps, () =>
-        events.prefetch([s.dataRef], signals, (message) => app.log.warn(message), s),
-      );
+      chainPrefetch(deps, async () => {
+        // Checked again when the job runs: the workspace may have unlinked meanwhile (K11).
+        if (!wantsScopePrefetch(scope, holders())) return;
+        await events.prefetch([s.dataRef], signals, (message) => app.log.warn(message), s);
+      });
     });
     // A preview's warm work (K10), in the preview's class: the session's table events and its
     // events-line signals; none for an object scope (K11).

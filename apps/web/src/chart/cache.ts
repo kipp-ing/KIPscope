@@ -8,6 +8,7 @@ import {
   type WorkspaceScope,
 } from "@kipscope/shared";
 import { type CaseRequestOptions, fetchSeries } from "../api.ts";
+import { SCOPE_STORES } from "./gaps.ts";
 import {
   deriveRaw,
   FRESH_MARGIN_NS,
@@ -84,6 +85,8 @@ interface Run {
 interface Stored {
   tile: Tile;
   weight: number;
+  /** An edge tile (reaches past the scope it was fetched under): that scope's key (K12). */
+  scopeKey?: string;
   /** A raw tile without `before` (`after`) fetched under a scope: that scope's start (end) (K12). */
   cutFrom?: bigint;
   cutTo?: bigint;
@@ -105,6 +108,11 @@ export class SeriesCache {
   private readonly now: () => number;
   /** Stored tiles; a Map keeps insertion order, so re-inserting on use makes the first the oldest. */
   private readonly tiles = new Map<string, Stored>();
+  /**
+   * The SCOPE_STORES most recently used scope keys, least recently used first, each with the IDs of
+   * its stored edge tiles; a key leaving drops its edge tiles (K12).
+   */
+  private readonly edges = new Map<string, Set<string>>();
   /** Per signal: levels holding stored raw tiles, with their count (C3). */
   private readonly rawLevels = new Map<string, Map<number, number>>();
   private readonly inFlight = new Map<string, InFlight>();
@@ -162,6 +170,19 @@ export class SeriesCache {
    */
   setScope(scope: WorkspaceScope | undefined): void {
     this.scope = cacheScope(scope);
+    this.touchScope(this.scope?.key ?? "");
+  }
+
+  /** Makes `key` the most recently used scope key; the least recently used beyond 4 is dropped. */
+  private touchScope(key: string): void {
+    const ids = this.edges.get(key) ?? new Set<string>();
+    this.edges.delete(key);
+    this.edges.set(key, ids);
+    for (const [oldest, dropped] of this.edges) {
+      if (this.edges.size <= SCOPE_STORES) break;
+      this.edges.delete(oldest);
+      for (const id of [...dropped]) this.remove(id);
+    }
   }
 
   /**
@@ -214,10 +235,33 @@ export class SeriesCache {
     index: bigint,
     scope: WorkspaceScope | undefined = undefined,
   ): Tile | undefined {
+    return this.lookUp(signalId, level, index, scope, true);
+  }
+
+  /**
+   * True when `find` would answer the tile under `scope` (default: the workspace's), without
+   * marking anything as used: a pure lookup for the preload plan (K13).
+   */
+  hasTile(
+    signalId: string,
+    level: number,
+    index: bigint,
+    scope: WorkspaceScope | undefined = undefined,
+  ): boolean {
+    return this.lookUp(signalId, level, index, scope, false) !== undefined;
+  }
+
+  private lookUp(
+    signalId: string,
+    level: number,
+    index: bigint,
+    scope: WorkspaceScope | undefined,
+    touch: boolean,
+  ): Tile | undefined {
     const under = scope ? cacheScope(scope) : this.scope;
     // A signal of another data ref than the scope's answers 409 out_of_scope, never a tile.
     if (under && parseSignalId(signalId)?.dataRef !== under.dataRef) return undefined;
-    return this.findUpTo(signalId, level, index, MERGE_DEPTH, under);
+    return this.findUpTo(signalId, level, index, MERGE_DEPTH, under, touch);
   }
 
   private findUpTo(
@@ -226,20 +270,21 @@ export class SeriesCache {
     index: bigint,
     depth: number,
     scope: CacheScope | undefined,
+    touch: boolean,
   ): Tile | undefined {
-    const own = this.use(tileId(signalId, level, index), scope);
+    const own = this.use(tileId(signalId, level, index), scope, touch);
     if (own) return own;
     const levels = this.rawLevels.get(signalId);
     for (const parentLevel of levels?.keys() ?? []) {
       if (parentLevel <= level) continue;
       const parentIndex = index >> BigInt(parentLevel - level);
-      const parent = this.use(tileId(signalId, parentLevel, parentIndex), scope);
+      const parent = this.use(tileId(signalId, parentLevel, parentIndex), scope, touch);
       if (parent?.data.kind === "raw") return deriveRaw(parent, level, index);
     }
     if (depth <= 0 || level <= 0) return undefined;
-    const left = this.findUpTo(signalId, level - 1, index * 2n, depth - 1, scope);
+    const left = this.findUpTo(signalId, level - 1, index * 2n, depth - 1, scope, touch);
     if (!left) return undefined;
-    const right = this.findUpTo(signalId, level - 1, index * 2n + 1n, depth - 1, scope);
+    const right = this.findUpTo(signalId, level - 1, index * 2n + 1n, depth - 1, scope, touch);
     return right && mergeUp(left, right);
   }
 
@@ -254,7 +299,7 @@ export class SeriesCache {
    * rest. A "prefetch" run waits while PREFETCH_IN_FLIGHT prefetch or preload runs are fetched; a
    * "preload" run (with its `target` entry and scope, K13) waits behind every waiting prefetch run;
    * a "visible" load never waits and starts a waiting run it wants at once (Z6), a preload run
-   * then without its preload class.
+   * then without its preload class. A preload run makes its scope key the most recently used (K12).
    */
   load(
     owner: string,
@@ -267,6 +312,7 @@ export class SeriesCache {
     const runs = this.owned.get(owner) ?? new Set<Run>();
     this.owned.set(owner, runs);
     const scope = target ? cacheScope(target.scope) : this.scope;
+    if (target) this.touchScope(scope?.key ?? "");
     const promises = new Map<bigint, Promise<Tile>>();
     const missing: bigint[] = [];
     for (const index of indices) {
@@ -429,22 +475,29 @@ export class SeriesCache {
   }
 
   /**
-   * Stores a tile unless it is recent (C6), heavier than the limit, or not inside the scope it was
-   * fetched under (K12), then evicts the oldest (C5). A raw tile the scope cut (no `before` or
-   * `after` point) records that scope's edge.
+   * Stores a tile unless it is recent (C6) or heavier than the limit, then evicts the oldest (C5).
+   * A tile inside the scope it was fetched under is stored for every scope; a raw one the scope cut
+   * (no `before` or `after` point) records that scope's edge. A tile reaching past the scope is an
+   * edge tile, stored under the scope's key while that key is among the SCOPE_STORES kept (K12).
    */
   private store(tile: Tile, scope: CacheScope | undefined): void {
     if (!this.storable(tile.level, tile.index)) return;
     const span = tileSpan(tile.level);
     const from = tile.index * span;
     const to = from + span;
-    if (scope && (from < scope.from || to > scope.to)) return;
+    const edge = scope && (from < scope.from || to > scope.to) ? scope.key : undefined;
+    const edgeIds = edge === undefined ? undefined : this.edges.get(edge);
+    if (edge !== undefined && !edgeIds) return;
     const weight = tileWeight(tile);
     if (weight > this.limit) return;
-    const id = tileId(tile.signalId, tile.level, tile.index);
+    const own = tileId(tile.signalId, tile.level, tile.index);
+    const id = edge === undefined ? own : edgeId(own, edge);
     this.remove(id);
     const stored: Stored = { tile, weight };
-    if (scope && tile.data.kind === "raw") {
+    if (edge !== undefined) {
+      stored.scopeKey = edge;
+      edgeIds?.add(id);
+    } else if (scope && tile.data.kind === "raw") {
       if (!tile.data.before) stored.cutFrom = scope.from;
       if (!tile.data.after) stored.cutTo = scope.to;
     }
@@ -466,6 +519,7 @@ export class SeriesCache {
     if (!stored) return;
     this.tiles.delete(id);
     this.weight -= stored.weight;
+    if (stored.scopeKey !== undefined) this.edges.get(stored.scopeKey)?.delete(id);
     const { tile } = stored;
     if (tile.data.kind !== "raw") return;
     const levels = this.rawLevels.get(tile.signalId);
@@ -476,24 +530,43 @@ export class SeriesCache {
   }
 
   /**
-   * The stored tile, marked as most recently used, if it answers under `scope` (K12): it lies
-   * inside it, and a cut raw tile only where the scope reaches no further than the cut.
+   * The stored tile, marked as most recently used when `touch`, if it answers under `scope` (K12):
+   * a tile stored for every scope when it lies inside it, a cut raw one only where the scope reaches
+   * no further than the cut; else the edge tile stored under the scope's key.
    */
-  private use(id: string, scope: CacheScope | undefined): Tile | undefined {
+  private use(id: string, scope: CacheScope | undefined, touch: boolean): Tile | undefined {
+    const found = this.answering(id, scope);
+    if (!found) return undefined;
+    if (touch) {
+      this.tiles.delete(found[0]);
+      this.tiles.set(found[0], found[1]);
+    }
+    return found[1].tile;
+  }
+
+  private answering(id: string, scope: CacheScope | undefined): [string, Stored] | undefined {
     const stored = this.tiles.get(id);
-    if (!stored) return undefined;
-    const lo = scope?.from ?? TIME_MIN;
-    const hi = scope?.to ?? TIME_MAX;
-    const span = tileSpan(stored.tile.level);
-    const from = stored.tile.index * span;
-    if (from < lo || from + span > hi) return undefined;
-    if (stored.cutFrom !== undefined && lo < stored.cutFrom) return undefined;
-    if (stored.cutTo !== undefined && hi > stored.cutTo) return undefined;
-    this.tiles.delete(id);
-    this.tiles.set(id, stored);
-    return stored.tile;
+    if (stored) {
+      const lo = scope?.from ?? TIME_MIN;
+      const hi = scope?.to ?? TIME_MAX;
+      const span = tileSpan(stored.tile.level);
+      const from = stored.tile.index * span;
+      const inside =
+        from >= lo &&
+        from + span <= hi &&
+        (stored.cutFrom === undefined || lo >= stored.cutFrom) &&
+        (stored.cutTo === undefined || hi <= stored.cutTo);
+      if (inside) return [id, stored];
+    }
+    if (!scope) return undefined;
+    const edge = edgeId(id, scope.key);
+    const own = this.tiles.get(edge);
+    return own && [edge, own];
   }
 }
+
+/** Stored-tile key of an edge tile: tile ID and the key of the scope it was fetched under (K12). */
+const edgeId = (id: string, key: string) => `${id}#${key}`;
 
 /** In-flight key: tile ID and the scope the run is fetched under (K12). */
 const flightKey = (signalId: string, level: number, index: bigint, scope: CacheScope | undefined) =>

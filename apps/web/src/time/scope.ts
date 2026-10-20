@@ -43,22 +43,51 @@ export function scopeText(scope: WorkspaceScope): string {
   return `${scope.dataRef} · ${formatRange(BigInt(scope.from), BigInt(scope.to))}`;
 }
 
+/** Case notice texts this tab showed, combined texts included (add-case-open K14), oldest first. */
+const caseNotices = new Set<string>();
+/** Texts kept: only the latest can be in the slot; the rest bound the set. */
+const CASE_NOTICES_KEPT = 16;
+
+/** A case notice (K14), remembered so that `endedEvents` dismisses its exact text. */
+export function caseNotice(text: string): StripEvent {
+  caseNotices.delete(text);
+  caseNotices.add(text);
+  if (caseNotices.size > CASE_NOTICES_KEPT) {
+    const oldest = caseNotices.values().next().value;
+    if (oldest !== undefined) caseNotices.delete(oldest);
+  }
+  return { kind: "notice", text };
+}
+
+/**
+ * What an accepted command without a message of its own does to the slot: it ends an older error,
+ * an older clamp message and every case notice (K14); an info notice such as an open's stays.
+ */
+export function endedEvents(): StripEvent[] {
+  const texts = new Set([
+    CLAMP_MESSAGE,
+    SESSION_CLAMP_MESSAGE,
+    VEHICLE_CLAMP_MESSAGE,
+    ...caseNotices,
+  ]);
+  return [
+    { kind: "dismiss", tone: "error" },
+    ...[...texts].map((text): StripEvent => ({ kind: "dismiss", text })),
+  ];
+}
+
 /**
  * What a command result does to the strip's message slot: a refusal shows its code and message; a
  * result with `clamped` shows the clamp message of the workspace's case (`clampMessage`); any
- * other accepted command ends an older error and an older clamp message (an info notice such as an
- * open's stays).
+ * other accepted command ends an older error, an older clamp message and any case notice
+ * (`endedEvents`).
  */
 export function resultStripEvents(
   result: CommandResult,
   c?: Pick<WorkspaceCase, "linked">,
 ): StripEvent[] {
   if (!result.ok) return [{ kind: "error", text: `${result.code}: ${result.message}` }];
-  if (result.clamped) return [{ kind: "notice", text: clampMessage(c) }];
-  return [
-    { kind: "dismiss", tone: "error" },
-    ...[CLAMP_MESSAGE, SESSION_CLAMP_MESSAGE, VEHICLE_CLAMP_MESSAGE].map(
-      (text): StripEvent => ({ kind: "dismiss", text }),
-    ),
-  ];
+  if (result.clamped)
+    return [c ? caseNotice(clampMessage(c)) : { kind: "notice", text: CLAMP_MESSAGE }];
+  return endedEvents();
 }

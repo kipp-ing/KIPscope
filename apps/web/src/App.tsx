@@ -1493,7 +1493,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       const s = infos.current.get(id);
       return s && shownName(s);
     };
-    showResult(caseResultEvents(result, openedCase, nameOf).filter((e) => e.kind !== "dismiss"));
+    showResult(caseResultEvents(result, openedCase, nameOf));
     if (report.warnings.length > 0) setNotice(report.warnings.join(" · "));
   }, [start, openedCase, showResult, setNotice]);
 
