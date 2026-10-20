@@ -57,7 +57,9 @@ function namedView(views: ViewStore, body: unknown): unknown {
   const parsed = OpenViewRequest.safeParse(body);
   if (!parsed.success) return undefined;
   if ("view" in parsed.data) return parsed.data.view;
-  const data = views.data(parsed.data.name);
+  const resolved = views.resolve(parsed.data.name);
+  if (!resolved.ok) return undefined;
+  const data = views.data(resolved.name);
   return data?.ok ? data.data : undefined;
 }
 
@@ -155,8 +157,10 @@ export const viewRoutes =
       const body = parseInput(OpenViewRequest, request.body, reply);
       if (!body) return reply;
       if ("view" in body) return open(deps, reply, views, body.view);
-      const { name } = body;
-      if (!validViewName(name)) return invalidName(reply, name);
+      // A name or the title the Views menu shows.
+      const resolved = views.resolve(body.name);
+      if (!resolved.ok) return apiError(reply, resolved.status, resolved.code, resolved.message);
+      const { name } = resolved;
       // Read before executing: opening `_previous` reads it before the hook replaces it.
       const data = views.data(name);
       if (data === undefined) return apiError(reply, 404, "unknown_view", `no view ${name}`);

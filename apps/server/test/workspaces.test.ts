@@ -290,6 +290,33 @@ describe("workspace registry", () => {
     expect(server.registry.grantOf(a.record.id)).toEqual(GRANT_NONE);
   });
 
+  it("widens a stored all on a server through grantObjects", () => {
+    const first = fresh();
+    const a = first.registry.create("local");
+    first.registry.flush();
+    first.registry.stop();
+    const server = newRegistry(state.dir, { identity: "oidc" });
+    registry = server.registry;
+    server.registry.start();
+    const id = a.record.id;
+    const events: string[] = [];
+    server.registry.onChange((e) => events.push(e.type));
+
+    // No refs: nothing to widen, the stored all stays and nothing fires.
+    server.registry.grantObjects(id, []);
+    expect(server.registry.get(id)?.record.grant).toEqual(GRANT_ALL);
+    expect(events).toEqual([]);
+
+    // The stored all counts as empty and is replaced by the given refs, written and announced.
+    server.registry.grantObjects(id, ["testcar", "testcar"]);
+    expect(server.registry.grantOf(id)).toEqual({ objects: ["testcar"] });
+    expect(covers(server.registry.grantOf(id), "othercar")).toBe(false);
+    expect(events).toEqual(["grant"]);
+    server.registry.flush();
+    const file = JSON.parse(readFileSync(join(state.workspacesDir, `${id}.json`), "utf8"));
+    expect(file.grant).toEqual({ objects: ["testcar"] });
+  });
+
   it("evicts the least recently active workspace at the limit", () => {
     const { registry } = fresh({ limit: 200 });
     const made = [];

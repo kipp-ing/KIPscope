@@ -170,6 +170,31 @@ export class ViewStore {
     );
   }
 
+  /**
+   * The view an open by name means (`?view=`, `POST /api/views/open`): the view of that name, else
+   * the one whose title is `nameOrTitle` ignoring case, as the Views menu shows it. Several
+   * views with that title answer `ambiguous_view`, its message naming them; none `unknown_view`.
+   */
+  resolve(
+    nameOrTitle: string,
+  ): { ok: true; name: string } | { ok: false; status: number; code: string; message: string } {
+    if (this.exists(nameOrTitle)) return { ok: true, name: nameOrTitle };
+    const wanted = nameOrTitle.trim().toLowerCase();
+    const names = this.list()
+      .filter((v) => v.error === undefined && v.title.toLowerCase() === wanted)
+      .map((v) => v.name);
+    const [name] = names;
+    if (names.length === 1 && name !== undefined) return { ok: true, name };
+    if (names.length > 1)
+      return {
+        ok: false,
+        status: 409,
+        code: "ambiguous_view",
+        message: `several views have the title ${nameOrTitle}: ${names.join(", ")}; open one by name`,
+      };
+    return { ok: false, status: 404, code: "unknown_view", message: `no view ${nameOrTitle}` };
+  }
+
   /** `WorkspaceStore` hook: keeps a workspace with windows as "Before last open" (design V5). */
   beforeOpen(previous: Workspace): void {
     if (previous.windows.length === 0) return;

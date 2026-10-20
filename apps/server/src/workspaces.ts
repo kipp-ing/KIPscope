@@ -245,8 +245,10 @@ export class WorkspaceRegistry {
 
   /**
    * The only code that widens a grant (M3). Adds `dataRefs` (each matching DataRef) to the
-   * workspace's grant: unique, existing order kept, new ones appended; a no-op on "all". Writes the
-   * file (debounced) and fires onChange {type: "grant"}, so open live clients get a new `summary`.
+   * workspace's grant: unique, existing order kept, new ones appended. A stored "all" is a no-op
+   * with identity none; with any other identity it counts as empty (effectiveGrant) and is replaced
+   * by the given refs, so a workspace carried over from local use can be widened. Writes the file
+   * (debounced) and fires onChange {type: "grant"}, so open live clients get a new `summary`.
    * Throws GrantLimitError (grant unchanged) above MAX_GRANT_OBJECTS; returns undefined for an
    * unknown ID. Never reachable from a client payload: no route, command or view sets a grant.
    */
@@ -254,8 +256,9 @@ export class WorkspaceRegistry {
     const held = this.held.get(workspaceId);
     if (!held) return undefined;
     const { record } = held.entry;
-    const { objects } = record.grant;
-    if (objects === "all") return held.entry;
+    const stored = record.grant.objects;
+    if (stored === "all" && this.identity === "none") return held.entry;
+    const objects = stored === "all" ? [] : stored;
     for (const ref of dataRefs)
       if (!DataRef.safeParse(ref).success)
         throw new TypeError(`grantObjects: not a data ref: ${JSON.stringify(ref)}`);

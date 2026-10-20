@@ -518,6 +518,38 @@ describe("workspace management", () => {
     expect(opened.body.workspace.windows).toBe(1);
   });
 
+  it("opens a saved view by the title the Views menu shows", async () => {
+    t = await multiApp({ identity: "none" });
+    const me = t.anon;
+    const first = await create(me);
+    await me.command({ ...windowCreate }, first);
+    await me.command({ type: "window.addSignal", windowId: "w1", signalId: SIG }, first);
+    expect((await me.post(`/api/w/${first}/views`, { title: "Speeds" })).status).toBe(200);
+    // The title as shown, in any case, for ?view= and for an open in the workspace.
+    for (const name of ["Speeds", "SPEEDS"]) {
+      const opened = await me.post("/api/workspaces", { open: { name } });
+      expect(opened.status, name).toBe(200);
+      expect(opened.body.workspace.windows).toBe(1);
+    }
+    const inPlace = await me.post(`/api/w/${first}/views/open`, { name: "Speeds" });
+    expect(inPlace.status).toBe(200);
+    // That open kept the workspace before it as "Before last open", which opens by that title.
+    const previous = await me.post("/api/workspaces", { open: { name: "Before last open" } });
+    expect(previous.status).toBe(200);
+    expect(previous.body.workspace.windows).toBe(1);
+
+    // A second view with the same title: the title is ambiguous and the answer names both.
+    const again = { title: "Speeds", name: "speeds-2" };
+    expect((await me.post(`/api/w/${first}/views`, again)).status).toBe(200);
+    const ambiguous = await me.post("/api/workspaces", { open: { name: "Speeds" } });
+    expect([ambiguous.status, codeOf(ambiguous.body)]).toEqual([409, "ambiguous_view"]);
+    expect(ambiguous.body.error.message).toMatch(/speeds, speeds-2|speeds-2, speeds/);
+    // The name still comes first, and an unknown title is an unknown view.
+    expect((await me.post("/api/workspaces", { open: { name: "speeds" } })).status).toBe(200);
+    const nope = await me.post("/api/workspaces", { open: { name: "No such title" } });
+    expect([nope.status, codeOf(nope.body)]).toEqual([404, "unknown_view"]);
+  });
+
   it("evicts the oldest idle workspace at the limit and refuses when all have clients", async () => {
     t = await multiApp({ workspaceLimit: 3 });
     const alice = t.as("alice");

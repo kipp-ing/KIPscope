@@ -14,7 +14,7 @@ import type { AppDeps } from "../app.ts";
 import type { Access } from "../guard.ts";
 import { apiError, parseInput, userOf } from "../http.ts";
 import { dataRefsOfView, workspaceRights } from "../rights.ts";
-import { type ViewStore, validViewName } from "../views.ts";
+import type { ViewStore } from "../views.ts";
 import { summaryOf, type WorkspaceEntry, WorkspaceLimitError } from "../workspaces.ts";
 import { runCommand } from "./workspace.ts";
 
@@ -36,15 +36,14 @@ function openedView(
   | { ok: true; view: unknown; name?: string }
   | { ok: false; status: number; code: string; message: string } {
   if ("view" in open) return { ok: true, view: open.view };
-  const { name } = open;
-  if (!validViewName(name))
-    return {
-      ok: false,
-      status: 400,
-      code: "invalid_view_name",
-      message: `not a valid view name: ${name}`,
-    };
-  const data = viewsFor(deps, request)?.data(name);
+  const views = viewsFor(deps, request);
+  if (!views)
+    return { ok: false, status: 404, code: "unknown_view", message: `no view ${open.name}` };
+  // `?view=` carries a name or the title the Views menu shows.
+  const resolved = views.resolve(open.name);
+  if (!resolved.ok) return resolved;
+  const { name } = resolved;
+  const data = views.data(name);
   if (data === undefined)
     return { ok: false, status: 404, code: "unknown_view", message: `no view ${name}` };
   if (!data.ok)
