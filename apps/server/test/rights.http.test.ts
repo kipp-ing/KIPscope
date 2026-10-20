@@ -1,11 +1,13 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { decodeTimes, EMPTY_WORKSPACE } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stringify } from "yaml";
 import {
   callsNaming,
   codeOf,
+  grant,
   type MultiApp,
   multiApp,
   SCOPE,
@@ -29,69 +31,133 @@ afterEach(async () => {
 });
 
 const SIG = "Fast_100h.SIG_A";
-/** A data ref that exists in the test DB and one that does not; neither is visible to `test*`. */
-const HIDDEN = "othercar";
+/** A data ref that exists in the test DB and one that does not; the workspaces here are not granted either. */
+const OTHER = "othercar";
 const ABSENT = "nosuchcar";
-const REFS = [HIDDEN, ABSENT] as const;
+const REFS = [OTHER, ABSENT] as const;
+/** The methods of the data source that read series data (everything but listing and ping). */
+const SERIES_METHODS = ["raw", "buckets", "before", "after", "refBuckets"];
+const SERIES_RANGE = "from=2026-10-01T00:00:00Z&to=2026-10-01T00:00:10Z";
 
-describe("deny by default", () => {
-  it("refuses users without rights", async () => {
-    t = await multiApp();
+type Who = ReturnType<MultiApp["as"]>;
+const window10 = {
+  type: "window.create",
+  from: T1.toString(),
+  to: (T1 + 600_000_000_000n).toString(),
+};
+/** A new workspace of `who`, widened to `refs` the way add-case-open will. */
+async function workspaceOf(who: Who, refs: string[] = []): Promise<string> {
+  const id = (await who.post("/api/workspaces", {})).body.workspace.id as string;
+  if (t && refs.length > 0) grant(t, id, refs);
+  return id;
+}
+const seriesOf = (id: string, ref: string) =>
+  `/api/w/${id}/series?signal=${ref}/${SIG}&${SERIES_RANGE}&target=500`;
+
+describe("grant per workspace", () => {
+  it("starts a server workspace with an empty grant", async () => {
+    t = await multiApp({ adapter: testSource(), dbc: true });
+    // Roles decide nothing: even an administrator role starts with an empty grant.
+    const alice = t.as("alice", ["kipscope-admin"]);
+    const created = await alice.post("/api/workspaces", {});
+    expect(created.status).toBe(200);
+    expect(created.body.workspace.granted).toBe(0);
+    const id = created.body.workspace.id as string;
     const callsBefore = t.calls.length;
-    const eve = t.as("eve", ["nobody"]);
-    const me = await eve.get("/api/me");
-    expect(me.status).toBe(200);
-    expect(me.body.rights).toEqual({ data: [], share: false });
-    for (const [method, url, body] of [
-      ["GET", "/api/workspace"],
-      ["GET", "/api/catalog"],
-      ["GET", "/api/sessions"],
-      ["POST", "/api/sessions", {}],
-    ] as const) {
-      const res = await eve.request(method, url, body);
-      expect([res.status, codeOf(res.body)], `${method} ${url}`).toEqual([403, "no_rights"]);
-    }
-    const live = await eve.live();
-    expect(live.messages).toEqual([]);
-    expect(live.status === 403 || live.closeCode !== undefined).toBe(true);
-    // No session was created for her, and the source received no call.
-    expect(t.sessions.listOf("eve")).toEqual([]);
-    expect(t.calls.length).toBe(callsBefore);
+
+    const catalog = await alice.get(`/api/w/${id}/catalog`);
+    expect([catalog.status, catalog.body.items]).toEqual([200, []]);
+    const signals = await alice.get(`/api/w/${id}/signals?q=`);
+    expect([signals.status, signals.body.items, signals.body.total]).toEqual([200, [], 0]);
+    const meta = await alice.get(`/api/w/${id}/meta`);
+    expect(meta.body.catalog.size).toBe(0);
+    const series = await alice.get(seriesOf(id, "testcar"));
+    expect([series.status, codeOf(series.body)]).toEqual([403, "forbidden_data"]);
+    // The source received no series query.
+    const queries = t.calls.slice(callsBefore).filter((c) => SERIES_METHODS.includes(c.method));
+    expect(queries).toEqual([]);
   });
 
-  it("refuses users without rights on every route but /api/me and /api/license", async () => {
-    t = await multiApp({ licenseText: "AAL" });
-    const owned = t.sessions.create("alice");
-    const callsBefore = t.calls.length;
-    const eve = t.as("eve", ["nobody"]);
-    const urls: [string, string][] = routeLog
-      .filter((r) => r.url.startsWith("/api/") && !["/api/me", "/api/license"].includes(r.url))
-      .filter((r) => !(r.method === "GET" && r.url === "/api/live"))
-      .map((r) => [r.method, r.url.replace(":id", owned.record.id).replace(":name", "speeds")]);
-    expect(urls.length).toBeGreaterThan(20);
-    for (const [method, url] of urls) {
-      const res = await eve.request(
-        method as "GET" | "POST" | "DELETE",
-        url,
-        method === "POST" ? {} : undefined,
-      );
-      expect([res.status, codeOf(res.body)], `${method} ${url}`).toEqual([403, "no_rights"]);
-      const viaSession = await eve.request(
-        method as "GET" | "POST" | "DELETE",
-        url.replace("/api/", `/api/s/${owned.record.id}/`),
-        method === "POST" ? {} : undefined,
-      );
-      expect(viaSession.status, `prefixed ${method} ${url}`).toBe(403);
+  it("reads a stored all as empty on a server", async () => {
+    // A state dir of `none` mode: one workspace of user `local` with grant all and a window.
+    const local = await multiApp({ identity: "none", adapter: testSource(), dbc: true });
+    const stateDir = local.stateDir;
+    const id = (await local.anon.post("/api/workspaces", {})).body.workspace.id as string;
+    expect((await local.anon.command(window10, id)).status).toBe(200);
+    const added = await local.anon.command(
+      { type: "window.addSignal", windowId: "w1", signalId: `testcar/${SIG}` },
+      id,
+    );
+    expect(added.status).toBe(200);
+    local.workspaces.flush();
+    local.workspaces.stop();
+    await local.app.close();
+
+    try {
+      // The same dir under the test identity adapter, as user `local`.
+      t = await multiApp({ stateDir, adapter: testSource(), dbc: true });
+      const me = t.as("local");
+      const read = await me.get(`/api/w/${id}/workspace`);
+      expect(read.status).toBe(200);
+      expect(read.body.workspace.windows).toHaveLength(1);
+      const summary = await me.get(`/api/workspaces/${id}`);
+      expect(summary.body.workspace.granted).toBe(0);
+      const series = await me.get(seriesOf(id, "testcar"));
+      expect([series.status, codeOf(series.body)]).toEqual([403, "forbidden_data"]);
+    } finally {
+      await t?.close();
+      t = undefined;
+      rmSync(stateDir, { recursive: true, force: true });
     }
-    expect((await eve.get("/api/license")).status).toBe(200);
-    expect(t.sessions.listOf("eve")).toEqual([]);
-    expect(t.calls.length).toBe(callsBefore);
   });
 
-  it("gives a role that has a rule but no data patterns no rights either", async () => {
-    t = await multiApp({ rules: { roles: [{ role: "empty", data: [], share: true }] } });
-    const res = await t.as("eve", ["empty"]).get("/api/workspace");
-    expect([res.status, codeOf(res.body)]).toEqual([403, "no_rights"]);
+  it("grants everything in local mode", async () => {
+    t = await multiApp({ identity: "none", adapter: testSource(), dbc: true });
+    const created = await t.anon.post("/api/workspaces", {});
+    expect(created.body.workspace.granted).toBe("all");
+    const id = created.body.workspace.id as string;
+    const series = await t.anon.get(seriesOf(id, OTHER));
+    expect(series.status).toBe(200);
+    expect(decodeTimes(series.body.t).length).toBeGreaterThan(0);
+  });
+
+  it("takes no grant from a client", async () => {
+    t = await multiApp({ adapter: testSource(), dbc: true });
+    const alice = t.as("alice");
+    const id = await workspaceOf(alice);
+    const before = t.workspaces.listOf("alice").length;
+
+    const create = await alice.post("/api/workspaces", { grant: { objects: "all" } });
+    expect(create.status).toBe(400);
+    expect(t.workspaces.listOf("alice")).toHaveLength(before);
+
+    const command = await alice.command({ type: "grant.set", objects: "all" }, id);
+    expect(command.status).toBe(400);
+
+    // A view document with a top-level grant opens like any other, and grants nothing.
+    const doc = viewDoc([], { grant: { objects: "all" } });
+    const imported = await alice.post(`/api/w/${id}/views/import`, {
+      text: JSON.stringify(doc),
+      open: true,
+    });
+    expect(imported.status).toBe(200);
+    expect((await alice.get(`/api/workspaces/${id}`)).body.workspace.granted).toBe(0);
+    expect(t.workspaces.grantOf(id)).toEqual({ objects: [] });
+
+    // The one widening path: `grantObjects(` is called nowhere in the server code but its definition.
+    const src = resolve(import.meta.dirname, "../src");
+    let found = "";
+    try {
+      found = execFileSync("grep", ["-rn", "grantObjects(", src], { encoding: "utf8" });
+    } catch {
+      // grep exits 1 when nothing matches
+    }
+    const code = found
+      .split("\n")
+      .filter((line) => line !== "")
+      .filter((line) => !/^[^:]+:\d+:\s*(\/\/|\*|\/\*)/.test(line));
+    expect(code, code.join("\n")).toHaveLength(1);
+    expect(code[0]).toContain("workspaces.ts");
   });
 });
 
@@ -160,21 +226,21 @@ const CASES: Record<string, (ref: string) => Req[]> = {
   ],
   "POST /api/views/import": (r) => [
     post("/api/views/import", { text: JSON.stringify(viewDoc([[`${r}/${SIG}`]])), open: true }),
-    post("/api/views/import", { text: JSON.stringify(viewDoc([[`${r}/${SIG}`]])) }),
+    // An import without `open` names no data ref (storing a layout reveals no data), so it is no case.
     post("/api/views/import", {
       text: stringify(viewDoc([[`${r}/${SIG}`]])),
       open: true,
       name: "imported",
     }),
   ],
-  "POST /api/sessions": (r) => [
-    post("/api/sessions", { open: { view: viewDoc([[`${r}/${SIG}`]]) } }),
-    post("/api/sessions", { open: { name: `via-${r}` } }),
+  "POST /api/workspaces": (r) => [
+    post("/api/workspaces", { open: { view: viewDoc([[`${r}/${SIG}`]]) } }),
+    post("/api/workspaces", { open: { name: `via-${r}` } }),
   ],
 };
 
 describe("one guard for every route", () => {
-  it("keeps role A out of data refs of role B on every route", async () => {
+  it("keeps a workspace to its grant on every route", async () => {
     t = await multiApp({ adapter: testSource(), dbc: true });
     routes = routeLog.filter((r) => r.access?.dataRefs !== undefined && r.url.startsWith("/api/"));
     // The case list comes from the registered routes: a data route without a case fails here.
@@ -187,7 +253,7 @@ describe("one guard for every route", () => {
     // And no case for a route that is not registered with data refs.
     for (const key of Object.keys(CASES)) expect(routes.map(routeKey), key).toContain(key);
 
-    // Saved views of alice that name a data ref she may not see (rights narrowed since).
+    // Saved views of alice that name a data ref outside her grant (the cases open them by name).
     const viewsDir = join(t.stateDir, "users", "alice", "views");
     mkdirSync(viewsDir, { recursive: true });
     for (const ref of REFS)
@@ -196,35 +262,21 @@ describe("one guard for every route", () => {
         stringify(viewDoc([[`${ref}/${SIG}`]], { title: `via ${ref}` })),
       );
 
-    const alice = t.as("alice", ["testers"]);
-    const bob = t.as("bob", ["all"]);
-    const own = (await alice.post("/api/sessions", {})).body.session.id as string;
-    const foreign = (await bob.post("/api/sessions", {})).body.session.id as string;
-    // A session of alice's with a visible window, so a changed revision would show.
-    expect(
-      (
-        await alice.command(
-          { type: "window.create", from: T1.toString(), to: (T1 + 600_000_000_000n).toString() },
-          own,
-        )
-      ).status,
-    ).toBe(200);
+    const alice = t.as("alice", ["kipscope-admin"]);
+    const w = await workspaceOf(alice, ["testcar"]);
+    // A visible window, so a changed revision would show.
+    expect((await alice.command(window10, w)).status).toBe(200);
 
     // Let background work started by the setup settle, so only the sweep's calls are counted.
     await new Promise((r) => setTimeout(r, 100));
     const app = t;
-    const revisions = () =>
-      Object.fromEntries(
-        [...app.sessions.listOf("alice"), ...app.sessions.listOf("bob")].map((s) => [
-          s.record.id,
-          s.store.revision,
-        ]),
-      );
-    const before = revisions();
-    const ownBefore = t.sessions.listOf("alice").length;
+    const revision = () => app.workspaces.get(w)?.store.revision;
+    const before = revision();
+    const ownBefore = t.workspaces.listOf("alice").length;
     const callsBefore = t.calls.length;
 
-    const prefixes = ["", `/s/${own}`, `/s/${foreign}`, "/s/zzzzzzzzzz"];
+    // Without a prefix the default workspace serves (alice's only one, W); with it, W itself.
+    const prefixes = ["", `/w/${w}`];
     let checked = 0;
     for (const route of routes) {
       for (const prefix of prefixes) {
@@ -239,82 +291,75 @@ describe("one guard for every route", () => {
             expect(res.status, label).toBe(403);
             expect(codeOf(res.body), label).toBe("forbidden_data");
             expect(res.body.error.message, label).toBe(`data ref ${ref} is not permitted`);
-            // The guard answers before it looks at any session.
-            expect(res.headers["x-kipscope-session"], label).toBeUndefined();
             answers[ref]?.push({ status: res.status, text: res.text });
             checked++;
           }
         }
         // Existing and non-existent data refs answer alike once the name is replaced.
-        const hidden = answers[HIDDEN] ?? [];
+        const exists = answers[OTHER] ?? [];
         const absent = answers[ABSENT] ?? [];
-        expect(hidden.length).toBe(absent.length);
-        hidden.forEach((h, i) => {
+        expect(exists.length).toBe(absent.length);
+        exists.forEach((h, i) => {
           const a = absent[i];
           expect(h.status).toBe(a?.status);
-          expect(h.text.replaceAll(HIDDEN, "REF"), `${routeKey(route)} #${i}`).toBe(
+          expect(h.text.replaceAll(OTHER, "REF"), `${routeKey(route)} #${i}`).toBe(
             a?.text.replaceAll(ABSENT, "REF"),
           );
         });
       }
     }
-    expect(checked).toBeGreaterThan(40);
+    expect(checked).toBeGreaterThan(30);
 
-    // No source query names either ref, no revision moved, no session appeared.
+    // No source query names either ref, W did not change, and no workspace appeared.
     for (const ref of REFS) expect(callsNaming(t.calls.slice(callsBefore), ref), ref).toEqual([]);
-    expect(revisions()).toEqual(before);
-    expect(t.sessions.listOf("alice")).toHaveLength(ownBefore);
-    expect(t.sessions.listOf("bob")).toHaveLength(1);
-    expect(t.sessions.listOf(HIDDEN)).toEqual([]);
+    expect(revision()).toBe(before);
+    expect(t.workspaces.listOf("alice")).toHaveLength(ownBefore);
+    expect(t.workspaces.listOf(OTHER)).toEqual([]);
   });
 
-  it("decides forbidden_data before the session, the catalog or the body is looked at", async () => {
-    // A signal list that has not loaded: the refusal needs no list, no session and no source.
+  it("decides forbidden_data before the catalog or the body is looked at", async () => {
+    // A signal list that has not loaded: the refusal needs no list and no source.
     t = await multiApp({ loadFullCatalog: false });
-    const alice = t.as("alice", ["testers"]);
-    const res = await alice.get(`/api/series?signal=${HIDDEN}/${SIG}`);
+    const alice = t.as("alice");
+    const w = await workspaceOf(alice, ["testcar"]);
+    const res = await alice.get(`/api/w/${w}/series?signal=${OTHER}/${SIG}`);
     expect([res.status, codeOf(res.body)]).toEqual([403, "forbidden_data"]);
-    // A visible data ref on the same unloaded catalog answers as before (503, not 403).
-    const visible = await alice.get(
-      `/api/series?signal=testcar/${SIG}&from=2026-10-01T01:00:00Z&to=2026-10-01T01:10:00Z`,
+    // A granted data ref on the same unloaded catalog answers as before (503, not 403).
+    const granted = await alice.get(
+      `/api/w/${w}/series?signal=testcar/${SIG}&from=2026-10-01T01:00:00Z&to=2026-10-01T01:10:00Z`,
     );
-    expect(visible.status).toBe(503);
-    expect(callsNaming(t.calls, HIDDEN)).toEqual([]);
+    expect(granted.status).toBe(503);
+    expect(callsNaming(t.calls, OTHER)).toEqual([]);
   });
 
-  it("answers visible data as before", async () => {
+  it("answers granted data as before", async () => {
     t = await multiApp({ adapter: testSource(), dbc: true });
     const alice = t.as("alice", ["testers"]);
-    const ok = await alice.get(
-      `/api/series?signal=testcar/${SIG}&from=2026-10-01T00:00:00Z&to=2026-10-01T00:00:10Z&target=500`,
-    );
+    const w = await workspaceOf(alice, ["testcar"]);
+    const ok = await alice.get(seriesOf(w, "testcar"));
     expect(ok.status).toBe(200);
     expect(["raw", "buckets"]).toContain(ok.body.kind);
     expect(decodeTimes(ok.body.t).length).toBeGreaterThan(0);
-    const unknown = await alice.get(
-      "/api/series?signal=testcar/Nope.X&from=2026-10-01T00:00:00Z&to=2026-10-01T00:00:10Z",
-    );
+    const unknown = await alice.get(`/api/w/${w}/series?signal=testcar/Nope.X&${SERIES_RANGE}`);
     expect(unknown.status).toBe(404);
     expect(codeOf(unknown.body)).toBe("unknown_signal");
-    // The same two answers an administrator gets.
-    const admin = t.as("root", ["admins"]);
-    expect(
-      (
-        await admin.get(
-          `/api/series?signal=${HIDDEN}/${SIG}&from=2026-10-01T00:00:00Z&to=2026-10-01T00:00:10Z`,
-        )
-      ).status,
-    ).toBe(200);
-    const absent = await admin.get(
-      `/api/series?signal=${ABSENT}/${SIG}&from=2026-10-01T00:00:00Z&to=2026-10-01T00:00:10Z`,
-    );
-    expect(codeOf(absent.body)).toBe("unknown_signal");
+    // Widened by the server, the second data ref answers the same way; an absent one is still refused.
+    expect((await alice.get(seriesOf(w, OTHER))).status).toBe(403);
+    grant(t, w, [OTHER]);
+    expect((await alice.get(seriesOf(w, OTHER))).status).toBe(200);
+    const absent = await alice.get(seriesOf(w, ABSENT));
+    expect([absent.status, codeOf(absent.body)]).toEqual([403, "forbidden_data"]);
+    grant(t, w, [ABSENT]);
+    expect(codeOf((await alice.get(seriesOf(w, ABSENT))).body)).toBe("unknown_signal");
   });
 
   it("names the refused data ref only as the request sent it", async () => {
     t = await multiApp();
-    const alice = t.as("alice", ["testers"]);
-    const res = await alice.get(`/api/density?dataRef=${encodeURIComponent("other car/<x>")}`);
+    const alice = t.as("alice");
+    const w = await workspaceOf(alice, ["testcar"]);
+    const res = await alice.get(
+      `/api/w/${w}/density?dataRef=${encodeURIComponent("other car/<x>")}`,
+    );
     expect([res.status, codeOf(res.body)]).toEqual([403, "forbidden_data"]);
     expect(res.body.error.message).toBe("data ref other car/<x> is not permitted");
     expect(Object.keys(res.body.error).sort()).toEqual(["code", "message"]);
@@ -324,14 +369,14 @@ describe("one guard for every route", () => {
 describe("one guard for every spelling of the prefix", () => {
   /** Prefixes the router decodes to `/api/`; the plain form is the reference. */
   const ENCODED = ["/%61pi", "/a%70i", "/ap%69", "/%61%70%69"];
-  /** Same length as HIDDEN, so the answers can be compared byte for byte once the name is swapped. */
+  /** Same length as OTHER, so the answers can be compared byte for byte once the name is swapped. */
   const SAME_LENGTH_ABSENT = "nowherec";
   const respell = (url: string, prefix: string) => `${prefix}${url.slice("/api".length)}`;
 
-  it("answers hidden data refs through an encoded prefix like the plain form, never 200 or 500", async () => {
+  it("answers ungranted data refs through an encoded prefix like the plain form, never 200 or 500", async () => {
     t = await multiApp({ adapter: testSource(), dbc: true });
-    const routes = routeLog.filter((r) => r.access?.dataRefs !== undefined);
-    // Saved views of alice that name a hidden data ref (the cases open them by name).
+    const sweep = routeLog.filter((r) => r.access?.dataRefs !== undefined);
+    // Saved views of alice that name an ungranted data ref (the cases open them by name).
     const viewsDir = join(t.stateDir, "users", "alice", "views");
     mkdirSync(viewsDir, { recursive: true });
     for (const ref of REFS)
@@ -340,14 +385,14 @@ describe("one guard for every spelling of the prefix", () => {
         stringify(viewDoc([[`${ref}/${SIG}`]], { title: `via ${ref}` })),
       );
     const alice = t.as("alice", ["testers"]);
-    const own = (await alice.post("/api/sessions", {})).body.session.id as string;
+    const own = await workspaceOf(alice, ["testcar"]);
     const callsBefore = t.calls.length;
-    const revisionBefore = t.sessions.get(own)?.store.revision;
+    const revisionBefore = t.workspaces.get(own)?.store.revision;
     let checked = 0;
-    for (const route of routes) {
+    for (const route of sweep) {
       for (const ref of REFS) {
         for (const req of CASES[routeKey(route)]?.(ref) ?? []) {
-          // A session prefix after an encoded `api` is no prefix at all, so it is left out here.
+          // A workspace prefix after an encoded `api` is no prefix at all, so it is left out here.
           const plain = await alice.request(req.method, req.url, req.body);
           expect([plain.status, codeOf(plain.body)], req.url).toEqual([403, "forbidden_data"]);
           for (const prefix of ENCODED) {
@@ -361,39 +406,34 @@ describe("one guard for every spelling of the prefix", () => {
         }
       }
     }
-    expect(checked).toBeGreaterThan(150);
-    // Neither ref reached a source, and the session did not change.
+    expect(checked).toBeGreaterThan(120);
+    // Neither ref reached a source, and the workspace did not change.
     for (const ref of REFS) expect(callsNaming(t.calls.slice(callsBefore), ref), ref).toEqual([]);
-    expect(t.sessions.get(own)?.store.revision).toBe(revisionBefore);
+    expect(t.workspaces.get(own)?.store.revision).toBe(revisionBefore);
   });
 
-  it("refuses an unsigned and a no-rights caller through an encoded prefix on every data route", async () => {
+  it("refuses an unsigned caller through an encoded prefix on every data route", async () => {
     t = await multiApp({ adapter: testSource(), dbc: true });
-    const eve = t.as("eve", ["nobody"]);
     let checked = 0;
     for (const route of routeLog.filter((r) => r.access?.dataRefs !== undefined)) {
-      for (const req of CASES[routeKey(route)]?.(HIDDEN) ?? []) {
+      for (const req of CASES[routeKey(route)]?.(OTHER) ?? []) {
         for (const prefix of ENCODED) {
           const url = respell(req.url, prefix);
           const anon = await t.anon.request(req.method, url, req.body);
           expect([anon.status, codeOf(anon.body)], url).toEqual([401, "unauthenticated"]);
-          const none = await eve.request(req.method, url, req.body);
-          expect([none.status, codeOf(none.body)], url).toEqual([403, "no_rights"]);
           checked++;
         }
       }
     }
-    expect(checked).toBeGreaterThan(80);
-    expect(t.calls.filter((c) => callsNaming([c], HIDDEN).length > 0)).toEqual([]);
+    expect(checked).toBeGreaterThan(40);
+    expect(t.calls.filter((c) => callsNaming([c], OTHER).length > 0)).toEqual([]);
   });
 
-  it("returns byte-identical forbidden_data for a hidden and a non-existent ref on a prefixed route", async () => {
+  it("returns byte-identical forbidden_data for an existing and a non-existent ref on a prefixed route", async () => {
     t = await multiApp({ adapter: testSource(), dbc: true });
     const alice = t.as("alice", ["testers"]);
-    const bob = t.as("bob", ["all"]);
-    const own = (await alice.post("/api/sessions", {})).body.session.id as string;
-    const foreign = (await bob.post("/api/sessions", {})).body.session.id as string;
-    expect(SAME_LENGTH_ABSENT.length).toBe(HIDDEN.length);
+    const own = await workspaceOf(alice, ["testcar"]);
+    expect(SAME_LENGTH_ABSENT.length).toBe(OTHER.length);
     const volatile = new Set(["date"]);
     const stable = (headers: Record<string, unknown>) =>
       Object.fromEntries(Object.entries(headers).filter(([k]) => !volatile.has(k)));
@@ -401,119 +441,114 @@ describe("one guard for every spelling of the prefix", () => {
       `/api${prefix}/series?signal=${ref}/${SIG}&from=2026-10-01T01:00:00Z&to=2026-10-01T01:10:00Z`;
 
     const seen: string[] = [];
-    // Own, foreign (someone else's private) and missing session: the guard answers before any of
-    // them is looked up, so all give the same bytes.
-    for (const prefix of [`/s/${own}`, `/s/${foreign}`, "/s/zzzzzzzzzz", ""]) {
-      const hidden = await alice.get(urlOf(prefix, HIDDEN));
+    // Through the workspace's prefix and through the default workspace (the same one).
+    for (const prefix of [`/w/${own}`, ""]) {
+      const exists = await alice.get(urlOf(prefix, OTHER));
       const absent = await alice.get(urlOf(prefix, SAME_LENGTH_ABSENT));
-      const label = prefix || "(default session)";
-      expect([hidden.status, codeOf(hidden.body)], label).toEqual([403, "forbidden_data"]);
-      expect(hidden.status, label).toBe(absent.status);
-      expect(hidden.text.length, label).toBe(absent.text.length);
-      expect(hidden.text.replaceAll(HIDDEN, "REF"), label).toBe(
+      const label = prefix || "(default workspace)";
+      expect([exists.status, codeOf(exists.body)], label).toEqual([403, "forbidden_data"]);
+      expect(exists.status, label).toBe(absent.status);
+      expect(exists.text.length, label).toBe(absent.text.length);
+      expect(exists.text.replaceAll(OTHER, "REF"), label).toBe(
         absent.text.replaceAll(SAME_LENGTH_ABSENT, "REF"),
       );
-      expect(stable(hidden.headers), label).toEqual(stable(absent.headers));
-      expect(hidden.headers["x-kipscope-session"], label).toBeUndefined();
-      seen.push(hidden.text);
+      expect(stable(exists.headers), label).toEqual(stable(absent.headers));
+      seen.push(exists.text);
     }
-    // And across the session prefixes: the session is not told apart either.
     expect(new Set(seen).size).toBe(1);
   });
 });
 
-describe("lists and counts show visible data only", () => {
-  it("filters lists and counts by rights", async () => {
+describe("lists and counts show granted data only", () => {
+  it("filters lists and counts by grant", async () => {
     t = await multiApp({ adapter: testSource(), dbc: true });
     const listsBefore = t.calls.filter((c) => c.method === "listSignals").length;
     const alice = t.as("alice", ["testers"]);
-    const admin = t.as("root", ["admins"]);
-    const catalogOf = async (c: typeof alice) =>
-      (await c.get("/api/catalog")).body.items as { dataRef: string; id: string }[];
+    const w1 = await workspaceOf(alice, ["testcar"]);
+    const w2 = await workspaceOf(alice, ["testcar", OTHER]);
+    const catalogOf = async (id: string) =>
+      (await alice.get(`/api/w/${id}/catalog`)).body.items as { dataRef: string; id: string }[];
 
-    const a = await catalogOf(alice);
-    const r = await catalogOf(admin);
+    const a = await catalogOf(w1);
+    const r = await catalogOf(w2);
     expect(a.length).toBeGreaterThan(0);
-    for (const item of a) expect(item.dataRef.startsWith("test"), item.id).toBe(true);
-    expect(new Set(r.map((i) => i.dataRef)).has(HIDDEN)).toBe(true);
+    for (const item of a) expect(item.dataRef, item.id).toBe("testcar");
+    expect(new Set(r.map((i) => i.dataRef)).has(OTHER)).toBe(true);
     expect(r.length).toBeGreaterThan(a.length);
-    expect(a.some((i) => i.dataRef === HIDDEN)).toBe(false);
 
-    // Search: alice's total counts her hits only; the same name in `othercar` is not counted.
-    const hits = async (c: typeof alice, q: string) =>
-      (await c.get(`/api/signals?q=${q}&limit=200`)).body;
-    const aliceHits = await hits(alice, SIG);
-    const adminHits = await hits(admin, SIG);
-    expect(aliceHits.total).toBe(aliceHits.items.length);
-    expect(aliceHits.items.every((i: { dataRef: string }) => i.dataRef === "testcar")).toBe(true);
-    expect(adminHits.total).toBe(aliceHits.total + 1);
-    const all = await hits(alice, "");
+    // Search: W1's total counts its hits only; the same name in `othercar` is not counted.
+    const hits = async (id: string, q: string) =>
+      (await alice.get(`/api/w/${id}/signals?q=${q}&limit=200`)).body;
+    const w1Hits = await hits(w1, SIG);
+    const w2Hits = await hits(w2, SIG);
+    expect(w1Hits.total).toBe(w1Hits.items.length);
+    expect(w1Hits.items.every((i: { dataRef: string }) => i.dataRef === "testcar")).toBe(true);
+    expect(w2Hits.total).toBe(w1Hits.total + 1);
+    const all = await hits(w1, "");
     expect(all.total).toBe(a.length);
-    for (const item of all.items) expect(item.dataRef.startsWith("test")).toBe(true);
 
-    // Meta counts what the user may see.
-    const aliceMeta = (await alice.get("/api/meta")).body;
-    const adminMeta = (await admin.get("/api/meta")).body;
-    expect(aliceMeta.catalog.size).toBe(a.length);
-    expect(adminMeta.catalog.size).toBe(r.length);
-    expect(adminMeta.catalog.size).toBeGreaterThan(aliceMeta.catalog.size);
+    // Meta counts what the workspace may see.
+    const m1 = (await alice.get(`/api/w/${w1}/meta`)).body;
+    const m2 = (await alice.get(`/api/w/${w2}/meta`)).body;
+    expect(m1.catalog.size).toBe(a.length);
+    expect(m2.catalog.size).toBe(r.length);
+    expect(m2.catalog.size).toBeGreaterThan(m1.catalog.size);
 
-    // The shared list was loaded once, at start, for both users; a refresh loads it again.
+    // The shared list was loaded once, at start, for both workspaces.
     expect(t.calls.filter((c) => c.method === "listSignals").length).toBe(listsBefore);
-    const refreshed = await alice.post("/api/catalog/refresh");
-    expect(refreshed.status).toBe(200);
-    expect(refreshed.body.size).toBe(a.length);
-    expect(t.calls.filter((c) => c.method === "listSignals").length).toBe(listsBefore + 1);
   });
 
-  it("refuses a hidden signal in a command and accepts a visible one", async () => {
+  it("refuses an ungranted signal in a command and accepts a granted one", async () => {
     t = await multiApp();
     const alice = t.as("alice", ["testers"]);
-    const created = await alice.post("/api/sessions", {});
-    const id = created.body.session.id as string;
+    const id = await workspaceOf(alice, ["testcar"]);
     const w = await alice.command({ type: "window.create", from: "0", to: "10" }, id);
-    // A signal of a hidden data ref is refused by the guard (403), not "unknown signal".
-    const hidden = await alice.command(
-      { type: "window.addSignal", windowId: w.body.created, signalId: `${HIDDEN}/${SIG}` },
+    // A signal of an ungranted data ref is refused by the guard (403), not "unknown signal".
+    const refused = await alice.command(
+      { type: "window.addSignal", windowId: w.body.created, signalId: `${OTHER}/${SIG}` },
       id,
     );
-    expect([hidden.status, codeOf(hidden.body)]).toEqual([403, "forbidden_data"]);
-    const visible = await alice.command(
+    expect([refused.status, codeOf(refused.body)]).toEqual([403, "forbidden_data"]);
+    const granted = await alice.command(
       { type: "window.addSignal", windowId: w.body.created, signalId: `testcar/${SIG}` },
       id,
     );
-    expect(visible.status).toBe(200);
+    expect(granted.status).toBe(200);
   });
 
-  it("seeds a new session without the events-line signals the creator may not see", async () => {
+  it("seeds a server workspace without the events-line signals it may not read", async () => {
     const seed = () => ({
       ...EMPTY_WORKSPACE,
-      eventSignals: [`testcar/${SIG}`, `${HIDDEN}/${SIG}`],
+      eventSignals: [`testcar/${SIG}`, `${OTHER}/${SIG}`],
     });
     t = await multiApp({ seed });
     const alice = t.as("alice", ["testers"]);
-    const admin = t.as("root", ["admins"]);
-    const a = await alice.post("/api/sessions", {});
-    const r = await admin.post("/api/sessions", {});
-    expect(a.status).toBe(200);
-    const ws = async (c: typeof alice, id: string) =>
-      (await c.get(`/api/s/${id}/workspace`)).body.workspace;
-    expect((await ws(alice, a.body.session.id)).eventSignals).toEqual([`testcar/${SIG}`]);
-    expect((await ws(admin, r.body.session.id)).eventSignals).toEqual([
-      `testcar/${SIG}`,
-      `${HIDDEN}/${SIG}`,
-    ]);
-    // Her default session is seeded the same way.
+    const created = await alice.post("/api/workspaces", {});
+    expect(created.status).toBe(200);
+    const read = async (c: typeof alice, id: string) =>
+      (await c.get(`/api/w/${id}/workspace`)).body.workspace;
+    // The initial grant of a server is empty, so none of them is seeded (the invariant of M3).
+    expect((await read(alice, created.body.workspace.id)).eventSignals ?? []).toEqual([]);
+    // Her default workspace is seeded the same way.
     const other = await t.as("carol", ["testers"]).get("/api/workspace");
-    expect(other.body.workspace.eventSignals).toEqual([`testcar/${SIG}`]);
+    expect(other.body.workspace.eventSignals ?? []).toEqual([]);
+    await t.close();
+
+    // With none, the grant is all and every events-line signal is seeded.
+    t = await multiApp({ seed, identity: "none" });
+    const local = await t.anon.post("/api/workspaces", {});
+    expect((await read(t.anon as typeof alice, local.body.workspace.id)).eventSignals).toEqual([
+      `testcar/${SIG}`,
+      `${OTHER}/${SIG}`,
+    ]);
   });
 });
 
 describe("scoped mode", () => {
-  it("answers a hidden data ref alike whether it exists, whatever the scope", async () => {
+  it("answers an ungranted data ref alike whether it exists, whatever the scope", async () => {
     t = await multiApp({ mode: "scoped" });
     const alice = t.as("alice", ["testers"]);
-    const id = (await alice.post("/api/sessions", {})).body.session.id as string;
+    const id = await workspaceOf(alice, ["testcar", "testcar2"]);
     expect(
       (
         await alice.command(
@@ -525,12 +560,12 @@ describe("scoped mode", () => {
     const callsBefore = t.calls.length;
     const answers = [];
     for (const ref of REFS) {
-      const res = await alice.get(`/api/s/${id}/density?dataRef=${ref}`);
+      const res = await alice.get(`/api/w/${id}/density?dataRef=${ref}`);
       expect([res.status, codeOf(res.body)], ref).toEqual([403, "forbidden_data"]);
       answers.push(res.text.replaceAll(ref, "REF"));
     }
     expect(answers[0]).toBe(answers[1]);
-    // A scope on a hidden data ref is refused before its signal list is loaded.
+    // A scope on an ungranted data ref is refused before its signal list is loaded.
     for (const ref of REFS) {
       const res = await alice.command(
         { type: "scope.set", dataRef: ref, from: SCOPE.from, to: SCOPE.to },
@@ -539,143 +574,105 @@ describe("scoped mode", () => {
       expect([res.status, codeOf(res.body)], ref).toEqual([403, "forbidden_data"]);
     }
     expect(t.calls.slice(callsBefore)).toEqual([]);
-    // A visible data ref outside the scope still answers as before.
-    const other = await alice.get(`/api/s/${id}/density?dataRef=testcar2`);
+    // A granted data ref outside the scope still answers as before.
+    const other = await alice.get(`/api/w/${id}/density?dataRef=testcar2`);
     expect(other.status).toBe(409);
     expect(codeOf(other.body)).toBe("out_of_scope");
   });
 });
 
 describe("sharing never widens data access", () => {
-  it("refuses a shared session holding hidden data", async () => {
-    t = await multiApp();
-    const admin = t.as("admin", ["admins"]);
+  it("shows an invited user the shared grant only there", async () => {
+    t = await multiApp({ adapter: testSource(), dbc: true });
     const alice = t.as("alice", ["testers"]);
-    const a = (await admin.post("/api/sessions", {})).body.session.id as string;
-    const window = await admin.command(
-      { type: "window.create", from: T1.toString(), to: (T1 + 600_000_000_000n).toString() },
-      a,
-    );
-    expect(window.status).toBe(200);
+    const bob = t.as("bob", ["testers"]);
+    const a = await workspaceOf(alice, ["testcar"]);
+    const w = await alice.command(window10, a);
     expect(
       (
-        await admin.command(
-          { type: "window.addSignal", windowId: window.body.created, signalId: `testcar/${SIG}` },
+        await alice.command(
+          { type: "window.addSignal", windowId: w.body.created, signalId: `testcar/${SIG}` },
           a,
         )
       ).status,
     ).toBe(200);
-    expect((await admin.post(`/api/sessions/${a}/share`, { share: "write" })).status).toBe(200);
+    expect((await alice.post(`/api/workspaces/${a}/share`, { share: "read" })).status).toBe(200);
 
-    // A private session of admin for the comparison of the refusal bodies.
-    const p = (await admin.post("/api/sessions", {})).body.session.id as string;
-    const privateAnswer = await alice.get(`/api/s/${p}/workspace`);
-    expect([privateAnswer.status, codeOf(privateAnswer.body)]).toEqual([403, "forbidden"]);
+    // In A, bob sees what A's grant covers: testcar only.
+    const catalog = await bob.get(`/api/w/${a}/catalog`);
+    expect(catalog.status).toBe(200);
+    expect(catalog.body.items.length).toBeGreaterThan(0);
+    for (const item of catalog.body.items) expect(item.dataRef).toBe("testcar");
+    expect((await bob.get(seriesOf(a, "testcar"))).status).toBe(200);
+    expect(codeOf((await bob.get(seriesOf(a, OTHER))).body)).toBe("forbidden_data");
 
-    const live = await alice.live(a);
-    await live.next((m) => m.type === "state");
-    expect((await alice.get(`/api/s/${a}/workspace`)).status).toBe(200);
-
-    // Admin adds a signal of a data ref alice may not see.
-    const add = await admin.command(
-      { type: "window.addSignal", windowId: window.body.created, signalId: `${HIDDEN}/${SIG}` },
-      a,
-    );
-    expect(add.status).toBe(200);
-    expect(await live.closedBy()).toBe(4403);
-    // The channel never carried the hidden signal: the close comes before the state with it.
-    expect(JSON.stringify(live.messages)).not.toContain(HIDDEN);
-
-    const workspace = await alice.get(`/api/s/${a}/workspace`);
-    const catalog = await alice.get(`/api/s/${a}/catalog`);
-    for (const res of [workspace, catalog]) {
-      expect([res.status, codeOf(res.body)]).toEqual([403, "forbidden"]);
-      expect(res.body).toEqual(privateAnswer.body);
-    }
-    // No other route of the session opens either, and no change gets through.
-    expect((await alice.command({ type: "cursor.set", cursor: "a", t: "5" }, a)).status).toBe(403);
-    expect((await alice.get(`/api/s/${a}/render-status`)).status).toBe(403);
-    expect((await alice.get(`/api/s/${a}/meta`)).status).toBe(403);
-    expect((await alice.get(`/api/sessions/${a}`)).status).toBe(403);
-    const reconnect = await alice.live(a);
-    expect(reconnect.messages).toEqual([]);
-    expect(reconnect.status === 403 || reconnect.closeCode !== undefined).toBe(true);
-    // The owner still opens it.
-    expect((await admin.get(`/api/s/${a}/workspace`)).status).toBe(200);
+    // An own copy of A's layout, and a new workspace of his own, get the initial grant.
+    const copy = await bob.post("/api/workspaces", {
+      open: { view: viewDoc([[`testcar/${SIG}`]]) },
+    });
+    expect([copy.status, codeOf(copy.body)]).toEqual([403, "forbidden_data"]);
+    expect(t.workspaces.listOf("bob")).toEqual([]);
+    const own = await bob.post("/api/workspaces", {});
+    expect(own.status).toBe(200);
+    expect(own.body.workspace.granted).toBe(0);
+    const ownCatalog = await bob.get(`/api/w/${own.body.workspace.id}/catalog`);
+    expect(ownCatalog.body.items).toEqual([]);
   });
 
-  it("does not serve an own session that holds data the user lost the right to", async () => {
-    t = await multiApp();
-    const before = t.as("alice", ["admins"]);
-    const id = (await before.post("/api/sessions", {})).body.session.id as string;
-    const w = await before.command(
-      { type: "window.create", from: T1.toString(), to: (T1 + 600_000_000_000n).toString() },
-      id,
-    );
-    await before.command(
-      { type: "window.addSignal", windowId: w.body.created, signalId: `${HIDDEN}/${SIG}` },
-      id,
-    );
-
-    // The same user, now with a narrower role.
-    const now = t.as("alice", ["testers"]);
-    const direct = await now.get(`/api/s/${id}/workspace`);
-    expect([direct.status, codeOf(direct.body)]).toEqual([403, "forbidden"]);
-    // The default session is a new one, not the latest own session that holds hidden data.
-    const fallback = await now.get("/api/workspace");
-    expect(fallback.status).toBe(200);
-    expect(fallback.headers["x-kipscope-session"]).not.toBe(id);
-    expect(fallback.body.workspace.windows).toEqual([]);
-    // She still lists it (without rights) and may delete it.
-    const list = await now.get("/api/sessions");
-    const listed = list.body.sessions.find((s: { id: string }) => s.id === id);
-    expect(listed).toBeDefined();
-    expect(listed.rights).toBeUndefined();
-    expect((await now.del(`/api/sessions/${id}`)).status).toBe(200);
-  });
-
-  it("needs the share right to share", async () => {
-    t = await multiApp();
+  it("needs sharing turned on to share", async () => {
+    t = await multiApp({ share: false });
     const alice = t.as("alice", ["testers"]);
-    const id = (await alice.post("/api/sessions", {})).body.session.id as string;
+    const id = await workspaceOf(alice);
     for (const share of ["read", "write"]) {
-      const res = await alice.post(`/api/sessions/${id}/share`, { share });
+      const res = await alice.post(`/api/workspaces/${id}/share`, { share });
       expect([res.status, codeOf(res.body)], share).toEqual([403, "share_not_permitted"]);
     }
-    expect((await alice.get(`/api/sessions/${id}`)).body.session.share).toBe("private");
-    const back = await alice.post(`/api/sessions/${id}/share`, { share: "private" });
+    expect((await alice.get(`/api/workspaces/${id}`)).body.workspace.share).toBe("private");
+    const back = await alice.post(`/api/workspaces/${id}/share`, { share: "private" });
     expect(back.status).toBe(200);
-    expect(back.body.session.share).toBe("private");
-    // With a role that may share, the same request works.
-    const lead = t.as("lead", ["admins"]);
-    const mine = (await lead.post("/api/sessions", {})).body.session.id as string;
+    expect(back.body.workspace.share).toBe("private");
+    await t.close();
+
+    // With sharing on, the same request works.
+    t = await multiApp({ share: true });
+    const lead = t.as("lead", ["testers"]);
+    const mine = await workspaceOf(lead);
     expect(
-      (await lead.post(`/api/sessions/${mine}/share`, { share: "read" })).body.session.share,
+      (await lead.post(`/api/workspaces/${mine}/share`, { share: "read" })).body.workspace.share,
     ).toBe("read");
   });
+});
 
-  it("never lets a share make a session readable by a user with no data right to it", async () => {
-    t = await multiApp();
-    const admin = t.as("admin", ["admins"]);
-    const id = (await admin.post("/api/sessions", {})).body.session.id as string;
-    const w = await admin.command(
-      { type: "window.create", from: T1.toString(), to: (T1 + 600_000_000_000n).toString() },
-      id,
+describe("a view grants nothing", () => {
+  it("opens a view only within the grant", async () => {
+    t = await multiApp({ adapter: testSource(), dbc: true });
+    const viewsDir = join(t.stateDir, "users", "alice", "views");
+    mkdirSync(viewsDir, { recursive: true });
+    writeFileSync(
+      join(viewsDir, "both.yaml"),
+      stringify(viewDoc([[`testcar/${SIG}`], [`${OTHER}/${SIG}`]], { title: "both" })),
     );
-    await admin.command(
-      { type: "window.addSignal", windowId: w.body.created, signalId: `${HIDDEN}/${SIG}` },
-      id,
-    );
-    for (const share of ["read", "write"]) {
-      expect((await admin.post(`/api/sessions/${id}/share`, { share })).status).toBe(200);
-      const alice = t.as("alice", ["testers"]);
-      for (const path of ["workspace", "catalog", "signals", "render-status", "meta", "extent"]) {
-        const res = await alice.get(`/api/s/${id}/${path}`);
-        expect(res.status, `${share} ${path}`).toBe(403);
-      }
-      const command = await alice.command({ type: "window.create" }, id);
-      expect(command.status, share).toBe(403);
-      expect(codeOf(command.body)).toBe("forbidden");
-    }
+    const alice = t.as("alice", ["testers"]);
+    const w = await workspaceOf(alice, ["testcar"]);
+    const revision = t.workspaces.get(w)?.store.revision;
+
+    // 1. The grant lacks othercar: refused naming it, and nothing changed.
+    const refused = await alice.post(`/api/w/${w}/views/open`, { name: "both" });
+    expect([refused.status, codeOf(refused.body)]).toEqual([403, "forbidden_data"]);
+    expect(refused.body.error.message).toContain(OTHER);
+    expect(t.workspaces.get(w)?.store.revision).toBe(revision);
+
+    // 2. Widened by the server, the same open works and shows both windows.
+    grant(t, w, [OTHER]);
+    const opened = await alice.post(`/api/w/${w}/views/open`, { name: "both" });
+    expect(opened.status).toBe(200);
+    expect((await alice.get(`/api/workspaces/${w}`)).body.workspace.windows).toBe(2);
+
+    // 3. Importing a view without opening it needs no grant, on a workspace with an empty one.
+    const empty = await workspaceOf(alice);
+    const imported = await alice.post(`/api/w/${empty}/views/import`, {
+      text: JSON.stringify(viewDoc([[`testcar/${SIG}`], [`${OTHER}/${SIG}`]], { title: "again" })),
+    });
+    expect(imported.status).toBe(200);
   });
 });

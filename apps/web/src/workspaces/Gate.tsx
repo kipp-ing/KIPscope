@@ -1,19 +1,20 @@
-import { sessionPath } from "@kipscope/shared";
+import { workspacePath } from "@kipscope/shared";
 import { useState } from "react";
-import { createSession } from "../api.ts";
-import { type Gate, LATEST_SESSION, NEW_SESSION } from "./gate.ts";
-import "./session.css";
+import { createWorkspace } from "../api.ts";
+import { type Gate, LATEST_WORKSPACE, NEW_WORKSPACE } from "./gate.ts";
+import "./workspaces.css";
 
-/** Opens a new session in this tab. */
-export async function openNewSession(): Promise<void> {
-  const answer = await createSession({});
-  if (!answer.session) throw new Error("no session was created");
-  location.assign(sessionPath(answer.session.id));
+/** Opens a new workspace in this tab. */
+export async function openNewWorkspace(): Promise<void> {
+  const answer = await createWorkspace({});
+  if (!answer.workspace) throw new Error("no workspace was created");
+  location.assign(workspacePath(answer.workspace.id));
 }
 
 /**
  * The page shown instead of the workspace (add-multiuser M12 "Gate pages"): a title, a text, and
- * for a missing or forbidden session "My latest session" (the start-up page `/`) and "New session".
+ * for a missing or forbidden workspace "My latest workspace" (the start-up page `/`) and "New
+ * workspace".
  */
 export function GatePage({ gate }: { gate: Gate }) {
   const [error, setError] = useState<string | undefined>();
@@ -24,21 +25,21 @@ export function GatePage({ gate }: { gate: Gate }) {
         {gate.text && <p>{gate.text}</p>}
         {gate.actions.length > 0 && (
           <div className="gate-actions">
-            {gate.actions.includes(LATEST_SESSION) && (
+            {gate.actions.includes(LATEST_WORKSPACE) && (
               <button type="button" className="primary" onClick={() => location.assign("/")}>
-                {LATEST_SESSION}
+                {LATEST_WORKSPACE}
               </button>
             )}
-            {gate.actions.includes(NEW_SESSION) && (
+            {gate.actions.includes(NEW_WORKSPACE) && (
               <button
                 type="button"
                 onClick={() =>
-                  void openNewSession().catch((e: unknown) =>
+                  void openNewWorkspace().catch((e: unknown) =>
                     setError(e instanceof Error ? e.message : String(e)),
                   )
                 }
               >
-                {NEW_SESSION}
+                {NEW_WORKSPACE}
               </button>
             )}
           </div>

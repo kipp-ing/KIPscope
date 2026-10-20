@@ -51,11 +51,11 @@ Write areas of groups 7–12 (disjoint):
 - [x] 6.2 Identity conformance suite (`apps/server/test/identity/conformance.ts`, its two runs, `oidc.test.ts`). Still valid.
 - [x] 6.3 Server HTTP tests. Renamed and rewritten by 12.2.
 - [x] 6.4 Web and CLI tests. Renamed and rewritten by 12.3.
-- [ ] 6.5 Crash guard: `pnpm smoke` against the dev server and `--preview` passes with the start-up redirect to `/w/<id>`. If `scripts/smoke.mjs` asserts the page path, the tester adapts only that assertion. Verify: ks-smoke pass.
+- [x] 6.5 Crash guard: `pnpm smoke` against the dev server and `--preview` passes with the start-up redirect to `/w/<id>`. If `scripts/smoke.mjs` asserts the page path, the tester adapts only that assertion. Verify: ks-smoke pass.
 
 ## 7. packages/shared: rename and grant
 
-- [ ] 7.1 `session.ts` → `workspaces.ts` exactly as design M7 and M3:
+- [x] 7.1 `session.ts` → `workspaces.ts` exactly as design M7 and M3:
   - `WORKSPACE_ID`, `USER_ID`, `LOCAL_USER`, `MAX_WORKSPACES_PER_USER`, `WORKSPACE_HEADER`, `RECENT_WORKSPACES`, `CLOSE_NO_ACCESS`, `CLOSE_WORKSPACE_GONE`
   - `Grant` (zod and type), `MAX_GRANT_OBJECTS`, `GRANT_ALL`, `GRANT_NONE`, `Granted`
   - `WorkspaceShare`, `WorkspaceRights`, `WorkspaceSummary` with `granted`
@@ -68,7 +68,7 @@ Write areas of groups 7–12 (disjoint):
 
 ## 8. apps/server/src: registry, grant, guard, routes
 
-- [ ] 8.1 Registry (M3, M4): `sessions.ts` → `workspaces.ts` with `WorkspaceRegistry` exactly as pinned:
+- [x] 8.1 Registry (M3, M4): `sessions.ts` → `workspaces.ts` with `WorkspaceRegistry` exactly as pinned:
   - the `grant` on the record and in the file (version 2), and `initialGrant` at create
   - `seed(grant)`, `grantOf`, and `grantObjects` with `GrantLimitError` and an `onChange` `grant` event
   - `reuseOf`, with an in-memory claim of `REUSE_CLAIM_MS` that a live connect clears
@@ -78,7 +78,7 @@ Write areas of groups 7–12 (disjoint):
   - `summaryOf(entry, rights, grant)` with `granted`
 
   `persist.ts` reads and writes the v2 file and reads the legacy one. Verify: workspaces "Two start-ups at once" (unit part), "Restart keeps every workspace", "Broken workspace file", "Old state dir", "Session folder of round 1", "Limit", "Idle cleanup"; data-access "Widening"; workspace-state "Debounced, atomic writes", "Restart keeps the workspace", "Broken state file".
-- [ ] 8.2 Grant checks, guard, config (M2, M3, M6, M10):
+- [x] 8.2 Grant checks, guard, config (M2, M3, M6, M10):
   - `rights.ts`: remove `loadRules`, `rightsOf`, `hasRights`, `canSee`, `ALL_RIGHTS` and the `Rules`/`Rights` types. Add `covers`, `effectiveGrant`, `initialGrant` and `grantedOf`; make `workspaceRights(user, entry)` per M6; `catalogView(catalog, grant)`. `dataRefsOfWorkspace` goes if nothing uses it.
   - `guard.ts`: `Level` without `identity`; no `no_rights`. The `preHandler` checks `dataRefs` against the resolved workspace's effective grant, or for level `user` against `initialGrant`. It sets `workspaceOf` and `grantOf`; `unknown_workspace`.
   - `config.ts`: no `KIPSCOPE_RULES`; `KIPSCOPE_SHARE` → `Config.share`; `KIPSCOPE_WORKSPACE_IDLE_DAYS`.
@@ -105,7 +105,7 @@ Write areas of groups 7–12 (disjoint):
 
 ## 9. apps/web/src: rename, start-up, Share…, Recent
 
-- [ ] 9.1 Start-up, prefix, gates (M5, M12):
+- [x] 9.1 Start-up, prefix, gates (M5, M12):
   - `session/` → `workspaces/`
   - `startupTarget` per M12: `/s/<id>` read as `/w/<id>` (`LEGACY_UI_PATH`), and `/` or a bad path → `{create: {reuse: true}}`; `replaceState` to `/w/<id>`
   - `apiPath` with `/api/w/`
@@ -114,7 +114,7 @@ Write areas of groups 7–12 (disjoint):
   - `App.tsx` passes `workspaceId`, `summary` and `me` to `OptionBar` (M12 props); the Sessions menu's mount goes
 
   Verify: workspaces "Start-up target", "Gate texts", "API paths of a workspace"; saved-views "Start-up from a link"; workspace-state "Browser reload".
-- [ ] 9.2 Share… and Recent (M12):
+- [x] 9.2 Share… and Recent (M12):
   - `workspaces/share.ts` `shareItems(me, summary)` with the M12 texts, and `workspaces/ShareMenu.tsx` as an overflow item in `bar/OptionBar.tsx` (row or "⋯")
   - `workspaces/recent.ts` `recentRows(summaries, currentId)` and `workspaceTitle` (from `title.ts`); the "Recent workspaces" section in `views/ViewsMenu.tsx`, loaded on open
   - "Copy link" removed from the Views menu; `views/link.ts` comments
@@ -125,7 +125,7 @@ Write areas of groups 7–12 (disjoint):
 
 ## 10. apps/cli/src
 
-- [ ] 10.1 Rename (M13):
+- [x] 10.1 Rename (M13):
   - `--workspace`, `KIPSCOPE_WORKSPACE`, and `parseWorkspaceLink` for `--server` and `--workspace`
   - `X-KIPscope-Workspace` pinning, `/api/w/<id>/…`, `CliOutput.workspace`
   - the forms `workspace list|new|share|delete` (`local.url` `/w/<id>`); `session` forms and `--session` are usage errors
@@ -135,7 +135,7 @@ Write areas of groups 7–12 (disjoint):
 
 ## 11. Docs
 
-- [ ] 11.1 (M14):
+- [x] 11.1 (M14):
   - `docs/deploy.md`: replace the rules section with "Rights" (KI.ping decides, grant per workspace, empty until a handoff from KI.ping, `KIPSCOPE_SHARE`, start a server on a fresh state dir); the renames
   - `docs/http-api.md`: `/api/w/<id>` prefix, `/api/workspaces…`, `X-KIPscope-Workspace`, the error codes of M7, the access levels of M6, `reuse`
   - README: the variables and CLI forms
@@ -144,7 +144,7 @@ Write areas of groups 7–12 (disjoint):
 
 ## 12. Tests (tester, test-first)
 
-- [ ] 12.1 Shared and server unit tests:
+- [x] 12.1 Shared and server unit tests:
   - `packages/shared/test/session.test.ts` → `workspaces.test.ts`
   - `apps/server/test/sessions.test.ts` → `workspaces.test.ts`, including "reuses a free workspace once" and "widens a grant only through grantObjects"
   - `apps/server/test/sessions.persist.test.ts` → `workspaces.persist.test.ts`, including "migrates the session folder of round 1"
@@ -153,7 +153,7 @@ Write areas of groups 7–12 (disjoint):
   - `apps/server/test/persist.test.ts`: v2 files
 
   Verify: `pnpm test` runs the named scenarios.
-- [ ] 12.2 Server HTTP tests:
+- [x] 12.2 Server HTTP tests:
   - `apps/server/test/identityApp.ts`: a test adapter (`x-test-user`, `x-test-roles`), no rules object, and a helper `grant(app, workspaceId, dataRefs)` that calls the app's registry `grantObjects`
   - `sessions.http.test.ts` → `workspaces.http.test.ts`, with the renamed cases plus "never hands one free workspace to two tabs" and "applies share, grant and delete to open connections"
   - `rights.http.test.ts` rewritten for the data-access scenarios ("starts a server workspace with an empty grant", "reads a stored all as empty on a server", "grants everything in local mode", "takes no grant from a client", "keeps a workspace to its grant on every route", "answers granted data as before", "filters lists and counts by grant", "shows an invited user the shared grant only there", "needs sharing turned on to share", "opens a view only within the grant")
@@ -162,14 +162,14 @@ Write areas of groups 7–12 (disjoint):
   - the renames in `guard.routes.test.ts`, `web.http.test.ts`, `access.http.test.ts`, `views.http.test.ts`, `workspace.http.test.ts` and `scope.http.test.ts`
 
   Verify: `pnpm test`.
-- [ ] 12.3 Web and CLI tests:
+- [x] 12.3 Web and CLI tests:
   - `apps/web/test/session.test.ts` → `workspaces.test.ts`: "chooses the workspace from the address", "chooses the gate page", "prefixes workspace routes only", "offers the share items", "titles workspaces", "lists recent workspaces"
   - `viewlink.test.ts` with a `/w/` page
   - `apps/cli/test/args.test.ts`: "reads the workspace and the token", "maps the workspace forms"
   - `cli.test.ts`: "addresses a workspace", "sends the token", "keeps a workspace to its grant", "waits for a UI of the same workspace", "manages workspaces", help
 
   Verify: `pnpm test`; then `pnpm build && pnpm lint`.
-- [ ] 12.4 Dev grant script `apps/server/scripts/grant.ts <stateDir> <workspaceId> <dataRef…>`: builds a `WorkspaceRegistry` on a stopped state dir, calls `grantObjects`, `flush()`, `stop()`, and prints the new `granted`. It is for the UI checks only, and is not shipped in the server build. Verify: run it on a temp copy of a test state dir, then `GET /api/w/<id>/workspace` on a server started there shows the new `granted`.
+- [x] 12.4 Dev grant script `apps/server/scripts/grant.ts <stateDir> <workspaceId> <dataRef…>`: builds a `WorkspaceRegistry` on a stopped state dir, calls `grantObjects`, `flush()`, `stop()`, and prints the new `granted`. It is for the UI checks only, and is not shipped in the server build. Verify: run it on a temp copy of a test state dir, then `GET /api/w/<id>/workspace` on a server started there shows the new `granted`.
 - [ ] 12.5 UI checks (UI user, after 7–12.4): workspaces "Two tabs on real data", "Gate on a server workspace without data", "Share on real data", "Recent on real data", "Two users on real data"; data-access "Explorer of a server workspace"; saved-views "Link in a second browser", "Bookmark by name", "Overflow menu by keyboard", "Share in the row when there is room", "Menu entries"; workspace-state "Browser reload". Verify: one screenshot per scenario, as named in each.
 
 ## Workflow follow-up

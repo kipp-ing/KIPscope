@@ -1,6 +1,6 @@
 /**
  * The app of the scope tests (add-scope): wired like `main.ts` does it (a `CatalogStore` of the full
- * catalog and the scope lists, `guardScoped` in scoped mode, the scopes of open sessions kept),
+ * catalog and the scope lists, `guardScoped` in scoped mode, the scopes of open workspaces kept),
  * over an adapter that records every call it receives. This is the one place that mirrors main.ts's
  * wiring; if main.ts changes, change it here.
  */
@@ -149,7 +149,7 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
   const stops: (() => void)[] = [];
   if (options.startup) {
     // As main.ts after listen: the full catalog in full mode, kept loading until it loads once
-    // (signal-catalog H5). A scope's list loads when a live client connects to its session
+    // (signal-catalog H5). A scope's list loads when a live client connects to its workspace
     // (add-multiuser M9), not at start.
     if (catalogs.full) stops.push(keepCatalogLoaded(catalogs.full, { loaded() {}, failed() {} }));
   }

@@ -68,12 +68,12 @@ export interface Config {
   scopePad: bigint;
   /** `KIPSCOPE_IDENTITY` (add-multiuser M1). */
   identity: IdentityConfig;
-  /** `KIPSCOPE_RULES`, absolute; required unless identity `none`, where it is ignored (M3). */
-  rulesFile?: string;
   /** `KIPSCOPE_ORIGINS`, normalised origins; required (non-empty) unless identity `none` (M10). */
   origins: string[];
-  /** `KIPSCOPE_SESSION_IDLE_DAYS` (M4). */
-  sessionIdleDays: number;
+  /** `KIPSCOPE_SHARE` (M2): whether owners may set the share level `read` or `write`; default on. */
+  share: boolean;
+  /** `KIPSCOPE_WORKSPACE_IDLE_DAYS` (M4). */
+  workspaceIdleDays: number;
   /** `KIPSCOPE_WEB_DIR`, absolute: the built UI the server serves (M11); unset serves none. */
   webDir?: string;
 }
@@ -330,6 +330,13 @@ function identityConfig(env: Env): IdentityConfig {
   throw new Error(`KIPSCOPE_IDENTITY: ${IDENTITY_FORMS}, not ${raw}`);
 }
 
+/** `KIPSCOPE_SHARE` (add-multiuser M2): `on` (the default) or `off`. */
+function share(env: Env): boolean {
+  const raw = env.KIPSCOPE_SHARE || "on";
+  if (raw !== "on" && raw !== "off") throw new Error(`KIPSCOPE_SHARE: on or off, not ${raw}`);
+  return raw === "on";
+}
+
 /** Comma list of `http(s)://host[:port]` origins without path, normalised (`https://h:443` → `https://h`). */
 export function parseOrigins(raw: string | undefined): string[] {
   const key = "KIPSCOPE_ORIGINS";
@@ -364,11 +371,6 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
   const columns = DEFAULT_COLUMNS[source.kind];
   const project = env.KIPSCOPE_PROJECT_FILE;
   const identity = identityConfig(env);
-  const rules = env.KIPSCOPE_RULES;
-  if (identity.kind !== "none" && !rules)
-    throw new Error(
-      `KIPSCOPE_RULES is not set; it is required with KIPSCOPE_IDENTITY=${identity.kind}`,
-    );
   const origins = parseOrigins(env.KIPSCOPE_ORIGINS);
   if (identity.kind !== "none" && origins.length === 0)
     throw new Error(
@@ -408,9 +410,9 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     catalogMode: catalogMode(env),
     scopePad: scopePad(env),
     identity,
-    ...(rules ? { rulesFile: isAbsolute(rules) ? rules : resolve(root, rules) } : {}),
     origins,
-    sessionIdleDays: positiveInt(env, "KIPSCOPE_SESSION_IDLE_DAYS", 30),
+    share: share(env),
+    workspaceIdleDays: positiveInt(env, "KIPSCOPE_WORKSPACE_IDLE_DAYS", 30),
     ...(webDir ? { webDir: isAbsolute(webDir) ? webDir : resolve(root, webDir) } : {}),
   };
 }

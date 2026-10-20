@@ -54,7 +54,7 @@ export interface WorkspaceStoreOptions {
 }
 
 /**
- * One session's workspace (spec workspace-state, add-multiuser M4), held in memory. Changes only through commands;
+ * One workspace (spec workspace-state, add-multiuser M4), held in memory. Changes only through commands;
  * each accepted command increases the revision by one. Browsers report what they have rendered.
  */
 export class WorkspaceStore {

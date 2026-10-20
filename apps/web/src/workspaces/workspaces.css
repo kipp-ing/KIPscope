@@ -1,5 +1,5 @@
-/* Sessions (add-multiuser M12): gate page, Sessions menu, Read-only pill. D-055 tokens; the menu's
-   popover, rows and items reuse the Views menu's (views/views.css). */
+/* Workspaces (add-multiuser M12): gate page, Share…, Recent workspaces, Read-only pill. D-055
+   tokens; the popovers, rows and items reuse the Views menu's (views/views.css). */
 
 .gate {
   display: flex;
@@ -60,31 +60,72 @@
   color: var(--error);
 }
 
-/* Sessions button and menu (M12): next to Views, the same box and popover. */
-.option-bar .sessions-menu {
+/* Share… (M12): an overflow item (bar.css step 4); its popover is the Views popover, right-aligned
+   under the button. */
+.option-bar .share-menu {
   position: relative;
   flex: none;
 }
 
-.option-bar .sessions-button {
+.share-menu .share-popover {
+  left: auto;
+  right: 0;
+  width: 320px;
+}
+
+.share-popover .share-line {
+  margin: 0;
+  padding: 0 10px 4px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.share-popover .share-heading {
+  margin: 0;
+  padding: 5px 10px 2px;
+  color: var(--label);
+  font-weight: 500;
+}
+
+.share-levels {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 3px 10px 5px;
+  border: none;
 }
 
-.option-bar .sessions-icon {
-  display: none;
+.share-levels label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
 }
 
-/* The Views button's step 3 (bar.css): the label goes, the glyph stays. */
-@container top-row (max-width: 910px) {
-  .option-bar .sessions-label {
-    display: none;
-  }
+.share-levels label.disabled {
+  color: var(--disabled);
+  cursor: not-allowed;
+}
 
-  .option-bar .sessions-icon {
-    display: block;
-  }
+.share-levels input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.share-levels .share-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Recent workspaces (M12) in the Views menu: rows are links, the current one tinted. */
+.views-popover .views-heading {
+  padding: 5px 10px 2px;
+  color: var(--label);
+  font-weight: 500;
 }
 
 .views-popover a.views-open {
@@ -97,42 +138,8 @@
   background: var(--accent-soft);
 }
 
-.views-popover .sessions-clients {
+.views-popover .views-clients {
   color: var(--ok-dot);
-}
-
-.sessions-share {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 2px 0 0;
-  padding: 5px 10px;
-  border: none;
-  border-top: 1px solid var(--border);
-}
-
-.sessions-share legend {
-  float: left;
-  padding: 0;
-  color: var(--label);
-  font-weight: 500;
-}
-
-.sessions-share label {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-}
-
-.sessions-share label.disabled {
-  color: var(--disabled);
-  cursor: not-allowed;
-}
-
-.sessions-share input {
-  margin: 0;
-  accent-color: var(--accent);
 }
 
 /* Read-only (M12): an outlined pill, not a control. */

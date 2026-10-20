@@ -30,7 +30,7 @@ describe("identity over HTTP", () => {
       user: "local",
       identity: "none",
       roles: [],
-      rights: { data: ["*"], share: true },
+      canShare: true,
     });
     // Headers do not change who the user is: no adapter runs.
     const headers = {
@@ -44,17 +44,17 @@ describe("identity over HTTP", () => {
     expect(forged.body).toEqual(plain.body);
   });
 
-  it("makes sessions of the user local in none mode whatever headers say", async () => {
+  it("makes workspaces of the user local in none mode whatever headers say", async () => {
     t = await multiApp({ identity: "none" });
-    const created = await t.anon.post("/api/sessions", {}, { "x-test-user": "mallory" });
+    const created = await t.anon.post("/api/workspaces", {}, { "x-test-user": "mallory" });
     expect(created.status).toBe(200);
-    expect(created.body.session.owner).toBe("local");
-    expect(t.sessions.listOf("mallory")).toEqual([]);
+    expect(created.body.workspace.owner).toBe("local");
+    expect(t.workspaces.listOf("mallory")).toEqual([]);
   });
 
   it("refuses every API route without a user", async () => {
     t = await multiApp({ identity: refuseAll(), licenseText: "AAL" });
-    const owned = t.sessions.create("alice");
+    const owned = t.workspaces.create("alice");
     const revision = owned.store.revision;
     const callsBefore = t.calls.length;
 
@@ -83,8 +83,8 @@ describe("identity over HTTP", () => {
       expect(res.status, `${route.method} ${route.url}`).toBe(401);
       expect(codeOf(res.body), `${route.method} ${route.url}`).toBe("unauthenticated");
     }
-    // Under a session prefix as well.
-    const prefixed = await t.anon.get(`/api/s/${owned.record.id}/workspace`);
+    // Under a workspace prefix as well.
+    const prefixed = await t.anon.get(`/api/w/${owned.record.id}/workspace`);
     expect(prefixed.status).toBe(401);
 
     const live = await t.anon.live();
@@ -94,7 +94,7 @@ describe("identity over HTTP", () => {
 
     expect(t.calls.length).toBe(callsBefore);
     expect(owned.store.revision).toBe(revision);
-    expect(t.sessions.listOf("alice")).toHaveLength(1);
+    expect(t.workspaces.listOf("alice")).toHaveLength(1);
 
     // The license is public.
     const license = await t.anon.get("/api/license");
@@ -209,50 +209,40 @@ describe("identity over HTTP", () => {
     }
   });
 
-  it("reports roles and rights", async () => {
-    const rules = {
-      roles: [
-        { role: "testers", data: ["test*"], share: true },
-        { role: "viewers", data: ["demo"], share: false },
-      ],
-    };
-    t = await multiApp({ rules });
-    const both = await t.as("alice", ["testers", "viewers"]).get("/api/me");
-    expect(both.status).toBe(200);
-    expect(both.body).toEqual({
-      user: "alice",
-      identity: "test",
-      roles: ["testers", "viewers"],
-      rights: { data: ["test*", "demo"], share: true },
-    });
-    const viewer = await t.as("bob", ["viewers"]).get("/api/me");
-    expect(viewer.body).toEqual({
-      user: "bob",
-      identity: "test",
-      roles: ["viewers"],
-      rights: { data: ["demo"], share: false },
-    });
-    // Also for a user without rights.
-    const nobody = await t.as("carol", ["nobody"]).get("/api/me");
-    expect(nobody.status).toBe(200);
-    expect(nobody.body).toEqual({
-      user: "carol",
-      identity: "test",
-      roles: ["nobody"],
-      rights: { data: [], share: false },
-    });
+  it("reports roles and the share switch", async () => {
+    const users: [string, string[]][] = [
+      ["alice", ["testers", "viewers"]],
+      ["bob", []],
+    ];
+    // KIPSCOPE_SHARE unset (on), then off: roles are shown only and canShare follows the switch.
+    for (const share of [undefined, false]) {
+      t = await multiApp(share === undefined ? {} : { share });
+      for (const [user, roles] of users) {
+        const res = await t.as(user, roles).get("/api/me");
+        expect(res.status, user).toBe(200);
+        expect(res.body, user).toEqual({
+          user,
+          identity: "test",
+          roles,
+          canShare: share === undefined,
+        });
+        expect(res.body, user).not.toHaveProperty("rights");
+      }
+      await t.close();
+      t = undefined;
+    }
   });
 
   it("identifies the user of the live channel's upgrade", async () => {
     t = await multiApp();
     const alice = t.as("alice", ["all"]);
-    const created = await alice.post("/api/sessions", {});
-    const id = created.body.session.id as string;
+    const created = await alice.post("/api/workspaces", {});
+    const id = created.body.workspace.id as string;
     const live = await alice.live(id);
     await live.next((m) => m.type === "state");
-    expect(live.messages.map((m) => m.type)).toEqual(["hello", "session", "state"]);
-    const session = live.messages.find((m) => m.type === "session");
-    expect(session).toMatchObject({ session: { id, owner: "alice" } });
+    expect(live.messages.map((m) => m.type)).toEqual(["hello", "summary", "state"]);
+    const summary = live.messages.find((m) => m.type === "summary");
+    expect(summary).toMatchObject({ summary: { id, owner: "alice" } });
     live.close();
   });
 
@@ -282,11 +272,11 @@ describe("identity over HTTP", () => {
       ["/a%70i/me?x=1&y=%61", "/api/me"],
       ["/%61%70%69/me", "/api/me"],
       ["/api/me?x=1", "/api/me"],
-      // A plain session prefix is rewritten away before the guard runs; an encoded session ID is
-      // not (no such route), and the adapter sees it decoded.
-      ["/api/s/abcdefghij/workspace?rev=3", "/api/workspace"],
-      ["/api/s/%61bcdefghij/workspace", "/api/s/abcdefghij/workspace"],
-      ["/api/s/abcdefghij/%77orkspace?rev=3", "/api/workspace"],
+      // A plain workspace prefix is rewritten away before the guard runs; an encoded workspace ID
+      // is not (no such route), and the adapter sees it decoded.
+      ["/api/w/abcdefghij/workspace?rev=3", "/api/workspace"],
+      ["/api/w/%61bcdefghij/workspace", "/api/w/abcdefghij/workspace"],
+      ["/api/w/abcdefghij/%77orkspace?rev=3", "/api/workspace"],
     ];
     for (const [url, routed] of cases) {
       paths.length = 0;

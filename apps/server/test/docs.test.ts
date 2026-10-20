@@ -30,9 +30,10 @@ describe("documents", () => {
         "KIPSCOPE_EVENTS_TABLE",
       ]),
     );
-    // The identity, rules, origins, session and web variables belong to the deployment guide
+    // The identity, share, origins, workspace and web variables belong to the deployment guide
     // (add-multiuser M14); every other key to the data-source guide.
-    const deployment = /^KIPSCOPE_(IDENTITY|OIDC_[A-Z_]+|ORIGINS|RULES|SESSION_IDLE_DAYS|WEB_DIR)$/;
+    const deployment =
+      /^KIPSCOPE_(IDENTITY|OIDC_[A-Z_]+|ORIGINS|SHARE|WORKSPACE_IDLE_DAYS|WEB_DIR)$/;
     const guide = read("docs/data-sources.md");
     const deploy = read("docs/deploy.md");
     const example = read(".env.example");
@@ -45,7 +46,7 @@ describe("documents", () => {
     expect(missingInExample, "missing in .env.example").toEqual([]);
   });
 
-  it("documents the deployment: Ping, the own adapter, the rules and the trust boundary", () => {
+  it("documents the deployment: Ping, the own adapter, the rights and the trust boundary", () => {
     const deploy = read("docs/deploy.md");
     for (const word of [
       "PingFederate",
@@ -54,13 +55,28 @@ describe("documents", () => {
       "KIPSCOPE_TRUSTED_PROXIES",
       "module:",
       "forward-header",
-      "rules",
+      "Rights",
+      "KIPSCOPE_SHARE",
     ])
       expect(deploy, `docs/deploy.md names ${word}`).toContain(word);
     expect(read("README.md"), "README links the deployment guide").toContain("docs/deploy.md");
     // The environment variables of the CLI are named in the README.
-    for (const key of ["KIPSCOPE_TOKEN", "KIPSCOPE_SESSION"])
+    for (const key of ["KIPSCOPE_TOKEN", "KIPSCOPE_WORKSPACE", "KIPSCOPE_SHARE"])
       expect(read("README.md"), `README names ${key}`).toContain(key);
+  });
+
+  it("documents no rules file and no session variable any more", () => {
+    // D-085: rights live in KI.ping. `grep -n "KIPSCOPE_RULES" docs README.md` prints nothing.
+    for (const file of [
+      "docs/deploy.md",
+      "docs/http-api.md",
+      "docs/data-sources.md",
+      "README.md",
+      ".env.example",
+    ])
+      expect(read(file), `${file} names KIPSCOPE_RULES`).not.toContain("KIPSCOPE_RULES");
+    for (const file of ["docs/deploy.md", "README.md", ".env.example"])
+      expect(read(file), `${file} names KIPSCOPE_SESSION`).not.toMatch(/KIPSCOPE_SESSION/);
   });
 
   it("documents the scope argument", () => {

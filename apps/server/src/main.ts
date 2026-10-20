@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import {
   attributionText,
   EMPTY_WORKSPACE,
+  type Grant,
   type Measurement,
   scopeKey,
   type Workspace,
@@ -20,16 +21,15 @@ import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
 import { QueryQueue, queuedAdapter } from "./queue.ts";
-import { loadRules, type Rules } from "./rights.ts";
 import { CatalogStore, guardScoped, openScopes } from "./scope.ts";
-import { SessionStore } from "./sessions.ts";
 import { createAdapter } from "./sources.ts";
 import { userViews } from "./views.ts";
+import { seedFor, WorkspaceRegistry } from "./workspaces.ts";
 
 const config = loadConfig();
 const build = readBuildInfo(REPO_ROOT);
 
-// Log lines from before the logger exists (an adapter's factory, the session store's start) wait
+// Log lines from before the logger exists (an adapter's factory, the registry's start) wait
 // for it; later ones go straight to it.
 const early: { level: "info" | "warn" | "debug"; message: string }[] = [];
 let ready: IdentityLog | undefined;
@@ -39,17 +39,11 @@ const log: Required<IdentityLog> = {
   debug: (message) => (ready ? ready.debug?.(message) : early.push({ level: "debug", message })),
 };
 
-// Before listen: the identity adapter and the rules file, or `none` (add-multiuser M1, M3). A bad
-// adapter or rules file stops the server naming the variable or file and the reason.
+// Before listen: the identity adapter, or `none` (add-multiuser M1). A bad adapter stops the
+// server naming the variable and the reason. What a workspace may read is its grant (M3).
 let identity: IdentityAdapter | undefined;
-let accessRules: Rules | undefined;
 try {
   identity = await loadIdentity(config.identity, { log });
-  if (config.identity.kind !== "none") {
-    if (config.rulesFile === undefined)
-      throw new Error("KIPSCOPE_RULES: required unless KIPSCOPE_IDENTITY is none");
-    accessRules = loadRules(config.rulesFile);
-  }
 } catch (error) {
   process.stderr.write(`kipscope: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
@@ -119,38 +113,43 @@ const newCatalog = (scope?: Scope) =>
   );
 // In scoped mode this catalog never loads: there is no start-up list (add-scope Z10).
 const catalog = newCatalog();
-// Every session, each in `<stateDir>/sessions/<id>.json` (add-multiuser M4). A new one starts from
-// the project file's measurement and events-line signals, as a fresh workspace did; `start()`
-// first moves an old `workspace.json` and `views/` to the user `local`.
-const seed = (): Workspace => ({
-  ...EMPTY_WORKSPACE,
-  ...(measurement ? { measurement } : {}),
-  ...(eventSignals.length > 0 ? { eventSignals: [...eventSignals] } : {}),
-});
-const sessions = new SessionStore({
+// Every workspace, each in `<stateDir>/workspaces/<id>.json` (add-multiuser M4). A new one starts
+// from the project file's measurement and the events-line signals its grant covers; `start()` first
+// migrates the state of earlier rounds (M4 "Migration") and logs each step.
+const seed = (grant: Grant): Workspace =>
+  seedFor(
+    {
+      ...EMPTY_WORKSPACE,
+      ...(measurement ? { measurement } : {}),
+      ...(eventSignals.length > 0 ? { eventSignals: [...eventSignals] } : {}),
+    },
+    grant,
+  );
+const workspaces = new WorkspaceRegistry({
   dir: config.stateDir,
   seed,
-  idleDays: config.sessionIdleDays,
+  identity: config.identity.kind,
+  idleDays: config.workspaceIdleDays,
   log,
 });
-sessions.start();
+workspaces.start();
 const catalogs = new CatalogStore({
   mode: config.catalogMode,
   full: catalog,
   create: newCatalog,
-  // The lists of sessions with a live client stay held however many other scopes load (M9).
-  keep: () => openScopes(sessions),
+  // The lists of workspaces with a live client stay held however many other scopes load (M9).
+  keep: () => openScopes(workspaces),
 });
 const deps = {
   catalog,
   catalogs,
   scopePad: config.scopePad,
   source,
-  sessions,
+  workspaces,
   // Each user's saved views in `<stateDir>/users/<user>/views/` (add-multiuser M9).
   viewsOf: userViews(config.stateDir),
   ...(identity ? { identity } : {}),
-  ...(accessRules ? { rules: accessRules } : {}),
+  share: config.share,
   ...(config.webDir === undefined ? {} : { webDir: config.webDir }),
   meta: {
     build,
@@ -172,8 +171,8 @@ if (rules === NO_RULES)
 if (licenseMissing) app.log.warn("LICENSE not found; /api/license answers 404");
 if (skippedDefaults.length > 0)
   app.log.info(`default metadata files not found, skipped: ${skippedDefaults.join(", ")}`);
-// Identity, rules and origins, or the loopback warning of `none` (add-multiuser M10).
-for (const line of accessLog(config, accessRules)) app.log[line.level](line.message);
+// Identity, sharing and origins, or the loopback warning of `none` (add-multiuser M10).
+for (const line of accessLog(config)) app.log[line.level](line.message);
 
 ready = {
   info: (message) => app.log.info(message),
@@ -184,11 +183,11 @@ for (const { level, message } of early.splice(0)) app.log[level](message);
 
 /** How long shutdown waits for the adapter to close. */
 const CLOSE_ADAPTER_MS = 2_000;
-// node --watch restarts with SIGTERM: write every session's last changes, close the adapter, then
+// node --watch restarts with SIGTERM: write every workspace's last changes, close the adapter, then
 // exit as the signal would.
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => {
-    sessions.stop();
+    workspaces.stop();
     const closing = identity?.close?.().catch(() => {}) ?? Promise.resolve();
     const timeout = new Promise((done) => setTimeout(done, CLOSE_ADAPTER_MS).unref());
     void Promise.race([closing, timeout]).finally(() => process.kill(process.pid, signal));
@@ -216,4 +215,4 @@ if (full)
       app.log.error({ error: String(error), retryInMs }, "catalog not loaded; retrying");
     },
   });
-// No scope list loads at start: a session's loads when a live client connects (add-multiuser M9).
+// No scope list loads at start: a workspace's loads when a live client connects (add-multiuser M9).

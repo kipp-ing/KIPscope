@@ -81,9 +81,6 @@ import {
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
 import { FLASH_MS, markTarget, revealDelta } from "./reveal.ts";
-import { GatePage } from "./session/Gate.tsx";
-import { gateOf } from "./session/gate.ts";
-import type { Startup } from "./session/startup.ts";
 import { resultStripEvents, scopeRange } from "./time/scope.ts";
 import { stripDataRef } from "./time/strip.ts";
 import { centreRange, stepDrive } from "./time/stripGeometry.ts";
@@ -103,6 +100,9 @@ import {
   type StripItem,
 } from "./views/notice.ts";
 import { WindowBoundary } from "./WindowBoundary.tsx";
+import { GatePage } from "./workspaces/Gate.tsx";
+import { gateOf } from "./workspaces/gate.ts";
+import type { Startup } from "./workspaces/startup.ts";
 
 /** A running legend-row (design D5), values-row (C7) or explorer-row drag; `active` once the pointer moved past the threshold. */
 interface Drag {
@@ -216,9 +216,9 @@ function navStep(key: NavKey, view: Range, a: bigint | undefined): Range | undef
   }
 }
 
-/** The workspace page of one session, after the start-up chose it (add-multiuser M12). */
+/** The page of one workspace, after the start-up chose it (add-multiuser M12). */
 export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
-  const [live, send] = useLive(start.session);
+  const [live, send] = useLive(start.workspace);
   // The strip's message slot (add-saved-views V7 round 2): one error or info notice; any new one
   // replaces it, so an open clears an older error.
   const [strip, setStrip] = useState<StripItem | undefined>();
@@ -1320,7 +1320,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   }, [tabTitle]);
 
   // Start-up from the address (add-multiuser M12): the start-up opened a `#view=` or `?view=` link
-  // in a new session, or fell back to the latest one with the open's error.
+  // in a new workspace, or fell back to what `/` gives with the open's error.
   const startup = useRef(false);
   useEffect(() => {
     if (startup.current) return;
@@ -1354,8 +1354,14 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     .filter(Boolean)
     .join(" ");
 
-  // The live channel closed for good (4403, 4404): the gate page replaces the workspace (M12).
-  const gate = live.closed !== undefined ? gateOf(live.closed) : undefined;
+  // The live channel closed for good (4403, 4404), or the workspace has no grant yet on a server:
+  // the gate page replaces the workspace (M12). The empty grant lifts with the next `summary`.
+  const gate =
+    live.closed !== undefined
+      ? gateOf(live.closed)
+      : live.summary
+        ? gateOf({ summary: live.summary }, start.me)
+        : undefined;
   if (gate) return <GatePage gate={gate} />;
 
   return (
@@ -1436,8 +1442,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     trackOpen={trackOpen}
                     onNotice={setNotice}
                     onMessage={setMessage}
-                    sessionId={start.session}
-                    session={live.session}
+                    workspaceId={start.workspace}
+                    summary={live.summary}
                     me={start.me}
                   />
                 </OverflowTailContext.Provider>

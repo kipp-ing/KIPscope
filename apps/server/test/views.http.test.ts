@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { type ViewDoc, type Workspace, workspaceToView } from "@kipscope/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { type Client, type MultiApp, multiApp, viewDoc } from "./identityApp.ts";
+import { type Client, grant, type MultiApp, multiApp, viewDoc } from "./identityApp.ts";
 import { codeOf, type ViewsApp, viewsApp } from "./viewsApp.ts";
 
 const RPM = "testcar/Sna_800h.RPM";
@@ -658,9 +658,10 @@ describe("views per user (add-multiuser)", () => {
 
   const SIG = "testcar/Fast_100h.SIG_A";
   const range = { from: "1790816400000000000", to: "1790817000000000000" };
-  /** A session of `client` with one window holding SIG. */
+  /** A workspace of `client`, granted testcar by the server, with one window holding SIG. */
   async function withWindow(client: Client): Promise<string> {
-    const id = (await client.post("/api/sessions", {})).body.session.id as string;
+    const id = (await client.post("/api/workspaces", {})).body.workspace.id as string;
+    if (m) grant(m, id, ["testcar"]);
     const w = await client.command({ type: "window.create", ...range }, id);
     await client.command({ type: "window.addSignal", windowId: w.body.created, signalId: SIG }, id);
     return id;
@@ -680,8 +681,8 @@ describe("views per user (add-multiuser)", () => {
     m = await multiApp();
     const alice = m.as("alice", ["all"]);
     const bob = m.as("bob", ["all"]);
-    const aliceSession = await withWindow(alice);
-    expect((await alice.post(`/api/s/${aliceSession}/views`, { title: "speeds" })).status).toBe(
+    const aliceWorkspace = await withWindow(alice);
+    expect((await alice.post(`/api/w/${aliceWorkspace}/views`, { title: "speeds" })).status).toBe(
       200,
     );
     const file = join(m.stateDir, "users", "alice", "views", "speeds.yaml");
@@ -699,8 +700,8 @@ describe("views per user (add-multiuser)", () => {
       expect([res.status, codeOf(res.body)]).toEqual([404, "unknown_view"]);
     }
     // His own `speeds` does not clash with hers.
-    const bobSession = await withWindow(bob);
-    const own = await bob.post(`/api/s/${bobSession}/views`, { title: "speeds" });
+    const bobWorkspace = await withWindow(bob);
+    const own = await bob.post(`/api/w/${bobWorkspace}/views`, { title: "speeds" });
     expect(own.status).toBe(200);
     expect(readFileSync(file, "utf8")).toBe(text);
     expect(existsSync(join(m.stateDir, "users", "bob", "views", "speeds.yaml"))).toBe(true);
@@ -708,18 +709,18 @@ describe("views per user (add-multiuser)", () => {
     expect((await alice.get("/api/views/speeds")).status).toBe(200);
   });
 
-  it("saves a shared session as a view of the one who saves it", async () => {
+  it("saves a shared workspace as a view of the one who saves it", async () => {
     m = await multiApp();
     const alice = m.as("alice", ["all"]);
     const bob = m.as("bob", ["all"]);
     const id = await withWindow(alice);
-    await alice.post(`/api/sessions/${id}/share`, { share: "write" });
-    expect((await bob.post(`/api/s/${id}/views`, { title: "bobs copy" })).status).toBe(200);
+    await alice.post(`/api/workspaces/${id}/share`, { share: "write" });
+    expect((await bob.post(`/api/w/${id}/views`, { title: "bobs copy" })).status).toBe(200);
     expect(existsSync(join(m.stateDir, "users", "bob", "views", "bobs-copy.yaml"))).toBe(true);
     expect((await alice.get("/api/views")).body.views).toEqual([]);
-    // A reader may not save: that marks the shared session's open view.
-    await alice.post(`/api/sessions/${id}/share`, { share: "read" });
-    const refused = await bob.post(`/api/s/${id}/views`, { title: "again" });
+    // A reader may not save: that marks the shared workspace's open view.
+    await alice.post(`/api/workspaces/${id}/share`, { share: "read" });
+    const refused = await bob.post(`/api/w/${id}/views`, { title: "again" });
     expect([refused.status, codeOf(refused.body)]).toEqual([403, "read_only"]);
   });
 
@@ -738,8 +739,8 @@ describe("views per user (add-multiuser)", () => {
     m = await multiApp();
     const alice = m.as("alice", ["all"]);
     const bob = m.as("bob", ["all"]);
-    const aliceSession = await withWindow(alice);
-    const bobSession = await withWindow(bob);
+    const aliceWorkspace = await withWindow(alice);
+    const bobWorkspace = await withWindow(bob);
     expect(
       (
         await alice.post("/api/views/import", {
@@ -748,15 +749,17 @@ describe("views per user (add-multiuser)", () => {
       ).status,
     ).toBe(200);
 
-    expect((await alice.post(`/api/s/${aliceSession}/views/open`, { name: "x" })).status).toBe(200);
+    expect((await alice.post(`/api/w/${aliceWorkspace}/views/open`, { name: "x" })).status).toBe(
+      200,
+    );
     const list = (await alice.get("/api/views")).body.views as { name: string; title: string }[];
     expect(list.at(-1)).toMatchObject({ name: "_previous", title: "Before last open" });
-    // Bob has none, and alice's open did not touch his session.
+    // Bob has none, and alice's open did not touch his workspace.
     expect((await bob.get("/api/views")).body.views).toEqual([]);
-    expect(m.sessions.get(bobSession)?.store.revision).toBe(2);
+    expect(m.workspaces.get(bobWorkspace)?.store.revision).toBe(2);
 
-    // Bob opens a view of his own in alice's shared session: the replaced workspace is HIS `_previous`.
-    await alice.post(`/api/sessions/${aliceSession}/share`, { share: "write" });
+    // Bob opens a view of his own in alice's shared workspace: the replaced workspace is HIS `_previous`.
+    await alice.post(`/api/workspaces/${aliceWorkspace}/share`, { share: "write" });
     const before = readFileSync(
       join(m.stateDir, "users", "alice", "views", "_previous.yaml"),
       "utf8",
@@ -768,7 +771,7 @@ describe("views per user (add-multiuser)", () => {
         })
       ).status,
     ).toBe(200);
-    expect((await bob.post(`/api/s/${aliceSession}/views/open`, { name: "y" })).status).toBe(200);
+    expect((await bob.post(`/api/w/${aliceWorkspace}/views/open`, { name: "y" })).status).toBe(200);
     expect((await bob.get("/api/views")).body.views.at(-1).name).toBe("_previous");
     expect(
       readFileSync(join(m.stateDir, "users", "alice", "views", "_previous.yaml"), "utf8"),

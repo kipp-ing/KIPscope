@@ -1,5 +1,5 @@
 /**
- * A real server with sessions and an identity (add-multiuser) for the CLI tests: the server's own
+ * A real server with workspaces and an identity (add-multiuser) for the CLI tests: the server's own
  * multi-user test app over the CLI tests' stub source, listening on a free loopback port.
  */
 import type { SourceAdapter } from "../../server/src/datasource.ts";
@@ -13,8 +13,8 @@ export interface MultiServer {
   app: MultiApp;
   /** Requests the identity adapter was asked about: one per API request that reached the guard. */
   identified: () => number;
-  /** A browser stand-in on `/api/s/<session>/live` that acknowledges every revision it is sent. */
-  browser(session: string, options?: { autoAckMs?: number }): Promise<{ close(): Promise<void> }>;
+  /** A browser stand-in on `/api/w/<workspace>/live` that acknowledges every revision it is sent. */
+  browser(workspace: string, options?: { autoAckMs?: number }): Promise<{ close(): Promise<void> }>;
   close(): Promise<void>;
 }
 
@@ -51,8 +51,8 @@ export async function startMulti(options: MultiAppOptions = {}): Promise<MultiSe
     url,
     app,
     identified: () => counted?.count() ?? 0,
-    async browser(session, browserOptions = {}) {
-      const ws = new WebSocket(`${url.replace("http", "ws")}/api/s/${session}/live`);
+    async browser(workspace, browserOptions = {}) {
+      const ws = new WebSocket(`${url.replace("http", "ws")}/api/w/${workspace}/live`);
       open.add(ws);
       await new Promise<void>((resolve, reject) => {
         ws.addEventListener("error", () => reject(new Error("fake browser: websocket error")));
@@ -84,6 +84,9 @@ export async function startMulti(options: MultiAppOptions = {}): Promise<MultiSe
     },
     async close() {
       for (const ws of open) ws.close();
+      // MultiApp.close() closes the listening server and then every open connection
+      // (`closeAllConnections`), so a request in flight never holds the test; the CLI test hang of
+      // round 4 came from a close that waited for them.
       await app.close();
     },
   };

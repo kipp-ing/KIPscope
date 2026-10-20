@@ -1,11 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { GatePage } from "./session/Gate.tsx";
-import { useStartup } from "./session/startup.ts";
+import { GatePage } from "./workspaces/Gate.tsx";
+import { useStartup } from "./workspaces/startup.ts";
 import "./styles.css";
 
-/** Chooses the page's session before the workspace and its live channel open (add-multiuser M12). */
+/** Chooses the page's workspace before the workspace and its live channel open (add-multiuser M12). */
 function Root() {
   const start = useStartup();
   if (start.kind === "pending") return null;

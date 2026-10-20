@@ -26,7 +26,7 @@ import {
 } from "../http.ts";
 import { withPriority } from "../priority.ts";
 import { sourceScope } from "../scope.ts";
-import type { Sessions } from "../sessions.ts";
+import type { Workspaces } from "../workspaces.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -52,19 +52,19 @@ const EventsQuery = z
 
 /** Access of `GET /api/events` (add-multiuser M6): its data ref and each signal's. */
 const EVENTS_ACCESS: Access = {
-  level: "session",
+  level: "workspace",
   dataRefs: queryDataRefs({ dataRef: "dataRef", signal: "signal" }),
 };
 
-/** Events-line signals of every session with a live client, united (add-multiuser M9). */
-function openEventSignals(sessions: Sessions): string[] {
-  return [...new Set(sessions.open().flatMap((s) => s.store.workspace.eventSignals ?? []))];
+/** Events-line signals of every workspace with a live client, united (add-multiuser M9). */
+function openEventSignals(workspaces: Workspaces): string[] {
+  return [...new Set(workspaces.open().flatMap((w) => w.store.workspace.eventSignals ?? []))];
 }
 
 export const eventsRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    const { catalog, source, sessions } = deps;
+    const { catalog, source, workspaces } = deps;
     const catalogs = catalogsOf(deps);
     // A scope's events follow that scope's signal list (add-scope Z9).
     const events = new EventsCache(
@@ -83,7 +83,7 @@ export const eventsRoutes =
     // `background` work (series-query design P9).
     const stopPrefetch = catalog.onLoaded(() => {
       const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
-      const signals = openEventSignals(sessions);
+      const signals = openEventSignals(workspaces);
       void withPriority("background", () =>
         events.prefetch(dataRefs, signals, (message) => app.log.warn(message)),
       );
@@ -92,7 +92,7 @@ export const eventsRoutes =
     // gap info (add-scope Z9), as background work.
     const stopScopePrefetch = catalogs.onLoaded((scope) => {
       const s = sourceScope(scope);
-      const signals = openEventSignals(sessions).filter(
+      const signals = openEventSignals(workspaces).filter(
         (id) => parseSignalId(id)?.dataRef === s.dataRef,
       );
       chainPrefetch(deps, () =>

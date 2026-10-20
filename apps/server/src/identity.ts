@@ -17,7 +17,7 @@ export interface IdentityRequest {
   /** The TCP peer, IPv4-mapped IPv6 as IPv4. Never taken from X-Forwarded-For. */
   readonly peer: string;
   readonly method: string;
-  /** Path without query, after the session prefix was removed (M5). */
+  /** Path without query, after the workspace prefix was removed (M5). */
   readonly path: string;
 }
 export interface Identity {
@@ -99,7 +99,7 @@ export async function loadIdentity(
     throw new Error(
       `${VAR}: module ${path}: the factory must return an adapter with kind and identify`,
     );
-  // "none" means "no adapter, all rights" everywhere else (GET /api/me, the footer).
+  // "none" means "no adapter, every workspace reads everything" elsewhere (GET /api/me, the footer).
   if (candidate.kind === NONE_KIND)
     throw new Error(`${VAR}: module ${path}: the adapter kind must not be "${NONE_KIND}"`);
   return candidate as IdentityAdapter;

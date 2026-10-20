@@ -633,42 +633,48 @@ describe("scope forms (add-scope Z13)", () => {
   });
 });
 
-describe("session and token options (add-multiuser M13)", () => {
+describe("workspace and token options (add-multiuser M13)", () => {
   const optionsOf = (argv: string[], env: Record<string, string | undefined> = {}) =>
     parseArgs([...argv, "state"], env).options;
 
-  it("reads the session and the token", () => {
-    const link = optionsOf(["--server", "https://k.example/s/abcdefghij"]);
-    expect(link.server).toBe("https://k.example");
-    expect(link.session).toBe("abcdefghij");
+  it("reads the workspace and the token", () => {
+    // The page link, the legacy page link and an explicit workspace link name server and ID.
+    for (const server of ["https://k.example/w/abcdefghij", "https://k.example/s/abcdefghij"]) {
+      const link = optionsOf(["--server", server]);
+      expect([link.server, link.workspace], server).toEqual(["https://k.example", "abcdefghij"]);
+    }
     const both = optionsOf([
       "--server",
       "https://k.example",
-      "--session",
-      "https://k.example/s/abcdefghij",
+      "--workspace",
+      "https://k.example/w/abcdefghij",
     ]);
-    expect([both.server, both.session]).toEqual(["https://k.example", "abcdefghij"]);
-    // --session wins over KIPSCOPE_SESSION, which wins over nothing.
-    expect(optionsOf(["--session", "abcdefghij"], { KIPSCOPE_SESSION: "bbbbbbbbbb" }).session).toBe(
-      "abcdefghij",
-    );
-    expect(optionsOf([], { KIPSCOPE_SESSION: "bbbbbbbbbb" }).session).toBe("bbbbbbbbbb");
-    expect(optionsOf([]).session).toBeUndefined();
-    // A session link in KIPSCOPE_SESSION names its ID only.
-    expect(optionsOf([], { KIPSCOPE_SESSION: "https://k.example/s/cccccccccc" }).session).toBe(
+    expect([both.server, both.workspace]).toEqual(["https://k.example", "abcdefghij"]);
+    // --workspace wins over KIPSCOPE_WORKSPACE, which wins over nothing.
+    expect(
+      optionsOf(["--workspace", "abcdefghij"], { KIPSCOPE_WORKSPACE: "bbbbbbbbbb" }).workspace,
+    ).toBe("abcdefghij");
+    expect(optionsOf([], { KIPSCOPE_WORKSPACE: "bbbbbbbbbb" }).workspace).toBe("bbbbbbbbbb");
+    expect(optionsOf([]).workspace).toBeUndefined();
+    // A workspace link in KIPSCOPE_WORKSPACE names its ID only.
+    expect(optionsOf([], { KIPSCOPE_WORKSPACE: "https://k.example/w/cccccccccc" }).workspace).toBe(
       "cccccccccc",
     );
-    // An explicit --session wins over the session of a --server link.
+    // An explicit --workspace wins over the workspace of a --server link.
     expect(
-      optionsOf(["--server", "https://k.example/s/abcdefghij", "--session", "bbbbbbbbbb"]).session,
+      optionsOf(["--server", "https://k.example/w/abcdefghij", "--workspace", "bbbbbbbbbb"])
+        .workspace,
     ).toBe("bbbbbbbbbb");
-    // An API-prefixed link names the same session.
-    expect(optionsOf(["--session", "https://k.example/api/s/abcdefghij/live"]).session).toBe(
+    // An API-prefixed link names the same workspace.
+    expect(optionsOf(["--workspace", "https://k.example/api/w/abcdefghij/live"]).workspace).toBe(
       "abcdefghij",
     );
     for (const bad of ["ABC", "abcdefghi", "abcdefghijk", "https://k.example/x", "", "../x"])
-      expect(usageError(["--session", bad, "state"]).outcome, bad).toBe("usage");
-    expect(() => parseArgs(["state"], { KIPSCOPE_SESSION: "not a session" })).toThrow(CliError);
+      expect(usageError(["--workspace", bad, "state"]).outcome, bad).toBe("usage");
+    expect(() => parseArgs(["state"], { KIPSCOPE_WORKSPACE: "not a workspace" })).toThrow(CliError);
+    // The old names are gone: --session is an unknown option, KIPSCOPE_SESSION is not read.
+    expect(usageError(["--session", "abcdefghij", "state"]).outcome).toBe("usage");
+    expect(optionsOf([], { KIPSCOPE_SESSION: "bbbbbbbbbb" }).workspace).toBeUndefined();
 
     // The token: --token, else KIPSCOPE_TOKEN, else KIPSCOPE_TOKEN_COMMAND (only without a token).
     const flag = optionsOf(["--token", "T1"], {
@@ -688,35 +694,40 @@ describe("session and token options (add-multiuser M13)", () => {
     expect(usageError(["--token", "", "state"]).outcome).toBe("usage");
   });
 
-  it("maps the session forms", () => {
+  it("maps the workspace forms", () => {
     const kind = (argv: string[]) => parseArgs(argv, {}).invocation;
     expect(kind(["whoami"])).toEqual({ kind: "whoami" });
-    expect(kind(["session", "list"])).toEqual({ kind: "session", action: "list" });
-    expect(kind(["session", "new"])).toEqual({ kind: "session", action: "new" });
-    expect(kind(["session", "share", "read"])).toEqual({
-      kind: "session",
+    expect(kind(["workspace", "list"])).toEqual({ kind: "workspace", action: "list" });
+    expect(kind(["workspace", "new"])).toEqual({ kind: "workspace", action: "new" });
+    expect(kind(["workspace", "share", "read"])).toEqual({
+      kind: "workspace",
       action: "share",
       share: "read",
     });
     for (const share of ["private", "read", "write"])
-      expect(kind(["session", "share", share])).toMatchObject({ action: "share", share });
-    expect(kind(["session", "delete", "abcdefghij"])).toEqual({
-      kind: "session",
+      expect(kind(["workspace", "share", share])).toMatchObject({ action: "share", share });
+    expect(kind(["workspace", "delete", "abcdefghij"])).toEqual({
+      kind: "workspace",
       action: "delete",
       id: "abcdefghij",
     });
-    // Usage errors: another share level, a missing or extra argument, a bad ID, an unknown action.
+    // Usage errors: another share level, a missing or extra argument, a bad ID, an unknown action,
+    // and the session forms, which are unknown commands now.
     for (const bad of [
-      ["session", "share", "public"],
-      ["session", "share"],
-      ["session", "share", "read", "write"],
-      ["session", "delete"],
-      ["session", "delete", "ABC"],
-      ["session", "delete", "abcdefghij", "extra"],
-      ["session", "new", "extra"],
-      ["session", "list", "extra"],
-      ["session"],
-      ["session", "rename"],
+      ["workspace", "share", "public"],
+      ["workspace", "share"],
+      ["workspace", "share", "read", "write"],
+      ["workspace", "delete"],
+      ["workspace", "delete", "ABC"],
+      ["workspace", "delete", "abcdefghij", "extra"],
+      ["workspace", "new", "extra"],
+      ["workspace", "list", "extra"],
+      ["workspace"],
+      ["workspace", "rename"],
+      ["session", "list"],
+      ["session", "new"],
+      ["session", "share", "read"],
+      ["session", "delete", "abcdefghij"],
       ["whoami", "extra"],
     ])
       expect(usageError(bad).outcome, bad.join(" ")).toBe("usage");
@@ -725,16 +736,17 @@ describe("session and token options (add-multiuser M13)", () => {
   it("names the new forms and options in the usage text", () => {
     for (const word of [
       "whoami",
-      "session list",
-      "session new",
-      "session share",
-      "session delete",
-      "--session",
+      "workspace list",
+      "workspace new",
+      "workspace share",
+      "workspace delete",
+      "--workspace",
       "--token",
-      "KIPSCOPE_SESSION",
+      "KIPSCOPE_WORKSPACE",
       "KIPSCOPE_TOKEN",
       "KIPSCOPE_TOKEN_COMMAND",
     ])
       expect(USAGE, word).toContain(word);
+    expect(USAGE).not.toMatch(/\bsession/i);
   });
 });

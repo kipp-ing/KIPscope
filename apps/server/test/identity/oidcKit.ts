@@ -11,7 +11,6 @@ export const oidcEnv = (jwks: JwksServer, extra: Record<string, string> = {}) =>
   KIPSCOPE_IDENTITY: "oidc",
   KIPSCOPE_OIDC_ISSUER: jwks.issuer,
   KIPSCOPE_OIDC_AUDIENCE: AUDIENCE,
-  KIPSCOPE_RULES: "/etc/kipscope/rules.yaml",
   KIPSCOPE_ORIGINS: "https://kipscope.example.org",
   ...extra,
 });

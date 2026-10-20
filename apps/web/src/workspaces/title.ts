@@ -1,4 +1,4 @@
-import type { SessionSummary } from "@kipscope/shared";
+import type { WorkspaceSummary } from "@kipscope/shared";
 
 const pad = (n: string | undefined) => (n ?? "").padStart(2, "0");
 
@@ -26,17 +26,17 @@ function localMinute(time: string, timeZone?: string): string {
 }
 
 /**
- * A session's title in the Sessions menu (add-multiuser M12): the open view's title, else the
- * measurement name, else `<dataRef> <scope start, local>`, else `New session`.
+ * A workspace's title in the Recent list (add-multiuser M12): the open view's title, else the
+ * measurement name, else `<dataRef> <scope start, local>`, else `New workspace`.
  */
-export function sessionTitle(
-  summary: Pick<SessionSummary, "view" | "measurement" | "scope">,
+export function workspaceTitle(
+  summary: Pick<WorkspaceSummary, "view" | "measurement" | "scope">,
   timeZone?: string,
 ): string {
   if (summary.view?.title) return summary.view.title;
   if (summary.measurement) return summary.measurement;
   if (summary.scope) return `${summary.scope.dataRef} ${localMinute(summary.scope.from, timeZone)}`;
-  return "New session";
+  return "New workspace";
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 days ago" from an ISO instant. */

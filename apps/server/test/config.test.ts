@@ -288,10 +288,9 @@ describe("loadConfig", () => {
     expect(mapped.events.table).toBe("KIPscopeEvents");
   });
 
-  // add-multiuser M2: the identity adapter, the rules file, the origins, the idle days, the web dir.
+  // add-multiuser M2: the identity adapter, the origins, the share switch, the idle days, the web dir.
   const corp = {
     ...base,
-    KIPSCOPE_RULES: "/etc/kipscope/rules.yaml",
     KIPSCOPE_ORIGINS: "https://kipscope.example.org",
   };
   const oidcEnv = {
@@ -302,7 +301,7 @@ describe("loadConfig", () => {
   };
 
   it("reads the identity settings", () => {
-    // Without the variable: no login, no rules file needed.
+    // Without the variable: no login.
     expect(loadConfig(base, "/repo/kipscope").identity).toEqual({ kind: "none" });
 
     const oidc = loadConfig(oidcEnv, "/repo/kipscope");
@@ -319,7 +318,8 @@ describe("loadConfig", () => {
     // The default algorithms, in the order of the contract.
     const algs = (oidc.identity as { oidc: { algs: string[] | string } }).oidc.algs;
     expect(Array.isArray(algs) ? algs.join(",") : algs).toBe("RS256,PS256,ES256");
-    expect(oidc.rulesFile).toBe("/etc/kipscope/rules.yaml");
+    // No rules file any more (D-085): the config has no such field.
+    expect(oidc).not.toHaveProperty("rulesFile");
 
     const module_ = loadConfig(
       { ...corp, KIPSCOPE_IDENTITY: "module:apps/server/examples/forward-header.mjs" },
@@ -352,7 +352,7 @@ describe("loadConfig", () => {
       },
     });
 
-    // Missing audience, forbidden algorithms, no rules file, an unknown kind: each names its variable.
+    // Missing audience, forbidden algorithms, no origins, an unknown kind: each names its variable.
     const { KIPSCOPE_OIDC_AUDIENCE: _a, ...noAudience } = oidcEnv;
     expect(() => loadConfig(noAudience, "/repo/kipscope")).toThrow(/KIPSCOPE_OIDC_AUDIENCE/);
     const { KIPSCOPE_OIDC_ISSUER: _i, ...noIssuer } = oidcEnv;
@@ -363,13 +363,19 @@ describe("loadConfig", () => {
         bad,
       ).toThrow(/KIPSCOPE_OIDC_ALGS/);
     }
-    const { KIPSCOPE_RULES: _r, ...noRules } = { ...corp, KIPSCOPE_IDENTITY: "module:x" };
-    expect(() => loadConfig(noRules, "/repo/kipscope")).toThrow(/KIPSCOPE_RULES/);
+    const { KIPSCOPE_ORIGINS: _o, ...moduleNoOrigins } = { ...corp, KIPSCOPE_IDENTITY: "module:x" };
+    expect(() => loadConfig(moduleNoOrigins, "/repo/kipscope")).toThrow(/KIPSCOPE_ORIGINS/);
     const ping = () => loadConfig({ ...corp, KIPSCOPE_IDENTITY: "ping" }, "/repo/kipscope");
     expect(ping).toThrow(/KIPSCOPE_IDENTITY/);
     expect(ping).toThrow(/none/);
     expect(ping).toThrow(/oidc/);
     expect(ping).toThrow(/module:/);
+
+    // KIPSCOPE_RULES is not read: setting it to a missing path changes none of the results.
+    for (const env of [base, oidcEnv, { ...corp, KIPSCOPE_IDENTITY: "module:x" }]) {
+      const rules = { ...env, KIPSCOPE_RULES: "/does/not/exist.yaml" };
+      expect(loadConfig(rules, "/repo/kipscope")).toEqual(loadConfig(env, "/repo/kipscope"));
+    }
   });
 
   it("refuses an insecure or malformed oidc issuer", () => {
@@ -393,11 +399,8 @@ describe("loadConfig", () => {
     }
   });
 
-  it("ignores the rules file and needs no origins with identity none", () => {
-    const config = loadConfig(
-      { ...base, KIPSCOPE_RULES: "/does/not/exist.yaml" },
-      "/repo/kipscope",
-    );
+  it("needs no origins with identity none", () => {
+    const config = loadConfig(base, "/repo/kipscope");
     expect(config.identity).toEqual({ kind: "none" });
     expect(config.origins).toEqual([]);
   });
@@ -428,17 +431,34 @@ describe("loadConfig", () => {
       loadConfig({ ...base, KIPSCOPE_ORIGINS: "https://a.example" }, "/repo/kipscope").origins,
     ).toEqual(["https://a.example"]);
 
-    // Idle days of a session: 30 by default, an integer of at least 1.
+    // Idle days of a workspace: 30 by default, an integer of at least 1.
     const idle = (value?: string) =>
       loadConfig(
-        value === undefined ? base : { ...base, KIPSCOPE_SESSION_IDLE_DAYS: value },
+        value === undefined ? base : { ...base, KIPSCOPE_WORKSPACE_IDLE_DAYS: value },
         "/repo/kipscope",
-      ).sessionIdleDays;
+      ).workspaceIdleDays;
     expect(idle()).toBe(30);
     expect(idle("7")).toBe(7);
     for (const bad of ["0", "x", "-3", "1.5"]) {
-      expect(() => idle(bad), bad).toThrow(/KIPSCOPE_SESSION_IDLE_DAYS/);
+      expect(() => idle(bad), bad).toThrow(/KIPSCOPE_WORKSPACE_IDLE_DAYS/);
     }
+    // The old name is not read any more.
+    expect(
+      loadConfig({ ...base, KIPSCOPE_SESSION_IDLE_DAYS: "7" }, "/repo/kipscope").workspaceIdleDays,
+    ).toBe(30);
+
+    // The share switch (data-access "Share switch"): on by default, on|off only.
+    const share = (value?: string, env = oidcEnv) =>
+      loadConfig(value === undefined ? env : { ...env, KIPSCOPE_SHARE: value }, "/repo/kipscope")
+        .share;
+    expect(share()).toBe(true);
+    expect(share("on")).toBe(true);
+    expect(share("off")).toBe(false);
+    for (const bad of ["maybe", "true", "1"]) {
+      expect(() => share(bad), bad).toThrow(/KIPSCOPE_SHARE/);
+    }
+    // With none the setting is ignored by the guard; the config still reads it.
+    expect(loadConfig(base, "/repo/kipscope").share).toBe(true);
   });
 
   it("reads the web directory", () => {

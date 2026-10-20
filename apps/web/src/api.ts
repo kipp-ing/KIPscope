@@ -4,8 +4,8 @@ import type {
   CommandErrorCode,
   CommandInput,
   CommandResult,
-  CreateSessionAnswer,
-  CreateSessionRequest,
+  CreateWorkspaceAnswer,
+  CreateWorkspaceRequest,
   CursorValueResult,
   Density,
   EventList,
@@ -16,16 +16,16 @@ import type {
   SaveViewRequest,
   SeriesResult,
   ServerMeta,
-  SessionAnswer,
-  SessionList,
-  SessionShare,
   SignalInfo,
   SignalPage,
   ValuesMode,
   ViewSummary,
+  WorkspaceAnswer,
+  WorkspaceList,
+  WorkspaceShare,
 } from "@kipscope/shared";
 import type { SeriesRequest } from "./chart/tiles.ts";
-import { apiPath, withSession } from "./session/apiPath.ts";
+import { apiPath, withWorkspace } from "./workspaces/apiPath.ts";
 
 /** A response that is not ok, with its HTTP status and error code (design R4). */
 export class ApiRequestError extends Error {
@@ -67,7 +67,7 @@ function requestError(res: Response, body: unknown): ApiRequestError {
   return new ApiRequestError(res.status, `http_${res.status}`, res.statusText);
 }
 
-/** GET of an API path; session-resolving paths go to the page's session (add-multiuser M12). */
+/** GET of an API path; workspace-resolving paths go to the page's workspace (add-multiuser M12). */
 async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
   const res = await fetch(apiPath(url), abort ? { signal: abort } : {});
   if (!res.ok) throw requestError(res, await res.json().catch(() => undefined));
@@ -223,8 +223,8 @@ export async function listViews(abort?: AbortSignal): Promise<ViewSummary[]> {
 
 /** Saves the open workspace; 409 `view_exists` (with `details.existing`) unless `overwrite`. */
 export function saveView(req: SaveViewRequest): Promise<SaveViewResult> {
-  // Saving reads the session's workspace; the path alone is also the session-independent list.
-  return sendJson(withSession("/api/views"), "POST", req);
+  // Saving reads the page's workspace; the path alone is also the workspace-independent list.
+  return sendJson(withWorkspace("/api/views"), "POST", req);
 }
 
 /** Opens a view as one `view.open` command; a refused open resolves to its command result. */
@@ -253,45 +253,42 @@ export function viewFileUrl(name: string, download: boolean): string {
   return `/api/views/${encodeURIComponent(name)}${download ? "?download=1" : ""}`;
 }
 
-// Identity and sessions (add-multiuser M7); session-independent, never prefixed.
+// Identity and workspaces (add-multiuser M7); workspace-independent, never prefixed.
 
-/** The signed-in user with roles and rights; read once at start (M12). */
+/** The signed-in user with roles and the share switch; read once at start (M12). */
 export function fetchMe(abort?: AbortSignal): Promise<Me> {
   return getJson("/api/me", abort);
 }
 
-/** The user's own sessions, latest first. */
-export async function listSessions(abort?: AbortSignal): Promise<SessionList> {
-  return getJson("/api/sessions", abort);
+/** The user's own workspaces, latest first. */
+export async function listWorkspaces(abort?: AbortSignal): Promise<WorkspaceList> {
+  return getJson("/api/workspaces", abort);
 }
 
-/** One session; 404 `unknown_session`, 403 `forbidden` without the open right. */
-export function fetchSession(id: string, abort?: AbortSignal): Promise<SessionAnswer> {
-  return getJson(`/api/sessions/${encodeURIComponent(id)}`, abort);
+/** One workspace; 404 `unknown_workspace`, 403 `forbidden` without the open right. */
+export function fetchWorkspace(id: string, abort?: AbortSignal): Promise<WorkspaceAnswer> {
+  return getJson(`/api/workspaces/${encodeURIComponent(id)}`, abort);
 }
 
 /**
- * Creates a session, with a view opened in it. A refused open answers no session and the open's
- * command result (M7); a refused request (403 `forbidden_data`, 409 `session_limit`) rejects.
+ * Creates a workspace, with a view opened in it, or reuses a free one (`reuse`, M4). A refused
+ * open answers no workspace and the open's command result (M7); a refused request (403
+ * `forbidden_data`, 409 `workspace_limit`) rejects.
  */
-export async function createSession(
-  req: CreateSessionRequest = {},
-): Promise<{ session?: CreateSessionAnswer["session"]; result?: CommandResult }> {
-  const res = await fetch("/api/sessions", {
+export async function createWorkspace(
+  req: CreateWorkspaceRequest = {},
+): Promise<Partial<CreateWorkspaceAnswer>> {
+  const res = await fetch("/api/workspaces", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),
   });
   const data: unknown = await res.json().catch(() => undefined);
-  if (res.ok) return data as CreateSessionAnswer;
+  if (res.ok) return data as CreateWorkspaceAnswer;
   if (isCommandResult(data)) return { result: data };
   throw requestError(res, data);
 }
 
-export function shareSession(id: string, share: SessionShare): Promise<SessionAnswer> {
-  return sendJson(`/api/sessions/${encodeURIComponent(id)}/share`, "POST", { share });
-}
-
-export function deleteSession(id: string): Promise<{ deleted: string }> {
-  return sendJson(`/api/sessions/${encodeURIComponent(id)}`, "DELETE");
+export function shareWorkspace(id: string, share: WorkspaceShare): Promise<WorkspaceAnswer> {
+  return sendJson(`/api/workspaces/${encodeURIComponent(id)}/share`, "POST", { share });
 }

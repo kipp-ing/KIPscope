@@ -5,7 +5,8 @@
 // Plain Node >= 22 (global WebSocket), no dependencies. Never touches Jan's Chrome profile: Chrome
 // runs with a fresh temp profile and only this script's own child is killed.
 //
-//   pnpm smoke                      http://localhost:5173/ (the running dev server)
+//   pnpm smoke                      http://localhost:5173/ (the running dev server); `/` opens the
+//                                   user's free workspace (or else the latest) at /w/<id>
 //   pnpm smoke --url <url>          another page
 //   pnpm smoke --preview            builds nothing; serves apps/web/dist with `vite preview` on a free
 //                                   port (own child, stopped at the end) and checks that
@@ -27,6 +28,8 @@ const MODULE = /\/(src|@vite|@fs|@id|node_modules|assets)\//;
 const argv = process.argv.slice(2);
 const arg = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 let url = arg("--url") ?? "http://localhost:5173/";
+// The start-up reuse POST (`/` with no workspace yet) may pass once; see resolveStart.
+let allowReuse = false;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Polls `cond` up to `tries` times, `ms` apart; the caller checks the outcome itself.
@@ -125,15 +128,44 @@ const handlers = {
       fail(`HTTP ${r.status} for ${new URL(r.url).pathname}`);
     }
   },
-  // The smoke must not change the shared workspace: writes to /api are blocked and reported.
+  // The smoke must not change the shared workspace: writes to /api are blocked and reported, except
+  // the one start-up `POST /api/workspaces {reuse: true}` when the user has no workspace yet.
   "Fetch.requestPaused": ({ requestId, request }) => {
-    if (request.method === "GET" || request.method === "HEAD") {
+    if (request.method === "GET" || request.method === "HEAD" || isStartupReuse(request)) {
       return send("Fetch.continueRequest", { requestId });
     }
     fail(`blocked ${request.method} ${new URL(request.url).pathname} (smoke must not write)`);
     return send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" });
   },
 };
+
+function isStartupReuse(request) {
+  if (!allowReuse || request.method !== "POST") return false;
+  if (new URL(request.url).pathname !== "/api/workspaces") return false;
+  let body;
+  try {
+    body = JSON.parse(request.postData ?? "");
+  } catch {
+    return false;
+  }
+  if (JSON.stringify(body) !== '{"reuse":true}') return false;
+  allowReuse = false;
+  return true;
+}
+
+// `/` makes the app reuse or create a workspace by POST; the smoke instead opens the user's free
+// workspace (no tab on it), or else the latest, at /w/<id>. Only a user without any workspace gets
+// the one reuse POST, which creates an empty workspace.
+async function resolveStart() {
+  const page = new URL(url);
+  if (page.pathname !== "/" || page.search || page.hash) return;
+  const res = await fetch(new URL("/api/workspaces", page));
+  if (!res.ok) throw new Error(`GET /api/workspaces: HTTP ${res.status}`);
+  const { workspaces } = await res.json();
+  const ws = workspaces.find((w) => w.clients === 0) ?? workspaces[0];
+  if (ws) url = new URL(`/w/${ws.id}`, page).href;
+  else allowReuse = true;
+}
 
 // Network quiet for 500 ms, at most `max` ms (the live WebSocket does not count as a request).
 async function idle(max = 4000) {
@@ -240,6 +272,7 @@ async function main() {
       200,
     );
   }
+  await resolveStart();
   // Port 0: Chrome picks a free port and writes it to DevToolsActivePort in the profile.
   const flags =
     "--headless=new --remote-debugging-port=0 --no-first-run --no-default-browser-check \

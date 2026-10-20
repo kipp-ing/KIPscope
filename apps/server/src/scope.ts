@@ -3,8 +3,8 @@ import type { FastifyRequest } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { CatalogMode } from "./config.ts";
 import type { DataSource, Scope, SignalRef } from "./datasource.ts";
-import { sessionOf } from "./http.ts";
-import type { Sessions } from "./sessions.ts";
+import { workspaceOf } from "./http.ts";
+import type { WorkspaceEntry } from "./workspaces.ts";
 
 /** Scope catalogs the store keeps besides the kept ones; the least recently used one is dropped (design Z10). */
 export const MAX_SCOPE_CATALOGS = 4;
@@ -16,14 +16,16 @@ export const sourceScope = (scope: WorkspaceScope): Scope => ({
   to: BigInt(scope.to),
 });
 
-/** The scope of the session a request serves (design Z10, add-multiuser M5). */
+/** The scope of the workspace a request serves (design Z10, add-multiuser M5). */
 export function scopeOf(request: FastifyRequest): WorkspaceScope | undefined {
-  return sessionOf(request).store.workspace.scope;
+  return workspaceOf(request).store.workspace.scope;
 }
 
-/** The scopes of every session with a live client (add-multiuser M9): the lists a store keeps. */
-export function openScopes(sessions: Pick<Sessions, "open">): WorkspaceScope[] {
-  return sessions.open().flatMap((s) => (s.store.workspace.scope ? [s.store.workspace.scope] : []));
+/** The scopes of every workspace with a live client (add-multiuser M9): the lists a store keeps. */
+export function openScopes(workspaces: { open(): WorkspaceEntry[] }): WorkspaceScope[] {
+  return workspaces
+    .open()
+    .flatMap((w) => (w.store.workspace.scope ? [w.store.workspace.scope] : []));
 }
 
 /** Waits for `promise`, or rejects with the abort reason once `abort` fires; the work goes on. */
@@ -50,7 +52,7 @@ type LoadedListener = (scope: WorkspaceScope, catalog: Catalog) => void;
 
 /**
  * The signal lists the server holds (design Z10): the full catalog (full mode only) and one
- * catalog per scope. The catalogs of the scopes `keep` returns (those of the sessions with a live
+ * catalog per scope. The catalogs of the scopes `keep` returns (those of the workspaces with a live
  * client, add-multiuser M9) are never dropped; of the others at most MAX_SCOPE_CATALOGS stay, the
  * least recently used dropped first.
  */

@@ -1,11 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import {
-  SESSION_ID,
-  SessionShare,
+  GRANT_ALL,
+  Grant,
   USER_ID,
+  WORKSPACE_ID,
   type Workspace,
   WorkspaceSchema,
+  WorkspaceShare,
 } from "@kipscope/shared";
 import type { WorkspaceStore } from "./workspace.ts";
 
@@ -171,29 +173,38 @@ export class StatePersister {
   }
 }
 
-/** Folder of the session files below the state dir (add-multiuser M4). */
-export const SESSIONS_DIR = "sessions";
+/** Folder of the workspace files below the state dir (add-multiuser M4). */
+export const WORKSPACES_DIR = "workspaces";
+/** LEGACY_: the folder of round 1, renamed to WORKSPACES_DIR once at start (M4 migration). */
+export const LEGACY_SESSIONS_DIR = "sessions";
+/** LEGACY_: the `kipscope` tag of round-1 files (version 1, no grant), read as grant "all". */
+export const LEGACY_SESSION_TAG = "session";
+/** The `kipscope` tag and version of a workspace file (M4). */
+const WORKSPACE_TAG = "workspace";
+const WORKSPACE_VERSION = 2;
 
-/** What a session file holds besides its envelope (add-multiuser M4). */
-export interface SessionFile {
+/** What a workspace file holds besides its envelope (add-multiuser M4). */
+export interface WorkspaceFile {
   id: string;
   owner: string;
-  share: SessionShare;
+  share: WorkspaceShare;
+  grant: Grant;
   createdAt: string;
   lastActiveAt: string;
   revision: number;
   workspace: Workspace;
 }
 
-/** The text of `<stateDir>/sessions/<id>.json` (add-multiuser M4). */
-export function sessionFileText(file: SessionFile): string {
-  const { id, owner, share, createdAt, lastActiveAt, revision, workspace } = file;
+/** The text of `<stateDir>/workspaces/<id>.json`, always version 2 (add-multiuser M4). */
+export function workspaceFileText(file: WorkspaceFile): string {
+  const { id, owner, share, grant, createdAt, lastActiveAt, revision, workspace } = file;
   const json = {
-    kipscope: "session",
-    version: 1,
+    kipscope: WORKSPACE_TAG,
+    version: WORKSPACE_VERSION,
     id,
     owner,
     share,
+    grant,
     createdAt,
     lastActiveAt,
     revision,
@@ -204,14 +215,25 @@ export function sessionFileText(file: SessionFile): string {
 
 const isTime = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value));
 
-function sessionError(json: unknown, id: string): string | undefined {
+/** Why a parsed file is no workspace file of `id`; undefined when it is one (v2 or LEGACY_SESSION_TAG v1). */
+function workspaceFileError(json: unknown, id: string): string | undefined {
   if (typeof json !== "object" || json === null || Array.isArray(json)) return "not an object";
   const file = json as Record<string, unknown>;
-  if (file.kipscope !== "session") return "not a KIPscope session file";
-  if (file.version !== 1) return `session version ${String(file.version)}; this KIPscope reads 1`;
-  if (file.id !== id || !SESSION_ID.test(id)) return "id: not the file's session ID";
+  const legacy = file.kipscope === LEGACY_SESSION_TAG;
+  if (legacy) {
+    if (file.version !== 1)
+      return `version ${String(file.version)} of a round-1 file; this KIPscope reads 1`;
+  } else if (file.kipscope !== WORKSPACE_TAG) return "not a KIPscope workspace file";
+  else if (file.version !== WORKSPACE_VERSION)
+    return `workspace version ${String(file.version)}; this KIPscope reads ${WORKSPACE_VERSION}`;
+  if (file.id !== id || !WORKSPACE_ID.test(id)) return "id: not the file's workspace ID";
   if (typeof file.owner !== "string" || !USER_ID.test(file.owner)) return "owner: not a user ID";
-  if (!SessionShare.safeParse(file.share).success) return "share: not private, read or write";
+  if (!WorkspaceShare.safeParse(file.share).success) return "share: not private, read or write";
+  if (!legacy) {
+    const grant = Grant.safeParse(file.grant);
+    if (!grant.success)
+      return grant.error.issues.map((i) => `grant.${i.path.join(".")}: ${i.message}`).join("; ");
+  }
   if (!isTime(file.createdAt)) return "createdAt: not a time";
   if (!isTime(file.lastActiveAt)) return "lastActiveAt: not a time";
   const { revision } = file;
@@ -224,17 +246,21 @@ function sessionError(json: unknown, id: string): string | undefined {
 }
 
 /**
- * Reads one session file (add-multiuser M4); `<id>` is its name without `.json`. Valid → its
- * fields, unchecked against any catalog; anything else is moved to `<id>.bad.json` with one
- * warning and gives undefined.
+ * Reads one workspace file (add-multiuser M4); `<id>` is its name without `.json`. Version 2, or
+ * a round-1 file (LEGACY_SESSION_TAG, version 1) read with grant "all"; valid → its fields,
+ * unchecked against any catalog. Anything else is moved to `<id>.bad.json` with one warning and
+ * gives undefined.
  */
-export function loadSessionFile(path: string, warn: Warn = consoleWarn): SessionFile | undefined {
+export function loadWorkspaceFile(
+  path: string,
+  warn: Warn = consoleWarn,
+): WorkspaceFile | undefined {
   const id = basename(path, ".json");
   let reason: string | undefined;
   let json: unknown;
   try {
     json = JSON.parse(readFileSync(path, "utf8"));
-    reason = sessionError(json, id);
+    reason = workspaceFileError(json, id);
   } catch (error) {
     reason =
       error instanceof SyntaxError
@@ -242,11 +268,12 @@ export function loadSessionFile(path: string, warn: Warn = consoleWarn): Session
         : `not readable: ${String(error)}`;
   }
   if (reason === undefined) {
-    const file = json as SessionFile;
+    const file = json as Omit<WorkspaceFile, "grant"> & { kipscope: string; grant?: unknown };
     return {
       id,
       owner: file.owner,
       share: file.share,
+      grant: file.kipscope === LEGACY_SESSION_TAG ? GRANT_ALL : Grant.parse(file.grant),
       createdAt: file.createdAt,
       lastActiveAt: file.lastActiveAt,
       revision: file.revision,
@@ -256,9 +283,11 @@ export function loadSessionFile(path: string, warn: Warn = consoleWarn): Session
   const bad = join(dirname(path), `${id}.bad.json`);
   try {
     renameSync(path, bad);
-    warn(`session file ${path} not restored (${reason}); moved to ${bad}`);
+    warn(`workspace file ${path} not restored (${reason}); moved to ${bad}`);
   } catch (error) {
-    warn(`session file ${path} not restored (${reason}); move to ${bad} failed: ${String(error)}`);
+    warn(
+      `workspace file ${path} not restored (${reason}); move to ${bad} failed: ${String(error)}`,
+    );
   }
   return undefined;
 }

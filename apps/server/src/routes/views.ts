@@ -15,7 +15,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import type { Access } from "../guard.ts";
-import { apiError, parseInput, sessionOf, userOf } from "../http.ts";
+import { apiError, parseInput, userOf, workspaceOf } from "../http.ts";
 import { dataRefsOfView } from "../rights.ts";
 import { parseViewText, savedNow, type ViewStore, validViewName, viewSummary } from "../views.ts";
 import { type CommandAnswer, runCommand } from "./workspace.ts";
@@ -34,7 +34,7 @@ function viewExists(reply: FastifyReply, existing: ViewSummary) {
 }
 
 /**
- * Opens a view like POST /api/commands in the request's session, its scope's signal list loaded
+ * Opens a view like POST /api/commands in the request's workspace, its scope's signal list loaded
  * first (add-scope Z10); the workspace it replaces becomes the requester's `_previous` (M9).
  */
 function open(
@@ -83,7 +83,8 @@ export const viewRoutes =
       viewsOf ? viewsOf(userOf(request).identity.user) : (shared as ViewStore);
 
     // Access per route (design M6): listing and files are the user's own; save, open and an
-    // import that opens change the session; the data refs of a view opened or imported are checked.
+    // import that opens change the workspace, whose grant must cover the data refs of the view
+    // opened. An import that only stores names none: storing a layout reveals no data.
     const USER: { access: Access } = { access: { level: "user" } };
     const SAVE: { access: Access } = { access: { level: "change" } };
     const OPEN: { access: Access } = {
@@ -92,13 +93,12 @@ export const viewRoutes =
         dataRefs: (request) => dataRefsOfView(namedView(viewsFor(request), request.body)),
       },
     };
+    const opens = (request: FastifyRequest) =>
+      (request.body as { open?: unknown } | undefined)?.open === true;
     const IMPORT: { access: Access } = {
       access: {
-        level: {
-          body: (request) =>
-            (request.body as { open?: unknown } | undefined)?.open === true ? "change" : "user",
-        },
-        dataRefs: (request) => dataRefsOfView(importedView(request.body)),
+        level: { body: (request) => (opens(request) ? "change" : "user") },
+        dataRefs: (request) => (opens(request) ? dataRefsOfView(importedView(request.body)) : []),
       },
     };
 
@@ -120,7 +120,7 @@ export const viewRoutes =
 
     app.post("/api/views", { config: SAVE }, async (request, reply) => {
       const views = viewsFor(request);
-      const { store: workspace } = sessionOf(request);
+      const { store: workspace } = workspaceOf(request);
       const body = parseInput(SaveViewRequest, request.body, reply);
       if (!body) return reply;
       const name = body.name ?? viewName(body.title);

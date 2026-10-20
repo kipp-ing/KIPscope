@@ -1,184 +1,74 @@
-import { readFileSync } from "node:fs";
 import {
   buildSearchIndex,
   type Command,
+  GRANT_ALL,
+  GRANT_NONE,
+  type Grant,
+  type Granted,
   parseSignalId,
   parseViewDoc,
   type SearchIndex,
-  type SessionRights,
-  type SessionShare,
   type SignalInfo,
   type SignalPage,
   searchSignals,
-  type Workspace,
+  type WorkspaceRights,
+  type WorkspaceShare,
 } from "@kipscope/shared";
-import { parse } from "yaml";
 import { type Catalog, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "./catalog.ts";
+import type { IdentityConfig } from "./config.ts";
 
-/** The rules file (design M3): which data-ref patterns and share right each role gives. */
-export interface Rules {
-  readonly roles: readonly { role: string; data: readonly string[]; share: boolean }[];
-}
-/** What a request may do: see data refs matching `data`, share sessions with `share`. */
-export interface Rights {
-  readonly data: readonly string[];
-  readonly share: boolean;
-}
-
-/** Rights of every request in `none` mode (D-084 „bei mir lokal ohne login"). */
-export const ALL_RIGHTS: Rights = Object.freeze({ data: Object.freeze(["*"]), share: true });
-
-/** Bounds of the rules file (design M3, Numbers). */
-const MAX_RULE_ROLES = 1_000;
-const MAX_RULE_PATTERNS = 200;
-const MAX_TEXT = 128;
-const RULE_KEYS = new Set(["role", "data", "share"]);
-const CONTROL = /\p{Cc}/u;
-const BAD_PATTERN = /[/\s\p{Cc}]/u;
+/**
+ * Grant checks and workspace rights (add-multiuser M3, M6): pure functions the guard, the
+ * registry and the routes share. KI.ping decides what a workspace may read (D-085); KIPscope only
+ * holds and enforces the grant.
+ */
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Reads and checks the rules file; throws naming the file, the entry's index and the key. */
-export function loadRules(path: string): Rules {
-  const fail = (message: string): never => {
-    throw new Error(`rules file ${path}: ${message}`);
-  };
-  let text = "";
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (error) {
-    fail(`cannot read: ${(error as NodeJS.ErrnoException).code ?? String(error)}`);
-  }
-  let data: unknown;
-  try {
-    data = parse(text, { schema: "core" });
-  } catch (error) {
-    fail(`not valid YAML: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!isRecord(data)) return fail("not a mapping");
-  for (const key of Object.keys(data))
-    if (!["kipscope", "version", "roles"].includes(key)) fail(`${key}: unknown key`);
-  if (data.kipscope !== "rules") fail("kipscope: must be rules");
-  if (data.version !== 1) fail(`version: must be 1, not ${String(data.version)}`);
-  if (!Array.isArray(data.roles)) return fail("roles: must be a list");
-  if (data.roles.length > MAX_RULE_ROLES) fail(`roles: more than ${MAX_RULE_ROLES} entries`);
-  const seen = new Set<string>();
-  const roles = data.roles.map((entry: unknown, i) => {
-    const at = `roles[${i}]`;
-    if (!isRecord(entry)) return fail(`${at}: must be a mapping`);
-    for (const key of Object.keys(entry))
-      if (!RULE_KEYS.has(key)) fail(`${at}.${key}: unknown key`);
-    const { role, data: patterns, share } = entry;
-    if (typeof role !== "string" || role.length < 1 || role.length > MAX_TEXT || CONTROL.test(role))
-      fail(`${at}.role: 1–${MAX_TEXT} characters without control characters`);
-    const name = role as string;
-    if (seen.has(name)) fail(`${at}.role: ${name} appears more than once`);
-    seen.add(name);
-    if (!Array.isArray(patterns)) return fail(`${at}.data: must be a list`);
-    if (patterns.length > MAX_RULE_PATTERNS)
-      fail(`${at}.data: more than ${MAX_RULE_PATTERNS} patterns`);
-    patterns.forEach((p: unknown, j) => {
-      if (typeof p !== "string" || p.length < 1 || p.length > MAX_TEXT || BAD_PATTERN.test(p))
-        fail(
-          `${at}.data[${j}]: 1–${MAX_TEXT} characters without "/", whitespace or control characters`,
-        );
-    });
-    if (share !== undefined && typeof share !== "boolean")
-      fail(`${at}.share: must be true or false`);
-    return { role: name, data: patterns as string[], share: share === true };
-  });
-  return { roles };
-}
+/** One Set per grant object (design "Numbers": O(1) per data ref). */
+const grantSets = new WeakMap<Grant, ReadonlySet<string>>();
 
-/** Union of the rights of every rule naming one of the identity's roles; none matching: no rights. */
-export function rightsOf(identity: { readonly roles: readonly string[] }, rules: Rules): Rights {
-  const roles = new Set(identity.roles);
-  const data: string[] = [];
-  let share = false;
-  for (const rule of rules.roles) {
-    if (!roles.has(rule.role)) continue;
-    for (const pattern of rule.data) if (!data.includes(pattern)) data.push(pattern);
-    if (rule.share) share = true;
-  }
-  return { data, share };
-}
-
-/** Deny by default: rights without a data pattern are no rights (design M3). */
-export function hasRights(rights: Rights): boolean {
-  return rights.data.length > 0;
-}
-
-/** Characters of a text, one per code point: the text itself unless it holds a surrogate. */
-type Chars = string | readonly string[];
-const SURROGATE = /[\uD800-\uDFFF]/;
-const charsOf = (text: string): Chars => (SURROGATE.test(text) ? Array.from(text) : text);
-
-/** Compiled pattern sets; bounded, since rights come from a finite rules file. */
-const compiled = new Map<string, readonly Chars[]>();
-const MAX_COMPILED = 1_000;
-
-/** A pattern set split into characters once, duplicates dropped. */
-function matcher(patterns: readonly string[]): readonly Chars[] {
-  const key = patterns.join("\n");
-  let set = compiled.get(key);
+function setOf(objects: readonly string[], grant: Grant): ReadonlySet<string> {
+  let set = grantSets.get(grant);
   if (!set) {
-    set = [...new Set(patterns)].map(charsOf);
-    if (compiled.size >= MAX_COMPILED) compiled.clear();
-    compiled.set(key, set);
+    set = new Set(objects);
+    grantSets.set(grant, set);
   }
   return set;
 }
 
+/** true for "all"; else exact membership of the data ref (no patterns, no time part, D-086). */
+export function covers(grant: Grant, dataRef: string): boolean {
+  const { objects } = grant;
+  if (objects === "all") return true;
+  return setOf(objects, grant).has(dataRef);
+}
+
 /**
- * Whether the whole text matches the glob: `*` any run of characters (also none, newlines too),
- * `?` one, everything else literal. Two pointers that fall back to the last `*` only, so no
- * backtracking: at most text × pattern steps, linear for any pattern a rules file holds.
+ * The grant the guard uses: GRANT_ALL with identity none; GRANT_NONE for a stored "all" with any
+ * other identity (state carried over from local use never grants on a server); else as stored.
  */
-function globMatch(pattern: Chars, text: Chars): boolean {
-  let p = 0;
-  let t = 0;
-  let star = -1;
-  let mark = 0;
-  while (t < text.length) {
-    if (p < pattern.length && pattern[p] === "*") {
-      star = p++;
-      mark = t;
-    } else if (p < pattern.length && (pattern[p] === "?" || pattern[p] === text[t])) {
-      p++;
-      t++;
-    } else if (star >= 0) {
-      p = star + 1;
-      t = ++mark;
-    } else return false;
-  }
-  while (p < pattern.length && pattern[p] === "*") p++;
-  return p === pattern.length;
+export function effectiveGrant(stored: Grant, identity: IdentityConfig["kind"]): Grant {
+  if (identity === "none") return GRANT_ALL;
+  return stored.objects === "all" ? GRANT_NONE : stored;
 }
 
-/** Whether a data ref matches one of the rights' patterns; decided from the patterns alone. */
-export function canSee(rights: Rights, dataRef: string): boolean {
-  const text = charsOf(dataRef);
-  return matcher(rights.data).some((pattern) => globMatch(pattern, text));
+/** A new workspace's grant: GRANT_ALL with identity none, else GRANT_NONE. */
+export function initialGrant(identity: IdentityConfig["kind"]): Grant {
+  return identity === "none" ? GRANT_ALL : GRANT_NONE;
 }
 
-/** Whether the rights see every data ref, so lists need no filter. */
-const seesAll = (rights: Rights) => rights.data.includes("*");
+/** What a client learns of a grant: "all", or the number of objects. */
+export function grantedOf(grant: Grant): Granted {
+  return grant.objects === "all" ? "all" : grant.objects.length;
+}
 
 const dataRefOf = (id: unknown): string | undefined =>
   typeof id === "string" ? parseSignalId(id)?.dataRef : undefined;
 
 function unique(refs: readonly (string | undefined)[]): string[] {
   return [...new Set(refs.filter((r): r is string => r !== undefined))];
-}
-
-/** Data refs a workspace holds: its scope, window signals and events-line signals; unique. */
-export function dataRefsOfWorkspace(workspace: Workspace): string[] {
-  return unique([
-    workspace.scope?.dataRef,
-    ...workspace.windows.flatMap((w) => w.signals.map((s) => dataRefOf(s.signalId))),
-    ...(workspace.eventSignals ?? []).map(dataRefOf),
-  ]);
 }
 
 const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -227,30 +117,24 @@ export function dataRefsOfCommand(command: Command): string[] {
 }
 
 /**
- * A user's rights on a session (design M6): none when any data ref of its workspace is hidden from
- * them, whoever they are; else by owner and share level.
+ * A user's rights on a workspace (design M6): by owner and share level only. There is no data
+ * condition, since a workspace's data is always covered by its own grant (M3 invariant).
  */
-export function sessionRights(
+export function workspaceRights(
   user: string,
-  rights: Rights,
-  session: {
-    readonly record: { readonly owner: string; readonly share: SessionShare };
-    readonly store: { readonly workspace: Workspace };
-  },
-): SessionRights | undefined {
-  if (!dataRefsOfWorkspace(session.store.workspace).every((ref) => canSee(rights, ref)))
-    return undefined;
-  const { owner, share } = session.record;
+  entry: { readonly record: { readonly owner: string; readonly share: WorkspaceShare } },
+): WorkspaceRights | undefined {
+  const { owner, share } = entry.record;
   if (owner === user) return { open: true, change: true, owner: true };
   if (share === "write") return { open: true, change: true, owner: false };
   if (share === "read") return { open: true, change: false, owner: false };
   return undefined;
 }
 
-/** A shared signal list as one user sees it (design M6 "Filtered lists"). */
+/** A shared signal list as one workspace's grant shows it (design M6 "Filtered lists"). */
 export interface CatalogView
   extends Pick<Catalog, "loadedAt" | "lastError" | "unavailableReason" | "refresh"> {
-  /** Undefined for a signal the user may not see. */
+  /** Undefined for a signal outside the grant. */
   get(id: string): SignalInfo | undefined;
   /** Visible signals only. */
   all(): readonly SignalInfo[];
@@ -266,35 +150,34 @@ interface Visible {
   readonly index: SearchIndex;
 }
 
-/** Visible signals per loaded list (keyed by its entries array, which a load replaces) and pattern set. */
-const visibleCache = new WeakMap<readonly SignalInfo[], Map<string, Visible>>();
+/** Visible signals per loaded list (keyed by its entries array, which a load replaces) and grant. */
+const visibleCache = new WeakMap<readonly SignalInfo[], WeakMap<Grant, Visible>>();
 
-function visibleOf(all: readonly SignalInfo[], rights: Rights): Visible {
-  let byRights = visibleCache.get(all);
-  if (!byRights) {
-    byRights = new Map();
-    visibleCache.set(all, byRights);
+function visibleOf(all: readonly SignalInfo[], grant: Grant): Visible {
+  let byGrant = visibleCache.get(all);
+  if (!byGrant) {
+    byGrant = new WeakMap();
+    visibleCache.set(all, byGrant);
   }
-  const key = rights.data.join("\n");
-  let visible = byRights.get(key);
+  let visible = byGrant.get(grant);
   if (!visible) {
-    const signals = all.filter((s) => canSee(rights, s.dataRef));
+    const signals = all.filter((s) => covers(grant, s.dataRef));
     visible = { signals, index: buildSearchIndex(signals) };
-    byRights.set(key, visible);
+    byGrant.set(grant, visible);
   }
   return visible;
 }
 
 /**
- * The view of a shared list for `rights`: the list itself when they see every data ref, else one
- * that hides the signals of hidden data refs from lookups, lists, searches and counts. The list
+ * The view of a shared list for `grant`: the list itself for "all", else one that hides the
+ * signals of data refs outside the grant from lookups, lists, searches and counts. The list
  * itself, its loads and caches stay shared.
  */
-export function catalogView(catalog: Catalog, rights: Rights): CatalogView {
-  if (seesAll(rights)) return catalog;
+export function catalogView(catalog: Catalog, grant: Grant): CatalogView {
+  if (grant.objects === "all") return catalog;
   const visible = (id: string) => {
     const ref = parseSignalId(id)?.dataRef;
-    return ref !== undefined && canSee(rights, ref);
+    return ref !== undefined && covers(grant, ref);
   };
   return {
     get loadedAt() {
@@ -308,16 +191,16 @@ export function catalogView(catalog: Catalog, rights: Rights): CatalogView {
     },
     refresh: () => catalog.refresh(),
     get: (id) => (visible(id) ? catalog.get(id) : undefined),
-    all: () => visibleOf(catalog.all(), rights).signals,
+    all: () => visibleOf(catalog.all(), grant).signals,
     search(q, offset = 0, limit = DEFAULT_PAGE_SIZE) {
-      const matches = searchSignals(visibleOf(catalog.all(), rights).index, q).map((m) => m.signal);
+      const matches = searchSignals(visibleOf(catalog.all(), grant).index, q).map((m) => m.signal);
       const size = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
       const items = matches.slice(offset, offset + size);
       return { items, total: matches.length, more: offset + items.length < matches.length };
     },
     snaRanges: (id) => (visible(id) ? catalog.snaRanges(id) : []),
     get size() {
-      return visibleOf(catalog.all(), rights).signals.length;
+      return visibleOf(catalog.all(), grant).signals.length;
     },
   };
 }

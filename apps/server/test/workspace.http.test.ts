@@ -403,10 +403,10 @@ describe("WS /api/live and GET /api/render-status", () => {
     const hello = await client.next((m) => m.type === "hello");
     expect(hello).toEqual({ type: "hello", clientId: expect.stringMatching(/^c\d+$/) });
     expect(await client.next((m) => m.type === "state" && m.revision === 0)).toBeTruthy();
-    // After the hello and before the state: the session this channel serves, with the user's rights.
-    expect(client.messages.map((m) => m.type).slice(0, 3)).toEqual(["hello", "session", "state"]);
+    // After the hello and before the state: the workspace this channel serves, with the user's rights.
+    expect(client.messages.map((m) => m.type).slice(0, 3)).toEqual(["hello", "summary", "state"]);
     const served = client.messages[1];
-    expect(served?.type === "session" && served.session).toMatchObject({
+    expect(served?.type === "summary" && served.summary).toMatchObject({
       owner: "local",
       share: "private",
       revision: 0,

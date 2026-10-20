@@ -203,10 +203,10 @@ describe("configured origins (add-multiuser M10)", () => {
 
   it("accepts a configured origin only exactly", async () => {
     t = await multiApp({ identity: "none", origins: [ORIGIN] });
-    const session = t.sessions.create("local");
-    const before = session.store.revision;
+    const workspace = t.workspaces.create("local");
+    const before = workspace.store.revision;
     const send = (origin: string) =>
-      t?.anon.request("POST", `/api/s/${session.record.id}/commands`, command, { origin });
+      t?.anon.request("POST", `/api/w/${workspace.record.id}/commands`, command, { origin });
     expect((await send("https://kipscope.example.org"))?.status).toBe(200);
     expect((await send("https://kipscope.example.org:443"))?.status).toBe(200);
     for (const origin of [
@@ -221,7 +221,7 @@ describe("configured origins (add-multiuser M10)", () => {
       expect(res?.status, origin).toBe(403);
       expect(res?.body.error.code, origin).toBe("forbidden_origin");
     }
-    expect(session.store.revision).toBe(before + 2);
+    expect(workspace.store.revision).toBe(before + 2);
   });
 
   it("checks origins before it identifies anyone", async () => {
@@ -241,13 +241,13 @@ describe("configured origins (add-multiuser M10)", () => {
   it("refuses a foreign origin on the live channel and accepts a configured one", async () => {
     t = await multiApp({ origins: [ORIGIN] });
     const alice = t.as("alice", ["all"]);
-    const id = (await alice.post("/api/sessions", {})).body.session.id as string;
+    const id = (await alice.post("/api/workspaces", {})).body.workspace.id as string;
     const foreign = await alice.live(id, { origin: "https://evil.example" });
     expect(foreign.messages).toEqual([]);
     expect(foreign.status === 403 || foreign.closeCode === 1008).toBe(true);
     const own = await alice.live(id, { origin: ORIGIN, host: "kipscope.example.org" });
     await own.next((m) => m.type === "state");
-    expect(own.messages.map((m) => m.type)).toEqual(["hello", "session", "state"]);
+    expect(own.messages.map((m) => m.type)).toEqual(["hello", "summary", "state"]);
     own.close();
   });
 
@@ -280,64 +280,48 @@ describe("configured origins (add-multiuser M10)", () => {
   });
 
   it("logs the access settings per mode", () => {
-    const none = { identity: { kind: "none" } as const, origins: [] as string[] };
+    const none = { identity: { kind: "none" } as const, share: true, origins: [] as string[] };
     expect(accessLog({ ...none, host: "127.0.0.1" })).toEqual([]);
     const open = accessLog({ ...none, host: "0.0.0.0" });
     expect(open).toHaveLength(1);
     expect(open[0]?.level).toBe("warn");
     expect(open[0]?.message).toContain("every machine that reaches it");
 
-    const lines = accessLog(
-      {
-        host: "0.0.0.0",
-        identity: {
-          kind: "oidc",
-          oidc: {
-            issuer: "https://idp.example.org",
-            audience: "kipscope",
-            userClaim: "sub",
-            rolesClaim: "roles",
-            header: "authorization",
-            algs: ["RS256"],
-          },
+    const lines = accessLog({
+      host: "0.0.0.0",
+      identity: {
+        kind: "oidc",
+        oidc: {
+          issuer: "https://idp.example.org",
+          audience: "kipscope",
+          userClaim: "sub",
+          rolesClaim: "roles",
+          header: "authorization",
+          algs: ["RS256"],
         },
-        rulesFile: "/etc/kipscope/rules.yaml",
-        origins: [ORIGIN],
       },
-      {
-        roles: [
-          { role: "a", data: ["*"], share: false },
-          { role: "b", data: ["*"], share: false },
-          { role: "c", data: ["*"], share: false },
-        ],
-      },
-    );
+      share: false,
+      origins: [ORIGIN],
+    });
     const info = lines.filter((l) => l.level === "info");
     const warn = lines.filter((l) => l.level === "warn");
     expect(info).toHaveLength(1);
-    for (const part of [
-      "oidc",
-      "https://idp.example.org",
-      "kipscope",
-      "/etc/kipscope/rules.yaml",
-      "3 roles",
-      ORIGIN,
-    ])
+    for (const part of ["oidc", "https://idp.example.org", "kipscope", "sharing off", ORIGIN])
       expect(info[0]?.message).toContain(part);
+    // No rules file any more (D-085).
+    expect(info[0]?.message).not.toMatch(/rules/i);
     expect(warn).toHaveLength(1);
     expect(warn[0]?.message).toContain("only the proxy");
-    // A loopback host with an identity: the info line only.
-    const local = accessLog(
-      {
-        host: "127.0.0.1",
-        identity: { kind: "module", path: "/srv/id.mjs" },
-        rulesFile: "/r.yaml",
-        origins: [ORIGIN],
-      },
-      { roles: [] },
-    );
+    // A loopback host with an identity: the info line only, and sharing on.
+    const local = accessLog({
+      host: "127.0.0.1",
+      identity: { kind: "module", path: "/srv/id.mjs" },
+      share: true,
+      origins: [ORIGIN],
+    });
     expect(local.map((l) => l.level)).toEqual(["info"]);
     expect(local[0]?.message).toContain("/srv/id.mjs");
+    expect(local[0]?.message).toContain("sharing on");
   });
 
   it("logs the access lines at start", () => {

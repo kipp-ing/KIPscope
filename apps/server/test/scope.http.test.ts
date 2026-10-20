@@ -11,8 +11,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Scope, SourceAdapter } from "../src/datasource.ts";
 import { loadState, StatePersister } from "../src/persist.ts";
-import { SessionStore } from "../src/sessions.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { WorkspaceRegistry } from "../src/workspaces.ts";
 import { multiApp, realSleep } from "./identityApp.ts";
 import {
   type Call,
@@ -422,19 +422,22 @@ describe("scoped mode", () => {
     });
   }
 
-  it("keeps an open session's scope list loaded", async () => {
-    // Two stored sessions, one on testcar and one on othercar, both of alice.
-    const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-sessions-"));
-    const store = new SessionStore({
+  it("keeps an open workspace's scope list loaded", async () => {
+    // Two stored workspaces, one on testcar and one on othercar, both of alice.
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-workspaces-"));
+    let scope: WorkspaceScope = SCOPE;
+    const store = new WorkspaceRegistry({
       dir,
-      seed: () => EMPTY_WORKSPACE,
+      seed: () => ({ ...EMPTY_WORKSPACE, scope }),
+      identity: "module",
       idleDays: 30,
       now: () => Date.now(),
       log: { info() {}, warn() {} },
     });
     store.start();
-    const first = store.create("alice", { ...EMPTY_WORKSPACE, scope: SCOPE });
-    store.create("alice", { ...EMPTY_WORKSPACE, scope: { ...SCOPE, dataRef: "othercar" } });
+    const first = store.create("alice");
+    scope = { ...SCOPE, dataRef: "othercar" };
+    store.create("alice");
     store.flush();
     store.stop();
 
@@ -458,22 +461,22 @@ describe("scoped mode", () => {
     };
     const t = await multiApp({ adapter, mode: "scoped", stateDir: dir });
     try {
-      // Nothing loads at start, however many sessions are stored.
+      // Nothing loads at start, however many workspaces are stored.
       await vi.advanceTimersByTimeAsync(5_000);
       expect(loads).toEqual([]);
 
-      // A live client connects to the first session: its scope's list loads, retried until it does.
+      // A live client connects to the first workspace: its scope's list loads, retried until it does.
       const alice = t.as("alice", ["all"]);
       const connectedAt = Date.now();
       const live = await alice.live(first.record.id);
       for (let i = 0; i < 200 && loads.length === 0; i++) await realSleep(10);
       await vi.advanceTimersByTimeAsync(10_000);
       expect(loads.map((l) => l.at - connectedAt)).toEqual([0, 1000, 3000]);
-      // Always with the first session's scope: never without one, never othercar's.
+      // Always with the first workspace's scope: never without one, never othercar's.
       for (const load of loads)
         expect(load.scope).toEqual({ dataRef: "testcar", from: T1, to: T2 });
 
-      const catalog = await alice.get(`/api/s/${first.record.id}/catalog`);
+      const catalog = await alice.get(`/api/w/${first.record.id}/catalog`);
       expect(catalog.status).toBe(200);
       expect(catalog.body.scope).toEqual(SCOPE);
       // Nothing else loads afterwards.
@@ -652,30 +655,31 @@ describe("commands that do not change the scope never wait for a scope list", ()
     expect(t.store.workspace.scope).toEqual(SCOPE);
   });
 
-  it("answers cursor.set while an open session's scope list is still loading (scoped mode)", async () => {
+  it("answers cursor.set while an open workspace's scope list is still loading (scoped mode)", async () => {
     vi.useRealTimers();
     const { adapter, release } = gatedMemory();
-    const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-sessions-"));
-    const store = new SessionStore({
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-workspaces-"));
+    const store = new WorkspaceRegistry({
       dir,
-      seed: () => EMPTY_WORKSPACE,
+      seed: () => ({ ...EMPTY_WORKSPACE, scope: SCOPE }),
+      identity: "module",
       idleDays: 30,
       log: { info() {}, warn() {} },
     });
     store.start();
-    const session = store.create("alice", { ...EMPTY_WORKSPACE, scope: SCOPE });
+    const workspace = store.create("alice");
     store.flush();
     store.stop();
     const t = await multiApp({ adapter, mode: "scoped", stateDir: dir });
     try {
       const alice = t.as("alice", ["all"]);
-      const live = await alice.live(session.record.id);
+      const live = await alice.live(workspace.record.id);
       await vi.waitFor(() =>
         expect(t.calls.some((c) => c.method === "listSignals" && c.args[0] !== undefined)).toBe(
           true,
         ),
       );
-      const cursor = await within(alice.command(CURSOR, session.record.id), 2000, "cursor.set");
+      const cursor = await within(alice.command(CURSOR, workspace.record.id), 2000, "cursor.set");
       expect(cursor.status).toBe(200);
       expect(cursor.body.ok).toBe(true);
       release();

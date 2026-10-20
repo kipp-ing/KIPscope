@@ -89,7 +89,7 @@ describe("copy link", () => {
   });
 });
 
-describe("copy link on a session page (add-multiuser M12)", () => {
+describe("copy link on a workspace page (add-multiuser M12)", () => {
   const ws: Workspace = {
     ...EMPTY_WORKSPACE,
     windows: [
@@ -99,26 +99,32 @@ describe("copy link on a session page (add-multiuser M12)", () => {
   };
 
   it("copies the shared link", async () => {
-    // The link is built on the page's origin: the session in the path is not part of it.
+    // The link is built on the page's origin: the workspace in the path is not part of it.
     const link = await viewLink(ws, {
       origin: "http://127.0.0.1:5173",
-      pathname: "/s/abcdefghij",
+      pathname: "/w/abcdefghij",
     });
     expect(link.startsWith("http://127.0.0.1:5173/#view=")).toBe(true);
-    expect(link).not.toContain("/s/");
+    expect(link).not.toContain("/w/");
     expect(link).not.toContain("abcdefghij");
     expect(link).toBe(await viewLinkUrl(ws, "http://127.0.0.1:5173/"));
     // The same on a server behind its public name.
     const behind = await viewLink(ws, {
       origin: "https://kipscope.example.org",
-      pathname: "/s/zzzzzzzzzz",
+      pathname: "/w/zzzzzzzzzz",
     });
     expect(behind.startsWith("https://kipscope.example.org/#view=")).toBe(true);
+    // And from the legacy address of round 1.
+    const legacy = await viewLink(ws, {
+      origin: "https://kipscope.example.org",
+      pathname: "/s/zzzzzzzzzz",
+    });
+    expect(legacy).toBe(behind);
   });
 
-  it("cleans a session address of the view part and keeps the session", async () => {
-    expect(cleanAddress(at("/s/abcdefghij?view=demo"))).toBe("/s/abcdefghij");
-    expect(await startupView(at("/s/abcdefghij?view=demo"))).toEqual({ name: "demo" });
-    expect(await startupView(at("/s/abcdefghij"))).toBeUndefined();
+  it("cleans a workspace address of the view part and keeps the workspace", async () => {
+    expect(cleanAddress(at("/w/abcdefghij?view=demo"))).toBe("/w/abcdefghij");
+    expect(await startupView(at("/w/abcdefghij?view=demo"))).toEqual({ name: "demo" });
+    expect(await startupView(at("/w/abcdefghij"))).toBeUndefined();
   });
 });

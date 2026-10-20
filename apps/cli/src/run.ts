@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import {
   type CommandInput,
-  type CreateSessionAnswer,
+  type CreateWorkspaceAnswer,
   type CursorValueResult,
   DEFAULT_EVENT_FILTER,
   describeEventFilter,
@@ -14,12 +14,12 @@ import {
   parseSignalId,
   type RenderStatus,
   type ServerMeta,
-  type SessionAnswer,
-  type SessionList,
   type SignalPage,
-  sessionPath,
   type Workspace,
+  type WorkspaceAnswer,
+  type WorkspaceList,
   widenScope,
+  workspacePath,
 } from "@kipscope/shared";
 import { type GlobalOptions, type Invocation, parseArgs, USAGE } from "./args.ts";
 import { type Client, createClient, type Deadline } from "./client.ts";
@@ -155,15 +155,15 @@ async function execute(
     }
   }
   const client = createClient(options.server, deadline, {
-    ...(options.session !== undefined && { session: options.session }),
+    ...(options.workspace !== undefined && { workspace: options.workspace }),
     ...(token !== undefined && { token }),
   });
   const out = await executeWith(invocation, options, client, deadline);
-  const session = client.session();
-  // The session right after exitCode (S2 key order).
-  if (session === undefined) return out;
+  const workspace = client.workspace();
+  // The workspace right after exitCode (S2 key order).
+  if (workspace === undefined) return out;
   const { ok, outcome, exitCode, ...rest } = out;
-  return { ok, outcome, exitCode, session, ...rest };
+  return { ok, outcome, exitCode, workspace, ...rest };
 }
 
 async function executeWith(
@@ -296,8 +296,8 @@ async function executeWith(
       case "whoami":
         body.data = await client.get<Me>("/api/me");
         return result("ok", body);
-      case "session":
-        await runSession(invocation, options, client, body);
+      case "workspace":
+        await runWorkspace(invocation, options, client, body);
         return result("ok", body);
       case "view": {
         const opened = await runView(invocation, client, body);
@@ -310,36 +310,36 @@ async function executeWith(
   }
 }
 
-/** The session forms (M13); `share` acts on the call's session, pinned first when none was given. */
-async function runSession(
-  invocation: Extract<Invocation, { kind: "session" }>,
+/** The workspace forms (M13); `share` acts on the call's workspace, pinned first when none was given. */
+async function runWorkspace(
+  invocation: Extract<Invocation, { kind: "workspace" }>,
   options: GlobalOptions,
   client: Client,
   body: Body,
 ): Promise<void> {
   switch (invocation.action) {
     case "list":
-      body.data = await client.get<SessionList>("/api/sessions");
+      body.data = await client.get<WorkspaceList>("/api/workspaces");
       return;
     case "new": {
-      const answer = await client.post<CreateSessionAnswer>("/api/sessions", {});
+      const answer = await client.post<CreateWorkspaceAnswer>("/api/workspaces", {});
       body.data = answer;
-      body.local = { url: new URL(sessionPath(answer.session.id), options.server).href };
+      body.local = { url: new URL(workspacePath(answer.workspace.id), options.server).href };
       return;
     }
     case "share": {
-      // No session given: the default one, named by the header of a session-resolving answer.
-      if (client.session() === undefined) await client.get<RenderStatus>("/api/render-status");
-      const id = client.session();
+      // No workspace given: the default one, named by the header of a workspace-resolving answer.
+      if (client.workspace() === undefined) await client.get<RenderStatus>("/api/render-status");
+      const id = client.workspace();
       if (id === undefined)
-        throw new CliError("unavailable", "unavailable", "the server named no session");
-      body.data = await client.post<SessionAnswer>(`/api/sessions/${id}/share`, {
+        throw new CliError("unavailable", "unavailable", "the server named no workspace");
+      body.data = await client.post<WorkspaceAnswer>(`/api/workspaces/${id}/share`, {
         share: invocation.share,
       });
       return;
     }
     case "delete":
-      body.data = await client.delete<{ deleted: string }>(`/api/sessions/${invocation.id}`);
+      body.data = await client.delete<{ deleted: string }>(`/api/workspaces/${invocation.id}`);
       return;
   }
 }

@@ -142,7 +142,7 @@ describe("one place for the credential", () => {
   });
 
   it("decides access in guard.ts and rights.ts only", () => {
-    // Routes read the user and the session the guard set; none calls the rights functions to decide.
+    // Routes read the user and the workspace the guard set; none calls the rights functions to decide.
     const root = resolve(import.meta.dirname, "../src/routes");
     for (const name of readdirSync(root)) {
       const text = readFileSync(join(root, name), "utf8");

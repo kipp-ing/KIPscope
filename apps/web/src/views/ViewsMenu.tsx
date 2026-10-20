@@ -5,6 +5,7 @@ import {
   PREVIOUS_VIEW_TITLE,
   type ViewSummary,
   type Workspace,
+  type WorkspaceSummary,
 } from "@kipscope/shared";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -12,12 +13,13 @@ import {
   deleteView,
   importView,
   listViews,
+  listWorkspaces,
   openView,
   saveView,
   viewFileUrl,
 } from "../api.ts";
 import { HINTS } from "../help/hints.ts";
-import { copyViewLink } from "./link.ts";
+import { recentRows } from "../workspaces/recent.ts";
 import { existingTitle, rowDetails, saveEntries, saveTarget, titleMinChars } from "./model.ts";
 import { SaveForm, type SaveOutcome } from "./SaveForm.tsx";
 import "./views.css";
@@ -33,6 +35,8 @@ export type TrackOpen = <T>(
 
 export interface ViewsMenuProps {
   workspace: Workspace;
+  /** The page's workspace, marked in "Recent workspaces" (add-multiuser M12). */
+  workspaceId: string;
   /** Every open this menu sends goes through it. */
   trackOpen: TrackOpen;
   /** App: the open notice after the push, or the error of a refused open. */
@@ -74,14 +78,25 @@ const BookmarkIcon = () => (
 /**
  * "Views" in the top row (add-saved-views V7): the save entries ("Save" and "Save as…" for a named
  * open view, else "Save view…"; Ctrl/Cmd+S runs the first), the saved views, "Before last open"
- * last, "Import file…" and "Copy link". A row click opens the view; hovering shows Download and
- * Delete (inline confirm) over the row's title line. Esc or a pointer down outside closes it.
+ * last, "Import file…" and "Recent workspaces" (add-multiuser M12: the user's latest own
+ * workspaces as plain links to `/w/<id>`, the current one marked). A row click opens the view;
+ * hovering shows Download and Delete (inline confirm) over the row's title line. Esc or a pointer
+ * down outside closes it. The link of the open layout is "Copy link (own copy)" in Share….
  */
-export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage }: ViewsMenuProps) {
+export function ViewsMenu({
+  workspace,
+  workspaceId,
+  trackOpen,
+  onOpened,
+  onNotice,
+  onMessage,
+}: ViewsMenuProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [views, setViews] = useState<ViewSummary[] | undefined>();
   const [listError, setListError] = useState<string | undefined>();
+  const [recent, setRecent] = useState<WorkspaceSummary[] | undefined>();
+  const [recentError, setRecentError] = useState<string | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<string | undefined>();
   // An import onto an existing name waits for "Replace".
   const [importing, setImporting] = useState<{ text: string; title: string } | undefined>();
@@ -105,9 +120,19 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
     }
   }, []);
 
+  const reloadRecent = useCallback(async () => {
+    try {
+      setRecent((await listWorkspaces()).workspaces);
+      setRecentError(undefined);
+    } catch (e) {
+      setRecentError(errorText(e));
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     void reload();
+    void reloadRecent();
     const onDown = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) close();
     };
@@ -124,7 +149,7 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, reload, close]);
+  }, [open, reload, reloadRecent, close]);
 
   const save = useCallback(
     async (
@@ -222,15 +247,6 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
         close();
         onMessage(errorText(e));
       }
-    }
-  };
-
-  const copyLink = async () => {
-    close();
-    try {
-      onNotice(await copyViewLink(workspace));
-    } catch (e) {
-      onMessage(`Copy link: ${errorText(e)}`);
     }
   };
 
@@ -367,15 +383,35 @@ export function ViewsMenu({ workspace, trackOpen, onOpened, onNotice, onMessage 
                 >
                   Import file…
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="views-item"
-                  title={HINTS.copyLink}
-                  onClick={() => void copyLink()}
-                >
-                  Copy link
-                </button>
+                <div className="views-divider" />
+                <div className="views-heading">Recent workspaces</div>
+                <div className="views-list">
+                  {recentError && <p className="views-error">{recentError}</p>}
+                  {recent &&
+                    recentRows(recent, workspaceId, Date.now(), TIME_ZONE).map((r) => (
+                      <div key={r.id} className={`views-row${r.current ? " current" : ""}`}>
+                        <a
+                          role="menuitem"
+                          className="views-open"
+                          href={r.href}
+                          aria-current={r.current ? "page" : undefined}
+                        >
+                          <span className="views-row-title">
+                            {r.current && <span className="views-current">✓</span>}
+                            {r.title}
+                          </span>
+                          <span className="views-row-details">
+                            {r.since}
+                            {r.dot && (
+                              <span className="views-clients" title={HINTS.openElsewhere}>
+                                {" ●"}
+                              </span>
+                            )}
+                          </span>
+                        </a>
+                      </div>
+                    ))}
+                </div>
               </>
             )}
           </div>

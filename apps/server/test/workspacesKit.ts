@@ -1,11 +1,11 @@
-/** Shared bits of the session store tests (add-multiuser M4). */
+/** Shared bits of the workspace registry tests (add-multiuser M4). */
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EMPTY_WORKSPACE, type Workspace } from "@kipscope/shared";
-import { SessionStore } from "../src/sessions.ts";
+import { EMPTY_WORKSPACE, type Grant, type Workspace } from "@kipscope/shared";
+import { WorkspaceRegistry } from "../src/workspaces.ts";
 
-/** An apply context that knows every signal (the store tests do not need a catalog). */
+/** An apply context that knows every signal (the registry tests do not need a catalog). */
 export const ctx = {
   signalExists: () => true,
   hasStates: () => false,
@@ -29,33 +29,34 @@ export function logs(): Logs {
 }
 
 /** A temp state dir, removed by `cleanup`. */
-export function tempState(prefix = "kipscope-sessions-") {
+export function tempState(prefix = "kipscope-workspaces-") {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   return {
     dir,
-    sessionsDir: join(dir, "sessions"),
+    workspacesDir: join(dir, "workspaces"),
     files: () =>
-      existsSync(join(dir, "sessions")) ? readdirSync(join(dir, "sessions")).sort() : [],
+      existsSync(join(dir, "workspaces")) ? readdirSync(join(dir, "workspaces")).sort() : [],
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
 
-export const seedEmpty = (): Workspace => EMPTY_WORKSPACE;
+export const seedEmpty = (_grant?: Grant): Workspace => EMPTY_WORKSPACE;
 
-/** A store on `dir` whose clock is `Date.now()` (so vitest's fake timers move it). */
-export function newStore(
+/** A registry on `dir` (identity `none` unless told) whose clock is `Date.now()`, so vitest's fake timers move it. */
+export function newRegistry(
   dir: string,
-  extra: Partial<ConstructorParameters<typeof SessionStore>[0]> = {},
-  seed: () => Workspace = seedEmpty,
+  extra: Partial<ConstructorParameters<typeof WorkspaceRegistry>[0]> = {},
+  seed: (grant: Grant) => Workspace = seedEmpty,
 ) {
   const out = logs();
-  const store = new SessionStore({
+  const registry = new WorkspaceRegistry({
     dir,
     seed,
+    identity: "none",
     idleDays: 30,
     now: () => Date.now(),
     log: out.log,
     ...extra,
   });
-  return { store, ...out };
+  return { registry, ...out };
 }

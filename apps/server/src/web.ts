@@ -49,7 +49,8 @@ function servable(root: string, path: string): boolean {
 
 /**
  * The built UI from `KIPSCOPE_WEB_DIR` (design M11): a GET outside `/api/` answers the file below
- * the directory, else `index.html` (so `/s/<id>` loads the app); a path outside it answers 404.
+ * the directory, else `index.html` (so `/w/<id>` and the legacy `/s/<id>` load the app, which
+ * replaces the latter with the former); a path outside it answers 404.
  * No identity: these files hold no data. Without a directory nothing is registered (404 as today).
  */
 export const webRoutes =

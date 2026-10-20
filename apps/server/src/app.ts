@@ -2,27 +2,25 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { type AccessOptions, hostAllowed, originAllowed } from "./access.ts";
 import { type RequestUser, registerGuard } from "./guard.ts";
-import { apiError, rewriteUrl, type ScopeDeps, sessionPrefixOf } from "./http.ts";
+import { apiError, rewriteUrl, type ScopeDeps, workspacePrefixOf } from "./http.ts";
 import type { IdentityAdapter } from "./identity.ts";
 import { type MetaDeps, metaRoutes } from "./meta.ts";
-import { type Rules, sessionRights } from "./rights.ts";
 import { eventsRoutes } from "./routes/events.ts";
 import { identityRoutes } from "./routes/identity.ts";
 import { seriesRoutes } from "./routes/series.ts";
-import { sessionRoutes } from "./routes/sessions.ts";
 import { signalRoutes } from "./routes/signals.ts";
 import { viewRoutes } from "./routes/views.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
-import {
-  type Session,
-  SessionLimitError,
-  type Sessions,
-  seedFor,
-  singleSession,
-} from "./sessions.ts";
+import { workspacesRoutes } from "./routes/workspaces.ts";
 import type { ViewStore, ViewsOf } from "./views.ts";
 import { webRoutes } from "./web.ts";
 import type { WorkspaceStore } from "./workspace.ts";
+import {
+  singleWorkspace,
+  type WorkspaceEntry,
+  WorkspaceLimitError,
+  type Workspaces,
+} from "./workspaces.ts";
 
 /** Largest live channel message in bytes (design H4). */
 export const MAX_LIVE_PAYLOAD = 262_144;
@@ -36,10 +34,13 @@ export interface AppDeps extends ScopeDeps {
   viewsOf?: ViewsOf;
   /** One view store for every user (tests); without it and `viewsOf` the view routes answer 404. */
   views?: ViewStore;
-  /** The identity adapter (add-multiuser M1); absent in `none` mode: every request is `local` with all rights. */
+  /**
+   * The identity adapter (add-multiuser M1); absent in `none` mode: every request is `local` and
+   * every workspace reads everything (M3).
+   */
   identity?: IdentityAdapter;
-  /** The rules file's content (add-multiuser M3); required with `identity`. */
-  rules?: Rules;
+  /** `KIPSCOPE_SHARE` (add-multiuser M2); absent: on. Ignored without `identity`. */
+  share?: boolean;
   /** `KIPSCOPE_WEB_DIR` (add-multiuser M11); absent: no static files. */
   webDir?: string;
   /** Ping interval of the live channel in ms; default LIVE_HEARTBEAT_MS (tests use a short one). */
@@ -47,27 +48,25 @@ export interface AppDeps extends ScopeDeps {
 }
 
 /**
- * What `buildApp` takes: the deps with a session store, or with one workspace store that becomes
- * the only session, owned by `local` (tests written before sessions).
+ * What `buildApp` takes: the deps with a workspace registry, or with one workspace store that
+ * becomes the only workspace, owned by `local` (tests written before workspaces).
  */
-export type AppInput = Omit<AppDeps, "sessions"> &
-  ({ sessions: Sessions; workspace?: never } | { workspace: WorkspaceStore; sessions?: never });
+export type AppInput = Omit<AppDeps, "workspaces"> &
+  (
+    | { workspaces: Workspaces; workspace?: never }
+    | { workspace: WorkspaceStore; workspaces?: never }
+  );
 
 /**
- * The session a `session` or `change` request serves (add-multiuser M5): the one of its
- * `/api/s/<id>/` prefix (undefined when there is none: 404 `unknown_session`), else the user's
- * latest own session they may open, or a new one.
+ * The workspace a `workspace` or `change` request serves (add-multiuser M5): the one of its
+ * `/api/w/<id>/` prefix (undefined when there is none: 404 `unknown_workspace`), else the user's
+ * latest own workspace, or a new one.
  */
-export function sessionResolver(sessions: Sessions) {
-  return (request: FastifyRequest, user: RequestUser): Session | undefined => {
-    const id = sessionPrefixOf(request);
-    if (id !== undefined) return sessions.get(id);
-    const name = user.identity.user;
-    return sessions.defaultOf(
-      name,
-      (session) => sessionRights(name, user.rights, session) !== undefined,
-      seedFor(sessions.seed(), user.rights),
-    );
+export function workspaceResolver(workspaces: Workspaces) {
+  return (request: FastifyRequest, user: RequestUser): WorkspaceEntry | undefined => {
+    const id = workspacePrefixOf(request);
+    if (id !== undefined) return workspaces.get(id);
+    return workspaces.defaultOf(user.identity.user);
   };
 }
 
@@ -75,12 +74,12 @@ export function buildApp(
   input: AppInput,
   options: { logger?: boolean; extraHost?: string; origins?: readonly string[] } = {},
 ): FastifyInstance {
-  const { workspace, sessions, ...rest } = input;
+  const { workspace, workspaces, ...rest } = input;
   const deps: AppDeps = {
     ...rest,
-    sessions: sessions ?? singleSession(workspace as WorkspaceStore),
+    workspaces: workspaces ?? singleWorkspace(workspace as WorkspaceStore),
   };
-  // `/api/s/<id>/…` serves `/api/…` for session <id> (add-multiuser M5).
+  // `/api/w/<id>/…` serves `/api/…` for workspace <id> (add-multiuser M5).
   const app = Fastify({ logger: options.logger ?? false, rewriteUrl });
   const access: AccessOptions = {
     ...(options.extraHost === undefined ? {} : { extraHost: options.extraHost }),
@@ -102,15 +101,15 @@ export function buildApp(
     // The one guard (add-multiuser M6), after the Host/Origin check and before any route.
     registerGuard(app, {
       ...(deps.identity ? { identity: deps.identity } : {}),
-      ...(deps.rules ? { rules: deps.rules } : {}),
-      resolveSession: sessionResolver(deps.sessions),
+      resolveWorkspace: workspaceResolver(deps.workspaces),
+      grantOf: (entry: WorkspaceEntry) => deps.workspaces.grantOf(entry.record.id),
       log: { warn: (message) => app.log.warn(message) },
     });
   });
   app.setErrorHandler((error, _request, reply) => {
-    // A user whose every session has a live client cannot get a new default one.
-    if (error instanceof SessionLimitError)
-      return apiError(reply, 409, "session_limit", error.message);
+    // A user whose every workspace has a live client cannot get a new default one.
+    if (error instanceof WorkspaceLimitError)
+      return apiError(reply, 409, "workspace_limit", error.message);
     throw error;
   });
   app.register(identityRoutes(deps));
@@ -118,7 +117,7 @@ export function buildApp(
   app.register(seriesRoutes(deps));
   app.register(eventsRoutes(deps));
   app.register(workspaceRoutes(deps));
-  app.register(sessionRoutes(deps));
+  app.register(workspacesRoutes(deps));
   app.register(viewRoutes(deps));
   app.register(metaRoutes(deps));
   app.register(webRoutes(deps.webDir));

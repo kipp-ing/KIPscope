@@ -127,12 +127,12 @@ describe("server address and usage", () => {
       "value",
       "wait",
       "whoami",
-      "session list",
-      "session new",
-      "session share",
-      "session delete",
+      "workspace list",
+      "workspace new",
+      "workspace share",
+      "workspace delete",
       "--server",
-      "--session",
+      "--workspace",
       "--token",
       "--wait",
       "--timeout",
@@ -207,8 +207,8 @@ describe("server address and usage", () => {
         accepted: true,
         command: { type: "cursor.setDiff", diff: true },
         revision: 1,
-        // The session the call served (add-multiuser M13): the harness has the one, `0000000000`.
-        session: expect.stringMatching(/^[a-z0-9]{10}$/),
+        // The workspace the call served (add-multiuser M13): the harness has the one, `0000000000`.
+        workspace: expect.stringMatching(/^[a-z0-9]{10}$/),
       });
       const pretty = await cli(s, "--pretty", "diff", "off");
       expect(pretty.code).toBe(0);
@@ -1329,13 +1329,13 @@ describe("scope", () => {
   });
 });
 
-describe("sessions (add-multiuser M13)", () => {
+describe("workspaces (add-multiuser M13)", () => {
   let m: MultiServer | undefined;
   afterEach(async () => {
     await m?.close();
     m = undefined;
   });
-  const sessionCli = (server: MultiServer, ...argv: string[]) =>
+  const workspaceCli = (server: MultiServer, ...argv: string[]) =>
     runCli(["--server", server.url, ...argv]);
   const start = async (options?: Parameters<typeof startMulti>[0]) => {
     m = await startMulti({ identity: "none", ...options });
@@ -1343,24 +1343,25 @@ describe("sessions (add-multiuser M13)", () => {
   };
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  it("addresses a session", async () => {
+  it("addresses a workspace", async () => {
     const s = await start();
-    const a = s.app.sessions.create("local");
+    const a = s.app.workspaces.create("local");
     await wait(5);
-    const b = s.app.sessions.create("local");
+    const b = s.app.workspaces.create("local");
     await wait(5);
 
-    const dflt = await sessionCli(s, "state");
+    // Without --workspace the most recently active one (B) is taken, and named in the output.
+    const dflt = await workspaceCli(s, "state");
     expect(dflt.code).toBe(0);
-    expect(dflt.out.session).toBe(b.record.id);
+    expect(dflt.out.workspace).toBe(b.record.id);
 
-    const named = await sessionCli(s, "--session", a.record.id, "state");
-    expect(named.out.session).toBe(a.record.id);
+    const named = await workspaceCli(s, "--workspace", a.record.id, "state");
+    expect(named.out.workspace).toBe(a.record.id);
     expect(named.out.data.revision).toBe(0);
 
-    const created = await sessionCli(
+    const created = await workspaceCli(
       s,
-      "--session",
+      "--workspace",
       a.record.id,
       "window",
       "create",
@@ -1370,34 +1371,36 @@ describe("sessions (add-multiuser M13)", () => {
       "10",
     );
     expect(created.code, created.stderr.join("")).toBe(0);
-    expect(created.out.session).toBe(a.record.id);
+    expect(created.out.workspace).toBe(a.record.id);
     expect(a.store.revision).toBe(1);
     expect(b.store.revision).toBe(0);
-    // The session of the environment and a session link work alike.
-    const viaEnv = await runCli(["--server", s.url, "state"], { KIPSCOPE_SESSION: a.record.id });
-    expect(viaEnv.out.session).toBe(a.record.id);
+    // The workspace of the environment and a workspace link work alike.
+    const viaEnv = await runCli(["--server", s.url, "state"], { KIPSCOPE_WORKSPACE: a.record.id });
+    expect(viaEnv.out.workspace).toBe(a.record.id);
     expect(viaEnv.out.data.revision).toBe(1);
-    const viaLink = await runCli(["--server", `${s.url}/s/${a.record.id}`, "state"]);
-    expect(viaLink.out.session).toBe(a.record.id);
-    // A session that does not exist is rejected with the server's code.
-    const unknown = await sessionCli(s, "--session", "zzzzzzzzzz", "state");
+    const viaLink = await runCli(["--server", `${s.url}/w/${a.record.id}`, "state"]);
+    expect(viaLink.out.workspace).toBe(a.record.id);
+    const viaLegacy = await runCli(["--server", `${s.url}/s/${a.record.id}`, "state"]);
+    expect(viaLegacy.out.workspace).toBe(a.record.id);
+    // A workspace that does not exist is rejected with the server's code.
+    const unknown = await workspaceCli(s, "--workspace", "zzzzzzzzzz", "state");
     expect(unknown.code).toBe(1);
-    expect(unknown.out).toMatchObject({ ok: false, error: { code: "unknown_session" } });
+    expect(unknown.out).toMatchObject({ ok: false, error: { code: "unknown_workspace" } });
   });
 
-  it("keeps every request of one call on one session", async () => {
+  it("keeps every request of one call on one workspace", async () => {
     const s = await start();
-    const a = s.app.sessions.create("local");
+    const a = s.app.workspaces.create("local");
     await wait(5);
-    s.app.sessions.create("local");
+    s.app.workspaces.create("local");
     // `window create --from/--to` and a signal add read the workspace and send commands: more than
-    // one request. Without --session the call's session is the first answer's, for all of them.
-    const first = await sessionCli(s, "window", "create", "--from", "0", "--to", "10");
-    const id = first.out.session as string;
+    // one request. Without --workspace the call's workspace is the first answer's, for all of them.
+    const first = await workspaceCli(s, "window", "create", "--from", "0", "--to", "10");
+    const id = first.out.workspace as string;
     expect(id).not.toBe(a.record.id);
-    const added = await sessionCli(
+    const added = await workspaceCli(
       s,
-      "--session",
+      "--workspace",
       id,
       "signal",
       "add",
@@ -1405,70 +1408,85 @@ describe("sessions (add-multiuser M13)", () => {
       "testcar/Sna_800h.RPM",
     );
     expect(added.code, added.stderr.join("")).toBe(0);
-    expect(s.app.sessions.get(id)?.store.workspace.windows[0]?.signals).toHaveLength(1);
+    expect(s.app.workspaces.get(id)?.store.workspace.windows[0]?.signals).toHaveLength(1);
     expect(a.store.revision).toBe(0);
   });
 
-  it("waits for a UI of the same session", async () => {
+  it("waits for a UI of the same workspace", async () => {
     const s = await start();
-    const a = s.app.sessions.create("local");
+    const a = s.app.workspaces.create("local");
     await wait(5);
-    const b = s.app.sessions.create("local");
-    // A browser is connected to A only; B is the default session.
+    const b = s.app.workspaces.create("local");
+    // A browser is connected to A only; B is the default workspace.
     const browser = await s.browser(a.record.id, { autoAckMs: 5 });
-    // The live connect made A the latest session; B becomes the default again.
+    // The live connect made A the latest workspace; B becomes the default again.
     await wait(5);
-    s.app.sessions.touch(b.record.id);
+    s.app.workspaces.touch(b.record.id);
     try {
-      const other = await sessionCli(s, "--wait", "diff", "on");
+      const other = await workspaceCli(s, "--wait", "diff", "on");
       expect(other.code).toBe(6);
       expect(other.out.render.status).toBe("no_ui");
-      expect(other.out.session).toBe(b.record.id);
+      expect(other.out.workspace).toBe(b.record.id);
 
-      const same = await sessionCli(s, "--session", a.record.id, "--wait", "diff", "on");
+      const same = await workspaceCli(s, "--workspace", a.record.id, "--wait", "diff", "on");
       expect(same.code, same.stderr.join("")).toBe(0);
       expect(same.out.render.status).toBe("complete");
-      expect(same.out.session).toBe(a.record.id);
+      expect(same.out.workspace).toBe(a.record.id);
     } finally {
       await browser.close();
     }
   }, 20_000);
 
-  it("manages sessions", async () => {
+  it("manages workspaces", async () => {
     const s = await start();
-    const created = await sessionCli(s, "session", "new");
+    const created = await workspaceCli(s, "workspace", "new");
     expect(created.code, created.stderr.join("")).toBe(0);
-    const id = created.out.data.session.id as string;
+    const id = created.out.data.workspace.id as string;
     expect(id).toMatch(/^[a-z0-9]{10}$/);
-    expect(created.out.local.url).toBe(`${s.url}/s/${id}`);
-    expect(created.out.session).toBeUndefined();
+    expect(created.out.local.url).toBe(`${s.url}/w/${id}`);
+    // The create serves no existing workspace; if the call names one, it is the new one.
+    expect([undefined, id]).toContain(created.out.workspace);
 
-    const listed = await sessionCli(s, "session", "list");
-    expect(listed.out.data.sessions[0].id).toBe(id);
+    const listed = await workspaceCli(s, "workspace", "list");
+    expect(listed.out.data.workspaces[0].id).toBe(id);
 
-    const shared = await sessionCli(s, "--session", id, "session", "share", "write");
+    const shared = await workspaceCli(s, "--workspace", id, "workspace", "share", "write");
     expect(shared.code, shared.stderr.join("")).toBe(0);
-    expect(shared.out.data.session).toMatchObject({ id, share: "write" });
-    expect(s.app.sessions.get(id)?.record.share).toBe("write");
+    expect(shared.out.data.workspace).toMatchObject({ id, share: "write" });
+    expect(s.app.workspaces.get(id)?.record.share).toBe("write");
 
-    const deleted = await sessionCli(s, "session", "delete", id);
+    const deleted = await workspaceCli(s, "workspace", "delete", id);
     expect(deleted.out.data).toEqual({ deleted: id });
-    const after = await sessionCli(s, "session", "list");
-    expect(after.out.data.sessions.map((x: { id: string }) => x.id)).not.toContain(id);
-    const again = await sessionCli(s, "session", "delete", id);
+    const after = await workspaceCli(s, "workspace", "list");
+    expect(after.out.data.workspaces.map((x: { id: string }) => x.id)).not.toContain(id);
+    const again = await workspaceCli(s, "workspace", "delete", id);
     expect(again.code).toBe(1);
-    expect(again.out.error.code).toBe("unknown_session");
+    expect(again.out.error.code).toBe("unknown_workspace");
+  });
+
+  it("refuses the session forms of round 1 as unknown commands", async () => {
+    const s = await start();
+    const before = s.app.workspaces.listOf("local").length;
+    for (const argv of [
+      ["session", "list"],
+      ["session", "new"],
+      ["--session", "abcdefghij", "state"],
+    ]) {
+      const r = await workspaceCli(s, ...argv);
+      expect(r.code, argv.join(" ")).toBe(2);
+    }
+    expect(s.app.workspaces.listOf("local")).toHaveLength(before);
   });
 
   it("tells who is signed in without a login", async () => {
     const s = await start();
-    const me = await sessionCli(s, "whoami");
+    const me = await workspaceCli(s, "whoami");
     expect(me.code).toBe(0);
     expect(me.out.data).toEqual({
       user: "local",
       identity: "none",
       roles: [],
-      rights: { data: ["*"], share: true },
+      canShare: true,
     });
   });
 });
@@ -1512,7 +1530,12 @@ describe("identity over the CLI (add-multiuser M13)", () => {
 
     const flag = await call(["--token", alice, "whoami"]);
     expect(flag.code, flag.stderr.join("")).toBe(0);
-    expect(flag.out.data).toMatchObject({ user: "alice", identity: "oidc", roles: ["testers"] });
+    expect(flag.out.data).toMatchObject({
+      user: "alice",
+      identity: "oidc",
+      roles: ["testers"],
+      canShare: true,
+    });
     noLeak(flag, alice);
 
     const garbage = await call(["whoami"], { KIPSCOPE_TOKEN: "garbage" });
@@ -1582,7 +1605,7 @@ describe("identity over the CLI (add-multiuser M13)", () => {
     const down = await closedUrl();
     for (const argv of [
       ["--server", server.url, "--token", secret, "window", "create", "--bogus"],
-      ["--server", server.url, "--token", secret, "--session", "zzzzzzzzzz", "state"],
+      ["--server", server.url, "--token", secret, "--workspace", "zzzzzzzzzz", "state"],
       ["--server", down, "--token", secret, "state"],
       ["--server", server.url, "--token", `${secret}x`, "state"],
     ]) {
@@ -1593,32 +1616,33 @@ describe("identity over the CLI (add-multiuser M13)", () => {
     }
   });
 
-  it("keeps a role to its data", async () => {
+  it("keeps a workspace to its grant", async () => {
     const { server, token } = await oidcServer();
     const alice = token();
     const call = (...argv: string[]) => runCli(["--server", server.url, "--token", alice, ...argv]);
 
-    // She has a window of her own with a visible signal; its revision must not move.
+    // Her latest workspace holds a window of her own. The test widens its grant to testcar the way
+    // add-case-open will; its revision must not move afterwards.
     const made = await call("window", "create", "--from", "0", "--to", "10");
     expect(made.code, made.stderr.join("")).toBe(0);
-    const id = made.out.session as string;
-    const revision = server.app.sessions.get(id)?.store.revision;
+    const id = made.out.workspace as string;
+    server.app.workspaces.grantObjects(id, ["testcar"]);
+    const revision = server.app.workspaces.get(id)?.store.revision;
 
-    const search = await call("--session", id, "search", "Fast");
+    const search = await call("--workspace", id, "search", "Fast");
     expect(search.code).toBe(0);
     expect(search.out.data.items.length).toBeGreaterThan(0);
-    for (const item of search.out.data.items)
-      expect(item.dataRef.startsWith("test"), item.id).toBe(true);
+    for (const item of search.out.data.items) expect(item.dataRef, item.id).toBe("testcar");
     expect(search.out.data.total).toBe(search.out.data.items.length);
 
     const hidden = "othercar/Fast_100h.SIG_A";
     const forbidden = [
-      await call("--session", id, "extent", hidden),
-      await call("--session", id, "value", hidden, "2026-10-01T02:00:01Z"),
-      await call("--session", id, "events", "list", "--ref", "othercar"),
-      await call("--session", id, "signal", "add", "w1", hidden),
+      await call("--workspace", id, "extent", hidden),
+      await call("--workspace", id, "value", hidden, "2026-10-01T02:00:01Z"),
+      await call("--workspace", id, "events", "list", "--ref", "othercar"),
+      await call("--workspace", id, "signal", "add", "w1", hidden),
       await call(
-        "--session",
+        "--workspace",
         id,
         "scope",
         "set",
@@ -1631,21 +1655,22 @@ describe("identity over the CLI (add-multiuser M13)", () => {
       expect(r.code, r.stdout.join("")).toBe(1);
       expect(r.out.error.code).toBe("forbidden_data");
     }
-    expect(server.app.sessions.get(id)?.store.revision).toBe(revision);
+    expect(server.app.workspaces.get(id)?.store.revision).toBe(revision);
 
-    // A name that two data refs share is not ambiguous for her: only one of them is hers.
-    const bare = await call("--session", id, "signal", "add", "w1", "Fast_100h.SIG_A");
+    // A name that two data refs share is not ambiguous here: only one of them is granted.
+    const bare = await call("--workspace", id, "signal", "add", "w1", "Fast_100h.SIG_A");
     expect(bare.code, bare.stdout.join("")).toBe(0);
-    expect(server.app.sessions.get(id)?.store.workspace.windows[0]?.signals[0]?.signalId).toBe(
+    expect(server.app.workspaces.get(id)?.store.workspace.windows[0]?.signals[0]?.signalId).toBe(
       "testcar/Fast_100h.SIG_A",
     );
-    // For an administrator the same name is ambiguous.
-    const admin = token({ sub: "root", roles: ["admins"] });
+
+    // Where the grant covers both data refs, the same name is ambiguous.
+    const wide = token({ sub: "root" });
     const first = await runCli([
       "--server",
       server.url,
       "--token",
-      admin,
+      wide,
       "window",
       "create",
       "--from",
@@ -1653,14 +1678,15 @@ describe("identity over the CLI (add-multiuser M13)", () => {
       "--to",
       "10",
     ]);
-    const adminId = first.out.session as string;
+    const wideId = first.out.workspace as string;
+    server.app.workspaces.grantObjects(wideId, ["testcar", "othercar"]);
     const ambiguous = await runCli([
       "--server",
       server.url,
       "--token",
-      admin,
-      "--session",
-      adminId,
+      wide,
+      "--workspace",
+      wideId,
       "signal",
       "add",
       "w1",
@@ -1684,14 +1710,19 @@ describe("identity over the CLI (add-multiuser M13)", () => {
     expect(JSON.stringify(r.out)).not.toContain("idp unreachable");
   });
 
-  it("is rejected by a server without rights for the roles, with the server's code", async () => {
+  it("lets roles decide nothing and shows a new workspace empty", async () => {
     const { server, token } = await oidcServer();
     const nobody = token({ roles: ["nobody"] });
     const me = await runCli(["--server", server.url, "--token", nobody, "whoami"]);
     expect(me.code).toBe(0);
-    expect(me.out.data.rights).toEqual({ data: [], share: false });
+    expect(me.out.data.roles).toEqual(["nobody"]);
+    expect(me.out.data).not.toHaveProperty("rights");
+    // The server answers any signed-in user; the new workspace has an empty grant.
     const state = await runCli(["--server", server.url, "--token", nobody, "state"]);
-    expect(state.code).toBe(1);
-    expect(state.out.error.code).toBe("no_rights");
+    expect(state.code, state.stdout.join("")).toBe(0);
+    const search = await runCli(["--server", server.url, "--token", nobody, "search", "Fast"]);
+    expect(search.code, search.stdout.join("")).toBe(0);
+    expect(search.out.data.items).toEqual([]);
+    expect(search.out.data.total).toBe(0);
   });
 });

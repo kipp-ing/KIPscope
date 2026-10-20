@@ -15,12 +15,12 @@ vi.mock("fastify", async (importOriginal) =>
  */
 const TABLE: Record<string, { level: Level | "body"; dataRefs: boolean }> = {
   "GET /api/license": { level: "public", dataRefs: false },
-  "GET /api/me": { level: "identity", dataRefs: false },
-  "GET /api/sessions": { level: "user", dataRefs: false },
-  "POST /api/sessions": { level: "user", dataRefs: true },
-  "GET /api/sessions/:id": { level: "user", dataRefs: false },
-  "POST /api/sessions/:id/share": { level: "user", dataRefs: false },
-  "DELETE /api/sessions/:id": { level: "user", dataRefs: false },
+  "GET /api/me": { level: "user", dataRefs: false },
+  "GET /api/workspaces": { level: "user", dataRefs: false },
+  "POST /api/workspaces": { level: "user", dataRefs: true },
+  "GET /api/workspaces/:id": { level: "user", dataRefs: false },
+  "POST /api/workspaces/:id/share": { level: "user", dataRefs: false },
+  "DELETE /api/workspaces/:id": { level: "user", dataRefs: false },
   "GET /api/views": { level: "user", dataRefs: false },
   "GET /api/views/:name": { level: "user", dataRefs: false },
   "DELETE /api/views/:name": { level: "user", dataRefs: false },
@@ -28,19 +28,19 @@ const TABLE: Record<string, { level: Level | "body"; dataRefs: boolean }> = {
   "POST /api/views": { level: "change", dataRefs: false },
   "POST /api/views/open": { level: "change", dataRefs: true },
   "POST /api/commands": { level: "change", dataRefs: true },
-  "GET /api/workspace": { level: "session", dataRefs: false },
-  "GET /api/render-status": { level: "session", dataRefs: false },
-  "GET /api/live": { level: "session", dataRefs: false },
-  "GET /api/meta": { level: "session", dataRefs: false },
-  "GET /api/catalog": { level: "session", dataRefs: false },
-  "GET /api/signals": { level: "session", dataRefs: false },
-  "POST /api/catalog/refresh": { level: "session", dataRefs: false },
-  "GET /api/extent": { level: "session", dataRefs: true },
-  "GET /api/series": { level: "session", dataRefs: true },
-  "GET /api/value": { level: "session", dataRefs: true },
-  "GET /api/density": { level: "session", dataRefs: true },
-  "GET /api/gaps": { level: "session", dataRefs: true },
-  "GET /api/events": { level: "session", dataRefs: true },
+  "GET /api/workspace": { level: "workspace", dataRefs: false },
+  "GET /api/render-status": { level: "workspace", dataRefs: false },
+  "GET /api/live": { level: "workspace", dataRefs: false },
+  "GET /api/meta": { level: "workspace", dataRefs: false },
+  "GET /api/catalog": { level: "workspace", dataRefs: false },
+  "GET /api/signals": { level: "workspace", dataRefs: false },
+  "POST /api/catalog/refresh": { level: "workspace", dataRefs: false },
+  "GET /api/extent": { level: "workspace", dataRefs: true },
+  "GET /api/series": { level: "workspace", dataRefs: true },
+  "GET /api/value": { level: "workspace", dataRefs: true },
+  "GET /api/density": { level: "workspace", dataRefs: true },
+  "GET /api/gaps": { level: "workspace", dataRefs: true },
+  "GET /api/events": { level: "workspace", dataRefs: true },
 };
 
 let t: MultiApp | undefined;
@@ -86,7 +86,7 @@ describe("the guard's route table", () => {
 
   it("refuses to start for a route with another method or a nested path", async () => {
     for (const [method, url] of [
-      ["post", "/api/s/anything"],
+      ["post", "/api/w/anything"],
       ["delete", "/api/deep/er/path"],
       ["put", "/api/x"],
     ] as const) {
@@ -135,12 +135,10 @@ describe("unknown paths and methods under /api/", () => {
     const anon = await t.anon.get("/api/nosuchroute");
     expect(anon.status).toBe(401);
     expect(anon.body.error.code).toBe("unauthenticated");
-    // A user without rights learns nothing about routes either.
-    const nobody = await t.as("eve", ["nobody"]).get("/api/nosuchroute");
-    expect(nobody.status).toBe(403);
-    expect(nobody.body.error.code).toBe("no_rights");
-    // Only a user with rights gets the plain 404.
+    // Any signed-in user gets the plain 404, whatever their roles (roles decide nothing).
     expect((await t.as("alice", ["all"]).get("/api/nosuchroute")).status).toBe(404);
+    expect((await t.as("eve", ["nobody"]).get("/api/nosuchroute")).status).toBe(404);
+    expect((await t.as("eve").get("/api/nosuchroute")).status).toBe(404);
   });
 
   it("guards the HEAD route Fastify adds to every GET", async () => {
@@ -153,6 +151,7 @@ describe("unknown paths and methods under /api/", () => {
       const anon = await t.app.inject({ method: "HEAD", url });
       expect(anon.statusCode, `HEAD ${url}`).toBe(401);
     }
+    // A signed-in user's new workspace has an empty grant: the data ref is refused.
     const hidden = await t.app.inject({
       method: "HEAD",
       url: "/api/series?signal=othercar/Fast_100h.SIG_A",
@@ -196,7 +195,7 @@ describe("an encoded /api/ prefix is guarded like the plain one", () => {
   ] as const) {
     it(`answers every route like its plain form with ${label}`, async () => {
       t = await multiApp({ ...(identity ? { identity } : {}), licenseText: "AAL" });
-      const owned = t.sessions.create("alice");
+      const owned = t.workspaces.create("alice");
       const routes = concrete(owned.record.id);
       expect(routes.length).toBeGreaterThan(20);
       const callsBefore = t.calls.length;
@@ -217,34 +216,43 @@ describe("an encoded /api/ prefix is guarded like the plain one", () => {
           const key = `${method} ${spelled(url, prefix)}`;
           // No handler: not found, or the guard's refusal; never data and never a crash.
           expect([401, 404], key).toContain(res.status);
-          // Fastify's own 404 echoes the path the caller sent; it holds nothing of the session.
+          // Fastify's own 404 echoes the path the caller sent; it holds nothing of the workspace.
           expect(res.text, key).not.toContain("alice");
           checked++;
         }
       }
       expect(checked).toBeGreaterThan(200);
-      // Nothing got through to a source, and no session appeared.
+      // Nothing got through to a source, and no workspace appeared.
       expect(t.calls.length).toBe(callsBefore);
-      expect(t.sessions.listOf("alice")).toHaveLength(1);
+      expect(t.workspaces.listOf("alice")).toHaveLength(1);
     });
   }
 
-  it("refuses a user without rights on every encoded route like the plain one", async () => {
+  it("does not read a workspace prefix after an encoded /api/ as a prefix", async () => {
     t = await multiApp();
-    const owned = t.sessions.create("alice");
+    const owned = t.workspaces.create("alice");
     const eve = t.as("eve", ["nobody"]);
-    for (const { method, url } of concrete(owned.record.id)) {
-      if (url === "/api/me" || url === "/api/license" || url === "/api/live") continue;
-      const plain = await eve.request(method, url, body(method));
-      expect(plain.status, `plain ${method} ${url}`).toBe(403);
-      for (const prefix of DECODED_PREFIXES) {
-        const key = `${method} ${spelled(url, prefix)}`;
-        const res = await eve.request(method, spelled(url, prefix), body(method));
-        expect([res.status, codeOf(res.body)], key).toEqual([403, "no_rights"]);
-        expect(res.text, key).toBe(plain.text);
+    const revision = owned.store.revision;
+    // The rewrite knows the plain `/api/w/<id>/` only: after an encoded `api` the path names no
+    // route, so it never reaches alice's private workspace, whatever the spelling.
+    for (const prefix of DECODED_PREFIXES) {
+      for (const [method, rest] of [
+        ["GET", "workspace"],
+        ["GET", "catalog"],
+        ["POST", "commands"],
+      ] as const) {
+        const url = `${prefix}/w/${owned.record.id}/${rest}`;
+        const res = await eve.request(
+          method,
+          url,
+          method === "POST" ? { type: "cursor.setDiff", diff: true } : undefined,
+        );
+        expect(res.status, `${method} ${url}`).toBe(404);
+        expect(res.text, `${method} ${url}`).not.toContain("alice");
       }
     }
-    expect(t.sessions.listOf("eve")).toEqual([]);
+    expect(owned.store.revision).toBe(revision);
+    expect(t.workspaces.listOf("eve")).toEqual([]);
   });
 
   it("guards an encoded prefix of a path that names no route", async () => {
@@ -252,17 +260,17 @@ describe("an encoded /api/ prefix is guarded like the plain one", () => {
     for (const prefix of DECODED_PREFIXES) {
       const anon = await t.anon.get(`${prefix}/nosuchroute`);
       expect([anon.status, codeOf(anon.body)], prefix).toEqual([401, "unauthenticated"]);
-      const nobody = await t.as("eve", ["nobody"]).get(`${prefix}/nosuchroute`);
-      expect([nobody.status, codeOf(nobody.body)], prefix).toEqual([403, "no_rights"]);
+      const signedIn = await t.as("eve", ["nobody"]).get(`${prefix}/nosuchroute`);
+      expect(signedIn.status, prefix).toBe(404);
     }
   });
 
-  it("answers an existing and a missing session alike for a caller who is not signed in", async () => {
+  it("answers an existing and a missing workspace alike for a caller who is not signed in", async () => {
     for (const identity of [denyAll, undefined]) {
       t = await multiApp(identity ? { identity } : {});
-      const owned = t.sessions.create("alice");
+      const owned = t.workspaces.create("alice");
       const missing = "zzzzzzzzzz";
-      expect(t.sessions.get(missing)).toBeUndefined();
+      expect(t.workspaces.get(missing)).toBeUndefined();
       for (const prefix of [...DECODED_PREFIXES, "/api"]) {
         for (const [method, rest] of [
           ["GET", ""],
@@ -272,41 +280,41 @@ describe("an encoded /api/ prefix is guarded like the plain one", () => {
           const answer = async (id: string) => {
             const res = await t?.anon.request(
               method,
-              `${prefix}/sessions/${id}${rest}`,
+              `${prefix}/workspaces/${id}${rest}`,
               method === "POST" ? { share: "read" } : undefined,
             );
             return { status: res?.status, text: res?.text.replaceAll(id, "ID") };
           };
           const existing = await answer(owned.record.id);
           const absent = await answer(missing);
-          const key = `${method} ${prefix}/sessions/<id>${rest}`;
+          const key = `${method} ${prefix}/workspaces/<id>${rest}`;
           expect(existing.status, key).toBe(401);
           expect(existing, key).toEqual(absent);
         }
-        // And through the session prefix of a live workspace route.
-        const viaExisting = await t.anon.get(`${prefix}/s/${owned.record.id}/workspace`);
-        const viaMissing = await t.anon.get(`${prefix}/s/${missing}/workspace`);
+        // And through the workspace prefix of a workspace route.
+        const viaExisting = await t.anon.get(`${prefix}/w/${owned.record.id}/workspace`);
+        const viaMissing = await t.anon.get(`${prefix}/w/${missing}/workspace`);
         expect([401, 404], prefix).toContain(viaExisting.status);
         expect(viaExisting.status, prefix).toBe(viaMissing.status);
         expect(viaExisting.text.replaceAll(owned.record.id, "ID"), prefix).toBe(
           viaMissing.text.replaceAll(missing, "ID"),
         );
       }
-      expect(t.sessions.get(owned.record.id)).toBeDefined();
+      expect(t.workspaces.get(owned.record.id)).toBeDefined();
       await t.close();
       t = undefined;
     }
   });
 
-  it("answers a signed-in caller as the plain form does, a foreign and a missing session each", async () => {
+  it("answers a signed-in caller as the plain form does, a foreign and a missing workspace each", async () => {
     t = await multiApp();
-    const bob = t.sessions.create("bob");
+    const bob = t.workspaces.create("bob");
     const alice = t.as("alice", ["all"]);
     for (const id of [bob.record.id, "zzzzzzzzzz"]) {
-      const plain = await alice.get(`/api/sessions/${id}`);
+      const plain = await alice.get(`/api/workspaces/${id}`);
       expect([403, 404], id).toContain(plain.status);
       for (const prefix of DECODED_PREFIXES) {
-        const res = await alice.get(`${prefix}/sessions/${id}`);
+        const res = await alice.get(`${prefix}/workspaces/${id}`);
         expect([res.status, res.text], `${prefix} ${id}`).toEqual([plain.status, plain.text]);
         expect(res.text).not.toContain("bob");
       }
@@ -315,13 +323,11 @@ describe("an encoded /api/ prefix is guarded like the plain one", () => {
 });
 
 describe("a 16 KB query string through the guard", () => {
-  const rulesOf = (...data: string[]) => ({ roles: [{ role: "many", data, share: false }] });
-  // A rule that makes a backtracking matcher take n^5 steps on a ref of only a's.
-  const MANY = "*a*a*a*a*a*b";
-
   it("refuses a 16 KB data ref in the time of a short one", async () => {
-    t = await multiApp({ rules: rulesOf(MANY) });
+    t = await multiApp();
     const user = t.as("alice", ["many"]);
+    const own = t.workspaces.create("alice");
+    t.workspaces.grantObjects(own.record.id, ["testcar"]);
     const long = "a".repeat(16 * 1024);
     for (const url of [
       `/api/density?dataRef=${long}`,
@@ -334,30 +340,18 @@ describe("a 16 KB query string through the guard", () => {
       const res = await user.get(url);
       const took = performance.now() - started;
       const key = url.slice(0, 60);
-      // The first query (a ref ending in b) may be visible; the long one never is.
       expect([res.status, codeOf(res.body)], key).toEqual([403, "forbidden_data"]);
       expect(took, `ms for ${key}`).toBeLessThan(750);
     }
-    // The same through an encoded prefix and a session prefix.
-    const own = t.sessions.create("alice");
+    // The same through an encoded prefix and a workspace prefix.
     for (const url of [
       `/%61pi/density?dataRef=${long}`,
-      `/api/s/${own.record.id}/density?dataRef=${long}`,
+      `/api/w/${own.record.id}/density?dataRef=${long}`,
     ]) {
       const started = performance.now();
       const res = await user.get(url);
       expect([res.status, codeOf(res.body)], url.slice(0, 40)).toEqual([403, "forbidden_data"]);
       expect(performance.now() - started, url.slice(0, 40)).toBeLessThan(750);
     }
-  });
-
-  it("matches a 16 KB data ref that the pattern covers, as fast", async () => {
-    t = await multiApp({ rules: rulesOf("a*a*a*a*a*b", "*c") });
-    const user = t.as("alice", ["many"]);
-    const started = performance.now();
-    // Visible (it ends in b after more than five a's): not forbidden; the source knows no such ref.
-    const res = await user.get(`/api/density?dataRef=${"a".repeat(16 * 1024)}b`);
-    expect(codeOf(res.body)).not.toBe("forbidden_data");
-    expect(performance.now() - started).toBeLessThan(750);
   });
 });

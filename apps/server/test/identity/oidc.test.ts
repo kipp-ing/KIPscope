@@ -301,7 +301,7 @@ describe("oidc identity adapter", () => {
     const res = await me(t, token);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ user: "bob", roles: ["viewers"] });
-    // A token without the roles claim has no roles, so by the rules no rights (not an error).
+    // A token without the roles claim has no roles (not an error).
     const bare = signToken(
       key,
       tokenClaims(jwks, { realm_access: undefined, preferred_username: "carol" }),
@@ -319,12 +319,45 @@ describe("oidc identity adapter", () => {
     const missing = await me(t, signToken(key, tokenClaims(jwks, { roles: undefined })));
     expect(missing.status).toBe(200);
     expect(missing.body.roles).toEqual([]);
-    expect(missing.body.rights).toEqual({ data: [], share: false });
-    // Without roles every data route answers no_rights.
+    expect(missing.body).not.toHaveProperty("rights");
+    // Roles decide nothing (D-085): a token without roles uses the workspace routes like any other.
     const token = signToken(key, tokenClaims(jwks, { roles: undefined }));
-    const denied = await t.anon.get("/api/workspace", { authorization: `Bearer ${token}` });
-    expect(denied.status).toBe(403);
-    expect(codeOf(denied.body)).toBe("no_rights");
+    const used = await t.anon.get("/api/workspace", { authorization: `Bearer ${token}` });
+    expect(used.status).toBe(200);
+  });
+
+  it("refuses a token of another issuer on a workspace route", async () => {
+    const key = makeKey("RS256");
+    const { jwks, t } = await oidcApp([key]);
+    const bearer = (over: Record<string, unknown>) => ({
+      authorization: `Bearer ${signToken(key, tokenClaims(jwks, over))}`,
+    });
+    // alice owns a workspace shared for writing.
+    const created = await t.anon.post("/api/workspaces", {}, bearer({ sub: "alice" }));
+    expect(created.status).toBe(200);
+    const id = created.body.workspace.id as string;
+    const shared = await t.anon.post(
+      `/api/workspaces/${id}/share`,
+      { share: "write" },
+      bearer({ sub: "alice" }),
+    );
+    expect(shared.body.workspace.share).toBe("write");
+
+    // bob of the same issuer opens it; a token signed by the same key with another issuer does not.
+    const good = await t.anon.get(`/api/w/${id}/workspace`, bearer({ sub: "bob" }));
+    expect(good.status).toBe(200);
+    const other = await t.anon.get(
+      `/api/w/${id}/workspace`,
+      bearer({ sub: "bob", iss: "https://other.example" }),
+    );
+    expect([other.status, codeOf(other.body)]).toEqual([401, "invalid_token"]);
+    const posted = await t.anon.post(
+      `/api/w/${id}/commands`,
+      { type: "window.create", from: "0", to: "10" },
+      bearer({ sub: "bob", iss: "https://other.example" }),
+    );
+    expect([posted.status, codeOf(posted.body)]).toEqual([401, "invalid_token"]);
+    expect(t.workspaces.get(id)?.store.revision).toBe(0);
   });
 
   it("identifies the live channel's upgrade by its token", async () => {
@@ -335,8 +368,8 @@ describe("oidc identity adapter", () => {
     });
     const good = await t.anon.live(undefined, bearer());
     await good.next((m) => m.type === "state");
-    expect(good.messages.map((m) => m.type)).toEqual(["hello", "session", "state"]);
-    expect(good.last("session")?.session.owner).toBe("alice");
+    expect(good.messages.map((m) => m.type)).toEqual(["hello", "summary", "state"]);
+    expect(good.last("summary")?.summary.owner).toBe("alice");
     good.close();
 
     const now = Math.floor(Date.now() / 1000);
@@ -350,10 +383,10 @@ describe("oidc identity adapter", () => {
       expect(refused.messages, name).toEqual([]);
       expect(refused.status, name).toBe(401);
     }
-    // A user whose roles match no rule gets no channel either.
-    const nobody = await t.anon.live(undefined, bearer({ roles: ["nobody"] }));
-    expect(nobody.messages).toEqual([]);
-    expect(nobody.status).toBe(403);
+    // Roles decide nothing: a token without any gets a channel as well.
+    const bare = await t.anon.live(undefined, bearer({ roles: undefined }));
+    await bare.next((m) => m.type === "state");
+    bare.close();
   });
 
   it("refuses roles that are no strings", async () => {

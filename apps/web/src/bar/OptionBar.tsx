@@ -4,17 +4,17 @@ import {
   type CursorName,
   type Digits,
   type Me,
-  type SessionSummary,
   type TimeseriesWindow,
   type Workspace,
+  type WorkspaceSummary,
   windowTitle,
 } from "@kipscope/shared";
 import { useEffect, useRef, useState } from "react";
 import { HINTS } from "../help/hints.ts";
-import { ReadOnlyPill } from "../session/ReadOnlyPill.tsx";
-import { SessionsMenu } from "../session/SessionsMenu.tsx";
 import { formatRange } from "../time/axis.ts";
 import { type TrackOpen, ViewsMenu } from "../views/ViewsMenu.tsx";
+import { ReadOnlyPill } from "../workspaces/ReadOnlyPill.tsx";
+import { ShareMenu } from "../workspaces/ShareMenu.tsx";
 import "./bar.css";
 import { defaultCursorTime, SPAN_PRESETS } from "./bar.ts";
 import { OverflowMenu } from "./OverflowMenu.tsx";
@@ -44,18 +44,18 @@ interface OptionBarProps {
   onNotice: (text: string, title?: string) => void;
   /** Error in the strip. */
   onMessage: (text: string) => void;
-  /** The page's session (add-multiuser M12). */
-  sessionId: string;
-  /** The page's session from the live channel, with this user's rights and its owner. */
-  session: SessionSummary | undefined;
+  /** The page's workspace (add-multiuser M12). */
+  workspaceId: string;
+  /** The page's workspace from the live channel, with this user's rights, its owner and grant. */
+  summary: WorkspaceSummary | undefined;
   /** The signed-in user, read once at start. */
-  me: Me;
+  me: Me | undefined;
 }
 
 /**
- * Sticky bar above the windows (D-023): Sessions and Views menus, the open view's title and the
- * Read-only pill (add-multiuser M12), cursors, link, Go to, span presets, Back, Reset, digits,
- * new values window; on a short row digits, new values window and span move into the "⋯" menu (V7).
+ * Sticky bar above the windows (D-023): Views menu, the open view's title and the Read-only pill
+ * (add-multiuser M12), cursors, link, Go to, span presets, Back, Reset, digits, new values window
+ * and Share…; on a short row digits, new values window, span and Share… move into the "⋯" menu (V7).
  */
 export function OptionBar({
   workspace,
@@ -71,8 +71,8 @@ export function OptionBar({
   trackOpen,
   onNotice,
   onMessage,
-  sessionId,
-  session,
+  workspaceId,
+  summary,
   me,
 }: OptionBarProps) {
   const { cursors, linkTime } = workspace;
@@ -191,23 +191,29 @@ export function OptionBar({
     </button>
   );
 
+  const shareMenu = (after?: () => void) => (
+    <ShareMenu
+      workspace={workspace}
+      workspaceId={workspaceId}
+      summary={summary}
+      me={me}
+      onNotice={onNotice}
+      onMessage={onMessage}
+      {...(after ? { after } : {})}
+    />
+  );
+
   return (
     <div className="option-bar">
-      <SessionsMenu
-        current={sessionId}
-        session={session}
-        me={me}
-        onNotice={onNotice}
-        onMessage={onMessage}
-      />
       <ViewsMenu
         workspace={workspace}
+        workspaceId={workspaceId}
         trackOpen={trackOpen}
         onOpened={onOpened}
         onNotice={onNotice}
         onMessage={onMessage}
       />
-      <ReadOnlyPill session={session} />
+      <ReadOnlyPill summary={summary} />
       <span className="separator" />
       {cursorToggle("a")}
       {cursorToggle("b")}
@@ -282,12 +288,14 @@ export function OptionBar({
       <span className="separator" />
       {digitsSelect(false)}
       {newValuesButton()}
+      {shareMenu()}
       <OverflowMenu>
         {(close) => (
           <>
             {digitsSelect(true)}
             {newValuesButton(() => close(true))}
             {spanSelect(true, close)}
+            {shareMenu(() => close(true))}
           </>
         )}
       </OverflowMenu>

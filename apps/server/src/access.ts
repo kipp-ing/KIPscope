@@ -66,27 +66,20 @@ export interface AccessLogConfig {
   host: string;
   port?: number;
   identity: IdentityConfig;
-  rulesFile?: string;
+  /** KIPSCOPE_SHARE (M2). */
+  share: boolean;
   origins: readonly string[];
 }
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 
 /** The access lines logged at start (add-multiuser M10); pure, so tests read them. */
-export function accessLog(
-  config: AccessLogConfig,
-  rules?: { readonly roles: readonly unknown[] },
-): { level: "info" | "warn"; message: string }[] {
+export function accessLog(config: AccessLogConfig): { level: "info" | "warn"; message: string }[] {
   const lines: { level: "info" | "warn"; message: string }[] = [];
   const loopback = isLoopbackHost(config.host);
   const wildcard = WILDCARD_HOSTS.has(config.host);
   const { identity } = config;
   if (identity.kind === "none") {
-    if (config.rulesFile !== undefined)
-      lines.push({
-        level: "info",
-        message: `KIPSCOPE_RULES ${config.rulesFile} ignored: identity none`,
-      });
     if (!loopback)
       lines.push({
         level: "warn",
@@ -100,10 +93,9 @@ export function accessLog(
     identity.kind === "oidc"
       ? `identity oidc (issuer ${identity.oidc.issuer}, audience ${identity.oidc.audience})`
       : `identity module ${identity.path}`;
-  const roles = rules?.roles.length ?? 0;
   lines.push({
     level: "info",
-    message: `${who}; rules ${config.rulesFile ?? "(none)"} with ${roles} ${roles === 1 ? "role" : "roles"}; origins ${config.origins.join(", ")}`,
+    message: `${who}; sharing ${config.share ? "on" : "off"}; origins ${config.origins.join(", ")}`,
   });
   if (!loopback)
     lines.push({

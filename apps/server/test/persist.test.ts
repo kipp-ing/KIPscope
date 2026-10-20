@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EMPTY_WORKSPACE, type Workspace } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionStore } from "../src/sessions.ts";
+import { WorkspaceRegistry } from "../src/workspaces.ts";
 
 // Count the renames that put a state file in place (design V4/M4: tmp + rename).
 const renames = vi.hoisted(() => ({ calls: [] as string[] }));
@@ -54,13 +54,14 @@ const VIEW = {
   ],
 };
 
-/** The session file of an id, written by hand for the broken-file cases. */
-const sessionFile = (id: string, over: Record<string, unknown> = {}) => ({
-  kipscope: "session",
-  version: 1,
+/** The workspace file (version 2) of an id, written by hand for the broken-file cases. */
+const workspaceFile = (id: string, over: Record<string, unknown> = {}) => ({
+  kipscope: "workspace",
+  version: 2,
   id,
   owner: "local",
   share: "private",
+  grant: { objects: "all" },
   createdAt: "2026-10-19T08:00:00Z",
   lastActiveAt: "2026-10-19T08:00:00Z",
   revision: 3,
@@ -68,14 +69,15 @@ const sessionFile = (id: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe("session state files", () => {
+describe("workspace state files", () => {
   let dir: string;
-  let sessions: string;
+  let workspaces: string;
   let warnings: string[];
   const open = (seed: () => Workspace = () => EMPTY_WORKSPACE) => {
-    const store = new SessionStore({
+    const store = new WorkspaceRegistry({
       dir,
       seed,
+      identity: "none",
       idleDays: 30,
       now: () => Date.now(),
       log: { info: () => {}, warn: (m) => warnings.push(m) },
@@ -84,10 +86,10 @@ describe("session state files", () => {
     stores.push(store);
     return store;
   };
-  const stores: SessionStore[] = [];
+  const stores: WorkspaceRegistry[] = [];
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "kipscope-state-"));
-    sessions = join(dir, "sessions");
+    workspaces = join(dir, "workspaces");
     warnings = [];
     renames.calls.length = 0;
   });
@@ -130,19 +132,20 @@ describe("session state files", () => {
     });
   });
 
-  it("writes the documented envelope", () => {
+  it("writes the documented version 2 envelope", () => {
     const store = open();
     const s = store.create("local");
     s.store.execute({ type: "window.create", from: "0", to: "1000" }, ctx);
     store.flush();
-    const path = join(sessions, `${s.record.id}.json`);
+    const path = join(workspaces, `${s.record.id}.json`);
     const file = JSON.parse(readFileSync(path, "utf8"));
     expect(file).toMatchObject({
-      kipscope: "session",
-      version: 1,
+      kipscope: "workspace",
+      version: 2,
       id: s.record.id,
       owner: "local",
       share: "private",
+      grant: { objects: "all" },
       revision: 1,
     });
     expect(typeof file.createdAt).toBe("string");
@@ -155,7 +158,7 @@ describe("session state files", () => {
     vi.useFakeTimers({ now: new Date("2026-10-19T08:00:00Z") });
     const store = open();
     const s = store.create("local");
-    const path = join(sessions, `${s.record.id}.json`);
+    const path = join(workspaces, `${s.record.id}.json`);
     // Let the creation settle, so only the 20 commands are counted.
     vi.advanceTimersByTime(1_000);
     renames.calls.length = 0;
@@ -175,8 +178,8 @@ describe("session state files", () => {
     vi.advanceTimersByTime(2);
     expect(renames.calls.filter((p) => p === path)).toHaveLength(1);
     expect(JSON.parse(readFileSync(path, "utf8")).revision).toBe(20);
-    expect(readdirSync(sessions).filter((f) => f.endsWith(".tmp"))).toEqual([]);
-    expect(readdirSync(sessions)).toEqual([`${s.record.id}.json`]);
+    expect(readdirSync(workspaces).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+    expect(readdirSync(workspaces)).toEqual([`${s.record.id}.json`]);
 
     // Nothing further without a further change.
     vi.advanceTimersByTime(5_000);
@@ -187,7 +190,7 @@ describe("session state files", () => {
     vi.useFakeTimers({ now: new Date("2026-10-19T08:00:00Z") });
     const store = open();
     const s = store.create("local");
-    const path = join(sessions, `${s.record.id}.json`);
+    const path = join(workspaces, `${s.record.id}.json`);
     vi.advanceTimersByTime(1_000);
     renames.calls.length = 0;
     s.store.execute({ type: "window.create", from: "0", to: "1000" }, ctx);
@@ -202,10 +205,10 @@ describe("session state files", () => {
     vi.useFakeTimers({ now: new Date("2026-10-19T08:00:00Z") });
     const store = open();
     const s = store.create("local");
-    // The sessions folder is replaced by a plain file: every write fails.
+    // The workspaces folder is replaced by a plain file: every write fails.
     store.flush();
-    rmSync(sessions, { recursive: true, force: true });
-    writeFileSync(sessions, "in the way");
+    rmSync(workspaces, { recursive: true, force: true });
+    writeFileSync(workspaces, "in the way");
     expect(s.store.execute({ type: "window.create", from: "0", to: "1000" }, ctx).ok).toBe(true);
     expect(() => vi.advanceTimersByTime(2_000)).not.toThrow();
     expect(s.store.revision).toBe(1);
@@ -213,45 +216,52 @@ describe("session state files", () => {
   });
 
   it("moves a broken state file aside", () => {
-    mkdirSync(sessions, { recursive: true });
-    const text = JSON.stringify(sessionFile("aaaaaaaaaa"));
-    writeFileSync(join(sessions, "aaaaaaaaaa.json"), text);
+    mkdirSync(workspaces, { recursive: true });
+    const text = JSON.stringify(workspaceFile("aaaaaaaaaa", { workspace: { windows: "x" } }));
+    writeFileSync(join(workspaces, "aaaaaaaaaa.json"), text);
     const store = open();
     expect(store.get("aaaaaaaaaa")).toBeUndefined();
-    expect(readFileSync(join(sessions, "aaaaaaaaaa.bad.json"), "utf8")).toBe(text);
-    expect(existsSync(join(sessions, "aaaaaaaaaa.json"))).toBe(false);
+    expect(readFileSync(join(workspaces, "aaaaaaaaaa.bad.json"), "utf8")).toBe(text);
+    expect(existsSync(join(workspaces, "aaaaaaaaaa.json"))).toBe(false);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("aaaaaaaaaa");
-    // A fresh start for that user: a new session is empty at revision 0.
+    // A fresh start for that user: a new workspace is empty at revision 0.
     const fresh = store.create("local");
     expect(fresh.store.revision).toBe(0);
     expect(fresh.store.workspace).toEqual(EMPTY_WORKSPACE);
   });
 
-  it("moves a file with another kind or version aside, replacing an older .bad", () => {
-    mkdirSync(sessions, { recursive: true });
-    writeFileSync(join(sessions, "aaaaaaaaaa.bad.json"), "old");
+  it("moves a file with another kind, version or grant aside, replacing an older .bad", () => {
+    mkdirSync(workspaces, { recursive: true });
+    writeFileSync(join(workspaces, "aaaaaaaaaa.bad.json"), "old");
     writeFileSync(
-      join(sessions, "aaaaaaaaaa.json"),
-      JSON.stringify(sessionFile("aaaaaaaaaa", { version: 2, workspace: EMPTY_WORKSPACE })),
+      join(workspaces, "aaaaaaaaaa.json"),
+      JSON.stringify(workspaceFile("aaaaaaaaaa", { version: 3, workspace: EMPTY_WORKSPACE })),
     );
     writeFileSync(
-      join(sessions, "bbbbbbbbbb.json"),
+      join(workspaces, "bbbbbbbbbb.json"),
       JSON.stringify(
-        sessionFile("bbbbbbbbbb", { kipscope: "workspace", workspace: EMPTY_WORKSPACE }),
+        workspaceFile("bbbbbbbbbb", { kipscope: "other", workspace: EMPTY_WORKSPACE }),
+      ),
+    );
+    writeFileSync(
+      join(workspaces, "cccccccccc.json"),
+      JSON.stringify(
+        workspaceFile("cccccccccc", { grant: { objects: "some" }, workspace: EMPTY_WORKSPACE }),
       ),
     );
     open();
-    expect(readFileSync(join(sessions, "aaaaaaaaaa.bad.json"), "utf8")).toContain('"version":2');
-    expect(existsSync(join(sessions, "bbbbbbbbbb.bad.json"))).toBe(true);
-    expect(warnings).toHaveLength(2);
+    expect(readFileSync(join(workspaces, "aaaaaaaaaa.bad.json"), "utf8")).toContain('"version":3');
+    expect(existsSync(join(workspaces, "bbbbbbbbbb.bad.json"))).toBe(true);
+    expect(existsSync(join(workspaces, "cccccccccc.bad.json"))).toBe(true);
+    expect(warnings).toHaveLength(3);
   });
 
   it("treats a missing file as a fresh start", () => {
     const store = open();
     expect(store.listOf("local")).toEqual([]);
     expect(warnings).toEqual([]);
-    expect(existsSync(sessions) ? readdirSync(sessions) : []).toEqual([]);
+    expect(existsSync(workspaces) ? readdirSync(workspaces) : []).toEqual([]);
   });
 
   it("keeps the restored measurement", async () => {
@@ -267,10 +277,10 @@ describe("session state files", () => {
       measurement: { name: "old", object: "keep?" },
       view: { name: "mine", title: "Mine", modified: true },
     };
-    mkdirSync(sessions, { recursive: true });
+    mkdirSync(workspaces, { recursive: true });
     writeFileSync(
-      join(sessions, "aaaaaaaaaa.json"),
-      JSON.stringify(sessionFile("aaaaaaaaaa", { revision: 3, workspace: state })),
+      join(workspaces, "aaaaaaaaaa.json"),
+      JSON.stringify(workspaceFile("aaaaaaaaaa", { revision: 3, workspace: state })),
     );
     const project = join(dir, "kipscope.yaml");
     writeFileSync(project, "measurement:\n  name: smart451 test\n");
@@ -292,7 +302,7 @@ describe("session state files", () => {
       let restored: Body | undefined;
       for (let i = 0; i < 100 && !restored; i++) {
         try {
-          const res = await fetch(`${base}/api/s/aaaaaaaaaa/workspace`);
+          const res = await fetch(`${base}/api/w/aaaaaaaaaa/workspace`);
           if (res.ok) restored = (await res.json()) as Body;
           else await new Promise((r) => setTimeout(r, 100));
         } catch {
@@ -308,15 +318,15 @@ describe("session state files", () => {
       expect(restored?.workspace.view?.modified).toBe(true);
       expect(restored?.revision).toBe(3);
 
-      // A new session takes the project file's measurement.
-      const created = await fetch(`${base}/api/sessions`, {
+      // A new workspace takes the project file's measurement.
+      const created = await fetch(`${base}/api/workspaces`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
       });
       expect(created.status).toBe(200);
-      const id = ((await created.json()) as { session: { id: string } }).session.id;
-      const fresh = (await (await fetch(`${base}/api/s/${id}/workspace`)).json()) as Body;
+      const id = ((await created.json()) as { workspace: { id: string } }).workspace.id;
+      const fresh = (await (await fetch(`${base}/api/w/${id}/workspace`)).json()) as Body;
       expect(fresh.workspace.measurement).toEqual({ name: "smart451 test" });
       expect(fresh.workspace.windows).toEqual([]);
       expect(fresh.revision).toBe(0);

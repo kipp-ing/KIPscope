@@ -87,9 +87,16 @@ export const HINTS = {
   },
 
   // Top row, add-saved-views (V7): Views menu, overflow menu, open view.
-  views: "Views: save, open, import and share named views",
-  copyLink:
-    "Copy link: a link holding this view; works where a KIPscope server with the same data runs",
+  views: "Views: save, open and import named views; back to a recent workspace",
   viewModified: "Changed since saved or opened",
   moreControls: "More controls: the top row items that do not fit",
+
+  // Share… and Recent workspaces, add-multiuser (M12).
+  share: "Share: a link to an own copy of this layout, or an invite to this workspace",
+  copyOwnLink:
+    "Copy link (own copy): a link holding this layout; works where a KIPscope server with the same data runs",
+  copyWorkspaceLink:
+    "Copy workspace link: the address of this workspace, for whoever it is shared with",
+  sharingOff: "Sharing is turned off on this server",
+  openElsewhere: "Open in another tab",
 } as const;

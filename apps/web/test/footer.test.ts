@@ -89,7 +89,7 @@ describe("signed-in user item (app-footer)", () => {
     user: "alice",
     identity: "oidc",
     roles: ["testers", "viewers"],
-    rights: { data: ["test*"], share: false },
+    canShare: false,
   };
 
   it("shows the signed-in user", () => {
@@ -117,7 +117,7 @@ describe("signed-in user item (app-footer)", () => {
       user: "local",
       identity: "none",
       roles: [],
-      rights: { data: ["*"], share: true },
+      canShare: true,
     };
     expect(footerItems(metaOf(), false, ZONE, new Date(), local).map((i) => i.key)).toEqual(
       base.map((i) => i.key),

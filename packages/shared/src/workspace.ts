@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { MAX_FILTER_LENGTH } from "./eventFilter.ts";
-import type { SessionSummary } from "./session.ts";
 import { fromIso, parseTimestamp, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
+import type { WorkspaceSummary } from "./workspaces.ts";
 
 /** Maximum number of distinct signals across all windows (spec workspace-state). */
 export const MAX_SIGNALS = 50;
@@ -250,7 +250,7 @@ export function windowUnits(
 const Id = z.string().min(1).max(200);
 
 /** A data ref: non-empty, no "/" (the separator of signal IDs). */
-const DataRef = Id.refine((s) => !s.includes("/"), { message: "a data ref holds no /" });
+export const DataRef = Id.refine((s) => !s.includes("/"), { message: "a data ref holds no /" });
 
 /** to − from ≥ MIN_SPAN_NS for decimal-ns strings (scope.set, view.open scope). */
 const scopeSpanOk = (s: { from: string; to: string }) =>
@@ -438,8 +438,8 @@ export interface OpenReport {
 /** Messages on `WS /api/live`. */
 export type LiveServerMessage =
   | { type: "hello"; clientId: string }
-  /** The session this connection serves, with this connection's user's rights (add-multiuser M8). */
-  | { type: "session"; session: SessionSummary }
+  /** The workspace this connection serves, with this connection's user's rights (add-multiuser M8). */
+  | { type: "summary"; summary: WorkspaceSummary }
   | {
       type: "state";
       revision: number;

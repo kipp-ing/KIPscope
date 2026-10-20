@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import type { CatalogState, ServerMeta } from "@kipscope/shared";
+import type { CatalogState, Grant, ServerMeta } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { SourceInfo } from "./datasource.ts";
-import { apiError, userOf } from "./http.ts";
-import { type CatalogView, catalogView, type Rights } from "./rights.ts";
+import { apiError, grantOf } from "./http.ts";
+import { type CatalogView, catalogView } from "./rights.ts";
 import { type CatalogStore, scopeOf } from "./scope.ts";
 
 /** The repo's commit when the server started (design F2). */
@@ -87,7 +87,7 @@ function catalogStatus(catalog: CatalogView): CatalogStatus {
 }
 
 /**
- * The catalog the session uses (add-scope Z5, Z10) as the requester sees it (add-multiuser M9):
+ * The catalog the workspace uses (add-scope Z5, Z10) as its grant shows it (add-multiuser M9):
  * with a scope that scope's list, else the full catalog in full mode and `no_scope` in scoped
  * mode. Without a store: full mode.
  */
@@ -95,15 +95,15 @@ function catalogMeta(
   catalogs: CatalogStore | undefined,
   full: Catalog,
   scope: ServerMeta["catalog"]["scope"],
-  rights: Rights,
+  grant: Grant,
 ): ServerMeta["catalog"] {
   const mode = catalogs?.mode ?? "full";
   if (!scope) {
     if (mode === "scoped") return { mode, state: "no_scope", size: 0 };
-    return { mode, ...catalogStatus(catalogView(catalogs?.full ?? full, rights)) };
+    return { mode, ...catalogStatus(catalogView(catalogs?.full ?? full, grant)) };
   }
   const held = catalogs?.get(scope);
-  const catalog = held && catalogView(held, rights);
+  const catalog = held && catalogView(held, grant);
   const status: CatalogStatus = catalog
     ? catalogStatus(catalog)
     : {
@@ -115,7 +115,7 @@ function catalogMeta(
 }
 
 /**
- * `GET /api/meta` (build, source reachability, the session's catalog state) and `GET /api/license`
+ * `GET /api/meta` (build, source reachability, the workspace's catalog state) and `GET /api/license`
  * (design F2, F4; add-multiuser M6, M9).
  */
 export function metaRoutes(deps: {
@@ -136,7 +136,7 @@ export function metaRoutes(deps: {
   };
 
   return async (app) => {
-    app.get("/api/meta", { config: { access: { level: "session" } } }, async (request, reply) => {
+    app.get("/api/meta", { config: { access: { level: "workspace" } } }, async (request, reply) => {
       if (!meta) return apiError(reply, 404, "not_configured", "server meta not configured");
       const ping = await check(meta.ping);
       const body: ServerMeta = {
@@ -151,7 +151,7 @@ export function metaRoutes(deps: {
           table: meta.source.table,
           ...ping,
         },
-        catalog: catalogMeta(catalogs, catalog, scopeOf(request), userOf(request).rights),
+        catalog: catalogMeta(catalogs, catalog, scopeOf(request), grantOf(request)),
       };
       return body;
     });

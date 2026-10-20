@@ -72,7 +72,7 @@ describe("built UI served by the server", () => {
     expect(asset.headers["cache-control"]).toContain("immutable");
     expect(asset.text).toBe("console.log('app');");
 
-    for (const path of ["/s/abcdefghij", "/"]) {
+    for (const path of ["/w/abcdefghij", "/s/abcdefghij", "/"]) {
       const page = await t.anon.get(path);
       expect(page.status, path).toBe(200);
       expect(page.headers["content-type"], path).toBe("text/html; charset=utf-8");
@@ -93,6 +93,7 @@ describe("built UI served by the server", () => {
   it("answers 404 for paths without a web directory", async () => {
     t = await multiApp({ identity: refuseAll });
     expect((await t.anon.get("/")).status).toBe(404);
+    expect((await t.anon.get("/w/abcdefghij")).status).toBe(404);
     expect((await t.anon.get("/s/abcdefghij")).status).toBe(404);
     expect((await t.anon.get("/assets/app.js")).status).toBe(404);
   });
@@ -104,7 +105,7 @@ describe("built UI served by the server", () => {
       "/api/me",
       "/api/workspace",
       "/api/nosuchroute",
-      "/api/s/abcdefghij/workspace",
+      "/api/w/abcdefghij/workspace",
     ]) {
       const res = await t.anon.get(path);
       expect([res.status, codeOf(res.body)], path).toEqual([401, "unauthenticated"]);
@@ -152,7 +153,12 @@ describe("built UI served by the server", () => {
       await refused.close();
     }
     // The SPA route itself still gets the index, also with a query string.
-    for (const path of ["/s/abcdefghij", "/s/abcdefghij?x=1"]) {
+    for (const path of [
+      "/w/abcdefghij",
+      "/w/abcdefghij?x=1",
+      "/s/abcdefghij",
+      "/s/abcdefghij?x=1",
+    ]) {
       const page = await alice.get(path);
       expect(page.status, path).toBe(200);
       expect(page.text, path).toContain("KIPscope index");

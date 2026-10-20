@@ -2,9 +2,9 @@ import {
   type ApiError,
   type CommandInput,
   type CommandResult,
-  SESSION_HEADER,
-  SESSION_ID,
-  sessionApi,
+  WORKSPACE_HEADER,
+  WORKSPACE_ID,
+  workspaceApi,
 } from "@kipscope/shared";
 import { CliError } from "./output.ts";
 
@@ -27,13 +27,13 @@ export interface Client {
   postCommand(command: CommandInput): Promise<CommandResult>;
   /** As postCommand, for an endpoint that answers like POST /api/commands (POST /api/views/open). */
   postCommandAt(path: string, body: unknown): Promise<CommandResult>;
-  /** The call's session: the given one, else the first answer's `X-KIPscope-Session` (M13). */
-  session(): string | undefined;
+  /** The call's workspace: the given one, else the first answer's `X-KIPscope-Workspace` (M13). */
+  workspace(): string | undefined;
 }
 
 export interface ClientOptions {
-  /** Every request goes to `/api/s/<session>/…`; the server ignores the prefix where no session applies. */
-  session?: string;
+  /** Every request goes to `/api/w/<workspace>/…`; the server ignores the prefix where no workspace applies. */
+  workspace?: string;
   /** Sent as `Authorization: Bearer <token>`; never part of a message. */
   token?: string;
 }
@@ -43,14 +43,14 @@ export function createClient(
   deadline: Deadline,
   options: ClientOptions = {},
 ): Client {
-  let session = options.session;
+  let workspace = options.workspace;
   const auth: Record<string, string> =
     options.token === undefined ? {} : { authorization: `Bearer ${options.token}` };
 
-  /** `/api/x` → `/api/s/<id>/x` once the call has a session. */
+  /** `/api/x` → `/api/w/<id>/x` once the call has a workspace. */
   const address = (path: string) =>
-    session !== undefined && path.startsWith("/api/")
-      ? `${sessionApi(session)}${path.slice("/api".length)}`
+    workspace !== undefined && path.startsWith("/api/")
+      ? `${workspaceApi(workspace)}${path.slice("/api".length)}`
       : path;
 
   async function request(method: "GET" | "POST" | "DELETE", path: string, init: RequestInit) {
@@ -66,9 +66,11 @@ export function createClient(
         method,
         signal,
       });
-      // One session per call: a default session the server chose stays the call's session.
-      const served = response.headers.get(SESSION_HEADER);
-      if (session === undefined && served !== null && SESSION_ID.test(served)) session = served;
+      // One workspace per call: a default workspace the server chose stays the call's workspace.
+      const served = response.headers.get(WORKSPACE_HEADER);
+      if (workspace === undefined && served !== null && WORKSPACE_ID.test(served)) {
+        workspace = served;
+      }
       // Read the body under the same deadline; a server can stall after the headers.
       const text = await response.text();
       return { status: response.status, text, body: parseJson(text), what };
@@ -116,7 +118,7 @@ export function createClient(
 
     postCommand: (command: CommandInput) => postCommandAt("/api/commands", command),
     postCommandAt,
-    session: () => session,
+    workspace: () => workspace,
   };
 }
 

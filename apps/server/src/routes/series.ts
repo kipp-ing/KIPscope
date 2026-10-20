@@ -30,7 +30,7 @@ import {
 import { withPriority } from "../priority.ts";
 import { sourceScope } from "../scope.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
-import type { Sessions } from "../sessions.ts";
+import type { Workspaces } from "../workspaces.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -62,21 +62,21 @@ const ValueQuery = z.object({
   mode: ValuesMode.default("line"),
 });
 
-/** Window and events-line signals of every session with a live client, united (add-multiuser M9). */
-export function openSignals(sessions: Sessions): string[] {
-  return [...new Set(sessions.open().flatMap((s) => workspaceSignals(s.store.workspace)))];
+/** Window and events-line signals of every workspace with a live client, united (add-multiuser M9). */
+export function openSignals(workspaces: Workspaces): string[] {
+  return [...new Set(workspaces.open().flatMap((w) => workspaceSignals(w.store.workspace)))];
 }
 
 /**
- * Scopes of the sessions with a live client, one per scope key; `unscoped` when one of them has
- * none or no session has a client (add-multiuser M9).
+ * Scopes of the workspaces with a live client, one per scope key; `unscoped` when one of them has
+ * none or no workspace has a client (add-multiuser M9).
  */
-function openScopeList(sessions: Sessions): { scopes: Scope[]; unscoped: boolean } {
-  const open = sessions.open();
+function openScopeList(workspaces: Workspaces): { scopes: Scope[]; unscoped: boolean } {
+  const open = workspaces.open();
   const scopes = new Map<string, Scope>();
   let unscoped = open.length === 0;
-  for (const session of open) {
-    const scope = session.store.workspace.scope;
+  for (const entry of open) {
+    const scope = entry.store.workspace.scope;
     if (!scope) unscoped = true;
     else scopes.set(`${scope.dataRef} ${scope.from} ${scope.to}`, sourceScope(scope));
   }
@@ -84,13 +84,13 @@ function openScopeList(sessions: Sessions): { scopes: Scope[]; unscoped: boolean
 }
 
 /** Access of the data routes (add-multiuser M6): the data refs each request names. */
-const SIGNAL_ACCESS: Access = { level: "session", dataRefs: queryDataRefs({ signal: "signal" }) };
+const SIGNAL_ACCESS: Access = { level: "workspace", dataRefs: queryDataRefs({ signal: "signal" }) };
 const DENSITY_ACCESS: Access = {
-  level: "session",
+  level: "workspace",
   dataRefs: queryDataRefs({ dataRef: "dataRef" }),
 };
 const GAPS_ACCESS: Access = {
-  level: "session",
+  level: "workspace",
   dataRefs: queryDataRefs({ dataRef: "dataRef", signal: "signal" }),
 };
 
@@ -104,15 +104,15 @@ const workspaceScope = (scope: Scope) => ({
 export const seriesRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    const { catalog, source, sessions } = deps;
+    const { catalog, source, workspaces } = deps;
     const catalogs = catalogsOf(deps);
     // A scope's caches follow that scope's signal list (add-scope Z9).
     const scopeCatalog = (scope: Scope) => catalogs.get(workspaceScope(scope));
     const density = new DensityCache(source, (scope) =>
       scope ? scopeCatalog(scope)?.loadedAt : catalog.loadedAt,
     );
-    // Periods are measured for the open sessions' signals and the requests' only (design P6, M9).
-    const gaps = new GapCache(source, catalog, () => openSignals(sessions), scopeCatalog);
+    // Periods are measured for the open workspaces' signals and the requests' only (design P6, M9).
+    const gaps = new GapCache(source, catalog, () => openSignals(workspaces), scopeCatalog);
     const warn = (message: string) => app.log.warn(message);
     // Gap info polls (design G9 (b)): a setTimeout chain, each poll GAP_REFRESH_MS after the
     // previous poll or the catalog load's prefetch ended, so polls never overlap each other or a
@@ -125,11 +125,11 @@ export const seriesRoutes =
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(poll, GAP_REFRESH_MS);
     };
-    // The gap info of the open sessions' scopes is polled (add-scope Z9, add-multiuser M9); the
-    // full catalog's only in full mode while an open session has no scope or none is open.
+    // The gap info of the open workspaces' scopes is polled (add-scope Z9, add-multiuser M9); the
+    // full catalog's only in full mode while an open workspace has no scope or none is open.
     const poll = () => {
       timer = undefined;
-      const { scopes, unscoped } = openScopeList(sessions);
+      const { scopes, unscoped } = openScopeList(workspaces);
       if (scopes.length > 0 && !(unscoped && catalogs.mode === "full")) {
         polling = withPriority("background", async () => {
           for (const s of scopes) await gaps.refresh([s.dataRef], warn, s);

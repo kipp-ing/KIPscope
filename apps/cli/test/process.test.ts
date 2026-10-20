@@ -50,8 +50,8 @@ describe("separate process", () => {
         accepted: true,
         command: { type: "cursor.setDiff", diff: true },
         revision: 1,
-        // The session the call served (add-multiuser M13): the harness has the one, `0000000000`.
-        session: expect.stringMatching(/^[a-z0-9]{10}$/),
+        // The workspace the call served (add-multiuser M13): the harness has the one, `0000000000`.
+        workspace: expect.stringMatching(/^[a-z0-9]{10}$/),
       });
     } finally {
       await fresh.close();

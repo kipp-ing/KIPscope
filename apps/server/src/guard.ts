@@ -1,38 +1,31 @@
 import {
+  type Grant,
   LOCAL_USER,
   parseSignalId,
-  SESSION_HEADER,
-  type SessionRights,
-  type SessionShare,
   USER_ID,
-  type Workspace,
+  WORKSPACE_HEADER,
+  type WorkspaceRights,
+  type WorkspaceShare,
 } from "@kipscope/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteOptions } from "fastify";
+import type { IdentityConfig } from "./config.ts";
 import { apiError } from "./http.ts";
 import type { IdentifyResult, Identity, IdentityAdapter, IdentityRequest } from "./identity.ts";
-import {
-  ALL_RIGHTS,
-  canSee,
-  hasRights,
-  type Rights,
-  type Rules,
-  rightsOf,
-  sessionRights,
-} from "./rights.ts";
+import { covers, initialGrant, workspaceRights } from "./rights.ts";
 
 /**
  * The one place that decides access (design M6): every route under `/api/` declares its level and
  * the data refs it names; two hooks enforce them before any handler runs.
  */
 
-export type Level = "public" | "identity" | "user" | "session" | "change";
+export type Level = "public" | "user" | "workspace" | "change";
 export type Access = {
   /**
-   * public: no user. identity: a user, rights not needed. user: a user with rights. session: +
-   * open right on the session. change: + change right. The body form is decided in preHandler
-   * (only `POST /api/views/import`) and counts as "user" in onRequest.
+   * public: no user. user: a signed-in user. workspace: + open right on the workspace. change: +
+   * change right. The body form is decided in preHandler (only `POST /api/views/import`) and
+   * counts as "user" in onRequest.
    */
-  level: Level | { body: (request: FastifyRequest) => "user" | "session" | "change" };
+  level: Level | { body: (request: FastifyRequest) => "user" | "workspace" | "change" };
   /** Every data ref the request names (query, body); checked before the handler runs. */
   dataRefs?: (request: FastifyRequest) => string[];
 };
@@ -43,48 +36,66 @@ declare module "fastify" {
   }
 }
 
-/** The user a request runs as, set by the onRequest hook. */
+/** The user a request runs as, set by the onRequest hook. Roles decide nothing (D-085). */
 export interface RequestUser {
   readonly identity: Identity;
-  readonly rights: Rights;
 }
 
-/** What the guard needs of a session (design M4 `Session`). */
-export interface GuardSession {
-  readonly record: { readonly id: string; readonly owner: string; readonly share: SessionShare };
-  readonly store: { readonly workspace: Workspace };
+/** What the guard needs of a workspace (design M4 `WorkspaceEntry`). */
+export interface GuardWorkspace {
+  readonly record: {
+    readonly id: string;
+    readonly owner: string;
+    readonly share: WorkspaceShare;
+  };
 }
 
-export interface GuardOptions<S extends GuardSession> {
-  /** The identity adapter; undefined in `none` mode, where every request is `local` with all rights. */
+/** A workspace the guard admitted, with the user's rights on it and its effective grant. */
+export interface Admitted<W extends GuardWorkspace = GuardWorkspace> {
+  readonly entry: W;
+  readonly rights: WorkspaceRights;
+  readonly grant: Grant;
+}
+
+export interface GuardOptions<W extends GuardWorkspace> {
+  /** The identity adapter; undefined in `none` mode, where every request is `local` and every grant is "all". */
   identity?: IdentityAdapter;
-  /** The rules file's content; required with an adapter. */
-  rules?: Rules;
   /**
-   * The session a `session` or `change` request serves: the prefix's, else the user's default
-   * (design M5). Undefined: 404 `unknown_session`.
+   * The workspace a `workspace` or `change` request serves: the prefix's, else the user's default
+   * (design M5). Undefined: 404 `unknown_workspace`.
    */
-  resolveSession(request: FastifyRequest, user: RequestUser): S | undefined;
+  resolveWorkspace(request: FastifyRequest, user: RequestUser): W | undefined;
+  /** The workspace's effective grant (the registry's `grantOf`, design M3). */
+  grantOf(entry: W): Grant;
   log?: { warn(message: string): void };
   now?: () => number;
 }
 
 const users = new WeakMap<FastifyRequest, RequestUser>();
-const sessions = new WeakMap<FastifyRequest, { session: GuardSession; rights: SessionRights }>();
+const admitted = new WeakMap<FastifyRequest, Admitted>();
+const grants = new WeakMap<FastifyRequest, Grant>();
 
 /** The user the guard identified for this request; undefined for `public` routes and non-API paths. */
 export function requestUser(request: FastifyRequest): RequestUser | undefined {
   return users.get(request);
 }
 
-/** The session the guard resolved and admitted for this request, with the user's rights on it. */
-export function requestSession<S extends GuardSession>(
+/** The workspace the guard resolved and admitted for this request, with rights and effective grant. */
+export function requestWorkspace<W extends GuardWorkspace>(
   request: FastifyRequest,
-): { session: S; rights: SessionRights } | undefined {
-  return sessions.get(request) as { session: S; rights: SessionRights } | undefined;
+): Admitted<W> | undefined {
+  return admitted.get(request) as Admitted<W> | undefined;
 }
 
-const LOCAL: RequestUser = { identity: { user: LOCAL_USER, roles: [] }, rights: ALL_RIGHTS };
+/**
+ * The grant the guard checked this request's data refs against: the admitted workspace's
+ * effective grant, or for level `user` the initial grant a new workspace gets (design M6).
+ */
+export function requestGrant(request: FastifyRequest): Grant | undefined {
+  return grants.get(request);
+}
+
+const LOCAL: RequestUser = { identity: { user: LOCAL_USER, roles: [] } };
 
 const MAX_ROLES = 200;
 const MAX_ROLE = 128;
@@ -93,9 +104,6 @@ const WARN_EVERY_MS = 60_000;
 
 const isApi = (url: string) => url.startsWith("/api/");
 const pathOf = (url: string) => url.split("?", 1)[0] ?? url;
-
-/** A level's place in the order public < identity < user < session < change. */
-const RANK: Record<Level, number> = { public: 0, identity: 1, user: 2, session: 3, change: 4 };
 
 /** What an adapter sees of a request (design M1); the request itself stays untouched. */
 function identityRequest(request: FastifyRequest): IdentityRequest {
@@ -164,9 +172,9 @@ function refusalOf(
  * Adds the guard to the app (design M6): the onRoute check, then the onRequest and preHandler
  * hooks. Call it before any route is registered and after the Host/Origin hook.
  */
-export function registerGuard<S extends GuardSession>(
+export function registerGuard<W extends GuardWorkspace>(
   app: FastifyInstance,
-  options: GuardOptions<S>,
+  options: GuardOptions<W>,
 ): void {
   const hooks = guardHooks(options);
   app.addHook("onRoute", hooks.onRoute);
@@ -175,9 +183,14 @@ export function registerGuard<S extends GuardSession>(
 }
 
 /** The guard's three hooks, for an app that orders its hooks itself. */
-export function guardHooks<S extends GuardSession>(options: GuardOptions<S>) {
-  const { identity: adapter, rules } = options;
-  if (adapter && !rules) throw new Error("guard: an identity adapter needs rules");
+export function guardHooks<W extends GuardWorkspace>(options: GuardOptions<W>) {
+  const { identity: adapter } = options;
+  // initialGrant tells only `none` from any other identity.
+  const kind: IdentityConfig["kind"] = adapter
+    ? adapter.kind === "oidc"
+      ? "oidc"
+      : "module"
+    : "none";
   const now = options.now ?? Date.now;
   /** A warning at most once per minute per kind (design M1). */
   const throttled = () => {
@@ -201,7 +214,8 @@ export function guardHooks<S extends GuardSession>(options: GuardOptions<S>) {
   };
 
   /**
-   * Identify, rights, `no_rights`; before the body is read, the live upgrade included. Keyed on
+   * Identify; before the body is read, the live upgrade included. A signed-in user may use
+   * KIPscope; the grant decides what data they see (design M6). Keyed on
    * the matched route, never on the raw URL: the router decodes percent escapes, so `/%61pi/…`
    * reaches an `/api/` route as well.
    */
@@ -209,7 +223,7 @@ export function guardHooks<S extends GuardSession>(options: GuardOptions<S>) {
     const level = levelOf(request);
     if (level === undefined || level === "public") return;
     let user: RequestUser = LOCAL;
-    if (adapter && rules) {
+    if (adapter) {
       let result: unknown;
       try {
         result = await adapter.identify(identityRequest(request));
@@ -228,19 +242,19 @@ export function guardHooks<S extends GuardSession>(options: GuardOptions<S>) {
           warnMalformed(`identity adapter ${adapter.kind} returned a malformed identity`);
         return apiError(reply, 401, "unauthenticated", "not signed in");
       }
-      const identity: Identity = { user: result.user, roles: [...result.roles] };
-      user = { identity, rights: rightsOf(identity, rules) };
+      user = { identity: { user: result.user, roles: [...result.roles] } };
     }
     users.set(request, user);
-    if (RANK[level] >= RANK.user && !hasRights(user.rights))
-      return apiError(reply, 403, "no_rights", "your roles match no rule of this server");
   };
 
   /**
-   * Data refs, then the session: every data ref the request names must be visible, decided from
-   * the patterns alone before any session, catalog or source is looked at; then the session's
-   * open and change rights.
+   * The workspace, then its data refs: resolve it (404 `unknown_workspace`), the user's open and
+   * change rights on it, then every data ref the request names against its effective grant, decided
+   * from the grant alone before any catalog, cache or source is looked at. Level `user` checks its
+   * data refs against the initial grant, the one a new workspace gets.
    */
+  const forbiddenData = (reply: FastifyReply, ref: string) =>
+    apiError(reply, 403, "forbidden_data", `data ref ${ref} is not permitted`);
   const preHandler = async (request: FastifyRequest, reply: FastifyReply) => {
     const access = request.routeOptions.config?.access;
     if (!access) {
@@ -255,20 +269,25 @@ export function guardHooks<S extends GuardSession>(options: GuardOptions<S>) {
     // onRequest answered already (or a public route); never run a guarded handler without a user.
     if (!user) return apiError(reply, 401, "unauthenticated", "not signed in");
     const level: Level = typeof declared === "string" ? declared : declared.body(request);
-    if (level === "identity") return;
-    for (const ref of access.dataRefs?.(request) ?? [])
-      if (!canSee(user.rights, ref))
-        return apiError(reply, 403, "forbidden_data", `data ref ${ref} is not permitted`);
-    if (level === "user") return;
-    const session = options.resolveSession(request, user);
-    if (!session) return apiError(reply, 404, "unknown_session", "no such session");
-    const rights = sessionRights(user.identity.user, user.rights, session);
-    // Private and holding hidden data answer alike (design M6).
-    if (!rights) return apiError(reply, 403, "forbidden", "no access to this session");
+    if (level === "user") {
+      const grant = initialGrant(kind);
+      for (const ref of access.dataRefs?.(request) ?? [])
+        if (!covers(grant, ref)) return forbiddenData(reply, ref);
+      grants.set(request, grant);
+      return;
+    }
+    const entry = options.resolveWorkspace(request, user);
+    if (!entry) return apiError(reply, 404, "unknown_workspace", "no such workspace");
+    const rights = workspaceRights(user.identity.user, entry);
+    if (!rights) return apiError(reply, 403, "forbidden", "no access to this workspace");
     if (level === "change" && !rights.change)
-      return apiError(reply, 403, "read_only", "this session is shared read-only");
-    sessions.set(request, { session, rights });
-    reply.header(SESSION_HEADER, session.record.id);
+      return apiError(reply, 403, "read_only", "this workspace is shared read-only");
+    const grant = options.grantOf(entry);
+    for (const ref of access.dataRefs?.(request) ?? [])
+      if (!covers(grant, ref)) return forbiddenData(reply, ref);
+    admitted.set(request, { entry, rights, grant });
+    grants.set(request, grant);
+    reply.header(WORKSPACE_HEADER, entry.record.id);
   };
 
   return { onRoute, onRequest, preHandler };

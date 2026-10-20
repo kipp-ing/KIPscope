@@ -2,17 +2,18 @@ import type { IncomingMessage } from "node:http";
 import {
   type ApiError,
   type CommandResult,
-  SESSION_ID,
+  type Grant,
+  WORKSPACE_ID,
   type WorkspaceScope,
 } from "@kipscope/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { z } from "zod";
 import { Catalog } from "./catalog.ts";
 import type { DataSource, Scope } from "./datasource.ts";
-import { type RequestUser, requestSession, requestUser } from "./guard.ts";
+import { type RequestUser, requestGrant, requestUser, requestWorkspace } from "./guard.ts";
 import { type CatalogView, catalogView } from "./rights.ts";
 import { CatalogStore, openScopes, scopeOf, sourceScope } from "./scope.ts";
-import type { Session, Sessions } from "./sessions.ts";
+import type { WorkspaceEntry, Workspaces } from "./workspaces.ts";
 
 export function apiError(
   reply: FastifyReply,
@@ -46,8 +47,8 @@ export interface ScopeDeps {
   catalog: Catalog;
   /** Source for series queries; in production wrapped by the query queue. */
   source: DataSource;
-  /** Every session (add-multiuser M4); routes reach the request's one through `sessionOf`. */
-  sessions: Sessions;
+  /** Every workspace (add-multiuser M4); routes reach the request's one through `workspaceOf`. */
+  workspaces: Workspaces;
   /** The signal lists (add-scope Z10); without it a full-mode store over `catalog` (tests). */
   catalogs?: CatalogStore;
   /** `KIPSCOPE_SCOPE_PAD` in ns; default config's DEFAULT_SCOPE_PAD. */
@@ -69,7 +70,7 @@ export function catalogsOf(deps: ScopeDeps): CatalogStore {
       full: deps.catalog,
       create: (scope) =>
         new Catalog(deps.source, async () => new Map(), undefined, undefined, undefined, scope),
-      keep: () => openScopes(deps.sessions),
+      keep: () => openScopes(deps.workspaces),
     });
     defaultStores.set(deps, store);
   }
@@ -90,30 +91,31 @@ export function chainPrefetch(deps: ScopeDeps, job: () => Promise<unknown>): voi
   prefetchChains.set(deps, next);
 }
 
-/** Session IDs of `/api/s/<id>/…` requests, recorded by `rewriteUrl` (add-multiuser M5). */
+/** Workspace IDs of `/api/w/<id>/…` requests, recorded by `rewriteUrl` (add-multiuser M5). */
 const prefixes = new WeakMap<IncomingMessage, string>();
-const PREFIX = /^\/api\/s\/([^/?]*)(?=[/?]|$)/;
+const PREFIX = /^\/api\/w\/([^/?]*)(?=[/?]|$)/;
 
 /**
- * Fastify's `rewriteUrl` (add-multiuser M5): `/api/s/<id>/<rest>` → `/api/<rest>` when `<id>`
- * matches SESSION_ID, recording `<id>` on the raw request. Any other URL stays as it is.
+ * Fastify's `rewriteUrl` (add-multiuser M5): `/api/w/<id>/<rest>` → `/api/<rest>` when `<id>`
+ * matches WORKSPACE_ID, recording `<id>` on the raw request. Any other URL stays as it is, so the
+ * address of round 1 (`/api/s/<id>/…`) is an unknown route.
  */
 export function rewriteUrl(raw: IncomingMessage): string {
   const url = raw.url ?? "/";
   const match = PREFIX.exec(url);
   const id = match?.[1];
-  if (match === null || id === undefined || !SESSION_ID.test(id)) return url;
+  if (match === null || id === undefined || !WORKSPACE_ID.test(id)) return url;
   prefixes.set(raw, id);
   const rest = url.slice(match[0].length);
   return rest.startsWith("/") ? `/api${rest}` : `/api/${rest}`;
 }
 
-/** The session ID of the request's `/api/s/<id>/` prefix, if it had one. */
-export function sessionPrefixOf(request: FastifyRequest): string | undefined {
+/** The workspace ID of the request's `/api/w/<id>/` prefix, if it had one. */
+export function workspacePrefixOf(request: FastifyRequest): string | undefined {
   return prefixes.get(request.raw);
 }
 
-/** The user of a guarded request and their rights (add-multiuser M5), set by the guard's onRequest. */
+/** The user of a guarded request (add-multiuser M5), set by the guard's onRequest. */
 export function userOf(request: FastifyRequest): RequestUser {
   const user = requestUser(request);
   // A route that reads the user without the guard having set one is a server bug: fail closed.
@@ -121,29 +123,40 @@ export function userOf(request: FastifyRequest): RequestUser {
   return user;
 }
 
-/** The session a `session` or `change` route serves (add-multiuser M5), set by the guard's preHandler. */
-export function sessionOf(request: FastifyRequest): Session {
-  const admitted = requestSession<Session>(request);
-  if (!admitted) throw new Error(`no session for ${request.method} ${request.url}`);
-  return admitted.session;
+/** The workspace a `workspace` or `change` route serves (add-multiuser M5), set by the guard's preHandler. */
+export function workspaceOf(request: FastifyRequest): WorkspaceEntry {
+  const admitted = requestWorkspace<WorkspaceEntry>(request);
+  // A route that reads a workspace the guard did not admit is a server bug: fail closed.
+  if (!admitted) throw new Error(`no workspace for ${request.method} ${request.url}`);
+  return admitted.entry;
+}
+
+/**
+ * The grant the guard checked the request against (add-multiuser M3, M5): the served workspace's
+ * effective grant, or on a `user` route the initial grant a new workspace gets.
+ */
+export function grantOf(request: FastifyRequest): Grant {
+  const grant = requestGrant(request);
+  if (!grant) throw new Error(`no grant for ${request.method} ${request.url}`);
+  return grant;
 }
 
 /** What a route reads within (add-scope Z10). */
 export interface RouteScope {
-  /** The session's scope; undefined in full mode without one. */
+  /** The workspace's scope; undefined in full mode without one. */
   scope?: WorkspaceScope;
   /** Its source form. */
   source?: Scope;
   /**
-   * The scope's signal list (loaded or not), else the full catalog, as the requester may see it
-   * (add-multiuser M6).
+   * The scope's signal list (loaded or not), else the full catalog, as the workspace's grant
+   * shows it (add-multiuser M6).
    */
   catalog: CatalogView | undefined;
 }
 
 /**
- * The scope of the session a request serves and its signal list, filtered by the requester's
- * rights (add-scope Z10, add-multiuser M6). In scoped mode without a scope it answers 409
+ * The scope of the workspace a request serves and its signal list, filtered by the workspace's
+ * grant (add-scope Z10, add-multiuser M6). In scoped mode without a scope it answers 409
  * `scope_required` and returns undefined. A scope's list that is not loaded starts loading, so the
  * caller's 503 `catalog_unavailable` lasts only until it has.
  */
@@ -153,8 +166,8 @@ export function routeScope(
   reply: FastifyReply,
 ): RouteScope | undefined {
   const catalogs = catalogsOf(deps);
-  const { rights } = userOf(request);
-  const view = (catalog: Catalog | undefined) => catalog && catalogView(catalog, rights);
+  const grant = grantOf(request);
+  const view = (catalog: Catalog | undefined) => catalog && catalogView(catalog, grant);
   const scope = scopeOf(request);
   if (!scope) {
     if (catalogs.mode === "scoped") {

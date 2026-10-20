@@ -9,7 +9,7 @@ import {
   warnDisplayFallbacks,
 } from "../catalog.ts";
 import type { Access } from "../guard.ts";
-import { apiError, catalogsOf, parseInput, routeScope, userOf } from "../http.ts";
+import { apiError, catalogsOf, grantOf, parseInput, routeScope } from "../http.ts";
 import { type CatalogView, catalogView } from "../rights.ts";
 
 const SearchQuery = z.object({
@@ -25,10 +25,10 @@ function catalogUnavailable(reply: FastifyReply, catalog: CatalogView | undefine
   });
 }
 
-/** The session's lists, filtered by the requester's rights (add-multiuser M6): no data ref named. */
-const ACCESS: Access = { level: "session" };
+/** The workspace's lists, filtered by its grant (add-multiuser M6): no data ref named. */
+const ACCESS: Access = { level: "workspace" };
 
-/** The session's scope's signal list, else the full catalog (add-scope Z10). */
+/** The workspace's scope's signal list, else the full catalog (add-scope Z10). */
 export const signalRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
@@ -85,8 +85,8 @@ export const signalRoutes =
         return apiError(reply, 502, "source_error", message);
       }
       warnDisplayFallbacks(app.log, catalog);
-      // The count of what the requester may see (add-multiuser M6).
-      const visible = catalogView(catalog, userOf(request).rights);
+      // The count of what the workspace's grant covers (add-multiuser M6).
+      const visible = catalogView(catalog, grantOf(request));
       return { size: visible.size, loadedAt: visible.loadedAt?.toISOString() };
     });
   };

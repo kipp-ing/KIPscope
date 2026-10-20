@@ -1,8 +1,8 @@
 /**
- * The app of the multi-user tests (add-multiuser): wired like `main.ts` does it, with a session
- * store on a temp state dir, per-user views, a test identity adapter (user and roles from the
- * headers `x-test-user` and `x-test-roles`) and a rules object, over an adapter that records
- * every call it receives. This is the one place that mirrors main.ts's wiring for these tests; if
+ * The app of the multi-user tests (add-multiuser): wired like `main.ts` does it, with a workspace
+ * registry on a temp state dir, per-user views, a test identity adapter (user and roles from the
+ * headers `x-test-user` and `x-test-roles`), no rules object (rights live in each workspace's
+ * grant, D-085), over an adapter that records every call it receives. This is the one place that mirrors main.ts's wiring for these tests; if
  * main.ts changes, change it here.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -23,10 +23,9 @@ import type { DataSource, Scope, SourceAdapter } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { completeSource } from "../src/fallbacks.ts";
 import type { IdentityAdapter } from "../src/identity.ts";
-import type { Rules } from "../src/rights.ts";
 import { CatalogStore, guardScoped, openScopes } from "../src/scope.ts";
-import { SessionStore } from "../src/sessions.ts";
 import { userViews } from "../src/views.ts";
+import { seedFor, WorkspaceRegistry } from "../src/workspaces.ts";
 import { type Call, memoryAdapter, recording } from "./scopeApp.ts";
 import { testDbcFiles } from "./testdb.ts";
 
@@ -43,15 +42,6 @@ export const T1 = 1790816400000000000n;
 export const T2 = 1790820000000000000n;
 export const SCOPE: WorkspaceScope = { dataRef: "testcar", from: T1.toString(), to: T2.toString() };
 export const OTHER_SCOPE: WorkspaceScope = { ...SCOPE, dataRef: "othercar" };
-
-/** The rules of the tests: `testers` see `test*`; `admins` and `all` see everything and may share. */
-export const TEST_RULES: Rules = {
-  roles: [
-    { role: "testers", data: ["test*"], share: false },
-    { role: "admins", data: ["*"], share: true },
-    { role: "all", data: ["*"], share: true },
-  ],
-};
 
 const MIN = 60n * 1_000_000_000n;
 /** Rows [t, value] every minute for an hour from T1. */
@@ -192,9 +182,9 @@ export interface Client {
     body?: unknown,
     headers?: Record<string, string>,
   ): Promise<Answer>;
-  command(body: unknown, session?: string): Promise<Answer>;
-  /** Opens the live channel (`/api/live` or `/api/s/<id>/live`) as this client. */
-  live(session?: string, headers?: Record<string, string>): Promise<Live>;
+  command(body: unknown, workspace?: string): Promise<Answer>;
+  /** Opens the live channel (`/api/live` or `/api/w/<id>/live`) as this client. */
+  live(workspace?: string, headers?: Record<string, string>): Promise<Live>;
 }
 
 export interface MultiAppOptions {
@@ -202,21 +192,21 @@ export interface MultiAppOptions {
   adapter?: SourceAdapter;
   /** `full` (default) or `scoped`. */
   mode?: CatalogMode;
-  /** The identity adapter: default `testIdentity()`; `"none"` runs without one (all rights). */
+  /** The identity adapter: default `testIdentity()`; `"none"` runs without one (every grant is all). */
   identity?: IdentityAdapter | "none";
-  /** Default `TEST_RULES`. */
-  rules?: Rules;
+  /** `KIPSCOPE_SHARE` (default on); only read with an identity adapter. */
+  share?: boolean;
   /** Read the test DBC files into the catalogs. */
   dbc?: boolean;
   /** Load the full catalog before the app starts (full mode; default true). */
   loadFullCatalog?: boolean;
   /** An existing state dir (a restart); else a fresh temp dir removed on close. */
   stateDir?: string;
-  /** A new session's workspace. */
+  /** A new workspace's content (the app filters events-line signals by the grant). */
   seed?: () => Workspace;
-  /** Session store clock (default the real one). */
+  /** Registry clock (default the real one). */
   now?: () => number;
-  sessionLimit?: number;
+  workspaceLimit?: number;
   idleDays?: number;
   webDir?: string;
   origins?: readonly string[];
@@ -231,14 +221,14 @@ export interface MultiAppOptions {
 
 export interface MultiApp {
   app: ReturnType<typeof buildApp>;
-  sessions: SessionStore;
+  workspaces: WorkspaceRegistry;
   catalogs: CatalogStore;
   /** The full catalog (never loaded in scoped mode). */
   catalog: Catalog;
   /** Everything the source adapter received, in order. */
   calls: Call[];
   stateDir: string;
-  /** Warnings the session store logged. */
+  /** Warnings the registry logged. */
   warnings: string[];
   /** Requests as `user` with `roles`. */
   as(user: string, roles?: string[]): Client;
@@ -269,32 +259,35 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
   const stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), "kipscope-multi-"));
 
   const warnings: string[] = [];
-  const sessions = new SessionStore({
+  const identity = options.identity === "none" ? undefined : (options.identity ?? testIdentity());
+  const seedOf = options.seed ?? (() => EMPTY_WORKSPACE);
+  const workspaces = new WorkspaceRegistry({
     dir: stateDir,
-    seed: options.seed ?? (() => EMPTY_WORKSPACE),
+    seed: (grant) => seedFor(seedOf(), grant),
+    // A test adapter is a module adapter to the server: its workspaces start with an empty grant.
+    identity: identity ? "module" : "none",
     idleDays: options.idleDays ?? 30,
     ...(options.now ? { now: options.now } : {}),
-    ...(options.sessionLimit === undefined ? {} : { limit: options.sessionLimit }),
+    ...(options.workspaceLimit === undefined ? {} : { limit: options.workspaceLimit }),
     log: { info: () => {}, warn: (m) => warnings.push(m) },
   });
-  sessions.start();
+  workspaces.start();
   catalogs = new CatalogStore({
     mode,
     full: catalog,
     create: newCatalog,
-    keep: () => openScopes(sessions),
+    keep: () => openScopes(workspaces),
   });
   if (mode === "full" && options.loadFullCatalog !== false) await catalog.refresh();
 
-  const identity = options.identity === "none" ? undefined : (options.identity ?? testIdentity());
   const app = buildApp(
     {
       catalog,
       catalogs,
       source,
-      sessions,
+      workspaces,
       viewsOf: userViews(stateDir),
-      ...(identity ? { identity, rules: options.rules ?? TEST_RULES } : {}),
+      ...(identity ? { identity, share: options.share ?? true } : {}),
       ...(options.webDir === undefined ? {} : { webDir: options.webDir }),
       ...(options.scopePad === undefined ? {} : { scopePad: options.scopePad }),
       ...(options.licenseText === undefined ? {} : { licenseText: options.licenseText }),
@@ -317,8 +310,8 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
     base ??= await app.listen({ port: 0, host: "127.0.0.1" });
     return base;
   };
-  const prefixed = (session: string | undefined, path: string) =>
-    session === undefined ? `/api${path}` : `/api/s/${session}${path}`;
+  const prefixed = (workspace: string | undefined, path: string) =>
+    workspace === undefined ? `/api${path}` : `/api/w/${workspace}${path}`;
 
   const clientWith = (base_: Record<string, string>): Client => {
     const send = async (
@@ -346,9 +339,9 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
       post: (url, body, headers) => send("POST", url, body, headers),
       del: (url, headers) => send("DELETE", url, undefined, headers),
       request: send,
-      command: (body, session) => send("POST", prefixed(session, "/commands"), body),
-      async live(session, headers = {}) {
-        const url = `${(await listen()).replace("http", "ws")}${prefixed(session, "/live")}`;
+      command: (body, workspace) => send("POST", prefixed(workspace, "/commands"), body),
+      async live(workspace, headers = {}) {
+        const url = `${(await listen()).replace("http", "ws")}${prefixed(workspace, "/live")}`;
         return new Live(url, { ...base_, ...headers }).connected();
       },
     };
@@ -356,7 +349,7 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
 
   return {
     app,
-    sessions,
+    workspaces,
     catalogs,
     catalog,
     calls,
@@ -375,10 +368,20 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
       const closing = app.close();
       app.server.closeAllConnections();
       await closing;
-      sessions.stop();
+      workspaces.stop();
       if (own) rmSync(stateDir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Widens a workspace's grant the way `add-case-open` will: through the registry's `grantObjects`,
+ * the one widening path (data-access "Only the server widens a grant"). Returns the entry.
+ */
+export function grant(app: Pick<MultiApp, "workspaces">, workspaceId: string, dataRefs: string[]) {
+  const entry = app.workspaces.grantObjects(workspaceId, dataRefs);
+  if (!entry) throw new Error(`grant: no workspace ${workspaceId}`);
+  return entry;
 }
 
 /** Error code of an answer, whether `{error:{code}}` (apiError) or a CommandResult `{code}`. */
