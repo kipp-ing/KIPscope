@@ -52,7 +52,12 @@ A request with an `Origin` SHALL be answered only when the origin is `http` or `
 - **Evidence:** UI check (one screenshot)
 
 ### Requirement: Warning on a network-facing host
-When `KIPSCOPE_HOST` is not a loopback address, the server SHALL log a warning at start: in `none` mode it names the host and says that every machine that reaches it can read signals and change the workspace; with any other identity it says that only the proxy should reach the host and port. With an identity other than `none` the server SHALL also log one info line naming the identity (`oidc` with issuer and audience, or the module path), the rules file with its role count, and the origins. Origin: necessary consequence of D-005 (no authentication in `none` mode) and of D-084 (the identity adapter and rules decide access; an operator must see which apply).
+When `KIPSCOPE_HOST` is not a loopback address, the server SHALL log a warning at start: in `none` mode it names the host and says that every machine that reaches it can read signals and change the workspace; with any other identity it says that only the proxy should reach the host and port. With an identity other than `none`, the server SHALL also log one info line naming:
+- the identity: `oidc` with issuer and audience, or the module path
+- `sharing on` or `sharing off`
+- the origins
+
+Origin: necessary consequence of D-005 (no authentication in `none` mode) and of D-084 (the identity adapter decides who signs in; an operator must see which applies); the share switch: data-access "Sharing never widens data access".
 
 #### Scenario: Loopback test
 - **WHEN** `isLoopbackHost` is given `127.0.0.1`, `localhost`, `::1`, `0.0.0.0`, `::` and `192.168.42.10`
@@ -60,8 +65,14 @@ When `KIPSCOPE_HOST` is not a loopback address, the server SHALL log a warning a
 - **Evidence:** `apps/server/test/access.http.test.ts` › "tells loopback hosts from network-facing ones"; command `grep -n "accessLog" apps/server/src/main.ts` prints the call that logs the lines
 
 #### Scenario: Start lines per mode
-- **WHEN** `accessLog` gets `none` on `127.0.0.1`, `none` on `0.0.0.0`, and `oidc` on `0.0.0.0` with issuer `https://idp.example.org`, audience `kipscope`, a rules file `/etc/kipscope/rules.yaml` with 3 roles and origin `https://kipscope.example.org`
-- **THEN** the first returns nothing; the second one warning containing `every machine that reaches it`; the third one info line containing `oidc`, `https://idp.example.org`, `kipscope`, `/etc/kipscope/rules.yaml`, `3 roles` and `https://kipscope.example.org`, and one warning containing `only the proxy`
+- **WHEN** `accessLog` gets:
+  1. `none` on `127.0.0.1`
+  2. `none` on `0.0.0.0`
+  3. `oidc` on `0.0.0.0` with issuer `https://idp.example.org`, audience `kipscope`, share off and origin `https://kipscope.example.org`
+- **THEN**
+  - the first returns nothing
+  - the second returns one warning containing `every machine that reaches it`
+  - the third returns one info line containing `oidc`, `https://idp.example.org`, `kipscope`, `sharing off` and `https://kipscope.example.org`, and no `rules`; plus one warning containing `only the proxy`
 - **Evidence:** `apps/server/test/access.http.test.ts` › "logs the access settings per mode"
 
 ## ADDED Requirements
@@ -70,6 +81,6 @@ When `KIPSCOPE_HOST` is not a loopback address, the server SHALL log a warning a
 With `KIPSCOPE_WEB_DIR` set, the server SHALL answer a `GET` of a path outside `/api/` with the file of that path below the directory, or with its `index.html` when there is no such file, with the content type of design M11. A path that resolves outside the directory SHALL answer 404. These answers SHALL need no user. Without the variable such paths SHALL answer 404 as today. Origin: D-079 („lokal ist immer nur der browser": the server delivers the UI). Design M11.
 
 #### Scenario: Files, app routes and traversal
-- **WHEN** the app is built with a temp web dir holding `index.html` and `assets/app.js`, with a test identity adapter that refuses every request, and `GET /assets/app.js`, `GET /s/abcdefghij`, `GET /`, `GET /..%2f..%2fetc%2fpasswd` and `GET /api/me` are sent; and once without a web dir `GET /`
-- **THEN** the first answers 200 `text/javascript` with the file and an `immutable` cache header; the next two answer `index.html` as `text/html` with `no-cache`; the traversal answers 404; `/api/me` answers 401 `unauthenticated`; without a web dir `/` answers 404
+- **WHEN** the app is built with a temp web dir holding `index.html` and `assets/app.js`, with a test identity adapter that refuses every request, and `GET /assets/app.js`, `GET /w/abcdefghij`, `GET /s/abcdefghij`, `GET /`, `GET /..%2f..%2fetc%2fpasswd` and `GET /api/me` are sent; and once without a web dir `GET /`
+- **THEN** the first answers 200 `text/javascript` with the file and an `immutable` cache header; the next three answer `index.html` as `text/html` with `no-cache`; the traversal answers 404; `/api/me` answers 401 `unauthenticated`; without a web dir `/` answers 404
 - **Evidence:** `apps/server/test/web.http.test.ts` › "serves the built UI"

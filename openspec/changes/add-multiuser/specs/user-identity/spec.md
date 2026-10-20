@@ -4,8 +4,18 @@
 The server SHALL learn the user of a request only from one identity adapter, selected by `KIPSCOPE_IDENTITY`: `none` (default), `oidc`, or `module:<path>`. An adapter SHALL implement the contract of design M1: `identify(request)` returns `{user, roles}` or a refusal (`unauthenticated` without a credential, `invalid_token` for a bad one). Any other value of the variable, a module that cannot be loaded, or one whose default export does not return an object with `kind` and `identify`, SHALL stop the server with a message naming the variable and the reason. Origin: D-084 („Identity is a pluggable adapter like the data source"; „da darf jeder auch seinen eigenen krams einbauen"). Design M1, M2.
 
 #### Scenario: Selection
-- **WHEN** `loadConfig` runs without `KIPSCOPE_IDENTITY`; with `oidc` plus issuer, audience, `KIPSCOPE_RULES` and `KIPSCOPE_ORIGINS`; with `module:apps/server/examples/forward-header.mjs` plus rules and origins; with `oidc` without `KIPSCOPE_OIDC_AUDIENCE`; with `oidc` and `KIPSCOPE_OIDC_ALGS=HS256`; with `module:x` but no `KIPSCOPE_RULES`; and with `ping`
-- **THEN** the kinds are `none`, `oidc` (user claim `sub`, roles claim `roles`, header `authorization`, algorithms `RS256,PS256,ES256`) and `module` with that path; the last four throw naming `KIPSCOPE_OIDC_AUDIENCE`, `KIPSCOPE_OIDC_ALGS`, `KIPSCOPE_RULES` and `KIPSCOPE_IDENTITY` with its three forms
+- **WHEN** `loadConfig` runs:
+  1. without `KIPSCOPE_IDENTITY`
+  2. with `oidc` plus issuer, audience and `KIPSCOPE_ORIGINS`
+  3. with `module:apps/server/examples/forward-header.mjs` plus origins
+  4. with `oidc` without `KIPSCOPE_OIDC_AUDIENCE`
+  5. with `oidc` and `KIPSCOPE_OIDC_ALGS=HS256`
+  6. with `module:x` but no `KIPSCOPE_ORIGINS`
+  7. with `ping`
+- **THEN**
+  - the kinds are `none`, `oidc` (user claim `sub`, roles claim `roles`, header `authorization`, algorithms `RS256,PS256,ES256`) and `module` with that path
+  - the last four throw naming, in order, `KIPSCOPE_OIDC_AUDIENCE`, `KIPSCOPE_OIDC_ALGS`, `KIPSCOPE_ORIGINS`, and `KIPSCOPE_IDENTITY` with its three forms
+  - no case reads `KIPSCOPE_RULES`: setting it to a missing path changes none of the results
 - **Evidence:** `apps/server/test/config.test.ts` › "reads the identity settings"
 
 #### Scenario: Bad module
@@ -19,11 +29,13 @@ The server SHALL learn the user of a request only from one identity adapter, sel
 - **Evidence:** the `grep` command
 
 ### Requirement: Local use without login
-With `KIPSCOPE_IDENTITY=none` every API request that passes the access guard SHALL be the user `local` with every right (data pattern `*`, share), whatever headers it carries; the rules file SHALL not be read. Origin: D-084 („bei mir lokal ohne login, bin mein eigener herr"). Design M1.
+With `KIPSCOPE_IDENTITY=none`, every API request that passes the access guard SHALL be the user `local`, whatever headers it carries. Every workspace SHALL be able to read all data (data-access "Grant per workspace"), and the user may share.
+
+Origin: D-084 („bei mir lokal ohne login, bin mein eigener herr"). Design M1, M3.
 
 #### Scenario: Local user
 - **WHEN** the test app runs in `none` mode and `GET /api/me` is sent without any header, and once with `Authorization: Bearer x` and `X-Forwarded-User: mallory`
-- **THEN** both answer 200 `{user: "local", identity: "none", roles: [], rights: {data: ["*"], share: true}}`
+- **THEN** both answer 200 `{user: "local", identity: "none", roles: [], canShare: true}`
 - **Evidence:** `apps/server/test/identity.http.test.ts` › "answers the local user without login"
 
 ### Requirement: Every API request has a user
@@ -31,7 +43,7 @@ With an adapter other than `none`, every request to `/api/` except `GET /api/lic
 
 #### Scenario: Nothing runs unauthenticated
 - **WHEN** with a test adapter that refuses every request, `POST /api/commands` with a valid command, `GET /api/series` and the `/api/live` upgrade are sent, and `GET /api/license`
-- **THEN** the first two answer 401 `unauthenticated`, the source receives no call and no session's revision changes; the WebSocket gets no message (handshake 401, or closed before any message); the license answers 200
+- **THEN** the first two answer 401 `unauthenticated`, the source receives no call and no workspace's revision changes; the WebSocket gets no message (handshake 401, or closed before any message); the license answers 200
 - **Evidence:** `apps/server/test/identity.http.test.ts` › "refuses every API route without a user"
 
 #### Scenario: Adapter failures
@@ -40,12 +52,17 @@ With an adapter other than `none`, every request to `/api/` except `GET /api/lic
 - **Evidence:** `apps/server/test/identity.http.test.ts` › "fails closed on a bad adapter"
 
 ### Requirement: Who am I
-`GET /api/me` SHALL answer the user, the identity kind, the roles and the rights of the request (design M7 `Me`), also for a user without rights. Origin: necessary consequence of D-084 (a user and an administrator must see which roles and rights apply).
+`GET /api/me` SHALL answer the user, the identity kind, the roles and whether the user may share (design M7 `Me`). Roles SHALL be shown only: they decide nothing in KIPscope.
 
-#### Scenario: Roles and rights
-- **WHEN** the rules give role `testers` the patterns `test*` with `share: true` and role `viewers` `demo` without share, and users with roles `[testers, viewers]`, `[viewers]` and `[nobody]` send `GET /api/me`
-- **THEN** the answers have `rights` `{data: ["test*", "demo"], share: true}`, `{data: ["demo"], share: false}` and `{data: [], share: false}`, each with its user, `identity` of the test adapter and its roles
-- **Evidence:** `apps/server/test/identity.http.test.ts` › "reports roles and rights"
+Origin: necessary consequence of D-084 (a user and an administrator must see as whom and with which roles a request acts); D-085 (rights are KI.ping's, so roles grant nothing here); share switch: data-access "Sharing never widens data access".
+
+#### Scenario: Roles and sharing
+- **WHEN** with the test identity adapter, users with roles `[testers, viewers]` and `[]` send `GET /api/me`, first with `KIPSCOPE_SHARE` unset, then with `off`
+- **THEN**
+  - the answers have their user, `identity` of the test adapter, and their roles
+  - `canShare` is true with `KIPSCOPE_SHARE` unset and false with `off`
+  - no answer has a `rights` field
+- **Evidence:** `apps/server/test/identity.http.test.ts` › "reports roles and the share switch"
 
 ### Requirement: OIDC tokens from Ping Identity
 The `oidc` adapter SHALL accept a request only with a JWT in `KIPSCOPE_OIDC_HEADER` (default `Authorization: Bearer`) that is signed by a key of the issuer's JWKS with an algorithm of `KIPSCOPE_OIDC_ALGS` (never `none` or `HS*`), whose `iss` equals the issuer, whose `aud` contains the audience, whose `exp` is in the future and `nbf` (if present) in the past within 30 s, and whose user claim matches `USER_ID`; it SHALL take the roles from the roles claim (array, or a space- or comma-separated string; missing: none). An unknown key ID SHALL refetch the JWKS at most once per 30 s. The token SHALL never be logged or echoed. Origin: D-084 („PING id sollte möglich sein mit unterschiedlichen rechten"); design M15 (PingFederate and PingOne issue such tokens). Numbers: design "Numbers".

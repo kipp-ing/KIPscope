@@ -2,53 +2,71 @@
 
 ## Why
 
-KIPscope becomes a server application, with only the browser on the user's machine (D-079: „das soll auf einem server laufen … lokal ist immer nur der browser. Multiuser ist also pflicht. eine zugriffsberechtigung im Server muss später auch einbaubar sein"). Today the server holds one workspace that every tab and the CLI share, and it answers only local requests (server-access). Jan answered the multiuser questions (D-083, D-084): „jedes sesseion braucht rechte, ja"; „bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten … muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauen. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutzer alle platformen sehen. q4 views je nutzer, ja". A platform is a naming pattern of data refs („platform ist nur für riesen corp dinger"). He also said „ja" to one workspace per session (case) with its own URL. This change is item 3 of status.md "Next". It comes before `add-case-open` and `add-signal-books`.
+KIPscope becomes a server application, with only the browser on the user's machine (D-079: „das soll auf einem server laufen … lokal ist immer nur der browser. Multiuser ist also pflicht. eine zugriffsberechtigung im Server muss später auch einbaubar sein"). Today the server holds one workspace that every tab and the CLI share, and it answers only local requests (server-access). Jan answered the multiuser questions (D-083, D-084): „jedes sesseion braucht rechte, ja"; „bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten … muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauen … q4 views je nutzer, ja". He also said „ja" to one workspace per case with its own URL.
+
+**Revision 2026-10-20 (D-085, D-086).** The change was built in four rounds with a "session" that is a server-side workspace and a KIPscope rules file (role → data-ref patterns). Two later decisions change it before the archive:
+
+- D-085: „wir können das rechtemanagement in kiping packen … die liste kann beliebig sortiert sein beliebige VINs." Rights live in KI.ping, not in a KIPscope rules file.
+- D-086: „unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts." The other recommendations of the exploration [2026-10-20-sessions-and-handoff.md](../../../docs/explore/2026-10-20-sessions-and-handoff.md) were accepted: "session" means the finder's data section and the server state is an invisible "workspace" renamed in this change (Q1); the rules file drops out (Q11); a view grants nothing (Q13).
+
+The exploration measured why: two tabs on `/` landed in one workspace and mirrored each other; the Sessions menu listed workspaces under data-section names, two with the same title; "Copy link" and "Copy session link" gave the receiver different things with nothing on screen saying which (exploration "What the app does today", rows 1–4).
+
+This change is item 3 of status.md "Next". It comes before `add-case-open` and `add-signal-books`.
 
 ## What Changes
 
-- **Identity as a pluggable adapter** (D-084), like the data source: a lean contract (request → `{user, roles}` or refused), one conformance suite an adapter author reuses, and three ways in: `none` (the default: no login, user `local` with every right), `oidc` (validates Ping-issued JWT access tokens, PingFederate or PingOne, for the browser through a proxy and for the CLI as a bearer token), and `module:<path>` for an organisation's own adapter, with a forward-auth header example.
-- **Roles map to rights** (D-084): a rules file maps each role to data-ref patterns (globs) and the right to share sessions. Deny by default.
-- **One guard on the server** (D-084, D-079): every `/api/` route declares its access level and the data refs it names; two hooks decide all access. Hidden data refs are refused before any lookup and never appear in lists or counts. ADX is still read as the server (D-083).
-- **A workspace per session** (D-083, Jan's „ja"): sessions with a random ID, an owner, a share level (`private`, `read`, `write`) and their own revision, live channel, render acknowledgements and state file. The UI address is `/s/<id>`; every workspace route also answers as `/api/s/<id>/…`; without the prefix a request serves the user's most recently active session. Sharing never widens data access: a session holding data the viewer may not see is refused.
-- **Session management:** list, create (optionally opening a view), share (needs the share right), delete. A limit per user and an idle cleanup. The single workspace and the views of today migrate to the user `local`.
-- **Views per user** (D-084, Q-4): `<stateDir>/users/<user>/views/`. `#view=` links and `?view=` open in a new session of the person opening them.
-- **Server deployment:** `KIPSCOPE_ORIGINS` admits the public origin behind a TLS proxy, and `KIPSCOPE_WEB_DIR` lets the server serve the built UI. `docs/deploy.md` gives the Ping setup, the own-adapter guide, the rules format and the ADX service identity.
-- **CLI:** `--session`, `--token` / `KIPSCOPE_TOKEN` / `KIPSCOPE_TOKEN_COMMAND` (the company's tool supplies the token), `whoami`, `session list|new|share|delete`, and the session named in every output.
-- **UI:** the session in the address, a Sessions menu, a `Read-only` pill, gate pages (no access, no rights, not signed in), and the user with roles in the footer.
+- **Identity as a pluggable adapter** (D-084), built: `none` (default: no login, user `local`), `oidc` (Ping-issued JWT access tokens, for the browser through a proxy and for the CLI as a bearer token), `module:<path>` for an organisation's own adapter, and one conformance suite. Roles are still read and shown; they decide nothing in KIPscope any more (D-085).
+- **Rights come from KI.ping, held as a grant per workspace** (D-085, D-086 Q11, Q12): each workspace stores `grant: {objects: "all"} | {objects: <data refs>}`, never set by a client. In `none` the grant is `all`. On a server a new workspace starts with an empty grant, and only one server function, `grantObjects(workspaceId, dataRefs)`, widens it; `add-case-open` calls it after it verified KI.ping's signed handoff. A grant names whole vehicles with no time part (D-086). The rules file (`KIPSCOPE_RULES`, role → data-ref patterns) is removed.
+- **One guard on the server** (D-084, D-079), built: every `/api/` route declares its access level and the data refs it names. A data ref outside the workspace's grant is refused before any lookup and never appears in lists or counts.
+- **Workspaces, renamed from "sessions"** (D-086 Q1): many workspaces with a random ID, an owner, a share level (`private`, `read`, `write`), a grant, and their own revision, live channel, render acknowledgements and state file. The UI address is `/w/<id>` (old `/s/<id>` addresses redirect); workspace routes also answer as `/api/w/<id>/…`; the header is `X-KIPscope-Workspace`; the state lives in `<stateDir>/workspaces/` (migrated from `sessions/`). "Session" is kept for the finder's data section (`add-case-open`).
+- **Workspaces drop out of the UI** (exploration "Workspaces become invisible"): no Sessions menu. "Share…" (top-row overflow item) offers "Copy link (own copy)" and "Invite to this workspace" (read or write), each saying what the receiver gets. A "Recent workspaces" list (last 10) sits in the Views menu. `/` opens the user's latest workspace without a live client, else a new one, chosen atomically on the server, so a second tab never mirrors the first. A gate page "Open a session from KI.ping" shows when a server workspace has an empty grant.
+- **Sharing never widens data:** an invited user gets read or write on that workspace only. Every user of one server comes from the same identity provider (one adapter, one issuer), which is "the same Ping tenant". Their own workspaces never gain the shared workspace's grant. The share switch is `KIPSCOPE_SHARE=on|off` (it replaces the rules file's per-role share right).
+- **Views per user** (D-084, Q-4), built. A view grants nothing (D-086 Q13): `#view=` links and `?view=` open in a new workspace, whose grant on a server is empty.
+- **Server deployment**, built: `KIPSCOPE_ORIGINS`, `KIPSCOPE_WEB_DIR`, `docs/deploy.md`.
+- **CLI:** `--workspace` / `KIPSCOPE_WORKSPACE`, `--token` / `KIPSCOPE_TOKEN` / `KIPSCOPE_TOKEN_COMMAND`, `whoami`, `workspace list|new|share|delete`. Without `--workspace` the CLI still takes the most recently active workspace (scripts keep working) and names it in every output.
 
 ## Capabilities
 
 ### New Capabilities
 
 - `user-identity`: the identity adapter contract, `none`, `oidc`, module adapters, the conformance suite, `/api/me`.
-- `data-access`: the rules file, rights per user, the guard on every route, filtered lists, refusal without leaks.
-- `sessions`: sessions with owner and share level, addressing, default session, session rights, management routes, live channel per session, persistence, migration, limits and cleanup, signal lists of open sessions, the session parts of the UI.
+- `data-access`: the grant per workspace, the one widening function, the guard on every route, filtered lists, refusal without leaks, sharing and views that never widen data.
+- `workspaces`: workspaces with owner, share level and grant; addressing; the start-up choice; workspace rights; management routes; live channel per workspace; persistence and migration; limits and cleanup; signal lists of open workspaces; the workspace parts of the UI (Share…, Recent, gate pages, Read-only).
 
 ### Modified Capabilities
 
 - `server-access`: configured origins, start lines per identity, the built UI served by the server.
-- `workspace-state`: one workspace per session; render status, state file and restore per session.
-- `saved-views`: views per user, "Before last open" per user, links and the address open a new session.
-- `cli`: session and token options, session commands, one session per call.
+- `workspace-state`: one workspace per entry of the registry; render status, state file and restore per workspace.
+- `saved-views`: views per user, "Before last open" per user, links and the address open a new workspace, "Copy link" moves to Share…, the Views menu gains "Recent workspaces", Share… joins the overflow items.
+- `cli`: workspace and token options, workspace commands, one workspace per call.
 - `app-footer`: the signed-in user and roles.
-- `signal-catalog`: background retries follow the open sessions' scopes instead of the one restored scope.
+- `signal-catalog`: background retries follow the open workspaces' scopes instead of the one restored scope.
+
+## Open questions
+
+For Jan. Tasks are written for the recommended answer; each alternative is small.
+
+- **Q-6 What does an invited user see?** (a) **The workspace's grant (recommended):** KI.ping vouched for those vehicles to the owner, and the owner chose to share this one workspace. The receiver sees exactly what the owner sees there, and nothing of it reaches the receiver's own workspaces. (b) Stricter: the receiver needs their own grant. The workspace opens for them only when every data ref it holds is in the grant of one of their own workspaces, so they must have opened those vehicles from KI.ping themselves. Under (b), a shared workspace is mostly useful between users with the same KI.ping rights. The exploration's Security section had (b); D-086 does not name it. Cost of (b): one function more in `rights.ts` (the union of the receiver's own grants) and one scenario.
+- **Q-7 A `#view=` or `?view=` link on a server:** it opens in a new workspace, whose grant is empty (Q13: a view grants nothing). So on a server the open is refused with `forbidden_data` until `add-case-open` brings layout and data together (its payload has a `view` field). (a) **Accept this for now (recommended).** (b) The new workspace takes over the grant of the opener's latest own workspace. The opener is the same user, and KI.ping vouched for that grant, but it is a second way to widen a grant. In `none` mode nothing changes either way.
 
 ## Out of scope
 
-- A login flow inside KIPscope (OIDC code flow, cookies, refresh), a device flow in the CLI, and KIPscope's own personal tokens (Q-5 (b) and (c) if Jan asks for them).
-- A platform concept or a platform column in the source (Jan: data-ref patterns suffice).
-- Deny rules, rights per signal or per time range, a `*` role for every signed-in user, reloading rules without a restart, an admin UI for rules.
-- Sharing with named users or groups, an audit log, query quotas or rate limits per user.
-- A shared view store, copying a session, renaming a session, sessions of other users in the list.
-- Edits by two users in the same session at the same time beyond today's "last command wins" (concept §7).
-- The finder handoff, case context and neighbours (`add-case-open`). Signal books (`add-signal-books`). Snapshots and undo (concept §8).
-- New ADX auth code: on a server `az login --service-principal` or `az login --identity` feeds today's `KIPSCOPE_ADX_AUTH=azcli` (documented only). Per-user ADX access (D-083: ADX is read as the server).
+- A login flow inside KIPscope (OIDC code flow, cookies, refresh), a device flow in the CLI, and KIPscope's own personal tokens.
+- The signed catalog, its verification (JWS, `KIPSCOPE_FINDER_JWKS`), the object → data ref mapping and every caller of `grantObjects`: `add-case-open`.
+- Narrowing or revoking a grant, grant expiry, time windows in a grant (D-086: no time part), patterns in a grant.
+- Any role → rights mapping in KIPscope, deny rules, rights per signal (D-085: rights are KI.ping's).
+- Sharing with named users or groups, users of another identity provider, an audit log, query quotas or rate limits per user.
+- A shared view store, copying, renaming or deleting a workspace in the UI (`kipscope workspace delete` and the idle cleanup remain), other users' workspaces in the Recent list, a "New workspace" entry in the UI.
+- An alias for the old API prefix `/api/s/<id>/…` and for the old CLI option `--session` (only the UI address `/s/<id>` redirects).
+- Switching workspaces without a page load, and keeping tiles across scopes (`add-case-open`, `add-tile-store`).
+- Edits by two users in the same workspace at the same time beyond today's "last command wins" (concept §7).
+- New ADX auth code (documented only); per-user ADX access (D-083: ADX is read as the server).
 
 ## Impact
 
-- `packages/shared/src`: new `session.ts` (IDs, share levels, summaries, `Me`, requests, header and close-code constants, `parseSessionLink`). `OpenViewRequest` moves here from the server. `LiveServerMessage` gains `session`, `ClientRenderStatus` gains `user`.
-- `apps/server/src`: new `identity.ts`, `identity/oidc.ts`, `rights.ts`, `guard.ts`, `sessions.ts`, `web.ts`, `routes/sessions.ts`, `routes/identity.ts`; new `apps/server/examples/forward-header.mjs`. Changes in `app.ts`, `access.ts`, `config.ts`, `http.ts`, `scope.ts`, `workspace.ts`, `persist.ts`, `views.ts`, `routes/*`, `meta.ts`, `main.ts`, `.env.example`. New dependency `jose`.
-- `apps/web/src`: new `session/` (start-up, API prefix, gate pages, Sessions menu). Changes in `api.ts`, `live.ts`, `App.tsx`, `bar/`, `footer/`. `apps/web/vite.config.ts` gets the dev user and roles.
-- `apps/cli/src`: options, token command, client, forms, output.
-- Docs: new `docs/deploy.md`, plus `docs/http-api.md` and the README.
-- Breaking: the state dir layout (migrated automatically) and the location of the views (migrated). Unprefixed routes keep working. In `none` mode nothing else changes.
+- `packages/shared/src`: `session.ts` becomes `workspaces.ts` (IDs, share levels, `Grant`, summaries, `Me`, requests, header and close-code constants, `parseWorkspaceLink`). `LiveServerMessage` gets `summary` instead of `session`.
+- `apps/server/src`: `sessions.ts` becomes `workspaces.ts` (registry with grant, `grantObjects`, atomic reuse, migration of `sessions/`); `routes/sessions.ts` becomes `routes/workspaces.ts`; `rights.ts` loses the rules and gains the grant checks; `guard.ts` loses `no_rights` and checks the grant; `config.ts` loses `KIPSCOPE_RULES` and gains `KIPSCOPE_SHARE`; renames in `app.ts`, `http.ts`, `persist.ts`, `scope.ts`, `meta.ts`, `main.ts`, `access.ts`, `web.ts`, `routes/*`, `.env.example`.
+- `apps/web/src`: `session/` becomes `workspaces/`; the Sessions menu goes; new Share… item and Recent list (`bar/`, `views/`); the empty-grant gate; renames in `api.ts`, `live.ts`, `main.tsx`, `App.tsx`.
+- `apps/cli/src`: options, forms and output renamed.
+- Docs: `docs/deploy.md` (rules section replaced by the grant), `docs/http-api.md`, README.
+- Breaking: the state dir layout (migrated automatically twice: `workspace.json` → `workspaces/`, `sessions/` → `workspaces/`), the API prefix, the CLI option and forms, the header. In `none` mode Jan's workspaces, views and old `/s/<id>` tabs keep working.
