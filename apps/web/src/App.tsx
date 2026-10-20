@@ -53,7 +53,14 @@ import {
 import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { liveCursor } from "./chart/live.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
-import { clampRange, extentRange, historyKey, type Range, ZoomHistory } from "./chart/zoom.ts";
+import {
+  clampRange,
+  extentRange,
+  historyKey,
+  type Range,
+  settleStep,
+  ZoomHistory,
+} from "./chart/zoom.ts";
 import { EventsPanel } from "./events/EventsPanel.tsx";
 import { appliedFilter, shownEvents, useEvents } from "./events/eventsData.ts";
 import { stepEvent } from "./events/list.ts";
@@ -613,11 +620,13 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     );
   }, []);
   /**
-   * One navigation step (design S5): clamps, pushes the view it leaves when `push`, sends one
-   * setRange. Returns whether it sent one (add-strip-navigation S9).
+   * One navigation step (design S5): clamps, sends one setRange and, once the server accepted it,
+   * pushes the view it left when `push`. A refused step (`read_only`, `forbidden_data`, …) pushes
+   * nothing, ends its pending range and calls `refused`, so the page stays at the server's range.
+   * Returns whether it sent one (add-strip-navigation S9).
    */
   const navigate = useCallback(
-    (windowId: string, r: Range, push: boolean): boolean => {
+    (windowId: string, r: Range, push: boolean, refused?: () => void): boolean => {
       const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
       if (!w || !isTimeseries(w)) return false;
       const key = navKeyOf(liveRef.current.workspace, windowId);
@@ -628,10 +637,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       // The server moves the range into the scope (add-scope Z6); the step expects that range and
       // still sends `next`, so a step at the edge reports `clamped` (the message, Z12).
       const expected = scopeRange(next, liveRef.current.workspace?.scope);
-      if (push && !sameRange(expected, view)) {
-        historyOf(key).push(view);
-        setHistoryVersion((v) => v + 1);
-      }
+      const pushView = push && !sameRange(expected, view);
       const entry = {
         windowId,
         range: expected,
@@ -641,41 +647,50 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       const drop = () => {
         if (pendingNav.current.get(key) === entry) pendingNav.current.delete(key);
       };
-      setRange(windowId, next).then(
-        (result) => {
-          if (!result.ok) drop();
+      settleStep(() => setRange(windowId, next), {
+        accepted: () => {
+          if (!pushView) return;
+          historyOf(key).push(view);
+          setHistoryVersion((v) => v + 1);
         },
-        (e: unknown) => {
+        refused: () => {
           drop();
-          setMessage(e instanceof Error ? e.message : String(e));
+          refused?.();
         },
-      );
+      }).catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
       return true;
     },
     [historyOf, setRange, setMessage],
   );
   /** One strip step on the bar target (S9): `next` maps its current view to the new range. */
   const stripNavigate = useCallback<StripNavigate>(
-    (next, push) => {
+    (next, push, refused) => {
       const ws = liveRef.current.workspace;
       const target = ws && barTarget(ws);
       const view = target && navView(target.id);
       const r = view && next(view);
-      return target && r ? navigate(target.id, r, push) : false;
+      return target && r ? navigate(target.id, r, push, refused) : false;
     },
     [navView, navigate],
   );
   const onBack = useCallback(
     (windowId: string) => {
-      const r = histories.current
-        .get(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId))
-        ?.back();
-      if (!r) return;
+      const history = histories.current.get(
+        historyKey(liveRef.current.workspace?.linkTime ?? true, windowId),
+      );
+      const r = history?.back();
+      if (!history || !r) return;
       pendingNav.current.delete(navKeyOf(liveRef.current.workspace, windowId));
       setHistoryVersion((v) => v + 1);
-      void setRange(windowId, r);
+      // A refused Back keeps the entry, since the window still shows the range it left.
+      settleStep(() => setRange(windowId, r), {
+        refused: () => {
+          history.push(r);
+          setHistoryVersion((v) => v + 1);
+        },
+      }).catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
     },
-    [setRange],
+    [setRange, setMessage],
   );
   // Reset to the extents of the window's signals, or of `signalIds` (the bar while linked, design C5).
   const onReset = useCallback(
@@ -1362,7 +1377,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       : live.summary
         ? gateOf({ summary: live.summary }, start.me)
         : undefined;
-  if (gate) return <GatePage gate={gate} />;
+  if (gate) return <GatePage gate={gate} me={start.me} />;
 
   return (
     <div

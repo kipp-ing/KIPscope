@@ -16,7 +16,8 @@ export interface ShareItems {
   copy: { label: string; lines: string[] };
   /** "Invite to this workspace": the share level for the owner on a server, and its link. */
   invite: {
-    label: string;
+    /** Absent with the identity `none`: nobody else to invite, only the link of this workspace. */
+    label?: string;
     /** Absent: no radio. */
     levels?: ShareLevel[];
     lines: string[];
@@ -55,7 +56,7 @@ export function shareItems(
   if (!server) {
     return {
       copy,
-      invite: { label: INVITE, lines: [], button: "Copy workspace link (same live workspace)" },
+      invite: { lines: [], button: "Copy workspace link (same live workspace)" },
     };
   }
   const button = "Copy workspace link";

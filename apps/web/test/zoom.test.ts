@@ -7,6 +7,7 @@ import {
   isMouseWheel,
   type Range,
   RangePreview,
+  settleStep,
   WheelFrame,
   wheelAction,
   wheelZoomFactor,
@@ -69,6 +70,47 @@ describe("extentRange", () => {
     ]);
     expect(union).toEqual({ from: 1_000_000n, to: 10_000_000n });
     expect(extentRange([])).toBeUndefined();
+  });
+});
+
+describe("settleStep (refused navigation steps)", () => {
+  const refusal = (code: string): CommandResult =>
+    ({ ok: false, code, message: "this workspace is shared read-only" }) as CommandResult;
+
+  it("rolls back on every refusal and keeps an accepted step", async () => {
+    // A step pushes the view it leaves only once the server accepts it; a refusal undoes its preview.
+    for (const code of ["read_only", "forbidden_data", "case_open"]) {
+      const history = new ZoomHistory();
+      const accepted = vi.fn(() => history.push({ from: 0n, to: 10n }));
+      const refused = vi.fn();
+      expect(await settleStep(async () => refusal(code), { accepted, refused })).toBe(false);
+      expect(accepted).not.toHaveBeenCalled();
+      expect(refused).toHaveBeenCalledOnce();
+      // Back offers nothing: the window still shows the range the step would have left.
+      expect(history.size).toBe(0);
+    }
+    const history = new ZoomHistory();
+    const refused = vi.fn();
+    const ok = await settleStep(async () => ({ ok: true }), {
+      accepted: () => history.push({ from: 0n, to: 10n }),
+      refused,
+    });
+    expect(ok).toBe(true);
+    expect(refused).not.toHaveBeenCalled();
+    expect(history.back()).toEqual({ from: 0n, to: 10n });
+  });
+
+  it("rolls back when the send throws and passes the error on", async () => {
+    const refused = vi.fn();
+    await expect(
+      settleStep(
+        async () => {
+          throw new Error("down");
+        },
+        { refused },
+      ),
+    ).rejects.toThrow("down");
+    expect(refused).toHaveBeenCalledOnce();
   });
 });
 

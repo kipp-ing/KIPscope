@@ -9,7 +9,7 @@ import "./styles.css";
 function Root() {
   const start = useStartup();
   if (start.kind === "pending") return null;
-  if (start.kind === "gate") return <GatePage gate={start.gate} />;
+  if (start.kind === "gate") return <GatePage gate={start.gate} me={start.me} />;
   return <App start={start} />;
 }
 

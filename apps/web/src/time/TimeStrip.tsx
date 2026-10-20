@@ -42,8 +42,12 @@ import {
 } from "./stripGeometry.ts";
 import "./strip.css";
 
-/** App → TimeStrip (S9): runs one strip step on the bar target; `next` maps its current view (pending or server) to the new range. Returns whether a command was sent. */
-export type StripNavigate = (next: (view: Range) => Range | undefined, push: boolean) => boolean;
+/** App → TimeStrip (S9): runs one strip step on the bar target; `next` maps its current view (pending or server) to the new range. Returns whether a command was sent; `refused` runs when the server refused it. */
+export type StripNavigate = (
+  next: (view: Range) => Range | undefined,
+  push: boolean,
+  refused?: () => void,
+) => boolean;
 
 /** Densities loaded so far, per data ref or scope (densityKey), for the page's life (design T8):
  *  one fetch per data ref, and one per scope (add-scope Z9). */
@@ -331,20 +335,30 @@ export function TimeStrip({
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  /** Sends one strip step; shows the sent range until the target's server range changes. */
+  /**
+   * Sends one strip step; shows the sent range until the target's server range changes, or until
+   * the server refuses the step (the server range then stays, so the strip shows it again).
+   */
   const commit = (next: (view: Range) => Range | undefined, push: boolean): boolean => {
     if (!navigate) return false;
-    const out: { range: Range | undefined } = { range: undefined };
-    const sent = navigate((view) => {
-      out.range = next(view);
-      return out.range;
-    }, push);
+    const out: { range: Range | undefined; step: Committed | undefined } = {
+      range: undefined,
+      step: undefined,
+    };
+    const sent = navigate(
+      (view) => {
+        out.range = next(view);
+        return out.range;
+      },
+      push,
+      () => setCommitted((c) => (c === out.step ? undefined : c)),
+    );
     // App's navigate sends the clamped range; show exactly that.
-    setCommitted(
+    out.step =
       sent && out.range
         ? { range: scopeRange(clampRange(out.range), scope), base: targetKey }
-        : undefined,
-    );
+        : undefined;
+    setCommitted(out.step);
     return sent;
   };
 

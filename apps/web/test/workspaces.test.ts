@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { applyLiveMessage, FINAL_CLOSES, type LiveState } from "../src/live.ts";
 import { apiPath, resolvesWorkspace, withWorkspace } from "../src/workspaces/apiPath.ts";
+import { GatePage } from "../src/workspaces/Gate.tsx";
 import { gateOf, LATEST_WORKSPACE, NEW_WORKSPACE } from "../src/workspaces/gate.ts";
 import { ReadOnlyPill, readOnlyTitle } from "../src/workspaces/ReadOnlyPill.tsx";
 import { recentRows } from "../src/workspaces/recent.ts";
@@ -99,6 +100,26 @@ describe("workspace start-up (add-multiuser M12)", () => {
 });
 
 describe("gate pages", () => {
+  it("says who the user is signed in as", () => {
+    const alice: Me = { user: "alice", identity: "oidc", roles: ["viewers"], canShare: true };
+    const local: Me = { user: "local", identity: "none", roles: [], canShare: true };
+    const empty = gateOf({ summary: { granted: 0 } }, alice);
+    const forbidden = gateOf({ status: 403, code: "forbidden" }, alice);
+    for (const gate of [empty, forbidden]) {
+      if (!gate) throw new Error("expected a gate");
+      const html = renderToStaticMarkup(createElement(GatePage, { gate, me: alice }));
+      expect(html).toContain(gate.title);
+      expect(html).toContain("Signed in as alice (oidc) · roles: viewers");
+    }
+    // As in the footer: no user line with the identity none, and none before /api/me answered.
+    const gate = gateOf({ status: 404, code: "unknown_workspace" });
+    if (!gate) throw new Error("expected a gate");
+    expect(renderToStaticMarkup(createElement(GatePage, { gate, me: local }))).not.toContain(
+      "Signed in",
+    );
+    expect(renderToStaticMarkup(createElement(GatePage, { gate }))).not.toContain("Signed in");
+  });
+
   it("chooses the gate page", () => {
     const server: Pick<Me, "identity"> = { identity: "oidc" };
     const local: Pick<Me, "identity"> = { identity: "none" };
@@ -347,6 +368,11 @@ describe("share items", () => {
     // 4: no radio, the button says it is the same live workspace.
     expect(four.invite.levels).toBeUndefined();
     expect(four.invite.button).toBe("Copy workspace link (same live workspace)");
+    // Only on a server is there anyone to invite: the heading shows there, not in local mode.
+    for (const items of [one, two, three])
+      expect(items.invite.label).toBe("Invite to this workspace");
+    expect(four.invite.label).toBeUndefined();
+    expect(four.invite.lines).toEqual([]);
   });
 });
 

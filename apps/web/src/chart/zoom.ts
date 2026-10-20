@@ -257,6 +257,26 @@ export class RangePreview {
   }
 }
 
+/**
+ * Sends one navigation step and settles what the page did for it ahead of the answer: `accepted`
+ * runs once the server accepted the step, `refused` when it refused it (any `ok: false`, e.g.
+ * `read_only` or `forbidden_data`) or the send threw, so a refused step leaves every part of the
+ * page at the server's state. A throw is passed on after `refused`. Resolves to whether it was accepted.
+ */
+export async function settleStep(
+  send: () => Promise<{ ok: boolean }>,
+  on: { accepted?: () => void; refused: () => void },
+): Promise<boolean> {
+  let ok = false;
+  try {
+    ok = (await send()).ok;
+  } finally {
+    if (ok) on.accepted?.();
+    else on.refused();
+  }
+  return ok;
+}
+
 /** History key: one shared history while linked ("*"), else per window ID. */
 export function historyKey(linked: boolean, windowId: string): string {
   return linked ? "*" : windowId;

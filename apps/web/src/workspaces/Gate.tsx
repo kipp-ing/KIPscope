@@ -1,6 +1,7 @@
-import { workspacePath } from "@kipscope/shared";
+import { type Me, workspacePath } from "@kipscope/shared";
 import { useState } from "react";
 import { createWorkspace } from "../api.ts";
+import { userItem } from "../footer/items.ts";
 import { type Gate, LATEST_WORKSPACE, NEW_WORKSPACE } from "./gate.ts";
 import "./workspaces.css";
 
@@ -14,10 +15,11 @@ export async function openNewWorkspace(): Promise<void> {
 /**
  * The page shown instead of the workspace (add-multiuser M12 "Gate pages"): a title, a text, and
  * for a missing or forbidden workspace "My latest workspace" (the start-up page `/`) and "New
- * workspace".
+ * workspace". Below the card, as the footer's user item says it, who the user is signed in as.
  */
-export function GatePage({ gate }: { gate: Gate }) {
+export function GatePage({ gate, me }: { gate: Gate; me?: Me | undefined }) {
   const [error, setError] = useState<string | undefined>();
+  const user = userItem(me);
   return (
     <div className="gate">
       <div className="gate-card" role="alert">
@@ -46,6 +48,7 @@ export function GatePage({ gate }: { gate: Gate }) {
         )}
         {error && <p className="gate-error">{error}</p>}
       </div>
+      {user && <footer className="gate-user">{user.title}</footer>}
     </div>
   );
 }

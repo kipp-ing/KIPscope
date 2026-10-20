@@ -60,6 +60,17 @@
   color: var(--error);
 }
 
+/* Who the user is signed in as, the footer's user item (M12 "Footer"). */
+.gate-user {
+  position: fixed;
+  right: 16px;
+  bottom: 8px;
+  left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
 /* Share… (M12): an overflow item (bar.css step 4); its popover is the Views popover, right-aligned
    under the button. */
 .option-bar .share-menu {

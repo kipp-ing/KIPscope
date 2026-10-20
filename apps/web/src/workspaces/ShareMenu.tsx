@@ -32,7 +32,8 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /**
  * "Share…" (add-multiuser M12): an overflow item of the top row, in the row or in "⋯". Its popover
  * offers "Copy link (own copy)", a link holding this layout as a view, and "Invite to this
- * workspace": the share level for the owner on a server, and the link of this live workspace.
+ * workspace": the share level for the owner on a server, and the link of this live workspace
+ * (with the identity `none` only that link, without the heading).
  * Esc closes the popover only (an open "⋯" menu stays), with focus back on "Share…".
  */
 export function ShareMenu({
@@ -147,7 +148,7 @@ export function ShareMenu({
             </p>
           ))}
           <div className="views-divider" />
-          <p className="share-heading">{items.invite.label}</p>
+          {items.invite.label && <p className="share-heading">{items.invite.label}</p>}
           {items.invite.levels && (
             <fieldset className="share-levels">
               <legend className="share-hidden">Share level</legend>

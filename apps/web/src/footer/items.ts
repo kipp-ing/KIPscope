@@ -172,17 +172,26 @@ export function footerItems(
     });
   }
 
-  if (me && me.identity !== "none") {
-    const roles = me.roles.length > 0 ? me.roles.join(", ") : "none";
-    items.push({
-      key: "user",
-      text: me.user,
-      title: `Signed in as ${me.user} (${me.identity}) · roles: ${roles}`,
-      tone: "plain",
-      rank: RANK_USER,
-    });
-  }
+  const user = userItem(me);
+  if (user) items.push(user);
   return items;
+}
+
+/**
+ * Who the user acts as (add-multiuser M12): text the user, title "Signed in as <user> (<identity>)
+ * · roles: <roles>"; undefined without `me` or with the identity `none`. The footer and the gate
+ * pages show it.
+ */
+export function userItem(me: Me | undefined): FooterItem | undefined {
+  if (!me || me.identity === "none") return undefined;
+  const roles = me.roles.length > 0 ? me.roles.join(", ") : "none";
+  return {
+    key: "user",
+    text: me.user,
+    title: `Signed in as ${me.user} (${me.identity}) · roles: ${roles}`,
+    tone: "plain",
+    rank: RANK_USER,
+  };
 }
 
 /** The browser's time zone (`Intl` `resolvedOptions().timeZone`) and its UTC offset at `date`. */
