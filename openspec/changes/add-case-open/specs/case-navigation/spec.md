@@ -87,16 +87,16 @@ When the target session's data ref differs, every window signal, colour key and 
 - **Evidence:** `apps/server/test/case.http.test.ts` › "aligns to an event and falls back to the start"
 
 ### Requirement: Session bar
-While a catalog is open, the strip head SHALL show the session bar instead of the scope head (design K14): linked `SESSION ‹ <session text> › <k> / <n> ▾ Unlink Align ▾`, unlinked `VEHICLE ‹ › <vehicle text> Link`, on one line, the strip at most 56 px. Origin: Jan („mit einem pfeil rechts links bei session metainfo bei hover hüpfe ich zur nächsten … mit "unlink" wird session rechts links grau"); exploration UX sketch; D-056 (≤ 56 px).
+While a catalog is open, the strip head SHALL show the session bar instead of the scope head (design K14): linked `SESSION ‹ <session text> › <k> / <n> ▾ Unlink Align ▾`, unlinked `VEHICLE ‹ › <vehicle text> Link` (vehicle text: the entry's `object`, never its title), on one line, the strip at most 56 px. Origin: Jan („mit einem pfeil rechts links bei session metainfo bei hover hüpfe ich zur nächsten … mit "unlink" wird session rechts links grau"); exploration UX sketch; D-056 (≤ 56 px).
 
 #### Scenario: Bar text
-- **WHEN** `sessionBarText` gets the case at entry 0 of C4 (title absent, `meta {distance_km: 6.2}`) in Europe/Berlin, and the same case unlinked with scope 2026-10-01 02:00 – 12:00 local
-- **THEN** it gives `testcar · driving · 2026-10-01 03:00 – 03:10 (10 min) · distance_km 6.2` with position `1 / 4`, and `testcar · whole series · 2026-10-01 02:00 – 2026-10-01 12:00 (10 h)`
+- **WHEN** `sessionBarText` gets the case at entry 0 of C4 (title absent, `meta {distance_km: 6.2}`) in Europe/Berlin, the same case unlinked with scope 2026-10-01 02:00 – 12:00 local, and that unlinked case with entry 0 titled `Drive 1`
+- **THEN** it gives `testcar · driving · 2026-10-01 03:00 – 03:10 (10 min) · distance_km 6.2` with position `1 / 4`, and both unlinked cases give `testcar · whole series · 2026-10-01 02:00 – 2026-10-01 12:00 (10 h)` (the vehicle, not `Drive 1`)
 - **Evidence:** `apps/web/test/sessionBar.test.ts` › "describes the session"
 
 #### Scenario: Bar on smart451
 - **WHEN** a catalog from `kipscope case drives smart451` is open at 1440×900 and at 1000×557, the user hovers the bar, then clicks **Unlink**
-- **THEN** `‹ ›` appear on hover with tooltips naming the neighbour; the bar fits one line and the strip is ≤ 56 px at both sizes; after Unlink the bar reads `VEHICLE` with greyed arrows and **Link**
+- **THEN** `‹ ›` appear on hover with tooltips naming the neighbour; the bar fits one line and the strip is ≤ 56 px at both sizes; after Unlink the bar reads `VEHICLE ‹ › smart451 · whole series · <local from> – <local to> (<span>) Link` with greyed arrows, naming the vehicle and not the dropped drive (no `Drive 1`)
 - **Evidence:** UI check on smart451 (one screenshot per state and size, strip height)
 
 ### Requirement: Arrows and keys
@@ -140,6 +140,14 @@ After a case command, the message line SHALL say when a range was clamped at the
 - **WHEN** the result handler gets a `case.step` result with `clamped`, one with `alignFallback` in event mode for `B1234`, and one with `missing` of 5 signals
 - **THEN** it shows `Stopped at the session edge. Unlink shows the whole vehicle.`, `No B1234 in this session; aligned to its start.` and `5 signals not in this session: <first 3 shown names>, …`
 - **Evidence:** `apps/web/test/sessionBar.test.ts` › "messages after a step"
+
+### Requirement: Case notices clear on the next command
+A case result notice ("Step messages", alone or combined) SHALL be dismissed by the tab's next accepted command, case or other, that sets no message of its own; a refusal or a new message SHALL replace it; an open notice SHALL stay. Origin: necessary consequence of matching the scope-edge message (time-navigation "Message on a clamped result"); round 1 UI finding („a clamp message outlives later commands").
+
+#### Scenario: Notice cleared by the next command
+- **WHEN** the message slot holds, in turn, each case notice (clamped linked, clamped unlinked, no anchor, no event, 1 signal missing, 5 signals missing, clamped and missing), and then gets the result events of an accepted `case.go` without flags and of an accepted window command without flags; and a held clamp notice gets a `case.step` result with `missing` of 1 signal
+- **THEN** every notice is gone after either next command; the clamp notice is replaced by `1 signal not in this session: S1`
+- **Evidence:** `apps/web/test/sessionBar.test.ts` › "clears a case message on the next command"
 
 ### Requirement: Zoom history per session
 The zoom history ("Back") SHALL be kept per catalog index in the tab: a step SHALL push no entry, and stepping back to a session SHALL restore its history. Origin: exploration UX sketch („Back history is per session"), accepted by D-086.

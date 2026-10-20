@@ -40,7 +40,7 @@ The same catalog SHALL open from the link `/open#cases=<code>`, a file, stdin an
 #### Scenario: Link in the browser
 - **WHEN** the web app starts on `/open#cases=<encodeCasesLink(C4)>`
 - **THEN** it posts `{open: {cases: <code>}}` once, replaces the address with `/w/<id>` without a second page load, and the strip head shows the session bar at `1 / 4`
-- **Evidence:** `apps/web/test/session.test.ts` › "opens /open#cases= as a new workspace"; UI check on smart451 with a link from `kipscope case drives smart451` and `kipscope case url -` (address after load, one screenshot)
+- **Evidence:** `apps/web/test/workspaces.test.ts` › "opens /open#cases= as a new workspace"; UI check on smart451 with a link from `kipscope case drives smart451` and `kipscope case url -` (address after load, one screenshot)
 
 #### Scenario: Dropped file
 - **WHEN** a file holding C4 as JSON is dropped on the window

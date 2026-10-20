@@ -45,10 +45,18 @@ While a case is linked, 500 ms after the tab's render acknowledgement for the cu
 - **THEN** after 500 ms the tab requests the preview of index 3, then the tiles covering [05:00:00, 05:02:00) of `testcar/Fast_100h.SIG_A` with `case=3` and the header, then the preview of index 1 and the tiles covering [23:59:01, 00:01:01) of `othercar/Fast_100h.SIG_A` with `case=1` (align start; nothing before 500 ms)
 - **Evidence:** `apps/web/test/preload.test.ts` › "preloads the next and then the previous session"
 
+### Requirement: Preload plan equals the step
+The preload SHALL request exactly the tiles (signal, level, index) each window asks for after `case.go {index: N}`, edge tiles included, computed as the loader does (design K13); a window without a known target width SHALL be skipped. Origin: necessary consequence of D-078; round 2 finding (e) (549 s tiles asked after the step, 274 s ones preloaded).
+
+#### Scenario: Plan equals the step's requests
+- **WHEN** a fake server answers, C4 is open at entry 2 with two windows on `testcar/Fast_100h.SIG_A`, `w1` [04:52:00, 04:54:00) (inside the session) and `w2` [04:50:00, 05:10:00) (as wide as the session, so its first and last tiles are cut by entry 3's scope), each with a known target width, and the preload for entry 3 runs to its end; then `case.go {index: 3}` is applied and both windows' loaders compute their requests
+- **THEN** the set of (signal, level, index) the preload loaded for entry 3 equals the set the two loaders ask for after the step, and no tile is asked twice
+- **Evidence:** `apps/web/test/preload.test.ts` › "plans the tiles the step asks for"
+
 #### Scenario: Step after preload draws from memory
-- **WHEN** on smart451 with a catalog from `kipscope case drives smart451` the user waits 3 s on drive 1 and presses `]`
-- **THEN** the network panel shows no `/api/series` request between the key press and the drawn windows of drive 2
-- **Evidence:** UI check on smart451 (network panel filtered to `/api/series`, one screenshot)
+- **WHEN** after "Plan equals the step's requests" the step to entry 3 draws both windows; and on smart451, with a catalog of at least 3 drives (`kipscope case drives smart451`, or one the lead supplies), the user waits 3 s on drive 2 and presses `]`
+- **THEN** in the test no `/api/series` request without `case=` is sent for `w1` or `w2`, edge tiles included, and both loaders end `complete`; on smart451 the network panel shows no `/api/series` request without `case=` for the timeseries windows between the key press and the drawn windows of drive 3 (overview tiles and extents may load: not preloaded, design K13)
+- **Evidence:** `apps/web/test/preload.test.ts` › "draws the stepped-to session from the cache" (both windows; it replaces "asks again after a step only for tiles the scope cannot store"); UI check on smart451 (network panel filtered to `/api/series`, one screenshot)
 
 ### Requirement: Preload yields and stops
 Preload runs SHALL rank below prefetch and share its 2 in-flight slots; a visible load SHALL never wait for them; the tab SHALL stop preloading once 25 % of the cache limit was preloaded since the last step; any pointer down, wheel or key press, any command of the tab and any new revision SHALL abort every preload request. Origin: D-081 („never delay interactive"); exploration "Caching plan" 2 (≤ 25 % of the memory budget, cancelled by any gesture), accepted by D-086 Q6.
