@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-086: Answers on the sessions exploration: unlink is the whole vehicle (2026-10-20)
+
+Jan on questions 1–13 of [2026-10-20-sessions-and-handoff.md](explore/2026-10-20-sessions-and-handoff.md): „unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts. der ist ja“ (read as: the rest is „ja“).
+
+- **Decision:** Unlink stays on the current session's vehicle (Q3). For the user, Unlink has no horizon: the vehicle's whole series, with no 31-day default and no 1-year cap (Q5 changed). Rights are per object with no time part: a grant names vehicles, and whoever may see a vehicle may see all of it (Q12 changed: no `grant.objects` windows). The other recommendations are accepted as written: "session" is the data section and the server state is an invisible "workspace" renamed in `add-multiuser` (Q1); signed link with the catalog, same JSON as file and CLI, no live channel (Q2, Q10); alignment to the session start or a chosen event (Q4); cache across switches and neighbour preload in `add-case-open`, IndexedDB store as `add-tile-store` (Q6); VIN → data ref by template (Q7); `kipscope case drives` for local tests (Q8); KI.ping button as a small PR, link built and signed by KI.ping's server (Q9); the KIPscope rules file drops out of `add-multiuser` (Q11); a view grants nothing (Q13).
+- **Why:** Jan's answers; rights are KI.ping's (D-085), and a vehicle is the unit of access.
+- **Consequences:** "Unbounded for the user" must still keep D-082's rule that no query scans without bounds: the scope after Unlink is the vehicle's full extent, but every query follows what is shown (series by view range and zoom level, the strip coarse first and finer on zoom, signal list and events lazily). Cost on a large ADX table is unmeasured; `add-case-open` must measure it on the emulator and name a fallback.
+
 ## D-085: Rights live in KI.ping; a catalog is any list (2026-10-20)
 
 Jan on the exploration [2026-10-20-sessions-and-handoff.md](explore/2026-10-20-sessions-and-handoff.md): „wir können das rechtemanagement in kiping packen. das mit der zeitlichen session set stimmt nicht. die liste kann beliebig sortiert sein beliebige VINs.“
