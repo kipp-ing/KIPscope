@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-087: Answers on add-multiuser Q-6, Q-7 and add-case-open Q-1 … Q-6 (2026-10-20)
+
+Jan: „alle ja“.
+
+- **Decision:** The recommended answers are taken. `add-multiuser`: Q-6 an invited user sees the shared workspace's grant, only inside that workspace; Q-7 on a server a `#view=` or `?view=` link opens a workspace with an empty grant (refused until `add-case-open`). `add-case-open`: Q-1 with event alignment each session aligns to its first matching event, else its start with a message; Q-2 a catalog without `view` takes the layout of the user's latest workspace, moved to the session's vehicle; Q-3 signals move by name, missing ones stay and are reported; Q-4 Link or a click on a mark restores the layout from before Unlink; Q-5 if the extent query is too slow, the scope is the source's retention ending now (`KIPSCOPE_OBJECT_RETENTION`); Q-6 `scope set`, Widen and Clear are refused (`case_open`) while a catalog is open.
+- **Why:** Jan accepted all recommendations.
+- **Consequences:** Both changes are ready to build: `add-multiuser` first (one more round for the rename and the grant), then `add-case-open`.
+
 ## D-086: Answers on the sessions exploration: unlink is the whole vehicle (2026-10-20)
 
 Jan on questions 1–13 of [2026-10-20-sessions-and-handoff.md](explore/2026-10-20-sessions-and-handoff.md): „unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts. der ist ja“ (read as: the rest is „ja“).
