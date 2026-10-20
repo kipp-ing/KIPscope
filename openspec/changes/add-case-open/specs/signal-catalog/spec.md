@@ -12,7 +12,7 @@ The explorer SHALL load the catalog again whenever the workspace's scope changes
 
 #### Scenario: No scope in the UI
 - **WHEN** the dev server runs a second instance with `KIPSCOPE_CATALOG=scoped` and no state file, the UI is opened against it, and then `kipscope scope set smart451 "2026-10-13 14:00" "2026-10-13 16:00"` runs
-- **THEN** the explorer first shows the "No scope set" text, then, without a reload, the scope's signals; searching `volt` finds `DCU_1F4h.COMP_HV_Volt`
+- **THEN** the explorer first shows the "No scope set" text, then, without a reload, the scope's signals; searching `volt` finds signals of the scope (`DCU_1F4h.COMP_HV_Volt` is not in the smart451 catalog any more; corrected by the lead 2026-10-20)
 - **Evidence:** UI check (two screenshots of the explorer)
 
 #### Scenario: Partial list

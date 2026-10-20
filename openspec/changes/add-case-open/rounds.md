@@ -17,3 +17,4 @@
 
   Local Docker databases only; a real ADX cluster and carserver (smart451 Unlink 15–30 s cold in rounds 1–2, not re-measured) may differ.
 - Lead (2026-10-20): 3.5 ticked under the amended wording: round 5 UI user on the 10-drive catalog saw every preloaded drawn tile reused after the preload finished; the remaining plain calls were overview and `maybePrefetch`, now named as allowed.
+- Lead (2026-10-20): "No scope in the UI" on a second server (7311, `KIPSCOPE_CATALOG=scoped`, fresh state dir, Vite 5174): explorer showed "No scope set …", after `kipscope --server http://127.0.0.1:7311 scope set smart451 …` it showed 415 signals without a reload within about 3 s; `volt` found 21 signals. Pass; the example signal of the scenario is not in the smart451 catalog (553 signals), wording corrected. 7.1 stays open only for the 1440x900 and 1000x557 sizes (the Chrome window does not resize; Jan).
