@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-088: Multiuser conventions (2026-10-20)
+
+From the archived change `add-multiuser`; details there (design M1–M15).
+
+- **Decision:** Identity is a pluggable adapter (`KIPSCOPE_IDENTITY`: `none` default, `oidc` for Ping-issued JWTs, `module:<path>`); roles are shown, they decide nothing. The server state is a **workspace** (`/w/<id>`, `/api/w/<id>/…`, `X-KIPscope-Workspace`, `--workspace`, `kipscope workspace …`); "session" is reserved for the finder's data section, legacy names only in `LEGACY_*` constants. Each workspace has an owner, a share level (`private`, `read`, `write`) and a grant of data refs (`all` with `none`; empty on a server until a handoff widens it through `grantObjects(workspaceId, dataRefs)`, the only widening path; a stored `all` counts as empty on a server). One guard on every route checks the grant; refusals leak nothing. Sharing never widens data: an invited user sees the workspace's grant only inside it (D-087 Q-6). `KIPSCOPE_SHARE=on|off` is the share right. `/` reuses a free workspace of the user, else creates one; `#view=` and `?view=` open a new one, and views grant nothing; `?view=` takes a slug or the title the menu shows. Views per user under `<stateDir>/users/<user>/views/`. The UI shows Share… and Recent only; gate pages say who is signed in.
+- **Why:** D-079, D-083 … D-087; Jan: „gut, archivieren".
+- **Consequences:** `add-case-open` widens grants after a verified signed catalog. Not run before the archive: the 1440×900 step of 12.5 ("Share in the row when there is room"), a dev server restart and a restart with the tunnel down, a real Ping tenant ([deploy.md](deploy.md)). During the lead's UI check a test agent deleted Jan's workspace `lhwad0nv1m` (a "Speeds" layout, recoverable by `?view=Speeds`).
+
 ## D-087: Answers on add-multiuser Q-6, Q-7 and add-case-open Q-1 … Q-6 (2026-10-20)
 
 Jan: „alle ja“.

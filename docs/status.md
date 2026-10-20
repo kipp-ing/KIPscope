@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-19, session 8. New direction after issue #1 and Jan's answers (D-078 … D-080); see Next. Twenty-nine changes are archived and the main specs describe the running app.
+As of 2026-10-20, session 9. New direction after issue #1 and Jan's answers (D-078 … D-088); see Next. Thirty changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -33,7 +33,8 @@ As of 2026-10-19, session 8. New direction after issue #1 and Jan's answers (D-0
 | Data sources | [data-source](../openspec/specs/data-source/spec.md), [adx-source](../openspec/specs/adx-source/spec.md) | Lean adapter contract (7 required methods, server-side fallbacks, one conformance suite); ClickHouse or Azure Data Explorer via `KIPSCOPE_SOURCE`, ADX signed in with `az login`; guide [data-sources.md](data-sources.md) |
 | Scope | [scope](../openspec/specs/scope/spec.md) | One data ref and `[from, to)` bound every query (D-082); `KIPSCOPE_CATALOG=scoped` for large sources; views open with a scope (pad 1 h); clamp at the edge, Widen ×3, Clear; CLI `scope …`; query classes with a slot kept for the UI (D-081) |
 | HTTP API | [api-reference](../openspec/specs/api-reference/spec.md) | Every route documented in [http-api.md](http-api.md), checked by a test |
-| Server access | [server-access](../openspec/specs/server-access/spec.md) | Local access only (`Host`/`Origin` guard), JSON bodies, size limits on live frames and acknowledgements |
+| Server access | [server-access](../openspec/specs/server-access/spec.md) | `Host`/`Origin` guard with configured origins (`KIPSCOPE_ORIGINS`), the built UI served by the server, JSON bodies, size limits |
+| Identity, workspaces, access | [user-identity](../openspec/specs/user-identity/spec.md), [workspaces](../openspec/specs/workspaces/spec.md), [data-access](../openspec/specs/data-access/spec.md) | Identity adapter `none`/`oidc` (Ping)/`module:`; a workspace per tab at `/w/<id>` with owner, share level and a grant of data refs; one guard on every route; Share… and Recent; views per user; guide [deploy.md](deploy.md) (D-088) |
 
 History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance, events usability, ADX source). Decisions D-001 … D-075: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
@@ -84,7 +85,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
    0. Done: papercuts from issue #1 item 8 (`.gitattributes`, `--env-file-if-exists`, DBC path warnings).
    1. `improve-query-priority`: interactive queries before background work; periods only for the signals in view (issue #1 item 7). Archived (D-081).
    2. `add-scope`: scope in the source contract and the workspace, scoped catalog, bounded strip, gaps and events, CLI `scope set` (issue #1 items 1–5). Unblocks the Azure users. Archived (D-082); Jan tests more on 2026-10-20 (not run yet: tunnel-down restart in scoped mode, strip at 1440×900 and 1000×557, Copy link by clipboard).
-   3. `add-multiuser`: SSO hook (KI.ping or authentik), a workspace per session with rights, configurable host, CLI against a remote server; ADX reads as the server (D-079, D-083); identity adapters `none`/`oidc`/`module:`, rules file with data-ref patterns, one guard on every route (D-084). Built in four rounds plus lead checks (two and three users with the example module; restart while loading acknowledges `complete`) and a test fix; waiting for Jan's check. Not run: a real Ping tenant (Jan's deployment check, [deploy.md](deploy.md)).
+   3. `add-multiuser`: archived (D-088). Rights moved to KI.ping (D-085): grant per workspace instead of a rules file; "session" renamed to "workspace". Not run: 1440×900 step, dev restart, tunnel-down restart, a real Ping tenant ([deploy.md](deploy.md)).
    4. `add-case-open`: specced 2026-10-20 after the [sessions and handoff exploration](explore/2026-10-20-sessions-and-handoff.md) and D-085/D-086: KI.ping signs a catalog (any order, any VINs) into `/open#cases=<JWS>`, file and CLI; session bar with ‹ › `[` `]`, `3 / 17`, Unlink (whole vehicle, unbounded for the user, every query still bounded by the view), Align; tiles kept across scopes, neighbour preload; measurement on a synthetic 400-day car. 23 tasks; open Q-1 … Q-6 for Jan. Before it, `add-multiuser` was revised (session → workspace, Share/Recent, grant per workspace instead of the rules file; open Q-6, Q-7) and needs one more build round.
    5. `add-signal-books`: book files and inline books, P1–P3, lazy metadata, learned book per user, ADX metadata once the Azure users explain it (D-080, issue #1 item 6).
    The ADX path has run only against the emulator so far; a real cluster needs [data-sources.md](data-sources.md) §6.

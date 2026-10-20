@@ -53,15 +53,15 @@ Reading a view SHALL accept YAML and JSON. A document whose `kipscope` is not `v
 - **Evidence:** `apps/server/test/views.http.test.ts` › "imports YAML and JSON"
 
 ### Requirement: Named views on the server
-The server SHALL save the open workspace as a named view in `<stateDir>/views/<name>.yaml`, list, return and delete views. Saving onto an existing name SHALL need `overwrite`, else 409 `view_exists`. The list SHALL show every file, a broken one with its error. Saving SHALL mark the open view as saved. Origin: concept §8 („Speichern/Laden"); Jan 2026-10-17; persona test (boss: keep a view).
+The server SHALL save a workspace as a named view of the requesting user in `<stateDir>/users/<user>/views/<name>.yaml`, and list, return and delete that user's views; a user SHALL never see or change another user's views. Saving onto an existing name SHALL need `overwrite`, else 409 `view_exists`. The list SHALL show every file, a broken one with its error. Saving SHALL mark the workspace's open view as saved. Origin: concept §8 („Speichern/Laden"); Jan 2026-10-17; persona test (boss: keep a view); per user: D-084 („q4 views je nutzer, ja").
 
 #### Scenario: Save, list, overwrite
 - **WHEN** on a test server with a temp state dir `POST /api/views {title: "Hard acceleration, drive 3"}` is sent twice, then once with `overwrite: true`, then `GET /api/views`
-- **THEN** the first answers 200 with `view.name` `hard-acceleration-drive-3` and the next revision; the second 409 `view_exists`; the third 200; the list holds that view with `windows` and `signals` counts of the workspace; `GET /api/workspace` shows `view` `{name: "hard-acceleration-drive-3", title: "Hard acceleration, drive 3", modified: false}`
+- **THEN** the first answers 200 with `view.name` `hard-acceleration-drive-3` and the next revision; the second 409 `view_exists`; the third 200; the list holds that view with `windows` and `signals` counts of the workspace; `GET /api/workspace` shows `view` `{name: "hard-acceleration-drive-3", title: "Hard acceleration, drive 3", modified: false}`; the file is `<stateDir>/users/local/views/hard-acceleration-drive-3.yaml`
 - **Evidence:** `apps/server/test/views.http.test.ts` › "saves, lists and overwrites views"
 
 #### Scenario: Broken file listed
-- **WHEN** the views directory holds `broken.yaml` with the text `windows: [`
+- **WHEN** the user's views directory holds `broken.yaml` with the text `windows: [`
 - **THEN** `GET /api/views` lists `{name: "broken", title: "broken", error: …}` and the other views as before
 - **Evidence:** `apps/server/test/views.http.test.ts` › "lists a broken file with its error"
 
@@ -69,6 +69,11 @@ The server SHALL save the open workspace as a named view in `<stateDir>/views/<n
 - **WHEN** `DELETE /api/views/hard-acceleration-drive-3` is sent twice
 - **THEN** the first answers 200 `{deleted: "hard-acceleration-drive-3"}` and the file is gone; the second 404 `unknown_view`
 - **Evidence:** `apps/server/test/views.http.test.ts` › "deletes a view"
+
+#### Scenario: Views per user
+- **WHEN** with the test identity adapter (alice and bob with role `all`) alice saves `speeds` from her workspace, and bob sends `GET /api/views`, `GET /api/views/speeds`, `DELETE /api/views/speeds`, `POST /api/views/open {name: "speeds"}` and then saves his own `speeds`
+- **THEN** bob's list does not hold alice's view; the get, the delete and the open answer 404 `unknown_view`; bob's save answers 200 without `overwrite`; alice's file is unchanged
+- **Evidence:** `apps/server/test/views.http.test.ts` › "keeps views per user"
 
 ### Requirement: File-safe view names
 A view name SHALL be given or derived from the title (`viewName`) and match `^[a-z0-9][a-z0-9-]{0,62}$`; any other name SHALL be refused with 400 `invalid_view_name`, and no request SHALL read or write a file outside the views directory. Origin: necessary consequence (names become file names; D-046 keeps the server local, not trusted input).
@@ -126,7 +131,7 @@ Opening a view SHALL need the signal list it is checked against. A view that res
 - **Evidence:** `apps/server/test/views.http.test.ts` › "loads the scope's list before checking the view"
 
 ### Requirement: Before last open
-Before a view is opened over a workspace with at least one window, the server SHALL keep that workspace as the view `_previous` titled "Before last open", replacing an older one. It SHALL be listed last and open like any view. Origin: necessary consequence of one shared workspace (opening replaces what every tab shows, design S-4); goal: undo of an open without the general undo of concept §8.
+Before a view is opened over a workspace with at least one window, the server SHALL keep that workspace as the view `_previous` of the user who opens, titled "Before last open", replacing an older one. It SHALL be listed last and open like any view. Origin: necessary consequence of opening into a workspace other tabs show (design S-4); goal: undo of an open without the general undo of concept §8; per user: D-084 (Q-4).
 
 #### Scenario: Open, then go back
 - **WHEN** the workspace has two windows, view X is opened, then `POST /api/views/open {name: "_previous"}` is sent
@@ -167,12 +172,19 @@ Each saved view SHALL be downloadable as its YAML file (`<name>.kipscope.yaml`).
 - **Evidence:** UI check on smart451 (the `href` read from the page; one screenshot of the menu after the import). The file dialogs themselves (browser saves `<name>.kipscope.yaml`; "Import file…" with it) are the lead's hand check (design "Manual checks").
 
 ### Requirement: Links to a view
-"Copy link" SHALL copy a link `<page address>#view=<code>` holding the whole open workspace as a view document (deflate-raw, base64url). It works only where a KIPscope server is reachable at that address (local-only, D-046) and knows the view's data refs. Origin: Jan 2026-10-17 („url? shared link?"); concept §9 („Untersuchung direkt öffnen … über … Link").
+"Copy link (own copy)" in Share… (workspaces "Share") SHALL copy a link `<page origin>/#view=<code>` holding the whole workspace as a view document (deflate-raw, base64url). Opening it SHALL open the view in a new workspace of the person who opens it (design M12). It works only where that person reaches the KIPscope server at that origin and the new workspace's grant covers the view's data refs: always in `none` mode; on a server not before `add-case-open` (data-access "A view grants nothing").
+
+Origin: Jan 2026-10-17 („url? shared link?"); concept §9 („Untersuchung direkt öffnen … über … Link"); new workspace: Jan's „ja" (a case per workspace, old tabs keep theirs); grant: D-086 Q13; the label: exploration row 3.
 
 #### Scenario: Link codec
 - **WHEN** a synthetic document of 17 windows with 66 signal entries over 44 smart451-like IDs is encoded with `encodeViewLink` and decoded with `decodeViewLink`, and `decodeViewLink` gets `@@@` and a valid code cut in half
 - **THEN** the round trip gives the same document; the code has at most 2,000 characters (goal; Jan's real workspace measured ≈ 1,400); the two bad inputs reject
 - **Evidence:** `packages/shared/test/views.test.ts` › "encodes views into short links"
+
+#### Scenario: Link page is the origin
+- **WHEN** the web's "Copy link (own copy)" helper builds a link on the page `http://127.0.0.1:5173/w/abcdefghij`
+- **THEN** the link starts with `http://127.0.0.1:5173/#view=`
+- **Evidence:** `apps/web/test/viewlink.test.ts` › "copies the shared link" (extended)
 
 ### Requirement: One link for web and CLI
 "Copy link" and `kipscope view link` SHALL build the link with one shared function (`viewLinkUrl`, design V1) from one document (`linkViewDoc`: title rule, the note when set, no saved time), so one workspace and page give one link. Origin: design V7/V8; round-2 finding (372 vs 355 characters); lead's decision 2026-10-17.
@@ -183,7 +195,9 @@ Each saved view SHALL be downloadable as its YAML file (`<name>.kipscope.yaml`).
 - **Evidence:** `packages/shared/test/views.test.ts` › "builds the link document" (`linkViewDoc` title rule, note, no `saved`); `apps/cli/test/cli.test.ts` › "prints the same link as Copy link" (`data.url` equals `viewLinkUrl(<GET /api/workspace>, page)`, the call web "Copy link" makes); `apps/web/test/viewlink.test.ts` › "copies the shared link" (the web helper's link equals `viewLinkUrl` for a workspace with a noted view); the grep above
 
 ### Requirement: Open from the address
-Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>` the saved view of that name; afterwards the UI SHALL remove that part from the address so a reload does not open it again. A bad code or unknown name SHALL leave the workspace unchanged and show an error. Origin: concept §9 („Untersuchung direkt öffnen"); Jan 2026-10-17.
+Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>` the user's saved view of that name, each in a new workspace of that user (workspaces "Create with an open view"). Afterwards the address SHALL be `/w/<new id>` without the view part, so a reload does not open it again. A bad code, an unknown name, or data refs outside the new workspace's grant SHALL create no workspace; the UI SHALL then show the workspace `/` would show, with the error in the message line.
+
+Origin: concept §9 („Untersuchung direkt öffnen"); Jan 2026-10-17; new workspace: Jan's „ja" (old tabs keep their case); grant: D-086 Q13.
 
 #### Scenario: Start-up from a link
 - **WHEN** the page's address has `#view=<code>`, `?view=demo`, `?view=nope`, or neither
@@ -191,13 +205,16 @@ Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>`
 - **Evidence:** `apps/web/test/viewlink.test.ts` › "reads a view from the address"
 
 #### Scenario: Link in a second browser
-- **WHEN** with Jan's windows open the user clicks "Copy link" and `kipscope view link --page <UI address>` runs, then all windows are removed and a new tab navigates to the printed `url`
-- **THEN** the notice says `Link copied (<n> characters)` with n within a few characters of the CLI's `data.chars` (same workspace and page address; compression may differ); the new tab's address loses `#view=…` after loading, all tabs show the windows again, and the new tab's strip shows `Opened "<title>"`
+- **WHEN** with Jan's windows open the user clicks Share… › "Copy link (own copy)" and `kipscope view link --page <UI origin>/` runs, then a new tab navigates to the printed `url`
+- **THEN**
+  - the notice says `Link copied (<n> characters)`, with n within a few characters of the CLI's `data.chars` (same workspace and page address; compression may differ)
+  - the new tab's address becomes `/w/<new id>` after loading, it shows the windows, and its strip shows `Opened "<title>"`
+  - the first tab's workspace and address are unchanged
 - **Evidence:** UI check on smart451 (the notice text and the CLI line; screenshot after opening the link). Pasting the clipboard into a tab is the lead's hand check.
 
 #### Scenario: Bookmark by name
-- **WHEN** a new tab navigates to `<UI address>?view=<saved name>` and then to `<UI address>?view=nope`
-- **THEN** the first opens the view (address without `?view=` after loading, `Opened "<title>"`); the second leaves the workspace unchanged and shows an error naming `unknown_view`
+- **WHEN** a new tab navigates to `<UI origin>/?view=<saved name>` and then to `<UI origin>/?view=nope`
+- **THEN** the first opens the view in a new workspace (address `/w/<id>` after loading, `Opened "<title>"`); the second creates no workspace, shows the workspace `/` would show, and an error naming `unknown_view`
 - **Evidence:** UI check on smart451 (one screenshot each)
 
 ### Requirement: Title of the open view
@@ -214,20 +231,50 @@ The top row SHALL show a **Views** button and, when the workspace has an open vi
 - **Evidence:** UI check on smart451: the UI user measures `getBoundingClientRect().top` of every displayed top-row item in a 1000×557 iframe and at 1440×900, as in round 2 (tops, title width and computed `min-width` per viewport, one screenshot each); `bar/bar.css` comment names the measured threshold and the row width after the move (≤ 728 px); `apps/web/test/views.test.ts` › "keeps the title at least ten characters" (`titleMinChars` gives 10 for 120 characters, 7 for `Drive 3`)
 
 ### Requirement: Top-row overflow menu
-Below a measured width, after the other give-way steps, the top row SHALL move its overflow items (Digits, "+ Values window"; later end-of-row controls such as `add-guidance`'s "?") into a "⋯" menu at its end, so it never wraps at 1000×557 with the sidebar open nor at 1440×900; each item SHALL stay usable by keyboard. Origin: round-2 UI finding (851 px needed, 728 px available); lead's decision 2026-10-17 (Jan: his hints are ideas); design V7 "Top-row overflow rule".
+Below a measured width, after the other give-way steps, the top row SHALL move its overflow items into a "⋯" menu at its end: Digits, "+ Values window", "Share…", and later end-of-row controls such as `add-guidance`'s "?". So the row never wraps at 1000×557 with the sidebar open nor at 1440×900. Each item SHALL stay usable by keyboard.
+
+Origin: round-2 UI finding (851 px needed, 728 px available); lead's decision 2026-10-17 (Jan: his hints are ideas); design V7 "Top-row overflow rule"; "Share…" as an overflow item: exploration „'Share…' in the overflow menu", accepted by D-086 (add-multiuser design M12).
 
 #### Scenario: Overflow menu by keyboard
-- **WHEN** at 1000×557 with the sidebar open the user tabs to "⋯", presses Enter, changes Digits to 4 with the arrow keys, tabs to "+ Values window" and presses Enter, then opens "⋯" again and presses Escape
-- **THEN** Enter opens the menu with focus on the Digits select; the workspace's digits become 4; a new values window appears; Escape closes the menu and focus is on "⋯"; "⋯" has `aria-haspopup="menu"` and `aria-expanded` true while open, false after
+- **WHEN** at 1000×557 with the sidebar open the user does, in order:
+  1. tabs to "⋯" and presses Enter
+  2. changes Digits to 4 with the arrow keys
+  3. tabs to "+ Values window" and presses Enter
+  4. opens "⋯" again, tabs to "Share…" and presses Enter, then presses Escape twice
+- **THEN**
+  - Enter opens the menu with focus on the Digits select
+  - the workspace's digits become 4, and a new values window appears
+  - "Share…" opens its popover
+  - the Escapes close the popover and the menu, with focus on "⋯"
+  - "⋯" has `aria-haspopup="menu"`, with `aria-expanded` true while open and false after
 - **Evidence:** UI check on smart451 (focused element and `aria-expanded` read from the page after each step, `kipscope state` for digits and windows; one screenshot with the menu open)
 
+#### Scenario: Share in the row when there is room
+- **WHEN** the six-window setup is open with the sidebar open at 1440×900
+- **THEN** "Share…" is in the top row before "⋯", "⋯" is not displayed, and every top-row item has the same `getBoundingClientRect().top` (±1 px)
+- **Evidence:** UI check on smart451 (tops read from the page; one screenshot)
+
 ### Requirement: Views menu
-The Views menu SHALL offer save entries, the saved views newest first with saved time, window count and data refs, the open one marked, "Before last open" last, "Import file…" and "Copy link"; each row SHALL offer Download and Delete (inline confirm) without shortening the row's meta line. Origin: persona test (boss); Jan 2026-10-17; row layout: round-1 UI finding (spec owner's default, design V7).
+The Views menu SHALL offer:
+- the save entries
+- the saved views, newest first, with saved time, window count and data refs; the open one marked
+- "Before last open", last among the views
+- "Import file…"
+- the section "Recent workspaces" (workspaces "Recent workspaces")
+
+Each view row SHALL offer Download and Delete (inline confirm) without shortening the row's meta line. "Copy link" SHALL NOT be in the Views menu; it is "Copy link (own copy)" in Share….
+
+Origin: persona test (boss); Jan 2026-10-17; row layout: round-1 UI finding (spec owner's default, design V7); "Copy link" moved and Recent added: exploration rows 2–3 and "Workspaces become invisible", accepted by D-086.
 
 #### Scenario: Row actions keep the meta line
 - **WHEN** the menu lists a view with 6 windows and data `smart451`, and the pointer moves onto its row
 - **THEN** Download and Delete appear; the meta line's rect width and text are the same as before the hover (±1 px), and it reads `<saved local time> · 6 windows · smart451`
 - **Evidence:** UI check on smart451 (rects before and on hover, one screenshot on hover); `apps/web/test/views.test.ts` › "describes a menu row" (`rowDetails`)
+
+#### Scenario: Menu entries
+- **WHEN** the Views menu is opened on smart451 with two saved views and three workspaces
+- **THEN** it shows the save entries, both views, "Import file…" and the "Recent workspaces" section with three rows, and no entry named "Copy link"
+- **Evidence:** UI check on smart451 (menu text read from the page; one screenshot)
 
 ### Requirement: Save in place
 With a named open view, "Save" (Ctrl/Cmd+S) SHALL save it in place without asking and "Save as…" SHALL open the form; otherwise "Save view…" (Ctrl/Cmd+S) opens the form. Saving SHALL ask "Replace?" only when the name belongs to a different view. Origin: round-1 UI finding (spec owner's default, design V7); persona test (boss: keep a view).
