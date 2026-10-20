@@ -80,6 +80,22 @@ Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the w
 - **Unlink** shows the vehicle's whole recording around the session: the bar reads `VEHICLE` and greys the arrows, the strip shows the catalog's sessions of this vehicle as marks, and the Events tab lists the events near the view (`Nearby`). Click a mark, or **Link**, to go back to a session with the layout you had.
 - **Back** remembers the zoom steps of each session; stepping back to a session restores them.
 
+### Workspaces and sharing
+
+Each browser tab works in its own **workspace**: the windows, signals, cursors, scope and session list you see, kept on the server under the address `/w/<id>`. A second tab never mirrors the first; a reload, or opening the address again, brings the workspace back as you left it. There is nothing to manage: an untouched workspace without an open tab is removed after 30 days.
+
+**Share…** (in the ⋯ menu, or in the top row when there is room):
+
+- **Copy link (own copy)** copies a link with this layout. The receiver gets their own workspace; their changes stay apart from yours.
+- **Copy workspace link (same live workspace)** copies the address of this workspace. Whoever opens it works in the same workspace with you.
+- **Invite to this workspace** (on a shared server, owner only): `Private` keeps it to you, `Read` lets others with the link watch live, `Write` lets them change it with you. The setting applies at once.
+
+Opening a shared workspace with `Read` shows the pill `Read-only`; zoom and other changes are refused, and "Copy link (own copy)" gives you a copy to work in.
+
+**Recent workspaces** in the Views menu lists your latest workspaces with their time; `●` marks one open in a tab, the tick the one you are in. Saved views (Save, Open, Import file…) are your own layouts; opening one puts it into a new workspace.
+
+**On a shared server** you sign in through your company's login, and KI.ping decides which vehicles you may see: a new workspace shows "Open a session from KI.ping" until you open a session there. "No access to this workspace" means its owner keeps it private; "My latest workspace" and "New workspace" take you on. The status strip, and the gate pages, show who you are signed in as.
+
 ## Events
 
 Events are faults (diagnostic trouble codes), state changes and logger errors. They show as pins on the TIME strip and as lines in the plots, with a glyph above the plot; hover one for its time, source and text. A click on a pin centres the view on it; a click on a glyph sets cursor A there.
@@ -126,3 +142,6 @@ Press `?` in the app for every key and gesture.
 - **drive**: a stretch of dense logging, shown under the strip bars.
 - **event**: a fault, a state change or a logger error at one time.
 - **data ref**: one recording, for example smart-ed.
+- **session**: a section of one vehicle's data found by KI.ping, such as a drive or a charge.
+- **catalog**: the list of sessions KI.ping handed over, in its order.
+- **workspace**: what one tab shows, kept on the server at `/w/<id>`.

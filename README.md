@@ -16,6 +16,8 @@ Interactive workspace for exploring recorded vehicle time series (e.g. CAN bus s
 - **Events in context.** Fault memory reads (DTCs), state changes and logger notes as pins on the strip and lines in the plots, with a filter and an Events tab.
 - **Honest gaps.** SNA values are never drawn; logger gaps break the lines and show as grey bands.
 - **Scriptable.** Every UI action is a workspace command; `kipscope` drives it from the shell, `--wait` until the UI rendered it. Saved views, YAML export and `#view=` links.
+- **Step through found sessions.** A finder such as KI.ping hands over a list of sessions; `[` and `]` step through them with the layout kept and aligned to an event, Unlink shows the vehicle's whole recording.
+- **Made for corporate environments.** One shared server with Ping sign-in, rights from the finder, sharing that never widens access and bounded queries on large ADX tables ([below](#made-for-corporate-environments)).
 
 ![Searching, dragging two signals into a window, fitting a drive on the TIME strip, zooming and setting cursors A and B with Diff](docs/images/workflow.gif)
 
@@ -46,6 +48,7 @@ scripts/demo.sh                               # UI http://localhost:5183, server
 | Manual (also in the app, `?`) | [docs/manual.md](docs/manual.md) |
 | Data sources and adapters | [docs/data-sources.md](docs/data-sources.md) |
 | HTTP API | [docs/http-api.md](docs/http-api.md) |
+| KIPscope in a company: overview, security model, setup | [docs/corporate.md](docs/corporate.md) |
 | Server deployment: sign-in (Ping), rights, workspaces | [docs/deploy.md](docs/deploy.md) |
 | Handoff from a finder (KI.ping): catalog, signature, link | [docs/handoff.md](docs/handoff.md) |
 | Requirements (German) | [docs/concept.md](docs/concept.md) |
@@ -123,31 +126,7 @@ The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or 
 
 **Workspaces:** each tab works in a workspace with its own address `/w/<id>` (old `/s/<id>` addresses still open); `/` reuses your latest workspace that no tab has open (or makes a new one), so two tabs never mirror each other, and a `#view=` or `?view=` link opens the view in a new workspace, so old tabs keep their case. `Share…` in the top row copies a link (own copy, or the same live workspace) and sets who else may open it; the Views menu lists your recent workspaces. The CLI and scripts without `--workspace` use the latest one. On first start older state dirs are migrated to the user `local` (the folder of round 1 becomes `workspaces/`, `workspace.json` becomes a workspace, `views/` moves to `users/local/views/`).
 
-**On a server** for several users ([docs/deploy.md](docs/deploy.md)): behind a TLS proxy, with an identity adapter (`oidc` for Ping Identity, or your own module), a grant per workspace that only a handoff from KI.ping widens (a new workspace sees no data until then), and the built UI served by the server:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `KIPSCOPE_IDENTITY` | `none` | `none`, `oidc` or `module:<path>` |
-| `KIPSCOPE_ORIGINS` | — | public origins, comma-separated; required unless `none` |
-| `KIPSCOPE_OIDC_ISSUER`, `KIPSCOPE_OIDC_AUDIENCE` | — | required with `oidc` |
-| `KIPSCOPE_OIDC_JWKS_URL`, `KIPSCOPE_OIDC_USER_CLAIM`, `KIPSCOPE_OIDC_ROLES_CLAIM`, `KIPSCOPE_OIDC_HEADER`, `KIPSCOPE_OIDC_ALGS` | discovered, `sub`, `roles`, `authorization`, `RS256,PS256,ES256` | token details |
-| `KIPSCOPE_SHARE` | `on` | `on` or `off`; `off` keeps every workspace private (sharing `read` or `write` answers 403 `share_not_permitted`) |
-| `KIPSCOPE_WORKSPACE_IDLE_DAYS` | `30` | untouched workspaces without an open tab are deleted after this |
-| `KIPSCOPE_WEB_DIR` | — | the built UI (`apps/web/dist` after `pnpm build`) the server serves |
-| `KIPSCOPE_DEV_USER`, `KIPSCOPE_DEV_ROLES` | — | dev only: the UI's Vite proxy sends them as `X-Forwarded-User` and `X-Forwarded-Groups` (for the example module) |
-
-**Sessions from KI.ping** ([docs/handoff.md](docs/handoff.md)): a finder hands over an ordered catalog of sessions as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`; each opens a new workspace on the first session with a session bar to step through the rest. On a server the catalog must be a JWS signed by the finder for the signed-in user, and it widens the new workspace's grant by its vehicles:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `KIPSCOPE_FINDER_JWKS` | — | the finder's key set, a JWKS file or an `https` URL; unset with an identity other than `none`: no catalog opens (503 `finder_not_configured`) |
-| `KIPSCOPE_FINDER_ISSUER`, `KIPSCOPE_FINDER_AUDIENCE` | — | required with the key set: `iss` exactly, a value of `aud` |
-| `KIPSCOPE_FINDER_ALGS` | `EdDSA,ES256` | subset of `EdDSA ES256 ES384 PS256 RS256` |
-| `KIPSCOPE_FINDER_USER_CLAIM` | `sub` | the claim that must equal the signed-in user |
-| `KIPSCOPE_FINDER_MAX_AGE` | `1h` | the largest `exp − iat`, 1 min … 24 h |
-| `KIPSCOPE_FINDER_ORIGINS` | — | origins a catalog's "Back to" link may point to |
-| `KIPSCOPE_CASE_DATAREF` | `{object}` | data ref of a session's vehicle; must contain `{object}` |
-| `KIPSCOPE_CASE_PAD` | `60s` | time shown before and after a session when the catalog sets none, 0 … 24 h |
+**Sessions from a finder:** a catalog of sessions opens as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`, in a new workspace with the session bar. Locally an unsigned catalog is enough; to try it on your own recording, `kipscope case drives <dataRef> | kipscope case open -` makes one session per drive. A shared server with sign-in and signed catalogs: [Made for corporate environments](#made-for-corporate-environments).
 
 Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the source address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
 
@@ -333,6 +312,30 @@ node apps/cli/src/main.ts signal add w1 VehSpeed
 node apps/cli/src/main.ts cursor set a "2026-10-14 07:44:22.950"
 node apps/cli/src/main.ts state | jq -r .local.cursors.a   # 2026-10-14 07:44:22.950+02:00
 ```
+
+## Made for corporate environments
+
+KIPscope runs as one shared service: users need only a browser, the CLI and AI agents use the same API, and data, credentials and rights stay on the server. The overview with the picture, the security model and the setup steps is [docs/corporate.md](docs/corporate.md).
+
+```
+KI.ping ──signed link──▶ browser ──https──▶ TLS proxy (Ping) ──▶ KIPscope ──one service identity──▶ ADX
+   finds sessions,                                                guard, grants,
+   decides rights                                                 bounded queries
+```
+
+- **Finder finds, KIPscope shows.** KI.ping finds the sessions and hands over a catalog in any order, of any vehicles; KIPscope steps through it with the layout kept, preloads the neighbours and never scans a vehicle's whole history in one query, not even after Unlink.
+- **Sign-in with Ping Identity.** `KIPSCOPE_IDENTITY=oidc` checks Ping-issued tokens behind PingAccess or an OIDC proxy; another provider plugs in as a small adapter module with a conformance suite. CLI and AI callers send a bearer token from the company's token tool.
+- **Rights from the finder.** On a server a new workspace sees nothing. Only a catalog signed by the finder for the signed-in user widens its grant, by exactly the listed vehicles; roles decide nothing in KIPscope. One guard checks every route; a hidden vehicle and a missing one answer alike, and lists never show what the grant lacks.
+- **Workspaces you don't manage.** Each tab is a workspace at `/w/<id>`. Share… sends an own copy or invites to the live workspace (read or write); sharing never widens data access, and `KIPSCOPE_SHARE=off` keeps everything private. Saved views are per user and grant nothing.
+- **Large data.** ADX or ClickHouse, read with the server's service principal or managed identity; scoped catalog for large tables, query classes that keep the UI first, and a measured 400-day vehicle with every query well under a second.
+- **Local stays simple.** Without these variables (`KIPSCOPE_IDENTITY=none`) there is no login and one user sees everything.
+
+| Topic | Guide |
+|---|---|
+| Overview, security model, setup checklist | [docs/corporate.md](docs/corporate.md) |
+| Server, Ping, own identity adapter, rights, trust boundary, ADX service identity | [docs/deploy.md](docs/deploy.md) |
+| For the finder: catalog, signature, keys, link, errors | [docs/handoff.md](docs/handoff.md) |
+| Sources: ADX setup, own adapter, scoped catalog | [docs/data-sources.md](docs/data-sources.md) |
 
 ## License
 
