@@ -245,7 +245,7 @@ The panel SHALL show below the list one key line naming each mark colour and lin
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, computed colours)
 
 ### Requirement: Events of a scope
-While the workspace has a scope, `GET /api/events` for its data ref SHALL answer only the table events in the scope and the state changes of the listed signals within it, the first row in the scope being a `snapshot` (design Z9). `from` and `to` SHALL be intersected with the scope, and loads SHALL be cached per scope. Origin: issue #1 item 4; issue #1 (`stateChanges` „all time for one signal"); D-078.
+While the workspace has a scope, `GET /api/events` for its data ref SHALL answer only the table events in the scope and the state changes of the listed signals within it, the first row in the scope being a `snapshot` (design Z9). `from` and `to` SHALL be intersected with the scope, and loads SHALL be cached per scope. In an object scope `from` and `to` SHALL be required and SHALL take the scope's place, loads cached per window (object-view "Gaps and events follow the view"). Origin: issue #1 item 4; issue #1 (`stateChanges` „all time for one signal"); D-078; object scope: D-086.
 
 #### Scenario: testcar events in a scope
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/events?dataRef=testcar` is sent, then the same with `&signal=testcar/Ign_A20h.MODE`
@@ -256,3 +256,8 @@ While the workspace has a scope, `GET /api/events` for its data ref SHALL answer
 - **WHEN** a fake source records its calls and an events request with one events-line signal is answered under scope {testcar, T1, T2}
 - **THEN** `events` and `stateChanges` were each called once with that scope, and never without one
 - **Evidence:** `apps/server/test/events.test.ts` › "loads table events and signal changes of a scope"
+
+#### Scenario: Work window in an object scope
+- **WHEN** a fake source records its calls, a workspace is unlinked on `testcar`, and an events request with one events-line signal and `from=2026-10-01T01:00:00Z&to=2026-10-01T02:00:00Z` is answered twice
+- **THEN** it answers the same events as the scope {testcar, T1, T2} above; `events` and `stateChanges` were each called once with that window as their scope and never with the whole object scope
+- **Evidence:** `apps/server/test/events.test.ts` › "loads the events of a work window"

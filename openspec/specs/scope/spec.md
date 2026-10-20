@@ -124,3 +124,11 @@ A server in scoped mode SHALL open a 2 h scope on a large data ref with its sign
 - **WHEN** the lead starts a second server with `KIPSCOPE_CATALOG=scoped` against carserver and runs `kipscope scope set smart451 "2026-10-13 14:00" "2026-10-13 16:00"`, then opens a `#view=` link of a 20 min window on smart451
 - **THEN** the start log shows no catalog load; the `scope set` call exits 0; the explorer lists the scope's signals and the windows draw; goal, measured and reported but not pass/fail: the `scope set` call returns within 3 s
 - **Evidence:** lead's manual check (log lines, CLI output with its time, one screenshot)
+
+### Requirement: Scope commands while a catalog is open
+While the workspace has an open catalog, `scope.set` and `scope.clear` SHALL be rejected with `case_open` and leave the workspace unchanged; the case commands (case-navigation) set the scope instead. Origin: Q-6 (a): Unlink and Link replace Widen and Clear in a case workspace (D-086).
+
+#### Scenario: Refused while a catalog is open
+- **WHEN** a workspace opened from C4 gets `scope.set {testcar, T1, T2}` and `scope.clear` through `applyCommand`, and `kipscope scope widen` runs against it
+- **THEN** both commands fail `case_open` with the revision unchanged, and the CLI exits 1 with `error.code` `case_open`
+- **Evidence:** `packages/shared/test/apply.test.ts` › "refuses scope commands while a catalog is open"; `apps/cli/test/cli.test.ts` › "opens, steps and unlinks a catalog"

@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-089: Case handoff conventions (2026-10-20)
+
+From the archived change `add-case-open`; details there (design K1–K17). Jan: „super das reicht. bitte archivieren."
+
+- **Decision:** A **catalog** (`{kipscope:"cases", version:1, origin, current, pad, align, view?, cases:[{id, object, kind, from, to, title, meta, anchor?}]}`) is any list of sessions in any order and of any vehicles; its order alone defines ← →. It arrives as `/open#cases=<code>` (a JWS whose payload is the deflate-raw claims JSON, base64url once), as a file (`kipscope case open`, or dropped on the window) or as `POST /api/workspaces {open:{cases}}`, all one command. On a server only a catalog signed by the finder (`KIPSCOPE_FINDER_JWKS`, `iss`, `aud`, `exp`, `sub` = the signed-in user) opens, and its objects, mapped by `KIPSCOPE_CASE_DATAREF` (default `{object}`), widen the workspace's grant through `grantObjects`; with identity `none` unsigned catalogs open. Stepping (`case.go/step`, `[` `]`) keeps windows, signals and cursors at their offset from the alignment point (start, end, anchor, or the first matching event); signals move to another vehicle by name, missing ones are reported. **Unlink** is the whole vehicle with no bound for the user, while every query stays bounded by what is shown (one cached extent, coarse strip, a work window of ≤ 32 days for drives, gaps, events). Tiles are kept across scopes (edge tiles under the scope that fetched them), the next and previous entries are preloaded at background class and every gesture cancels that. `scope set`, Widen and Clear are refused while a catalog is open. `kipscope case drives REF` is a test aid. `docs/handoff.md` is the guide for KI.ping.
+- **Why:** D-078, D-085 … D-087.
+- **Consequences:** Measured on a synthetic 400-day car (57.6 M rows): every query well within its goal on ClickHouse and the Kusto emulator; a real ADX cluster and carserver not measured. Jan's answers to the last two questions („das reicht"): no notice at the end of the catalog; preloading a neighbour may take up to ~13 s on smart451, and a step before that only reloads the visible tile. Not run before the archive: the 1440×900 and 1000×557 sizes. Next on the KI.ping side: an "Open in KIPscope" button that has KI.ping's server build and sign the link (its own repo).
+
 ## D-088: Multiuser conventions (2026-10-20)
 
 From the archived change `add-multiuser`; details there (design M1–M15).
