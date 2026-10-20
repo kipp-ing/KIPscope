@@ -79,6 +79,8 @@ export interface Density {
   drives: Drive[];
   /** Present when computed for a scope: then first = scope.from and last = scope.to − 1 ns (Z9). */
   scope?: { from: string; to: string };
+  /** Object scope without from/to: bars only, no grid buckets, drives [] (add-case-open K11). */
+  coarse?: true;
 }
 
 export interface ApiError {

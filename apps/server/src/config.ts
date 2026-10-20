@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
-import { parseDuration } from "@kipscope/shared";
+import { DEFAULT_CASE_PAD, MAX_CASE_PAD_NS, parseDuration } from "@kipscope/shared";
+import type { FinderConfig } from "./case.ts";
 
 /** Column names of the long-format table (design D5). */
 export interface TableMapping {
@@ -76,6 +77,8 @@ export interface Config {
   workspaceIdleDays: number;
   /** `KIPSCOPE_WEB_DIR`, absolute: the built UI the server serves (M11); unset serves none. */
   webDir?: string;
+  /** `KIPSCOPE_FINDER_*`, `KIPSCOPE_CASE_DATAREF`, `KIPSCOPE_CASE_PAD` (add-case-open K4). */
+  finder: FinderConfig;
 }
 
 /** A JWS algorithm `KIPSCOPE_OIDC_ALGS` may name; never `none` or `HS*` (add-multiuser M15). */
@@ -338,8 +341,7 @@ function share(env: Env): boolean {
 }
 
 /** Comma list of `http(s)://host[:port]` origins without path, normalised (`https://h:443` → `https://h`). */
-export function parseOrigins(raw: string | undefined): string[] {
-  const key = "KIPSCOPE_ORIGINS";
+export function parseOrigins(raw: string | undefined, key = "KIPSCOPE_ORIGINS"): string[] {
   const origins: string[] = [];
   for (const entry of (raw ?? "").split(",").map((e) => e.trim())) {
     if (!entry) continue;
@@ -363,6 +365,80 @@ export function parseOrigins(raw: string | undefined): string[] {
     if (!origins.includes(url.origin)) origins.push(url.origin);
   }
   return origins;
+}
+
+/** A finder signature algorithm `KIPSCOPE_FINDER_ALGS` may name (add-case-open K4). */
+export const FINDER_ALGORITHMS = ["EdDSA", "ES256", "ES384", "PS256", "RS256"] as const;
+
+/** A CLI duration of `key` within `min` … `max` ns; `range` names the bounds in the message. */
+function durationIn(
+  env: Env,
+  key: string,
+  fallback: string,
+  min: bigint,
+  max: bigint,
+  range: string,
+) {
+  const raw = env[key] || fallback;
+  let value: bigint;
+  try {
+    value = parseDuration(raw);
+  } catch {
+    value = -1n;
+  }
+  if (value < min || value > max) throw new Error(`${key}: a duration of ${range}, not ${raw}`);
+  return value;
+}
+
+function finderAlgorithms(env: Env): string[] {
+  const key = "KIPSCOPE_FINDER_ALGS";
+  const names = (env[key] || "EdDSA,ES256")
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
+  if (names.length === 0) throw new Error(`${key}: no algorithm named`);
+  for (const name of names)
+    if (!(FINDER_ALGORITHMS as readonly string[]).includes(name))
+      throw new Error(`${key}: ${name} is not allowed; use some of ${FINDER_ALGORITHMS.join(" ")}`);
+  return [...new Set(names)];
+}
+
+/** A JWKS file path (relative ones against `root`), or an https URL (http only for loopback). */
+function finderJwks(env: Env, root: string): string | undefined {
+  const key = "KIPSCOPE_FINDER_JWKS";
+  const raw = env[key];
+  if (!raw) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return httpsUrl(key, raw);
+  return isAbsolute(raw) ? raw : resolve(root, raw);
+}
+
+/** The finder handoff's variables (add-case-open K4); a bad value names its variable. */
+function finderConfig(env: Env, root: string): FinderConfig {
+  const jwks = finderJwks(env, root);
+  const template = env.KIPSCOPE_CASE_DATAREF || "{object}";
+  if (!template.includes("{object}"))
+    throw new Error(`KIPSCOPE_CASE_DATAREF: a template containing {object}, not ${template}`);
+  const finder: FinderConfig = {
+    algs: finderAlgorithms(env),
+    userClaim: claim(env, "KIPSCOPE_FINDER_USER_CLAIM", "sub"),
+    maxAgeNs: durationIn(
+      env,
+      "KIPSCOPE_FINDER_MAX_AGE",
+      "1h",
+      60_000_000_000n,
+      MAX_CASE_PAD_NS,
+      "1min … 24h",
+    ),
+    origins: parseOrigins(env.KIPSCOPE_FINDER_ORIGINS, "KIPSCOPE_FINDER_ORIGINS"),
+    dataRefTemplate: template,
+    padNs: durationIn(env, "KIPSCOPE_CASE_PAD", DEFAULT_CASE_PAD, 0n, MAX_CASE_PAD_NS, "0s … 24h"),
+  };
+  if (jwks !== undefined) {
+    finder.jwks = jwks;
+    finder.issuer = required(env, "KIPSCOPE_FINDER_ISSUER");
+    finder.audience = required(env, "KIPSCOPE_FINDER_AUDIENCE");
+  }
+  return finder;
 }
 
 /** Reads the server config from environment variables (see .env.example). */
@@ -414,5 +490,9 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     share: share(env),
     workspaceIdleDays: positiveInt(env, "KIPSCOPE_WORKSPACE_IDLE_DAYS", 30),
     ...(webDir ? { webDir: isAbsolute(webDir) ? webDir : resolve(root, webDir) } : {}),
+    finder: finderConfig(env, root),
   };
 }
+
+/** The finder config without any variable set (tests and apps built without `loadConfig`). */
+export const defaultFinderConfig = (): FinderConfig => finderConfig({}, REPO_ROOT);

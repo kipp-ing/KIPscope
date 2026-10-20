@@ -1,9 +1,12 @@
 import { TIME_MAX, TIME_MIN } from "./time.ts";
 import type { TimeRange, WorkspaceScope } from "./workspace.ts";
 
-/** Cache and comparison key of a scope: "" without one, else `${dataRef}|${from}|${to}`. */
+/**
+ * Cache and comparison key of a scope: "" without one, else `${dataRef}|${from}|${to}`, plus
+ * "|object" for an object scope (add-case-open K11).
+ */
 export const scopeKey = (s: WorkspaceScope | undefined): string =>
-  s === undefined ? "" : `${s.dataRef}|${s.from}|${s.to}`;
+  s === undefined ? "" : `${s.dataRef}|${s.from}|${s.to}${s.object ? "|object" : ""}`;
 
 /**
  * The clamp rule of design Z6: keep the span and shift inside; a span at least as wide as the

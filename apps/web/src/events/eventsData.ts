@@ -5,6 +5,9 @@ import {
   type EventFilter,
   type EventList,
   parseEventFilter,
+  scopeKey,
+  type TimeRange,
+  type WorkspaceScope,
 } from "@kipscope/shared";
 import { useEffect, useState } from "react";
 import { fetchEvents } from "../api.ts";
@@ -12,18 +15,37 @@ import { RETRY_MS } from "../time/strip.ts";
 
 // Events of a data ref in the web (design V9 of add-events): one unfiltered EventList per data ref
 // and events-line signals; strip, chart and panel filter it locally with the workspace's filter.
+// The key carries the scope, and in an object scope the work window (add-case-open K11), so a
+// step to another session asks again and a step back finds its list.
 
-/** Lists loaded so far, per `${dataRef}|${signals}`, for the page's life. */
+/** Lists kept, least recently used dropped first (a catalog's sessions each add one). */
+const MAX_LISTS = 32;
+
+/** Lists loaded so far, per `${scope}|${window}|${dataRef}|${signals}`, least recently used first. */
 const lists = new Map<string, EventList>();
+
+function remember(key: string, list: EventList): void {
+  lists.delete(key);
+  lists.set(key, list);
+  for (const old of lists.keys()) {
+    if (lists.size <= MAX_LISTS) break;
+    lists.delete(old);
+  }
+}
 /** Running fetches, shared by every hook asking for the same key; dropped when they fail. */
 const running = new Map<string, Promise<EventList>>();
 
-function load(key: string, dataRef: string, signals: readonly string[]): Promise<EventList> {
+function load(
+  key: string,
+  dataRef: string,
+  signals: readonly string[],
+  window: TimeRange | undefined,
+): Promise<EventList> {
   let p = running.get(key);
   if (!p) {
-    p = fetchEvents(dataRef, signals).then(
+    p = fetchEvents(dataRef, signals, undefined, window).then(
       (list) => {
-        lists.set(key, list);
+        remember(key, list);
         running.delete(key);
         return list;
       },
@@ -37,17 +59,37 @@ function load(key: string, dataRef: string, signals: readonly string[]): Promise
   return p;
 }
 
-/** GET /api/events for a data ref and its events-line signals, no filter; cached per page life by key `${dataRef}|${signals.join(",")}`; failures retried after 30 s like the density. */
+/** The cache key of an events list: scope key, work window, data ref and signals. */
+export function eventsKey(
+  dataRef: string,
+  signals: readonly string[],
+  scope?: WorkspaceScope,
+  window?: TimeRange,
+): string {
+  const w = window ? `${window.from}-${window.to}` : "";
+  return `${scopeKey(scope)}|${w}|${dataRef}|${signals.join(",")}`;
+}
+
+/**
+ * GET /api/events for a data ref and its events-line signals, no filter, within the workspace's
+ * `scope`; in an object scope with the work window `window` (add-case-open K11); cached by
+ * `eventsKey`; failures retried after 30 s like the density.
+ */
 export function useEvents(
   dataRef: string | undefined,
   signals: readonly string[],
+  scope?: WorkspaceScope,
+  window?: TimeRange,
 ): EventList | undefined {
-  const key = dataRef === undefined ? undefined : `${dataRef}|${signals.join(",")}`;
+  // An object scope asks nothing without its work window (K11: required there).
+  const waiting = scope?.object === true && window === undefined;
+  const key =
+    dataRef === undefined || waiting ? undefined : eventsKey(dataRef, signals, scope, window);
   const [loaded, setLoaded] = useState<{ key: string; list: EventList }>();
   // Bumped by the retry timer; a changed key fetches at once through its own dependency.
   const [attempt, setAttempt] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; signals are in key
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; signals, scope and window are in key
   useEffect(() => {
     if (key === undefined || dataRef === undefined) return;
     const cached = lists.get(key);
@@ -57,7 +99,7 @@ export function useEvents(
     }
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    load(key, dataRef, signals).then(
+    load(key, dataRef, signals, scope?.object ? window : undefined).then(
       (list) => {
         if (live) setLoaded({ key, list });
       },

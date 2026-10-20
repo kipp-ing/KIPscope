@@ -470,4 +470,88 @@ describe("loadConfig", () => {
       loadConfig({ ...base, KIPSCOPE_WEB_DIR: "apps/web/dist" }, "/repo/kipscope").webDir,
     ).toBe("/repo/kipscope/apps/web/dist");
   });
+  it("reads the finder and case variables", () => {
+    const finder = (env: Record<string, string> = {}) =>
+      loadConfig({ ...base, ...env }, "/repo/kipscope").finder;
+    const keyed = {
+      KIPSCOPE_FINDER_JWKS: "/keys/jwks.json",
+      KIPSCOPE_FINDER_ISSUER: "https://kiping.example",
+      KIPSCOPE_FINDER_AUDIENCE: "https://kipscope.example",
+    };
+
+    // None of them: the defaults of design K4.
+    const defaults = finder();
+    expect(defaults.jwks).toBeUndefined();
+    expect(defaults.algs).toEqual(["EdDSA", "ES256"]);
+    expect(defaults.userClaim).toBe("sub");
+    expect(defaults.maxAgeNs).toBe(3_600_000_000_000n);
+    expect(defaults.padNs).toBe(60_000_000_000n);
+    expect(defaults.dataRefTemplate).toBe("{object}");
+    expect(defaults.origins).toEqual([]);
+
+    // Keys without issuer or audience stop the server, naming the variable.
+    expect(() => finder({ KIPSCOPE_FINDER_JWKS: "/keys/jwks.json" })).toThrow(
+      /KIPSCOPE_FINDER_ISSUER/,
+    );
+    expect(() =>
+      finder({ KIPSCOPE_FINDER_JWKS: "/keys/jwks.json", KIPSCOPE_FINDER_ISSUER: "https://k" }),
+    ).toThrow(/KIPSCOPE_FINDER_AUDIENCE/);
+    const keyedConfig = finder(keyed);
+    expect(keyedConfig).toMatchObject({
+      jwks: "/keys/jwks.json",
+      issuer: "https://kiping.example",
+      audience: "https://kipscope.example",
+    });
+
+    // The algorithm list: a subset of EdDSA ES256 ES384 PS256 RS256; none and HS* stop the server.
+    expect(finder({ ...keyed, KIPSCOPE_FINDER_ALGS: "ES256" }).algs).toEqual(["ES256"]);
+    expect(finder({ ...keyed, KIPSCOPE_FINDER_ALGS: "RS256, PS256" }).algs).toEqual([
+      "RS256",
+      "PS256",
+    ]);
+    for (const bad of ["HS256", "none", "EdDSA,HS512", "ES512"])
+      expect(() => finder({ ...keyed, KIPSCOPE_FINDER_ALGS: bad }), bad).toThrow(
+        /KIPSCOPE_FINDER_ALGS/,
+      );
+
+    // The pad: a CLI duration of 0 … 1 d.
+    expect(finder({ KIPSCOPE_CASE_PAD: "30s" }).padNs).toBe(30_000_000_000n);
+    expect(finder({ KIPSCOPE_CASE_PAD: "0s" }).padNs).toBe(0n);
+    for (const bad of ["2d", "25h", "-1s", "soon"])
+      expect(() => finder({ KIPSCOPE_CASE_PAD: bad }), bad).toThrow(/KIPSCOPE_CASE_PAD/);
+
+    // The largest accepted lifetime: 1 min … 1 d.
+    expect(finder({ KIPSCOPE_FINDER_MAX_AGE: "10min" }).maxAgeNs).toBe(600_000_000_000n);
+    expect(finder({ KIPSCOPE_FINDER_MAX_AGE: "1min" }).maxAgeNs).toBe(60_000_000_000n);
+    for (const bad of ["30s", "25h", "2d"])
+      expect(() => finder({ KIPSCOPE_FINDER_MAX_AGE: bad }), bad).toThrow(
+        /KIPSCOPE_FINDER_MAX_AGE/,
+      );
+
+    // The data ref template must contain {object}.
+    expect(finder({ KIPSCOPE_CASE_DATAREF: "fleet-{object}" }).dataRefTemplate).toBe(
+      "fleet-{object}",
+    );
+    expect(() => finder({ KIPSCOPE_CASE_DATAREF: "fleet" })).toThrow(/KIPSCOPE_CASE_DATAREF/);
+
+    // Keys come from a file or an https URL; http only on a loopback host.
+    expect(finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "https://kiping.example/jwks" }).jwks).toBe(
+      "https://kiping.example/jwks",
+    );
+    expect(finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "http://127.0.0.1:9000/jwks" }).jwks).toBe(
+      "http://127.0.0.1:9000/jwks",
+    );
+    expect(() => finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "http://kiping.example/jwks" })).toThrow(
+      /KIPSCOPE_FINDER_JWKS/,
+    );
+
+    // The other variables.
+    expect(finder({ KIPSCOPE_FINDER_USER_CLAIM: "email" }).userClaim).toBe("email");
+    expect(
+      finder({ KIPSCOPE_FINDER_ORIGINS: "https://kiping.example, http://localhost:3000" }).origins,
+    ).toEqual(["https://kiping.example", "http://localhost:3000"]);
+    expect(() => finder({ KIPSCOPE_FINDER_ORIGINS: "kiping.example" })).toThrow(
+      /KIPSCOPE_FINDER_ORIGINS/,
+    );
+  });
 });

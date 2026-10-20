@@ -32,6 +32,9 @@ const TABLE: Record<string, { level: Level | "body"; dataRefs: boolean }> = {
   "GET /api/render-status": { level: "workspace", dataRefs: false },
   "GET /api/live": { level: "workspace", dataRefs: false },
   "GET /api/meta": { level: "workspace", dataRefs: false },
+  // add-case-open K10: the catalog and the preview of a neighbour, both of the workspace.
+  "GET /api/case": { level: "workspace", dataRefs: false },
+  "GET /api/case/preview": { level: "workspace", dataRefs: false },
   "GET /api/catalog": { level: "workspace", dataRefs: false },
   "GET /api/signals": { level: "workspace", dataRefs: false },
   "POST /api/catalog/refresh": { level: "workspace", dataRefs: false },

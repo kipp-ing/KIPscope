@@ -1,3 +1,6 @@
+import type { CommandInput, WorkspaceCase } from "@kipscope/shared";
+import { stepCommand } from "./case/sessionBar.ts";
+
 /** Input types that take no typed text; Backspace there is free for the app. */
 const NON_TEXT_INPUTS = ["checkbox", "radio", "button", "range"];
 
@@ -91,6 +94,28 @@ export function navKey(
     default:
       return undefined;
   }
+}
+
+/**
+ * `[` (-1) and `]` (1), the catalog keys (add-case-open K14), outside text fields and selects,
+ * without Ctrl, Meta or Alt; else undefined.
+ */
+export function caseKey(e: KeyLike, focused: Element | null): -1 | 1 | undefined {
+  if (e.ctrlKey || e.metaKey || e.altKey || isTextField(focused)) return undefined;
+  return e.key === "[" ? -1 : e.key === "]" ? 1 : undefined;
+}
+
+/**
+ * The step a catalog key sends (K14): only while linked and not at that end; undefined sends
+ * nothing.
+ */
+export function caseStepKey(
+  e: KeyLike,
+  focused: Element | null,
+  c: WorkspaceCase | undefined,
+): CommandInput | undefined {
+  const by = caseKey(e, focused);
+  return by === undefined ? undefined : stepCommand(c, by);
 }
 
 /** Least time between two steps of a held key, in ms (design N6). */

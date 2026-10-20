@@ -1,5 +1,13 @@
-import { assertSeries, type SeriesResult } from "@kipscope/shared";
-import { fetchSeries } from "../api.ts";
+import {
+  assertSeries,
+  parseSignalId,
+  type SeriesResult,
+  scopeKey,
+  TIME_MAX,
+  TIME_MIN,
+  type WorkspaceScope,
+} from "@kipscope/shared";
+import { type CaseRequestOptions, fetchSeries } from "../api.ts";
 import {
   deriveRaw,
   FRESH_MARGIN_NS,
@@ -16,14 +24,41 @@ import {
 } from "./tiles.ts";
 
 export const CACHE_LIMIT = 4_000_000; // weight units (C5)
-export const PREFETCH_IN_FLIGHT = 2; // prefetch runs fetched at once per tab (Z6)
+export const PREFETCH_IN_FLIGHT = 2; // prefetch and preload runs fetched at once per tab (Z6, K13)
 
-export type Priority = "visible" | "prefetch";
+/** "preload" ranks below "prefetch" and shares its slots (add-case-open K13). */
+export type Priority = "visible" | "prefetch" | "preload";
 
 /** Why the source may be reachable again: an answer through the cache, or the live channel opened (H9). */
 export type RecoverReason = "success" | "reconnect";
 
-export type FetchSeries = (request: SeriesRequest, abort: AbortSignal) => Promise<SeriesResult>;
+export type FetchSeries = (
+  request: SeriesRequest & CaseRequestOptions,
+  abort: AbortSignal,
+) => Promise<SeriesResult>;
+
+/** The scope tiles are fetched and used under (add-case-open K12); undefined: no scope. */
+interface CacheScope {
+  key: string;
+  dataRef: string;
+  from: bigint;
+  to: bigint;
+}
+
+const cacheScope = (scope: WorkspaceScope | undefined): CacheScope | undefined =>
+  scope && {
+    key: scopeKey(scope),
+    dataRef: scope.dataRef,
+    from: BigInt(scope.from),
+    to: BigInt(scope.to),
+  };
+
+/** A preload run's target: the catalog entry and its scope (add-case-open K13). */
+export interface PreloadTarget {
+  /** 0-based catalog index, sent as `case=<n>`. */
+  case: number;
+  scope: WorkspaceScope;
+}
 
 export interface CacheOptions {
   limit?: number; // default CACHE_LIMIT
@@ -36,13 +71,22 @@ interface Run {
   owners: Set<string>;
   /** Fetches the run; set only while it waits in the prefetch queue (Z6). */
   begin?: (() => void) | undefined;
-  /** Fetched as prefetch: holds one of the PREFETCH_IN_FLIGHT slots until it finishes. */
+  /** Fetched as prefetch or preload: holds one of the PREFETCH_IN_FLIGHT slots until it finishes. */
   counted?: boolean;
+  /** Fetched as a visible load: counts in `visibleInFlight` until it finishes. */
+  visible?: boolean;
+  /** The scope the run is fetched under: its tiles are stored by it (K12). */
+  scope: CacheScope | undefined;
+  /** A preload run: sent with `case=<n>` and the preload class until a visible load takes it over. */
+  preload?: PreloadTarget | undefined;
 }
 
 interface Stored {
   tile: Tile;
   weight: number;
+  /** A raw tile without `before` (`after`) fetched under a scope: that scope's start (end) (K12). */
+  cutFrom?: bigint;
+  cutTo?: bigint;
 }
 
 interface InFlight {
@@ -67,7 +111,12 @@ export class SeriesCache {
   private readonly owned = new Map<string, Set<Run>>();
   /** Prefetch runs waiting for a slot, oldest first (Z6). */
   private readonly queue: Run[] = [];
+  /** Preload runs waiting for a slot, oldest first; fetched only when no prefetch run waits (K13). */
+  private readonly preloadQueue: Run[] = [];
   private prefetchRunning = 0;
+  private visibleRunning = 0;
+  /** The workspace's scope: loads fetch and find under it (K12). */
+  private scope: CacheScope | undefined;
   private weight = 0;
   /** Counts `clear()` calls: a run started before the last one stores nothing (add-scope Z12). */
   private generation = 0;
@@ -98,6 +147,23 @@ export class SeriesCache {
     return this.queue.length;
   }
 
+  get queuedPreload(): number {
+    return this.preloadQueue.length;
+  }
+
+  /** Runs fetched for a visible load that have not answered yet (the preload waits for 0, K13). */
+  get visibleInFlight(): number {
+    return this.visibleRunning;
+  }
+
+  /**
+   * The workspace's scope changed (add-case-open K12): stored tiles stay, later loads fetch and
+   * find under `scope`; runs in flight under another scope answer only their own owners.
+   */
+  setScope(scope: WorkspaceScope | undefined): void {
+    this.scope = cacheScope(scope);
+  }
+
   /**
    * Called with "success" after every well-formed answer through the cache and with "reconnect" on
    * `recover()`; returns unsubscribe (R7, H9).
@@ -117,7 +183,7 @@ export class SeriesCache {
   clear(): void {
     for (const id of [...this.tiles.keys()]) this.remove(id);
     // The abort rejects the waiting runs' promises, as a release does; their owners ask again.
-    for (const run of this.queue.splice(0)) {
+    for (const run of [...this.queue.splice(0), ...this.preloadQueue.splice(0)]) {
       run.begin = undefined;
       run.controller.abort();
       for (const owner of run.owners) this.owned.get(owner)?.delete(run);
@@ -142,8 +208,16 @@ export class SeriesCache {
    * The stored tile, else one cut from a stored coarser raw tile (C3), else merged from its two
    * children found the same way, at most MERGE_DEPTH levels down (Z3); derived tiles are not stored.
    */
-  find(signalId: string, level: number, index: bigint): Tile | undefined {
-    return this.findUpTo(signalId, level, index, MERGE_DEPTH);
+  find(
+    signalId: string,
+    level: number,
+    index: bigint,
+    scope: WorkspaceScope | undefined = undefined,
+  ): Tile | undefined {
+    const under = scope ? cacheScope(scope) : this.scope;
+    // A signal of another data ref than the scope's answers 409 out_of_scope, never a tile.
+    if (under && parseSignalId(signalId)?.dataRef !== under.dataRef) return undefined;
+    return this.findUpTo(signalId, level, index, MERGE_DEPTH, under);
   }
 
   private findUpTo(
@@ -151,19 +225,21 @@ export class SeriesCache {
     level: number,
     index: bigint,
     depth: number,
+    scope: CacheScope | undefined,
   ): Tile | undefined {
-    const own = this.use(tileId(signalId, level, index));
+    const own = this.use(tileId(signalId, level, index), scope);
     if (own) return own;
     const levels = this.rawLevels.get(signalId);
     for (const parentLevel of levels?.keys() ?? []) {
       if (parentLevel <= level) continue;
-      const parent = this.use(tileId(signalId, parentLevel, index >> BigInt(parentLevel - level)));
+      const parentIndex = index >> BigInt(parentLevel - level);
+      const parent = this.use(tileId(signalId, parentLevel, parentIndex), scope);
       if (parent?.data.kind === "raw") return deriveRaw(parent, level, index);
     }
     if (depth <= 0 || level <= 0) return undefined;
-    const left = this.findUpTo(signalId, level - 1, index * 2n, depth - 1);
+    const left = this.findUpTo(signalId, level - 1, index * 2n, depth - 1, scope);
     if (!left) return undefined;
-    const right = this.findUpTo(signalId, level - 1, index * 2n + 1n, depth - 1);
+    const right = this.findUpTo(signalId, level - 1, index * 2n + 1n, depth - 1, scope);
     return right && mergeUp(left, right);
   }
 
@@ -174,9 +250,11 @@ export class SeriesCache {
   }
 
   /**
-   * Promises of the tiles, joining runs in flight and starting runs for the rest. A "prefetch" run
-   * waits while PREFETCH_IN_FLIGHT prefetch runs are fetched; a "visible" load never waits and
-   * starts a waiting prefetch run it wants at once (Z6).
+   * Promises of the tiles, joining runs in flight under the same scope and starting runs for the
+   * rest. A "prefetch" run waits while PREFETCH_IN_FLIGHT prefetch or preload runs are fetched; a
+   * "preload" run (with its `target` entry and scope, K13) waits behind every waiting prefetch run;
+   * a "visible" load never waits and starts a waiting run it wants at once (Z6), a preload run
+   * then without its preload class.
    */
   load(
     owner: string,
@@ -184,19 +262,24 @@ export class SeriesCache {
     level: number,
     indices: readonly bigint[],
     priority: Priority = "visible",
+    target?: PreloadTarget,
   ): Promise<Tile>[] {
     const runs = this.owned.get(owner) ?? new Set<Run>();
     this.owned.set(owner, runs);
+    const scope = target ? cacheScope(target.scope) : this.scope;
     const promises = new Map<bigint, Promise<Tile>>();
     const missing: bigint[] = [];
     for (const index of indices) {
-      const flight = this.inFlight.get(tileId(signalId, level, index));
+      const flight = this.inFlight.get(flightKey(signalId, level, index, scope));
       if (flight) {
         flight.run.owners.add(owner);
         runs.add(flight.run);
         promises.set(index, flight.promise);
         if (priority === "visible" && flight.run.begin) {
-          this.queue.splice(this.queue.indexOf(flight.run), 1);
+          this.unqueue(flight.run);
+          flight.run.preload = undefined;
+          flight.run.visible = true;
+          this.visibleRunning++;
           flight.run.begin();
         }
       } else if (!missing.includes(index)) {
@@ -215,12 +298,21 @@ export class SeriesCache {
       }
     }
     for (const { first, last } of groups) {
-      const run: Run = { controller: new AbortController(), owners: new Set([owner]) };
+      const run: Run = {
+        controller: new AbortController(),
+        owners: new Set([owner]),
+        scope,
+        ...(priority === "preload" && target ? { preload: target } : {}),
+      };
       runs.add(run);
       for (const [index, promise] of this.startRun(run, signalId, level, first, last)) {
         promises.set(index, promise);
       }
-      if (priority === "visible") run.begin?.();
+      if (priority === "visible") {
+        run.visible = true;
+        this.visibleRunning++;
+        run.begin?.();
+      } else if (priority === "preload") this.preloadQueue.push(run);
       else this.queue.push(run);
     }
     this.pump();
@@ -235,8 +327,7 @@ export class SeriesCache {
       run.owners.delete(owner);
       if (run.owners.size > 0) continue;
       // A waiting run leaves the queue unfetched; the abort rejects its promises.
-      const waiting = this.queue.indexOf(run);
-      if (waiting >= 0) this.queue.splice(waiting, 1);
+      this.unqueue(run);
       run.begin = undefined;
       run.controller.abort();
       // An aborted run takes no new owners: a later load of its tiles starts a new run.
@@ -253,6 +344,7 @@ export class SeriesCache {
   ): Map<bigint, Promise<Tile>> {
     const { signal } = run.controller;
     const generation = this.generation;
+    const scope = run.scope;
     // An abort rejects the run's promises at once, even if the fetch never settles.
     const aborted = new Promise<never>((_, reject) =>
       signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
@@ -261,8 +353,13 @@ export class SeriesCache {
     const fetched = new Promise<SeriesResult>((resolve, reject) => {
       run.begin = () => {
         run.begin = undefined;
+        const request = runRequest(signalId, level, first, last);
+        const preload = run.preload;
         try {
-          this.fetch(runRequest(signalId, level, first, last), signal).then(resolve, reject);
+          this.fetch(
+            preload ? { ...request, case: preload.case, preload: true } : request,
+            signal,
+          ).then(resolve, reject);
         } catch (error) {
           reject(error);
         }
@@ -273,15 +370,19 @@ export class SeriesCache {
       if (signal.aborted) throw signal.reason;
       const tiles = new Map<bigint, Tile>();
       for (const tile of splitRun(result, level, first, last)) {
-        if (generation === this.generation) this.store(tile);
+        if (generation === this.generation) this.store(tile, scope);
         tiles.set(tile.index, tile);
       }
       return tiles;
     });
     const done = () => {
       for (let index = first; index <= last; index++) {
-        const id = tileId(signalId, level, index);
+        const id = flightKey(signalId, level, index, scope);
         if (this.inFlight.get(id)?.run === run) this.inFlight.delete(id);
+      }
+      if (run.visible) {
+        run.visible = false;
+        this.visibleRunning--;
       }
       if (run.counted) {
         run.counted = false;
@@ -300,15 +401,26 @@ export class SeriesCache {
       // Nobody may await a tile of a run that fails after its owners left.
       promise.catch(() => {});
       promises.set(index, promise);
-      this.inFlight.set(tileId(signalId, level, index), { run, promise });
+      this.inFlight.set(flightKey(signalId, level, index, scope), { run, promise });
     }
     return promises;
   }
 
-  /** Fetches waiting prefetch runs while fewer than PREFETCH_IN_FLIGHT are in flight (Z6). */
+  /** Takes a waiting run out of its queue. */
+  private unqueue(run: Run): void {
+    for (const queue of [this.queue, this.preloadQueue]) {
+      const waiting = queue.indexOf(run);
+      if (waiting >= 0) queue.splice(waiting, 1);
+    }
+  }
+
+  /**
+   * Fetches waiting runs while fewer than PREFETCH_IN_FLIGHT are in flight (Z6): prefetch runs
+   * first, preload runs only when none waits (K13).
+   */
   private pump(): void {
     while (this.prefetchRunning < PREFETCH_IN_FLIGHT) {
-      const run = this.queue.shift();
+      const run = this.queue.shift() ?? this.preloadQueue.shift();
       if (!run) return;
       run.counted = true;
       this.prefetchRunning++;
@@ -316,14 +428,27 @@ export class SeriesCache {
     }
   }
 
-  /** Stores a tile unless it is recent (C6) or heavier than the limit, then evicts the oldest (C5). */
-  private store(tile: Tile): void {
+  /**
+   * Stores a tile unless it is recent (C6), heavier than the limit, or not inside the scope it was
+   * fetched under (K12), then evicts the oldest (C5). A raw tile the scope cut (no `before` or
+   * `after` point) records that scope's edge.
+   */
+  private store(tile: Tile, scope: CacheScope | undefined): void {
     if (!this.storable(tile.level, tile.index)) return;
+    const span = tileSpan(tile.level);
+    const from = tile.index * span;
+    const to = from + span;
+    if (scope && (from < scope.from || to > scope.to)) return;
     const weight = tileWeight(tile);
     if (weight > this.limit) return;
     const id = tileId(tile.signalId, tile.level, tile.index);
     this.remove(id);
-    this.tiles.set(id, { tile, weight });
+    const stored: Stored = { tile, weight };
+    if (scope && tile.data.kind === "raw") {
+      if (!tile.data.before) stored.cutFrom = scope.from;
+      if (!tile.data.after) stored.cutTo = scope.to;
+    }
+    this.tiles.set(id, stored);
     this.weight += weight;
     if (tile.data.kind === "raw") {
       const levels = this.rawLevels.get(tile.signalId) ?? new Map<number, number>();
@@ -350,15 +475,29 @@ export class SeriesCache {
     if (levels?.size === 0) this.rawLevels.delete(tile.signalId);
   }
 
-  /** The stored tile, marked as most recently used. */
-  private use(id: string): Tile | undefined {
+  /**
+   * The stored tile, marked as most recently used, if it answers under `scope` (K12): it lies
+   * inside it, and a cut raw tile only where the scope reaches no further than the cut.
+   */
+  private use(id: string, scope: CacheScope | undefined): Tile | undefined {
     const stored = this.tiles.get(id);
     if (!stored) return undefined;
+    const lo = scope?.from ?? TIME_MIN;
+    const hi = scope?.to ?? TIME_MAX;
+    const span = tileSpan(stored.tile.level);
+    const from = stored.tile.index * span;
+    if (from < lo || from + span > hi) return undefined;
+    if (stored.cutFrom !== undefined && lo < stored.cutFrom) return undefined;
+    if (stored.cutTo !== undefined && hi > stored.cutTo) return undefined;
     this.tiles.delete(id);
     this.tiles.set(id, stored);
     return stored.tile;
   }
 }
+
+/** In-flight key: tile ID and the scope the run is fetched under (K12). */
+const flightKey = (signalId: string, level: number, index: bigint, scope: CacheScope | undefined) =>
+  `${tileId(signalId, level, index)}#${scope?.key ?? ""}`;
 
 let tab: SeriesCache | undefined;
 

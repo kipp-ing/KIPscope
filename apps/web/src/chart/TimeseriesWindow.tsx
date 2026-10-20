@@ -73,7 +73,7 @@ import {
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
-import { bandsIn, useGapInfo } from "./gaps.ts";
+import { bandsIn, heldWorkWindow, useGapInfo } from "./gaps.ts";
 import { draggedHeight, heightCommand, startsHeightDrag, trackHeightDrag } from "./height.ts";
 import type { Insets } from "./insets.ts";
 import { linkedPreview, shownRange, useLinkedPreview } from "./linkedPreview.ts";
@@ -91,7 +91,13 @@ import {
   useLiveCursor,
   useLiveNear,
 } from "./live.ts";
-import { type LoadRequest, loadKey, loadStatusText, SeriesLoader } from "./loader.ts";
+import {
+  type LoadRequest,
+  loadKey,
+  loadStatusText,
+  SeriesLoader,
+  windowTargets,
+} from "./loader.ts";
 import { WINDOW_LOADER_OPTIONS } from "./overview.ts";
 import {
   atLevel,
@@ -101,7 +107,7 @@ import {
   sourceCell,
   sourceDelta,
 } from "./readout.ts";
-import { useScopeChange } from "./rescope.ts";
+import { scopeOfKey, useScopeChange } from "./rescope.ts";
 import { clampRange, type Range, RangePreview, WheelFrame, wheelAction } from "./zoom.ts";
 
 const COMMIT_DELAY_MS = 300;
@@ -185,6 +191,8 @@ interface Props {
   linked: boolean;
   /** The shown events of the window's data refs (design V6), from App. */
   events?: readonly DiagEvent[];
+  /** The workspace has an open catalog: a signal the session lacks reads `not in this session` (K14). */
+  inCase?: boolean;
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -732,6 +740,7 @@ export function TimeseriesWindow({
   nextHints,
   linked,
   events,
+  inCase = false,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState(false);
@@ -819,7 +828,11 @@ export function TimeseriesWindow({
     () => (signalIdsKey === "" ? [] : signalIdsKey.split("\n")),
     [signalIdsKey],
   );
-  const gapInfo = useGapInfo(signalIds);
+  // In an object scope gap info covers the work window around the committed range (K11), asked
+  // again only when the range leaves the window held.
+  const heldWindow = useRef<{ from: string; to: string } | undefined>(undefined);
+  heldWindow.current = heldWorkWindow(heldWindow.current, w.range, scopeOfKey(scopeKey));
+  const gapInfo = useGapInfo(signalIds, scopeKey, heldWindow.current);
   const gapsOf = (signalId: string): SignalGaps => {
     const dataRef = parseSignalId(signalId)?.dataRef;
     return signalGaps(dataRef === undefined ? undefined : gapInfo.infos.get(dataRef), signalId);
@@ -894,6 +907,14 @@ export function TimeseriesWindow({
   useEffect(() => () => linkedPreview.clear(w.id), []);
 
   const target = Math.min(4000, Math.max(100, Math.round(width)));
+  // The neighbour preload asks the tiles this window will draw at its target (K13).
+  useEffect(() => {
+    if (width === 0) return;
+    windowTargets.set(w.id, target);
+    return () => {
+      windowTargets.delete(w.id);
+    };
+  }, [w.id, target, width]);
   const loadRequests = (from: string, to: string): LoadRequest[] =>
     width === 0
       ? []
@@ -1861,7 +1882,7 @@ export function TimeseriesWindow({
               />
               {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
               <span className={`status ${state?.error ? "error" : (state?.status ?? "loading")}`}>
-                {loadStatusText(state)}
+                {loadStatusText(state, inCase)}
               </span>
               <span className="sna sna-share" title={sna && HINTS.sna(sna.replace(/^SNA /, ""))}>
                 {sna}

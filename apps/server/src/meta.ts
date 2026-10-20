@@ -3,9 +3,9 @@ import type { CatalogState, Grant, ServerMeta } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { SourceInfo } from "./datasource.ts";
-import { apiError, grantOf } from "./http.ts";
+import { apiError, grantOf, workspaceOf } from "./http.ts";
 import { type CatalogView, catalogView } from "./rights.ts";
-import { type CatalogStore, scopeOf } from "./scope.ts";
+import { type CatalogStore, noteObjectScope } from "./scope.ts";
 
 /** The repo's commit when the server started (design F2). */
 export interface BuildInfo {
@@ -89,7 +89,8 @@ function catalogStatus(catalog: CatalogView): CatalogStatus {
 /**
  * The catalog the workspace uses (add-scope Z5, Z10) as its grant shows it (add-multiuser M9):
  * with a scope that scope's list, else the full catalog in full mode and `no_scope` in scoped
- * mode. Without a store: full mode.
+ * mode. Without a store: full mode. In an object scope the vehicle's own list, which loads lazily
+ * while the session's list serves (add-case-open K11).
  */
 function catalogMeta(
   catalogs: CatalogStore | undefined,
@@ -102,7 +103,7 @@ function catalogMeta(
     if (mode === "scoped") return { mode, state: "no_scope", size: 0 };
     return { mode, ...catalogStatus(catalogView(catalogs?.full ?? full, grant)) };
   }
-  const held = catalogs?.get(scope);
+  const held = scope.object ? catalogs?.own(scope) : catalogs?.get(scope);
   const catalog = held && catalogView(held, grant);
   const status: CatalogStatus = catalog
     ? catalogStatus(catalog)
@@ -111,6 +112,8 @@ function catalogMeta(
         size: 0,
         reason: "still loading: the scope's signal list has not loaded",
       };
+  if (status.state === "loading" && catalogs?.partial(scope))
+    status.reason = "still loading: the vehicle's signal list; the session's list serves meanwhile";
   return { mode, ...status, scope };
 }
 
@@ -139,6 +142,8 @@ export function metaRoutes(deps: {
     app.get("/api/meta", { config: { access: { level: "workspace" } } }, async (request, reply) => {
       if (!meta) return apiError(reply, 404, "not_configured", "server meta not configured");
       const ping = await check(meta.ping);
+      const { workspace } = workspaceOf(request).store;
+      noteObjectScope(catalogs, workspace);
       const body: ServerMeta = {
         build: {
           commit: meta.build.commit,
@@ -151,7 +156,7 @@ export function metaRoutes(deps: {
           table: meta.source.table,
           ...ping,
         },
-        catalog: catalogMeta(catalogs, catalog, scopeOf(request), grantOf(request)),
+        catalog: catalogMeta(catalogs, catalog, workspace.scope, grantOf(request)),
       };
       return body;
     });

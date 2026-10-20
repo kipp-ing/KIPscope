@@ -3,6 +3,7 @@ import {
   type Command,
   type CursorName,
   DisplayMode,
+  MAX_LINK_CHARS,
   parseDuration,
   parseTime,
   parseWorkspaceLink,
@@ -10,6 +11,7 @@ import {
   WORKSPACE_ID,
   WorkspaceShare,
 } from "@kipscope/shared";
+import type { CaseInvocation } from "./case.ts";
 import { CliError } from "./output.ts";
 import type { ViewInvocation } from "./views.ts";
 
@@ -57,7 +59,8 @@ export type Invocation =
   | { kind: "workspace"; action: "list" | "new" }
   | { kind: "workspace"; action: "share"; share: WorkspaceShare }
   | { kind: "workspace"; action: "delete"; id: string }
-  | ViewInvocation;
+  | ViewInvocation
+  | CaseInvocation;
 
 export const DEFAULT_SERVER = "http://localhost:7310";
 const DEFAULT_TIMEOUT = "30s";
@@ -110,6 +113,21 @@ Workspaces (each with its own link; the default is your latest one):
   workspace share private|read|write
                                    (who else may open the call's workspace)
   workspace delete ID
+
+Catalogs (ordered lists handed over by a finder such as KI.ping; N: 1-based position):
+  case open FILE|-                 (a new workspace from a catalog document, a signed or
+                                   unsigned code, or a CLI output holding one; - reads stdin;
+                                   local.url is its link)
+  case show                        (the open catalog's state; local.position "k / n")
+  case next | case prev            (step to the next or previous catalog entry)
+  case go N                        (go to entry N and link)
+  case link [N]                    (link again: to entry N, default the entry left)
+  case unlink                      (the whole vehicle of the current entry)
+  case align start|end|anchor
+  case align event KIND SOURCE NAME [TEXT]
+                                   (align every entry to its first matching event)
+  case url FILE|-                  (prints the link /open#cases=…; at most ${MAX_LINK_CHARS} characters)
+  case drives REF                  (test aid: prints a catalog of REF's drives in the strip)
 
 Views (saved workspaces, stored by the server):
   view list
@@ -277,6 +295,14 @@ function integer(text: string, what: string, signed: boolean): number {
   return Number(text);
 }
 
+/** A 1-based position N: an integer ≥ 1. */
+function position(text: string): number {
+  if (!/^\d+$/.test(text) || Number(text) < 1) {
+    usage(`N must be a position, an integer ≥ 1, got "${text}"`);
+  }
+  return Number(text);
+}
+
 function displayMode(text: string): DisplayMode {
   const mode = DisplayMode.safeParse(text);
   return mode.success ? mode.data : usage(`--mode must be line, step or markers, got "${text}"`);
@@ -368,6 +394,7 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
     "view",
     "scope",
     "workspace",
+    "case",
   ].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
@@ -648,6 +675,56 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       take(1);
       if (!WORKSPACE_ID.test(arg(0))) usage(`not a workspace ID: "${arg(0)}"`);
       return { kind: "workspace", action: "delete", id: arg(0) };
+    case "case open":
+    case "case url":
+      take(1);
+      if (arg(0) === "") usage("FILE is empty");
+      return { kind: "case", action: form === "case open" ? "open" : "url", file: arg(0) };
+    case "case show":
+      take(0);
+      return { kind: "case", action: "show" };
+    case "case next":
+    case "case prev":
+      take(0);
+      return command({ type: "case.step", by: form === "case next" ? 1 : -1 });
+    case "case go":
+      take(1);
+      return command({ type: "case.go", index: position(arg(0)) - 1 });
+    case "case link":
+      take([0, 1]);
+      return command({
+        type: "case.go",
+        index: args.length === 0 ? { kind: "current" } : position(arg(0)) - 1,
+      });
+    case "case unlink":
+      take(0);
+      return command({ type: "case.unlink" });
+    case "case align": {
+      const mode = args[0];
+      if (mode === "start" || mode === "end" || mode === "anchor") {
+        take(1);
+        return command({ type: "case.align", align: { mode } });
+      }
+      if (mode !== "event")
+        usage(`case align takes start, end, anchor or event, got "${mode ?? ""}"`);
+      take([4, 5]);
+      return command({
+        type: "case.align",
+        align: {
+          mode: "event",
+          event: {
+            kind: arg(1),
+            source: arg(2),
+            name: arg(3),
+            ...(args.length === 5 && { text: arg(4) }),
+          },
+        },
+      });
+    }
+    case "case drives":
+      take(1);
+      if (arg(0) === "") usage("REF is empty");
+      return { kind: "case", action: "drives", dataRef: arg(0) };
     case "command": {
       take(1);
       try {

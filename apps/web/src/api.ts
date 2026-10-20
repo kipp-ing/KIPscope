@@ -1,28 +1,32 @@
-import type {
-  ApiError,
-  CatalogSnapshot,
-  CommandErrorCode,
-  CommandInput,
-  CommandResult,
-  CreateWorkspaceAnswer,
-  CreateWorkspaceRequest,
-  CursorValueResult,
-  Density,
-  EventList,
-  Extent,
-  GapInfo,
-  ImportViewRequest,
-  Me,
-  SaveViewRequest,
-  SeriesResult,
-  ServerMeta,
-  SignalInfo,
-  SignalPage,
-  ValuesMode,
-  ViewSummary,
-  WorkspaceAnswer,
-  WorkspaceList,
-  WorkspaceShare,
+import {
+  type ApiError,
+  type CaseCatalog,
+  type CasePreview,
+  type CatalogSnapshot,
+  CLASS_HEADER,
+  type CommandErrorCode,
+  type CommandInput,
+  type CommandResult,
+  type CreateWorkspaceAnswer,
+  type CreateWorkspaceRequest,
+  type CursorValueResult,
+  type Density,
+  type EventList,
+  type Extent,
+  type GapInfo,
+  type ImportViewRequest,
+  type Me,
+  type SaveViewRequest,
+  type SeriesResult,
+  type ServerMeta,
+  type SignalInfo,
+  type SignalPage,
+  type TimeRange,
+  type ValuesMode,
+  type ViewSummary,
+  type WorkspaceAnswer,
+  type WorkspaceList,
+  type WorkspaceShare,
 } from "@kipscope/shared";
 import type { SeriesRequest } from "./chart/tiles.ts";
 import { apiPath, withWorkspace } from "./workspaces/apiPath.ts";
@@ -67,9 +71,19 @@ function requestError(res: Response, body: unknown): ApiRequestError {
   return new ApiRequestError(res.status, `http_${res.status}`, res.statusText);
 }
 
+/** The request header of the `preload` query class (add-case-open K10). */
+const PRELOAD_HEADERS = { [CLASS_HEADER]: "preload" };
+
 /** GET of an API path; workspace-resolving paths go to the page's workspace (add-multiuser M12). */
-async function getJson<T>(url: string, abort?: AbortSignal): Promise<T> {
-  const res = await fetch(apiPath(url), abort ? { signal: abort } : {});
+async function getJson<T>(
+  url: string,
+  abort?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(apiPath(url), {
+    ...(abort ? { signal: abort } : {}),
+    ...(headers ? { headers } : {}),
+  });
   if (!res.ok) throw requestError(res, await res.json().catch(() => undefined));
   return (await res.json()) as T;
 }
@@ -91,14 +105,26 @@ export async function signalInfo(id: string): Promise<SignalInfo | undefined> {
   return page.items.find((s) => s.id === id);
 }
 
-export function fetchSeries(r: SeriesRequest, abort: AbortSignal): Promise<SeriesResult> {
+/** What a request for one catalog entry adds (add-case-open K10, K14): `case=<n>`, the preload class. */
+export interface CaseRequestOptions {
+  /** 0-based catalog index: bounded by that entry's scope instead of the workspace's. */
+  case?: number;
+  /** Sends `X-KIPscope-Class: preload`. */
+  preload?: boolean;
+}
+
+export function fetchSeries(
+  r: SeriesRequest & CaseRequestOptions,
+  abort: AbortSignal,
+): Promise<SeriesResult> {
   const params = new URLSearchParams({
     signal: r.signalId,
     from: r.from,
     to: r.to,
     target: String(r.target),
   });
-  return getJson(`/api/series?${params}`, abort);
+  if (r.case !== undefined) params.set("case", String(r.case));
+  return getJson(`/api/series?${params}`, abort, r.preload ? PRELOAD_HEADERS : undefined);
 }
 
 /** Value of one signal at time `t` (decimal ns) from its raw neighbours (design S3, C8). */
@@ -111,13 +137,38 @@ export function fetchCursorValue(
   return getJson(`/api/value?${new URLSearchParams({ signal: signalId, t, mode })}`, abort);
 }
 
-export function fetchExtent(signalId: string): Promise<Extent> {
-  return getJson(`/api/extent?${new URLSearchParams({ signal: signalId })}`);
+export function fetchExtent(
+  signalId: string,
+  options: CaseRequestOptions & { abort?: AbortSignal } = {},
+): Promise<Extent> {
+  const params = new URLSearchParams({ signal: signalId });
+  if (options.case !== undefined) params.set("case", String(options.case));
+  return getJson(
+    `/api/extent?${params}`,
+    options.abort,
+    options.preload ? PRELOAD_HEADERS : undefined,
+  );
 }
 
-/** Rows per bucket of one data ref over its whole recording, for the time strip (design T8). */
-export function fetchDensity(dataRef: string, signal?: AbortSignal): Promise<Density> {
-  return getJson(`/api/density?${new URLSearchParams({ dataRef })}`, signal);
+/** `from` and `to` of a time range as query parameters. */
+function appendRange(params: URLSearchParams, range: TimeRange | undefined): void {
+  if (!range) return;
+  params.set("from", range.from);
+  params.set("to", range.to);
+}
+
+/**
+ * Rows per bucket of one data ref over its whole recording, for the time strip (design T8); with
+ * `range` over that part of the scope only (add-case-open K10, K11: the work window's drives).
+ */
+export function fetchDensity(
+  dataRef: string,
+  signal?: AbortSignal,
+  range?: TimeRange,
+): Promise<Density> {
+  const params = new URLSearchParams({ dataRef });
+  appendRange(params, range);
+  return getJson(`/api/density?${params}`, signal);
 }
 
 /**
@@ -128,9 +179,12 @@ export function fetchGaps(
   dataRef: string,
   signals: readonly string[],
   abort?: AbortSignal,
+  window?: TimeRange,
 ): Promise<GapInfo> {
   const params = new URLSearchParams({ dataRef });
   for (const s of signals) params.append("signal", s);
+  // Only in an object scope: its work window (add-case-open K11).
+  appendRange(params, window);
   return getJson(`/api/gaps?${params}`, abort);
 }
 
@@ -139,10 +193,28 @@ export function fetchEvents(
   dataRef: string,
   signals: readonly string[],
   abort?: AbortSignal,
+  window?: TimeRange,
 ): Promise<EventList> {
   const params = new URLSearchParams({ dataRef });
   for (const s of signals) params.append("signal", s);
+  appendRange(params, window);
   return getJson(`/api/events?${params}`, abort);
+}
+
+// Catalogs (add-case-open K10, K14).
+
+/** The open catalog of the page's workspace; immutable for one `catalogId`; 404 `no_case`. */
+export function fetchCase(abort?: AbortSignal): Promise<CaseCatalog> {
+  return getJson("/api/case", abort);
+}
+
+/** Scope and alignment point of catalog entry `index`; the server warms that session (K13). */
+export function fetchCasePreview(index: number, abort: AbortSignal): Promise<CasePreview> {
+  return getJson(
+    `/api/case/preview?${new URLSearchParams({ index: String(index) })}`,
+    abort,
+    PRELOAD_HEADERS,
+  );
 }
 
 /** Build, source and catalog state of the running server for the footer (design F2). */
@@ -287,6 +359,23 @@ export async function createWorkspace(
   if (res.ok) return data as CreateWorkspaceAnswer;
   if (isCommandResult(data)) return { result: data };
   throw requestError(res, data);
+}
+
+/**
+ * Opens a catalog (a link's code, a JWS, or a plain document) in a new workspace (K10). A refused
+ * catalog rejects with its code and message (`invalid_catalog`, `signature_required`, …).
+ */
+export async function openCases(
+  cases: string | Record<string, unknown>,
+): Promise<CreateWorkspaceAnswer> {
+  const res = await fetch("/api/workspaces", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ open: { cases } }),
+  });
+  const data: unknown = await res.json().catch(() => undefined);
+  if (!res.ok) throw requestError(res, data);
+  return data as CreateWorkspaceAnswer;
 }
 
 export function shareWorkspace(id: string, share: WorkspaceShare): Promise<WorkspaceAnswer> {

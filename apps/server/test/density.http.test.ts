@@ -246,4 +246,59 @@ describe("GET /api/density with a scope (add-scope)", () => {
       await t.close();
     }
   });
+  it("covers part of the scope", async () => {
+    const t = await scopeApp({ adapter: testSource() });
+    try {
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T02:00:00Z",
+      });
+      expect(set.status).toBe(200);
+      const rowsIn = async (from: string, to: string) => {
+        const res = await testClient().query({
+          query: `SELECT count() FROM sdlog.signals WHERE vehicle = 'testcar'
+                  AND utc >= toDateTime64('${from}', 3, 'UTC') AND utc < toDateTime64('${to}', 3, 'UTC')`,
+          format: "TabSeparated",
+        });
+        return Number((await res.text()).trim());
+      };
+
+      // A window that reaches past the scope is cut to it: 01:30 … the scope's end.
+      const cut = await t.get(
+        "/api/density?dataRef=testcar&from=2026-10-01T01:30:00Z&to=2026-10-01T03:00:00Z",
+      );
+      expect(cut.status, JSON.stringify(cut.body)).toBe(200);
+      expect(cut.body.first).toBe("1790818200000000000"); // 01:30:00
+      expect(cut.body.last).toBe((T2 - 1n).toString());
+      expect(cut.body.coarse).toBeUndefined();
+      const expected = await rowsIn("2026-10-01 01:30:00", "2026-10-01 02:00:00");
+      expect(expected).toBeGreaterThan(0);
+      expect((cut.body.counts as number[]).reduce((a, b) => a + b, 0)).toBe(expected);
+      for (const drive of cut.body.drives as { from: string; to: string }[]) {
+        expect(BigInt(drive.from) >= 1790818200000000000n && BigInt(drive.to) <= T2).toBe(true);
+      }
+
+      // A window inside the scope is exactly that window.
+      const inside = await t.get(
+        "/api/density?dataRef=testcar&from=2026-10-01T01:10:00Z&to=2026-10-01T01:20:00Z",
+      );
+      expect(inside.status).toBe(200);
+      expect(inside.body.first).toBe("1790817000000000000");
+      expect(inside.body.last).toBe("1790817599999999999");
+      expect((inside.body.counts as number[]).reduce((a, b) => a + b, 0)).toBe(
+        await rowsIn("2026-10-01 01:10:00", "2026-10-01 01:20:00"),
+      );
+
+      // from and to go together.
+      for (const query of ["from=2026-10-01T01:30:00Z", "to=2026-10-01T01:30:00Z"]) {
+        const lone = await t.get(`/api/density?dataRef=testcar&${query}`);
+        expect(lone.status, query).toBe(400);
+        expect(lone.body.error.code).toBe("invalid_request");
+      }
+    } finally {
+      await t.close();
+    }
+  });
 });

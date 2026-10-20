@@ -1,5 +1,5 @@
 import type { CatalogSnapshot, SignalPage } from "@kipscope/shared";
-import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import {
@@ -9,8 +9,9 @@ import {
   warnDisplayFallbacks,
 } from "../catalog.ts";
 import type { Access } from "../guard.ts";
-import { apiError, catalogsOf, grantOf, parseInput, routeScope } from "../http.ts";
+import { apiError, catalogsOf, grantOf, parseInput, routeScope, workspaceOf } from "../http.ts";
 import { type CatalogView, catalogView } from "../rights.ts";
+import { noteObjectScope } from "../scope.ts";
 
 const SearchQuery = z.object({
   q: z.string().max(200).default(""),
@@ -32,11 +33,20 @@ const ACCESS: Access = { level: "workspace" };
 export const signalRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
+    /**
+     * The request's scope and list; in an object scope the session's list while the vehicle's
+     * own one loads (add-case-open K11).
+     */
+    const scopedList = (request: FastifyRequest, reply: FastifyReply) => {
+      noteObjectScope(catalogsOf(deps), workspaceOf(request).store.workspace);
+      return routeScope(deps, request, reply);
+    };
+
     /** Searches the catalog (spec signal-catalog). */
     app.get("/api/signals", { config: { access: ACCESS } }, async (request, reply) => {
       const query = parseInput(SearchQuery, request.query, reply);
       if (!query) return reply;
-      const scoped = routeScope(deps, request, reply);
+      const scoped = scopedList(request, reply);
       if (!scoped) return reply;
       const { catalog } = scoped;
       if (!catalog?.loadedAt) {
@@ -48,7 +58,7 @@ export const signalRoutes =
 
     /** Full catalog, unpaged, for clients that search locally (design E3). */
     app.get("/api/catalog", { config: { access: ACCESS } }, async (request, reply) => {
-      const scoped = routeScope(deps, request, reply);
+      const scoped = scopedList(request, reply);
       if (!scoped) return reply;
       const { catalog, scope } = scoped;
       if (!catalog?.loadedAt) {
@@ -59,6 +69,7 @@ export const signalRoutes =
         loadedAt: catalog.loadedAt.toISOString(),
       };
       if (scope) snapshot.scope = scope;
+      if (catalogsOf(deps).partial(scope)) snapshot.partial = true;
       return snapshot;
     });
 
@@ -70,12 +81,14 @@ export const signalRoutes =
       let catalog: Catalog;
       try {
         if (scope) {
-          // A loaded list loads again; one that never loaded joins its first load.
-          const held = catalogsOf(deps).get(scope);
-          if (held?.loadedAt) {
+          // A loaded list loads again; one that never loaded joins its first load. An object
+          // scope's own list, not the session's that serves while it loads (K11).
+          const catalogs = catalogsOf(deps);
+          const held = scope.object ? catalogs.entry(scope) : catalogs.get(scope);
+          if (held && (held.loadedAt || scope.object)) {
             catalog = held;
             await catalog.refresh();
-          } else catalog = await catalogsOf(deps).load(scope);
+          } else catalog = await catalogs.load(scope);
         } else {
           catalog = catalogsOf(deps).full ?? deps.catalog;
           await catalog.refresh();

@@ -268,4 +268,18 @@ Server settings, independent of the source:
 | `KIPSCOPE_CATALOG` | `full` | `full` (catalog of all data refs at start) or `scoped` (a signal list per scope only, section "Scope"); any other value stops the server |
 | `KIPSCOPE_SCOPE_PAD` | `1h` | a CLI duration ≥ 0 (`30min`, `1h`, `0s`): padding on each side of a scope derived from a view (section "Scope") |
 
+Sessions from a finder such as KI.ping ([handoff.md](handoff.md)); any bad value stops the server naming the variable:
+
+| Variable | Default | Rule |
+|---|---|---|
+| `KIPSCOPE_FINDER_JWKS` | unset | the finder's key set: a JWKS file path (relative to the repo root) or an `https` URL (`http` only for a loopback host); unset with an identity other than `none`, every catalog open answers 503 `finder_not_configured` |
+| `KIPSCOPE_FINDER_ISSUER` | — | required with the key set; must equal `iss` |
+| `KIPSCOPE_FINDER_AUDIENCE` | — | required with the key set; must be in `aud` |
+| `KIPSCOPE_FINDER_ALGS` | `EdDSA,ES256` | subset of `EdDSA ES256 ES384 PS256 RS256`; `none` and `HS*` stop the server |
+| `KIPSCOPE_FINDER_USER_CLAIM` | `sub` | the claim (name or dotted path) that must equal the signed-in user |
+| `KIPSCOPE_FINDER_MAX_AGE` | `1h` | a CLI duration of 1 min … 24 h: the largest `exp − iat` accepted |
+| `KIPSCOPE_FINDER_ORIGINS` | empty | comma list of `http(s)://host[:port]`: a catalog's back link is kept only for these origins |
+| `KIPSCOPE_CASE_DATAREF` | `{object}` | template of a session's data ref; must contain `{object}` |
+| `KIPSCOPE_CASE_PAD` | `60s` | a CLI duration of 0 … 24 h: the pad on each side of a session when the catalog has none |
+
 Test-only: `TEST_CLICKHOUSE_URL`, `TEST_CLICKHOUSE_USER`, `TEST_CLICKHOUSE_PASSWORD` (ClickHouse test DB on 8124) and `TEST_ADX_URL` (emulator, default `http://127.0.0.1:8125`).

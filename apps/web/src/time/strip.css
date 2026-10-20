@@ -282,3 +282,52 @@
   color: var(--muted);
   cursor: default;
 }
+
+/* Catalog sessions of the vehicle in an object scope (add-case-open K14): accent segments over the
+   drives, hit first; the session left with Unlink outlined. */
+.time-strip-session {
+  position: absolute;
+  top: 0;
+  height: 7px;
+}
+
+.time-strip-session-bar {
+  position: absolute;
+  top: 1px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.time-strip-session-bar.left {
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
+}
+
+/* The pin context menu: one item, `Align sessions to this event` (K14). */
+.time-strip-menu {
+  position: absolute;
+  top: 8px;
+  z-index: 5;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+}
+
+.time-strip-menu > button {
+  display: block;
+  padding: 3px 8px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.time-strip-menu > button:hover,
+.time-strip-menu > button:focus-visible {
+  background: var(--bg);
+}

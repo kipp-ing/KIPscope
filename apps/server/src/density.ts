@@ -10,6 +10,15 @@ import {
 import type { DataSource, RefBucket, Scope } from "./datasource.ts";
 import { currentPriority, Priority, withPriority } from "./priority.ts";
 
+/** A scope as the caches take it: the source form, plus the object flag of an object scope (add-case-open K11). */
+export type CacheScope = Scope & { object?: true };
+
+/** What part of a scope a density covers: a coarse one over all of it, or a window inside it (K11). */
+export type DensityPart = { coarse: true } | { window: Scope };
+
+/** Detail densities kept per cache (K11): least recently used dropped. */
+export const MAX_DENSITY_WINDOWS = 8;
+
 interface Entry {
   loadedAt: Date | undefined;
   /** Class of the computation's queries: the starting caller's, raised by each joining one. */
@@ -17,10 +26,15 @@ interface Entry {
   promise: Promise<Density | undefined>;
 }
 
-/** Cache key of a scope (add-scope Z9): `scopeKey` of its decimal-ns form. */
-export function scopeCacheKey(scope: Scope): string {
-  return scopeKey({ dataRef: scope.dataRef, from: scope.from.toString(), to: scope.to.toString() });
+/** Cache key of a scope (add-scope Z9): `scopeKey` of its decimal-ns form, `|object` for an object scope. */
+export function scopeCacheKey(scope: CacheScope): string {
+  const key = { dataRef: scope.dataRef, from: scope.from.toString(), to: scope.to.toString() };
+  return scopeKey(scope.object ? { ...key, object: true } : key);
 }
+
+/** The source form of a cache scope: no object flag goes to the source; a plain scope as it is. */
+export const plainScope = (scope: CacheScope): Scope =>
+  "object" in scope ? { dataRef: scope.dataRef, from: scope.from, to: scope.to } : scope;
 
 /**
  * Density of a data ref, computed at most once per catalog load (spec time-strip, design T7):
@@ -29,42 +43,77 @@ export function scopeCacheKey(scope: Scope): string {
  * queries run in the class of the caller that started it, raised to that of any caller that joins
  * (series-query design P4), so a request never waits behind the prefetch it joins. With a scope
  * (add-scope Z9) it covers the scope only, from one scoped `refBuckets`, cached by the scope's key
- * and dropped with that scope's catalog load (`loadedAt(scope)`).
+ * and dropped with that scope's catalog load (`loadedAt(scope)`). In an object scope (add-case-open
+ * K11) it is coarse over the scope, or covers a work window (`part`), kept per window, LRU 8.
  */
 export class DensityCache {
   private readonly source: Pick<DataSource, "refExtent" | "refBuckets">;
-  private readonly loadedAt: (scope?: Scope) => Date | undefined;
+  private readonly loadedAt: (scope?: CacheScope) => Date | undefined;
   private readonly entries = new Map<string, Entry>();
+  /** Window densities, least recently used first. */
+  private readonly windows = new Map<string, Entry>();
 
   constructor(
     source: Pick<DataSource, "refExtent" | "refBuckets">,
-    loadedAt: (scope?: Scope) => Date | undefined,
+    loadedAt: (scope?: CacheScope) => Date | undefined,
   ) {
     this.source = source;
     this.loadedAt = loadedAt;
   }
 
-  /** The density of `dataRef`, or of `scope` (whose data ref the caller made sure is `dataRef`). */
-  get(dataRef: string, scope?: Scope): Promise<Density | undefined> {
+  /**
+   * The density of `dataRef`, or of `scope` (whose data ref the caller made sure is `dataRef`):
+   * `part` coarse over the scope, or over a window the caller cut to the scope (K11).
+   */
+  get(dataRef: string, scope?: CacheScope, part?: DensityPart): Promise<Density | undefined> {
     const loadedAt = this.loadedAt(scope);
-    const key = scope ? scopeCacheKey(scope) : dataRef;
-    const cached = this.entries.get(key);
+    const base = scope ? scopeCacheKey(scope) : dataRef;
+    // Rows, not the signal list, make an object scope's density: one computed while the vehicle's
+    // list still loads stays for that list's first load (K11, lazy list).
+    const adopt = scope?.object === true;
+    if (part && "window" in part) {
+      const { window } = part;
+      const key = `${base}\n${window.from} ${window.to}`;
+      return this.cached(this.windows, key, loadedAt, adopt, () => this.computeScoped(window));
+    }
+    if (part?.coarse && scope) {
+      return this.cached(this.entries, `coarse ${base}`, loadedAt, adopt, () =>
+        coarse(this.source, scope),
+      );
+    }
+    return this.cached(this.entries, base, loadedAt, adopt, () =>
+      scope ? this.computeScoped(scope) : this.compute(dataRef),
+    );
+  }
+
+  private cached(
+    map: Map<string, Entry>,
+    key: string,
+    loadedAt: Date | undefined,
+    adopt: boolean,
+    compute: () => Promise<Density | undefined>,
+  ): Promise<Density | undefined> {
+    const cached = map.get(key);
+    if (cached && adopt && cached.loadedAt === undefined) cached.loadedAt = loadedAt;
     if (cached && cached.loadedAt === loadedAt) {
       cached.priority.raise(currentPriority().cls);
+      map.delete(key);
+      map.set(key, cached);
       return cached.promise;
     }
     const priority = new Priority(currentPriority().cls);
-    const entry: Entry = {
-      loadedAt,
-      priority,
-      promise: withPriority(priority, () =>
-        scope ? this.computeScoped(scope) : this.compute(dataRef),
-      ),
-    };
-    this.entries.set(key, entry);
+    const entry: Entry = { loadedAt, priority, promise: withPriority(priority, compute) };
+    map.delete(key);
+    map.set(key, entry);
     entry.promise.catch(() => {
-      if (this.entries.get(key) === entry) this.entries.delete(key);
+      if (map.get(key) === entry) map.delete(key);
     });
+    if (map === this.windows) {
+      for (const old of map.keys()) {
+        if (map.size <= MAX_DENSITY_WINDOWS) break;
+        map.delete(old);
+      }
+    }
     return entry.promise;
   }
 
@@ -99,7 +148,7 @@ export class DensityCache {
   private async computeScoped(scope: Scope): Promise<Density> {
     const last = scope.to - 1n;
     const grid = driveGrid(densityWidth(scope.from, last));
-    const buckets = await this.source.refBuckets(scope.dataRef, grid, false, scope);
+    const buckets = await this.source.refBuckets(scope.dataRef, grid, false, plainScope(scope));
     const body = density(scope.dataRef, scope.from, last, buckets);
     const from = scope.from.toString();
     const to = scope.to.toString();
@@ -111,6 +160,37 @@ export class DensityCache {
     body.scope = { from, to };
     return body;
   }
+}
+
+/**
+ * Bars over a whole object scope from one bucket query at the bar width (≤ MAX_DENSITY_BARS
+ * buckets), no grid query and no drives (add-case-open K11).
+ */
+async function coarse(source: Pick<DataSource, "refBuckets">, scope: Scope): Promise<Density> {
+  const first = scope.from;
+  const last = scope.to - 1n;
+  const width = densityWidth(first, last);
+  const buckets = await source.refBuckets(scope.dataRef, width, false, plainScope(scope));
+  const start = floorDiv(first, width) * width;
+  const length = Number(floorDiv(last, width) - floorDiv(first, width) + 1n);
+  const counts = new Array<number>(length).fill(0);
+  for (const bucket of buckets) {
+    const i = Number(floorDiv(bucket.start - start, width));
+    if (i < 0 || i >= length) continue;
+    counts[i] = (counts[i] ?? 0) + bucket.count;
+  }
+  return {
+    dataRef: scope.dataRef,
+    first: first.toString(),
+    last: last.toString(),
+    width: width.toString(),
+    start: start.toString(),
+    counts,
+    grid: driveGrid(width).toString(),
+    drives: [],
+    scope: { from: scope.from.toString(), to: scope.to.toString() },
+    coarse: true,
+  };
 }
 
 /** Bars over [first, last] and drives from the drive-grid buckets of a data ref. */

@@ -529,3 +529,39 @@
   background: var(--panel);
   box-shadow: inset 0 0 0 1px var(--ev-fault);
 }
+
+/* Row action `Align` while a catalog is linked (add-case-open K14): beside the row's button, shown
+   on hover and focus. */
+.events-row-wrap {
+  position: relative;
+}
+
+.events-align {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.events-row-wrap:hover > .events-align,
+.events-row-wrap:focus-within > .events-align {
+  opacity: 1;
+}
+
+/* The action takes the place of the right-aligned kind label while it shows. */
+.events-row-wrap:is(:hover, :focus-within) > button > .events-row-head > .events-cat {
+  visibility: hidden;
+}
+
+.events-align.read {
+  right: 26px;
+}

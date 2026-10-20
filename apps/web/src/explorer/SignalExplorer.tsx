@@ -15,7 +15,7 @@ import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
 import { HINTS } from "../help/hints.ts";
 import { isSearchKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
-import { CatalogLoader, NO_SCOPE_TEXT } from "./catalogLoader.ts";
+import { CatalogLoader, NO_SCOPE_TEXT, partialText } from "./catalogLoader.ts";
 import {
   CHUNK,
   formatSnaPhysical,
@@ -45,6 +45,8 @@ export { NEW_WINDOW };
 interface Props {
   /** The workspace's scope; a change loads that scope's catalog (add-scope Z12). */
   scope?: WorkspaceScope | undefined;
+  /** 1-based position of the open catalog's session, for the note on a `partial` list (add-case-open K14). */
+  session?: number | undefined;
   /** All windows; "Add to" lists timeseries and values windows by windowTitle. */
   windows: WorkspaceWindow[];
   onAdd: (signal: SignalInfo, target: string) => void;
@@ -87,6 +89,7 @@ interface Card {
  */
 export function SignalExplorer({
   scope,
+  session,
   windows,
   onAdd,
   onAddMany,
@@ -107,6 +110,8 @@ export function SignalExplorer({
   const [error, setError] = useState<string | undefined>();
   /** Scoped mode without a scope: the server answered 409 scope_required. */
   const [noScope, setNoScope] = useState(false);
+  /** The list is the last linked session's while the vehicle's own loads (K11). */
+  const [partial, setPartial] = useState(false);
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(CHUNK);
   /** Item index; undefined after a query change means firstSignal(items) (design G6). */
@@ -148,11 +153,13 @@ export function SignalExplorer({
           setCatalog(r.snapshot.items);
           setError(undefined);
           setNoScope(false);
+          setPartial(r.snapshot.partial === true);
           onSeenRef.current(r.snapshot.items);
         } else if (r.kind === "no_scope") {
           setCatalog(undefined);
           setError(undefined);
           setNoScope(true);
+          setPartial(false);
         } else setError(r.message);
       }),
   );
@@ -416,6 +423,7 @@ export function SignalExplorer({
         </select>
       </label>
       {error && <p className="error">{catalog ? error : `${error} (retrying)`}</p>}
+      {catalog && partial && <p className="count partial">{partialText(session ?? 1)}</p>}
       {catalog ? (
         <p className="count">
           {query.trim() === "" ? (

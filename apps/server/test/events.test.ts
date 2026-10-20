@@ -5,9 +5,13 @@ import {
   type SignalInfo,
   type StateRow,
 } from "@kipscope/shared";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Scope, SeriesRef, StateChangeRule } from "../src/datasource.ts";
 import { EventsCache } from "../src/events.ts";
+import { closeApps, unlink, unlinked } from "./caseApp.ts";
+import { scopeOfCall } from "./caseKit.ts";
+import { scopeApp } from "./scopeApp.ts";
+import { testSource } from "./testdb.ts";
 
 const s = (n: number) => String(BigInt(n) * 1_000_000_000n);
 
@@ -290,5 +294,54 @@ describe("EventsCache with a scope (add-scope)", () => {
     // Without a scope the source is asked without one, as before.
     await cache.table("testcar");
     expect(source.eventCalls[2]?.scope).toBeUndefined();
+  });
+});
+
+describe("EventsCache with a work window (add-case-open)", () => {
+  afterEach(closeApps);
+
+  it("loads the events of a work window", async () => {
+    // The reference: the linked scope of the same hour.
+    const reference = await scopeApp({ adapter: testSource(), dbc: true });
+    let linked: { total: number; events: unknown[] };
+    try {
+      const set = await reference.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T02:00:00Z",
+      });
+      expect(set.status).toBe(200);
+      const answer = await reference.get(
+        "/api/events?dataRef=testcar&signal=testcar/Ign_A20h.MODE",
+      );
+      expect(answer.status).toBe(200);
+      linked = answer.body;
+    } finally {
+      await reference.close();
+    }
+
+    const { t, id, calls } = await unlinked();
+    await unlink(t.anon, id);
+    const mark = calls.length;
+    const ask = () =>
+      t.anon.get(
+        `/api/w/${id}/events?dataRef=testcar&signal=testcar/Ign_A20h.MODE&from=2026-10-01T01:00:00Z&to=2026-10-01T02:00:00Z`,
+      );
+    const [one, two] = [await ask(), await ask()];
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    expect(two.text).toBe(one.text);
+    // The same events as the linked scope of that hour.
+    expect(one.body.total).toBe(linked.total);
+    expect(one.body.events).toEqual(linked.events);
+
+    // events and stateChanges: once each, with the window as their scope, never the whole object.
+    const window = { dataRef: "testcar", from: 1790816400000000000n, to: 1790820000000000000n };
+    const read = calls.slice(mark);
+    for (const name of ["events", "stateChanges"]) {
+      const named = read.filter((c) => c.method === name);
+      expect(named, name).toHaveLength(1);
+      expect(scopeOfCall(named[0] as (typeof read)[number]), name).toEqual(window);
+    }
   });
 });

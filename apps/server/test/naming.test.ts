@@ -13,9 +13,24 @@ function files(path: string): string[] {
 }
 
 describe("naming (workspaces: Session is not a word for the workspace)", () => {
-  it("has no session in the code", () => {
-    // grep -rniE "\bsessions?\b" apps/server/src apps/web/src apps/cli/src packages/shared/src \
-    //   docs/http-api.md docs/deploy.md README.md | grep -v -e LEGACY_ -e 'KI\.ping'
+  // Since add-case-open (design K1) "session" is the word for one entry of a catalog (the UI says
+  // "session", the code says `case`), so the word alone is no longer a finding. What stays out is
+  // the old name of the workspace: its header, option, variable, routes, menu and types.
+  const OLD_WORKSPACE_WORDS = new RegExp(
+    [
+      "X-KIPscope-Session",
+      "KIPSCOPE_SESSIONS?_?\\w*",
+      "--session\\b",
+      "/api/sessions?\\b",
+      "\\bsessions? (id|folder|store|registry|link|menu)\\b",
+      "\\bSessions menu\\b",
+      "\\bSession(Store|Registry|Entry|Summary|Answer)\\b",
+      "\\bsessionId\\b",
+    ].join("|"),
+    "i",
+  );
+
+  it("has no session as the name of the workspace in the code", () => {
     const paths = [
       "apps/server/src",
       "apps/web/src",
@@ -30,7 +45,7 @@ describe("naming (workspaces: Session is not a word for the workspace)", () => {
       for (const file of files(resolve(ROOT, path))) {
         const lines = readFileSync(file, "utf8").split("\n");
         lines.forEach((line, i) => {
-          if (!/\bsessions?\b/i.test(line)) return;
+          if (!OLD_WORKSPACE_WORDS.test(line)) return;
           if (line.includes("LEGACY_") || /KI\.ping/.test(line)) return;
           hits.push(`${relative(ROOT, file)}:${i + 1}: ${line.trim().slice(0, 100)}`);
         });

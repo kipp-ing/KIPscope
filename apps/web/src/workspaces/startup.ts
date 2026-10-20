@@ -1,4 +1,5 @@
 import {
+  type CaseOpenReport,
   type CommandResult,
   type CreateWorkspaceRequest,
   LEGACY_UI_PATH,
@@ -8,29 +9,39 @@ import {
   workspacePath,
 } from "@kipscope/shared";
 import { useEffect, useState } from "react";
-import { ApiRequestError, createWorkspace, fetchMe, fetchWorkspace } from "../api.ts";
+import { ApiRequestError, createWorkspace, fetchMe, fetchWorkspace, openCases } from "../api.ts";
 import { startupView } from "../views/link.ts";
 import { setWorkspace } from "./apiPath.ts";
-import { type Gate, gateOf } from "./gate.ts";
+import { type Gate, gateOf, LATEST_WORKSPACE } from "./gate.ts";
 
 type Address = Pick<Location, "pathname" | "search" | "hash">;
 
 /** Where the page starts (add-multiuser M12 "Start-up"). */
 export type StartupTarget =
   | { workspace: string; path: string }
-  | { create: CreateWorkspaceRequest };
+  | { create: CreateWorkspaceRequest }
+  /** `/open#cases=<code>`: a new workspace with that catalog open (add-case-open K14). */
+  | { cases: string };
 
 const REUSE: StartupTarget = { create: { reuse: true } };
 const WORKSPACE_PAGE = /^\/w\/([^/]+)\/?$/;
 const LEGACY_PAGE = new RegExp(`^${LEGACY_UI_PATH}([^/]+)/?$`);
+/** The catalog of a finder's link (K3): `#cases=<code>`, the code a JWS or a plain document's. */
+const CASES_HASH = /^#cases=(.+)$/;
+
+/** Title of the gate page of a catalog that did not open (K14). */
+export const CASES_FAILED = "Could not open the sessions";
 
 /**
  * The workspace the address asks for: `#view=` or `?view=` on any path → a new workspace with that
  * view open; `/w/<id>`, or the legacy `/s/<id>`, → that workspace at `/w/<id>`; `/` or any other
- * path → a free workspace of the user reused, else a new one (M4). Rejects a view code that does
- * not decode.
+ * path → a free workspace of the user reused, else a new one (M4). `#cases=<code>` (on `/open`,
+ * the finder's link) → a new workspace with that catalog (add-case-open K14). Rejects a view code
+ * that does not decode.
  */
 export async function startupTarget(location: Address): Promise<StartupTarget> {
+  const cases = CASES_HASH.exec(location.hash)?.[1];
+  if (cases !== undefined) return { cases };
   const asked = await startupView(location);
   if (asked) {
     return {
@@ -54,6 +65,8 @@ export type Startup =
       message?: string;
       /** The open of a `#view=`/`?view=` link in the new workspace, for the "Opened" notice. */
       opened?: CommandResult;
+      /** The open of a catalog (`#cases=`, add-case-open K10), for the message line. */
+      cases?: CaseOpenReport;
     };
 
 const RETRY_MS = 1000;
@@ -114,10 +127,33 @@ async function create(
   }
 }
 
+/** Opens a catalog in a new workspace (K10); waits while the session's list first loads. */
+async function openCatalog(
+  code: string,
+): Promise<{ workspace: WorkspaceSummary; case?: CaseOpenReport }> {
+  const deadline = Date.now() + CATALOG_WAIT_MS;
+  for (;;) {
+    try {
+      return await openCases(code);
+    } catch (e) {
+      const waiting = e instanceof ApiRequestError && e.code === "catalog_unavailable";
+      if (!waiting || Date.now() >= deadline) throw e;
+      await sleep(RETRY_MS);
+    }
+  }
+}
+
+/** The gate page of a catalog that did not open (K14): the server's code and message. */
+export function casesGate(e: unknown): Gate {
+  const text = e instanceof ApiRequestError ? `${e.code}: ${e.message}` : errorText(e);
+  return { title: CASES_FAILED, text, actions: [LATEST_WORKSPACE] };
+}
+
 /**
  * Runs the start-up (M12): reads `/api/me`, picks the workspace per `startupTarget`, opens a link's
  * view in a new workspace, checks a named one or reuses a free one, and replaces the address with
- * `/w/<id>` without a reload. A refused open falls back to what `/` gives, with its error.
+ * `/w/<id>` without a reload. A refused open falls back to what `/` gives, with its error; a
+ * catalog that does not open shows the gate page `Could not open the sessions` (add-case-open K14).
  */
 export async function startWorkspace(
   location: Address,
@@ -135,8 +171,19 @@ export async function startWorkspace(
   }
 
   let opened: CommandResult | undefined;
+  let cases: CaseOpenReport | undefined;
   let id: string | undefined;
-  if ("create" in target && target.create.open) {
+  if ("cases" in target) {
+    try {
+      const answer = await openCatalog(target.cases);
+      id = answer.workspace.id;
+      cases = answer.case;
+    } catch (e) {
+      // The identity's own refusals keep their gate; any other refusal names the catalog's error.
+      const gate = e instanceof ApiRequestError ? gateOf(e) : undefined;
+      return { kind: "gate", gate: gate ?? casesGate(e), me };
+    }
+  } else if ("create" in target && target.create.open) {
     try {
       const answer = await create(target.create);
       if (answer.workspace) {
@@ -176,6 +223,7 @@ export async function startWorkspace(
     me,
     ...(message ? { message } : {}),
     ...(opened ? { opened } : {}),
+    ...(cases ? { cases } : {}),
   };
 }
 

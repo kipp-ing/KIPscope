@@ -1,10 +1,13 @@
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { type AccessOptions, hostAllowed, originAllowed } from "./access.ts";
+import type { FinderConfig } from "./case.ts";
 import { type RequestUser, registerGuard } from "./guard.ts";
 import { apiError, rewriteUrl, type ScopeDeps, workspacePrefixOf } from "./http.ts";
 import type { IdentityAdapter } from "./identity.ts";
 import { type MetaDeps, metaRoutes } from "./meta.ts";
+import type { ObjectExtents } from "./objectScope.ts";
+import { caseRoutes } from "./routes/case.ts";
 import { eventsRoutes } from "./routes/events.ts";
 import { identityRoutes } from "./routes/identity.ts";
 import { seriesRoutes } from "./routes/series.ts";
@@ -45,6 +48,10 @@ export interface AppDeps extends ScopeDeps {
   webDir?: string;
   /** Ping interval of the live channel in ms; default LIVE_HEARTBEAT_MS (tests use a short one). */
   liveHeartbeatMs?: number;
+  /** The finder handoff (add-case-open K4); absent: the defaults of `loadConfig` without variables. */
+  finder?: FinderConfig;
+  /** The vehicles' extents for Unlink (K11); absent: one over `source`. */
+  objectExtents?: ObjectExtents;
 }
 
 /**
@@ -75,9 +82,12 @@ export function buildApp(
   options: { logger?: boolean; extraHost?: string; origins?: readonly string[] } = {},
 ): FastifyInstance {
   const { workspace, workspaces, ...rest } = input;
+  const registry = workspaces ?? singleWorkspace(workspace as WorkspaceStore);
   const deps: AppDeps = {
+    // `case=N` reads the workspace's catalog (add-case-open K10).
+    caseCatalog: (id) => registry.caseOf(id),
     ...rest,
-    workspaces: workspaces ?? singleWorkspace(workspace as WorkspaceStore),
+    workspaces: registry,
   };
   // `/api/w/<id>/…` serves `/api/…` for workspace <id> (add-multiuser M5).
   const app = Fastify({ logger: options.logger ?? false, rewriteUrl });
@@ -118,6 +128,7 @@ export function buildApp(
   app.register(eventsRoutes(deps));
   app.register(workspaceRoutes(deps));
   app.register(workspacesRoutes(deps));
+  app.register(caseRoutes(deps));
   app.register(viewRoutes(deps));
   app.register(metaRoutes(deps));
   app.register(webRoutes(deps.webDir));

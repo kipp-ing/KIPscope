@@ -107,6 +107,14 @@ export async function resolveCommand(t: CommandTemplate, l: Lookups): Promise<Co
   if (isArg(out.signalId, ["id", "name"])) {
     out.signalId = await resolveSignal(out.signalId as SignalArg, l);
   }
+  // `case link` without N: the session the workspace's catalog left (K15).
+  if (isArg(out.index, ["current"])) {
+    const held = (await l.workspace()).workspace.case;
+    if (held === undefined) {
+      throw new CliError("rejected", "no_case", "this workspace has no open catalog");
+    }
+    out.index = held.current;
+  }
   if (isArg(out.assignmentId, ["assignment", "id", "name"])) {
     out.assignmentId = await resolveRef(String(out.windowId), out.assignmentId as RefArg, l);
   }

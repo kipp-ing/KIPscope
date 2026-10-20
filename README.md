@@ -47,6 +47,7 @@ scripts/demo.sh                               # UI http://localhost:5183, server
 | Data sources and adapters | [docs/data-sources.md](docs/data-sources.md) |
 | HTTP API | [docs/http-api.md](docs/http-api.md) |
 | Server deployment: sign-in (Ping), rights, workspaces | [docs/deploy.md](docs/deploy.md) |
+| Handoff from a finder (KI.ping): catalog, signature, link | [docs/handoff.md](docs/handoff.md) |
 | Requirements (German) | [docs/concept.md](docs/concept.md) |
 | Specs, one per capability | [openspec/specs/](openspec/specs/) |
 | Changes in flight and archived | [openspec/changes/](openspec/changes/) |
@@ -134,6 +135,19 @@ The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or 
 | `KIPSCOPE_WORKSPACE_IDLE_DAYS` | `30` | untouched workspaces without an open tab are deleted after this |
 | `KIPSCOPE_WEB_DIR` | — | the built UI (`apps/web/dist` after `pnpm build`) the server serves |
 | `KIPSCOPE_DEV_USER`, `KIPSCOPE_DEV_ROLES` | — | dev only: the UI's Vite proxy sends them as `X-Forwarded-User` and `X-Forwarded-Groups` (for the example module) |
+
+**Sessions from KI.ping** ([docs/handoff.md](docs/handoff.md)): a finder hands over an ordered catalog of sessions as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`; each opens a new workspace on the first session with a session bar to step through the rest. On a server the catalog must be a JWS signed by the finder for the signed-in user, and it widens the new workspace's grant by its vehicles:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KIPSCOPE_FINDER_JWKS` | — | the finder's key set, a JWKS file or an `https` URL; unset with an identity other than `none`: no catalog opens (503 `finder_not_configured`) |
+| `KIPSCOPE_FINDER_ISSUER`, `KIPSCOPE_FINDER_AUDIENCE` | — | required with the key set: `iss` exactly, a value of `aud` |
+| `KIPSCOPE_FINDER_ALGS` | `EdDSA,ES256` | subset of `EdDSA ES256 ES384 PS256 RS256` |
+| `KIPSCOPE_FINDER_USER_CLAIM` | `sub` | the claim that must equal the signed-in user |
+| `KIPSCOPE_FINDER_MAX_AGE` | `1h` | the largest `exp − iat`, 1 min … 24 h |
+| `KIPSCOPE_FINDER_ORIGINS` | — | origins a catalog's "Back to" link may point to |
+| `KIPSCOPE_CASE_DATAREF` | `{object}` | data ref of a session's vehicle; must contain `{object}` |
+| `KIPSCOPE_CASE_PAD` | `60s` | time shown before and after a session when the catalog sets none, 0 … 24 h |
 
 Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the source address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
 
@@ -274,6 +288,16 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `scope set REF FROM TO` | `scope.set`: bounds every query to data ref REF and `[FROM, TO)` (TIME rules, anchors included) |
 | `scope widen` | one `scope.set` with the scope's span added on each side (2 h → 6 h); without a scope exit 1 `scope_required`, nothing sent |
 | `scope clear` | `scope.clear` (refused with `KIPSCOPE_CATALOG=scoped`) |
+| `case open FILE\|-` | `POST /api/workspaces {open: {cases}}` with the file's (or stdin's) catalog: a JWS, a link code, a catalog document, or a CLI output whose `data` is one; `local.url` is the new workspace's link |
+| `case show` | the workspace's `case` (`data`), `local {position: "k / n", from, to}`; without a catalog exit 1 `no_case` |
+| `case next` \| `case prev` | `case.step {by: 1 \| -1}`: the next or previous session in catalog order, windows kept at their offset |
+| `case go N` | `case.go {index: N − 1}`: session N (1-based) |
+| `case link [N]` | `case.go` to session N, default the current one: back from the whole vehicle to a session |
+| `case unlink` | `case.unlink`: the scope becomes the vehicle's whole recording |
+| `case align start\|end\|anchor` | `case.align`: what lines up between sessions |
+| `case align event KIND SOURCE NAME [TEXT]` | `case.align` to the first matching event of each session |
+| `case url FILE\|-` | prints the link `<server>/open#cases=<code>` of a catalog; longer than 8,192 characters: exit 2 `link_too_long` |
+| `case drives REF` | prints a catalog with one session per drive of REF (a test aid; pipe it to `case open -`) |
 | `command JSON` | the JSON as is (no anchors, names or REFs resolved) |
 | `view save TITLE [--name N] [--note TEXT] [--overwrite]` | `POST /api/views`: saves the workspace as view N (default derived from TITLE); `data.view`, `revision` |
 | `view open NAME` | `POST /api/views/open`: one command (`accepted`, `revision`, `data.report` of missing or left-out signals); honours `--wait` |

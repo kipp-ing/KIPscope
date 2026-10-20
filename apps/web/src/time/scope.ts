@@ -1,10 +1,24 @@
-import { type CommandResult, clampToScope, type WorkspaceScope } from "@kipscope/shared";
+import {
+  type CommandResult,
+  clampToScope,
+  type WorkspaceCase,
+  type WorkspaceScope,
+} from "@kipscope/shared";
 import type { Range } from "../chart/zoom.ts";
 import type { StripEvent } from "../views/notice.ts";
 import { formatRange } from "./axis.ts";
 
 /** Message of a range command the server moved into the scope (time-navigation, add-scope Z12). */
 export const CLAMP_MESSAGE = "Stopped at the scope edge. Widen shows more.";
+/** The same with a linked catalog, and in an object scope (time-navigation, add-case-open K14). */
+export const SESSION_CLAMP_MESSAGE = "Stopped at the session edge. Unlink shows the whole vehicle.";
+export const VEHICLE_CLAMP_MESSAGE = "Stopped at the end of the vehicle's data.";
+
+/** The clamp message of a workspace: by its case, linked or not, else the scope's. */
+export function clampMessage(c: Pick<WorkspaceCase, "linked"> | undefined): string {
+  if (!c) return CLAMP_MESSAGE;
+  return c.linked ? SESSION_CLAMP_MESSAGE : VEHICLE_CLAMP_MESSAGE;
+}
 
 /** Strip text in scoped mode without a scope (time-strip "Strip shows the scope"). */
 export const NO_SCOPE = "No scope set";
@@ -31,14 +45,20 @@ export function scopeText(scope: WorkspaceScope): string {
 
 /**
  * What a command result does to the strip's message slot: a refusal shows its code and message; a
- * result with `clamped` shows CLAMP_MESSAGE; any other accepted command ends an older error and an
- * older clamp message (an info notice such as an open's stays).
+ * result with `clamped` shows the clamp message of the workspace's case (`clampMessage`); any
+ * other accepted command ends an older error and an older clamp message (an info notice such as an
+ * open's stays).
  */
-export function resultStripEvents(result: CommandResult): StripEvent[] {
+export function resultStripEvents(
+  result: CommandResult,
+  c?: Pick<WorkspaceCase, "linked">,
+): StripEvent[] {
   if (!result.ok) return [{ kind: "error", text: `${result.code}: ${result.message}` }];
-  if (result.clamped) return [{ kind: "notice", text: CLAMP_MESSAGE }];
+  if (result.clamped) return [{ kind: "notice", text: clampMessage(c) }];
   return [
     { kind: "dismiss", tone: "error" },
-    { kind: "dismiss", text: CLAMP_MESSAGE },
+    ...[CLAMP_MESSAGE, SESSION_CLAMP_MESSAGE, VEHICLE_CLAMP_MESSAGE].map(
+      (text): StripEvent => ({ kind: "dismiss", text }),
+    ),
   ];
 }

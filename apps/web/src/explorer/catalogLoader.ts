@@ -4,6 +4,13 @@ import { ApiRequestError } from "../api.ts";
 /** Retry interval while the catalog is not loaded yet (design E3). */
 export const CATALOG_RETRY_MS = 5000;
 
+/** Reload interval while the answer is `partial` (signal-catalog "Explorer follows the scope", add-case-open K14). */
+export const PARTIAL_RELOAD_MS = 10_000;
+
+/** Note above the list while it is `partial`: the list of session `k` (1-based) stands in. */
+export const partialText = (k: number): string =>
+  `Signals of session ${k}; the vehicle's full list is loading`;
+
 /** Text of the explorer in scoped mode without a scope (signal-catalog "Explorer follows the scope"). */
 export const NO_SCOPE_TEXT =
   "No scope set. Open a view link or run kipscope scope set REF FROM TO.";
@@ -18,12 +25,14 @@ export type CatalogReport =
  * Loads the catalog of the workspace's scope (add-scope Z12): one fetch per new `scopeKey`, none
  * for a repeated one. An answer for an older scope, or whose own `scope` is not the current one,
  * is dropped. A failure is retried every `retryMs` while the scope stays; 409 `scope_required`
- * reports `no_scope` and waits for the next scope.
+ * reports `no_scope` and waits for the next scope. An answer with `partial` (object scope,
+ * add-case-open K11) is reported and loaded again every `partialMs` until one is not partial.
  */
 export class CatalogLoader {
   private readonly fetchCatalog: (abort: AbortSignal) => Promise<CatalogSnapshot>;
   private readonly report: (r: CatalogReport) => void;
   private readonly retryMs: number;
+  private readonly partialMs: number;
   private key: string | undefined;
   private abort: AbortController | undefined;
   private retry: ReturnType<typeof setTimeout> | undefined;
@@ -32,10 +41,12 @@ export class CatalogLoader {
     fetchCatalog: (abort: AbortSignal) => Promise<CatalogSnapshot>,
     report: (r: CatalogReport) => void,
     retryMs: number = CATALOG_RETRY_MS,
+    partialMs: number = PARTIAL_RELOAD_MS,
   ) {
     this.fetchCatalog = fetchCatalog;
     this.report = report;
     this.retryMs = retryMs;
+    this.partialMs = partialMs;
   }
 
   /** The workspace's scope; a new scope key aborts the running load and fetches again. */
@@ -69,6 +80,11 @@ export class CatalogLoader {
       (snapshot) => {
         if (!current() || scopeKey(snapshot.scope) !== key) return;
         this.report({ kind: "loaded", snapshot });
+        if (snapshot.partial) {
+          this.retry = setTimeout(() => {
+            if (current()) this.load();
+          }, this.partialMs);
+        }
       },
       (e: unknown) => {
         if (!current()) return;

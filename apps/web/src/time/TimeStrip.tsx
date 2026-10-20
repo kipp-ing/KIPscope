@@ -1,16 +1,20 @@
 import {
+  type CaseCatalog,
   type CommandInput,
   type CommandResult,
   type Density,
   type DiagEvent,
+  type Drive,
   scopeKey,
+  type TimeRange,
   type Workspace,
   type WorkspaceScope,
   widenScope,
 } from "@kipscope/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
+import { alignToEvent } from "../case/sessionBar.ts";
 import { useLiveCursor } from "../chart/live.ts";
 import { clampRange, type Range } from "../chart/zoom.ts";
 import { groupMarks, type Mark, markStyle, markTitle } from "../events/marks.ts";
@@ -18,10 +22,20 @@ import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
 import { NO_SCOPE, SCOPE_HINTS, scopeRange, scopeText } from "./scope.ts";
-import { formatSpan, RETRY_MS, stripBars, stripDataRef, stripLabel } from "./strip.ts";
+import {
+  formatSpan,
+  nearbyHint,
+  nextWorkWindow,
+  RETRY_MS,
+  stripBars,
+  stripDataRef,
+  stripLabel,
+} from "./strip.ts";
 import {
   barTitle,
   brushRange,
+  caseMarks,
+  caseMarkTitle,
   centreRange,
   driveRects,
   driveTitle,
@@ -58,14 +72,111 @@ function densityKey(dataRef: string, scope: WorkspaceScope | undefined): string 
   return scope ? scopeKey(scope) : dataRef;
 }
 
-/** The key an answer belongs to: the scope it was computed for, else its data ref. */
+/** The key an answer belongs to: the scope it was computed for (a coarse one: an object scope), else its data ref. */
 function answerKey(d: Density): string {
-  return d.scope ? scopeKey({ dataRef: d.dataRef, ...d.scope }) : d.dataRef;
+  if (!d.scope) return d.dataRef;
+  const scope = { dataRef: d.dataRef, ...d.scope };
+  return scopeKey(d.coarse ? { ...scope, object: true } : scope);
 }
 
 /** The density of `dataRef` (within `scope`) if the strip loaded it (design S9: the drive keys read it). */
 export function loadedDensity(dataRef: string, scope?: WorkspaceScope): Density | undefined {
   return densities.get(densityKey(dataRef, scope));
+}
+
+/** Detail densities of object scopes (add-case-open K11), per scope key and work window, least recently used first. */
+const details = new Map<string, Density>();
+/** Detail densities kept in the tab, like the server's LRU 8. */
+const MAX_DETAILS = 8;
+/** The detail density the strip shows last, per object scope key: the drive keys step through it. */
+const shownDetails = new Map<string, Density>();
+
+/** Cache key of a detail density. */
+const detailKey = (scope: WorkspaceScope, w: TimeRange) => `${scopeKey(scope)}\n${w.from} ${w.to}`;
+
+function rememberDetail(key: string, d: Density): void {
+  details.delete(key);
+  details.set(key, d);
+  for (const old of details.keys()) {
+    if (details.size <= MAX_DETAILS) break;
+    details.delete(old);
+  }
+}
+
+/**
+ * The drives the strip shows for `dataRef` (design S9: `,` `.` step through them): in an object
+ * scope those of the work window's detail density (add-case-open K14), else the density's.
+ */
+export function loadedDrives(
+  dataRef: string,
+  scope?: WorkspaceScope,
+): readonly Drive[] | undefined {
+  if (scope?.object) return shownDetails.get(scopeKey(scope))?.drives;
+  return loadedDensity(dataRef, scope)?.drives;
+}
+
+/**
+ * The work window an object scope holds for the bar target's range (add-case-open K11): kept while
+ * the range stays inside it, so panning asks nothing new; undefined outside an object scope or
+ * without a range. App passes it to the strip and the events.
+ */
+export function useWorkWindow(
+  scope: WorkspaceScope | undefined,
+  view: { from: bigint; to: bigint } | undefined,
+): TimeRange | undefined {
+  const [held, setHeld] = useState<{ key: string; window: TimeRange }>();
+  if (!scope?.object || !view) return undefined;
+  const key = scopeKey(scope);
+  const kept = held?.key === key ? held.window : undefined;
+  const window = nextWorkWindow(kept, view, scope);
+  // The same bounds again (a view the scope cuts) keep the held window: no render loop.
+  if (kept && window.from === kept.from && window.to === kept.to) return kept;
+  setHeld({ key, window });
+  return window;
+}
+
+/** Fetches the detail density of a work window (K11), retried every RETRY_MS while it stays. */
+function useDetailDensity(
+  dataRef: string | undefined,
+  scope: WorkspaceScope | undefined,
+  window: TimeRange | undefined,
+): Density | undefined {
+  const key =
+    dataRef !== undefined && scope?.object && window ? detailKey(scope, window) : undefined;
+  const [loaded, setLoaded] = useState<{ key: string; density: Density }>();
+  const [attempt, setAttempt] = useState(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; key stands for dataRef, scope and window
+  useEffect(() => {
+    if (key === undefined || dataRef === undefined || !scope || !window) return;
+    const show = (density: Density) => {
+      shownDetails.set(scopeKey(scope), density);
+      setLoaded({ key, density });
+    };
+    const cached = details.get(key);
+    if (cached) {
+      rememberDetail(key, cached);
+      show(cached);
+      return;
+    }
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    fetchDensity(dataRef, abort.signal, window).then(
+      (density) => {
+        rememberDetail(key, density);
+        if (!abort.signal.aborted) show(density);
+      },
+      () => {
+        if (!abort.signal.aborted) timer = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
+      },
+    );
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
+  }, [key, attempt]);
+
+  return key !== undefined && loaded?.key === key ? loaded.density : undefined;
 }
 
 type Load =
@@ -165,6 +276,7 @@ const ZONE_CURSOR: Record<Zone["kind"], string> = {
   drive: "pointer",
   body: "grab",
   edge: "ew-resize",
+  session: "pointer",
 };
 
 /** Pointer shape per running drag (design S7). */
@@ -224,6 +336,9 @@ export function TimeStrip({
   drop,
   mode,
   onScopeCommand,
+  caseCatalog,
+  sessionBar,
+  workWindow,
 }: {
   workspace: Workspace;
   navigate?: StripNavigate | undefined;
@@ -235,12 +350,23 @@ export function TimeStrip({
   drop?: StripDrop | undefined;
   /** The server's catalog mode (meta); Clear shows in full mode only, `No scope set` in scoped mode (add-scope Z12). */
   mode?: "full" | "scoped" | undefined;
-  /** Sends Widen's `scope.set` and Clear's `scope.clear`; absent → no scope buttons. */
+  /** Sends Widen's `scope.set` and Clear's `scope.clear`, a mark's `case.go` and a pin's `case.align`; absent → no scope buttons. */
   onScopeCommand?: ((command: CommandInput) => Promise<CommandResult>) | undefined;
+  /** The open catalog (add-case-open K14): its sessions of the vehicle are marks in an object scope. */
+  caseCatalog?: CaseCatalog | undefined;
+  /** The session bar, shown in the head instead of the scope controls while a catalog is open. */
+  sessionBar?: ReactNode;
+  /** In an object scope: the work window of the bar target's range (`useWorkWindow`). */
+  workWindow?: TimeRange | undefined;
 }) {
   const scope = workspace.scope;
+  const open = workspace.case;
+  const object = scope?.object === true;
   const dataRef = stripDataRef(workspace);
   const load = useDensity(dataRef, scope);
+  const detail = useDetailDensity(dataRef, scope, object ? workWindow : undefined);
+  // The pin a right click opened `Align sessions to this event` for (K14), and where.
+  const [pinMenu, setPinMenu] = useState<{ pin: number; x: number }>();
   // A scope command on its way: Widen and Clear wait for its result.
   const [scopePending, setScopePending] = useState(false);
   const targetWindow = barTarget(workspace);
@@ -280,7 +406,17 @@ export function TimeStrip({
   );
 
   const tr = density && px > 0 ? trackOf(density, px) : undefined;
-  const drives = density?.drives ?? [];
+  // In an object scope the drive row shows the work window's drives (K14).
+  const driveDensity = object ? detail : density;
+  const drives = driveDensity?.drives ?? [];
+  const sessions = useMemo(
+    () =>
+      tr && object && scope && open && caseCatalog?.catalogId === open.catalogId
+        ? caseMarks(tr, caseCatalog.entries, scope.dataRef, open.current)
+        : [],
+    [tr, object, scope, open, caseCatalog],
+  );
+  const sessionHits = useMemo(() => sessions.map((m) => m.hit), [sessions]);
   const shownEvents = events?.shown;
   const marks = useMemo(() => {
     if (!density || px <= 0 || !shownEvents) return [];
@@ -374,8 +510,14 @@ export function TimeStrip({
           : false;
         break;
       }
+      case "session": {
+        const mark = sessions[a.mark];
+        if (mark && onScopeCommand) void onScopeCommand({ type: "case.go", index: mark.index });
+        lastClickSent.current = false;
+        break;
+      }
       case "fit": {
-        const drive = d.drives[a.drive];
+        const drive = drives[a.drive];
         lastClickSent.current = drive
           ? commit(() => ({ from: BigInt(drive.from), to: BigInt(drive.to) }), true)
           : false;
@@ -403,7 +545,8 @@ export function TimeStrip({
     e.preventDefault();
     endPress();
     const { x, y } = point(e);
-    gesture.down(x, y, hitZone(tr, x, y, shown, drives, pinHits), e.timeStamp);
+    setPinMenu(undefined);
+    gesture.down(x, y, hitZone(tr, x, y, shown, drives, pinHits, sessionHits), e.timeStamp);
     e.currentTarget.setPointerCapture(e.pointerId);
     const onKey = (k: KeyboardEvent) => {
       if (k.key !== "Escape") return;
@@ -434,7 +577,7 @@ export function TimeStrip({
       }
       return;
     }
-    const zone = hitZone(tr, x, y, shown, drives, pinHits);
+    const zone = hitZone(tr, x, y, shown, drives, pinHits, sessionHits);
     el.style.cursor = ZONE_CURSOR[zone.kind];
     setHoverDrive(zone.kind === "drive" ? zone.index : undefined);
   };
@@ -446,13 +589,45 @@ export function TimeStrip({
     const a = gesture.up(x, y, e.timeStamp);
     endPress();
     if (!interactive) return;
-    e.currentTarget.style.cursor = ZONE_CURSOR[hitZone(tr, x, y, shown, drives, pinHits).kind];
+    e.currentTarget.style.cursor =
+      ZONE_CURSOR[hitZone(tr, x, y, shown, drives, pinHits, sessionHits).kind];
     if (a) apply(a, tr, density);
   };
 
   const onPointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pressRef.current?.pointerId === e.pointerId) cancelPress();
   };
+
+  /** Right click on a pin while linked: the menu `Align sessions to this event` (K14). */
+  const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!tr || !open?.linked || !onScopeCommand) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const zone = hitZone(tr, x, e.clientY - rect.top, shown, drives, pinHits, sessionHits);
+    if (zone.kind !== "pin") return;
+    e.preventDefault();
+    setPinMenu({ pin: zone.index, x });
+  };
+
+  // The menu closes on Escape and on any press outside it.
+  useEffect(() => {
+    if (!pinMenu) return;
+    const onKey = (k: KeyboardEvent) => {
+      if (k.key === "Escape") setPinMenu(undefined);
+    };
+    const onDown = (p: PointerEvent) => {
+      if (!(p.target instanceof Element && p.target.closest(".time-strip-menu")))
+        setPinMenu(undefined);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [pinMenu]);
+  // Unlink, a step or new pins end the menu.
+  if (pinMenu && (!open?.linked || !marks[pinMenu.pin])) setPinMenu(undefined);
 
   const win = tr && shown ? windowRects(tr, shown)?.drawn : undefined;
   const brush =
@@ -485,7 +660,9 @@ export function TimeStrip({
         : {})}
     >
       <div className="time-strip-head">
-        {scope ? (
+        {open ? (
+          sessionBar
+        ) : scope ? (
           <>
             <span className="section-label">SCOPE</span>
             <span className="time-strip-scope" title={scopeText(scope)}>
@@ -530,25 +707,31 @@ export function TimeStrip({
           <button
             type="button"
             className="time-strip-events"
-            title={HINTS.eventsCount(events.shown.length, events.total, events.sentence)}
+            title={
+              object && workWindow
+                ? nearbyHint(workWindow)
+                : HINTS.eventsCount(events.shown.length, events.total, events.sentence)
+            }
             {...(onOpenEvents ? { onClick: onOpenEvents } : {})}
           >
-            {`${events.shown.length.toLocaleString("en-US")} of ${events.total.toLocaleString("en-US")} events`}
+            {`${events.shown.length.toLocaleString("en-US")} of ${events.total.toLocaleString("en-US")} events${object && workWindow ? " nearby" : ""}`}
           </button>
         )}
         <span
           className="time-strip-info"
           {...(density
             ? {
-                title: density.scope
-                  ? SCOPE_HINTS.info(
-                      formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)),
-                      formatSpan(BigInt(density.width)),
-                    )
-                  : HINTS.stripInfo(
-                      formatSpan(BigInt(density.last) - BigInt(density.first)),
-                      formatSpan(BigInt(density.width)),
-                    ),
+                // An object scope is the vehicle's whole recording, no window the user set (K14).
+                title:
+                  density.scope && !density.coarse
+                    ? SCOPE_HINTS.info(
+                        formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)),
+                        formatSpan(BigInt(density.width)),
+                      )
+                    : HINTS.stripInfo(
+                        formatSpan(BigInt(density.last) - BigInt(density.first)),
+                        formatSpan(BigInt(density.width)),
+                      ),
               }
             : load?.state === "failed"
               ? { title: load.message }
@@ -569,6 +752,7 @@ export function TimeStrip({
               onPointerCancel,
               onLostPointerCapture: onPointerCancel,
               onPointerLeave: () => setHoverDrive(undefined),
+              onContextMenu,
             }
           : {})}
       >
@@ -632,7 +816,7 @@ export function TimeStrip({
                 key={i}
                 className={hoverDrive === i ? "time-strip-drive hover" : "time-strip-drive"}
                 style={{ left: hit.left, width: hit.right - hit.left }}
-                title={driveTitle(density, i)}
+                title={driveDensity ? driveTitle(driveDensity, i) : undefined}
               >
                 <span
                   className="time-strip-drive-bar"
@@ -640,7 +824,48 @@ export function TimeStrip({
                 />
               </span>
             ))}
+          {open &&
+            caseCatalog &&
+            sessions.map(({ index, drawn, hit, left }) => {
+              const entry = caseCatalog.entries[index];
+              return (
+                entry && (
+                  <span
+                    key={index}
+                    className="time-strip-session"
+                    style={{ left: hit.left, width: hit.right - hit.left }}
+                    title={caseMarkTitle(entry, index, open.count)}
+                  >
+                    <span
+                      className={left ? "time-strip-session-bar left" : "time-strip-session-bar"}
+                      style={{ left: drawn.left - hit.left, width: drawn.right - drawn.left }}
+                    />
+                  </span>
+                )
+              );
+            })}
         </div>
+        {pinMenu && marks[pinMenu.pin] && (
+          <div
+            className="time-strip-menu"
+            role="menu"
+            style={{ left: pinMenu.x }}
+            // Not a strip gesture: the press belongs to the menu.
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const first = marks[pinMenu.pin]?.events[0];
+                setPinMenu(undefined);
+                if (first && onScopeCommand) void onScopeCommand(alignToEvent(first));
+              }}
+            >
+              Align sessions to this event
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

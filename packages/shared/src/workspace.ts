@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CaseEntry, WorkspaceCase } from "./case.ts";
 import { MAX_FILTER_LENGTH } from "./eventFilter.ts";
 import { fromIso, parseTimestamp, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
@@ -176,7 +177,30 @@ export interface WorkspaceScope {
   dataRef: string;
   from: string;
   to: string;
+  /** The vehicle's full extent after Unlink (add-case-open K11). */
+  object?: true;
 }
+
+/**
+ * Case schemas of add-case-open K2, defined here so the command schema needs no import cycle;
+ * case.ts re-exports them.
+ */
+/** What "Align to this event" stores (K7). text only for state changes (category "change"). */
+export const EventMatch = z.strictObject({
+  kind: z.string().min(1).max(64),
+  source: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  text: z.string().max(200).optional(),
+});
+export type EventMatch = z.infer<typeof EventMatch>;
+
+export const CaseAlign = z.discriminatedUnion("mode", [
+  z.strictObject({ mode: z.literal("start") }),
+  z.strictObject({ mode: z.literal("end") }),
+  z.strictObject({ mode: z.literal("anchor") }),
+  z.strictObject({ mode: z.literal("event"), event: EventMatch }),
+]);
+export type CaseAlign = z.infer<typeof CaseAlign>;
 
 export const isTimeseries = (w: WorkspaceWindow): w is TimeseriesWindow => w.kind === "timeseries";
 
@@ -206,6 +230,8 @@ export interface Workspace {
   view?: OpenView;
   /** One data ref and one time window that bound every source query (D-078); absent = none. */
   scope?: WorkspaceScope;
+  /** The open catalog (add-case-open K2, K6); the entries stay in GET /api/case. */
+  case?: WorkspaceCase;
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -370,6 +396,12 @@ export const Command = z.discriminatedUnion("type", [
     .object({ type: z.literal("scope.set"), dataRef: DataRef, from: TimeInput, to: TimeInput })
     .refine(scopeSpanOk, { message: SCOPE_SPAN_MESSAGE }),
   z.object({ type: z.literal("scope.clear") }),
+  /** Goes to a catalog entry (0-based) and links (add-case-open K6). */
+  z.object({ type: z.literal("case.go"), index: z.number().int().min(0) }),
+  z.object({ type: z.literal("case.step"), by: z.union([z.literal(-1), z.literal(1)]) }),
+  z.object({ type: z.literal("case.unlink") }),
+  /** `at`: the chosen event's time (UI); absent: the server resolves the point (K9). */
+  z.object({ type: z.literal("case.align"), align: CaseAlign, at: TimeInput.optional() }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -402,6 +434,16 @@ export type CommandErrorCode =
   | "scope_required"
   /** A cursor time outside the scope (design Z6). */
   | "out_of_scope"
+  /** A case command in a workspace without a catalog (add-case-open K6). */
+  | "no_case"
+  /** case.step past the first or last session, case.go with index ≥ count. */
+  | "case_end"
+  /** case.step, case.align or case.unlink while unlinked. */
+  | "case_unlinked"
+  /** scope.set or scope.clear while a catalog is open (Q-6 (a)). */
+  | "case_open"
+  /** case.align event without `at` and no match in the current session. */
+  | "no_matching_event"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */
@@ -418,6 +460,10 @@ export type CommandResult =
       report?: OpenReport;
       /** The command moved a range into the scope (design Z6). */
       clamped?: true;
+      /** case.go/step: signals the target session's list lacks (after rebinding), unique, sorted. */
+      missing?: string[];
+      /** case.go/step/align: the mode could not be resolved; aligned to the session start. */
+      alignFallback?: true;
     }
   | { ok: false; code: CommandErrorCode; message: string };
 
@@ -481,6 +527,33 @@ const NsTime = z.string().regex(/^-?\d{1,20}$/);
 const ExactText = (max: number) => z.string().max(max).exactOptional();
 
 const SignalAssignmentSchema = z.strictObject({ id: Id, signalId: Id });
+const NsRange = z.strictObject({ from: NsTime, to: NsTime });
+
+const CaseEntrySchema: z.ZodType<CaseEntry> = z.strictObject({
+  id: z.string().min(1).max(256),
+  object: z.string().min(1).max(128),
+  dataRef: Id,
+  kind: z.string().max(32).exactOptional(),
+  from: NsTime,
+  to: NsTime,
+  title: z.string().max(120).exactOptional(),
+  meta: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .exactOptional(),
+  anchor: NsTime.exactOptional(),
+});
+
+const WorkspaceCaseSchema: z.ZodType<WorkspaceCase> = z.strictObject({
+  catalogId: z.string().regex(/^[a-z0-9]{10}$/),
+  count: z.number().int().min(1),
+  current: z.number().int().min(0),
+  linked: z.boolean(),
+  pad: NsTime,
+  align: CaseAlign,
+  alignAt: NsTime,
+  linkedRanges: z.record(Id, NsRange).exactOptional(),
+  entry: CaseEntrySchema,
+});
 
 /** zod schema of a whole Workspace (state file, design V4); unknown keys rejected. */
 export const WorkspaceSchema: z.ZodType<Workspace> = z.strictObject({
@@ -548,5 +621,13 @@ export const WorkspaceSchema: z.ZodType<Workspace> = z.strictObject({
       modified: z.boolean(),
     })
     .exactOptional(),
-  scope: z.strictObject({ dataRef: Id, from: NsTime, to: NsTime }).exactOptional(),
+  scope: z
+    .strictObject({
+      dataRef: Id,
+      from: NsTime,
+      to: NsTime,
+      object: z.literal(true).exactOptional(),
+    })
+    .exactOptional(),
+  case: WorkspaceCaseSchema.exactOptional(),
 });

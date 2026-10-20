@@ -17,6 +17,7 @@ import {
 import { vi } from "vitest";
 import WebSocket from "ws";
 import { buildApp } from "../src/app.ts";
+import type { FinderConfig } from "../src/case.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { CatalogMode } from "../src/config.ts";
 import type { DataSource, Scope, SourceAdapter } from "../src/datasource.ts";
@@ -26,6 +27,7 @@ import type { IdentityAdapter } from "../src/identity.ts";
 import { CatalogStore, guardScoped, openScopes } from "../src/scope.ts";
 import { userViews } from "../src/views.ts";
 import { seedFor, WorkspaceRegistry } from "../src/workspaces.ts";
+import { finderConfig } from "./caseKit.ts";
 import { type Call, memoryAdapter, recording } from "./scopeApp.ts";
 import { testDbcFiles } from "./testdb.ts";
 
@@ -215,6 +217,12 @@ export interface MultiAppOptions {
   scopePad?: bigint;
   /** Content of `LICENSE` for `GET /api/license`. */
   licenseText?: string;
+  /**
+   * The finder handoff of add-case-open (K4), over the defaults of `finderConfig()` in
+   * `caseKit.ts` (no keys, issuer and audience of the test finder): passed to `buildApp` as `finder`,
+   * the way `main.ts` passes `config.finder`.
+   */
+  finder?: Partial<FinderConfig>;
   /** Registers more on the app before it is ready (a route a test adds). */
   extend?: (app: ReturnType<typeof buildApp>) => void;
 }
@@ -287,6 +295,7 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
       source,
       workspaces,
       viewsOf: userViews(stateDir),
+      finder: { ...finderConfig(), ...options.finder },
       ...(identity ? { identity, share: options.share ?? true } : {}),
       ...(options.webDir === undefined ? {} : { webDir: options.webDir }),
       ...(options.scopePad === undefined ? {} : { scopePad: options.scopePad }),

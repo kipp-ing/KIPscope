@@ -1,7 +1,11 @@
 import type { IncomingMessage } from "node:http";
 import {
   type ApiError,
+  type CaseCatalog,
+  type CaseEntry,
+  CLASS_HEADER,
   type CommandResult,
+  caseScope,
   type Grant,
   WORKSPACE_ID,
   type WorkspaceScope,
@@ -10,7 +14,9 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { z } from "zod";
 import { Catalog } from "./catalog.ts";
 import type { DataSource, Scope } from "./datasource.ts";
+import type { CacheScope } from "./density.ts";
 import { type RequestUser, requestGrant, requestUser, requestWorkspace } from "./guard.ts";
+import { currentPriority, lowerClass, withPriority } from "./priority.ts";
 import { type CatalogView, catalogView } from "./rights.ts";
 import { CatalogStore, openScopes, scopeOf, sourceScope } from "./scope.ts";
 import type { WorkspaceEntry, Workspaces } from "./workspaces.ts";
@@ -53,6 +59,12 @@ export interface ScopeDeps {
   catalogs?: CatalogStore;
   /** `KIPSCOPE_SCOPE_PAD` in ns; default config's DEFAULT_SCOPE_PAD. */
   scopePad?: bigint;
+  /**
+   * The open catalog of a workspace by its ID (add-case-open K9, K10), for `case=N` on
+   * `/api/series` and `/api/extent`; without it only the current entry (`workspace.case.entry`)
+   * is known.
+   */
+  caseCatalog?: (workspaceId: string) => CaseCatalog | undefined;
 }
 
 const defaultStores = new WeakMap<object, CatalogStore>();
@@ -82,9 +94,13 @@ const prefetchChains = new WeakMap<object, Promise<void>>();
 /**
  * Runs `job` after every job queued before for the same deps, so a scope's density, gap info and
  * events prefetches run one after another (add-scope Z9); a failing job does not stop the chain.
+ * The job runs as `background`, or lower when the work that queued it ran lower: a preview's load
+ * keeps its prefetch in `preload` (D-081, add-case-open K10).
  */
 export function chainPrefetch(deps: ScopeDeps, job: () => Promise<unknown>): void {
-  const next = (prefetchChains.get(deps) ?? Promise.resolve()).then(job).then(
+  const cls = lowerClass("background", currentPriority().cls);
+  const run = () => withPriority(cls, job);
+  const next = (prefetchChains.get(deps) ?? Promise.resolve()).then(run).then(
     () => {},
     () => {},
   );
@@ -178,6 +194,81 @@ export function routeScope(
   }
   if (!catalogs.get(scope)?.loadedAt) catalogs.load(scope).catch(() => {});
   return { scope, source: sourceScope(scope), catalog: view(catalogs.get(scope)) };
+}
+
+/** The cache form of a workspace scope: the source form plus the object flag (add-case-open K11). */
+export function cacheScopeOf(scope: WorkspaceScope): CacheScope {
+  const s: CacheScope = sourceScope(scope);
+  if (scope.object) s.object = true;
+  return s;
+}
+
+/**
+ * The query class a request asks for with `X-KIPscope-Class` (add-case-open K10): `preload` for
+ * that value only; any other value leaves the request `interactive`.
+ */
+export function requestClass(request: FastifyRequest): "preload" | undefined {
+  return request.headers[CLASS_HEADER] === "preload" ? "preload" : undefined;
+}
+
+/**
+ * Runs a route's source work in the request's class (K10): under `withPriority("preload")` when
+ * it asked for `preload`, else as today. Only `/api/series`, `/api/extent` and
+ * `/api/case/preview` call it, so the header on another route is ignored.
+ */
+export function withRequestClass<T>(request: FastifyRequest, fn: () => T): T {
+  return requestClass(request) ? withPriority("preload", fn) : fn();
+}
+
+/**
+ * `routeScope` for `case=N` (add-case-open K10): the scope `caseScope(entry, pad)` of catalog
+ * entry N instead of the workspace's, with that scope's signal list, waited for when it is not
+ * loaded (the session is not shown yet; its preload asks first). Answers 404 `no_case` without a
+ * catalog, 400 `invalid_request` for N ≥ count and 503 `catalog_unavailable` when the list does
+ * not load, and then returns undefined.
+ */
+export async function caseRouteScope(
+  deps: ScopeDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  index: number,
+): Promise<RouteScope | undefined> {
+  const workspace = workspaceOf(request);
+  const open = workspace.store.workspace.case;
+  if (!open) {
+    apiError(reply, 404, "no_case", "this workspace has no open catalog");
+    return undefined;
+  }
+  if (index >= open.count) {
+    apiError(reply, 400, "invalid_request", `case: the catalog has ${open.count} entries`);
+    return undefined;
+  }
+  const entry: CaseEntry | undefined =
+    deps.caseCatalog?.(workspace.record.id)?.entries[index] ??
+    (index === open.current ? open.entry : undefined);
+  if (!entry) {
+    apiError(reply, 404, "no_case", "the workspace's catalog is not available");
+    return undefined;
+  }
+  const scope = caseScope(entry, BigInt(open.pad));
+  let catalog: Catalog;
+  try {
+    catalog = await catalogsOf(deps).load(scope);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    apiError(
+      reply,
+      503,
+      "catalog_unavailable",
+      `the session's signal list did not load: ${message}`,
+    );
+    return undefined;
+  }
+  return {
+    scope,
+    source: sourceScope(scope),
+    catalog: catalog && catalogView(catalog, grantOf(request)),
+  };
 }
 
 /** 409 of a route in scoped mode without a scope (add-scope Z10). */

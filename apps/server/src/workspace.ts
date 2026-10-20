@@ -134,6 +134,8 @@ export class WorkspaceStore {
     if (result.removedWindow !== undefined) answer.removedWindow = result.removedWindow;
     if (result.report !== undefined) answer.report = result.report;
     if (result.clamped) answer.clamped = true;
+    if (result.missing !== undefined) answer.missing = result.missing;
+    if (result.alignFallback) answer.alignFallback = true;
     return answer;
   }
 

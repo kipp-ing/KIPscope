@@ -6,6 +6,7 @@
 import {
   createHmac,
   createSign,
+  sign as cryptoSign,
   generateKeyPairSync,
   type KeyObject,
   randomBytes,
@@ -13,7 +14,7 @@ import {
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-export type TestAlg = "RS256" | "ES256";
+export type TestAlg = "RS256" | "ES256" | "EdDSA";
 
 export interface TestKey {
   kid: string;
@@ -34,7 +35,9 @@ export function makeKey(
   const pair =
     alg === "RS256"
       ? generateKeyPairSync("rsa", { modulusLength: 2048 })
-      : generateKeyPairSync("ec", { namedCurve: "P-256" });
+      : alg === "EdDSA"
+        ? generateKeyPairSync("ed25519")
+        : generateKeyPairSync("ec", { namedCurve: "P-256" });
   const jwk = { ...pair.publicKey.export({ format: "jwk" }), kid, alg, use: "sig" };
   return { kid, alg, privateKey: pair.privateKey, publicKey: pair.publicKey, jwk };
 }
@@ -71,9 +74,11 @@ export function signToken(
   const signer = createSign("sha256");
   signer.update(`${head}.${body}`);
   const signature =
-    key.alg === "RS256"
-      ? signer.sign(key.privateKey)
-      : signer.sign({ key: key.privateKey, dsaEncoding: "ieee-p1363" });
+    key.alg === "EdDSA"
+      ? cryptoSign(null, Buffer.from(`${head}.${body}`), key.privateKey)
+      : key.alg === "RS256"
+        ? signer.sign(key.privateKey)
+        : signer.sign({ key: key.privateKey, dsaEncoding: "ieee-p1363" });
   return `${head}.${body}.${b64(signature)}`;
 }
 

@@ -18,12 +18,15 @@ import {
   type SignalInfo,
   type SkipReason,
   shownName,
+  type TimeRange,
   toggleCategory,
   toggleSource,
 } from "@kipscope/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { alignToEvent } from "../case/sessionBar.ts";
 import type { Range } from "../chart/zoom.ts";
 import { formatTime } from "../time/axis.ts";
+import { nearbyHint } from "../time/strip.ts";
 import { appliedFilter, previewedFilter } from "./eventsData.ts";
 import {
   dayBands,
@@ -64,6 +67,10 @@ interface Props {
   cursorA: bigint | undefined;
   /** Bumped by App to open Refine and focus the filter field with its text selected (key `e`, the strip's count). */
   focus: number;
+  /** In an object scope: the work window the list covers; the second switch reads `Nearby` (add-case-open K14). */
+  nearby?: TimeRange | undefined;
+  /** A linked catalog is open: each event row offers `Align` (K14). */
+  caseLinked?: boolean | undefined;
 }
 
 /** Text after a skipped events-line signal (design V8). */
@@ -79,6 +86,7 @@ const TITLES = {
   inView: "In view: list the events in the window's time range",
   inViewOff: "In view: needs a window with a time range",
   all: "All: list every event that matches the filter",
+  align: "Align sessions to this event: every step puts its first match at the same place",
   refine: "Refine: filter field, category and ECU chips, signals on the events line · e",
   earlier: "Earlier events: put cursor A on the nearest one · p",
   later: "Later events: put cursor A on the nearest one · n",
@@ -164,6 +172,8 @@ export function EventsPanel({
   onJump,
   cursorA,
   focus,
+  nearby,
+  caseLinked,
 }: Props) {
   // The typed text while the user edits; undefined shows the workspace filter.
   const [draft, setDraft] = useState<string | undefined>();
@@ -295,7 +305,7 @@ export function EventsPanel({
     const n = (seen.get(id) ?? 0) + 1;
     seen.set(id, n);
     const line2 = rowText(e);
-    return (
+    const row = (
       <button
         key={`${id}|${n}`}
         type="button"
@@ -317,13 +327,32 @@ export function EventsPanel({
         </span>
       </button>
     );
+    if (!caseLinked) return row;
+    // The row action sits beside the row's button, not inside it (K14: hover and focus).
+    return (
+      <div key={`${id}|${n}`} className="events-row-wrap">
+        {row}
+        <button
+          type="button"
+          className="events-align"
+          title={TITLES.align}
+          onClick={() => void onCommand(alignToEvent(e))}
+        >
+          Align
+        </button>
+      </div>
+    );
   };
 
   const readRow = (item: Extract<ListItem, { kind: "read" }>) => {
     const id = `${item.t}|${item.source}`;
     const open = expanded.has(id);
+    const first = item.events[0];
     return (
-      <div key={`read|${id}`} className="events-read">
+      <div
+        key={`read|${id}`}
+        className={caseLinked && first ? "events-read events-row-wrap" : "events-read"}
+      >
         <button type="button" className={rowClass(item.t)} title={READ_LINE} onClick={jump(item.t)}>
           <span className="events-row-head">
             <span className="events-glyph" style={glyphStyle(readCategory(item.events), true)} />
@@ -342,6 +371,17 @@ export function EventsPanel({
         >
           {open ? "▾" : "▸"}
         </button>
+        {caseLinked && first && (
+          // A read's DTCs share its time: its first one aligns (K14, as a pin of several events).
+          <button
+            type="button"
+            className="events-align read"
+            title={TITLES.align}
+            onClick={() => void onCommand(alignToEvent(first))}
+          >
+            Align
+          </button>
+        )}
         {open &&
           item.events.map((e) => {
             // A code can repeat within one readout; a running number keeps keys unique.
@@ -379,10 +419,11 @@ export function EventsPanel({
             type="button"
             className="events-seg"
             aria-pressed={!view}
-            title={TITLES.all}
+            title={nearby ? nearbyHint(nearby) : TITLES.all}
             onClick={() => chooseScope("all")}
           >
-            All{list && <span className="events-scope-n">{` ${count(shown.length)}`}</span>}
+            {nearby ? "Nearby" : "All"}
+            {list && <span className="events-scope-n">{` ${count(shown.length)}`}</span>}
           </button>
         </div>
       </div>

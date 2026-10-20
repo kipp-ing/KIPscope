@@ -6,9 +6,15 @@ import {
   MAX_GAP_SIGNALS,
   parseSignalId,
   type SeriesResult,
+  type TimeRange,
+  type WorkspaceScope,
+  workWindow,
 } from "@kipscope/shared";
 import { useCallback, useSyncExternalStore } from "react";
 import { fetchGaps, isCatalogLoading } from "../api.ts";
+
+/** Scope keys whose extents and gap info are kept (add-case-open K12; the server keeps 4 scope lists too). */
+export const SCOPE_STORES = 4;
 
 /** A failed gap info is fetched again after this long while a window still asks for it (G7). */
 export const GAP_RETRY_MS = 30_000;
@@ -64,6 +70,26 @@ function byDataRef(signalIds: readonly string[]): Map<string, string[]> {
 /** The signals a fetch of `entry` names: the first MAX_GAP_SIGNALS asked (P8). */
 const toName = (entry: Entry) => [...entry.asks.keys()].slice(0, MAX_GAP_SIGNALS);
 
+/** Work windows of one data ref kept unasked per scope key (the server keeps 8, K11). */
+const KEPT_WINDOWS = 8;
+
+/** Fetches the gap info of a data ref; `window` only in an object scope (add-case-open K11). */
+export type FetchGapInfo = (
+  dataRef: string,
+  signals: readonly string[],
+  window?: TimeRange,
+) => Promise<GapInfo>;
+
+/** Where an entry belongs: the scope key, the data ref and, in an object scope, the work window. */
+interface Place {
+  scope: string;
+  ref: string;
+  window?: TimeRange | undefined;
+}
+
+const windowText = (w: TimeRange | undefined) => (w ? `${w.from}|${w.to}` : "");
+const entryKey = (p: Place) => `${p.scope}\n${p.ref}\n${windowText(p.window)}`;
+
 /**
  * Gap info per data ref for one browser tab (design G7, improve-query-priority P8): one request in
  * flight per data ref, shared by every window, naming the first MAX_GAP_SIGNALS signals the
@@ -74,17 +100,21 @@ const toName = (entry: Entry) => [...entry.asks.keys()].slice(0, MAX_GAP_SIGNALS
  * (G9 (c)): replaced only by a different answer, kept on a failure without an error.
  */
 export class GapInfoStore {
-  private readonly entries = new Map<string, Entry>();
+  /** By entryKey: per scope key and data ref (and work window in an object scope, K12). */
+  private readonly entries = new Map<string, Entry & { place: Place }>();
   private readonly listeners = new Set<() => void>();
-  // States by signal ID key, stable until one of their data refs changes (useSyncExternalStore).
+  // States by place and signal ID key, stable until one of their entries changes (useSyncExternalStore).
   private readonly snapshots = new Map<string, { refs: string[]; state: GapInfoState }>();
+  /** Scope keys whose gap info is kept, least recently used first (K12). */
+  private readonly scopes: string[] = [];
 
-  private readonly fetchInfo: (dataRef: string, signals: readonly string[]) => Promise<GapInfo>;
+  private readonly fetchInfo: FetchGapInfo;
   private readonly retryMs: number;
   private readonly refreshMs: number;
 
   constructor(
-    fetchInfo: (dataRef: string, signals: readonly string[]) => Promise<GapInfo> = fetchGaps,
+    fetchInfo: FetchGapInfo = (dataRef, signals, window) =>
+      fetchGaps(dataRef, signals, undefined, window),
     retryMs = GAP_RETRY_MS,
     refreshMs = GAP_REFRESH_MS,
   ) {
@@ -93,15 +123,52 @@ export class GapInfoStore {
     this.refreshMs = refreshMs;
   }
 
-  /** Asks for `signalIds` until the returned release is called; `listener` hears every change. */
-  ask(signalIds: readonly string[], listener: () => void): () => void {
-    const refs = byDataRef(idsOf(keyOf(signalIds)));
+  /**
+   * The workspace entered scope `key` (`enterScope`): it becomes the most recently used; the gap
+   * info of the least recently used beyond SCOPE_STORES scope keys is forgotten unless asked (K12).
+   */
+  enter(key: string): void {
+    const at = this.scopes.indexOf(key);
+    if (at >= 0) this.scopes.splice(at, 1);
+    this.scopes.push(key);
+    while (this.scopes.length > SCOPE_STORES) {
+      const dropped = this.scopes.shift();
+      for (const [k, entry] of this.entries) {
+        if (entry.place.scope === dropped && entry.asks.size === 0) this.drop(k, entry);
+      }
+    }
+  }
+
+  private drop(key: string, entry: Entry): void {
+    clearTimeout(entry.retry);
+    clearTimeout(entry.refresh);
+    this.entries.delete(key);
+    this.invalidate(key);
+  }
+
+  /**
+   * Asks for `signalIds` under scope key `scope` (in an object scope with its work `window`) until
+   * the returned release is called; `listener` hears every change.
+   */
+  ask(
+    signalIds: readonly string[],
+    listener: () => void,
+    scope = "",
+    window?: TimeRange,
+  ): () => void {
+    const refs = new Map(
+      [...byDataRef(idsOf(keyOf(signalIds)))].map(([ref, ids]) => {
+        const place: Place = { scope, ref, window };
+        return [entryKey(place), { place, ids }] as const;
+      }),
+    );
     this.listeners.add(listener);
-    for (const [ref, ids] of refs) {
+    for (const [ref, { place, ids }] of refs) {
       let entry = this.entries.get(ref);
       if (!entry) {
-        entry = { loading: false, asks: new Map(), named: new Set() };
+        entry = { loading: false, asks: new Map(), named: new Set(), place };
         this.entries.set(ref, entry);
+        if (window) this.trimWindows(place);
       }
       for (const id of ids) entry.asks.set(id, (entry.asks.get(id) ?? 0) + 1);
       // A loaded info whose refetch fell due while nobody asked is fetched again now.
@@ -111,7 +178,7 @@ export class GapInfoStore {
     }
     return () => {
       this.listeners.delete(listener);
-      for (const [ref, ids] of refs) {
+      for (const [ref, { ids }] of refs) {
         const entry = this.entries.get(ref);
         if (!entry) continue;
         for (const id of ids) {
@@ -125,40 +192,57 @@ export class GapInfoStore {
     };
   }
 
+  /** Keeps at most KEPT_WINDOWS unasked work windows of `place`'s scope and data ref. */
+  private trimWindows(place: Place): void {
+    const unasked = [...this.entries].filter(
+      ([, e]) =>
+        e.place.scope === place.scope &&
+        e.place.ref === place.ref &&
+        e.place.window !== undefined &&
+        e.asks.size === 0,
+    );
+    for (const [k, entry] of unasked.slice(0, Math.max(0, unasked.length - KEPT_WINDOWS))) {
+      this.drop(k, entry);
+    }
+  }
+
   /**
-   * The workspace's scope changed (add-scope Z12): every asked data ref is fetched again now (a
-   * fetch in flight drops its answer first), and data refs nobody asks for are forgotten.
+   * Fetches every asked entry again now (a fetch in flight drops its answer first), and forgets
+   * entries nobody asks for.
    */
   reload(): void {
     for (const [ref, entry] of this.entries) {
-      if (entry.asks.size === 0) {
-        clearTimeout(entry.retry);
-        clearTimeout(entry.refresh);
-        this.entries.delete(ref);
-        this.invalidate(ref);
-      } else if (entry.loading) entry.again = true;
+      if (entry.asks.size === 0) this.drop(ref, entry);
+      else if (entry.loading) entry.again = true;
       else this.load(ref, entry);
     }
   }
 
-  /** The state of `signalIds`' data refs; the same object until one of them changes. */
-  state(signalIds: readonly string[]): GapInfoState {
+  /**
+   * The state of `signalIds`' data refs under scope key `scope` (and work `window`); the same
+   * object until one of them changes.
+   */
+  state(signalIds: readonly string[], scope = "", window?: TimeRange): GapInfoState {
     const key = keyOf(signalIds);
-    let snapshot = this.snapshots.get(key);
+    const snapshotKey = `${scope}\n${windowText(window)}\n${key}`;
+    let snapshot = this.snapshots.get(snapshotKey);
     if (!snapshot) {
       const infos = new Map<string, GapInfo>();
       const errors: GapInfoState["errors"] = [];
       let settled = true;
       const refs = byDataRef(idsOf(key));
+      const keys: string[] = [];
       for (const [ref, ids] of refs) {
-        const entry = this.entries.get(ref);
+        const k = entryKey({ scope, ref, window });
+        keys.push(k);
+        const entry = this.entries.get(k);
         if (entry?.info) infos.set(ref, entry.info);
         if (entry && this.covered(entry, ids)) continue;
         if (entry?.error !== undefined) errors.push({ dataRef: ref, message: entry.error });
         else settled = false;
       }
-      snapshot = { refs: [...refs.keys()], state: { infos, errors, settled } };
-      this.snapshots.set(key, snapshot);
+      snapshot = { refs: keys, state: { infos, errors, settled } };
+      this.snapshots.set(snapshotKey, snapshot);
     }
     return snapshot.state;
   }
@@ -174,13 +258,13 @@ export class GapInfoStore {
   }
 
   /** Fetches again, at once or after the fetch in flight, when a signal to name is not named yet. */
-  private follow(ref: string, entry: Entry): void {
+  private follow(ref: string, entry: Entry & { place: Place }): void {
     this.invalidate(ref);
     // With a fetch in flight, its answer handler checks again (`next`).
     if (!entry.loading && toName(entry).some((id) => !entry.named.has(id))) this.load(ref, entry);
   }
 
-  private load(ref: string, entry: Entry): void {
+  private load(ref: string, entry: Entry & { place: Place }): void {
     clearTimeout(entry.retry);
     clearTimeout(entry.refresh);
     delete entry.retry;
@@ -195,7 +279,11 @@ export class GapInfoStore {
       if (this.entries.get(ref) === entry && entry.asks.size > 0) this.load(ref, entry);
       return true;
     };
-    this.fetchInfo(ref, names).then(
+    const { place } = entry;
+    (place.window
+      ? this.fetchInfo(place.ref, names, place.window)
+      : this.fetchInfo(place.ref, names)
+    ).then(
       (info) => {
         entry.loading = false;
         if (stale()) return;
@@ -242,7 +330,7 @@ export class GapInfoStore {
   }
 
   /** After a fetch: at once for a signal asked meanwhile, else the next refetch. */
-  private next(ref: string, entry: Entry): void {
+  private next(ref: string, entry: Entry & { place: Place }): void {
     if (entry.asks.size > 0 && toName(entry).some((id) => !entry.named.has(id))) {
       this.load(ref, entry);
       return;
@@ -269,17 +357,55 @@ export class GapInfoStore {
 export const gapInfoStore = new GapInfoStore();
 
 /**
- * Gap info of the data refs of `signalIds` from the tab's store; asks for those signals while the
- * component is mounted. Never holds back a draw: a signal without its period yet splits at logger
- * gaps only until the answer is in (P8).
+ * The work window to ask gap info for in an object scope (K11): `held` while it still contains
+ * `view`, else the work window around `view`; undefined outside an object scope.
  */
-export function useGapInfo(signalIds: readonly string[]): GapInfoState {
+export function heldWorkWindow(
+  held: TimeRange | undefined,
+  view: TimeRange,
+  scope: WorkspaceScope | undefined,
+): TimeRange | undefined {
+  if (!scope?.object) return undefined;
+  const inside =
+    held !== undefined &&
+    BigInt(held.from) <= BigInt(view.from) &&
+    BigInt(view.to) <= BigInt(held.to);
+  return inside ? held : workWindow(view, scope);
+}
+
+/**
+ * Gap info of the data refs of `signalIds` under scope key `scope` (in an object scope of the work
+ * `window`, K11) from the tab's store; asks for those signals while the component is mounted.
+ * Never holds back a draw: a signal without its period yet splits at logger gaps only until the
+ * answer is in (P8).
+ */
+export function useGapInfo(
+  signalIds: readonly string[],
+  scope = "",
+  window?: TimeRange,
+): GapInfoState {
   const key = keyOf(signalIds);
+  const from = window?.from;
+  const to = window?.to;
   const subscribe = useCallback(
-    (onChange: () => void) => gapInfoStore.ask(idsOf(key), onChange),
-    [key],
+    (onChange: () => void) =>
+      gapInfoStore.ask(
+        idsOf(key),
+        onChange,
+        scope,
+        from !== undefined && to !== undefined ? { from, to } : undefined,
+      ),
+    [key, scope, from, to],
   );
-  const snapshot = useCallback(() => gapInfoStore.state(idsOf(key)), [key]);
+  const snapshot = useCallback(
+    () =>
+      gapInfoStore.state(
+        idsOf(key),
+        scope,
+        from !== undefined && to !== undefined ? { from, to } : undefined,
+      ),
+    [key, scope, from, to],
+  );
   return useSyncExternalStore(subscribe, snapshot);
 }
 

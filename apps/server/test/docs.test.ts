@@ -79,6 +79,50 @@ describe("documents", () => {
       expect(read(file), `${file} names KIPSCOPE_SESSION`).not.toMatch(/KIPSCOPE_SESSION/);
   });
 
+  it("documents the handoff", () => {
+    // add-case-open K16: the guide for the finder's implementers.
+    const guide = read("docs/handoff.md");
+    // Every top-level key and every session key of the catalog document (design K2).
+    for (const key of [
+      "kipscope",
+      "version",
+      "origin",
+      "current",
+      "pad",
+      "align",
+      "view",
+      "cases",
+      "id",
+      "object",
+      "kind",
+      "from",
+      "to",
+      "title",
+      "meta",
+      "anchor",
+    ])
+      expect(guide, `docs/handoff.md names the key ${key}`).toContain(`\`${key}\``);
+    // Every claim of the signed payload, the header and the encoding.
+    for (const claim of ["iss", "aud", "sub", "iat", "exp", "cases"])
+      expect(guide, `docs/handoff.md names the claim ${claim}`).toContain(`\`${claim}\``);
+    for (const word of [
+      "typ",
+      "kipscope-cases",
+      "deflate-raw",
+      'target="kipscope"',
+      "EdDSA",
+      "ES256",
+      "KIPSCOPE_FINDER_JWKS",
+      "8,192",
+      "signature_required",
+      "invalid_signature",
+      "wrong_user",
+    ])
+      expect(guide, `docs/handoff.md names ${word}`).toContain(word);
+    // The README links it.
+    expect(read("README.md"), "README links the handoff guide").toContain("docs/handoff.md");
+  });
+
   it("documents the scope argument", () => {
     const guide = read("docs/data-sources.md");
     // The section "Scope" (a heading line that is just that word).

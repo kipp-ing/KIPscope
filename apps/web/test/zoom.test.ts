@@ -14,7 +14,12 @@ import {
   ZOOM_HISTORY_LIMIT,
   ZoomHistory,
 } from "../src/chart/zoom.ts";
-import { CLAMP_MESSAGE, resultStripEvents } from "../src/time/scope.ts";
+import {
+  CLAMP_MESSAGE,
+  resultStripEvents,
+  SESSION_CLAMP_MESSAGE,
+  VEHICLE_CLAMP_MESSAGE,
+} from "../src/time/scope.ts";
 import { nextStrip, type StripItem } from "../src/views/notice.ts";
 
 const MIN = -2_208_988_800_000_000_000n; // 1900-01-01T00:00:00Z
@@ -463,5 +468,62 @@ describe("range stopped at the scope edge (add-scope)", () => {
     expect(refused).toEqual({ tone: "error", text: "out_of_scope: cursor A outside the scope" });
     // A clamp replaces an older error.
     expect(slotAfter(refused, { ok: true, revision: 12, clamped: true })?.text).toBe(CLAMP_MESSAGE);
+  });
+});
+
+describe("range stopped at the session edge (add-case-open)", () => {
+  const slotAfter = (slot: StripItem | undefined, result: CommandResult, c?: { linked: boolean }) =>
+    resultStripEvents(result, c).reduce(nextStrip, slot);
+
+  it("reports a range stopped at the session edge", () => {
+    expect(SESSION_CLAMP_MESSAGE).toBe(
+      "Stopped at the session edge. Unlink shows the whole vehicle.",
+    );
+    expect(VEHICLE_CLAMP_MESSAGE).toBe("Stopped at the end of the vehicle's data.");
+    const result: CommandResult = { ok: true, revision: 9, clamped: true };
+    // With a linked catalog, then with the catalog unlinked.
+    expect(slotAfter(undefined, result, { linked: true })?.text).toBe(
+      "Stopped at the session edge. Unlink shows the whole vehicle.",
+    );
+    expect(slotAfter(undefined, result, { linked: false })?.text).toBe(
+      "Stopped at the end of the vehicle's data.",
+    );
+    // Without a catalog the scope's message stays.
+    expect(slotAfter(undefined, result)?.text).toBe(CLAMP_MESSAGE);
+    // Every one of the messages ends with the next accepted command.
+    for (const linked of [true, false]) {
+      const shown = slotAfter(undefined, result, { linked });
+      expect(slotAfter(shown, { ok: true, revision: 10 }, { linked })).toBeUndefined();
+    }
+    // A message of the other state is ended as well (Unlink after a clamp).
+    const linked = slotAfter(undefined, result, { linked: true });
+    expect(slotAfter(linked, { ok: true, revision: 10 }, { linked: false })).toBeUndefined();
+  });
+
+  it("keeps the zoom history per session", () => {
+    const r = (n: number) => ({ from: BigInt(n), to: BigInt(n) + 10n });
+    const histories = new Map<string, ZoomHistory>();
+    const of = (index: number) => {
+      const key = historyKey(true, "w1", index);
+      const h = histories.get(key) ?? new ZoomHistory();
+      histories.set(key, h);
+      return h;
+    };
+    // Entry 0: two zooms push the ranges shown before them.
+    of(0).push(r(1));
+    of(0).push(r(2));
+    // A step pushes no entry: entry 2 starts with an empty history.
+    expect(of(2).size).toBe(0);
+    of(2).push(r(30));
+    // Back at entry 0, Back gives the range before its second zoom, then the one before its first.
+    expect(of(0).back()).toEqual(r(2));
+    expect(of(0).back()).toEqual(r(1));
+    expect(of(0).back()).toBeUndefined();
+    // Entry 2's history was kept apart.
+    expect(of(2).back()).toEqual(r(30));
+    // Keys differ per session and per window, and match without a session as before.
+    expect(historyKey(true, "w1", 0)).not.toBe(historyKey(true, "w1", 2));
+    expect(historyKey(false, "w1", 0)).not.toBe(historyKey(false, "w2", 0));
+    expect(historyKey(true, "w1")).toBe(historyKey(true, "w2"));
   });
 });

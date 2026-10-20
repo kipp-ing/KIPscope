@@ -9,12 +9,23 @@ import { describe, expect, it } from "vitest";
 import {
   BAR_PX,
   formatSpan,
+  nearbyHint,
+  nextWorkWindow,
   RETRY_MS,
   stripBars,
   stripDataRef,
   stripLabel,
 } from "../src/time/strip.ts";
+import {
+  BARS_PX,
+  caseMarks,
+  caseMarkTitle,
+  hitZone,
+  StripGesture,
+  trackOf,
+} from "../src/time/stripGeometry.ts";
 import { stripDropText } from "../src/time/TimeStrip.tsx";
+import { at, C4_ENTRIES } from "./caseFixtures.ts";
 
 const S = 1_000_000_000n;
 const MIN = 60n * S;
@@ -182,5 +193,112 @@ describe("strip drop text for a selection", () => {
     expect(stripDropText({ name: "3 signals", ok: true })).toBe(
       "Drop to mark state changes of 3 signals",
     );
+  });
+});
+
+describe("strip in an object scope (add-case-open)", () => {
+  const DAYS = 86_400n * S;
+  const ms = (y: number, m: number, d: number, h = 0, min = 0) =>
+    BigInt(Date.UTC(y, m - 1, d, h, min)) * 1_000_000n;
+
+  it("labels an object scope", () => {
+    // 400 days in 7-day bars, a 10-minute view.
+    const first = ms(2025, 8, 1);
+    const last = first + 400n * DAYS - 1n;
+    const coarse = density({
+      first: first.toString(),
+      last: last.toString(),
+      width: (7n * DAYS).toString(),
+      start: first.toString(),
+      scope: { from: first.toString(), to: (last + 1n).toString() },
+      coarse: true,
+    });
+    expect(stripLabel(coarse, { from: ms(2026, 6, 10, 12), to: ms(2026, 6, 10, 12, 10) })).toBe(
+      "10 min of 1.1 y recorded · 1 bar = 7 d",
+    );
+    // A scope's density that is not coarse still reads "in scope".
+    expect(
+      stripLabel(
+        density({ scope: { from: "0", to: (2n * H).toString() }, width: (30n * S).toString() }),
+        { from: 0n, to: 10n * MIN },
+      ),
+    ).toBe("10 min of 2 h in scope · 1 bar = 30 s");
+  });
+
+  it("asks the detail density for the work window", () => {
+    const scope = {
+      dataRef: "longcar",
+      from: ms(2025, 8, 1).toString(),
+      to: ms(2026, 9, 5).toString(),
+      object: true as const,
+    };
+    const view = (from: bigint, span: bigint) => ({ from, to: from + span });
+    // A 10-minute view: three days on day edges.
+    const start = ms(2026, 6, 10, 12);
+    const held = nextWorkWindow(undefined, view(start, 10n * MIN), scope);
+    expect(held).toEqual({ from: ms(2026, 6, 9).toString(), to: ms(2026, 6, 12).toString() });
+    // A pan by one hour stays inside the window: the same window, nothing new to ask.
+    expect(nextWorkWindow(held, view(start + H, 10n * MIN), scope)).toBe(held);
+    // A jump of ten days leaves it: a new window around the new view.
+    const jumped = nextWorkWindow(held, view(start + 10n * DAYS, 10n * MIN), scope);
+    expect(jumped).not.toEqual(held);
+    expect(jumped).toEqual({ from: ms(2026, 6, 19).toString(), to: ms(2026, 6, 22).toString() });
+    expect(nearbyHint(held)).toBe("Events within 3 d around the view");
+  });
+
+  it("draws catalog marks of the vehicle", () => {
+    // testcar's rows: 00:00 – 10:00 in 10-minute bars.
+    const d: Density = {
+      dataRef: "testcar",
+      first: at(0, 0),
+      last: (BigInt(at(10, 0)) - 1n).toString(),
+      width: (10n * MIN).toString(),
+      start: at(0, 0),
+      counts: new Array<number>(60).fill(1),
+      grid: ((10n * MIN) / 400n).toString(),
+      drives: [],
+      coarse: true,
+    };
+    const tr = trackOf(d, 1438);
+    // Entry 0 is the session left with Unlink.
+    const marks = caseMarks(tr, C4_ENTRIES, "testcar", 0);
+    expect(marks.map((m) => m.index)).toEqual([0, 2, 3]); // not 1: othercar
+    expect(marks.map((m) => m.left)).toEqual([true, false, false]);
+    for (const mark of marks) {
+      expect(mark.drawn.right - mark.drawn.left).toBeGreaterThanOrEqual(4);
+      expect(mark.hit.right - mark.hit.left).toBeGreaterThanOrEqual(8);
+    }
+    const title = caseMarkTitle(C4_ENTRIES[2] as (typeof C4_ENTRIES)[number], 2, 4);
+    expect(title.startsWith("Session 3 of 4 · charging · ")).toBe(true);
+    expect(title).toContain("06:50");
+    expect(title).toContain("07:10");
+    // A title is the last part.
+    expect(
+      caseMarkTitle(
+        { ...(C4_ENTRIES[2] as (typeof C4_ENTRIES)[number]), title: "F-104" },
+        2,
+        4,
+      ).endsWith(" · F-104"),
+    ).toBe(true);
+
+    // A click on entry 2's mark (06:50 – 07:10 local; 04:52Z lies in no other mark) is a session
+    // action for that mark, hit before drives.
+    const hits = marks.map((m) => m.hit);
+    const x =
+      ((Number(BigInt(at(4, 52)) - BigInt(at(0, 0))) / Number(10n * MIN)) * (1438 + 2)) / 60;
+    const zone = hitZone(tr, x, BARS_PX + 2, undefined, [], [], hits);
+    expect(zone).toEqual({ kind: "session", index: 1 });
+    const g = new StripGesture();
+    g.down(x, BARS_PX + 2, zone, 0);
+    const action = g.up(x, BARS_PX + 2, 40);
+    expect(action).toEqual({ kind: "session", mark: 1 });
+    // The mark at that position is catalog entry 2: the command is case.go {index: 2}.
+    expect(marks[(action as { mark: number }).mark]?.index).toBe(2);
+
+    // A drive under the mark does not win.
+    const drive = { from: at(4, 51), to: at(5, 9), rows: 10 };
+    expect(hitZone(tr, x, BARS_PX + 2, undefined, [drive], [], hits).kind).toBe("session");
+    // Without marks the drive is hit.
+    expect(hitZone(tr, x, BARS_PX + 2, undefined, [drive], [], []).kind).toBe("drive");
   });
 });

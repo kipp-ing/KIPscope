@@ -1,5 +1,6 @@
 import type { CursorValueResult, GapInfo, ServerMeta } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as api from "../src/api.ts";
 import { ApiRequestError } from "../src/api.ts";
 import { SeriesCache, tabSeriesCache } from "../src/chart/cache.ts";
 import { GapInfoStore, gapInfoStore } from "../src/chart/gaps.ts";
@@ -60,28 +61,98 @@ describe("enterScope", () => {
     }
   });
 
-  it("forgets tiles, extents and gap info once when the key changes", () => {
+  it("keeps the tiles when the key changes and reloads nothing", () => {
     const clear = vi.spyOn(tabSeriesCache(), "clear");
     const forget = vi.spyOn(overview, "forgetExtents");
     const reload = vi.spyOn(gapInfoStore, "reload").mockImplementation(() => {});
     try {
       enterScope("smart451|1|2");
       expect(enterScope("smart451|1|3")).toBe(true);
-      expect(clear).toHaveBeenCalledTimes(1);
-      expect(forget).toHaveBeenCalledTimes(1);
-      expect(reload).toHaveBeenCalledTimes(1);
+      // The tiles stay (add-case-open K12): a scope change clears nothing.
+      expect(clear).not.toHaveBeenCalled();
+      expect(forget).not.toHaveBeenCalled();
       // Every window of the commit calls it: the others find the key entered already.
       expect(enterScope("smart451|1|3")).toBe(false);
-      expect(clear).toHaveBeenCalledTimes(1);
       // Clearing the scope is a change as well.
       expect(enterScope("")).toBe(true);
-      expect(clear).toHaveBeenCalledTimes(2);
-      expect(reload).toHaveBeenCalledTimes(2);
+      expect(clear).not.toHaveBeenCalled();
     } finally {
       clear.mockRestore();
       forget.mockRestore();
       reload.mockRestore();
     }
+  });
+});
+
+describe("per-scope stores (add-case-open K12)", () => {
+  beforeEach(() => {
+    resetScopeForTest();
+    overview.forgetExtents();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const info = (dataRef: string): GapInfo => ({ dataRef, through: "20", logger: [], periods: {} });
+
+  it("keeps extents and gap info for four scopes", async () => {
+    const extents = vi
+      .spyOn(api, "fetchExtent")
+      .mockImplementation(async () => ({ first: "1", last: "2" }) as never);
+    const gaps = vi.spyOn(api, "fetchGaps").mockImplementation(async (ref) => info(ref));
+    const signal = "car/Cyc_A.CYC";
+    const key = (n: string) => `car|${n.charCodeAt(0)}|1000`;
+
+    /** What the windows do in a scope: enter it, ask the signal's extent and gap info, let go. */
+    async function visit(k: string) {
+      enterScope(k);
+      await overview.signalExtent(signal);
+      const release = gapInfoStore.ask([signal], () => {}, k);
+      await flush();
+      release();
+    }
+    const asked = () => [extents.mock.calls.length, gaps.mock.calls.length];
+
+    for (const n of ["A", "B", "C", "D"]) await visit(key(n));
+    expect(asked()).toEqual([4, 4]);
+
+    // Back to A: kept, nothing asked.
+    await visit(key("A"));
+    expect(asked()).toEqual([4, 4]);
+
+    // E is the fifth scope: B, the least recently used, is dropped.
+    await visit(key("E"));
+    expect(asked()).toEqual([5, 5]);
+    await visit(key("C"));
+    await visit(key("D"));
+    await visit(key("A"));
+    expect(asked()).toEqual([5, 5]);
+
+    // B asks again.
+    await visit(key("B"));
+    expect(asked()).toEqual([6, 6]);
+  });
+
+  it("keeps gap info of an object scope per work window", async () => {
+    const gaps = vi.fn(async (ref: string, _signals?: readonly string[], _window?: unknown) =>
+      info(ref),
+    );
+    const store = new GapInfoStore(gaps);
+    const signal = "car/Cyc_A.CYC";
+    const key = "car|1|9|object";
+    const day = (n: number) => ({ from: `${n}000`, to: `${n}999` });
+    const ask = async (window: { from: string; to: string }) => {
+      const release = store.ask([signal], () => {}, key, window);
+      await Promise.resolve();
+      await Promise.resolve();
+      release();
+    };
+    store.enter(key);
+    await ask(day(1));
+    await ask(day(2));
+    await ask(day(1)); // kept
+    expect(gaps).toHaveBeenCalledTimes(2);
+    expect(gaps.mock.calls.map((c) => c[2])).toEqual([day(1), day(2)]);
+    expect(store.state([signal], key, day(1)).infos.get("car")).toBeDefined();
+    expect(store.state([signal], key, day(3)).infos.size).toBe(0);
   });
 });
 

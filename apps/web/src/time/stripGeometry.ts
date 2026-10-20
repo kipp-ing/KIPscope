@@ -1,4 +1,4 @@
-import { type Density, type Drive, MIN_SPAN_NS } from "@kipscope/shared";
+import { type CaseEntry, type Density, type Drive, MIN_SPAN_NS } from "@kipscope/shared";
 import { DOUBLE_CLICK_MS } from "../chart/cursors.ts";
 import { DRAG_THRESHOLD_PX } from "../chart/drag.ts";
 import { extentRange, type Range } from "../chart/zoom.ts";
@@ -125,6 +125,49 @@ export function driveRects(tr: Track, drives: readonly Drive[]): { drawn: Rect; 
   });
 }
 
+/** A catalog session of the scope's vehicle on the drive row (add-case-open K14). */
+export interface CaseMark {
+  /** 0-based catalog index. */
+  index: number;
+  drawn: Rect;
+  hit: Rect;
+  /** The session left with Unlink: drawn outlined. */
+  left: boolean;
+}
+
+/**
+ * The catalog entries on `dataRef` as marks in catalog order (K14): drawn widened to
+ * MIN_DRIVE_PX (4 px), hit to DRIVE_HIT_PX (8 px), like drives.
+ */
+export function caseMarks(
+  tr: Track,
+  entries: readonly CaseEntry[],
+  dataRef: string,
+  current: number,
+): CaseMark[] {
+  const marks: CaseMark[] = [];
+  entries.forEach((e, index) => {
+    if (e.dataRef !== dataRef) return;
+    const exact = { left: xOf(tr, BigInt(e.from)), right: xOf(tr, BigInt(e.to)) };
+    marks.push({
+      index,
+      drawn: widenAbout(exact, MIN_DRIVE_PX),
+      hit: widenAbout(exact, DRIVE_HIT_PX),
+      left: index === current,
+    });
+  });
+  return marks;
+}
+
+/** `Session <k> of <n> · <kind> · <local from> – <local to> · <title>`; absent parts left out (K14). */
+export function caseMarkTitle(entry: CaseEntry, index: number, count: number): string {
+  const parts = [`Session ${index + 1} of ${count}`];
+  if (entry.kind) parts.push(entry.kind);
+  parts.push(formatRange(BigInt(entry.from), BigInt(entry.to)));
+  if (entry.title) parts.push(entry.title);
+  return parts.join(" · ");
+}
+
 /** undefined when t < start or t > start + n·width; else min(xOf(t), px). */
 export function markerX(tr: Track, t: bigint): number | undefined {
   if (t < tr.start || t > endOf(tr)) return undefined;
@@ -133,6 +176,7 @@ export function markerX(tr: Track, t: bigint): number | undefined {
 
 export type Zone =
   | { kind: "pin"; index: number }
+  | { kind: "session"; index: number }
   | { kind: "drive"; index: number }
   | { kind: "edge"; side: "from" | "to" }
   | { kind: "body" }
@@ -153,7 +197,9 @@ function nearestHit(rects: readonly Rect[], x: number): number {
 }
 
 /** x, y relative to the track's top left. range: the bar target's range; undefined without a target.
- *  pins: the hit rects of the event pins (add-events V3), checked first in the pin lane (y < PIN_LANE_PX). */
+ *  pins: the hit rects of the event pins (add-events V3), checked first in the pin lane (y < PIN_LANE_PX).
+ *  sessions: the hit rects of the catalog marks (add-case-open K14), checked before the drives in
+ *  the drive row; the zone's index is the mark's position in that list. */
 export function hitZone(
   tr: Track,
   x: number,
@@ -161,12 +207,15 @@ export function hitZone(
   range: Range | undefined,
   drives: readonly Drive[],
   pins: readonly Rect[] = [],
+  sessions: readonly Rect[] = [],
 ): Zone {
   if (y < PIN_LANE_PX) {
     const pin = nearestHit(pins, x);
     if (pin >= 0) return { kind: "pin", index: pin };
   }
   if (y >= BARS_PX) {
+    const session = nearestHit(sessions, x);
+    if (session >= 0) return { kind: "session", index: session };
     const index = nearestHit(
       driveRects(tr, drives).map((r) => r.hit),
       x,
@@ -196,6 +245,7 @@ export type StripAction =
   | { kind: "jump"; x: number }
   | { kind: "fit"; drive: number }
   | { kind: "centre"; pin: number }
+  | { kind: "session"; mark: number }
   | { kind: "whole" }
   | { kind: "brush"; x0: number; x1: number }
   | { kind: "pan"; dx: number }
@@ -245,6 +295,7 @@ export class StripGesture {
     }
     this.lastClick = { x, y, now };
     if (p.zone.kind === "pin") return { kind: "centre", pin: p.zone.index };
+    if (p.zone.kind === "session") return { kind: "session", mark: p.zone.index };
     return p.zone.kind === "drive" ? { kind: "fit", drive: p.zone.index } : { kind: "jump", x };
   }
 
@@ -255,7 +306,7 @@ export class StripGesture {
   }
 }
 
-/** Drag kind from the press zone: edge → resize, body → pan, bars, drive and pin → brush. */
+/** Drag kind from the press zone: edge → resize, body → pan, bars, drive, session and pin → brush. */
 function dragAction(zone: Zone, x0: number, x: number): StripAction {
   if (zone.kind === "edge") return { kind: "resize", side: zone.side, dx: x - x0 };
   if (zone.kind === "body") return { kind: "pan", dx: x - x0 };

@@ -1,4 +1,11 @@
-import { type Density, parseSignalId, type Workspace } from "@kipscope/shared";
+import {
+  type Density,
+  parseSignalId,
+  type TimeRange,
+  type Workspace,
+  type WorkspaceScope,
+  workWindow,
+} from "@kipscope/shared";
 import { barTarget } from "../bar/bar.ts";
 
 /** Height of the strip's tallest bar in px (design T8). */
@@ -34,15 +41,35 @@ export function stripBars(
 
 /**
  * "<shown> of <recorded> recorded · 1 bar = <width>"; without range "<recorded> recorded · 1 bar = <width>".
- * recorded = last − first. A density of a scope reads "<shown> of <span> in scope · …" (add-scope Z12).
+ * recorded = last − first. A density of a scope reads "<shown> of <span> in scope · …" (add-scope Z12),
+ * a coarse one of an object scope "<shown> of <span> recorded · …" (add-case-open K14).
  */
 export function stripLabel(d: Density, range?: { from: bigint; to: bigint }): string {
-  const recorded = d.scope
-    ? `${formatSpan(BigInt(d.scope.to) - BigInt(d.scope.from))} in scope`
-    : `${formatSpan(BigInt(d.last) - BigInt(d.first))} recorded`;
+  const span = d.scope
+    ? BigInt(d.scope.to) - BigInt(d.scope.from)
+    : BigInt(d.last) - BigInt(d.first);
+  const recorded = `${formatSpan(span)} ${d.scope && !d.coarse ? "in scope" : "recorded"}`;
   const shown = range ? `${formatSpan(range.to - range.from)} of ` : "";
   return `${shown}${recorded} · 1 bar = ${formatSpan(BigInt(d.width))}`;
 }
+
+/**
+ * The work window the strip holds for `view` in an object scope (add-case-open K11): `held` while
+ * `view` lies inside it, else `workWindow(view, scope)`. So a pan inside the window asks nothing
+ * new, and a jump out of it asks once.
+ */
+export function nextWorkWindow(
+  held: TimeRange | undefined,
+  view: { from: bigint; to: bigint },
+  scope: WorkspaceScope,
+): TimeRange {
+  if (held && BigInt(held.from) <= view.from && view.to <= BigInt(held.to)) return held;
+  return workWindow({ from: view.from.toString(), to: view.to.toString() }, scope);
+}
+
+/** Tooltip of the events nearby, strip count and events switch (add-case-open K14). */
+export const nearbyHint = (w: TimeRange): string =>
+  `Events within ${formatSpan(BigInt(w.to) - BigInt(w.from))} around the view`;
 
 const MS = 1_000_000n;
 const SPAN_UNITS: { unit: string; ns: bigint }[] = [

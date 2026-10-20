@@ -22,6 +22,7 @@ import {
   workspacePath,
 } from "@kipscope/shared";
 import { type GlobalOptions, type Invocation, parseArgs, USAGE } from "./args.ts";
+import { runCase } from "./case.ts";
 import { type Client, createClient, type Deadline } from "./client.ts";
 import {
   CliError,
@@ -299,6 +300,9 @@ async function executeWith(
       case "workspace":
         await runWorkspace(invocation, options, client, body);
         return result("ok", body);
+      case "case":
+        await runCase(invocation, client, options.server, body);
+        return result("ok", body);
       case "view": {
         const opened = await runView(invocation, client, body);
         if (opened === undefined || !options.wait) return result("ok", body);
@@ -376,6 +380,16 @@ async function runCommand(
   if (answer.created !== undefined) body.created = answer.created;
   if (answer.createdWindow !== undefined) body.createdWindow = answer.createdWindow;
   if (answer.removedWindow !== undefined) body.removedWindow = answer.removedWindow;
+  if (command.type.startsWith("case.")) {
+    // What a step moved or could not resolve (add-case-open K6).
+    const { clamped, missing, alignFallback } = answer;
+    const data = {
+      ...(clamped && { clamped }),
+      ...(missing && { missing }),
+      ...(alignFallback && { alignFallback }),
+    };
+    if (Object.keys(data).length > 0) body.data = data;
+  }
   if (!options.wait) return result("ok", body);
   return renderResult(await awaitRender(answer.revision, deadline, client), body, options);
 }

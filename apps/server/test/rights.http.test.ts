@@ -144,7 +144,8 @@ describe("grant per workspace", () => {
     expect((await alice.get(`/api/workspaces/${id}`)).body.workspace.granted).toBe(0);
     expect(t.workspaces.grantOf(id)).toEqual({ objects: [] });
 
-    // The one widening path: `grantObjects(` is called nowhere in the server code but its definition.
+    // The one widening path: `grantObjects(` is defined in the registry and called in one place,
+    // the open of a signed catalog (add-case-open K5).
     const src = resolve(import.meta.dirname, "../src");
     let found = "";
     try {
@@ -156,8 +157,9 @@ describe("grant per workspace", () => {
       .split("\n")
       .filter((line) => line !== "")
       .filter((line) => !/^[^:]+:\d+:\s*(\/\/|\*|\/\*)/.test(line));
-    expect(code, code.join("\n")).toHaveLength(1);
-    expect(code[0]).toContain("workspaces.ts");
+    expect(code, code.join("\n")).toHaveLength(2);
+    expect(code.filter((line) => /\/src\/workspaces\.ts:/.test(line))).toHaveLength(1); // the definition
+    expect(code.filter((line) => /\/src\/routes\/workspaces\.ts:/.test(line))).toHaveLength(1); // the open
   });
 });
 

@@ -7,7 +7,12 @@ import type {
 } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
-import { CatalogLoader, type CatalogReport } from "../src/explorer/catalogLoader.ts";
+import {
+  CatalogLoader,
+  type CatalogReport,
+  PARTIAL_RELOAD_MS,
+  partialText,
+} from "../src/explorer/catalogLoader.ts";
 import {
   CHUNK,
   formatDbcRange,
@@ -335,6 +340,53 @@ describe("explorer catalog per scope (add-scope)", () => {
       await vi.advanceTimersByTimeAsync(1000);
       expect(failPending).toHaveLength(2);
       failing.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("reloads while the list is partial", async () => {
+    vi.useFakeTimers();
+    try {
+      const { loader, pending, reports } = harness();
+      const object: WorkspaceScope = { ...scope(T1, T2), object: true };
+      loader.setScope(object);
+      expect(pending).toHaveLength(1);
+      pending[0]?.resolve({ ...snapshot("Session", object), partial: true });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reports).toHaveLength(1);
+      expect((reports[0] as { snapshot: CatalogSnapshot }).snapshot.partial).toBe(true);
+      // The note names the session whose list stands in.
+      expect(partialText(3)).toBe("Signals of session 3; the vehicle's full list is loading");
+
+      // Not before 10 s; then it asks again.
+      await vi.advanceTimersByTimeAsync(PARTIAL_RELOAD_MS - 1);
+      expect(pending).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(pending).toHaveLength(2);
+      // Still partial: another 10 s.
+      pending[1]?.resolve({ ...snapshot("Session", object), partial: true });
+      await vi.advanceTimersByTimeAsync(PARTIAL_RELOAD_MS);
+      expect(pending).toHaveLength(3);
+      // The full list: reported without `partial`, and no more fetches.
+      pending[2]?.resolve(snapshot("Vehicle", object));
+      await vi.advanceTimersByTimeAsync(0);
+      const last = reports.at(-1) as { snapshot: CatalogSnapshot };
+      expect(last.snapshot.partial).toBeUndefined();
+      expect(last.snapshot.items[0]?.name).toBe("Vehicle");
+      await vi.advanceTimersByTimeAsync(5 * PARTIAL_RELOAD_MS);
+      expect(pending).toHaveLength(3);
+
+      // A new scope stops a pending partial reload.
+      const { loader: second, pending: waiting } = harness();
+      second.setScope(object);
+      waiting[0]?.resolve({ ...snapshot("Session", object), partial: true });
+      await vi.advanceTimersByTimeAsync(0);
+      second.setScope(scope(T1 - H, T2));
+      expect(waiting).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(PARTIAL_RELOAD_MS);
+      expect(waiting).toHaveLength(2);
+      second.dispose();
+      loader.dispose();
     } finally {
       vi.useRealTimers();
     }

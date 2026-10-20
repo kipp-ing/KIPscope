@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyCommand } from "../src/apply.ts";
+import { openCase } from "../src/caseApply.ts";
 import {
   Command,
   type CommandInput,
@@ -10,6 +11,7 @@ import {
   type Workspace,
   windowTitle,
 } from "../src/workspace.ts";
+import { at, C4, MIN as CASE_MIN, PAD } from "./caseFixtures.ts";
 
 const ctx = { signalExists: (id: string) => id.startsWith("car/"), hasStates: () => false };
 
@@ -1539,6 +1541,423 @@ describe("scope commands (add-scope)", () => {
       expect(
         result.report?.warnings.filter((w) => w.includes("othercar/Ign_A20h.MODE")),
       ).toHaveLength(1);
+    });
+  });
+});
+
+describe("case commands (add-case-open)", () => {
+  const bothCars = (id: string) => id.startsWith("testcar/") || id.startsWith("othercar/");
+  const base = { signalExists: bothCars, hasStates: () => false };
+  type CaseCtx = NonNullable<Parameters<typeof applyCommand>[2]["case"]>;
+  const withCase = (
+    extra: Partial<CaseCtx>,
+    signalExists: (id: string) => boolean = bothCars,
+  ): Parameters<typeof applyCommand>[2] => ({
+    signalExists,
+    hasStates: () => false,
+    case: { entry: (i: number) => C4.entries[i], ...extra },
+  });
+  /** testcar rows lie in [00:00, 10:00). */
+  const EXTENT = { from: at(0, 0), to: at(10, 0) };
+
+  function step(
+    state: Workspace,
+    input: CommandInput,
+    context: Parameters<typeof applyCommand>[2],
+  ) {
+    return applyCommand(state, Command.parse(input), context);
+  }
+  function stepOk(
+    state: Workspace,
+    input: CommandInput,
+    context: Parameters<typeof applyCommand>[2],
+  ) {
+    const result = step(state, input, context);
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    return result;
+  }
+
+  /** A workspace opened at entry 0 of C4 with w1 [01:02:00, 01:04:00) on two testcar signals. */
+  function openAtZero(align: "start" | "anchor" = "start"): Workspace {
+    let ws = EMPTY_WORKSPACE;
+    for (const input of [
+      { type: "window.create", from: at(1, 2), to: at(1, 4) },
+      { type: "window.addSignal", windowId: "w1", signalId: "testcar/Fast_100h.SIG_A" },
+      { type: "window.addSignal", windowId: "w1", signalId: "testcar/Irr_200h.JITTER" },
+    ] as const) {
+      ws = stepOk(ws, input, base).workspace;
+    }
+    const opened = openCase({
+      catalog: C4,
+      current: 0,
+      pad: PAD,
+      align: { mode: align },
+      alignAt: at(1, 0),
+      layout: ws,
+      layoutAlignAt: at(1, 0),
+      known: bothCars,
+    }).workspace;
+    return stepOk(opened, { type: "cursor.set", cursor: "a", t: at(1, 3) }, base).workspace;
+  }
+  const w1 = (ws: Workspace) => ws.windows[0] as TimeseriesWindow;
+
+  it("parses the case commands", () => {
+    expect(Command.safeParse({ type: "case.go", index: 2 }).success).toBe(true);
+    expect(Command.safeParse({ type: "case.go", index: -1 }).success).toBe(false);
+    expect(Command.safeParse({ type: "case.step", by: 1 }).success).toBe(true);
+    expect(Command.safeParse({ type: "case.step", by: -1 }).success).toBe(true);
+    expect(Command.safeParse({ type: "case.step", by: 2 }).success).toBe(false);
+    expect(Command.safeParse({ type: "case.unlink" }).success).toBe(true);
+    expect(Command.safeParse({ type: "case.align", align: { mode: "end" } }).success).toBe(true);
+    expect(
+      Command.safeParse({
+        type: "case.align",
+        align: { mode: "event", event: { kind: "dtc", source: "BMS", name: "P0CA700" } },
+        at: "2026-10-01T05:00:00Z",
+      }).success,
+    ).toBe(true);
+    expect(Command.safeParse({ type: "case.align", align: { mode: "middle" } }).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses steps past the ends and while unlinked", () => {
+    // Without a catalog every case command fails no_case.
+    const plain = stepOk(EMPTY_WORKSPACE, { type: "window.create", from: "0", to: "1000" }, base);
+    for (const input of [
+      { type: "case.step", by: 1 },
+      { type: "case.go", index: 0 },
+      { type: "case.unlink" },
+      { type: "case.align", align: { mode: "end" } },
+    ] as const) {
+      expect(step(plain.workspace, input, base), input.type).toMatchObject({
+        ok: false,
+        code: "no_case",
+      });
+    }
+    // Ends of the catalog.
+    const last = openCase({
+      catalog: C4,
+      current: 3,
+      pad: PAD,
+      align: { mode: "start" },
+      alignAt: at(4, 58),
+      known: bothCars,
+    }).workspace;
+    expect(step(last, { type: "case.step", by: 1 }, withCase({ alignAt: at(0, 0) }))).toMatchObject(
+      {
+        ok: false,
+        code: "case_end",
+      },
+    );
+    const first = openAtZero();
+    expect(
+      step(first, { type: "case.step", by: -1 }, withCase({ alignAt: at(0, 0) })),
+    ).toMatchObject({
+      ok: false,
+      code: "case_end",
+    });
+    expect(
+      step(first, { type: "case.go", index: 4 }, withCase({ alignAt: at(0, 0) })),
+    ).toMatchObject({
+      ok: false,
+      code: "case_end",
+    });
+    // Unlinked: no steps.
+    const unlinked = stepOk(first, { type: "case.unlink" }, withCase({ extent: EXTENT })).workspace;
+    expect(unlinked.case?.linked).toBe(false);
+    expect(
+      step(unlinked, { type: "case.step", by: 1 }, withCase({ alignAt: at(4, 50) })),
+    ).toMatchObject({ ok: false, code: "case_unlinked" });
+    expect(step(unlinked, { type: "case.unlink" }, withCase({ extent: EXTENT }))).toMatchObject({
+      ok: false,
+      code: "case_unlinked",
+    });
+    expect(
+      step(
+        unlinked,
+        { type: "case.align", align: { mode: "end" } },
+        withCase({ alignAt: at(1, 10) }),
+      ),
+    ).toMatchObject({ ok: false, code: "case_unlinked" });
+  });
+
+  it("steps keeping offsets from the alignment point", () => {
+    const start = stepOk(
+      openAtZero(),
+      { type: "case.go", index: 2 },
+      withCase({ alignAt: at(4, 50) }),
+    );
+    expect(start.workspace.scope).toEqual({ dataRef: "testcar", from: at(4, 49), to: at(5, 11) });
+    expect(w1(start.workspace).range).toEqual({ from: at(4, 52), to: at(4, 54) });
+    expect(start.workspace.cursors.a).toBe(at(4, 53));
+    expect(start.workspace.case).toMatchObject({
+      current: 2,
+      linked: true,
+      alignAt: at(4, 50),
+      entry: C4.entries[2],
+    });
+    expect(start.clamped).toBeUndefined();
+    expect(start.missing).toBeUndefined();
+
+    // Align anchor: entry 0 has none (falls back to its start), entry 2's anchor is 04:55:00.
+    const anchored = stepOk(
+      openAtZero("anchor"),
+      { type: "case.go", index: 2 },
+      withCase({ alignAt: at(4, 55) }),
+    );
+    expect(w1(anchored.workspace).range).toEqual({ from: at(4, 57), to: at(4, 59) });
+    expect(anchored.workspace.cursors.a).toBe(at(4, 58));
+    expect(anchored.workspace.case?.alignAt).toBe("1790830500000000000");
+    expect(anchored.workspace.case?.align).toEqual({ mode: "anchor" });
+    // Signals, colours, linked time and the rest stay.
+    expect(w1(anchored.workspace).signals).toEqual(w1(openAtZero("anchor")).signals);
+  });
+
+  it("steps keeping offsets from the alignment point: stepping by one", () => {
+    const next = stepOk(
+      openAtZero(),
+      { type: "case.step", by: 1 },
+      withCase({ alignAt: at(0, 0) }),
+    );
+    expect(next.workspace.case?.current).toBe(1);
+    expect(next.workspace.scope?.dataRef).toBe("othercar");
+  });
+
+  it("applies two steps in a row from the state the first left", () => {
+    // w1 [01:02:00, 01:04:00) is +2 … +4 min from entry 0; entry 2's anchor is 04:55:00.
+    const zero = openAtZero("anchor");
+    // othercar lists only Fast_100h.SIG_A: the first step reports the jitter missing.
+    const lacksJitter = (id: string) => bothCars(id) && id !== "othercar/Irr_200h.JITTER";
+    const first = stepOk(
+      zero,
+      { type: "case.step", by: 1 },
+      withCase({ alignAt: at(0, 0) }, lacksJitter),
+    );
+    expect(first.workspace.case?.current).toBe(1);
+    expect(first.missing).toEqual(["othercar/Irr_200h.JITTER"]);
+
+    // The second step goes on from entry 1: current is 2, and the scope, the alignment point,
+    // the rebound signals and the missing list are those of entry 2.
+    const two = stepOk(
+      first.workspace,
+      { type: "case.step", by: 1 },
+      withCase({ alignAt: at(4, 55) }),
+    );
+    expect(two.workspace.case).toMatchObject({ current: 2, linked: true, alignAt: at(4, 55) });
+    expect(two.workspace.case?.entry).toEqual(C4.entries[2]);
+    expect(two.workspace.scope).toEqual({ dataRef: "testcar", from: at(4, 49), to: at(5, 11) });
+    expect(two.missing).toBeUndefined();
+    expect(w1(two.workspace).signals.map((s) => s.signalId)).toEqual([
+      "testcar/Fast_100h.SIG_A",
+      "testcar/Irr_200h.JITTER",
+    ]);
+    // Entry 1's 2-minute scope clamped the window; entry 2 keeps the offsets that range had from
+    // entry 1's alignment point (00:00:00), now from 04:55:00.
+    const left = w1(first.workspace).range;
+    const now = w1(two.workspace).range;
+    expect(BigInt(now.from) - BigInt(at(4, 55))).toBe(BigInt(left.from) - BigInt(at(0, 0)));
+    expect(BigInt(now.to) - BigInt(at(4, 55))).toBe(BigInt(left.to) - BigInt(at(0, 0)));
+
+    // A case.align or case.unlink applied after the step acts on entry 1.
+    const aligned = stepOk(
+      first.workspace,
+      { type: "case.align", align: { mode: "end" } },
+      withCase({}),
+    );
+    expect(aligned.workspace.case?.alignAt).toBe(at(0, 0, 1));
+    const unlinked = stepOk(
+      first.workspace,
+      { type: "case.unlink" },
+      withCase({ extent: { from: at(0, 0), to: at(0, 5) } }),
+    );
+    expect(unlinked.workspace.scope?.dataRef).toBe("othercar");
+    expect(unlinked.workspace.case).toMatchObject({ current: 1, linked: false });
+  });
+
+  it("steps keeping offsets from the alignment point: clamped at a short session", () => {
+    const result = stepOk(
+      openAtZero(),
+      { type: "case.go", index: 1 },
+      withCase({ alignAt: at(0, 0) }),
+    );
+    // Scope [23:59:00 of 2026-09-30, 00:01:01).
+    expect(result.workspace.scope).toEqual({
+      dataRef: "othercar",
+      from: String(1790812740n * 1_000_000_000n),
+      to: String(1790812861n * 1_000_000_000n),
+    });
+    expect(w1(result.workspace).range).toEqual({
+      from: String(1790812741n * 1_000_000_000n),
+      to: String(1790812861n * 1_000_000_000n),
+    });
+    expect(result.clamped).toBe(true);
+    // Cursor A (offset +3 min) lies outside the short scope and is dropped.
+    expect(result.workspace.cursors.a).toBeUndefined();
+  });
+
+  it("reports an alignment that fell back to the start", () => {
+    const result = stepOk(
+      openAtZero(),
+      { type: "case.go", index: 2 },
+      withCase({ alignAt: at(4, 50), alignFallback: true }),
+    );
+    expect(result.alignFallback).toBe(true);
+  });
+
+  it("moves signals to another vehicle", () => {
+    const zero = openAtZero();
+    const before = w1(zero).signals;
+    expect(zero.colors).toMatchObject({
+      "testcar/Fast_100h.SIG_A": 0,
+      "testcar/Irr_200h.JITTER": 1,
+    });
+    // othercar's list holds SIG_A only.
+    const onlyA = (id: string) => id === "othercar/Fast_100h.SIG_A";
+    const there = stepOk(
+      zero,
+      { type: "case.go", index: 1 },
+      withCase({ alignAt: at(0, 0) }, onlyA),
+    );
+    expect(w1(there.workspace).signals).toEqual([
+      { id: before[0]?.id, signalId: "othercar/Fast_100h.SIG_A" },
+      { id: before[1]?.id, signalId: "othercar/Irr_200h.JITTER" },
+    ]);
+    expect(there.workspace.colors).toEqual({
+      "othercar/Fast_100h.SIG_A": 0,
+      "othercar/Irr_200h.JITTER": 1,
+    });
+    expect(there.missing).toEqual(["othercar/Irr_200h.JITTER"]);
+    const back = stepOk(
+      there.workspace,
+      { type: "case.go", index: 0 },
+      withCase({ alignAt: at(1, 0) }),
+    );
+    expect(w1(back.workspace).signals).toEqual(before);
+    expect(back.workspace.colors).toEqual(zero.colors);
+    expect(back.missing).toBeUndefined();
+  });
+
+  it("moves the events line to another vehicle", () => {
+    const zero = openAtZero();
+    const withEvents = stepOk(
+      zero,
+      { type: "events.addSignal", signalId: "testcar/Ign_A20h.MODE" },
+      { ...base, hasStates: () => true },
+    ).workspace;
+    const there = stepOk(
+      withEvents,
+      { type: "case.go", index: 1 },
+      withCase({ alignAt: at(0, 0) }),
+    );
+    expect(there.workspace.eventSignals).toEqual(["othercar/Ign_A20h.MODE"]);
+  });
+
+  it("unlinks to the vehicle's extent and links back", () => {
+    const zero = openAtZero();
+    const unlinked = stepOk(zero, { type: "case.unlink" }, withCase({ extent: EXTENT })).workspace;
+    expect(unlinked.scope).toEqual({
+      dataRef: "testcar",
+      from: at(0, 0),
+      to: at(10, 0),
+      object: true,
+    });
+    expect(w1(unlinked).range).toEqual({ from: at(1, 2), to: at(1, 4) });
+    expect(unlinked.cursors.a).toBe(at(1, 3));
+    expect(unlinked.case?.linked).toBe(false);
+    expect(unlinked.case?.linkedRanges).toEqual({
+      w1: { from: String(2n * CASE_MIN), to: String(4n * CASE_MIN) },
+    });
+    expect(unlinked.case?.linkedRanges?.w1).toEqual({ from: "120000000000", to: "240000000000" });
+
+    // Zoom w1, create w2 while unlinked, then link to entry 2.
+    const zoomed = stepOk(
+      unlinked,
+      { type: "window.setRange", windowId: "w1", from: at(6, 0), to: at(7, 0) },
+      base,
+    ).workspace;
+    const created = stepOk(
+      zoomed,
+      { type: "window.create", from: at(2, 0), to: at(3, 0) },
+      base,
+    ).workspace;
+    const linked = stepOk(
+      created,
+      { type: "case.go", index: 2 },
+      withCase({ alignAt: at(4, 50) }),
+    ).workspace;
+    expect(linked.scope).toEqual({ dataRef: "testcar", from: at(4, 49), to: at(5, 11) });
+    expect("object" in (linked.scope ?? {})).toBe(false);
+    expect((linked.windows[0] as TimeseriesWindow).range).toEqual({
+      from: at(4, 52),
+      to: at(4, 54),
+    });
+    expect((linked.windows[1] as TimeseriesWindow).range).toEqual({
+      from: at(4, 49),
+      to: at(5, 11),
+    });
+    expect(linked.case?.linked).toBe(true);
+    expect(linked.case?.current).toBe(2);
+    expect("linkedRanges" in (linked.case ?? {})).toBe(false);
+  });
+
+  it("keeps the scope inside the vehicle's extent when the session lies outside it", () => {
+    const zero = openAtZero();
+    // An extent that ends before the session's scope: the scope keeps the session inside.
+    const unlinked = stepOk(
+      zero,
+      { type: "case.unlink" },
+      withCase({ extent: { from: at(1, 5), to: at(1, 6) } }),
+    ).workspace;
+    expect(unlinked.scope).toEqual({
+      dataRef: "testcar",
+      from: at(0, 59),
+      to: at(1, 11),
+      object: true,
+    });
+  });
+
+  it("aligns without moving windows", () => {
+    const zero = openAtZero();
+    const ended = stepOk(
+      zero,
+      { type: "case.align", align: { mode: "end" } },
+      withCase({ alignAt: at(1, 10) }),
+    );
+    expect(ended.workspace.case).toMatchObject({ align: { mode: "end" }, alignAt: at(1, 10) });
+    expect(w1(ended.workspace).range).toEqual({ from: at(1, 2), to: at(1, 4) });
+    expect(ended.workspace.cursors.a).toBe(at(1, 3));
+    const event = {
+      mode: "event",
+      event: { kind: "dtc", source: "BMS", name: "P0CA700" },
+    } as const;
+    const chosen = stepOk(zero, { type: "case.align", align: event, at: at(1, 3) }, withCase({}));
+    expect(chosen.workspace.case?.alignAt).toBe(at(1, 3));
+    expect(chosen.workspace.case?.align).toEqual(event);
+    // The chosen time must lie in the scope.
+    expect(
+      step(zero, { type: "case.align", align: event, at: at(5, 0) }, withCase({})),
+    ).toMatchObject({ ok: false, code: "out_of_scope" });
+  });
+
+  it("refuses scope commands while a catalog is open", () => {
+    const zero = openAtZero();
+    expect(
+      step(
+        zero,
+        { type: "scope.set", dataRef: "testcar", from: at(1, 0), to: at(2, 0) },
+        withCase({}),
+      ),
+    ).toMatchObject({ ok: false, code: "case_open" });
+    expect(step(zero, { type: "scope.clear" }, withCase({}))).toMatchObject({
+      ok: false,
+      code: "case_open",
+    });
+    // Unlinked it stays refused.
+    const unlinked = stepOk(zero, { type: "case.unlink" }, withCase({ extent: EXTENT })).workspace;
+    expect(step(unlinked, { type: "scope.clear" }, withCase({}))).toMatchObject({
+      ok: false,
+      code: "case_open",
     });
   });
 });

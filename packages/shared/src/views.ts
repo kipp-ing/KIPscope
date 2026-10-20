@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { rebindSignalId } from "./case.ts";
+import { packCode, unpackCode } from "./encoding.ts";
 import { parseSignalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
@@ -450,6 +452,48 @@ export function viewScope(doc: ViewDoc, pad: bigint): WorkspaceScope | undefined
   return { dataRef, from: from.toString(), to: to.toString() };
 }
 
+/**
+ * A view as a layout for another data ref (add-case-open K8): signals of the view's data ref
+ * (viewScope's) move to `toRef` by name, signals of any other data ref are left out with a
+ * warning; the scope is dropped, since a catalog session gives it. Unchanged without a data ref.
+ */
+export function rebindView(doc: ViewDoc, toRef: string): { doc: ViewDoc; warnings: string[] } {
+  const fromRef = viewScope(doc, 0n)?.dataRef;
+  if (fromRef === undefined) return { doc, warnings: [] };
+  const dropped = new Set<string>();
+  const move = (id: string): string[] => {
+    const ref = parseSignalId(id)?.dataRef;
+    if (ref === fromRef) return [rebindSignalId(id, toRef)];
+    if (ref === toRef) return [id];
+    dropped.add(id);
+    return [];
+  };
+  const unique = (ids: string[]) => [...new Set(ids.flatMap(move))];
+  const windows = doc.windows.map((w) => ({ ...w, signals: unique(w.signals) }));
+  const colors: Record<string, number> = {};
+  for (const [id, index] of Object.entries(doc.colors ?? {})) {
+    const [next] = move(id);
+    if (next !== undefined && !(next in colors)) colors[next] = index;
+  }
+  const { scope: _scope, ...rest } = doc;
+  const events = doc.events && {
+    ...doc.events,
+    ...(doc.events.signals && { signals: unique(doc.events.signals) }),
+  };
+  const next: ViewDoc = {
+    ...rest,
+    data: dataRefs(windows, events?.signals),
+    ...(events && { events }),
+    ...(doc.colors && { colors }),
+    windows,
+  };
+  const warnings =
+    dropped.size > 0
+      ? [`signals of another data ref than ${fromRef} left out: ${[...dropped].sort().join(", ")}`]
+      : [];
+  return { doc: next, warnings };
+}
+
 /** File name from a title: NFKD, diacritics dropped, lower case, runs of other characters → "-", trimmed, ≤ 63; "" → "view". */
 export function viewName(title: string): string {
   const name = title
@@ -463,45 +507,9 @@ export function viewName(title: string): string {
   return name || "view";
 }
 
-/** Runs `bytes` through a (de)compression stream; rejects once the output exceeds `limit`. */
-async function transform(
-  bytes: Uint8Array<ArrayBuffer>,
-  stream: CompressionStream | DecompressionStream,
-  limit = Number.POSITIVE_INFINITY,
-): Promise<Uint8Array> {
-  const reader = new Blob([bytes]).stream().pipeThrough(stream).getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.length;
-    if (size > limit) {
-      await reader.cancel().catch(() => {});
-      throw new RangeError(`view link inflates to more than ${limit} bytes`);
-    }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return out;
-}
-
 /** base64url (no padding) of deflate-raw of the document's JSON; async (CompressionStream). */
 export async function encodeViewLink(doc: ViewDoc): Promise<string> {
-  const packed = await transform(
-    new TextEncoder().encode(JSON.stringify(doc)),
-    new CompressionStream("deflate-raw"),
-  );
-  let binary = "";
-  for (let i = 0; i < packed.length; i += 0x8000) {
-    binary += String.fromCharCode(...packed.subarray(i, i + 0x8000));
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return packCode(JSON.stringify(doc));
 }
 
 /** The document a link carries: title = view title ?? measurement name ?? "Shared view"; the open view's note when set; no `saved`. */
@@ -522,11 +530,6 @@ export async function viewLinkUrl(ws: Workspace, page: string): Promise<string> 
 /** Inverse of encodeViewLink up to JSON.parse; rejects bad base64url, bad deflate and > MAX_VIEW_BYTES inflated. */
 export async function decodeViewLink(code: string): Promise<unknown> {
   // Deflate never shrinks below ~1/1000, so a longer code cannot be a valid view.
-  if (!/^[A-Za-z0-9_-]+$/.test(code) || code.length % 4 === 1 || code.length > MAX_VIEW_BYTES) {
-    throw new SyntaxError("not a view link code");
-  }
-  const binary = atob(code.replace(/-/g, "+").replace(/_/g, "/"));
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  const text = await transform(bytes, new DecompressionStream("deflate-raw"), MAX_VIEW_BYTES);
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(text));
+  if (code.length > MAX_VIEW_BYTES) throw new SyntaxError("not a view link code");
+  return JSON.parse(await unpackCode(code, MAX_VIEW_BYTES, "view link"));
 }

@@ -1,9 +1,10 @@
-import { scopeKey, type WorkspaceScope } from "@kipscope/shared";
+import { caseScope, scopeKey, type Workspace, type WorkspaceScope } from "@kipscope/shared";
 import type { FastifyRequest } from "fastify";
 import type { Catalog } from "./catalog.ts";
 import type { CatalogMode } from "./config.ts";
 import type { DataSource, Scope, SignalRef } from "./datasource.ts";
 import { workspaceOf } from "./http.ts";
+import { withPriority } from "./priority.ts";
 import type { WorkspaceEntry } from "./workspaces.ts";
 
 /** Scope catalogs the store keeps besides the kept ones; the least recently used one is dropped (design Z10). */
@@ -21,11 +22,33 @@ export function scopeOf(request: FastifyRequest): WorkspaceScope | undefined {
   return workspaceOf(request).store.workspace.scope;
 }
 
-/** The scopes of every workspace with a live client (add-multiuser M9): the lists a store keeps. */
+/**
+ * The session scope a workspace left with Unlink (add-case-open K11): its list answers while the
+ * vehicle's own one loads; undefined outside an object scope.
+ */
+export function linkedScopeOf(workspace: Workspace): WorkspaceScope | undefined {
+  const { scope, case: open } = workspace;
+  if (!scope?.object || !open) return undefined;
+  return caseScope(open.entry, BigInt(open.pad));
+}
+
+/** Names an unlinked workspace's session list for its object scope (K11); nothing otherwise. */
+export function noteObjectScope(catalogs: CatalogStore | undefined, workspace: Workspace): void {
+  const linked = linkedScopeOf(workspace);
+  if (catalogs && linked && workspace.scope) catalogs.objectScope(workspace.scope, linked);
+}
+
+/**
+ * The scopes of every workspace with a live client (add-multiuser M9): the lists a store keeps;
+ * for an unlinked one also the session's it left (add-case-open K11).
+ */
 export function openScopes(workspaces: { open(): WorkspaceEntry[] }): WorkspaceScope[] {
-  return workspaces
-    .open()
-    .flatMap((w) => (w.store.workspace.scope ? [w.store.workspace.scope] : []));
+  return workspaces.open().flatMap((w) => {
+    const { scope } = w.store.workspace;
+    if (!scope) return [];
+    const linked = linkedScopeOf(w.store.workspace);
+    return linked ? [scope, linked] : [scope];
+  });
 }
 
 /** Waits for `promise`, or rejects with the abort reason once `abort` fires; the work goes on. */
@@ -64,6 +87,8 @@ export class CatalogStore {
   private readonly keep: () => Iterable<WorkspaceScope>;
   /** Scope catalogs by `scopeKey`, least recently used first. */
   private readonly scoped = new Map<string, { scope: WorkspaceScope; catalog: Catalog }>();
+  /** Object scope key → the session scope whose list answers while the vehicle's loads (K11). */
+  private readonly linked = new Map<string, WorkspaceScope>();
   private readonly listeners = new Set<LoadedListener>();
 
   constructor(options: {
@@ -78,9 +103,47 @@ export class CatalogStore {
     this.keep = options.keep ?? (() => []);
   }
 
-  /** The scope's catalog, loaded or not, else without a scope the full catalog; if any. */
+  /**
+   * The scope's catalog, loaded or not, else without a scope the full catalog; if any. For an
+   * object scope (K11): the vehicle's own list once loaded, until then the list of the session
+   * `objectScope` named for it (its load started in the background class).
+   */
   get(scope?: WorkspaceScope): Catalog | undefined {
     if (!scope) return this.full;
+    if (scope.object) {
+      const own = this.entry(scope);
+      if (own.loadedAt) return own;
+      const linked = this.linked.get(scopeKey(scope));
+      return (linked && this.held(linked)) ?? own;
+    }
+    return this.held(scope);
+  }
+
+  /** The held catalog of exactly `scope` (an object scope's own list), marked as used. */
+  own(scope: WorkspaceScope): Catalog | undefined {
+    return this.held(scope);
+  }
+
+  /**
+   * Names the session list that answers for an object scope while the vehicle's own list loads
+   * (add-case-open K11) and starts that load; the session's list starts loading too.
+   */
+  objectScope(scope: WorkspaceScope, linked: WorkspaceScope): void {
+    this.linked.set(scopeKey(scope), linked);
+    this.entry(scope);
+    const session = this.entry(linked);
+    if (!session.loadedAt) session.refresh().catch(() => {});
+  }
+
+  /** Whether `get(scope)` answers a session's list in place of the vehicle's (K11 `partial`). */
+  partial(scope: WorkspaceScope | undefined): boolean {
+    if (!scope?.object) return false;
+    if (this.held(scope)?.loadedAt) return false;
+    const linked = this.linked.get(scopeKey(scope));
+    return linked !== undefined && this.held(linked)?.loadedAt !== undefined;
+  }
+
+  private held(scope: WorkspaceScope): Catalog | undefined {
     const key = scopeKey(scope);
     const entry = this.scoped.get(key);
     if (!entry) return undefined;
@@ -89,11 +152,16 @@ export class CatalogStore {
     return entry.catalog;
   }
 
-  /** The scope's catalog, created (not loaded) when the store does not hold it yet. */
+  /**
+   * The scope's catalog, created (not loaded) when the store does not hold it yet. An object
+   * scope's list starts loading at once in the `background` class (K11), so a request joining it
+   * never raises it.
+   */
   entry(scope: WorkspaceScope): Catalog {
-    const held = this.get(scope);
+    const held = this.held(scope);
     if (held) return held;
-    const own = { dataRef: scope.dataRef, from: scope.from, to: scope.to };
+    const own: WorkspaceScope = { dataRef: scope.dataRef, from: scope.from, to: scope.to };
+    if (scope.object) own.object = true;
     const catalog = this.create(sourceScope(own));
     catalog.onLoaded(() => {
       for (const listener of this.listeners) listener(own, catalog);
@@ -105,8 +173,10 @@ export class CatalogStore {
       if (others <= MAX_SCOPE_CATALOGS) break;
       if (kept.has(key)) continue;
       this.scoped.delete(key);
+      this.linked.delete(key);
       others--;
     }
+    if (own.object) withPriority("background", () => catalog.refresh()).catch(() => {});
     return catalog;
   }
 
@@ -116,6 +186,11 @@ export class CatalogStore {
    * only this caller's wait.
    */
   async load(scope: WorkspaceScope, abort?: AbortSignal): Promise<Catalog> {
+    if (scope.object) {
+      // Lazy (K11): the session's list while the vehicle's own one loads in the background.
+      const current = this.get(scope);
+      if (current?.loadedAt) return current;
+    }
     const catalog = this.entry(scope);
     if (!catalog.loadedAt) await abortable(catalog.refresh(), abort);
     return catalog;

@@ -150,6 +150,7 @@ const deps = {
   viewsOf: userViews(config.stateDir),
   ...(identity ? { identity } : {}),
   share: config.share,
+  finder: config.finder,
   ...(config.webDir === undefined ? {} : { webDir: config.webDir }),
   meta: {
     build,

@@ -70,6 +70,16 @@ On the TIME strip:
 
 Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (`Backspace`) returns to the previous range, up to 50 steps. **Reset** (`Home`) shows all data.
 
+### Sessions from KI.ping
+
+"Open in KIPscope" in KI.ping, or a dropped catalog file, opens a new workspace on one session of the list it found. The strip head then shows the session bar instead of the scope: `SESSION`, the vehicle or title, the kind, the time and length, up to three meta values, and the position such as `3 / 17`. Hover the bar for the full meta and a `Back to` link to the finder.
+
+- `‹` and `›` on the bar, or the keys `[` and `]`, step to the previous and next session in the order KI.ping sent. The windows, signals and filter stay; each window keeps its distance from the alignment point, so the same moment of the next session shows. A signal the next vehicle lacks stays in its window and reads `not in this session`.
+- `3 / 17 ▾` opens the list of all sessions; type to filter by vehicle, kind, time or a meta value, then `Enter` or click a row.
+- **Align** sets what lines up between sessions: `Session start`, `Session end`, `Anchor from the finder`, or an event: right-click a pin and choose `Align sessions to this event`, or use `Align` on an Events row. Each later session lines up on its first matching event; without one it aligns to its start and the message line says so.
+- **Unlink** shows the vehicle's whole recording around the session: the bar reads `VEHICLE` and greys the arrows, the strip shows the catalog's sessions of this vehicle as marks, and the Events tab lists the events near the view (`Nearby`). Click a mark, or **Link**, to go back to a session with the layout you had.
+- **Back** remembers the zoom steps of each session; stepping back to a session restores them.
+
 ## Events
 
 Events are faults (diagnostic trouble codes), state changes and logger errors. They show as pins on the TIME strip and as lines in the plots, with a glyph above the plot; hover one for its time, source and text. A click on a pin centres the view on it; a click on a glyph sets cursor A there.

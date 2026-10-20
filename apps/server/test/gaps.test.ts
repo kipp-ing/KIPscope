@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { DataSource } from "../src/datasource.ts";
+import type { DataSource, SourceAdapter } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { closeApps, stateOf, unlink, unlinked } from "./caseApp.ts";
+import { c4, scopeOfCall } from "./caseKit.ts";
 import { memoryAdapter, scopeApp } from "./scopeApp.ts";
 import { testSource } from "./testdb.ts";
 
@@ -414,5 +416,91 @@ describe("gap info of a scope (add-scope)", () => {
     } finally {
       await t.close();
     }
+  });
+});
+
+describe("gap info of a work window (add-case-open)", () => {
+  afterEach(async () => {
+    vi.useRealTimers();
+    await closeApps();
+  });
+
+  it("computes and polls the gap info of a work window", async () => {
+    // The vehicle's rows span five days (2026-10-01 … 2026-10-05); the work window is 2026-10-03.
+    const G = 1790985600n * S; // 2026-10-03T00:00:00Z
+    const DAY = 86_400n * S;
+    const MS = 1_000_000n;
+    const cyc: [bigint, number][] = Array.from({ length: 1001 }, (_, i) => [
+      G + S + BigInt(i) * 100n * MS,
+      1,
+    ]);
+    const adapter = memoryAdapter([
+      { dataRef: "gapcar", name: "Cyc", rows: cyc },
+      {
+        dataRef: "gapcar",
+        name: "Edge",
+        rows: [
+          [G - 2n * DAY, 1],
+          [G + 3n * DAY - 1n, 1],
+        ],
+      },
+    ]);
+    const doc = c4({
+      cases: [
+        {
+          id: "gapcar|driving|2026-10-03T00:00:10Z",
+          object: "gapcar",
+          from: "2026-10-03T00:00:10Z",
+          to: "2026-10-03T00:01:00Z",
+        },
+      ],
+    });
+    const { t, id, calls } = await unlinked(
+      { adapter: adapter as unknown as SourceAdapter, dbc: false },
+      doc,
+    );
+    await unlink(t.anon, id);
+    const { workspace } = await stateOf(t.anon, id);
+    expect(workspace.scope).toMatchObject({
+      dataRef: "gapcar",
+      from: (G - 2n * DAY).toString(),
+      to: (G + 3n * DAY).toString(),
+      object: true,
+    });
+
+    const mark = calls.length;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const flush = async () => {
+      for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(0);
+    };
+    const ask = () =>
+      t.anon.get(
+        `/api/w/${id}/gaps?dataRef=gapcar&signal=gapcar/Cyc&from=2026-10-03T00:00:00Z&to=2026-10-04T00:00:00Z`,
+      );
+    const [one, two] = [await ask(), await ask()];
+    await flush();
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    expect(two.text).toBe(one.text);
+    const count = (name: string) => calls.slice(mark).filter((c) => c.method === name);
+    expect(count("loggerGaps")).toHaveLength(1);
+    expect(count("firstTimes")).toHaveLength(1);
+    const before = count("refCount").length;
+
+    await vi.advanceTimersByTimeAsync(300_000 + 1000);
+    await flush();
+    expect(count("refCount").length).toBe(before + 1);
+    expect(count("loggerGaps")).toHaveLength(1);
+
+    const window = { dataRef: "gapcar", from: G, to: G + DAY };
+    for (const name of ["loggerGaps", "firstTimes", "refCount"]) {
+      for (const call of count(name)) expect(scopeOfCall(call), name).toEqual(window);
+    }
+    // Never the vehicle's whole scope.
+    expect(
+      calls
+        .slice(mark)
+        .some((c) => scopeOfCall(c)?.from === G - 2n * DAY && scopeOfCall(c)?.to === G + 3n * DAY),
+    ).toBe(false);
+    expect(count("refExtent")).toEqual([]);
   });
 });

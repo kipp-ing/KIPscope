@@ -1,0 +1,127 @@
+/* Session bar (add-case-open K14): one line in the strip head, the text truncates first; buttons are
+   the scope head's pills (.time-strip-button), so the strip stays ≤ 56 px. */
+
+.session-bar {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ‹ and › take their space always; linked they show on hover and focus within the bar. */
+.session-arrow {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: 14px / 14px var(--font-sans);
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.session-bar:is(:hover, :focus-within) .session-arrow,
+.session-arrow.unlinked {
+  visibility: visible;
+}
+
+.session-arrow:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.session-arrow:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.session-menu {
+  position: relative;
+  flex: none;
+}
+
+.session-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.session-popover button {
+  padding: 2px 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-popover button:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--band);
+}
+
+.session-popover button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.session-list {
+  width: min(520px, 80vw);
+  max-height: min(70vh, 520px);
+}
+
+.session-filter {
+  margin: 2px 8px 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.session-back {
+  padding: 0 10px 4px;
+  color: var(--accent);
+}
+
+.session-rows {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.session-rows button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-rows button.current {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.session-note {
+  padding: 2px 10px;
+  color: var(--muted);
+}

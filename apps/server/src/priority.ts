@@ -16,6 +16,11 @@ export function rank(cls: QueryClass): number {
   return QUERY_CLASSES.indexOf(cls);
 }
 
+/** The lower-ranked of two classes, e.g. a prefetch that never runs above the work that caused it. */
+export function lowerClass(a: QueryClass, b: QueryClass): QueryClass {
+  return rank(a) >= rank(b) ? a : b;
+}
+
 /**
  * The class of one piece of work, shared by every query it sends. Work that a request joins is
  * raised to the request's class, never lowered (design P4).

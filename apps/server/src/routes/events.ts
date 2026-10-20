@@ -14,19 +14,24 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import type { Scope } from "../datasource.ts";
+import type { CacheScope } from "../density.ts";
 import { EventsCache } from "../events.ts";
 import { type Access, queryDataRefs } from "../guard.ts";
 import {
   apiError,
+  cacheScopeOf,
   catalogsOf,
   chainPrefetch,
   outOfScope,
   parseInput,
   routeScope,
 } from "../http.ts";
+import { WorkWindowError, workWindowOf } from "../objectScope.ts";
 import { withPriority } from "../priority.ts";
 import { sourceScope } from "../scope.ts";
 import type { Workspaces } from "../workspaces.ts";
+import { addScopeWarmer } from "./case.ts";
+import { isObjectScope, workspaceScope } from "./series.ts";
 
 const Time = TimeInput.transform(BigInt);
 
@@ -71,12 +76,7 @@ export const eventsRoutes =
       source,
       catalog,
       (message) => app.log.warn(message),
-      (scope: Scope) =>
-        catalogs.get({
-          dataRef: scope.dataRef,
-          from: scope.from.toString(),
-          to: scope.to.toString(),
-        }),
+      (scope: CacheScope) => catalogs.get(workspaceScope(scope)),
     );
     // After each catalog load: every data ref's table events, then the events-line signals
     // (design E3). Independent of the density prefetch; both go through the query queue as
@@ -89,21 +89,33 @@ export const eventsRoutes =
       );
     });
     // After a scope's list loads: its table events and events-line signals, after its density and
-    // gap info (add-scope Z9), as background work.
+    // gap info (add-scope Z9), as background work (preload after a preview's load, K10). None for
+    // an object scope: its events follow the asked work windows (add-case-open K11).
     const stopScopePrefetch = catalogs.onLoaded((scope) => {
+      if (isObjectScope(scope, workspaces)) return;
       const s = sourceScope(scope);
       const signals = openEventSignals(workspaces).filter(
         (id) => parseSignalId(id)?.dataRef === s.dataRef,
       );
       chainPrefetch(deps, () =>
-        withPriority("background", () =>
-          events.prefetch([s.dataRef], signals, (message) => app.log.warn(message), s),
-        ),
+        events.prefetch([s.dataRef], signals, (message) => app.log.warn(message), s),
+      );
+    });
+    // A preview's warm work (K10), in the preview's class: the session's table events and its
+    // events-line signals; none for an object scope (K11).
+    const stopWarmer = addScopeWarmer(deps, async (scope, _signals, eventSignals) => {
+      if (scope.object) return;
+      await events.prefetch(
+        [scope.dataRef],
+        eventSignals,
+        (message) => app.log.warn(message),
+        scope,
       );
     });
     app.addHook("onClose", async () => {
       stopPrefetch();
       stopScopePrefetch();
+      stopWarmer();
     });
 
     /** Table events of a data ref plus the state changes of listed signals (spec events). */
@@ -123,6 +135,17 @@ export const eventsRoutes =
       if (scope && dataRef !== scope.dataRef) {
         return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
       }
+      // In an object scope `from`/`to` are the work window and take the scope's place (K11).
+      let window: Scope | undefined;
+      try {
+        const w = workWindowOf(query, scoped.scope);
+        if (w) window = { dataRef, ...w };
+      } catch (error) {
+        if (error instanceof WorkWindowError)
+          return apiError(reply, 400, "invalid_request", error.message);
+        throw error;
+      }
+      const cache = scoped.scope && cacheScopeOf(scoped.scope);
       const visible = scoped.catalog;
       if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
@@ -134,8 +157,8 @@ export const eventsRoutes =
       try {
         // Shared and cached, so a client close does not abort them (design E3).
         const [table, results] = await Promise.all([
-          events.table(dataRef, scope),
-          Promise.all(signals.map((id) => events.signal(id, scope))),
+          events.table(dataRef, cache, window),
+          Promise.all(signals.map((id) => events.signal(id, cache, window))),
         ]);
         const lists: DiagEvent[][] = [table.events];
         const skipped: EventList["skipped"] = [];
@@ -145,9 +168,10 @@ export const eventsRoutes =
           else lists.push(result);
         });
         let merged = mergeEvents(...lists);
-        // With a scope the loads hold only its events; `from`/`to` narrow them further.
+        // With a scope the loads hold only its events; `from`/`to` narrow them further (a work
+        // window's loads hold exactly its events).
         const { from, to } = query;
-        if (from !== undefined && to !== undefined) {
+        if (!window && from !== undefined && to !== undefined) {
           merged = merged.filter((e) => {
             const t = BigInt(e.t);
             return t >= from && t < to;

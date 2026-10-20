@@ -11,6 +11,8 @@
     "seed:test": "node --env-file-if-exists=../../.env scripts/seed-test-db.ts",
     "seed:demo": "node --env-file-if-exists=../../.env scripts/seed-demo.ts",
     "seed:adx": "node --env-file-if-exists=../../.env scripts/seed-adx.ts",
+    "seed:long": "node --env-file-if-exists=../../.env scripts/seed-long.ts",
+    "measure:object": "node --env-file-if-exists=../../.env scripts/measure-object.ts",
     "test:adx": "TZ=Europe/Berlin vitest run --config vitest.adx.config.ts"
   },
   "dependencies": {

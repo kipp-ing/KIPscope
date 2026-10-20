@@ -21,16 +21,22 @@ import {
   shownName,
   signalColor,
   spanAround,
+  type TimeRange,
   type Workspace,
+  type WorkspaceCase,
+  type WorkspaceScope,
   zoomAround,
 } from "@kipscope/shared";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
 import { runPlan } from "./addSignals.ts";
-import { fetchExtent, sendCommand, signalInfo } from "./api.ts";
+import { fetchExtent, isCatalogLoading, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
+import { useCaseCatalog } from "./case/catalog.ts";
+import { SessionBar } from "./case/SessionBar.tsx";
+import { caseResultEvents } from "./case/sessionBar.ts";
 import {
   type AnyDragSource,
   canAdd,
@@ -50,6 +56,7 @@ import {
   isCopy,
   isLegendSource,
 } from "./chart/drag.ts";
+import { GAP_LOADING_RETRY_MS } from "./chart/gaps.ts";
 import { type Insets, mergeInsets } from "./chart/insets.ts";
 import { liveCursor } from "./chart/live.ts";
 import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
@@ -66,14 +73,14 @@ import { appliedFilter, shownEvents, useEvents } from "./events/eventsData.ts";
 import { stepEvent } from "./events/list.ts";
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
-import { ignoreFileDrops } from "./filedrop.ts";
+import { ignoreFileDrops, openDroppedCatalog } from "./filedrop.ts";
 import { StatusBar } from "./footer/StatusBar.tsx";
 import { useMeta } from "./footer/useMeta.ts";
 import { HelpPanel } from "./help/HelpPanel.tsx";
 import { HINTS } from "./help/hints.ts";
 import { StartCard } from "./help/StartCard.tsx";
 import { dismissStart, hasLearned, learn, showStartAgain, startDismissed } from "./help/storage.ts";
-import { isHelpKey, isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
+import { caseStepKey, isHelpKey, isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
 import {
   isEventsKey,
   isSidebarKey,
@@ -87,16 +94,18 @@ import {
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
+import { NeighbourPreload } from "./preload/preload.ts";
 import { FLASH_MS, markTarget, revealDelta } from "./reveal.ts";
 import { resultStripEvents, scopeRange } from "./time/scope.ts";
 import { stripDataRef } from "./time/strip.ts";
 import { centreRange, stepDrive } from "./time/stripGeometry.ts";
 import {
-  loadedDensity,
+  loadedDrives,
   type StripDrop,
   type StripEvents,
   type StripNavigate,
   TimeStrip,
+  useWorkWindow,
 } from "./time/TimeStrip.tsx";
 import { ValuesWindow } from "./values/ValuesWindow.tsx";
 import {
@@ -186,18 +195,39 @@ interface PendingNav {
 function EventsLoader({
   dataRef,
   signalsKey,
+  scope,
+  window,
   onList,
 }: {
   dataRef: string;
   /** The data ref's events-line signals joined with ",". */
   signalsKey: string;
+  /** The workspace's scope: a scope change loads again (add-case-open, no page load per session). */
+  scope: WorkspaceScope | undefined;
+  /** In an object scope: the work window the events cover (K11). */
+  window: TimeRange | undefined;
   onList: (dataRef: string, list: EventList | undefined) => void;
 }) {
   const signals = useMemo(() => (signalsKey ? signalsKey.split(",") : []), [signalsKey]);
-  const list = useEvents(dataRef, signals);
+  const list = useEvents(dataRef, signals, scope, window);
   useEffect(() => onList(dataRef, list), [dataRef, list, onList]);
   useEffect(() => () => onList(dataRef, undefined), [dataRef, onList]);
   return null;
+}
+
+/**
+ * The case a case command leaves, for its result's message (add-case-open K14): a step or go links,
+ * Unlink unlinks, Align keeps its new mode; the answer's state push may come later.
+ */
+function caseAfter(
+  open: WorkspaceCase | undefined,
+  input: CommandInput,
+): WorkspaceCase | undefined {
+  if (!open) return undefined;
+  if (input.type === "case.unlink") return { ...open, linked: false };
+  if (input.type === "case.align") return { ...open, align: input.align };
+  if (input.type === "case.go" || input.type === "case.step") return { ...open, linked: true };
+  return open;
 }
 
 /** Data ref of a signal ID, or undefined. */
@@ -419,14 +449,30 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   const onTarget = useCallback((t: string) => setMarked(t === NEW_WINDOW ? undefined : t), []);
   const signalIds = [...new Set(windows.flatMap((w) => w.signals.map((s) => s.signalId)))];
   const missingKey = signalIds.filter((id) => !infos.current.has(id)).join(",");
+  // A server still loading its catalog (503 `catalog_unavailable`) is asked again soon; any other
+  // failure leaves the metadata unknown (the window shows the bare ID), never an unhandled rejection.
   useEffect(() => {
-    for (const id of missingKey ? missingKey.split(",") : []) {
-      signalInfo(id).then((s) => s && remember([s]));
-    }
+    let active = true;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const look = (id: string) =>
+      signalInfo(id).then(
+        (s) => active && s && remember([s]),
+        (error: unknown) => {
+          if (active && isCatalogLoading(error))
+            timers.push(setTimeout(() => look(id), GAP_LOADING_RETRY_MS));
+        },
+      );
+    for (const id of missingKey ? missingKey.split(",") : []) look(id);
+    return () => {
+      active = false;
+      for (const t of timers) clearTimeout(t);
+    };
   }, [missingKey, remember]);
 
   const liveRef = useRef(live);
   liveRef.current = live;
+  // The open catalog's entries (add-case-open K14): the strip's marks.
+  const caseCatalog = useCaseCatalog(workspace?.case?.catalogId);
   const colorOf = useCallback(
     (id: string) => signalColor(workspace ?? EMPTY_WORKSPACE, id),
     // A new workspace object per revision redraws windows when colours change.
@@ -440,16 +486,57 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     [shownKey, colorOf],
   );
 
-  const command = useCallback(
-    async (input: CommandInput): Promise<CommandResult> => {
-      const result = await sendCommand(input);
-      // An accepted command ends an older error; a notice stays. A range moved into the scope
-      // says so (add-scope Z12).
-      for (const event of resultStripEvents(result)) toStrip(event);
-      return result;
+  // Neighbour preload (add-case-open K13): one per tab; every command of the tab cancels it.
+  const preloadRef = useRef<NeighbourPreload | undefined>(undefined);
+  preloadRef.current ??= new NeighbourPreload();
+  const preload = preloadRef.current;
+  useEffect(() => {
+    const detach = preload.listen(window);
+    return () => {
+      detach();
+      preload.dispose();
+    };
+  }, [preload]);
+  useEffect(() => preload.state(live.revision), [preload, live.revision]);
+
+  // The message the latest command result put in the line (a clamp, a fallback, missing signals,
+  // add-case-open K14): it ends as the next command is sent, so only the latest result's message
+  // stays (until its ✕); that command's result may show its own.
+  const resultNotice = useRef<string | undefined>(undefined);
+  const showResult = useCallback(
+    (events: readonly StripEvent[]) => {
+      for (const event of events) {
+        toStrip(event);
+        if (event.kind === "notice") resultNotice.current = event.text;
+      }
     },
     [toStrip],
   );
+  const command = useCallback(
+    async (input: CommandInput): Promise<CommandResult> => {
+      preload.cancel();
+      const shown = resultNotice.current;
+      if (shown !== undefined) {
+        resultNotice.current = undefined;
+        toStrip({ kind: "dismiss", tone: "info", text: shown });
+      }
+      const result = await sendCommand(input);
+      // An accepted command ends an older error; a notice stays. A range moved into the scope
+      // says so (add-scope Z12), in a case workspace the session's or vehicle's edge (K14).
+      const open = liveRef.current.workspace?.case;
+      const events = input.type.startsWith("case.")
+        ? caseResultEvents(result, caseAfter(open, input), (id) => {
+            const s = infos.current.get(id);
+            return s && shownName(s);
+          })
+        : resultStripEvents(result, open);
+      showResult(events);
+      return result;
+    },
+    [toStrip, showResult, preload],
+  );
+  // The session bar sends without waiting; its result goes to the message line like any command.
+  const caseCommand = useCallback((input: CommandInput) => void command(input), [command]);
 
   // Windows this tab created, and the target of an explorer add, are scrolled into view and flash
   // once the workspace lists them (add-guidance H3; the effect below the window list refs). Drops
@@ -881,8 +968,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         e.preventDefault();
         if (e.repeat) return;
         const dataRef = stripDataRef(ws);
-        const density = dataRef ? loadedDensity(dataRef, ws.scope) : undefined;
-        const drives = density?.drives;
+        // In an object scope the work window's drives (add-case-open K14).
+        const drives = dataRef ? loadedDrives(dataRef, ws.scope) : undefined;
         const view = navView(target.id);
         const drive = drives && view && stepDrive(drives, view, key === "nextDrive" ? 1 : -1);
         if (drive) navigate(target.id, { from: BigInt(drive.from), to: BigInt(drive.to) }, true);
@@ -938,6 +1025,14 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         if (!e.repeat) toggleHelp("keys");
         return;
       }
+      // `[` and `]` step the open catalog while linked (add-case-open K14), once per press.
+      const step = caseStepKey(e, document.activeElement, liveRef.current.workspace?.case);
+      if (step) {
+        if (dragRef.current) return;
+        e.preventDefault();
+        if (!e.repeat) caseCommand(step);
+        return;
+      }
       if (e.key !== "Backspace") return onNavKey(e);
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTextField(document.activeElement)) return;
@@ -957,7 +1052,17 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       document.removeEventListener("pointerout", onOut);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onBack, onReset, navView, navigate, onJump, toggleSidebar, openEvents, toggleHelp]);
+  }, [
+    onBack,
+    onReset,
+    navView,
+    navigate,
+    onJump,
+    toggleSidebar,
+    openEvents,
+    toggleHelp,
+    caseCommand,
+  ]);
 
   // Drag and drop of legend rows (design D5) and explorer rows, with pointer events on the document.
   const mainRef = useRef<HTMLElement>(null);
@@ -1193,6 +1298,12 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
 
   // Option bar (design C5): Back and Reset zoom act on the window zoomed last, else the first one.
   const barWindow = workspace ? barTarget(workspace) : undefined;
+  // In an object scope the work window around the bar target's range (add-case-open K11): strip
+  // drives, events and pins cover it.
+  const workWindow = useWorkWindow(
+    workspace?.scope,
+    barWindow ? toRange(barWindow.range) : undefined,
+  );
   // A stale state without options still renders (design S3).
   const digits = workspace?.options?.digits ?? 3;
   const diff = workspace?.cursors?.diff ?? false;
@@ -1247,7 +1358,14 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
 
   // Render acknowledgement (design H6): one Acknowledger per tab; `send` is stable.
   const ackRef = useRef<Acknowledger | undefined>(undefined);
-  ackRef.current ??= new Acknowledger(send);
+  // A `complete` acknowledgement of the current revision starts the neighbour preload (K13).
+  ackRef.current ??= new Acknowledger((message) => {
+    const sent = send(message);
+    const ws = liveRef.current.workspace;
+    if (ws && message.revision === liveRef.current.revision)
+      preload.rendered(message.revision, ws, message.status);
+    return sent;
+  });
   const ack = ackRef.current;
   const onReady = useCallback(
     (windowId: string, revision: number, errors: RenderError[]) =>
@@ -1265,8 +1383,22 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     if (live.connected) ack.reconnected();
   }, [live.connected, ack]);
 
-  // A file dropped anywhere on the page would navigate the tab away (design H8).
-  useEffect(() => ignoreFileDrops(document), []);
+  // A file dropped anywhere on the page would navigate the tab away (design H8); a dropped catalog
+  // opens in a new workspace (add-case-open K14).
+  useEffect(
+    () =>
+      ignoreFileDrops(document, (files) => {
+        const [file] = files;
+        if (!file) return;
+        openDroppedCatalog(file).then(
+          (opened) => {
+            if (!opened) setMessage(`${file.name} holds no catalog of sessions`);
+          },
+          (e: unknown) => setMessage(e instanceof Error ? e.message : String(e)),
+        );
+      }),
+    [setMessage],
+  );
 
   // Own opens (add-saved-views V7 round 3): a `view.open` push whose revision is none of this tab's
   // open results was opened elsewhere and replaces the strip's item. The push can beat the HTTP
@@ -1343,6 +1475,27 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     if (start.message !== undefined) setMessage(start.message);
     if (start.opened) onOpened(start.opened);
   }, [start, onOpened, setMessage]);
+  // A catalog's open (add-case-open K10, K14): its missing signals, fallback and warnings in the
+  // message line, once the workspace and its case arrived.
+  const casesShown = useRef(false);
+  const openedCase = workspace?.case;
+  useEffect(() => {
+    const report = start.cases;
+    if (casesShown.current || !report || !openedCase) return;
+    casesShown.current = true;
+    const result: CommandResult = {
+      ok: true,
+      revision: 0,
+      ...(report.missing.length > 0 ? { missing: report.missing } : {}),
+      ...(report.alignFallback ? { alignFallback: true } : {}),
+    };
+    const nameOf = (id: string) => {
+      const s = infos.current.get(id);
+      return s && shownName(s);
+    };
+    showResult(caseResultEvents(result, openedCase, nameOf).filter((e) => e.kind !== "dismiss"));
+    if (report.warnings.length > 0) setNotice(report.warnings.join(" · "));
+  }, [start, openedCase, showResult, setNotice]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -1392,11 +1545,14 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
             key={ref}
             dataRef={ref}
             signalsKey={eventSignals.filter((id) => dataRefOf(id) === ref).join(",")}
+            scope={workspace?.scope}
+            window={ref === workspace?.scope?.dataRef ? workWindow : undefined}
             onList={onEventList}
           />
         ))}
       <SignalExplorer
         scope={workspace?.scope}
+        session={workspace?.case ? workspace.case.current + 1 : undefined}
         windows={windows}
         onAdd={addSignal}
         onAddMany={addSignals}
@@ -1422,6 +1578,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
           onJump={onJump}
           cursorA={cursors.a}
           focus={eventsFocus}
+          nearby={workspace?.scope?.object ? workWindow : undefined}
+          caseLinked={workspace?.case?.linked === true}
         />
       </SignalExplorer>
       <div className="workspace">
@@ -1472,6 +1630,17 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
               drop={stripDrop}
               mode={meta.meta?.catalog.mode}
               onScopeCommand={command}
+              caseCatalog={caseCatalog}
+              workWindow={workWindow}
+              sessionBar={
+                workspace?.case && (
+                  <SessionBar
+                    caseState={workspace.case}
+                    scope={workspace.scope}
+                    onCommand={caseCommand}
+                  />
+                )
+              }
             />
           </div>
           {/* Hidden during a drag but kept in place, so nothing below it moves (B1, B2). */}

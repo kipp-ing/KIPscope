@@ -56,6 +56,9 @@ export interface LoadState {
   result?: SeriesResult;
   /** The failure; also kept while a retry of the same request loads (R5). */
   error?: string;
+  /** HTTP status and code of an API failure, kept with `error` (add-case-open K14). */
+  errorStatus?: number;
+  errorCode?: string;
   /** Set while `result` is a placeholder of coarser tiles (Z4); never with status "complete". */
   placeholder?: true;
 }
@@ -65,8 +68,17 @@ export function retryable(error: unknown): boolean {
   return !(error instanceof ApiRequestError && error.status >= 400 && error.status <= 499);
 }
 
-/** The legend's status text of a signal: failed while an error is kept, empty when complete. */
-export function loadStatusText(state: LoadState | undefined): string {
+/** The error text of a signal the open catalog's session lacks (add-case-open K8, K14). */
+export const NOT_IN_SESSION = "not in this session";
+
+/**
+ * The legend's status text of a signal: failed while an error is kept, empty when complete. In a
+ * workspace with a catalog (`inCase`), a 404 `unknown_signal` reads NOT_IN_SESSION.
+ */
+export function loadStatusText(state: LoadState | undefined, inCase = false): string {
+  if (inCase && state?.errorStatus === 404 && state.errorCode === "unknown_signal") {
+    return NOT_IN_SESSION;
+  }
   if (state?.error !== undefined) return `failed: ${state.error}`;
   return state?.status === "complete" ? "" : "loading";
 }
@@ -122,6 +134,12 @@ interface Failures {
   /** A success of another request already pulled this run forward (H9). */
   pulled?: true;
 }
+
+/**
+ * Per timeseries window: the bucket target its loads ask with (its plot width), so the neighbour
+ * preload requests the tiles the window will draw (add-case-open K13).
+ */
+export const windowTargets = new Map<string, number>();
 
 let loaders = 0;
 
@@ -233,13 +251,25 @@ export class SeriesLoader {
    * The workspace's scope changed (add-scope Z12): every key loads its current request again at
    * once, keeping what it shows meanwhile, and its overview after that; its failures in a row start
    * over. A complete key reloads too: its tiles and the value lines at its edges were bounded by the
-   * old scope. A new sequence number drops any late answer of the old scope.
+   * old scope; the cache answers what it may (add-case-open K12). A new sequence number drops any
+   * late answer of the old scope. The reload waits for a microtask, so the window's update of the
+   * same commit runs first: a key it gives a new request (a step's range, a rebound signal) loads
+   * only that, never its old view under the new scope (a wasted fetch, or 409 out_of_scope).
    */
   rescope(): void {
+    for (const request of this.order) this.dropOverview(request.key);
+    if (this.order.length === 0) return;
+    const marks = new Map(this.order.map((r) => [r.key, this.latest.get(r.key)]));
+    queueMicrotask(() => this.reloadKept(marks));
+  }
+
+  /** The reload of `rescope` for the keys whose request did not change since (`marks`). */
+  private reloadKept(marks: Map<string, number | undefined>): void {
+    if (this.order.length === 0) return; // disposed meanwhile
     const loads: LoadRequest[] = [];
     for (const request of this.order) {
       const { key } = request;
-      this.dropOverview(key);
+      if (!marks.has(key) || this.latest.get(key) !== marks.get(key)) continue;
       const state = this.states.get(key);
       if (state?.request === requestId(request)) {
         this.clearRetry(key);
@@ -490,6 +520,9 @@ export class SeriesLoader {
             status: "error",
             request: id,
             error: error instanceof Error ? error.message : String(error),
+            ...(error instanceof ApiRequestError
+              ? { errorStatus: error.status, errorCode: error.code }
+              : {}),
           }),
       ...(shown?.result ? { result: shown.result } : {}),
       ...(shown?.placeholder ? { placeholder: true } : {}),

@@ -1,10 +1,19 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decodeViewLink, type Workspace as SharedWorkspace, viewLinkUrl } from "@kipscope/shared";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import {
+  decodeCasesLink,
+  decodeViewLink,
+  fromIso,
+  type Workspace as SharedWorkspace,
+  viewLinkUrl,
+} from "@kipscope/shared";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { SourceAdapter } from "../../server/src/datasource.ts";
 import { oidcAdapter, tokenClaims } from "../../server/test/identity/oidcKit.ts";
 import { type JwksServer, jwksServer, makeKey, signToken } from "../../server/test/jwks.ts";
+import { testSource } from "../../server/test/testdb.ts";
 import { parseArgs } from "../src/args.ts";
 import type { EventListData } from "../src/output.ts";
 import { eventTable } from "../src/output.ts";
@@ -18,6 +27,7 @@ import {
   sleep,
   startHangingServer,
   startServer,
+  stubSource,
 } from "./helpers.ts";
 import { type MultiServer, startMulti } from "./multi.ts";
 
@@ -131,6 +141,17 @@ describe("server address and usage", () => {
       "workspace new",
       "workspace share",
       "workspace delete",
+      "case open",
+      "case show",
+      "case next",
+      "case prev",
+      "case go",
+      "case link",
+      "case unlink",
+      "case align start|end|anchor",
+      "case align event",
+      "case url",
+      "case drives",
       "--server",
       "--workspace",
       "--token",
@@ -1724,5 +1745,261 @@ describe("identity over the CLI (add-multiuser M13)", () => {
     expect(search.code, search.stdout.join("")).toBe(0);
     expect(search.out.data.items).toEqual([]);
     expect(search.out.data.total).toBe(0);
+  });
+});
+
+describe("catalogs (add-case-open K15)", () => {
+  let m: MultiServer | undefined;
+  let dir: string | undefined;
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await m?.close();
+    m = undefined;
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  /** Catalog C4 of the design's "Test fixtures" as the finder sends it (ISO times, two vehicles). */
+  const C4 = {
+    kipscope: "cases",
+    version: 1,
+    cases: [
+      {
+        id: "testcar|driving|2026-10-01T01:00:00Z",
+        object: "testcar",
+        kind: "driving",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T01:10:00Z",
+        meta: { distance_km: 6.2 },
+      },
+      {
+        id: "othercar|driving|2026-10-01T00:00:00Z",
+        object: "othercar",
+        kind: "driving",
+        from: "2026-10-01T00:00:00Z",
+        to: "2026-10-01T00:00:01Z",
+      },
+      {
+        id: "testcar|charging|2026-10-01T04:50:00Z",
+        object: "testcar",
+        kind: "charging",
+        from: "2026-10-01T04:50:00Z",
+        to: "2026-10-01T05:10:00Z",
+        anchor: "2026-10-01T04:55:00Z",
+      },
+      {
+        id: "testcar|idle|2026-10-01T04:58:00Z",
+        object: "testcar",
+        kind: "idle",
+        from: "2026-10-01T04:58:00Z",
+        to: "2026-10-01T05:02:00Z",
+      },
+    ],
+  };
+  const file = (name: string, text: string) => {
+    dir ??= mkdtempSync(join(tmpdir(), "kipscope-cli-case-"));
+    const path = join(dir, name);
+    writeFileSync(path, text);
+    return path;
+  };
+  const caseCli = (server: MultiServer, ...argv: string[]) =>
+    runCli(["--server", server.url, ...argv]);
+  /** The stub source with the extent of any vehicle (00:00 – 10:00 on 2026-10-01), for Unlink. */
+  const withExtents = () => {
+    const stub = stubSource();
+    return {
+      ...stub,
+      refExtent: async () => ({
+        count: 100,
+        first: 1790812800000000000n,
+        last: 1790848800000000000n,
+      }),
+    } as unknown as SourceAdapter;
+  };
+  /** Feeds `text` to the call's stdin (the CLI reads `process.stdin` for "-"). */
+  const pipe = (text: string) => {
+    vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from([Buffer.from(text)]) as never);
+  };
+
+  it("opens, steps and unlinks a catalog", async () => {
+    m = await startMulti({ identity: "none", adapter: withExtents() });
+    const opened = await caseCli(m, "case", "open", file("c4.json", JSON.stringify(C4)));
+    expect(opened.code, opened.stdout.join("")).toBe(0);
+    const id = opened.out.data.workspace.id as string;
+    expect(opened.out.local.url).toBe(`${m.url}/w/${id}`);
+    expect(opened.out.data.case.count).toBe(4);
+
+    const on = (...argv: string[]) => caseCli(m as MultiServer, "--workspace", id, ...argv);
+    const first = await on("case", "show");
+    expect(first.code, first.stdout.join("")).toBe(0);
+    expect(first.out.local.position).toBe("1 / 4");
+    expect(first.out.data).toMatchObject({ count: 4, current: 0, linked: true });
+
+    const next = await on("case", "next");
+    expect(next.code, next.stdout.join("")).toBe(0);
+    expect((await on("case", "show")).out.local.position).toBe("2 / 4");
+
+    // Scope commands are refused while a catalog is open.
+    const widen = await on("scope", "widen");
+    expect(widen.code).toBe(1);
+    expect(widen.out.error.code).toBe("case_open");
+
+    const unlinked = await on("case", "unlink");
+    expect(unlinked.code, unlinked.stdout.join("")).toBe(0);
+    const stuck = await on("case", "next");
+    expect(stuck.code).toBe(1);
+    expect(stuck.out.error.code).toBe("case_unlinked");
+
+    // Link returns to the session left: entry 2 of 4 (position 2).
+    const linked = await on("case", "link");
+    expect(linked.code, linked.stdout.join("")).toBe(0);
+    const after = await on("case", "show");
+    expect(after.out.local.position).toBe("2 / 4");
+    expect(after.out.data.linked).toBe(true);
+
+    // go N, align and the end of the catalog.
+    expect((await on("case", "go", "4")).code).toBe(0);
+    expect((await on("case", "show")).out.local.position).toBe("4 / 4");
+    const past = await on("case", "next");
+    expect(past.code).toBe(1);
+    expect(past.out.error.code).toBe("case_end");
+    const beyond = await on("case", "go", "5");
+    expect(beyond.code).toBe(1);
+    expect(beyond.out.error.code).toBe("case_end");
+    expect((await on("case", "align", "end")).code).toBe(0);
+    expect((await on("case", "show")).out.data.align).toEqual({ mode: "end" });
+    expect((await on("case", "link", "1")).code).toBe(0);
+    expect((await on("case", "show")).out.local.position).toBe("1 / 4");
+  });
+
+  it("refuses case commands in a workspace without a catalog", async () => {
+    m = await startMulti({ identity: "none", adapter: withExtents() });
+    const plain = await caseCli(m, "state");
+    expect(plain.code).toBe(0);
+    const shown = await caseCli(m, "case", "show");
+    expect(shown.code).toBe(1);
+    expect(shown.out.error.code).toBe("no_case");
+    const stepped = await caseCli(m, "case", "next");
+    expect(stepped.code).toBe(1);
+    expect(stepped.out.error.code).toBe("no_case");
+  });
+
+  it("builds a catalog from drives", async () => {
+    // The seeded test DB: drivecar has several drives, testcar one; full mode (the strip needs a catalog).
+    m = await startMulti({ identity: "none", adapter: testSource() as unknown as SourceAdapter });
+    const density = (await (await fetch(`${m.url}/api/density?dataRef=drivecar`)).json()) as {
+      drives: { from: string; to: string; rows: number }[];
+    };
+    expect(density.drives.length).toBeGreaterThan(0);
+
+    const drives = await caseCli(m, "case", "drives", "drivecar");
+    expect(drives.code, drives.stdout.join("")).toBe(0);
+    const doc = drives.out.data;
+    expect(doc.kipscope).toBe("cases");
+    expect(doc.cases).toHaveLength(density.drives.length);
+    doc.cases.forEach((entry: Record<string, unknown> & { meta: { rows: number } }, i: number) => {
+      const drive = density.drives[i] as (typeof density.drives)[number];
+      expect(entry.object).toBe("drivecar");
+      expect(entry.kind).toBe("driving");
+      expect(entry.title).toBe(`Drive ${i + 1}`);
+      expect(fromIso(entry.from as string)).toBe(BigInt(drive.from));
+      expect(fromIso(entry.to as string)).toBe(BigInt(drive.to));
+      expect(entry.id).toBe(`drivecar|drive|${entry.from}`);
+      expect(entry.meta.rows).toBe(drive.rows);
+    });
+    // In time order.
+    const starts = doc.cases.map((c: { from: string }) => fromIso(c.from));
+    expect(starts).toEqual([...starts].sort((a, b) => (a < b ? -1 : 1)));
+
+    // No such vehicle: the server's 404 code, exit 1.
+    const none = await caseCli(m, "case", "drives", "nosuchcar");
+    expect(none.code).toBe(1);
+    expect(none.out.ok).toBe(false);
+  });
+
+  it("opens drives piped from case drives", async () => {
+    m = await startMulti({ identity: "none", adapter: testSource() as unknown as SourceAdapter });
+    const density = (await (await fetch(`${m.url}/api/density?dataRef=testcar`)).json()) as {
+      drives: unknown[];
+    };
+    expect(density.drives.length).toBeGreaterThan(0);
+    const drives = await caseCli(m, "case", "drives", "testcar");
+    expect(drives.code, drives.stdout.join("")).toBe(0);
+    // `kipscope case drives testcar | kipscope case open -`
+    pipe(drives.stdout[0] as string);
+    const opened = await caseCli(m, "case", "open", "-");
+    expect(opened.code, opened.stdout.join("")).toBe(0);
+    expect(opened.out.data.case.count).toBe(density.drives.length);
+    const id = opened.out.data.workspace.id as string;
+    const catalog = (await (await fetch(`${m.url}/api/w/${id}/case`)).json()) as {
+      entries: { dataRef: string }[];
+    };
+    expect(catalog.entries).toHaveLength(density.drives.length);
+    expect(new Set(catalog.entries.map((e) => e.dataRef))).toEqual(new Set(["testcar"]));
+  });
+
+  it("prints a catalog link", async () => {
+    // No server contact is needed: the link is made from the file.
+    const server = "http://localhost:7310";
+    const cliUrl = (path: string) => runCli(["--server", server, "case", "url", path]);
+
+    const c4 = await cliUrl(file("c4.json", JSON.stringify(C4)));
+    expect(c4.code, c4.stdout.join("")).toBe(0);
+    const url = c4.out.local.url as string;
+    expect(url.startsWith(`${server}/open#cases=`)).toBe(true);
+    const decoded = await decodeCasesLink(url.slice(url.indexOf("#cases=") + "#cases=".length));
+    expect(decoded).toEqual(C4);
+
+    // A signed catalog is passed as it is.
+    const jws = await cliUrl(file("signed.txt", "aaa.bbb.ccc\n"));
+    expect(jws.code, jws.stdout.join("")).toBe(0);
+    expect(jws.out.local.url).toBe(`${server}/open#cases=aaa.bbb.ccc`);
+
+    // 2,000 sessions do not fit in a link of 8,192 characters.
+    let seed = 7;
+    const hex = () => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed.toString(16).padStart(8, "0");
+    };
+    const many = {
+      ...C4,
+      cases: Array.from({ length: 2000 }, (_, i) => ({
+        id: `VIN${hex()}${hex()}|driving|${i}`,
+        object: `VIN${hex()}`,
+        kind: "driving",
+        from: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000).toISOString(),
+        to: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000 + 1_800_000).toISOString(),
+        title: `F-${hex()}`,
+        meta: { distance_km: Number.parseFloat((i * 1.37).toFixed(2)) },
+      })),
+    };
+    const long = await cliUrl(file("many.json", JSON.stringify(many)));
+    expect(long.code).toBe(2);
+    expect(long.out.error.code).toBe("link_too_long");
+  });
+
+  it("opens a catalog link's code and refuses unreadable input", async () => {
+    m = await startMulti({ identity: "none", adapter: withExtents() });
+    // The code of an unsigned link, read from a file.
+    const url = (await caseCli(m, "case", "url", file("c4.json", JSON.stringify(C4)))).out.local
+      .url as string;
+    const code = url.slice(url.indexOf("#cases=") + "#cases=".length);
+    const opened = await caseCli(m, "case", "open", file("code.txt", `${code}\n`));
+    expect(opened.code, opened.stdout.join("")).toBe(0);
+    expect(opened.out.data.case.count).toBe(4);
+    // A missing file and an empty one are usage errors: nothing is sent.
+    const before = m.app.workspaces.listOf("local").length;
+    expect((await caseCli(m, "case", "open", join(tmpdir(), "no-such-catalog.json"))).code).toBe(2);
+    expect((await caseCli(m, "case", "open", file("empty.json", "  \n"))).code).toBe(2);
+    expect(m.app.workspaces.listOf("local")).toHaveLength(before);
+    // A catalog the server refuses exits 1 with its code.
+    const bad = await caseCli(
+      m,
+      "case",
+      "open",
+      file("bad.json", JSON.stringify({ ...C4, cases: [] })),
+    );
+    expect(bad.code).toBe(1);
+    expect(bad.out.error.code).toBe("invalid_catalog");
   });
 });

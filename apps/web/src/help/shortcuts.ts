@@ -27,7 +27,7 @@ export interface Shortcut {
   action: string;
   /**
    * Keyboard entries only: events the global handlers (navKey, isSearchKey, isSidebarKey,
-   * isEventsKey, isHelpKey) must recognise. Backspace, Esc and the signal list's keys are handled
+   * isEventsKey, isHelpKey, caseStepKey) must recognise. Backspace, Esc and the signal list's keys are handled
    * in place (App, drags, explorer field) and carry none.
    */
   probe?: KeyProbe[];
@@ -81,6 +81,12 @@ export const SHORTCUTS: Shortcut[] = [
     keys: "p  n",
     action: "Previous or next event: put cursor A on it",
     probe: [{ key: "p" }, { key: "n" }],
+  },
+  {
+    group: "Time",
+    keys: "[  ]",
+    action: "Previous or next session of the catalog",
+    probe: [{ key: "[" }, { key: "]" }],
   },
 
   { group: "Signal list", keys: "↑  ↓", action: "Move through the list" },

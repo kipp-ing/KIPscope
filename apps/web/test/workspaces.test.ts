@@ -1,7 +1,9 @@
 import {
+  CasesDocument,
   CLOSE_NO_ACCESS,
   CLOSE_WORKSPACE_GONE,
   EMPTY_WORKSPACE,
+  encodeCasesLink,
   encodeViewLink,
   type Me,
   RECENT_WORKSPACES,
@@ -10,7 +12,7 @@ import {
 } from "@kipscope/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyLiveMessage, FINAL_CLOSES, type LiveState } from "../src/live.ts";
 import { apiPath, resolvesWorkspace, withWorkspace } from "../src/workspaces/apiPath.ts";
 import { GatePage } from "../src/workspaces/Gate.tsx";
@@ -18,7 +20,7 @@ import { gateOf, LATEST_WORKSPACE, NEW_WORKSPACE } from "../src/workspaces/gate.
 import { ReadOnlyPill, readOnlyTitle } from "../src/workspaces/ReadOnlyPill.tsx";
 import { recentRows } from "../src/workspaces/recent.ts";
 import { shareItems } from "../src/workspaces/share.ts";
-import { startupTarget } from "../src/workspaces/startup.ts";
+import { CASES_FAILED, startupTarget, startWorkspace } from "../src/workspaces/startup.ts";
 import { sinceText, workspaceTitle } from "../src/workspaces/title.ts";
 
 const at = (path: string) => {
@@ -397,5 +399,97 @@ describe("read-only pill", () => {
       undefined,
     ])
       expect(renderToStaticMarkup(createElement(ReadOnlyPill, { summary: s }))).toBe("");
+  });
+});
+
+describe("catalog start-up (add-case-open K14)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const C4_DOC = {
+    kipscope: "cases",
+    version: 1,
+    cases: [
+      {
+        id: "testcar|driving|2026-10-01T01:00:00Z",
+        object: "testcar",
+        from: "2026-10-01T01:00:00Z",
+        to: "2026-10-01T01:10:00Z",
+      },
+    ],
+  };
+  const ME: Me = { user: "local", identity: "none", roles: [], canShare: true };
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+  /** The browser as the start-up sees it: a fake server for /api/me and POST /api/workspaces. */
+  function browser(open: (body: unknown) => Response) {
+    const posts: unknown[] = [];
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        urls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url === "/api/me") return json(200, ME);
+        if (url === "/api/workspaces" && init?.method === "POST") {
+          const body = JSON.parse(String(init.body));
+          posts.push(body);
+          return open(body);
+        }
+        throw new Error(`unexpected request ${url}`);
+      }),
+    );
+    const replaceState = vi.fn();
+    vi.stubGlobal("history", { replaceState });
+    return { posts, urls, replaceState };
+  }
+
+  it("chooses a catalog from the address", async () => {
+    const code = await encodeCasesLink(CasesDocument.parse(C4_DOC));
+    // The finder's link wins over the path; a JWS in the fragment is passed as it is.
+    expect(await startupTarget(at(`/open#cases=${code}`))).toEqual({ cases: code });
+    expect(await startupTarget(at("/#cases=aaa.bbb.ccc"))).toEqual({ cases: "aaa.bbb.ccc" });
+    // No catalog: as before.
+    expect(await startupTarget(at("/open"))).toEqual({ create: { reuse: true } });
+  });
+
+  it("opens /open#cases= as a new workspace", async () => {
+    const code = await encodeCasesLink(CasesDocument.parse(C4_DOC));
+    const b = browser(() =>
+      json(200, {
+        workspace: summary("abcdefghij"),
+        case: { count: 4, current: 0, dataRefs: ["testcar"], missing: [], warnings: [] },
+      }),
+    );
+    const started = await startWorkspace(at(`/open#cases=${code}`));
+    expect(started).toMatchObject({ kind: "ready", workspace: "abcdefghij" });
+    if (started.kind === "ready") expect(started.cases?.count).toBe(4);
+    // One post with the code, and the address becomes /w/<id> without a page load.
+    expect(b.posts).toEqual([{ open: { cases: code } }]);
+    expect(b.urls.filter((u) => u.startsWith("POST"))).toEqual(["POST /api/workspaces"]);
+    expect(b.replaceState).toHaveBeenCalledTimes(1);
+    expect(b.replaceState).toHaveBeenCalledWith(null, "", "/w/abcdefghij");
+  });
+
+  it("shows the gate page of a catalog that did not open", async () => {
+    const b = browser(() =>
+      json(403, {
+        error: { code: "wrong_user", message: "this catalog was made for another user" },
+      }),
+    );
+    const started = await startWorkspace(at("/open#cases=aaa.bbb.ccc"));
+    expect(started.kind).toBe("gate");
+    if (started.kind !== "gate") return;
+    expect(CASES_FAILED).toBe("Could not open the sessions");
+    expect(started.gate.title).toBe("Could not open the sessions");
+    expect(started.gate.text).toContain("wrong_user");
+    expect(started.gate.text).toContain("this catalog was made for another user");
+    // The button back to the user's latest workspace.
+    expect(started.gate.actions).toEqual([LATEST_WORKSPACE]);
+    expect(b.replaceState).not.toHaveBeenCalled();
+    // The gate page renders the message.
+    const html = renderToStaticMarkup(createElement(GatePage, { gate: started.gate, me: ME }));
+    expect(html).toContain("Could not open the sessions");
+    expect(html).toContain("wrong_user");
+    expect(html).toContain("My latest workspace");
   });
 });

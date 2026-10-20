@@ -125,6 +125,8 @@ export interface CatalogSnapshot {
   loadedAt: string;
   /** The scope this list belongs to; absent for the full catalog. */
   scope?: WorkspaceScope;
+  /** Object scope only: the list is the last linked session's while the vehicle's own list loads (add-case-open K11). */
+  partial?: true;
 }
 
 export interface SignalPage {

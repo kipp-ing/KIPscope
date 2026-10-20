@@ -277,7 +277,12 @@ export async function settleStep(
   return ok;
 }
 
-/** History key: one shared history while linked ("*"), else per window ID. */
-export function historyKey(linked: boolean, windowId: string): string {
-  return linked ? "*" : windowId;
+/**
+ * History key: one shared history while linked ("*"), else per window ID; with an open catalog
+ * one set per catalog index (`caseIndex`, add-case-open K7), so stepping back to a session
+ * restores its history. A step itself pushes no entry.
+ */
+export function historyKey(linked: boolean, windowId: string, caseIndex?: number): string {
+  const key = linked ? "*" : windowId;
+  return caseIndex === undefined ? key : `${key}@${caseIndex}`;
 }

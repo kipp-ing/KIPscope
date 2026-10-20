@@ -10,6 +10,7 @@ import {
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { alignToEvent } from "../src/case/sessionBar.ts";
 import { EventsPanel } from "../src/events/EventsPanel.tsx";
 import { appliedFilter, previewedFilter } from "../src/events/eventsData.ts";
 import {
@@ -23,6 +24,8 @@ import {
   rowName,
   stepEvent,
 } from "../src/events/list.ts";
+import { TimeStrip } from "../src/time/TimeStrip.tsx";
+import { caseWorkspace } from "./caseFixtures.ts";
 import { atB, fakeEvent } from "./fakeEvents.ts";
 
 // Tests run with TZ=Europe/Berlin (see package.json).
@@ -322,5 +325,84 @@ describe("events panel while the typed filter is invalid", () => {
     // Default `active changes`: two active faults and the change are shown, the untested DTC hidden.
     expect(html).toContain("1 hidden");
     expect(html).toMatch(/All[^0-9]*3/);
+  });
+});
+
+describe("events panel with a catalog (add-case-open)", () => {
+  const dtc = fakeEvent(atB(5, 0, 0), "active", { name: "P0CA700", source: "BMS" });
+  const list: EventList = {
+    dataRef: "testcar",
+    total: 1,
+    counts: { active: 1 },
+    sources: [{ source: "BMS", count: 1 }],
+    events: [dtc],
+    skipped: [],
+  };
+  const panel = (extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      createElement(EventsPanel, {
+        list,
+        filter: "all",
+        signals: [],
+        info: () => undefined,
+        range: undefined,
+        onCommand: async () => ({ ok: true, revision: 1 }) as CommandResult,
+        onJump: () => undefined,
+        cursorA: undefined,
+        focus: 0,
+        ...extra,
+      }),
+    );
+
+  it("offers Align on an event row", () => {
+    // Linked: the row has an Align action; without a catalog it has none.
+    expect(panel({ caseLinked: true })).toContain('class="events-align"');
+    expect(panel({ caseLinked: false })).not.toContain("events-align");
+    expect(panel()).not.toContain("events-align");
+    // The action sends the event's match and its time (05:00:00 = 1790830800 s).
+    expect(alignToEvent(dtc)).toEqual({
+      type: "case.align",
+      align: { mode: "event", event: { kind: "dtc", source: "BMS", name: "P0CA700" } },
+      at: "1790830800000000000",
+    });
+  });
+
+  it("asks events for the work window in an object scope", () => {
+    const window = {
+      from: String(atB(0, 0, 0)),
+      to: String(atB(0, 0, 0) + 3n * 86_400_000_000_000n),
+    };
+    const nearby = panel({ nearby: window });
+    expect(nearby).toContain("Nearby");
+    expect(nearby).toContain("Events within 3 d around the view");
+    expect(nearby).toContain("In view");
+    expect(panel()).not.toContain("Nearby");
+
+    // The strip's count reads "<shown> of <total> events nearby".
+    const workspace = {
+      ...caseWorkspace({ current: 0 }),
+      scope: {
+        dataRef: "testcar",
+        from: String(atB(0, 0, 0)),
+        to: String(atB(10, 0, 0)),
+        object: true as const,
+      },
+    };
+    const strip = renderToStaticMarkup(
+      createElement(TimeStrip, {
+        workspace,
+        events: { shown: [dtc], total: 9 },
+        workWindow: window,
+      }),
+    );
+    expect(strip).toContain("1 of 9 events nearby");
+    const linked = renderToStaticMarkup(
+      createElement(TimeStrip, {
+        workspace: { ...workspace, scope: { ...workspace.scope, object: undefined } as never },
+        events: { shown: [dtc], total: 9 },
+      }),
+    );
+    expect(linked).toContain("1 of 9 events");
+    expect(linked).not.toContain("nearby");
   });
 });

@@ -235,3 +235,116 @@ describe("SeriesCache", () => {
     });
   });
 });
+
+describe("SeriesCache across scopes (add-case-open)", () => {
+  const S = 262144n; // tile span of level 10 (width 1024 ns)
+  const sig = "c/s"; // data ref "c"
+  const scope = (from: bigint, to: bigint) => ({
+    dataRef: "c",
+    from: String(from),
+    to: String(to),
+  });
+  /** Ten raw points in each of the level-10 tiles `from` … `to`. */
+  const tiles = (from: number, to: number): FakePoint[] =>
+    Array.from({ length: to - from + 1 }, (_, k) =>
+      Array.from({ length: 10 }, (_, i) => ({
+        t: BigInt(from + k) * S + 1000n * BigInt(i) + 500n,
+        v: (from + k) * 100 + i,
+      })),
+    ).flat();
+
+  it("keeps tiles across scopes", async () => {
+    const { fetch, calls } = fakeFetch(tiles(0, 130));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    // Entry 0's scope [10 S, 20 S), entry 2's scope [100 S, 110 S): two sessions of one vehicle.
+    const first = scope(10n * S, 20n * S);
+    const second = scope(100n * S, 110n * S);
+
+    cache.setScope(first);
+    const load = cache.load("w", sig, 10, [12n, 13n]);
+    expect(calls).toHaveLength(1);
+    calls[0]?.answer();
+    const drawn = await Promise.all(load);
+    expect(cache.find(sig, 10, 12n)).toBeDefined();
+
+    // The scope changes: nothing is cleared; the other session loads its own tiles.
+    cache.setScope(second);
+    expect(cache.peek(sig, 10, 12n)).toBeDefined();
+    expect(cache.find(sig, 10, 12n)).toBeUndefined(); // outside the new scope
+    const other = cache.load("w", sig, 10, [105n]);
+    expect(calls).toHaveLength(2);
+    calls[1]?.answer();
+    await Promise.all(other);
+
+    // Back to the first scope: the same window asks the same tiles and gets them from memory.
+    cache.setScope(first);
+    const again = [12n, 13n].map((i) => cache.find(sig, 10, i));
+    expect(again.every((t) => t !== undefined)).toBe(true);
+    expect(again.map((t) => t?.data)).toEqual(drawn.map((t) => t.data));
+    expect(calls).toHaveLength(2); // no third fetch
+  });
+
+  it("stores only tiles inside the scope they were fetched under", async () => {
+    const { fetch, calls } = fakeFetch(tiles(0, 5));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    // Scope [1.5 S, 3.5 S): tile 1 and tile 3 stick out on one side, tile 2 lies inside.
+    cache.setScope(scope((3n * S) / 2n, (7n * S) / 2n));
+    const run = cache.load("w", sig, 10, [1n, 2n, 3n]);
+    expect(calls).toHaveLength(1);
+    calls[0]?.answer();
+    expect(await Promise.all(run)).toHaveLength(3); // the window still draws all three
+    expect(cache.peek(sig, 10, 1n)).toBeUndefined();
+    expect(cache.peek(sig, 10, 2n)).toBeDefined();
+    expect(cache.peek(sig, 10, 3n)).toBeUndefined();
+    // A later request for the edge tile fetches again.
+    cache.load("w", sig, 10, [1n]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("refetches a cut raw tile under a wider scope", async () => {
+    // Points start in tile 2, so tile 2 has no point before it: the scope's start cut nothing, but
+    // the answer cannot tell, and a wider scope may hold an earlier point.
+    const { fetch, calls } = fakeFetch(tiles(2, 8));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    const narrow = scope(2n * S, 6n * S);
+    cache.setScope(narrow);
+    const run = cache.load("w", sig, 10, [2n]);
+    calls[0]?.answer();
+    await Promise.all(run);
+    expect(cache.peek(sig, 10, 2n)).toBeDefined();
+    expect(cache.find(sig, 10, 2n)).toBeDefined(); // same scope: from memory
+
+    // A scope that starts 1 h before: the tile is asked again.
+    cache.setScope(scope(2n * S - 3_600_000_000_000n, 6n * S));
+    expect(cache.find(sig, 10, 2n)).toBeUndefined();
+    // A scope that starts where the first one did: from memory.
+    cache.setScope(scope(2n * S, 8n * S));
+    expect(cache.find(sig, 10, 2n)).toBeDefined();
+  });
+
+  it("answers no tile of another data ref than the scope's", async () => {
+    const { fetch, calls } = fakeFetch(tiles(0, 5));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    cache.setScope(scope(0n, 6n * S));
+    const run = cache.load("w", "c/s", 10, [2n]);
+    calls[0]?.answer();
+    await Promise.all(run);
+    expect(cache.find("c/s", 10, 2n)).toBeDefined();
+    expect(cache.find("other/s", 10, 2n)).toBeUndefined();
+  });
+
+  it("keys runs in flight by tile and scope", async () => {
+    const { fetch, calls } = fakeFetch(tiles(0, 130));
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    cache.setScope(scope(10n * S, 20n * S));
+    cache.load("w", sig, 10, [12n]);
+    expect(calls).toHaveLength(1);
+    // The same tile asked under another scope is another run: the first one's answer never serves it.
+    cache.setScope(scope(11n * S, 21n * S));
+    cache.load("w", sig, 10, [12n]);
+    expect(calls).toHaveLength(2);
+    // The same scope again joins the run in flight.
+    cache.load("v", sig, 10, [12n]);
+    expect(calls).toHaveLength(2);
+  });
+});

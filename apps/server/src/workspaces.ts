@@ -1,7 +1,8 @@
 import { randomInt } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type CaseCatalog,
   DataRef,
   GRANT_ALL,
   GRANT_NONE,
@@ -92,9 +93,40 @@ function newId(): string {
   return id;
 }
 
+/** The `kipscope` tag and version of a catalog file (add-case-open K9 step 5). */
+const CATALOG_TAG = "case-catalog";
+const CATALOG_VERSION = 1;
+/** `<id>.cases.json`: the catalog of a workspace opened from one, next to its workspace file. */
+const CATALOG_SUFFIX = ".cases.json";
+
+/** The text of a catalog file. */
+const catalogFileText = (catalog: CaseCatalog) =>
+  `${JSON.stringify({ kipscope: CATALOG_TAG, version: CATALOG_VERSION, catalog })}\n`;
+
+const isText = (value: unknown) => typeof value === "string";
+
+/** Why a parsed catalog file is not the catalog `catalogId` with `count` entries; undefined when it is. */
+function catalogFileError(json: unknown, catalogId: string, count: number): string | undefined {
+  const file = json as { kipscope?: unknown; version?: unknown; catalog?: Partial<CaseCatalog> };
+  if (typeof json !== "object" || json === null) return "not an object";
+  if (file.kipscope !== CATALOG_TAG || file.version !== CATALOG_VERSION)
+    return "not a KIPscope catalog file of version 1";
+  const catalog = file.catalog;
+  if (catalog?.catalogId !== catalogId) return "catalogId: not the workspace's catalog";
+  const entries = catalog.entries;
+  if (!Array.isArray(entries) || entries.length !== count)
+    return `entries: not the ${count} sessions of the workspace's catalog`;
+  for (const [i, e] of entries.entries())
+    if (![e?.id, e?.object, e?.dataRef, e?.from, e?.to].every(isText))
+      return `entries[${i}]: not a session`;
+  return undefined;
+}
+
 /** Internal state per workspace: its file writer, last scope, activity order, reuse claim. */
 interface Held {
   entry: WorkspaceEntry;
+  /** The open catalog's entries (add-case-open K6); absent without `workspace.case`. */
+  catalog?: CaseCatalog;
   file: DebouncedFile;
   scope: string | undefined;
   /** Breaks ties of equal `lastActiveAt` (same millisecond): later activity first. */
@@ -157,9 +189,10 @@ export class WorkspaceRegistry {
         this.log.warn(`workspace dir ${this.workspacesDir} not readable: ${String(error)}`);
     }
     for (const name of names) {
-      if (!name.endsWith(".json") || name.endsWith(".bad.json")) continue;
+      if (!name.endsWith(".json") || name.endsWith(".bad.json") || name.endsWith(CATALOG_SUFFIX))
+        continue;
       const file = loadWorkspaceFile(join(this.workspacesDir, name), (m) => this.log.warn(m));
-      if (file && !this.held.has(file.id)) this.add(file);
+      if (file && !this.held.has(file.id)) this.restore(file);
     }
     this.cleanup();
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_EVERY_MS);
@@ -237,6 +270,32 @@ export class WorkspaceRegistry {
       .map((h) => h.entry);
   }
 
+  /**
+   * Gives a new workspace its content from a catalog (add-case-open K9 steps 4–5): writes the
+   * catalog file `<id>.cases.json` once, atomically, then replaces the workspace's content with
+   * `workspace` as the next revision (it has no live client yet). Returns the entry, whose store is
+   * new; undefined for an unknown ID. A failed write throws and leaves the workspace unchanged.
+   */
+  openCase(id: string, workspace: Workspace, catalog: CaseCatalog): WorkspaceEntry | undefined {
+    const held = this.held.get(id);
+    if (!held) return undefined;
+    writeAtomic(this.catalogPath(id), catalogFileText(catalog));
+    held.file.cancel();
+    held.unsubscribe();
+    const { record, store } = held.entry;
+    // The record stays the one object the routes hold.
+    const next = this.add({ ...record, revision: store.revision + 1, workspace }, record);
+    next.seq = held.seq;
+    next.catalog = catalog;
+    this.write(next);
+    return next.entry;
+  }
+
+  /** The open catalog of a workspace (add-case-open K6); undefined without one. */
+  caseOf(id: string): CaseCatalog | undefined {
+    return this.held.get(id)?.catalog;
+  }
+
   /** The effective grant of the stored one (M3); GRANT_NONE for an unknown ID. */
   grantOf(id: string): Grant {
     const held = this.held.get(id);
@@ -292,10 +351,12 @@ export class WorkspaceRegistry {
     held.file.cancel();
     held.unsubscribe();
     this.held.delete(id);
-    try {
-      rmSync(held.file.path, { force: true });
-    } catch (error) {
-      this.log.warn(`workspace file ${held.file.path} not removed: ${String(error)}`);
+    for (const path of [held.file.path, this.catalogPath(id)]) {
+      try {
+        rmSync(path, { force: true });
+      } catch (error) {
+        this.log.warn(`workspace file ${path} not removed: ${String(error)}`);
+      }
     }
     this.emit({ type: "delete", entry: held.entry, scopeChanged: false });
     return true;
@@ -352,7 +413,47 @@ export class WorkspaceRegistry {
     return held;
   }
 
-  private add(file: WorkspaceFile): Held {
+  private catalogPath(id: string): string {
+    return join(this.workspacesDir, `${id}${CATALOG_SUFFIX}`);
+  }
+
+  /**
+   * A workspace read at start; one with a case gets its catalog file (add-case-open K9 step 5). A
+   * missing or bad catalog file drops `workspace.case` with one warning; windows and scope stay.
+   */
+  private restore(file: WorkspaceFile): void {
+    const { workspace } = file;
+    if (!workspace.case) {
+      this.add(file);
+      return;
+    }
+    const path = this.catalogPath(file.id);
+    let reason: string | undefined;
+    let json: unknown;
+    try {
+      json = JSON.parse(readFileSync(path, "utf8"));
+      reason = catalogFileError(json, workspace.case.catalogId, workspace.case.count);
+    } catch (error) {
+      reason =
+        error instanceof SyntaxError
+          ? `not JSON: ${error.message}`
+          : `not readable: ${String(error)}`;
+    }
+    if (reason === undefined) {
+      const held = this.add(file);
+      held.catalog = (json as { catalog: CaseCatalog }).catalog;
+      return;
+    }
+    this.log.warn(
+      `catalog file ${path} not restored (${reason}); workspace ${file.id} has no catalog`,
+    );
+    const { case: _dropped, ...rest } = workspace;
+    const held = this.add({ ...file, workspace: rest });
+    this.write(held);
+  }
+
+  /** Holds a workspace; `record` (default: one from the file's fields) becomes the entry's. */
+  private add(file: WorkspaceFile, record?: WorkspaceRecord): Held {
     const { id, owner, share, grant, createdAt, lastActiveAt, revision, workspace } = file;
     // Commands always bring their own context (the request's signal list); this one knows no signal.
     const store = new WorkspaceStore(catalogContext(undefined), {
@@ -361,7 +462,7 @@ export class WorkspaceRegistry {
         this.log.warn(`workspace ${id}: listener failed: ${String(error)}`),
     });
     const entry: WorkspaceEntry = {
-      record: { id, owner, share, grant, createdAt, lastActiveAt },
+      record: record ?? { id, owner, share, grant, createdAt, lastActiveAt },
       store,
     };
     const held: Held = {
@@ -465,6 +566,9 @@ export type Workspaces = Pick<
   WorkspaceRegistry,
   | "get"
   | "create"
+  | "grantObjects"
+  | "openCase"
+  | "caseOf"
   | "reuseOf"
   | "defaultOf"
   | "listOf"
@@ -519,6 +623,10 @@ export function singleWorkspace(store: WorkspaceStore, id = "0000000000"): Works
     defaultOf: () => entry,
     listOf: (user) => (user === LOCAL_USER ? [entry] : []),
     grantOf: () => GRANT_ALL,
+    grantObjects: (wanted) => (wanted === id ? entry : undefined),
+    // No workspace can be created, so none is opened from a catalog.
+    openCase: () => undefined,
+    caseOf: () => undefined,
     setShare(_id, share) {
       entry.record.share = share;
       emit({ type: "share", entry, scopeChanged: false });

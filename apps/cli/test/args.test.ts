@@ -750,3 +750,119 @@ describe("workspace and token options (add-multiuser M13)", () => {
     expect(USAGE).not.toMatch(/\bsession/i);
   });
 });
+
+describe("case forms (add-case-open K15)", () => {
+  /** A workspace that holds a catalog at 0-based entry 2, for `case link` without N. */
+  const heldAtTwo: Lookups = {
+    ...noLookups,
+    workspace: async () => ({ revision: 3, workspace: { case: { current: 2 } } }) as never,
+  };
+  async function sent(argv: string[], lookups: Lookups = noLookups): Promise<unknown> {
+    const { invocation } = parseArgs(argv, {});
+    if (invocation.kind !== "command") throw new Error(`not a command: ${invocation.kind}`);
+    return JSON.parse(JSON.stringify(await resolveCommand(invocation.template, lookups)));
+  }
+
+  it("maps the case forms", async () => {
+    const forms: [string[], unknown][] = [
+      [["case", "next"], { type: "case.step", by: 1 }],
+      [["case", "prev"], { type: "case.step", by: -1 }],
+      // Positions are 1-based in the CLI, 0-based in the command.
+      [["case", "go", "3"], { type: "case.go", index: 2 }],
+      [["case", "link", "2"], { type: "case.go", index: 1 }],
+      [["case", "unlink"], { type: "case.unlink" }],
+      [["case", "align", "anchor"], { type: "case.align", align: { mode: "anchor" } }],
+      [["case", "align", "start"], { type: "case.align", align: { mode: "start" } }],
+      [["case", "align", "end"], { type: "case.align", align: { mode: "end" } }],
+      [
+        ["case", "align", "event", "dtc", "ECU1", "B1234"],
+        {
+          type: "case.align",
+          align: { mode: "event", event: { kind: "dtc", source: "ECU1", name: "B1234" } },
+        },
+      ],
+      [
+        ["case", "align", "event", "state", "VCU", "Ign_A20h.MODE", "KEYON"],
+        {
+          type: "case.align",
+          align: {
+            mode: "event",
+            event: { kind: "state", source: "VCU", name: "Ign_A20h.MODE", text: "KEYON" },
+          },
+        },
+      ],
+    ];
+    for (const [argv, command] of forms) expect(await sent(argv), argv.join(" ")).toEqual(command);
+
+    // `case link` without N goes to the workspace's current entry, read at run time.
+    expect(await sent(["case", "link"], heldAtTwo)).toEqual({ type: "case.go", index: 2 });
+    // A workspace without a catalog refuses it.
+    const noCase: Lookups = {
+      ...noLookups,
+      workspace: async () => ({ revision: 1, workspace: {} }) as never,
+    };
+    await expect(sent(["case", "link"], noCase)).rejects.toMatchObject({ code: "no_case" });
+  });
+
+  it("refuses a bad position and malformed case forms as usage errors", () => {
+    for (const argv of [
+      ["case", "go", "0"],
+      ["case", "go", "-1"],
+      ["case", "go", "x"],
+      ["case", "go"],
+      ["case", "go", "1", "2"],
+      ["case", "link", "0"],
+      ["case", "next", "1"],
+      ["case", "align"],
+      ["case", "align", "middle"],
+      ["case", "align", "event", "dtc", "ECU1"],
+      ["case", "align", "event", "dtc", "ECU1", "B1", "t", "extra"],
+      ["case", "open"],
+      ["case", "url"],
+      ["case", "drives"],
+      ["case", "nothing"],
+    ]) {
+      expect(usageError(argv).code, argv.join(" ")).toBe("usage");
+    }
+  });
+
+  it("reads the forms that are no plain command", () => {
+    const kind = (argv: string[]) => parseArgs(argv, {}).invocation;
+    expect(kind(["case", "open", "c4.json"])).toMatchObject({
+      kind: "case",
+      action: "open",
+      file: "c4.json",
+    });
+    expect(kind(["case", "open", "-"])).toMatchObject({ kind: "case", action: "open", file: "-" });
+    expect(kind(["case", "show"])).toMatchObject({ kind: "case", action: "show" });
+    expect(kind(["case", "url", "c4.json"])).toMatchObject({
+      kind: "case",
+      action: "url",
+      file: "c4.json",
+    });
+    expect(kind(["case", "drives", "smart451"])).toMatchObject({
+      kind: "case",
+      action: "drives",
+      dataRef: "smart451",
+    });
+  });
+
+  it("names the case forms in the usage text", () => {
+    for (const form of [
+      "case open FILE",
+      "case show",
+      "case next",
+      "case prev",
+      "case go N",
+      "case link",
+      "case unlink",
+      "case align start|end|anchor",
+      "case align event KIND SOURCE NAME",
+      "case url FILE",
+      "case drives REF",
+    ]) {
+      expect(USAGE, form).toContain(form);
+    }
+    expect(USAGE).toMatch(/test aid/);
+  });
+});

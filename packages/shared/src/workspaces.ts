@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type CaseOpenReport, OpenCasesRequest } from "./case.ts";
 import { type CommandResult, DataRef, type WorkspaceScope } from "./workspace.ts";
 
 /** Workspace ID: 10 × [a-z0-9] (add-multiuser M4). */
@@ -75,7 +76,8 @@ export const OpenViewRequest = z.union([
 ]);
 export type OpenViewRequest = z.infer<typeof OpenViewRequest>;
 export const CreateWorkspaceRequest = z.strictObject({
-  open: OpenViewRequest.optional(),
+  /** A view (name or document) or a catalog (add-case-open K2). */
+  open: z.union([OpenViewRequest, OpenCasesRequest]).optional(),
   /** Reuse a free workspace (M4); not together with open (400 bad_request). */
   reuse: z.literal(true).optional(),
 });
@@ -105,6 +107,8 @@ export interface CreateWorkspaceAnswer {
   reused?: boolean;
   /** Of the open. */
   result?: CommandResult;
+  /** Of an open with a catalog (add-case-open K10). */
+  case?: CaseOpenReport;
 }
 
 /** `/w/<id>`, `/api/w/<id>/<rest>` or the legacy UI path `/s/<id>`. */

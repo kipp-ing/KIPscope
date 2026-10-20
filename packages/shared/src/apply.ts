@@ -1,9 +1,11 @@
+import { type CaseEntry, caseScope } from "./case.ts";
+import { applyCaseCommand } from "./caseApply.ts";
 import { DEFAULT_EVENT_FILTER, formatEventFilter, parseEventFilter } from "./eventFilter.ts";
 import { clampToScope } from "./scope.ts";
 import { parseSignalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
-import { parseViewDoc } from "./views.ts";
+import { parseViewDoc, rebindView } from "./views.ts";
 import {
   type Command,
   type CommandErrorCode,
@@ -39,6 +41,15 @@ export interface ApplyContext {
   catalogReady?(): boolean;
   /** Scoped mode (KIPSCOPE_CATALOG=scoped): scope.clear and catalog-checked commands need a scope. */
   scopeRequired?: boolean;
+  /** The open catalog's entries and what the server resolved for a case command (add-case-open K6, K9). */
+  case?: {
+    entry(index: number): CaseEntry | undefined;
+    /** case.go/step/align: the target's alignment point, resolved by the server (K9). */
+    alignAt?: string;
+    alignFallback?: boolean;
+    /** case.unlink: the vehicle's extent [from, to), resolved by the server (K9). */
+    extent?: { from: string; to: string };
+  };
 }
 
 export type ApplyResult =
@@ -52,6 +63,10 @@ export type ApplyResult =
       report?: OpenReport;
       /** The command moved a range into the scope (design Z6). */
       clamped?: true;
+      /** case.go/step: signals the target session's list lacks (after rebinding), unique, sorted. */
+      missing?: string[];
+      /** case.go/step/align: the mode could not be resolved; aligned to the session start. */
+      alignFallback?: true;
     }
   | { ok: false; code: CommandErrorCode; message: string };
 
@@ -121,6 +136,9 @@ function checkUnits(
   );
 }
 
+const caseOpen = (): ApplyResult =>
+  fail("case_open", "a catalog is open: Unlink and Link set the scope");
+
 const scopeRequired = (): ApplyResult =>
   fail("scope_required", "set a scope first: no signal list is loaded without one");
 
@@ -180,15 +198,29 @@ function openView(
   if (notReady && !ctx.scopeRequired) return catalogUnavailable();
   const parsed = parseViewDoc(command.view);
   if (!parsed.ok) return fail(parsed.code, parsed.message);
-  const { doc } = parsed;
   const ns = (iso: string) => fromIso(iso).toString();
+  // In a case workspace the view is a layout for the catalog (add-case-open K6, K8): rebound to
+  // the current session's data ref, its windows at the whole session, the case and scope kept.
+  const held = state.case;
+  const rebound = held ? rebindView(parsed.doc, held.entry.dataRef) : undefined;
+  const doc = rebound?.doc ?? parsed.doc;
+  const session = held && caseScope(held.entry, BigInt(held.pad));
   // The command's scope (resolved by the server, design Z10), else the document's.
-  const scope: WorkspaceScope | undefined =
-    command.scope ??
-    (doc.scope && { dataRef: doc.scope.dataRef, from: ns(doc.scope.from), to: ns(doc.scope.to) });
+  const scope: WorkspaceScope | undefined = held
+    ? (state.scope ?? session)
+    : (command.scope ??
+      (doc.scope && {
+        dataRef: doc.scope.dataRef,
+        from: ns(doc.scope.from),
+        to: ns(doc.scope.to),
+      }));
   if (!scope && ctx.scopeRequired) return scopeRequired();
   if (notReady) return catalogUnavailable();
-  const report: OpenReport = { missing: [], skipped: [], warnings: [...parsed.warnings] };
+  const report: OpenReport = {
+    missing: [],
+    skipped: [],
+    warnings: [...parsed.warnings, ...(rebound?.warnings ?? [])],
+  };
   let nextId = state.nextId;
   const otherRef = (signalId: string) =>
     scope !== undefined && parseSignalId(signalId)?.dataRef !== scope.dataRef;
@@ -202,7 +234,7 @@ function openView(
       id,
       kind: "timeseries",
       ...title,
-      range: { from: ns(d.from), to: ns(d.to) },
+      range: session ? { from: session.from, to: session.to } : { from: ns(d.from), to: ns(d.to) },
       display: { mode: d.mode, envelope: d.envelope },
       signals: [],
       ...(d.height !== undefined && { height: d.height }),
@@ -315,6 +347,19 @@ function openView(
     modified: false,
   };
   if (scope) workspace.scope = scope;
+  if (held) {
+    // Unlinked: the new windows' offsets for Link, as case.unlink keeps them.
+    const linkedRanges: Record<string, TimeRange> = {};
+    for (const w of workspace.windows) {
+      if (!isTimeseries(w)) continue;
+      linkedRanges[w.id] = {
+        from: (BigInt(w.range.from) - BigInt(held.alignAt)).toString(),
+        to: (BigInt(w.range.to) - BigInt(held.alignAt)).toString(),
+      };
+    }
+    const { linkedRanges: _old, ...kept } = held;
+    workspace.case = held.linked ? kept : { ...kept, linkedRanges };
+  }
   return { ok: true, workspace, report };
 }
 
@@ -710,6 +755,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
       return openView(state, command, ctx);
 
     case "scope.set": {
+      if (state.case) return caseOpen();
       const { dataRef, from, to } = command;
       if (!dataRef || dataRef.includes("/"))
         return fail("invalid_command", "a data ref is non-empty and holds no /");
@@ -730,10 +776,17 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
     }
 
     case "scope.clear": {
+      if (state.case) return caseOpen();
       if (ctx.scopeRequired) return scopeRequired();
       const { scope: _removed, ...rest } = state;
       return { ok: true, workspace: rest };
     }
+
+    case "case.go":
+    case "case.step":
+    case "case.unlink":
+    case "case.align":
+      return applyCaseCommand(state, command, ctx);
 
     case "view.markSaved":
       return {

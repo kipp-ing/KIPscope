@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type KeyProbe, SHORTCUTS } from "../src/help/shortcuts.ts";
-import { isHelpKey, isSearchKey, type NavKey, navKey } from "../src/keys.ts";
+import { caseKey, isHelpKey, isSearchKey, type NavKey, navKey } from "../src/keys.ts";
 import { isEventsKey, isSidebarKey } from "../src/layout/sidebar.ts";
 
 const event = (p: KeyProbe) => ({
@@ -22,7 +22,9 @@ function recognised(p: KeyProbe): { any: boolean; nav: NavKey | undefined } {
       isSearchKey(e, null) ||
       isSidebarKey(e, null) ||
       isEventsKey(e, null) ||
-      isHelpKey(e, null),
+      isHelpKey(e, null) ||
+      // The catalog keys `[` and `]` (add-case-open K14).
+      caseKey(e, null) !== undefined,
   };
 }
 
@@ -76,6 +78,8 @@ describe("shortcut table", () => {
       { key: "s" },
       { key: "e" },
       { key: "?" },
+      { key: "[" },
+      { key: "]" },
     ];
     for (const h of handled) {
       expect(recognised(h).any, `handler for ${h.key} gone`).toBe(true);

@@ -1,8 +1,10 @@
 import {
+  type ApplyContext,
   CLOSE_NO_ACCESS,
   CLOSE_WORKSPACE_GONE,
   Command,
   type CommandResult,
+  caseScope,
   type LiveServerMessage,
   parseViewDoc,
   RenderedMessage,
@@ -17,21 +19,36 @@ import { keepCatalogLoaded } from "../catalog.ts";
 import { DEFAULT_SCOPE_PAD } from "../config.ts";
 import type { Access } from "../guard.ts";
 import { catalogsOf, commandStatus, userOf, workspaceOf } from "../http.ts";
-import { catalogView, dataRefsOfCommand, grantedOf, workspaceRights } from "../rights.ts";
+import { catalogView, covers, dataRefsOfCommand, grantedOf, workspaceRights } from "../rights.ts";
+import { noteObjectScope } from "../scope.ts";
 import { catalogContext } from "../workspace.ts";
 import { summaryOf, type WorkspaceEntry } from "../workspaces.ts";
+import { alignmentOf, caseEntryOf, objectExtentsOf, reboundEventSignals } from "./case.ts";
 
-/** A command result, or the 503 of a scope whose signal list did not load (add-scope Z10). */
+/**
+ * A command result, the 503 of a scope whose signal list did not load (add-scope Z10), or the 502
+ * of a case pre-step whose source query failed (add-case-open K9).
+ */
 export type CommandAnswer =
   | CommandResult
-  | (Extract<CommandResult, { ok: false }> & { reason: string });
+  | (Extract<CommandResult, { ok: false }> & { reason: string })
+  | { ok: false; code: "source_error"; message: string };
 
 /**
  * The scope a scope-changing command leaves in effect (add-scope Z10): `scope.set`'s own; for
- * `view.open` its `scope`, else the view's (`viewScope` with the pad). `changes` is false for
- * every other command.
+ * `view.open` its `scope`, else the view's (`viewScope` with the pad); in a case workspace the
+ * session's, which `view.open` keeps (add-case-open K6). `changes` is false for every other
+ * command, and for `scope.set` in a case workspace, which is refused (`case_open`).
  */
-function targetScope(command: Command, pad: bigint): { changes: boolean; target?: WorkspaceScope } {
+function targetScope(
+  command: Command,
+  pad: bigint,
+  workspace: Workspace,
+): { changes: boolean; target?: WorkspaceScope } {
+  if (workspace.case) {
+    if (command.type !== "view.open" || !workspace.scope) return { changes: false };
+    return { changes: true, target: workspace.scope };
+  }
   if (command.type === "scope.set") {
     const { dataRef, from, to } = command;
     return { changes: true, target: { dataRef, from, to } };
@@ -95,14 +112,25 @@ export async function runCommand(
   const scoped = catalogs.mode === "scoped";
   const context = (catalog: Parameters<typeof catalogView>[0] | undefined, required = scoped) =>
     catalogContext(catalog && catalogView(catalog, grant), required);
-  const answer = (result: CommandAnswer) => {
+  const answer = (result: Exclude<CommandAnswer, { code: "source_error" }>) => {
     reply.code(commandStatus(result));
     return result;
   };
   const parsed = Command.safeParse(input);
   // The store answers invalid_command itself.
   if (!parsed.success) return answer(workspace.execute(input));
-  const { changes, target } = targetScope(parsed.data, deps.scopePad ?? DEFAULT_SCOPE_PAD);
+  if (parsed.data.type.startsWith("case."))
+    return runCaseCommand(deps, entry, parsed.data as CaseCommand, input, {
+      reply,
+      answer,
+      context,
+      grant,
+    });
+  const { changes, target } = targetScope(
+    parsed.data,
+    deps.scopePad ?? DEFAULT_SCOPE_PAD,
+    workspace.workspace,
+  );
   if (changes && target) {
     // The list starts loading at once; only applying waits for older scope changes.
     const loading = catalogs.load(target).then(
@@ -145,6 +173,146 @@ export async function runCommand(
   if (changes || parsed.data.type === "scope.clear")
     return inAcceptedOrder(workspace, inCurrentScope);
   return inCurrentScope();
+}
+
+type CaseCommand = Extract<Command, { type: `case.${string}` }>;
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** What `runCommand` hands the case pre-steps. */
+interface CaseRun {
+  reply: FastifyReply;
+  answer: (result: Exclude<CommandAnswer, { code: "source_error" }>) => CommandAnswer;
+  context: (catalog: Parameters<typeof catalogView>[0] | undefined) => ApplyContext;
+  grant: ReturnType<AppDeps["workspaces"]["grantOf"]>;
+}
+
+/**
+ * The pre-steps of the case commands (add-case-open K9) before `execute`: `case.go` and
+ * `case.step` load the target session's list (503 `catalog_unavailable`, unchanged) and resolve
+ * its alignment point; `case.align` in event mode without `at` resolves the point in the current
+ * session; `case.unlink` gets the vehicle's extent (502 `source_error`, unchanged) and no list.
+ * The target's data ref must lie in the grant (403 `forbidden_data`). Refusals that need no
+ * server work (`no_case`, `case_end`, `case_unlinked`) are the store's. Case commands apply in the
+ * order they were accepted, after every scope change accepted before, and read the case (target
+ * of a step, scope of an unlink, session of an align) as it stands when they apply, so two quick
+ * steps land on the second next entry with its own point and list.
+ */
+async function runCaseCommand(
+  deps: AppDeps,
+  entry: WorkspaceEntry,
+  command: CaseCommand,
+  input: unknown,
+  run: CaseRun,
+): Promise<CommandAnswer> {
+  const { store } = entry;
+  const catalogs = catalogsOf(deps);
+  /** 502 `source_error`, the workspace unchanged. */
+  const sourceFailed = (error: unknown): CommandAnswer => {
+    run.reply.code(502);
+    return { ok: false, code: "source_error", message: errorText(error) };
+  };
+  const entryAt = (index: number) => caseEntryOf(deps, entry, index);
+  const current = () => run.context(catalogs.get(store.workspace.scope));
+  const execute = (ctx: ApplyContext, extra: NonNullable<ApplyContext["case"]> | object = {}) =>
+    run.answer(store.execute(input, { ...ctx, case: { entry: entryAt, ...extra } }));
+  const loadList = (scope: WorkspaceScope) =>
+    catalogs.load(scope).then(
+      (catalog) => ({ catalog }),
+      (error: unknown) => ({ error }),
+    );
+
+  if (command.type === "case.go" || command.type === "case.step") {
+    const targetIndex = (c: NonNullable<Workspace["case"]>) =>
+      command.type === "case.go" ? command.index : c.current + command.by;
+    // The list of the target as the case stands now starts loading at once; applying uses it when
+    // the target is still the same, and only applying waits for older scope changes.
+    const accepted = store.workspace.case;
+    const early = accepted ? targetIndex(accepted) : undefined;
+    const earlyTarget = early === undefined ? undefined : entryAt(early);
+    const prefetch =
+      accepted && earlyTarget && covers(run.grant, earlyTarget.dataRef)
+        ? loadList(caseScope(earlyTarget, BigInt(accepted.pad)))
+        : undefined;
+    return inAcceptedOrder(store, async () => {
+      const open = store.workspace.case;
+      if (!open) return execute(current());
+      const index = targetIndex(open);
+      const target = entryAt(index);
+      if ((command.type === "case.step" && !open.linked) || !target) return execute(current());
+      if (!covers(run.grant, target.dataRef))
+        return run.answer({
+          ok: false,
+          code: "forbidden_data",
+          message: `data ref ${target.dataRef} is not permitted`,
+        });
+      const pad = BigInt(open.pad);
+      const scope = caseScope(target, pad);
+      const loaded = await (index === early && prefetch ? prefetch : loadList(scope));
+      if ("error" in loaded) {
+        const message = errorText(loaded.error);
+        return run.answer({
+          ok: false,
+          code: "catalog_unavailable",
+          message: `signal list of the session not loaded: ${message}`,
+          reason: catalogs.get(scope)?.unavailableReason ?? message,
+        });
+      }
+      let point: { t: string; fallback: boolean };
+      try {
+        point = await alignmentOf(
+          deps,
+          target,
+          open.align,
+          pad,
+          reboundEventSignals(store.workspace, target.dataRef),
+        );
+      } catch (error) {
+        return sourceFailed(error);
+      }
+      return execute(run.context(loaded.catalog), {
+        alignAt: point.t,
+        alignFallback: point.fallback,
+      });
+    });
+  }
+  if (command.type === "case.align") {
+    return inAcceptedOrder(store, async () => {
+      const open = store.workspace.case;
+      if (!open?.linked || command.at !== undefined || command.align.mode !== "event")
+        return execute(current());
+      let point: { t: string; fallback: boolean };
+      try {
+        point = await alignmentOf(
+          deps,
+          open.entry,
+          command.align,
+          BigInt(open.pad),
+          reboundEventSignals(store.workspace, open.entry.dataRef),
+        );
+      } catch (error) {
+        return sourceFailed(error);
+      }
+      return execute(current(), point.fallback ? {} : { alignAt: point.t });
+    });
+  }
+  // case.unlink: the vehicle's extent of the scope as it stands when it applies, no list first
+  // (K11, lazy).
+  return inAcceptedOrder(store, async () => {
+    const scope = store.workspace.scope;
+    if (!store.workspace.case?.linked || !scope) return execute(current());
+    let extent: { from: bigint; to: bigint };
+    try {
+      extent = await objectExtentsOf(deps).get(scope.dataRef);
+    } catch (error) {
+      return sourceFailed(error);
+    }
+    const result = execute(current(), {
+      extent: { from: extent.from.toString(), to: extent.to.toString() },
+    });
+    if (result.ok) noteObjectScope(catalogs, store.workspace);
+    return result;
+  });
 }
 
 /** The data refs of a command body; a body that is no command names none (it is refused as invalid). */
@@ -239,6 +407,7 @@ export const workspaceRoutes =
       send({ type: "hello", clientId });
       send({ type: "summary", summary: summary(current) });
       send({ type: "state", revision: store.revision, workspace: store.workspace });
+      noteObjectScope(catalogs, store.workspace);
       let stopLoading = keepScopeLoaded(store.workspace.scope);
       // The registry's own listener runs first (it subscribed when the workspace was added), so a
       // command that takes this user's access closes the channel before its state is sent.
@@ -262,6 +431,7 @@ export const workspaceRoutes =
           send({ type: "summary", summary: summary(next) });
         }
         if (event.scopeChanged) {
+          noteObjectScope(catalogs, store.workspace);
           stopLoading();
           stopLoading = keepScopeLoaded(store.workspace.scope);
         }

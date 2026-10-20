@@ -59,3 +59,62 @@ export function assertSeries(value: unknown): asserts value is SeriesResult {
     if (!Array.isArray(array) || array.length !== length) fail(`${field} length`);
   }
 }
+
+/** Runs `bytes` through a (de)compression stream; rejects once the output exceeds `limit`. */
+async function transform(
+  bytes: Uint8Array<ArrayBuffer>,
+  stream: CompressionStream | DecompressionStream,
+  limit: number,
+  what: string,
+): Promise<Uint8Array> {
+  const reader = new Blob([bytes]).stream().pipeThrough(stream).getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > limit) {
+      await reader.cancel().catch(() => {});
+      throw new RangeError(`${what} inflates to more than ${limit} bytes`);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+/** base64url (no padding) of deflate-raw of the UTF-8 text: the code of `#view=` and `#cases=` links. */
+export async function packCode(text: string): Promise<string> {
+  const packed = await transform(
+    new TextEncoder().encode(text),
+    new CompressionStream("deflate-raw"),
+    Number.POSITIVE_INFINITY,
+    "text",
+  );
+  let binary = "";
+  for (let i = 0; i < packed.length; i += 0x8000) {
+    binary += String.fromCharCode(...packed.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Inverse of packCode; rejects bad base64url and bad deflate (SyntaxError, TypeError) and more
+ * than `limit` bytes inflated (RangeError, after inflating no more than the limit). `what` names
+ * the code in messages.
+ */
+export async function unpackCode(code: string, limit: number, what: string): Promise<string> {
+  if (!/^[A-Za-z0-9_-]+$/.test(code) || code.length % 4 === 1) {
+    throw new SyntaxError(`not a ${what} code`);
+  }
+  const binary = atob(code.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const text = await transform(bytes, new DecompressionStream("deflate-raw"), limit, what);
+  return new TextDecoder("utf-8", { fatal: true }).decode(text);
+}
