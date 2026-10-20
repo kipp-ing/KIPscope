@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-085: Rights live in KI.ping; a catalog is any list (2026-10-20)
+
+Jan on the exploration [2026-10-20-sessions-and-handoff.md](explore/2026-10-20-sessions-and-handoff.md): „wir können das rechtemanagement in kiping packen. das mit der zeitlichen session set stimmt nicht. die liste kann beliebig sortiert sein beliebige VINs.“
+
+- **Decision:** Partly supersedes D-084. Who may see which vehicles and sessions is decided in KI.ping, not in a KIPscope rules file. A catalog handed to KIPscope is an arbitrary list: any order, any VINs. Its order alone defines previous and next; KIPscope never re-sorts it and never treats "neighbour" as "the same vehicle, adjacent in time".
+- **Why:** KI.ping is where users find and select sessions, so it already knows what each user may see; one place for rights instead of two.
+- **Consequences:** KIPscope can no longer trust a plain handoff link: KI.ping must vouch for it (how is open, see the exploration's questions 10–12). Preloading neighbours means the next and previous list entries, which may be other vehicles. The KIPscope rules file of `add-multiuser` is in question before that change is archived.
+
 ## D-084: Pluggable identity, roles and rights per data ref (2026-10-19)
 
 Jan on `add-multiuser` Q-1, Q-2, Q-4: „1: bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten. 2. keine Ahnung es gibt rollen,. die bestätigt ein tool in verbindung mit PIng id. not my business. muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauben. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutezer alle platformen sehen. q4 views je nutzer, ja“.

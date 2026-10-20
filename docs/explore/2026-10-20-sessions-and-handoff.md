@@ -65,8 +65,8 @@ These come from a read-only pass over `/Users/jan/dev/repos/KI.ping` at commit `
 ### Catalog and neighbours
 
 - **Catalog.** The catalog is the filtered table, `POST /filters/query`, sorted on the server (default `t_start`) and paged (50, at most 500). `SessionRow` lacks both `session_type` (it is only inside the id) and `t_end` (it has `duration_min`) (`src/kustocache/api/models.py:222-232`).
-- **Neighbours.** There is no neighbour concept. Since the sessions of one vehicle tile its timeline, "previous/next of the same object" means the same VIN ordered by `t_start`.
-- **Session sets.** These already exist. `POST /sessionsets` freezes a filter into an immutable set whose id is derived from its members, ordered by `t_start`. `POST /sessionsets/{id}/handover` returns a manifest (SPEC §9.3) for KI.ping's own evaluations, with paths into its local cache. Nothing reads a set's member list without a style, and nothing reads it over HTTP for another tool. A frozen set is the natural "session catalog".
+- **Neighbours.** There is no neighbour concept. **Correction (D-085):** a catalog is any list, in any order, of any VINs. Neighbours are the previous and next list entries, nothing else; "the same vehicle, adjacent in time" is not what Jan means.
+- **Session sets.** These already exist. `POST /sessionsets` freezes a filter into an immutable set whose id is derived from its members (the code orders them by `t_start` today, but per D-085 KIPscope must not rely on any order other than the one sent). `POST /sessionsets/{id}/handover` returns a manifest (SPEC §9.3) for KI.ping's own evaluations, with paths into its local cache. Nothing reads a set's member list without a style, and nothing reads it over HTTP for another tool. A frozen set is the natural "session catalog".
 
 ### Links, auth and deployment
 
@@ -122,17 +122,23 @@ https://kipscope.example/open#cases=<deflate-raw, base64url JSON>
 **One command for link, file and CLI** (D-078). The same JSON is `POST /api/workspaces {open: {cases}}`, which answers with the new workspace's address. The same document also works as a file (`kipscope case open cases.json`, or dropped on the window) and on the CLI (`kipscope case link cases.json` prints the link).
 
 **No "active link" for now.** KI.ping does not keep controlling an open KIPscope, and KIPscope does not ask KI.ping for more sessions:
-- KI.ping has no identity to vouch for a user. A server-to-server control channel would have to act as that user, which bypasses D-084's one guard.
+- With D-085 KI.ping vouches for the user by signing the catalog (see Security), so no server-to-server channel acting as the user is needed.
 - The catalog in the link already gives KIPscope what it needs to step.
 - KI.ping opens the link with `target="kipscope"`, so later clicks reuse the same KIPscope tab. That covers "click another session in KI.ping, the KIPscope tab follows" without a channel. Each such click is one page load, which the persistent cache makes cheap.
 - **Later, if wanted:** browser-side `postMessage` between the two tabs of the same user would give a switch without a reload, and highlighting of the current session in KI.ping. No server would be involved; KIPscope accepts messages only from `KIPSCOPE_FINDER_ORIGINS`. A pull variant, `/open?set=<sessionset_id>&at=<n>` fetched by KIPscope's server, needs KI.ping's `GET /sessionsets/{id}` and an authenticated route between the two hosts. That is only worth it when both run behind the same Ping proxy.
 
 ### Security
 
-- The payload is untrusted input. It is validated by schema and size limits: at most 2,000 sessions by file or API, at most 8,192 characters by link.
+**Revised after D-085 (rights live in KI.ping).** A plain link can be written by anyone, so KIPscope can only grant what KI.ping signed:
+
+- **Signed catalog.** KI.ping's server signs the catalog as a JWS (EdDSA or ES256, its own key pair); the link carries `#cases=<JWS>`. KIPscope verifies it with KI.ping's public key (`KIPSCOPE_FINDER_JWKS`, a file or URL). The signature adds about 100 characters; the 200-session estimate still fits.
+- **Claims.** `iss` (KI.ping), `aud` (this KIPscope), `sub` (the Ping user KI.ping saw), `exp` (short, e.g. 10 min to open the link), and the catalog. The grant is exactly the sessions listed, plus, if KI.ping allows it, each object's unlink horizon (`grant.objects: {VIN: {from, to}}`).
+- **Bound to the user.** KIPscope accepts the link only if `sub` matches the signed-in user (same Ping tenant). A forwarded link does not open for someone else.
+- **The grant lives in the workspace.** Once opened, the workspace's guard allows queries only inside the grant (data refs and windows), for as long as the workspace lives; stepping and preload need no further call to KI.ping. Sharing a workspace never widens it: the receiver needs their own grant (D-084's rule, now with KI.ping as the source).
+- **Local `none` mode** stays as today: no login, unsigned catalogs accepted, everything visible.
 - Each session's object becomes a data ref through KIPscope's own mapping (`KIPSCOPE_CASE_DATAREF`, default `{object}`).
-- Each data ref goes through the guard like any `scope.set`. A session whose data the user may not see appears greyed as `no access`, and stepping skips it. The payload can name data refs but never widens access.
-- The link carries no credentials.
+- The payload is still validated by schema and size limits: at most 2,000 sessions by file or API, at most 8,192 characters by link.
+- The link carries no credentials beyond the short-lived signed grant.
 - `origin.url` ("back to KI.ping") becomes a link only if it starts with a configured finder origin, so no link can point anywhere else.
 - **Login caveat.** If the user is not signed in yet, an IdP round trip may drop the fragment. The user then clicks again in KI.ping.
 
@@ -284,10 +290,17 @@ Each question comes with a recommended answer; "ja" accepts it.
 
 1. **Terms:** "Session" means the data section, as in KI.ping. The server state is called "workspace" and drops out of the UI: no Sessions menu; "Share…" and "Recent" instead. The rename happens in `add-multiuser` before the archive. *Recommended: ja.*
 2. **Handoff:** KI.ping sends the catalog inside a link (`/open#cases=…`, up to 200 sessions). The same JSON also works as a file and on the CLI. There is no live control channel and no KIPscope → KI.ping calls; KI.ping opens the link in a named tab, so later clicks reuse it. *Recommended: ja.*
-3. **Neighbours = catalog order:** ← → follow the order KI.ping sends (its result list as sorted), even when the next session belongs to another vehicle. Unlink always stays on the current session's vehicle. *Recommended: ja.*
+3. **Neighbours = catalog order:** decided by D-085 — the list is any order, any VINs; ← → follow it as sent. Still open: Unlink always stays on the current session's vehicle. *Recommended: ja.*
 4. **Stepping keeps the dashboard:** windows keep their position relative to the session start. "Align to this event" on an event pin makes every session show the same event instead. *Recommended: ja.*
 5. **Unlink horizon:** 31 days around the session by default, Widen up to 1 year, never unbounded, with the catalog's sessions as marks on the strip. *Recommended: ja (numbers can change after the first ADX measurement).*
 6. **Cache:** tiles survive session switches in memory, and neighbours are preloaded in the background (`add-case-open`). After that, an IndexedDB store keeps up to 1 GB for 14 days, per user (`add-tile-store`). *Recommended: ja.*
 7. **Object → data ref:** the data ref is the VIN as KI.ping sends it, configurable by a template. The Azure users confirm how ADX names a vehicle. *Recommended: ja.*
 8. **Local testing without KI.ping:** KI.ping has no data for Jan's own cars. `kipscope case drives <dataRef>` builds a catalog from the strip's drives (D-060), so the session bar can be used on smart451 and the demo. It is a dev aid, and finding stays with KI.ping (D-078). *Recommended: ja.*
-9. **KI.ping button:** the team adds "Open in KIPscope" next to "Grafana" in KI.ping, in KI.ping's repo and after its own rules. It builds the link from the loaded result page; optionally `session_type` and `t_end` go onto `SessionRow`. *Recommended: ja, as a small PR once the payload is fixed.*
+9. **KI.ping button:** the team adds "Open in KIPscope" next to "Grafana" in KI.ping, in KI.ping's repo and after its own rules. Because of D-085 the link is built by KI.ping's server (it signs), not in the browser; optionally `session_type` and `t_end` go onto `SessionRow`. *Recommended: ja, as a small PR once the payload is fixed.*
+
+**After D-085 (rights in KI.ping):**
+
+10. **How KI.ping vouches:** KI.ping signs the catalog (JWS, short expiry, bound to the Ping user); KIPscope verifies with KI.ping's public key and allows only what is signed. Alternative: KIPscope asks KI.ping per request "may this user see VIN X?" — rejected, it makes KIPscope stop working whenever KI.ping is down. *Recommended: ja, signed catalog.*
+11. **Rules file in KIPscope:** drop the KIPscope rules file (role → data-ref patterns) from `add-multiuser` before its archive; on a server, KIPscope shows only what a signed grant covers, and the guard stays as the one place that enforces it. Local `none` is unchanged. *Recommended: ja.* (Alternative: keep the rules file as an option for deployments without KI.ping.)
+12. **Unlink and rights:** Unlink on a server works only as far as KI.ping's grant covers the vehicle (`grant.objects`). If KI.ping grants only the listed session windows, Unlink is greyed out. *Recommended: ja; KI.ping decides how much of a vehicle a user may see.*
+13. **Views without KI.ping:** on a server, a saved view or `#view=` link opens only data the user's current workspace grant covers; a view alone grants nothing. *Recommended: ja.*
