@@ -1,6 +1,6 @@
 # Handing sessions to KIPscope
 
-For the implementers of a finder such as KI.ping: how to send an ordered list of found sessions (a *catalog*) to KIPscope, so the user steps through them in one workspace without a page load. KIPscope does not search; the finder decides which sessions and, on a server, which vehicles the user may see (D-078, D-085, D-086). Design: [add-case-open](../openspec/changes/add-case-open/design.md) K2–K5, K15. Routes: [http-api.md](http-api.md). User side: [manual.md](manual.md).
+For the implementers of a finder such as KI.ping: how to send an ordered list of found sessions (a *catalog*) to KIPscope, so the user steps through them in one workspace without a page load. KIPscope does not search; the finder decides which sessions and, on a server, which vehicles the user may see (D-078, D-085, D-086). Design: [add-case-open](../openspec/changes/archive/2026-10-20-add-case-open/design.md) K2–K5, K15. Routes: [http-api.md](http-api.md). User side: [manual.md](manual.md).
 
 ## The catalog document
 
