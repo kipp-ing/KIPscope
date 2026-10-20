@@ -54,8 +54,8 @@ The preload SHALL request exactly the tiles (signal, level, index) each window a
 - **Evidence:** `apps/web/test/preload.test.ts` › "plans the tiles the step asks for"
 
 #### Scenario: Step after preload draws from memory
-- **WHEN** after "Plan equals the step's requests" the step to entry 3 draws both windows; and on smart451, with a catalog of at least 3 drives (`kipscope case drives smart451`, or one the lead supplies), the user waits 3 s on drive 2 and presses `]`
-- **THEN** in the test no `/api/series` request without `case=` is sent for `w1` or `w2`, edge tiles included, and both loaders end `complete`; on smart451 the network panel shows no `/api/series` request without `case=` for the timeseries windows between the key press and the drawn windows of drive 3 (overview tiles and extents may load: not preloaded, design K13)
+- **WHEN** after "Plan equals the step's requests" the step to entry 3 draws both windows; and on smart451, with a catalog of at least 3 drives (`kipscope case drives smart451`, or one the lead supplies), the user waits on drive 2 until the neighbour's preload has finished (its `case=` requests are done; on smart451 this took 0.8–12.7 s in round 5) and presses `]`
+- **THEN** in the test no `/api/series` request without `case=` is sent for `w1` or `w2`, edge tiles included, and both loaders end `complete`; on smart451 the network panel shows no `/api/series` request without `case=` for the timeseries windows between the key press and the drawn windows of drive 3 (overview tiles, the loader's prefetch of the next level and of the span after the view (`maybePrefetch`), and extents may load: not preloaded and not drawn, design K13)
 - **Evidence:** `apps/web/test/preload.test.ts` › "draws the stepped-to session from the cache" (both windows; it replaces "asks again after a step only for tiles the scope cannot store"); UI check on smart451 (network panel filtered to `/api/series`, one screenshot)
 
 ### Requirement: Preload yields and stops

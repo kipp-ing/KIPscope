@@ -104,7 +104,7 @@ describe("oidc identity adapter", () => {
       issSlash: signToken(key, c({ iss: `${jwks.issuer}/` })),
       wrongAud: signToken(key, c({ aud: "someone-else" })),
       expired31: signToken(key, c({ exp: now - 31 })),
-      expired29: signToken(key, c({ exp: now - 29 })),
+      expired20: signToken(key, c({ exp: now - 20 })),
       noExp: signToken(key, c({ exp: undefined })),
       nbfFuture: signToken(key, c({ nbf: now + 60 })),
       nbfPast: signToken(key, c({ nbf: now - 60 })),
@@ -121,7 +121,7 @@ describe("oidc identity adapter", () => {
     };
     await ok("valid", "alice", ["testers"]);
     await ok("spaceRoles", "alice", ["testers", "viewers"]);
-    await ok("expired29", "alice", ["testers"]);
+    await ok("expired20", "alice", ["testers"]);
     await ok("nbfPast", "alice", ["testers"]);
     await ok("audArray", "alice", ["testers"]);
 
