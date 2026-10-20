@@ -80,6 +80,13 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 - Built and archived `improve-events` (D-073) in three rounds plus a lead check (the 1000×557 count check, run headless): events in view with `In view | All`, `n`/`p` stepping, fault memory reads as hollow marks, a Refine section, a key line. Jan: „nice. before we upgrade some more we need more user feedback".
 - Built and archived `add-adx-source` (D-074) in two rounds plus lead checks: lean data-source contract, ADX adapter (token from `az login`), conformance suite on ClickHouse and the Kusto emulator, `docs/data-sources.md` and `docs/http-api.md`. Lead fix D-075: ClickHouse progress headers overflowed on queries over ~10 s (gap info failed, 502s since 14:26). Jan: „nice. wrap it up. we will expect user feedback for azzre".
 
+## Session 9 in brief
+
+- Jan found the session handling confusing; an exploration ([sessions and handoff](explore/2026-10-20-sessions-and-handoff.md)) showed "session" meant two things. Jan: rights live in KI.ping, a catalog is any list of any vehicles, Unlink is the whole vehicle without a bound (D-085 … D-087).
+- Revised, built and archived `add-multiuser` (D-088): "workspace" for the server state, Share… and Recent instead of the Sessions menu, a grant per workspace instead of a rules file. Lead checks with two users (alice, bob) on a separate server; lead fixes (grant of a stored `all`, `?view=` by title, refused steps roll back, gate pages name the user). A test agent deleted Jan's workspace `lhwad0nv1m`. Jan: „gut, archivieren".
+- Built and archived `add-case-open` (D-089) in five rounds plus a spec amendment and lead checks: signed catalog by link, file and CLI; session bar with `[` `]`, Align and Unlink; tiles kept across sessions, neighbour preload; measured on a synthetic 400-day car (all queries well within goal). Jan: „super das reicht. bitte archivieren."
+- Docs: [corporate.md](corporate.md) (KIPscope in a company), README section "Made for corporate environments", manual "Workspaces and sharing". Old test workspaces removed (Jan: „altkram kann alles weg").
+
 ## Next
 
 1. New direction (2026-10-19, D-078 … D-080, issue #1): KI.ping finds sessions, KIPscope shows one case (scope = data ref + time window), runs multiuser on a server, signal books with three priorities and a learned book. Planned changes in order:
