@@ -1,0 +1,72 @@
+# Tasks
+
+Written for the recommended answers Q-1 … Q-6 (proposal "Open questions for Jan"); the lead confirms them with Jan before round 1. Needs `add-multiuser` after its revision (workspace names, `grant`, `grantObjects`; design Context). Every interface two tasks share is pinned in design K2 (shared DTOs), K9 (server interfaces), K10 (routes), K14 (web API functions) and K15 (CLI), so all build tasks can run in parallel; an engineer stubs a pinned import until its task lands. The tester writes group 6 test-first from the specs and design "Test fixtures".
+
+Write areas (disjoint):
+
+- 1.1: `packages/shared/src/case.ts` (new), `workspace.ts`, `scope.ts`, `signals.ts`, `series.ts`, the create-request file of add-multiuser (`session.ts` or its successor), `index.ts`
+- 1.2: `packages/shared/src/caseApply.ts` (new), `apply.ts`, `views.ts`
+- 2.1: `apps/server/src/case.ts` (new), `caseSignature.ts` (new), `config.ts`, `.env.example`
+- 2.2: `apps/server/src/routes/case.ts` (new), the workspaces route and store of add-multiuser (`routes/sessions.ts`, `sessions.ts` or their successors), `routes/workspace.ts`, `views.ts`
+- 2.3: `apps/server/src/objectScope.ts` (new), `density.ts`, `gaps.ts`, `events.ts`, `routes/series.ts`, `routes/events.ts`, `http.ts`
+- 2.4: `apps/server/src/scope.ts`, `catalog.ts`, `routes/signals.ts`, `meta.ts`
+- 3.1: `apps/web/src/api.ts`, `chart/cache.ts`, `chart/tiles.ts`, `chart/loader.ts`, `chart/rescope.ts`, `chart/overview.ts`, `chart/gaps.ts`, `chart/TimeseriesWindow.tsx`
+- 3.2: `apps/web/src/case/*` (new), `keys.ts`, `help/shortcuts.ts`, `chart/zoom.ts`
+- 3.3: `apps/web/src/time/*`
+- 3.4: `apps/web/src/events/*`, `apps/web/src/explorer/*`
+- 3.5: `apps/web/src/preload/*` (new)
+- 3.6: `apps/web/src/App.tsx`, `main.tsx`, the start-up file of add-multiuser (`session/startup.ts` or its successor), `filedrop.ts`
+- 4.1: `apps/cli/src/*`
+- 5.1: `docs/handoff.md` (new)
+- 5.2: `docs/http-api.md`, `docs/manual.md`, `README.md`
+- 6.x: tests as listed per task; 6.6 `apps/server/scripts/seed-long.ts`, `measure-object.ts` (new) and `apps/server/package.json` scripts
+
+## 1. packages/shared
+
+- [ ] 1.1 Case DTOs and pure helpers (K2, K3, K7, K11): `case.ts` with the constants, `CaseObject`, `EventMatch`, `CaseAlign`, `CaseEntryInput`, `CasesDocument`, `CaseEntry`, `CaseCatalog`, `WorkspaceCase`, `CasePreview`, `CaseOpenReport`, `OpenCasesRequest`, `caseDataRef`, `caseScope`, `alignPoint`, `eventMatchOf`, `matchesEvent`, `firstMatch`, `rebindSignalId`, `workWindow`, `encodeCasesLink`, `decodeCasesLink`, `isSignedCases`, `casesLinkUrl`; `Workspace.case`, `WorkspaceScope.object`, the four case commands in the `Command` union, the five error codes, `CommandResult.missing` and `.alignFallback`, `ApplyContext.case`; `scopeKey` with `|object`; `CatalogSnapshot.partial`; `Density.coarse`; the create request's `open` union and `CreateWorkspaceAnswer.case`. Verify: `pnpm --filter @kipscope/shared build`; scenarios "Valid catalog with defaults", "Bad catalogs", "Template", "Points of a session", "Event matching", "Window sizes", "Object scope keyed apart".
+- [ ] 1.2 Case behaviour (K6, K7, K8, K9): `caseApply.ts` with `caseRanges` and `openCase`; `applyCommand` handles `case.go`, `case.step`, `case.unlink`, `case.align` (offsets, clamp, cursors, rebinding, `linkedRanges`, `missing`, `alignFallback`, refusals) and refuses `scope.set`/`scope.clear` with `case_open`; `views.ts` gains the rebinding of a view document to a data ref (K8) and keeps `workspace.case` on `view.open`. Verify: scenarios "Case commands without a catalog", "Step by start and by anchor", "Clamped at a short session", "Ends and unlinked", "testcar to othercar and back", "Link to another session", "Layout of the latest workspace", "Refused while a catalog is open".
+
+## 2. apps/server/src
+
+- [ ] 2.1 Reading and checking a catalog (K3, K4, K5): `caseSignature.ts` (`jose.compactVerify`, local or remote JWKS, inflate with the limit, claim checks and reasons); `case.ts` with `FinderConfig`, `CaseOpenError`, `readCases` (forms, signature, user, schema, mapping, origin filter, pad and align defaults); the nine variables in `config.ts` and `.env.example`. Verify: scenarios "Verified catalog", "Forged, expired and foreign catalogs", "Configuration", "Inflate bomb and long link" (server part).
+- [ ] 2.2 Open, catalog and case commands (K9, K10): `POST /api/workspaces {open: {cases}}` (read, create, `grantObjects`, layout from view or latest workspace, list first, `openCase`, catalog file, `CaseOpenReport`, error codes); the catalog file written, restored and deleted with its workspace; `GET /api/case`; `GET /api/case/preview` with the warm-up; the pre-steps of `case.go`, `case.step`, `case.align` and `case.unlink` in `routes/workspace.ts` (target list, alignment point, `ObjectExtents` from 2.3), `dataRefsOfCommand` for case commands, `commandStatus` 422 mapping. Verify: scenarios "Unsorted catalog of two vehicles", "Same workspace content from every form", "Unsigned catalog with a sign-in", "No finder keys", "Forwarded link", "Grant of a signed catalog", "Foreign back link", "Restart and small pushes", "Layout of the latest workspace", "View in the payload", "Step over HTTP", "Align to a DTC and step", "Align without a match", "Preview of entry 2", "Bad preview".
+- [ ] 2.3 Object scope and entry-bounded routes (K10, K11): `objectScope.ts` (`ObjectExtents`, `workWindowOf`); coarse and detail density (`from`/`to` in any scope); gaps and events per work window in an object scope (required range, ≤ 32 d, caches LRU 8, poll per held window); `/api/value` gap info by work window; `case=N` on `/api/series` and `/api/extent`; `X-KIPscope-Class: preload` on series, extent and preview (`http.ts` helper, `withPriority("preload")`). Verify: scenarios "Unlink on testcar", "Extent cached", "Coarse density", "Detail density", "Part of a scope", "Gaps and events in an object scope", "Work window in an object scope" (gaps, events), "Bounded by the entry", "Class of the source calls", "Unlinked in scoped mode"; unchanged and still passing: "One hour of testcar", "One query per scope", "A scope that cuts a logger gap", "Scoped queries and poll", "testcar events in a scope", "Scoped source calls".
+- [ ] 2.4 Lazy vehicle list (K11): in an object scope the catalog store answers the last linked session's list with `partial` and loads `listSignals(objectScope)` in the `background` class; command checks use whichever list is current; `/api/meta` reports the object list's state; the kept scopes include an unlinked workspace's session list. Verify: scenario "Partial then full".
+
+## 3. apps/web/src
+
+- [ ] 3.1 Cache across scopes and API (K12, K14 API): the pinned `api.ts` functions; `enterScope` without clearing tiles; store and use rules with `cutFrom`/`cutTo`; runs keyed by tile and scope; extents and gap info per scope key, LRU 4 (gap info by work window in an object scope); cache priority `preload` below `prefetch`, sharing its 2 slots; the window error text `not in this session` for 404 `unknown_signal` in a case workspace. Verify: scenarios "Back to a seen session", "Edge tiles not stored", "Cut raw tile under a wider scope", "Four scopes", "Visible first", "Missing signal in the window" (error line); `pnpm smoke` passes.
+- [ ] 3.2 Session bar parts (K14): `case/` with `sessionBarText`, the bar component (linked and unlinked, `‹ ›` on hover and focus, tooltips, Unlink, Link), the catalog list (filter, 500 rows, Enter, click), the Align menu, `alignToEvent(event)` for 3.3 and 3.4, the step messages, the catalog loader (`fetchCase` per `catalogId`); keys `[` `]` in `keys.ts` and the Keys tab; zoom history per catalog index in `chart/zoom.ts`. Verify: scenarios "Bar text", "Keys", "Greyed while unlinked", "Filter and go", "Messages", "Back after stepping back".
+- [ ] 3.3 Strip with a case (K14): the session bar in the head instead of `SCOPE … Widen Clear`; in an object scope the coarse bars, the detail density for the work window (asked again only when the range leaves it), its drives on the drive row and for `,` `.`, the catalog marks (hit first, tooltip, click → `case.go`), the label, pins of the work window; the pin context menu `Align sessions to this event`; the three clamp messages in `time/scope.ts`; one line, ≤ 56 px. Verify: scenarios "Head with a catalog", "Strip asks for the work window", "Marks", "Label", "Message on a clamped result", "Message in a case workspace"; `pnpm smoke` passes.
+- [ ] 3.4 Events and explorer with a case (K14): the events panel asks with the work window in an object scope, the `In view | Nearby` switch, the `nearby` count text and tooltip, the `Align` row action while linked; the explorer's partial note and 10-s reload. Verify: scenarios "Events panel nearby", "Row action", "Partial list"; "Reload on scope change" still passes.
+- [ ] 3.5 Neighbour preload (K13): `preload/` with the trigger (complete acknowledgement, no visible load, 500 ms quiet), next then previous, preview then tiles via `caseRanges` and `rebindSignalId`, `case=N` and the preload header, the 25 % budget, the cancel rules. Verify: scenarios "Order and tiles", "Gesture cancels", "Budget".
+- [ ] 3.6 Start-up and wiring (K14): `/open#cases=` → `openCases` → `replaceState` to `/w/<id>`, the gate page on failure; a dropped catalog file; `App.tsx` passes the case, the catalog and the command sender to the strip, the bar, the events panel and the preload, and shows case results in the message line. Verify: scenarios "Link in the browser", "Dropped file"; `pnpm smoke` passes.
+
+## 4. apps/cli/src
+
+- [ ] 4.1 `case` forms (K15): `open`, `show`, `next`, `prev`, `go`, `link`, `unlink`, `align`, `url`, `drives`, with usage text, 1-based positions, the pipe form of `open -`, `link_too_long`. Verify: scenarios "Forms map to requests", "Open, step and unlink over HTTP", "Open from a pipe", "Link of a catalog", "Drives of drivecar", "Help lists the forms" (cli), "Refused while a catalog is open" (CLI part).
+
+## 5. Docs
+
+- [ ] 5.1 `docs/handoff.md` for KI.ping (K16): payload table, field mapping, order rule, JWS header and deflate-raw payload, claims and lifetime, a Node `jose` example, JWKS, link limit and trimming, `target="kipscope"`, user-visible errors. Verify: scenario "Guide names every key and claim".
+- [ ] 5.2 `docs/http-api.md` (K10 routes, `case` and `from`/`to` parameters, the class header, codes), `docs/manual.md` section "Sessions from KI.ping", README (variables of K4, `case` forms, link to `docs/handoff.md`). Verify: the route-documentation test in `apps/server/test/docs.test.ts` passes; `apps/web/test/manual.test.ts` passes.
+
+## 6. Tests (tester, test-first)
+
+- [ ] 6.1 Shared: `packages/shared/test/case.test.ts` (new) and `apply.test.ts` per the scenarios naming them, with catalog C4 as a fixture. Verify: `pnpm --filter @kipscope/shared test`.
+- [ ] 6.2 Server handoff: `apps/server/test/caseSignature.test.ts` (new; Ed25519 and P-256 keys, local JWKS via `jwks.ts`), `case.http.test.ts` (new; identity `none` and the example module with `alice` and `bob`), `config.test.ts` › "reads the finder and case variables", `docs.test.ts` › "documents the handoff". Verify: `pnpm --filter @kipscope/server test`.
+- [ ] 6.3 Server object scope: `apps/server/test/objectScope.http.test.ts` (new; recording adapter, full and scoped mode), `density.http.test.ts` › "covers part of the scope", `gaps.test.ts` › "computes and polls the gap info of a work window", `events.test.ts` › "loads the events of a work window". Verify: `pnpm --filter @kipscope/server test`.
+- [ ] 6.4 Web: `cache.test.ts`, `rescope.test.ts`, `preload.test.ts` (new), `sessionBar.test.ts` (new), `strip.test.ts`, `eventsPanel.test.ts`, `explorer.test.ts`, `zoom.test.ts`, `session.test.ts`, `filedrop.test.ts` per the scenarios naming them. Verify: `pnpm --filter @kipscope/web test`.
+- [ ] 6.5 CLI: `args.test.ts` › "maps the case forms", `cli.test.ts` › "opens, steps and unlinks a catalog", "builds a catalog from drives", "prints a catalog link", help list. Verify: `pnpm --filter @kipscope/cli test`.
+- [ ] 6.6 Measurement tools (K17): `apps/server/scripts/seed-long.ts` (ClickHouse and `--adx`, in-database generation, scale flags, prints rows) and `measure-object.ts` (M1–M7 through the server's source code, warm-up plus 3 runs, one line per query, exit 0); scripts `seed:long` and `measure:object` in `apps/server/package.json`. Verify: `pnpm --filter @kipscope/server seed:long -- --days 3` and `measure:object -- --source clickhouse --ref longcar` print the row count and seven `M<n>` lines against the local test DB.
+
+## 7. Checks
+
+- [ ] 7.1 UI checks on smart451 (UI user) with a catalog from `kipscope case drives smart451` opened by `kipscope case url -`: scenarios "Link in the browser" (UI part), "No page load", "Bar on smart451", "Align on smart451", "Unlinked on smart451", "Step after preload draws from memory", "Scope on smart451" (still passes without a catalog), "Zoom out and pan on smart451", "No scope in the UI". One screenshot per scenario.
+- [ ] 7.2 Measurement (lead, K17): `seed:long` and `seed:long -- --adx` at full size (scaled down only if the emulator cannot hold it, size reported), then `measure:object` for `clickhouse` and `adx`; the pacer records both tables in `rounds.md`; every `2x over` line becomes a finding for Jan with its fallback F1–F5. Verify: scenario "Measurement run".
+
+## Workflow follow-up
+
+- The lead shows Jan the result after `pnpm smoke` passes against his dev server; then archive.
+- On archive, copy the ledger entry of design "Ledger entry on archive" into `docs/decisions.md`.
+- After archive: a KI.ping PR for "Open in KIPscope" (KI.ping's repo, after its own rules), then `add-tile-store`.
