@@ -35,7 +35,7 @@ Write areas of groups 7–12 (disjoint):
 
 - [x] 3.1 Session start-up, API prefix, gate pages (M12). Renamed and changed by 9.1.
 - [x] 3.2 Sessions menu and read-only pill: the menu is removed by 9.2. The `Read-only` pill was built and stays, with its tooltip changed by 9.2. Not reopened; its UI checks moved to 12.5.
-- [ ] 3.3 Footer user and dev users (M2, M12): built in round 1. Open only for the UI evidence. Verify: app-footer "User item" (green since round 1); UI check "Two users on real data" (footer part), now in workspaces "Read-only workspace in the UI" (run in 12.5).
+- [x] 3.3 Footer user and dev users (M2, M12): built in round 1. Open only for the UI evidence. Verify: app-footer "User item" (green since round 1); UI check "Two users on real data" (footer part), now in workspaces "Read-only workspace in the UI" (run in 12.5).
 
 ## 4. apps/cli/src (built)
 
@@ -86,7 +86,7 @@ Write areas of groups 7–12 (disjoint):
   - `.env.example`.
 
   Verify: data-access "Grant functions", "Every API route declares its access"; workspaces "Rights function"; server-access "Start lines per mode"; user-identity "Selection"; workspaces "Idle days configuration"; data-access "Share switch" (config part).
-- [ ] 8.3 Routes and wiring (M5, M6, M7, M8, M11):
+- [x] 8.3 Routes and wiring (M5, M6, M7, M8, M11):
   - `rewriteUrl` for `/api/w/<id>/…` only; `X-KIPscope-Workspace`; `workspaceOf`, `grantOf`, `userOf` in `http.ts`
   - `routes/sessions.ts` → `routes/workspaces.ts` with the M7 routes: `reuse` (400 together with `open`, 400 for unknown keys), the share route with `share_not_permitted` from `Config.share`, `workspace_limit`
   - `routes/workspace.ts`: live `hello`, `summary`, `state`; a `summary` or 4403 after share, grant and command events; 4404 on delete
