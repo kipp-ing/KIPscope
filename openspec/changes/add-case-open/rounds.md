@@ -16,3 +16,4 @@
   | M7 events 32 d | 4 ms | 7 ms | 2,000 ms |
 
   Local Docker databases only; a real ADX cluster and carserver (smart451 Unlink 15–30 s cold in rounds 1–2, not re-measured) may differ.
+- Lead (2026-10-20): 3.5 ticked under the amended wording: round 5 UI user on the 10-drive catalog saw every preloaded drawn tile reused after the preload finished; the remaining plain calls were overview and `maybePrefetch`, now named as allowed.
