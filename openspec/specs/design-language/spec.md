@@ -1,7 +1,7 @@
 # design-language Specification
 
 ## Purpose
-KIPscope's visual language, taken from KI.ping (D-055): colour, type and size tokens, the looks of controls, pills, explorer, windows, legend and footer, and the series palette (Okabe-Ito first), with the numbers that keep the workspace dense.
+KIPscope's visual language, taken from the existing design language of the search tool (D-055): colour, type and size tokens, the looks of controls, pills, explorer, windows, legend and footer, and the series palette (Okabe-Ito first), with the numbers that keep the workspace dense.
 
 ## Requirements
 

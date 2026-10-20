@@ -475,7 +475,7 @@ describe("loadConfig", () => {
       loadConfig({ ...base, ...env }, "/repo/kipscope").finder;
     const keyed = {
       KIPSCOPE_FINDER_JWKS: "/keys/jwks.json",
-      KIPSCOPE_FINDER_ISSUER: "https://kiping.example",
+      KIPSCOPE_FINDER_ISSUER: "https://finder.example",
       KIPSCOPE_FINDER_AUDIENCE: "https://kipscope.example",
     };
 
@@ -499,7 +499,7 @@ describe("loadConfig", () => {
     const keyedConfig = finder(keyed);
     expect(keyedConfig).toMatchObject({
       jwks: "/keys/jwks.json",
-      issuer: "https://kiping.example",
+      issuer: "https://finder.example",
       audience: "https://kipscope.example",
     });
 
@@ -535,22 +535,22 @@ describe("loadConfig", () => {
     expect(() => finder({ KIPSCOPE_CASE_DATAREF: "fleet" })).toThrow(/KIPSCOPE_CASE_DATAREF/);
 
     // Keys come from a file or an https URL; http only on a loopback host.
-    expect(finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "https://kiping.example/jwks" }).jwks).toBe(
-      "https://kiping.example/jwks",
+    expect(finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "https://finder.example/jwks" }).jwks).toBe(
+      "https://finder.example/jwks",
     );
     expect(finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "http://127.0.0.1:9000/jwks" }).jwks).toBe(
       "http://127.0.0.1:9000/jwks",
     );
-    expect(() => finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "http://kiping.example/jwks" })).toThrow(
+    expect(() => finder({ ...keyed, KIPSCOPE_FINDER_JWKS: "http://finder.example/jwks" })).toThrow(
       /KIPSCOPE_FINDER_JWKS/,
     );
 
     // The other variables.
     expect(finder({ KIPSCOPE_FINDER_USER_CLAIM: "email" }).userClaim).toBe("email");
     expect(
-      finder({ KIPSCOPE_FINDER_ORIGINS: "https://kiping.example, http://localhost:3000" }).origins,
-    ).toEqual(["https://kiping.example", "http://localhost:3000"]);
-    expect(() => finder({ KIPSCOPE_FINDER_ORIGINS: "kiping.example" })).toThrow(
+      finder({ KIPSCOPE_FINDER_ORIGINS: "https://finder.example, http://localhost:3000" }).origins,
+    ).toEqual(["https://finder.example", "http://localhost:3000"]);
+    expect(() => finder({ KIPSCOPE_FINDER_ORIGINS: "finder.example" })).toThrow(
       /KIPSCOPE_FINDER_ORIGINS/,
     );
   });

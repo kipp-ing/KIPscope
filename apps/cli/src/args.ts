@@ -114,7 +114,7 @@ Workspaces (each with its own link; the default is your latest one):
                                    (who else may open the call's workspace)
   workspace delete ID
 
-Catalogs (ordered lists handed over by a finder such as KI.ping; N: 1-based position):
+Catalogs (ordered lists handed over by a search tool; N: 1-based position):
   case open FILE|-                 (a new workspace from a catalog document, a signed or
                                    unsigned code, or a CLI output holding one; - reads stdin;
                                    local.url is its link)

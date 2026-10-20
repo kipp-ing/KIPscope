@@ -2,16 +2,16 @@
 
 ## Context
 
-- **Jan's decisions:** D-078 („Kipview soll nicht datenabschnitte finden. es soll gefundene Datenabschnitte effizient darstellen … im finder gibt es immer "benachbarte" sessions. wäre toll man kann die mit einem klick wählen. das nachladen muss für die nächste halt auch noch klappen"). D-081 (query classes; `preload` is the lowest, „D-078 neighbours"). D-082 (scope conventions: every source query bounded, the signal list per scope, clamp at the edge). D-084 (identity adapters, one guard). D-085 („wir können das rechtemanagement in kiping packen … die liste kann beliebig sortiert sein beliebige VINs"). D-086 („unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts. der ist ja"), which accepts the exploration's recommendations 1, 2, 4, 6–11 and 13 and changes 5 and 12.
+- **Jan's decisions:** D-078 („Kipview soll nicht datenabschnitte finden. es soll gefundene Datenabschnitte effizient darstellen … im finder gibt es immer "benachbarte" sessions. wäre toll man kann die mit einem klick wählen. das nachladen muss für die nächste halt auch noch klappen"). D-081 (query classes; `preload` is the lowest, „D-078 neighbours"). D-082 (scope conventions: every source query bounded, the signal list per scope, clamp at the edge). D-084 (identity adapters, one guard). D-085 („wir können das rechtemanagement in [Suchtool] packen … die liste kann beliebig sortiert sein beliebige VINs"). D-086 („unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts. der ist ja"), which accepts the exploration's recommendations 1, 2, 4, 6–11 and 13 and changes 5 and 12.
 - **Exploration:** [docs/explore/2026-10-20-sessions-and-handoff.md](../../../docs/explore/2026-10-20-sessions-and-handoff.md) (payload, commands, UX sketch, caching plan, Security). D-086 overrides it on the Unlink horizon (no 31-day default, no 1-year cap, no `KIPSCOPE_HORIZON_MAX`) and on rights (no `grant.objects` windows).
 - **Concept:** §9 „Untersuchung direkt öffnen: Datensatz, Zeitpunkt, Vor-/Nachlauf und Template oder Signalauswahl gemeinsam über CLI beziehungsweise Link übergeben"; §9 „Templates neu binden: Vorhandene Ansicht auf eine andere Messung anwenden; fehlende oder mehrdeutige Signalzuordnungen melden"; §7 (one command model for UI and CLI).
-- **KI.ping data facts** (exploration, KI.ping `8fc8457`): a session id is `<VIN>|<kind>|<t_start ISO>`; the object is the VIN; kinds `driving`, `charging`, `idle`; windows `[t_start, t_end)` UTC; KI.ping pads plots by 60 s (`pad_s`); about 1.6 sessions and 5 logged hours per vehicle and day; the longest charge was 16.5 h; KI.ping keeps 12 months. Measured link sizes (unsigned, deflate-raw, base64url): 50 sessions 1.9 k characters, 200 sessions 5.8 k.
+- **Session facts** (exploration "What a search tool provides"): a session has an opaque id; the object is the VIN; kinds such as `driving`, `charging`, `idle`; windows `[from, to)` UTC; a plot pads a session by 60 s. Measured link sizes (unsigned, deflate-raw, base64url): 50 sessions 1.9 k characters, 200 sessions 5.8 k.
 - **Prerequisite (`add-multiuser` after its revision, pinned there, used here unchanged):** the server state is a *workspace*: UI `/w/<id>`, API prefix `/api/w/<id>/…`, `POST /api/workspaces`, header `X-KIPscope-Workspace`, CLI `--workspace`. Each workspace has `grant: {objects: "all"} | {objects: string[]}` (data refs), enforced by the one guard on every data route; `grantObjects(workspaceId, dataRefs)` widens it; identity `none` has `all`. Where this design names a route or type of that change, its final name wins; the behaviour here does not depend on the spelling.
 - **Code today:** `enterScope` (`apps/web/src/chart/rescope.ts`) clears every tile, extent and gap info on a scope change (add-scope Z12). Tile IDs are `<signalId>|<level>|<index>`, and a signal ID starts with its data ref, so the key holds no scope. Raw tiles carry `before`/`after` edge points, which a scope cuts („as if the source held only the scope's rows"). Density, gaps and events of a scope are computed over the whole scope (add-scope Z9) and cached per `scopeKey`. HTTP requests run `interactive`; only server-side prefetches and polls run `background`. `scope.set` and `view.open` load the scope's list before they apply (scope "A scope's signal list loads first"). The strip head shows `SCOPE <ref> · <from> – <to>` with Widen and Clear (`apps/web/src/time/scope.ts`). Keys `[` and `]` are free (`apps/web/src/keys.ts`).
 
 ## Goals / Non-Goals
 
-**Goals:** one handoff document for link, file, CLI and API; KI.ping's signature as the only source of rights on a server; stepping through any catalog without a page load and with the dashboard kept; Unlink to a whole vehicle with no user-visible bound and no unbounded query; a switch back to a seen session drawn from memory; neighbours ready before the user steps; every interface two areas share pinned here, so shared, server, web, CLI, docs and tests build in parallel.
+**Goals:** one handoff document for link, file, CLI and API; the search tool's signature as the only source of rights on a server; stepping through any catalog without a page load and with the dashboard kept; Unlink to a whole vehicle with no user-visible bound and no unbounded query; a switch back to a seen session drawn from memory; neighbours ready before the user steps; every interface two areas share pinned here, so shared, server, web, CLI, docs and tests build in parallel.
 
 **Non-goals:** the proposal's "Out of scope". At design level also: no change to the source contract (no new adapter method; every query below uses the 15 methods with a scope); no new identity code; no change to view documents (`version: 1` stays).
 
@@ -21,7 +21,7 @@
 
 | Word | Meaning | In code |
 |---|---|---|
-| Session | one entry of a catalog: one object, `[from, to)`, kind, meta (KI.ping's meaning, D-086 Q1) | `CaseEntry` |
+| Session | one entry of a catalog: one object, `[from, to)`, kind, meta (the search tool's meaning, D-086 Q1) | `CaseEntry` |
 | Catalog | the ordered list handed over; its order alone defines previous and next (D-085) | `CaseCatalog`, `cases` |
 | Case | the open catalog in a workspace: which entry, linked or not, alignment | `Workspace.case` |
 | Object scope | the scope after Unlink: one vehicle's full extent | `WorkspaceScope.object: true` |
@@ -38,7 +38,7 @@ export const MAX_CASES = 2_000;                 // sessions per catalog (file, A
 export const MAX_CASES_TEXT = 4_000_000;         // characters of a `cases` string in a request body
 export const MAX_CASES_JSON = 4_194_304;         // bytes of the catalog JSON after inflating
 export const MAX_CASE_META = 16;                 // meta keys per session
-export const DEFAULT_CASE_PAD = "60s";           // KIPSCOPE_CASE_PAD default (KI.ping pad_s)
+export const DEFAULT_CASE_PAD = "60s";           // KIPSCOPE_CASE_PAD default
 export const MAX_CASE_PAD_NS = 86_400_000_000_000n; // 1 d
 export const CASE_LIST_ROWS = 500;               // rows the catalog list renders before "type to filter"
 export const CLASS_HEADER = "x-kipscope-class";  // request header; the only accepted value is "preload"
@@ -74,7 +74,7 @@ export const CaseEntryInput = z.object({
   kind: z.string().min(1).max(32).optional(), // display only
   from: TimeInput,
   to: TimeInput,                              // to − from ≥ MIN_SPAN_NS
-  title: z.string().max(120).optional(),      // display only (KI.ping: fleet number)
+  title: z.string().max(120).optional(),      // display only (for example a fleet number)
   meta: z.record(z.string().min(1).max(64), CaseMetaValue).optional(), // ≤ MAX_CASE_META keys, display only
   anchor: TimeInput.optional(),               // from ≤ anchor ≤ to
 });
@@ -224,12 +224,12 @@ CreateWorkspaceRequest = z.strictObject({ open: z.union([OpenViewRequest, OpenCa
 CreateWorkspaceAnswer gains: case?: CaseOpenReport;
 ```
 
-### K3: Link and signature format (pinned; `docs/handoff.md` repeats it for KI.ping)
+### K3: Link and signature format (pinned; `docs/handoff.md` repeats it for the search tool)
 
 - **Signed (any identity):** `cases` is a JWS in compact form. Protected header `{"alg": "EdDSA" | "ES256", "kid": "<key id>", "typ": "kipscope-cases"}`. The payload bytes are **deflate-raw of the UTF-8 JSON** of the claims (so the link is base64url once, not twice):
 
   ```json
-  { "iss": "https://kiping.example", "aud": "https://kipscope.example", "sub": "<Ping user>",
+  { "iss": "https://finder.example", "aud": "https://kipscope.example", "sub": "<Ping user>",
     "iat": 1792488000, "exp": 1792488600, "cases": { "kipscope": "cases", "version": 1, "cases": [ … ] } }
   ```
 - **Unsigned (identity `none` only):** `cases` is `encodeCasesLink(doc)`, the same encoding as `#view=` (D-070).
@@ -265,7 +265,7 @@ The token-like string is never logged; a refusal is logged at debug level with i
 
 ### K5: Grant and mapping
 
-- Each entry's data ref is `caseDataRef(KIPSCOPE_CASE_DATAREF, object)` (Jan Q7 „ja": the VIN as KI.ping sends it, configurable by a template).
+- Each entry's data ref is `caseDataRef(KIPSCOPE_CASE_DATAREF, object)` (Jan Q7 „ja": the VIN as the search tool sends it, configurable by a template).
 - After a successful check the server creates the workspace (add-multiuser's store), calls `grantObjects(workspaceId, dataRefs)` with the catalog's unique data refs, and only then builds the workspace content (K9). In `none` mode the grant is already `all`; the call is still made (it changes nothing), so one code path serves both.
 - The route declares no `dataRefs` for `open.cases` (the signature is the access decision for those objects); data refs of a `view` or of the user's layout outside the catalog's are left out of the new workspace (warning), so the new workspace never names a data ref its grant lacks.
 - Rights have no time part (D-086 Q12): the grant names vehicles, so stepping, preload and Unlink need no further check than the guard's.
@@ -466,9 +466,9 @@ Positions are 1-based in the CLI and the UI (`3 / 17`), `index` and `current` 0-
 
 ### K16: Documents
 
-- **`docs/handoff.md` (new, for KI.ping's implementers):** the payload (every key of K2 with type and meaning), the KI.ping field mapping (`session_id` → `id`, `device_id` → `object`, `session_type` → `kind`, `t_start`/`t_end` → `from`/`to`, `finas_id` → `title`, `a_<name>` → `meta`), the order rule (D-085), the signature (K3: header, deflate-raw payload, claims, lifetime ≤ `KIPSCOPE_FINDER_MAX_AGE`, 10 min recommended), a Node example with `jose` (`CompactSign` over `deflateRawSync(JSON)`), publishing the JWKS (file or URL, rotation by `kid`), the link and its 8,192-character limit (trim the catalog around `current`, keep the order; more sessions: file or API), opening it with `target="kipscope"`, and the errors a user may see.
+- **`docs/handoff.md` (new, for the implementers of a search tool):** the payload (every key of K2 with type and meaning), a field mapping (session id → `id`, vehicle → `object`, kind → `kind`, start and end → `from`/`to`, display name → `title`, attributes → `meta`), the order rule (D-085), the signature (K3: header, deflate-raw payload, claims, lifetime ≤ `KIPSCOPE_FINDER_MAX_AGE`, 10 min recommended), a Node example with `jose` (`CompactSign` over `deflateRawSync(JSON)`), publishing the JWKS (file or URL, rotation by `kid`), the link and its 8,192-character limit (trim the catalog around `current`, keep the order; more sessions: file or API), opening it with `target="kipscope"`, and the errors a user may see.
 - **`docs/http-api.md`:** the K10 routes, parameters, header and codes (the route-documentation test covers them).
-- **`docs/manual.md`:** "Sessions from KI.ping": the bar, stepping, keys, Align, Unlink and Link, marks, the catalog list.
+- **`docs/manual.md`:** "Sessions from the search tool": the bar, stepping, keys, Align, Unlink and Link, marks, the catalog list.
 - **README:** the variables of K4 and the `case` forms.
 
 ### K17: Measurement (task 7.6)
@@ -512,10 +512,10 @@ In proposal.md "Open questions for Jan" (Q-1 … Q-6), each with a recommended a
 
 | Number | Value | At ×½ | At ×2 |
 |---|---|---|---|
-| Sessions per catalog | 2,000 | 1,000: a long KI.ping result list needs two files | 4,000: a 1.2 MB catalog file per workspace; the list popover still renders 500 rows |
+| Sessions per catalog | 2,000 | 1,000: a long result list of the search tool needs two files | 4,000: a 1.2 MB catalog file per workspace; the list popover still renders 500 rows |
 | Link length | 8,192 chars (D-070) | about 100 sessions per link | some browsers and proxies cut URLs near 16 k; the fragment is not sent to servers, so only the browser limit matters |
-| JWS lifetime | ≤ 1 h | 30 min: a link left in a tab over lunch fails sooner; the user clicks again in KI.ping | 2 h: a leaked link works longer, but only for its `sub` |
-| Pad | 60 s (KI.ping `pad_s`) | 30 s: less context at the edges | 2 min: a 10-min drive's scope grows by 20 % |
+| JWS lifetime | ≤ 1 h | 30 min: a link left in a tab over lunch fails sooner; the user clicks again in the search tool | 2 h: a leaked link works longer, but only for its `sub` |
+| Pad | 60 s | 30 s: less context at the edges | 2 min: a 10-min drive's scope grows by 20 % |
 | Work window | 3 × view, ≥ 3 d, ≤ 32 d | more requests while panning; drives and events cover less around the view | 64 d of gaps and events on ADX per page view; M3, M6, M7 decide |
 | Object extent cache | 5 min | more extent queries on repeated Unlink | new rows show up later in the extent |
 | Server LRUs (detail, gaps, events) | 8 windows each | panning back and forth refetches sooner | a few MB more memory |
@@ -529,14 +529,14 @@ In proposal.md "Open questions for Jan" (Q-1 … Q-6), each with a recommended a
 
 ## Security
 
-- **Only KI.ping grants:** on a server, an unsigned catalog is refused (`signature_required`); a signed one widens the grant only by its own objects (K5). A `view` or layout never adds a data ref the grant lacks.
+- **Only the search tool grants:** on a server, an unsigned catalog is refused (`signature_required`); a signed one widens the grant only by its own objects (K5). A `view` or layout never adds a data ref the grant lacks.
 - **Signature checks:** an allow-list of algorithms (never `none`, never `HS*`, so a public key cannot serve as an HMAC secret), the issuer exactly, the audience, `exp`, `iat` and the lifetime, keys from a file or `https` only.
 - **Bound to the user:** the claim must equal the signed-in user; a forwarded link fails with `wrong_user`. A replay by the same user only opens another workspace with the same rights.
 - **Inflate bomb:** inflating stops at `MAX_CASES_JSON`; the string length is checked before.
 - **No leaks:** the JWS is never logged or echoed; refusals name a reason, not the token. `origin.url` is kept only for a listed origin, so a link cannot place an arbitrary "Back to" target.
 - **Origin check** (add-multiuser M10) stops a cross-site page from posting a catalog with the user's proxy cookie.
 - **Grant lifetime:** the grant lives as long as the workspace (D-086 Q12: no time part); sharing never widens it (add-multiuser).
-- **Not covered:** revoking a grant after KI.ping withdraws a right (the workspace keeps it until it is deleted or idles out); an IdP round trip that drops the fragment (the user clicks again).
+- **Not covered:** revoking a grant after the search tool withdraws a right (the workspace keeps it until it is deleted or idles out); an IdP round trip that drops the fragment (the user clicks again).
 
 ## Risks / Trade-offs
 
@@ -544,7 +544,7 @@ In proposal.md "Open questions for Jan" (Q-1 … Q-6), each with a recommended a
 - [The vehicle's signal list never finishes on ADX] → it runs `background` and the session's list serves meanwhile; fallback F4.
 - [A whole-vehicle series view is slow] → it is what the user asked to see and runs as one bucket query per signal; fallback F5 keeps navigation unbounded.
 - [Rebinding by name meets a vehicle with other signal names] → reported as `missing`, kept in place; signal books (`add-signal-books`) map names later.
-- [Many workspaces from many KI.ping clicks] → add-multiuser's per-user limit and idle cleanup; each is cheap (the catalog file is small for ordinary lists).
+- [Many workspaces from many clicks in the search tool] → add-multiuser's per-user limit and idle cleanup; each is cheap (the catalog file is small for ordinary lists).
 - [Kept tiles of an old scope use memory] → the 4 M weight LRU drops them first.
 - [Preload competes with the user's own queries] → `preload` is the lowest class, one slot stays for `interactive` (D-081), and any gesture cancels it in the tab.
 - [The catalog file and the workspace file can drift on a crash] → the catalog file is written before the workspace's first state; a workspace whose catalog file is missing or bad loses `case` with a warning, and its windows stay.
@@ -557,12 +557,12 @@ No data migration: workspaces without `case` behave as today. Rollback: a server
 
 - `add-tile-store`: the K12 store and use rules become the rules of the IndexedDB level; its key is the K12 key plus user and server.
 - `add-signal-books`: the payload gains `book`; K8's rebinding by name becomes book-driven.
-- A live channel to KI.ping (`postMessage`) would send `case.go` for the clicked entry; the commands stay.
+- A live channel to the search tool (`postMessage`) would send `case.go` for the clicked entry; the commands stay.
 
 ## Manual checks (lead)
 
 - M1–M7 on ClickHouse and the Kusto emulator (task 7.6); any "2x over" goes to Jan with its fallback.
-- A real KI.ping link once KI.ping signs (after `docs/handoff.md`); not testable here.
+- A real link from the search tool once it signs (after `docs/handoff.md`); out of scope here and not testable here.
 
 ## Ledger entry on archive (proposed; the lead assigns the number)
 

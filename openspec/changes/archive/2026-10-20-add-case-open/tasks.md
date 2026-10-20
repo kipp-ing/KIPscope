@@ -48,8 +48,8 @@ Write areas (disjoint):
 
 ## 5. Docs
 
-- [x] 5.1 `docs/handoff.md` for KI.ping (K16): payload table, field mapping, order rule, JWS header and deflate-raw payload, claims and lifetime, a Node `jose` example, JWKS, link limit and trimming, `target="kipscope"`, user-visible errors. Verify: scenario "Guide names every key and claim".
-- [x] 5.2 `docs/http-api.md` (K10 routes, `case` and `from`/`to` parameters, the class header, codes), `docs/manual.md` section "Sessions from KI.ping", README (variables of K4, `case` forms, link to `docs/handoff.md`). Verify: the route-documentation test in `apps/server/test/docs.test.ts` passes; `apps/web/test/manual.test.ts` passes.
+- [x] 5.1 `docs/handoff.md` for the search tool (K16): payload table, field mapping, order rule, JWS header and deflate-raw payload, claims and lifetime, a Node `jose` example, JWKS, link limit and trimming, `target="kipscope"`, user-visible errors. Verify: scenario "Guide names every key and claim".
+- [x] 5.2 `docs/http-api.md` (K10 routes, `case` and `from`/`to` parameters, the class header, codes), `docs/manual.md` section "Sessions from the search tool", README (variables of K4, `case` forms, link to `docs/handoff.md`). Verify: the route-documentation test in `apps/server/test/docs.test.ts` passes; `apps/web/test/manual.test.ts` passes.
 
 ## 6. Tests (tester, test-first)
 
@@ -69,4 +69,4 @@ Write areas (disjoint):
 
 - The lead shows Jan the result after `pnpm smoke` passes against his dev server; then archive.
 - On archive, copy the ledger entry of design "Ledger entry on archive" into `docs/decisions.md`.
-- After archive: a KI.ping PR for "Open in KIPscope" (KI.ping's repo, after its own rules), then `add-tile-store`.
+- After archive: "Open in KIPscope" on the search tool's side (its own repo, out of scope of KIPscope), then `add-tile-store`.

@@ -1,6 +1,6 @@
 # Deploy KIPscope on a server
 
-Locally KIPscope needs no login: `KIPSCOPE_IDENTITY=none` (the default) makes every request the user `local` with every right, as on Jan's machine (D-084). This guide is for a shared server: several users, each seeing only the data KI.ping granted their workspace, behind a TLS proxy. Specs: [user-identity](../openspec/specs/user-identity/spec.md), [data-access](../openspec/specs/data-access/spec.md), [workspaces](../openspec/specs/workspaces/spec.md), [server-access](../openspec/specs/server-access/spec.md); routes: [http-api.md](http-api.md); data sources: [data-sources.md](data-sources.md).
+Locally KIPscope needs no login: `KIPSCOPE_IDENTITY=none` (the default) makes every request the user `local` with every right, as on Jan's machine (D-084). This guide is for a shared server: several users, each seeing only the data the search tool (finder) granted their workspace, behind a TLS proxy. Specs: [user-identity](../openspec/specs/user-identity/spec.md), [data-access](../openspec/specs/data-access/spec.md), [workspaces](../openspec/specs/workspaces/spec.md), [server-access](../openspec/specs/server-access/spec.md); routes: [http-api.md](http-api.md); data sources: [data-sources.md](data-sources.md).
 
 ## The picture
 
@@ -10,7 +10,7 @@ CLI, AI ──https + Bearer token ──▶ (same proxy, or a route that passes
 ```
 
 - The **identity adapter** turns each request into a user and roles, or refuses it (401). It runs once per request in the server's guard, for every `/api/` route but `GET /api/license`, the live channel's upgrade included.
-- The **grant** of each workspace names the data refs it may read ([Rights](#rights)). KI.ping decides it; on a server a new workspace's grant is empty (deny by default).
+- The **grant** of each workspace names the data refs it may read ([Rights](#rights)). The search tool decides it; on a server a new workspace's grant is empty (deny by default).
 - The **guard** decides every access in one place, before a route runs. A data ref outside the workspace's grant answers 403 `forbidden_data`, decided from the grant alone, before any lookup or source query: a hidden data ref that exists and one that does not answer the same. Lists and counts (catalog, search totals, footer) never include data refs outside the grant, and the workspace list never includes other users' workspaces.
 - **Workspaces:** each case is a workspace with its own address `/w/<id>`, owner, share level (`private`, `read`, `write`) and grant. Sharing never widens data access.
 - The **database access** stays the server's own (D-083): KIPscope queries the source with one account, and the data limits above are KIPscope's, never the source's.
@@ -81,7 +81,7 @@ Check it with `curl <issuer>/.well-known/openid-configuration`: the answer's `is
 
 - **PingFederate:** the access token must be a JWT (an access token manager of the JSON Web Token type, signed with RS256, PS256 or ES256). Set its audience to the value of `KIPSCOPE_OIDC_AUDIENCE`, and fulfil a claim with the user's group or role names from the attribute contract.
 - **PingOne:** define a custom resource for KIPscope; its audience is `KIPSCOPE_OIDC_AUDIENCE`, and an attribute mapping adds the roles claim (for example `groups`, the user's group names). PingOne's `sub` is the user's UUID; to show a readable name, map an attribute such as the username into a claim and name it in `KIPSCOPE_OIDC_USER_CLAIM`.
-- **Roles claim:** `KIPSCOPE_OIDC_ROLES_CLAIM` names the claim the IdP fills (`groups`, `roles`, or a dotted path). Roles are shown, for checking, and decide nothing in KIPscope: which data a user sees is KI.ping's decision ([Rights](#rights)). `GET /api/me`, `kipscope whoami` and the footer's user tooltip show the user, the roles and whether sharing is allowed.
+- **Roles claim:** `KIPSCOPE_OIDC_ROLES_CLAIM` names the claim the IdP fills (`groups`, `roles`, or a dotted path). Roles are shown, for checking, and decide nothing in KIPscope: which data a user sees is the search tool's decision ([Rights](#rights)). `GET /api/me`, `kipscope whoami` and the footer's user tooltip show the user, the roles and whether sharing is allowed.
 
 ### Browser: through an OIDC proxy
 
@@ -151,11 +151,11 @@ pnpm --filter @kipscope/server exec vitest run test/identity/<yours>.conformance
 
 ## Rights
 
-KIPscope keeps no rules of its own. Which vehicles a user may see is KI.ping's decision (D-085); KIPscope holds what KI.ping vouched for and enforces it.
+KIPscope keeps no rules of its own. Which vehicles a user may see is the search tool's decision (D-085); KIPscope holds what the search tool vouched for and enforces it. The search tool is not part of KIPscope; [handoff.md](handoff.md) is the interface.
 
 - **A grant per workspace:** each workspace stores the data refs it may read, as a whole: whoever may see a vehicle sees all of it, with no time limit (D-086). The grant is stored in the workspace's state file and never comes from a client: no route, command, view or file sets it.
 - **Locally** (`none`) every workspace's grant is everything, so nothing changes on Jan's machine.
-- **On a server** (`oidc` or `module:`) a new workspace's grant is empty. It shows no data until KI.ping hands it a case (the handoff of `add-case-open`, which widens the grant); until then the page shows "Open a session from KI.ping". The catalog, search, footer counts and every data route see only the granted data refs.
+- **On a server** (`oidc` or `module:`) a new workspace's grant is empty. It shows no data until the search tool hands it a case (the handoff of `add-case-open`, which widens the grant); until then the page shows "Open a session from the search tool". The catalog, search, footer counts and every data route see only the granted data refs.
 - **Roles** from the token are shown (`GET /api/me`, `kipscope whoami`, the footer tooltip) and decide nothing.
 - **Views grant nothing:** opening a view checks its data refs against the workspace's grant, and a view from a link opens in a new workspace with the initial (on a server: empty) grant.
 - **Sharing** never widens data access. Share levels decide who may open a workspace (`private`: the owner; `read`: anyone with the link may look; `write`: anyone with the link may change it); an invited user sees the shared workspace's grant while in that workspace, and their own workspaces never gain it. `KIPSCOPE_SHARE=off` turns `read` and `write` off for everyone (403 `share_not_permitted`); `private` is always allowed.

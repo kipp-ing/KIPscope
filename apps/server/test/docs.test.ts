@@ -66,7 +66,7 @@ describe("documents", () => {
   });
 
   it("documents no rules file and no session variable any more", () => {
-    // D-085: rights live in KI.ping. `grep -n "KIPSCOPE_RULES" docs README.md` prints nothing.
+    // D-085: rights live in the search tool. `grep -n "KIPSCOPE_RULES" docs README.md` prints nothing.
     for (const file of [
       "docs/deploy.md",
       "docs/http-api.md",

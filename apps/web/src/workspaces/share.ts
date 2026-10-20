@@ -49,7 +49,7 @@ export function shareItems(
     lines: [
       "The receiver gets their own copy of this layout; changes stay apart.",
       ...(server
-        ? ["On this server they see data only for vehicles KI.ping opened for them."]
+        ? ["On this server they see data only for vehicles the search tool opened for them."]
         : []),
     ],
   };

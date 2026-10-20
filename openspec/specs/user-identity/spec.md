@@ -59,7 +59,7 @@ With an adapter other than `none`, every request to `/api/` except `GET /api/lic
 ### Requirement: Who am I
 `GET /api/me` SHALL answer the user, the identity kind, the roles and whether the user may share (design M7 `Me`). Roles SHALL be shown only: they decide nothing in KIPscope.
 
-Origin: necessary consequence of D-084 (a user and an administrator must see as whom and with which roles a request acts); D-085 (rights are KI.ping's, so roles grant nothing here); share switch: data-access "Sharing never widens data access".
+Origin: necessary consequence of D-084 (a user and an administrator must see as whom and with which roles a request acts); D-085 (rights are the search tool's, so roles grant nothing here); share switch: data-access "Sharing never widens data access".
 
 #### Scenario: Roles and sharing
 - **WHEN** with the test identity adapter, users with roles `[testers, viewers]` and `[]` send `GET /api/me`, first with `KIPSCOPE_SHARE` unset, then with `off`

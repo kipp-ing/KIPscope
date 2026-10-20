@@ -259,11 +259,11 @@ describe("POST /api/workspaces with a catalog", () => {
   });
 
   it("keeps only a back link to a listed finder", async () => {
-    const { t } = await start({ finder: { origins: ["https://kiping.example"] } });
-    const withUrl = (url: string) => c4({ origin: { tool: "KI.ping", url } });
-    const listed = await open(t.anon, withUrl("https://kiping.example/#f=1"));
+    const { t } = await start({ finder: { origins: ["https://finder.example"] } });
+    const withUrl = (url: string) => c4({ origin: { tool: "search tool", url } });
+    const listed = await open(t.anon, withUrl("https://finder.example/#f=1"));
     const kept = await caseOf(t.anon, idOf(listed));
-    expect(kept.origin).toEqual({ tool: "KI.ping", url: "https://kiping.example/#f=1" });
+    expect(kept.origin).toEqual({ tool: "search tool", url: "https://finder.example/#f=1" });
     expect(listed.body.case.warnings).toEqual([]);
     const foreign = await open(t.anon, withUrl("https://evil.example/"));
     const dropped = await caseOf(t.anon, idOf(foreign));

@@ -22,7 +22,7 @@ export const LEGACY_UI_PATH = "/s/";
 /** Most data refs one grant holds (M3). */
 export const MAX_GRANT_OBJECTS = 2000;
 
-/** Data refs one workspace may read (D-085: KI.ping decides; D-086: whole objects, no time part). */
+/** Data refs one workspace may read (D-085: the search tool decides; D-086: whole objects, no time part). */
 export type Grant = { readonly objects: "all" } | { readonly objects: readonly string[] };
 export const Grant: z.ZodType<Grant> = z.union([
   z.strictObject({ objects: z.literal("all") }),

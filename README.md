@@ -16,7 +16,7 @@ Interactive workspace for exploring recorded vehicle time series (e.g. CAN bus s
 - **Events in context.** Fault memory reads (DTCs), state changes and logger notes as pins on the strip and lines in the plots, with a filter and an Events tab.
 - **Honest gaps.** SNA values are never drawn; logger gaps break the lines and show as grey bands.
 - **Scriptable.** Every UI action is a workspace command; `kipscope` drives it from the shell, `--wait` until the UI rendered it. Saved views, YAML export and `#view=` links.
-- **Step through found sessions.** A finder such as KI.ping hands over a list of sessions; `[` and `]` step through them with the layout kept and aligned to an event, Unlink shows the vehicle's whole recording.
+- **Step through found sessions.** A search tool (finder), not part of KIPscope, hands over a list of sessions; `[` and `]` step through them with the layout kept and aligned to an event, Unlink shows the vehicle's whole recording.
 - **Made for corporate environments.** One shared server with Ping sign-in, rights from the finder, sharing that never widens access and bounded queries on large ADX tables ([below](#made-for-corporate-environments)).
 
 ![Searching, dragging two signals into a window, fitting a drive on the TIME strip, zooming and setting cursors A and B with Diff](docs/images/workflow.gif)
@@ -50,7 +50,7 @@ scripts/demo.sh                               # UI http://localhost:5183, server
 | HTTP API | [docs/http-api.md](docs/http-api.md) |
 | KIPscope in a company: overview, security model, setup | [docs/corporate.md](docs/corporate.md) |
 | Server deployment: sign-in (Ping), rights, workspaces | [docs/deploy.md](docs/deploy.md) |
-| Handoff from a finder (KI.ping): catalog, signature, link | [docs/handoff.md](docs/handoff.md) |
+| Handoff from a search tool (finder): catalog, signature, link | [docs/handoff.md](docs/handoff.md) |
 | Requirements (German) | [docs/concept.md](docs/concept.md) |
 | Specs, one per capability | [openspec/specs/](openspec/specs/) |
 | Changes in flight and archived | [openspec/changes/](openspec/changes/) |
@@ -318,12 +318,14 @@ node apps/cli/src/main.ts state | jq -r .local.cursors.a   # 2026-10-14 07:44:22
 KIPscope runs as one shared service: users need only a browser, the CLI and AI agents use the same API, and data, credentials and rights stay on the server. The overview with the picture, the security model and the setup steps is [docs/corporate.md](docs/corporate.md).
 
 ```
-KI.ping ──signed link──▶ browser ──https──▶ TLS proxy (Ping) ──▶ KIPscope ──one service identity──▶ ADX
-   finds sessions,                                                guard, grants,
-   decides rights                                                 bounded queries
+search tool ──signed link──▶ browser ──https──▶ TLS proxy (Ping) ──▶ KIPscope ──one service identity──▶ ADX
+   finds sessions,                                                    guard, grants,
+   decides rights                                                     bounded queries
 ```
 
-- **Finder finds, KIPscope shows.** KI.ping finds the sessions and hands over a catalog in any order, of any vehicles; KIPscope steps through it with the layout kept, preloads the neighbours and never scans a vehicle's whole history in one query, not even after Unlink.
+The search tool is a separate tool and not part of KIPscope; it is out of scope of this repo. KIPscope defines only the handoff interface (catalog, signature, link: [docs/handoff.md](docs/handoff.md)), so any search tool that signs a catalog works.
+
+- **Finder finds, KIPscope shows.** The search tool finds the sessions and hands over a catalog in any order, of any vehicles; KIPscope steps through it with the layout kept, preloads the neighbours and never scans a vehicle's whole history in one query, not even after Unlink.
 - **Sign-in with Ping Identity.** `KIPSCOPE_IDENTITY=oidc` checks Ping-issued tokens behind PingAccess or an OIDC proxy; another provider plugs in as a small adapter module with a conformance suite. CLI and AI callers send a bearer token from the company's token tool.
 - **Rights from the finder.** On a server a new workspace sees nothing. Only a catalog signed by the finder for the signed-in user widens its grant, by exactly the listed vehicles; roles decide nothing in KIPscope. One guard checks every route; a hidden vehicle and a missing one answer alike, and lists never show what the grant lacks.
 - **Workspaces you don't manage.** Each tab is a workspace at `/w/<id>`. Share… sends an own copy or invites to the live workspace (read or write); sharing never widens data access, and `KIPSCOPE_SHARE=off` keeps everything private. Saved views are per user and grant nothing.

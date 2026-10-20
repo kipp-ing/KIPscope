@@ -268,7 +268,7 @@ Server settings, independent of the source:
 | `KIPSCOPE_CATALOG` | `full` | `full` (catalog of all data refs at start) or `scoped` (a signal list per scope only, section "Scope"); any other value stops the server |
 | `KIPSCOPE_SCOPE_PAD` | `1h` | a CLI duration ≥ 0 (`30min`, `1h`, `0s`): padding on each side of a scope derived from a view (section "Scope") |
 
-Sessions from a finder such as KI.ping ([handoff.md](handoff.md)); any bad value stops the server naming the variable:
+Sessions from a search tool (finder; not part of KIPscope, [handoff.md](handoff.md)); any bad value stops the server naming the variable:
 
 | Variable | Default | Rule |
 |---|---|---|

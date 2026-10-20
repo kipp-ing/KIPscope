@@ -1,7 +1,7 @@
 # case-handoff Specification
 
 ## Purpose
-How a finder such as KI.ping hands an ordered catalog of sessions to KIPscope: one document for link, file, CLI and API, signed by the finder on a server, bound to the user, mapped to data refs, and turned into a new workspace whose grant covers exactly the catalog's vehicles.
+How a search tool (finder; not part of KIPscope) hands an ordered catalog of sessions to KIPscope: one document for link, file, CLI and API, signed by the finder on a server, bound to the user, mapped to data refs, and turned into a new workspace whose grant covers exactly the catalog's vehicles.
 
 Test data: catalog C4 of design "Test fixtures" (4 sessions on `testcar` and `othercar`, 2026-10-01 UTC, pad 60 s). T0 = 01:00:00Z = `1790816400000000000`.
 
@@ -47,7 +47,7 @@ The same catalog SHALL open from the link `/open#cases=<code>`, a file, stdin an
 - **Evidence:** `apps/web/test/filedrop.test.ts` › "opens a dropped catalog"
 
 ### Requirement: Signed catalogs on a server
-With an identity other than `none`, a catalog SHALL be accepted only as a JWS (design K3) that verifies against `KIPSCOPE_FINDER_JWKS` with an allowed algorithm, the configured `iss` and `aud`, a valid `exp` and `iat` and `exp − iat` ≤ `KIPSCOPE_FINDER_MAX_AGE`; else 403 `signature_required` or `invalid_signature` with a reason. Origin: D-085 („rechtemanagement in kiping"); D-086 Q10.
+With an identity other than `none`, a catalog SHALL be accepted only as a JWS (design K3) that verifies against `KIPSCOPE_FINDER_JWKS` with an allowed algorithm, the configured `iss` and `aud`, a valid `exp` and `iat` and `exp − iat` ≤ `KIPSCOPE_FINDER_MAX_AGE`; else 403 `signature_required` or `invalid_signature` with a reason. Origin: D-085 („rechtemanagement in [Suchtool]"); D-086 Q10.
 
 #### Scenario: Verified catalog
 - **WHEN** `verifyCases` gets C4 signed with the test Ed25519 key and, separately, with the P-256 key (ES256), both with the configured `iss` and `aud`, `iat` now and `exp` now + 10 min
@@ -102,7 +102,7 @@ The server SHALL read `KIPSCOPE_FINDER_JWKS`, `_ISSUER`, `_AUDIENCE`, `_ALGS`, `
 `origin.url` SHALL be kept only when its origin is listed in `KIPSCOPE_FINDER_ORIGINS`; otherwise it SHALL be dropped with a warning in the open report. Origin: exploration "Security" („no link can point anywhere else").
 
 #### Scenario: Foreign back link
-- **WHEN** C4 with `origin.url` `https://kiping.example/#f=1` is opened with `KIPSCOPE_FINDER_ORIGINS=https://kiping.example`, and again with `origin.url` `https://evil.example/`
+- **WHEN** C4 with `origin.url` `https://finder.example/#f=1` is opened with `KIPSCOPE_FINDER_ORIGINS=https://finder.example`, and again with `origin.url` `https://evil.example/`
 - **THEN** the first catalog keeps the url; the second has none and the report's `warnings` names the dropped url
 - **Evidence:** `apps/server/test/case.http.test.ts` › "keeps only a back link to a listed finder"
 
@@ -136,7 +136,7 @@ A new workspace from a catalog SHALL show the current session: scope `[from − 
 - **Evidence:** `apps/server/test/case.http.test.ts` › "opens a catalog with a view"
 
 ### Requirement: Guide for the finder
-`docs/handoff.md` SHALL document every key of the catalog document, the KI.ping field mapping, the order rule, the JWS header, the deflate-raw payload, the claims and lifetime, a signing example, the JWKS, the link and its limit, the named tab and the user-visible errors. Origin: D-086 Q9 („KI.ping button … once the payload is fixed").
+`docs/handoff.md` SHALL document every key of the catalog document, a field mapping, the order rule, the JWS header, the deflate-raw payload, the claims and lifetime, a signing example, the JWKS, the link and its limit, the named tab and the user-visible errors. Origin: D-086 Q9 („[Suchtool] button … once the payload is fixed").
 
 #### Scenario: Guide names every key and claim
 - **WHEN** the docs test reads `docs/handoff.md`

@@ -2,7 +2,7 @@
 
 ## Why
 
-Jan (2026-10-16): „KI.ping has a ui too. i want to take over the design language" (D-055). He accepted the mock as shown („accepted right away"): artboards "Workspace" and "Tokens and parts", source `docs/design/Main.dc.html` (its `renderVals()` holds the palettes, accent and density values) and `docs/design/Tokens.dc.html`, with the defaults accent sky `#0284c7`, Okabe-Ito series palette, compact density (12 px) and the time strip on. D-055: restyle only, no behaviour change, except the time strip, which is new.
+Jan (2026-10-16): „[Suchtool] has a ui too. i want to take over the design language" (D-055). He accepted the mock as shown („accepted right away"): artboards "Workspace" and "Tokens and parts", source `docs/design/Main.dc.html` (its `renderVals()` holds the palettes, accent and density values) and `docs/design/Tokens.dc.html`, with the defaults accent sky `#0284c7`, Okabe-Ito series palette, compact density (12 px) and the time strip on. D-055: restyle only, no behaviour change, except the time strip, which is new.
 
 Today the app uses `--accent #2563eb`, a 14 px base, plain checkboxes for A/B/Diff, a borderless group header and a ten-colour Tailwind-600 series palette (`SIGNAL_COLORS`).
 

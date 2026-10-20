@@ -30,8 +30,8 @@ const WORKSPACE_ACTIONS = [LATEST_WORKSPACE, NEW_WORKSPACE] as const;
 const NOT_FOUND: Gate = { title: "Workspace not found", actions: WORKSPACE_ACTIONS };
 const NO_ACCESS: Gate = { title: "No access to this workspace", actions: WORKSPACE_ACTIONS };
 const EMPTY_GRANT: Gate = {
-  title: "Open a session from KI.ping",
-  text: "This workspace has no data yet. KI.ping decides which vehicles you may see: open a session there and it opens here.",
+  title: "Open a session from the search tool",
+  text: "This workspace has no data yet. The search tool decides which vehicles you may see: open a session there and it opens here.",
   actions: [],
 };
 

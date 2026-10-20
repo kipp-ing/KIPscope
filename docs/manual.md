@@ -70,11 +70,11 @@ On the TIME strip:
 
 Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (`Backspace`) returns to the previous range, up to 50 steps. **Reset** (`Home`) shows all data.
 
-### Sessions from KI.ping
+### Sessions from the search tool
 
-"Open in KIPscope" in KI.ping, or a dropped catalog file, opens a new workspace on one session of the list it found. The strip head then shows the session bar instead of the scope: `SESSION`, the vehicle or title, the kind, the time and length, up to three meta values, and the position such as `3 / 17`. Hover the bar for the full meta and a `Back to` link to the finder.
+The search tool (finder) is a separate tool that finds sessions; it is not part of KIPscope. Its "Open in KIPscope", or a dropped catalog file, opens a new workspace on one session of the list it found. The strip head then shows the session bar instead of the scope: `SESSION`, the vehicle or title, the kind, the time and length, up to three meta values, and the position such as `3 / 17`. Hover the bar for the full meta and a `Back to` link to the finder.
 
-- `‹` and `›` on the bar, or the keys `[` and `]`, step to the previous and next session in the order KI.ping sent. The windows, signals and filter stay; each window keeps its distance from the alignment point, so the same moment of the next session shows. A signal the next vehicle lacks stays in its window and reads `not in this session`.
+- `‹` and `›` on the bar, or the keys `[` and `]`, step to the previous and next session in the order the search tool sent. The windows, signals and filter stay; each window keeps its distance from the alignment point, so the same moment of the next session shows. A signal the next vehicle lacks stays in its window and reads `not in this session`.
 - `3 / 17 ▾` opens the list of all sessions; type to filter by vehicle, kind, time or a meta value, then `Enter` or click a row.
 - **Align** sets what lines up between sessions: `Session start`, `Session end`, `Anchor from the finder`, or an event: right-click a pin and choose `Align sessions to this event`, or use `Align` on an Events row. Each later session lines up on its first matching event; without one it aligns to its start and the message line says so.
 - **Unlink** shows the vehicle's whole recording around the session: the bar reads `VEHICLE` and greys the arrows, the strip shows the catalog's sessions of this vehicle as marks, and the Events tab lists the events near the view (`Nearby`). Click a mark, or **Link**, to go back to a session with the layout you had.
@@ -94,7 +94,7 @@ Opening a shared workspace with `Read` shows the pill `Read-only`; zoom and othe
 
 **Recent workspaces** in the Views menu lists your latest workspaces with their time; `●` marks one open in a tab, the tick the one you are in. Saved views (Save, Open, Import file…) are your own layouts; opening one puts it into a new workspace.
 
-**On a shared server** you sign in through your company's login, and KI.ping decides which vehicles you may see: a new workspace shows "Open a session from KI.ping" until you open a session there. "No access to this workspace" means its owner keeps it private; "My latest workspace" and "New workspace" take you on. The status strip, and the gate pages, show who you are signed in as.
+**On a shared server** you sign in through your company's login, and the search tool decides which vehicles you may see: a new workspace shows "Open a session from the search tool" until you open a session there. "No access to this workspace" means its owner keeps it private; "My latest workspace" and "New workspace" take you on. The status strip, and the gate pages, show who you are signed in as.
 
 ## Events
 
@@ -142,6 +142,6 @@ Press `?` in the app for every key and gesture.
 - **drive**: a stretch of dense logging, shown under the strip bars.
 - **event**: a fault, a state change or a logger error at one time.
 - **data ref**: one recording, for example smart-ed.
-- **session**: a section of one vehicle's data found by KI.ping, such as a drive or a charge.
-- **catalog**: the list of sessions KI.ping handed over, in its order.
+- **session**: a section of one vehicle's data found by the search tool, such as a drive or a charge.
+- **catalog**: the list of sessions the search tool handed over, in its order.
 - **workspace**: what one tab shows, kept on the server at `/w/<id>`.

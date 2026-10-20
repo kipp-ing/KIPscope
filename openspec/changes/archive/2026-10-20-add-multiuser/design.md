@@ -3,10 +3,10 @@
 ## Context
 
 - **Jan's decisions:**
-  - D-079: „das soll auf einem server laufen, dem gleichen vielleicht wie Ki ping. lokal ist immer nur der browser. Multiuser ist also pflicht. eine zugriffsberechtigung im Server muss später auch einbaubar sein".
+  - D-079: „das soll auf einem server laufen, dem gleichen vielleicht wie [Suchtool]. lokal ist immer nur der browser. Multiuser ist also pflicht. eine zugriffsberechtigung im Server muss später auch einbaubar sein".
   - D-083: „jedes sesseion braucht rechte, ja. ADX rechte sind serverrechte hier keine unterscheidung" (its SSO part is superseded by D-084).
   - D-084: „1: bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten. 2. keine Ahnung es gibt rollen,. die bestätigt ein tool in verbindung mit PIng id. not my business. muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauben. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutezer alle platformen sehen. q4 views je nutzer, ja". Its rules part is superseded by D-085.
-  - D-085: „wir können das rechtemanagement in kiping packen. das mit der zeitlichen session set stimmt nicht. die liste kann beliebig sortiert sein beliebige VINs." Rights live in KI.ping; the KIPscope rules file is in question.
+  - D-085: „wir können das rechtemanagement in [Suchtool] packen. das mit der zeitlichen session set stimmt nicht. die liste kann beliebig sortiert sein beliebige VINs." Rights live in the search tool; the KIPscope rules file is in question.
   - D-086: „unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts. der ist ja". Read as: rights per object with no time part, and the exploration's other recommendations accepted. Q1: "session" is the data section; the server state is the invisible "workspace", renamed in this change. Q11: the rules file drops out of this change. Q13: a view grants nothing.
   - On a workspace per case with its own URL („old tabs keep their case"), Jan answered „ja". D-082: catalogs are keyed by scope. D-081: query classes. D-078: the finder hands over cases.
 - **Concept:** §7 „Vollständige CLI-Fernsteuerung … Eine KI verwendet diese reguläre Schnittstelle" (the CLI needs an identity without a browser). §8 „Ein eigenes Rechteverwaltungssystem kommt später. Ein autorisierter Datenbankzugang bleibt erforderlich".
@@ -65,7 +65,7 @@ Rounds 1–4 built every part below under the name "session", with a rules file.
 
 - **Q-1 Identity mechanism → pluggable adapter (D-084).** `none` stays the default (M1); the built-in `oidc` validates Ping-issued tokens (M15); a module adapter is loaded from config (M1).
 - **Q-2 CLI identity → the same adapter (D-084).** The CLI sends a bearer token the company's tool obtained (M13).
-- **Q-3 Rights → KI.ping (D-085, D-086 Q11).** Superseded: the rules file of D-084 is dropped. KIPscope holds what KI.ping vouched for as a grant per workspace (M3) and enforces it in one guard (M6).
+- **Q-3 Rights → the search tool (D-085, D-086 Q11).** Superseded: the rules file of D-084 is dropped. KIPscope holds what the search tool vouched for as a grant per workspace (M3) and enforces it in one guard (M6).
 - **Q-4 Saved views → per user.** „q4 views je nutzer, ja".
 - **Q-5 CLI token → the company's tool (a).** Lead's reading of D-084, 2026-10-19; Jan can veto.
 - **Open:** Q-6 (what an invited user sees) and Q-7 (`#view=` links on a server) in proposal "Open questions". Tasks follow the recommended answers.
@@ -146,7 +146,7 @@ This is the interface `add-case-open` uses. It does not specify the signed catal
 
 ```ts
 // packages/shared/src/workspaces.ts
-/** Data refs one workspace may read (D-085: KI.ping decides; D-086: whole objects, no time part). */
+/** Data refs one workspace may read (D-085: the search tool decides; D-086: whole objects, no time part). */
 export type Grant = { readonly objects: "all" } | { readonly objects: readonly string[] /* data refs */ };
 export const Grant: z.ZodType<Grant>; // strict: {objects: "all"} | {objects: DataRef[] (≤ MAX_GRANT_OBJECTS, unique)}
 export const MAX_GRANT_OBJECTS = 2000;
@@ -184,7 +184,7 @@ grantObjects(workspaceId: string, dataRefs: readonly string[]): WorkspaceEntry |
 - **Stored with the workspace** (M4 file). It is never sent by a client. `CreateWorkspaceRequest` is strict and has no grant field, no command touches the grant, and view documents carry none. A client only reads `granted` in the summary.
 - **Creation:**
   - With `none`, a new workspace's grant is `all`, so nothing changes for Jan.
-  - With `oidc` or `module:`, a new workspace's grant is empty. It shows data only after `add-case-open` has verified a signed handoff and called `grantObjects`. Until then the web shows the gate "Open a session from KI.ping" (M12).
+  - With `oidc` or `module:`, a new workspace's grant is empty. It shows data only after `add-case-open` has verified a signed handoff and called `grantObjects`. Until then the web shows the gate "Open a session from the search tool" (M12).
 - **Unit:** a grant object is a data ref, matched exactly. There are no patterns and no time part (D-086: whoever may see a vehicle may see all of it). Scope windows, Unlink and Widen stay `add-case-open`'s and are not limited by the grant.
 - **Invariant:** a workspace's data refs (scope, window signals, events-line signals) are always covered by its effective grant. Every command that names a data ref is checked (M6), and a new workspace is seeded only with covered events-line signals (M4). The one exception: a state dir carried over from `none` to a server. There a stored `all` reads as empty, and the data routes refuse its data refs (Risks).
 - **Views grant nothing** (D-086 Q13). Opening a view in a workspace checks the view's data refs against that workspace's grant. A view opened from a link goes into a new workspace, whose grant is the initial one (Q-7).
@@ -470,7 +470,7 @@ As built. The SPA catch-all answers `index.html` for `/w/<id>` and for the legac
   |---|---|---|---|
   | 404 `unknown_workspace` or close 4404 | `Workspace not found` | — | `My latest workspace` (navigates to `/`), `New workspace` (`POST /api/workspaces {}`) |
   | 403 `forbidden` or close 4403 | `No access to this workspace` | — | same two |
-  | **Empty grant:** `me.identity !== "none"` and `summary.granted === 0` | `Open a session from KI.ping` | `This workspace has no data yet. KI.ping decides which vehicles you may see: open a session there and it opens here.` | none |
+  | **Empty grant:** `me.identity !== "none"` and `summary.granted === 0` | `Open a session from the search tool` | `This workspace has no data yet. The search tool decides which vehicles you may see: open a session there and it opens here.` | none |
   | 401 | `Not signed in` | `Reload to sign in.` | none |
   | 503 `identity_unavailable` | `Sign-in service unreachable` | `Try again later.` | none |
 
@@ -478,7 +478,7 @@ As built. The SPA catch-all answers `index.html` for `/w/<id>` and for the legac
   - The `no_rights` gate is removed.
   - The live channel does not reconnect after 4403 or 4404.
 - **Share…** (`workspaces/ShareMenu.tsx`) is an overflow item (saved-views "Top-row overflow menu"): a `Share…` button in the row on a wide top row, the same entry in "⋯" on a short one. Its popover holds two parts. Their labels and lines come from the pure `shareItems(me, summary)`:
-  1. **`Copy link (own copy)`**, with the line `The receiver gets their own copy of this layout; changes stay apart.` With an identity other than `none`, a second line follows: `On this server they see data only for vehicles KI.ping opened for them.` It copies `viewLinkUrl(workspace, location.origin + "/")`, as "Copy link" did, and shows the notice `Link copied (<n> characters)`.
+  1. **`Copy link (own copy)`**, with the line `The receiver gets their own copy of this layout; changes stay apart.` With an identity other than `none`, a second line follows: `On this server they see data only for vehicles the search tool opened for them.` It copies `viewLinkUrl(workspace, location.origin + "/")`, as "Copy link" did, and shows the notice `Link copied (<n> characters)`.
   2. **`Invite to this workspace`**:
      - For the owner with an identity other than `none`: the radio `Private · Read · Write`, with the lines `Read: they watch this workspace live.` and `Write: they change it with you.` `Read` and `Write` are disabled, with the tooltip `Sharing is turned off on this server`, when `me.canShare` is false.
      - For a non-owner: the line `Shared by <owner> (<read|write>)`.
@@ -513,7 +513,7 @@ As built, renamed:
 ### M14: Docs
 
 - **`docs/deploy.md`:**
-  - The "Rules" section is replaced by "Rights": KI.ping decides; each workspace holds a grant; in `none` it is `all`; on a server a workspace shows data only after a handoff from KI.ping (`add-case-open`); `KIPSCOPE_SHARE`.
+  - The "Rules" section is replaced by "Rights": the search tool decides; each workspace holds a grant; in `none` it is `all`; on a server a workspace shows data only after a handoff from the search tool (`add-case-open`); `KIPSCOPE_SHARE`.
   - The rest is as built, renamed.
 - **`docs/http-api.md`:** the `/api/w/<id>` prefix rule, the default workspace, the access level of every route, `/api/workspaces…`, the error codes and `X-KIPscope-Workspace`.
 - **README:** the variables (`KIPSCOPE_SHARE`, `KIPSCOPE_WORKSPACE_IDLE_DAYS`, no `KIPSCOPE_RULES`) and the CLI forms.
@@ -557,7 +557,7 @@ Built in round 1, unchanged:
 ## Fit for the next changes
 
 - **`add-case-open`:**
-  - Verifies KI.ping's signed catalog (its own design).
+  - Verifies the search tool's signed catalog (its own design).
   - Creates the workspace through the registry.
   - Maps each session's object to a data ref and calls `grantObjects(id, dataRefs)` once, before the first `case.*` command.
   - Its routes declare their access like every other (M6).
@@ -570,7 +570,7 @@ Built in round 1, unchanged:
 - **Fail closed on a server:** a stored grant `all` reads as empty when the identity is not `none`.
 - **Unknown routes:** `/api/s/<id>/…` and `--session` get no alias; only the UI address `/s/<id>` redirects.
 - **Recent list:** no delete and no "New workspace" entry. Rows are links (a page load).
-- **The empty-grant gate** has no buttons. Its text names KI.ping, the finder of D-078.
+- **The empty-grant gate** has no buttons. Its text names the search tool, the finder of D-078.
 - **Kept from round 1:** `forbidden_data` (403) for a data ref outside the grant; views per user; migration to `local`; the user shown in the footer unless the identity is `none`; the server serving the built UI.
 
 ## Risks
@@ -579,4 +579,4 @@ Built in round 1, unchanged:
 - **A misconfigured proxy** breaks the trust boundary. Mitigations are as built (`oidc` trusts signatures; the example checks the peer; the start log).
 - **An invited user with write** can change the owner's windows within the grant (last command wins; concept §7).
 - **An own copy on a server shows nothing** until `add-case-open` (Q-7).
-- **Not testable here:** a real PingFederate or PingOne, the company's token tool, and KI.ping's signing. `grantObjects` is exercised by tests only until `add-case-open`.
+- **Not testable here:** a real PingFederate or PingOne, the company's token tool, and the search tool's signing. `grantObjects` is exercised by tests only until `add-case-open`.

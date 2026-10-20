@@ -46,7 +46,7 @@ describe("naming (workspaces: Session is not a word for the workspace)", () => {
         const lines = readFileSync(file, "utf8").split("\n");
         lines.forEach((line, i) => {
           if (!OLD_WORKSPACE_WORDS.test(line)) return;
-          if (line.includes("LEGACY_") || /KI\.ping/.test(line)) return;
+          if (line.includes("LEGACY_") || /search tool/i.test(line)) return;
           hits.push(`${relative(ROOT, file)}:${i + 1}: ${line.trim().slice(0, 100)}`);
         });
       }

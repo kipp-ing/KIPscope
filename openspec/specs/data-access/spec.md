@@ -15,7 +15,7 @@ What a workspace may read:
 
 Roles from the identity adapter SHALL NOT change what a workspace may read.
 
-Origin: D-085 („wir können das rechtemanagement in kiping packen": rights live in KI.ping); D-086 Q11 (no KIPscope rules file) and its decision „rechte haben keinen zeit bezug des objekts" (a grant names vehicles, whoever may see one may see all of it); D-084 („bei mir lokal ohne login, bin mein eigener herr": `none` unchanged); fail closed for state carried over from `none`: necessary consequence of "never taken from a client" (a local state dir must not grant on a server). Design M3.
+Origin: D-085 („wir können das rechtemanagement in [Suchtool] packen": rights live in the search tool); D-086 Q11 (no KIPscope rules file) and its decision „rechte haben keinen zeit bezug des objekts" (a grant names vehicles, whoever may see one may see all of it); D-084 („bei mir lokal ohne login, bin mein eigener herr": `none` unchanged); fail closed for state carried over from `none`: necessary consequence of "never taken from a client" (a local state dir must not grant on a server). Design M3.
 
 #### Scenario: Grant functions
 - **WHEN**
@@ -55,7 +55,7 @@ One server function SHALL add data refs to a workspace's grant: `WorkspaceRegist
 
 More than 2,000 objects SHALL be refused, leaving the grant unchanged.
 
-Origin: D-085 (KIPscope "can no longer trust a plain handoff link: KI.ping must vouch for it"); D-086 Q10 (signed catalog, verified by `add-case-open`, which calls this function); necessary consequence: a grant a client could set would undo D-085. 2,000: design M3 "Numbers".
+Origin: D-085 (KIPscope "can no longer trust a plain handoff link: the search tool must vouch for it"); D-086 Q10 (signed catalog, verified by `add-case-open`, which calls this function); necessary consequence: a grant a client could set would undo D-085. 2,000: design M3 "Numbers".
 
 #### Scenario: Widening
 - **WHEN**, on a registry in `oidc` mode, `grantObjects` gets:
@@ -85,7 +85,7 @@ Origin: D-085 (KIPscope "can no longer trust a plain handoff link: KI.ping must 
 ### Requirement: One guard for every route
 Every route under `/api/` SHALL declare its access level and the data refs it names (design M6 table), and the server SHALL refuse to start when one does not. Every data ref a request names (query parameter, signal ID, command, view document, saved view opened by name) that the workspace's grant does not cover SHALL be refused with 403 `forbidden_data`, before any catalog lookup, cache read or source query. The status, code and message form SHALL be the same whether that data ref exists or not. For `POST /api/workspaces {open}` the check SHALL use the grant the new workspace gets.
 
-Origin: D-084 („rights limit which data a user can see, in every query, list, view and CLI call, on the server"; „data-ref filtering at one place"); D-085 (the grant is KI.ping's, enforced by KIPscope's guard, exploration "Security" and Q11). Design M6.
+Origin: D-084 („rights limit which data a user can see, in every query, list, view and CLI call, on the server"; „data-ref filtering at one place"); D-085 (the grant is the search tool's, enforced by KIPscope's guard, exploration "Security" and Q11). Design M6.
 
 #### Scenario: Every API route declares its access
 - **WHEN** the test app is built and its registered routes are listed, and a test app is built with one extra route `GET /api/x` without `config.access`
@@ -119,7 +119,7 @@ Origin: D-084 („rights limit which data a user can see, in every query, list, 
 ### Requirement: Lists and counts show granted data only
 `GET /api/catalog`, `GET /api/signals` (items and `total`), `GET /api/meta` (`catalog.size`) and the signal lookups of commands SHALL see only signals of data refs the workspace's grant covers. The shared signal lists and caches SHALL stay shared between workspaces.
 
-Origin: D-084 (not every user sees every platform; now decided by KI.ping, D-085); necessary consequence: a count or a search hit reveals data as much as a series does. Design M6 `CatalogView`.
+Origin: D-084 (not every user sees every platform; now decided by the search tool, D-085); necessary consequence: a count or a search hit reveals data as much as a series does. Design M6 `CatalogView`.
 
 #### Scenario: Filtered catalog
 - **WHEN**, in full mode on the test DB, workspace W1 (grant `["testcar"]`) and workspace W2 (grant `["testcar", "othercar"]`) read `GET /api/catalog`, `GET /api/signals?q=` and `GET /api/meta`
@@ -135,7 +135,7 @@ An invited user SHALL see in a shared workspace exactly what its grant covers. S
 
 Only users of the same identity provider SHALL be invited: the server's one adapter and, for `oidc`, its one issuer. Setting the share level `read` or `write` SHALL answer 403 `share_not_permitted` when `KIPSCOPE_SHARE` is `off`, and `private` SHALL always be allowed.
 
-Origin: D-085 (KI.ping decides what each user sees); D-084 (share levels stay; sharing must not show data the user's rights hide); the lead's brief 2026-10-20: the receiver gets read or write only within the same Ping tenant. What the receiver sees follows the recommendation of open question Q-6 (proposal); the stricter alternative changes the first sentence only. Share switch: spec owner's default (design "Revision", item 4).
+Origin: D-085 (the search tool decides what each user sees); D-084 (share levels stay; sharing must not show data the user's rights hide); the lead's brief 2026-10-20: the receiver gets read or write only within the same Ping tenant. What the receiver sees follows the recommendation of open question Q-6 (proposal); the stricter alternative changes the first sentence only. Share switch: spec owner's default (design "Revision", item 4).
 
 #### Scenario: Invited user and the owner's grant
 - **WHEN**
@@ -182,6 +182,6 @@ Origin: D-086 Q13 („a saved view or `#view=` link opens only data the user's c
   - bob opens `/` on 5174 and then alice's private workspace address
 - **THEN**
   - alice's explorer lists signals
-  - bob first sees "Open a session from KI.ping", then "No access to this workspace"
+  - bob first sees "Open a session from the search tool", then "No access to this workspace"
   - his footer tooltip names his roles
 - **Evidence:** UI check (one screenshot per tab)

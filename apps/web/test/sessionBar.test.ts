@@ -38,10 +38,10 @@ describe("session bar text", () => {
     );
     expect(linked.position).toBe("1 / 4");
     // The tooltip lists every meta entry, the id and the origin tool.
-    const tip = sessionBarText(caseAt(0), undefined, { tool: "KI.ping" }).tooltip;
+    const tip = sessionBarText(caseAt(0), undefined, { tool: "search tool" }).tooltip;
     expect(tip).toContain("distance_km");
     expect(tip).toContain(entryAt(0).id);
-    expect(tip).toContain("KI.ping");
+    expect(tip).toContain("search tool");
 
     // Unlinked: the vehicle's whole series, 02:00 – 12:00 local (00:00Z – 10:00Z).
     const scope: WorkspaceScope = {

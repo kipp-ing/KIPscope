@@ -26,7 +26,7 @@ export const MAX_CASES_TEXT = 4_000_000;
 export const MAX_CASES_JSON = 4_194_304;
 /** Meta keys per session. */
 export const MAX_CASE_META = 16;
-/** KIPSCOPE_CASE_PAD default (KI.ping pad_s). */
+/** KIPSCOPE_CASE_PAD default. */
 export const DEFAULT_CASE_PAD = "60s";
 /** 1 d. */
 export const MAX_CASE_PAD_NS = 86_400_000_000_000n;
@@ -63,7 +63,7 @@ export const CaseEntryInput = z.object({
   from: TimeInput,
   /** to − from ≥ MIN_SPAN_NS. */
   to: TimeInput,
-  /** Display only (KI.ping: fleet number). */
+  /** Display only (for example a fleet number). */
   title: z.string().max(120).optional(),
   /** ≤ MAX_CASE_META keys, display only. */
   meta: z.record(z.string().min(1).max(64), CaseMetaValue).optional(),

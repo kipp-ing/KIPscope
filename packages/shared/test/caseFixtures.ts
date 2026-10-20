@@ -14,7 +14,7 @@ export const B = 1790812800n;
 export const at = (h: number, m: number, s = 0): string =>
   String((B + BigInt(h * 3600 + m * 60 + s)) * NS);
 
-/** The document as KI.ping would send it (ISO times, unknown key `extra`). */
+/** The document as a search tool would send it (ISO times, unknown key `extra`). */
 export const C4_DOC = {
   kipscope: "cases",
   version: 1,

@@ -21,7 +21,7 @@ import { currentPriority, type QueryClass } from "../src/priority.ts";
 import { makeKey, type TestKey } from "./jwks.ts";
 import type { MemorySignal } from "./scopeApp.ts";
 
-export const ISS = "https://kiping.example";
+export const ISS = "https://finder.example";
 export const AUD = "https://kipscope.example";
 
 /** 2026-10-01T00:00:00Z = 1790812800 s, so 01:00:00 = 1790816400 s (by hand). */

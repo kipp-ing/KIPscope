@@ -19,7 +19,7 @@ import type { IdentityConfig } from "./config.ts";
 
 /**
  * Grant checks and workspace rights (add-multiuser M3, M6): pure functions the guard, the
- * registry and the routes share. KI.ping decides what a workspace may read (D-085); KIPscope only
+ * registry and the routes share. The search tool (finder) decides what a workspace may read (D-085); KIPscope only
  * holds and enforces the grant.
  */
 

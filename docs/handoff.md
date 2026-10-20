@@ -1,6 +1,8 @@
 # Handing sessions to KIPscope
 
-For the implementers of a finder such as KI.ping: how to send an ordered list of found sessions (a *catalog*) to KIPscope, so the user steps through them in one workspace without a page load. KIPscope does not search; the finder decides which sessions and, on a server, which vehicles the user may see (D-078, D-085, D-086). Design: [add-case-open](../openspec/changes/archive/2026-10-20-add-case-open/design.md) K2–K5, K15. Routes: [http-api.md](http-api.md). User side: [manual.md](manual.md).
+For the implementers of a search tool (finder): how to send an ordered list of found sessions (a *catalog*) to KIPscope, so the user steps through them in one workspace without a page load. KIPscope does not search; the finder decides which sessions and, on a server, which vehicles the user may see (D-078, D-085, D-086). Design: [add-case-open](../openspec/changes/archive/2026-10-20-add-case-open/design.md) K2–K5, K15. Routes: [http-api.md](http-api.md). User side: [manual.md](manual.md).
+
+The search tool is not part of KIPscope and is out of scope of this repo. KIPscope defines only this interface: the catalog document, its signature and the link. Any search tool that signs a catalog as described here works.
 
 ## The catalog document
 
@@ -10,14 +12,14 @@ One JSON document travels by link, file, CLI and API. Unknown keys are ignored a
 {
   "kipscope": "cases",
   "version": 1,
-  "origin": { "tool": "KI.ping", "url": "https://kiping.example/#f=1", "set": "search 42" },
+  "origin": { "tool": "search tool", "url": "https://finder.example/#f=1", "set": "search 42" },
   "current": 0,
   "pad": "60s",
   "align": { "mode": "start" },
   "view": "battery-dashboard",
   "cases": [
     {
-      "id": "WVWZZZ1KZAW000001|driving|2026-10-01T01:00:00Z",
+      "id": "s-000001",
       "object": "WVWZZZ1KZAW000001",
       "kind": "driving",
       "from": "2026-10-01T01:00:00Z",
@@ -62,17 +64,19 @@ Times are ISO-8601 UTC with `Z` or an offset (`2026-10-01T01:00:00Z`, `2026-10-0
 
 `align` is one of `{"mode": "start"}`, `{"mode": "end"}`, `{"mode": "anchor"}` or `{"mode": "event", "event": {"kind": "dtc", "source": "BMS", "name": "P0CA700"}}` (`event` also takes `text`, which then must match too, e.g. the state a change goes to). On every step each chart keeps its offset from the session's alignment point: its start, its end, its `anchor`, or its first matching event. A session without an anchor or a matching event is aligned to its start, and the user is told.
 
-### KI.ping field mapping
+### Field mapping
 
-| KI.ping | Catalog |
+How a search tool's session fields typically map to the catalog:
+
+| Search tool | Catalog |
 |---|---|
-| `session_id` (`<VIN>\|<kind>\|<t_start ISO>`) | `id` |
-| `device_id` (the VIN) | `object` |
-| `session_type` | `kind` |
-| `t_start`, `t_end` (UTC, `[t_start, t_end)`) | `from`, `to` |
-| `finas_id` | `title` |
-| `a_<name>` attributes | `meta` (`<name>` as the key) |
-| `pad_s` | `pad` (`"<pad_s>s"`) |
+| the session's own ID | `id` |
+| the vehicle (VIN) | `object` |
+| the session's kind (drive, charge, idle) | `kind` |
+| start and end (UTC, half-open) | `from`, `to` |
+| a display name such as the fleet number | `title` |
+| attributes | `meta` (the attribute name as the key) |
+| the padding a plot shows around a session | `pad` (e.g. `"60s"`) |
 
 ## Order
 
@@ -102,7 +106,7 @@ The signed form is a JWS in compact serialisation, `<header>.<payload>.<signatur
 Example claims:
 
 ```json
-{ "iss": "https://kiping.example", "aud": "https://kipscope.example", "sub": "alice",
+{ "iss": "https://finder.example", "aud": "https://kipscope.example", "sub": "alice",
   "iat": 1792488000, "exp": 1792488600, "cases": { "kipscope": "cases", "version": 1, "cases": [ … ] } }
 ```
 
@@ -117,7 +121,7 @@ const key = await importPKCS8(process.env.KIPSCOPE_SIGNING_KEY, "EdDSA"); // PKC
 export async function signCatalog(user, catalog) {
   const now = Math.floor(Date.now() / 1000);
   const claims = {
-    iss: "https://kiping.example",
+    iss: "https://finder.example",
     aud: "https://kipscope.example",
     sub: user,
     iat: now,
@@ -126,7 +130,7 @@ export async function signCatalog(user, catalog) {
   };
   const payload = deflateRawSync(Buffer.from(JSON.stringify(claims), "utf8"));
   return new CompactSign(payload)
-    .setProtectedHeader({ alg: "EdDSA", kid: "kiping-2026-10", typ: "kipscope-cases" })
+    .setProtectedHeader({ alg: "EdDSA", kid: "finder-2026-10", typ: "kipscope-cases" })
     .sign(key);
 }
 ```
@@ -138,7 +142,7 @@ For P-256 use `importPKCS8(pem, "ES256")` and `alg: "ES256"`.
 KIPscope verifies against a JSON Web Key Set with your public keys, each with its `kid`:
 
 ```json
-{ "keys": [ { "kty": "OKP", "crv": "Ed25519", "x": "…", "kid": "kiping-2026-10", "alg": "EdDSA", "use": "sig" } ] }
+{ "keys": [ { "kty": "OKP", "crv": "Ed25519", "x": "…", "kid": "finder-2026-10", "alg": "EdDSA", "use": "sig" } ] }
 ```
 
 Give it to the KIPscope operator as a file, or serve it at an `https` URL (`KIPSCOPE_FINDER_JWKS`). A URL is fetched again on an unknown `kid` (at most every 30 s), so rotation is: publish the new key next to the old one, sign with the new `kid`, drop the old key after the longest lifetime has passed.

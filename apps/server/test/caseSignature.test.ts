@@ -286,11 +286,11 @@ describe("readCases: mapping and back link", () => {
   });
 
   it("keeps only a back link to a listed finder", async () => {
-    const listed = { tool: "KI.ping", url: "https://kiping.example/#f=1" };
+    const listed = { tool: "search tool", url: "https://finder.example/#f=1" };
     const withLink = (url: string) =>
       readCases(
-        c4({ origin: { tool: "KI.ping", url } }),
-        finderConfig({ origins: ["https://kiping.example"] }),
+        c4({ origin: { tool: "search tool", url } }),
+        finderConfig({ origins: ["https://finder.example"] }),
         "none",
         undefined,
       );
@@ -299,7 +299,7 @@ describe("readCases: mapping and back link", () => {
     expect(kept.warnings).toEqual([]);
     const dropped = await withLink("https://evil.example/");
     expect(dropped.catalog.origin?.url).toBeUndefined();
-    expect(dropped.catalog.origin?.tool).toBe("KI.ping");
+    expect(dropped.catalog.origin?.tool).toBe("search tool");
     expect(dropped.warnings.join(" ")).toMatch(/origin\.url|evil\.example/);
   });
 
@@ -347,7 +347,7 @@ describe("readCases: remote keys", () => {
   });
 
   it("issuer and audience come from the configuration", async () => {
-    expect(ISS).toBe("https://kiping.example");
+    expect(ISS).toBe("https://finder.example");
     const other = finderConfig({ jwks: keys.path, issuer: "https://other.example" });
     expect(await refused(readCases(signCases(good), other, "other", "alice"))).toMatchObject({
       reason: "issuer",

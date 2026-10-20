@@ -132,7 +132,7 @@ describe("catalog document", () => {
       pad: "30s",
       align: { mode: "event", event: { kind: "dtc", source: "BMS", name: "P0CA700" } },
       view: "my-view",
-      origin: { tool: "KI.ping", url: "https://kiping.example/#f=1", set: "abc" },
+      origin: { tool: "search tool", url: "https://finder.example/#f=1", set: "abc" },
     });
     expect(parsed).toMatchObject({
       ok: true,
@@ -140,7 +140,7 @@ describe("catalog document", () => {
       pad: 30n * NS,
       align: { mode: "event", event: { kind: "dtc", source: "BMS", name: "P0CA700" } },
       view: "my-view",
-      origin: { tool: "KI.ping", url: "https://kiping.example/#f=1", set: "abc" },
+      origin: { tool: "search tool", url: "https://finder.example/#f=1", set: "abc" },
     });
     expect(parseCasesDocument({ ...C4_DOC, align: { mode: "middle" } }).ok).toBe(false);
     expect(parseCasesDocument({ ...C4_DOC, view: "not a view name!" }).ok).toBe(false);

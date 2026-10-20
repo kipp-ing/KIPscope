@@ -26,14 +26,14 @@ Origin: D-083 („jedes sesseion braucht rechte"); Jan's „ja" to a workspace p
 ### Requirement: Session is not a word for the workspace
 The words "session" and "sessions" SHALL NOT name the server-held workspace anywhere: UI text, routes, headers, CLI options and forms, DTOs, error codes, files and code names. There are two exceptions:
 - constants named `LEGACY_*` that read old state and addresses
-- lines about the finder's data section, which name `KI.ping` on the same line (such as the gate text "Open a session from KI.ping")
+- lines about the finder's data section, which name `search tool` on the same line (such as the gate text "Open a session from the search tool")
 
 "Session" is reserved for the finder's data section.
 
 Origin: D-086 Q1 („session" is the data section; the server state is the invisible "workspace", renamed in `add-multiuser`); exploration "Root cause" (two meanings of one word); data fact: on 2026-10-20 the Sessions menu listed workspaces under data-section titles (exploration row 1).
 
 #### Scenario: No session in the code
-- **WHEN** `grep -rniE "\bsessions?\b" apps/server/src apps/web/src apps/cli/src packages/shared/src docs/http-api.md docs/deploy.md README.md | grep -v -e LEGACY_ -e 'KI\.ping'` runs
+- **WHEN** `grep -rniE "\bsessions?\b" apps/server/src apps/web/src apps/cli/src packages/shared/src docs/http-api.md docs/deploy.md README.md | grep -v -e LEGACY_ -e 'search tool'` runs
 - **THEN** it prints no line
 - **Evidence:** the command
 
@@ -247,10 +247,10 @@ The UI SHALL run at `/w/<id>`.
 
 Gate pages:
 - An unknown workspace SHALL show "Workspace not found", and a forbidden one "No access to this workspace", both with the buttons "My latest workspace" and "New workspace".
-- A workspace with an empty grant under an identity other than `none` SHALL show "Open a session from KI.ping" until a `summary` message brings a grant (data-access "Grant per workspace").
+- A workspace with an empty grant under an identity other than `none` SHALL show "Open a session from the search tool" until a `summary` message brings a grant (data-access "Grant per workspace").
 - The live channel SHALL NOT reconnect after the codes 4403 and 4404.
 
-Origin: Jan's „ja" (own URL per case, old tabs keep their case); D-086 Q1 (rename, old addresses exist in Jan's tabs); exploration row 4 (no mirroring); D-085 (KI.ping decides what a user sees). Design M12.
+Origin: Jan's „ja" (own URL per case, old tabs keep their case); D-086 Q1 (rename, old addresses exist in Jan's tabs); exploration row 4 (no mirroring); D-085 (the search tool decides what a user sees). Design M12.
 
 #### Scenario: Start-up target
 - **WHEN** `startupTarget` gets the paths `/w/abcdefghij`, `/s/abcdefghij`, `/`, `/#view=<code>`, `/w/abcdefghij?view=demo` and `/w/ABC`
@@ -270,7 +270,7 @@ Origin: Jan's „ja" (own URL per case, old tabs keep their case); D-086 Q1 (ren
   - the answers 401 `unauthenticated` and 503 `identity_unavailable`
 - **THEN** it returns:
   - "Workspace not found", then "No access to this workspace" twice
-  - "Open a session from KI.ping", then no gate
+  - "Open a session from the search tool", then no gate
   - "Not signed in", then "Sign-in service unreachable"
 
   Only the first three offer "My latest workspace" and "New workspace".
@@ -298,7 +298,7 @@ Origin: Jan's „ja" (own URL per case, old tabs keep their case); D-086 Q1 (ren
   2. The lead stops the server and runs `pnpm --filter @kipscope/server exec tsx scripts/grant.ts <stateDir> <her workspace id> <carserver data ref>`. This dev-only script builds a `WorkspaceRegistry` on the stopped state dir, calls `grantObjects` and flushes.
   3. The lead starts the server again.
 - **THEN**
-  - before the grant, her tab shows "Open a session from KI.ping" and the explorer lists no signal
+  - before the grant, her tab shows "Open a session from the search tool" and the explorer lists no signal
   - after the restart, without a reload, the tab reconnects, the gate is gone and the explorer lists signals
 - **Evidence:** UI check (one screenshot before, one after the restart)
 
@@ -318,7 +318,7 @@ Origin: exploration row 3 (data fact: "Copy link" in the Views menu and "Copy se
   3. a non-owner of a `read` workspace of `alice`
   4. `me` `{identity: "none"}`
 - **THEN**
-  - every result starts with `Copy link (own copy)` and the line `The receiver gets their own copy of this layout; changes stay apart.`; the first three add `On this server they see data only for vehicles KI.ping opened for them.`
+  - every result starts with `Copy link (own copy)` and the line `The receiver gets their own copy of this layout; changes stay apart.`; the first three add `On this server they see data only for vehicles the search tool opened for them.`
   - the first offers `Private`, `Read` and `Write`, all enabled, and `Copy workspace link`
   - the second has `Read` and `Write` disabled with the tooltip `Sharing is turned off on this server`
   - the third has no radio and the line `Shared by alice (read)`

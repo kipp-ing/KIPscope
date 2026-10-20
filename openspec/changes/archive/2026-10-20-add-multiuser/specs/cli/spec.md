@@ -95,7 +95,7 @@ Origin: concept §7 (the CLI does what the UI does: Share…, Recent, plus delet
 ### Requirement: The CLI sees only what the workspace's grant covers
 Every CLI call SHALL get exactly the answers the server gives for its workspace (data-access). A data ref outside the workspace's grant SHALL fail with exit 1 and `error.code` `forbidden_data`, and searches SHALL list only granted signals.
 
-Origin: D-084 („in every query, list, view and CLI call"); D-085 (the grant comes from KI.ping); concept §7 (the CLI uses the regular interface).
+Origin: D-084 („in every query, list, view and CLI call"); D-085 (the grant comes from the search tool); concept §7 (the CLI uses the regular interface).
 
 #### Scenario: Keeps a workspace to its grant
 - **WHEN** the test server runs `oidc`, alice's latest workspace has the grant `["testcar"]` (set by the test through `grantObjects`), and with alice's token `kipscope search Fast`, `kipscope extent othercar/Fast_100h.SIG_A`, `kipscope value othercar/Fast_100h.SIG_A <t>`, `kipscope events list --ref othercar`, `kipscope signal add <w> othercar/Fast_100h.SIG_A` and `kipscope scope set othercar <from> <to>` run

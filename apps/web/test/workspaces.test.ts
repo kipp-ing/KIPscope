@@ -136,9 +136,9 @@ describe("gate pages", () => {
     expect(unknown?.title).toBe("Workspace not found");
     expect(forbidden?.title).toBe("No access to this workspace");
     expect(closed?.title).toBe("No access to this workspace");
-    expect(empty?.title).toBe("Open a session from KI.ping");
+    expect(empty?.title).toBe("Open a session from the search tool");
     expect(empty?.text).toBe(
-      "This workspace has no data yet. KI.ping decides which vehicles you may see: open a session there and it opens here.",
+      "This workspace has no data yet. The search tool decides which vehicles you may see: open a session there and it opens here.",
     );
     // With the identity none an empty grant is no gate.
     expect(emptyLocal).toBeUndefined();
@@ -317,7 +317,8 @@ describe("recent workspaces", () => {
 
 describe("share items", () => {
   const OWN_LINE = "The receiver gets their own copy of this layout; changes stay apart.";
-  const SERVER_LINE = "On this server they see data only for vehicles KI.ping opened for them.";
+  const SERVER_LINE =
+    "On this server they see data only for vehicles the search tool opened for them.";
   const owner = summary("abcdefghij", { rights: { open: true, change: true, owner: true } });
 
   it("offers the share items", () => {

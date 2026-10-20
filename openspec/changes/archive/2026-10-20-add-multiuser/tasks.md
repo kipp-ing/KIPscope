@@ -136,7 +136,7 @@ Write areas of groups 7–12 (disjoint):
 ## 11. Docs
 
 - [x] 11.1 (M14):
-  - `docs/deploy.md`: replace the rules section with "Rights" (KI.ping decides, grant per workspace, empty until a handoff from KI.ping, `KIPSCOPE_SHARE`, start a server on a fresh state dir); the renames
+  - `docs/deploy.md`: replace the rules section with "Rights" (the search tool decides, grant per workspace, empty until a handoff from the search tool, `KIPSCOPE_SHARE`, start a server on a fresh state dir); the renames
   - `docs/http-api.md`: `/api/w/<id>` prefix, `/api/workspaces…`, `X-KIPscope-Workspace`, the error codes of M7, the access levels of M6, `reuse`
   - README: the variables and CLI forms
 
@@ -175,6 +175,6 @@ Write areas of groups 7–12 (disjoint):
 ## Workflow follow-up
 
 - **Before round 5,** the lead asks Jan Q-6 and Q-7 (proposal "Open questions"). Tasks follow the recommended answers. Q-6 (b) adds one function in 8.2 and one scenario.
-- **Not checked here:** a real PingFederate or PingOne, the company's token tool, and KI.ping's signing (`add-case-open`).
+- **Not checked here:** a real PingFederate or PingOne, the company's token tool, and the search tool's signing (`add-case-open`).
 - **At archive:** copy the project-wide decisions into `docs/decisions.md`: the identity adapter, `oidc` for Ping, the grant and `grantObjects` as the one widening path, the guard, the workspaces, views per user, `KIPSCOPE_SHARE`, and the spec owner's defaults. Update the purpose lines of `server-access` and `workspace-state`, which still say "local only" and "the open workspace".
 - **Round log 1–4** (2026-10-19): `rounds.md`. Open from round 4, still for the lead: the CLI test hang in `apps/cli/test/multi.ts` (fixed in commit c49a6e9); `catalog_unavailable` shown as loading has no scenario (spec owner if wanted); the coulds listed there.
