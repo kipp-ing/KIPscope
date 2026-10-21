@@ -41,6 +41,19 @@ The open report's `warnings` SHALL be shown in the message line after an open by
 - **THEN** after the page load the message line reads `origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS`
 - **Evidence:** UI check on smart451 (one screenshot of the message line)
 
+### Requirement: Open report in the session bar
+The open's notice (texts of "Open warnings shown") SHALL also show in the session bar next to the session text, cut to fit the one-line bar with the full text in its tooltip and a ✕ to dismiss it; it SHALL stay until the ✕ or the first accepted `case.go`, `case.step` or `case.unlink` (design X4a). Origin: Jan's hand check of this change (2026-10-21: the warning only showed cut off in the bottom bar and went unnoticed).
+
+#### Scenario: Note in the bar
+- **WHEN** the session bar renders linked C4 with the note `1 signal not in this session: JITTER · origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS`, and again without a note; and `endsOpenNote` gets accepted results of `case.step`, `case.go`, `case.unlink`, `case.align` and a window command, and a refused `case.step`
+- **THEN** the first markup holds one `session-open-note` element after the session text with that text and that `title`, and a button labelled `Dismiss`; the second holds none; `endsOpenNote` is true for the first three only
+- **Evidence:** `apps/web/test/sessionBar.test.ts` › "shows the open report in the session bar"
+
+#### Scenario: Note on smart451
+- **WHEN** at 1440×900 a catalog from `kipscope case drives smart451` with `origin.url` `https://evil.example/` is opened once as a dropped file and once by its link (`kipscope case url -`), the user hovers the note, moves a window, then presses `]`
+- **THEN** both times the session bar shows the note beside the session text, the tooltip shows the whole warning, the strip stays ≤ 56 px on one line, the note survives the window move and is gone after `]`
+- **Evidence:** UI check on smart451 (one screenshot per open path with the tooltip, one after `]`)
+
 ## MODIFIED Requirements
 
 ### Requirement: Back link only to the finder

@@ -99,6 +99,16 @@ export function caseOpenEvents(
 
 - `App.tsx` (the effect at :1481-1497) calls `showResult(caseOpenEvents(report, openedCase, nameOf))` and drops its separate `setNotice(warnings)`. Like every case notice it ends with the tab's next command (case-navigation "Case notices clear on the next command").
 
+### X4a: Open report in the session bar (pinned, `apps/web/src/case/`, `App.tsx`)
+
+Jan's choice after the hand check: the bottom bar's slot cuts the text off, so the open's notice also goes to the top.
+
+- `sessionBar.ts`: `openNoteText(report: CaseOpenReport, after: WorkspaceCase, nameOf?): string | undefined` gives the text `caseOpenEvents` shows (which now builds its notice from it), and `endsOpenNote(input: CommandInput, result: CommandResult): boolean` is true only for an accepted `case.go`, `case.step` or `case.unlink`.
+- `SessionBar.tsx` props gain `openNote?: string` and `onDismissNote?: () => void`. It renders `<span class="session-open-note" title={openNote}>⚠ {openNote}</span>` and a `✕` button (`aria-label` and `title` `Dismiss`) right after `.session-text` (after the vehicle text while unlinked).
+- `case.css`: the note is warning-toned with the existing tokens, `white-space: nowrap`, `overflow: hidden`, `text-overflow: ellipsis`, `flex: 0 1 auto`, `min-width: 6em`, `max-width: 40%`. The bar stays one line and ≤ 56 px; the session text still shrinks first.
+- `App.tsx` holds the note (`useState`), sets it where the open's effect calls `showResult(caseOpenEvents(…))`, clears it on ✕ and when `endsOpenNote` holds for a command result. The bottom bar keeps its notice under the existing rule.
+- **Lifetime, why so:** the existing case notice rule ("Case notices clear on the next command", D-089) ends a notice at the next accepted command. That is right for the bottom bar's step messages, but it is why the warning went unnoticed. The bar note describes the opened catalog and session, so it lasts until the user leaves that session (`case.go`, `case.step`, `case.unlink`) or dismisses it. Window commands, `case.align` and refusals keep it, and a reload drops it (the report is taken once, X4).
+
 ### X5: Documents
 
 - `docs/handoff.md`: "The link" bullet "Trimming" rewritten to the X1 rule with the 3,540/213 example and a pointer to `trimCases` and `kipscope case url --trim`; a "Lengths" note under the key tables (UTF-16 code units, `"é".length` 1, `"😀".length` 2; the inflated limit in UTF-8 bytes); under the errors table, `invalid_catalog` refuses the whole catalog, no session is skipped; under `view`, each chart opens at `[from − pad, to + pad)` of `current`, the view's chart times and cursors are not used; under the named tab, KIPscope sets no `Cross-Origin-Opener-Policy`, `window.open(url, "kipscope")` and `<a target="kipscope">` reuse the tab only while the finder keeps the opener relationship, so no `noopener`/`rel="noopener"` and no COOP `same-origin` on the finder page (nor on a proxy in front of KIPscope), else every click opens a new tab; the `origin.url` row and `KIPSCOPE_FINDER_ORIGINS` row name the loopback rule in `none`.
@@ -125,7 +135,7 @@ export function caseOpenEvents(
 
 ## Manual checks
 
-- UI user: "Dropped file on smart451" (case-handoff).
+- UI user: "Dropped file on smart451" and "Note on smart451" (case-handoff).
 
 ## Ledger entry on archive (proposed D-091; the lead writes it)
 

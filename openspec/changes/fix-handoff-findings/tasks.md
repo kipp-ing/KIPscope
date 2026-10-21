@@ -7,6 +7,7 @@ Write areas (disjoint):
 - 1.1: `packages/shared/src/caseTrim.ts` (new), `index.ts`
 - 2.1: `apps/server/src/case.ts`
 - 3.1: `apps/web/src/workspaces/caseReport.ts` (new), `workspaces/startup.ts`, `filedrop.ts`, `case/sessionBar.ts`, `App.tsx`
+- 3.2: `apps/web/src/case/sessionBar.ts`, `case/SessionBar.tsx`, `case/case.css`, `App.tsx`
 - 4.1: `apps/cli/src/args.ts`, `apps/cli/src/case.ts`
 - 5.1: `docs/handoff.md`
 - 5.2: `README.md`
@@ -24,6 +25,8 @@ Write areas (disjoint):
 
 - [x] 3.1 Open report on every path (X4): `workspaces/caseReport.ts` (`CASE_REPORT_KEY`, `stashCaseReport`, `takeCaseReport`, never throwing); `openDroppedCatalog` stashes the answer's report before `go`; the start-up takes it for the settled workspace; `caseOpenEvents` in `case/sessionBar.ts`; `App.tsx` shows the open with `showResult(caseOpenEvents(…))` and no separate `setNotice`. Verify: scenarios "One notice for case texts and warnings", "Report carried across the page load", "Link in the browser" (unchanged), "Dropped file" (unchanged).
 
+- [ ] 3.2 Open report in the session bar (X4a): `openNoteText`, `endsOpenNote`, `caseOpenEvents` built from `openNoteText`; `SessionBar` props `openNote`, `onDismissNote` with the note and its ✕ after the session text; the note's CSS; `App.tsx` holds the note, sets it on open, clears it on ✕ and on `endsOpenNote`. Verify: scenarios "Note in the bar", "One notice for case texts and warnings" (unchanged), "Bar on smart451" (strip ≤ 56 px).
+
 ## 4. apps/cli/src
 
 - [x] 4.1 `case url --trim` (X2): `--trim` flag only on `case url`, `trim: true` in the invocation, the help line `case url FILE|- [--trim]`; the trim path (JWS refused, unsigned code decoded, document checked, `trimCases` with the link encoder, `local.dropped` and `local.position`, `link_too_long` with `chars`). Verify: scenarios "Link of a catalog", "Trimmed link", "Trim flag parsed", "Help lists the forms".
@@ -40,6 +43,9 @@ Write areas (disjoint):
 - [x] 6.3 Web: `sessionBar.test.ts` › "shows open warnings with the case notice"; `filedrop.test.ts` › "carries the open report across the page load"; `workspaces.test.ts` › "shows a dropped catalog's report after the page load".
 - [x] 6.4 CLI: `cli.test.ts` › "trims a catalog link"; `args.test.ts` › "maps the case forms" (the `--trim` lists); the `--help` test names `--trim`.
 
+- [ ] 6.5 Web: `sessionBar.test.ts` › "shows the open report in the session bar".
+
 ## 7. Checks outside the suite
 
 - [x] 7.1 UI user on smart451: "Dropped file on smart451" (one screenshot of the message line).
+- [ ] 7.2 UI user on smart451: "Note on smart451" (dropped file and link, tooltip, gone after `]`).
