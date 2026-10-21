@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-093: Ranges without seconds, two-digit year (2026-10-21)
+
+Jan, on the declutter mock's range „15:06:03 – 15:18:33": „passt nicht gut. sekunden braucht niemand. Jahr reicht YY".
+
+- **Decision:** Ranges, session times and dates people read show `Tue 13.10.26  15:06 – 15:18` (English weekday, DD.MM.YY, HH:MM; `⁺¹` for an end on the next day, the full end date after that). The lead's defaults, Jan can veto: seconds appear only when both ends fall in the same minute; picker time fields take HH:MM (presets 00:00 / 24:00); cursor readouts (A, B, L, Δt) and typed input keep their precision, since they are measurements.
+- **Why:** Jan's comment on the mock.
+- **Consequences:** Supersedes the `YYYY-MM-DD HH:MM:SS` result line of D-092's picker answer. `add-range-picker` and `declutter-workspace` follow it before they are archived.
+
 ## D-092: Declutter and stable layout (2026-10-21)
 
 Jan: „can we have an agent to unclutter again? its so crowded. we need a specialist. […] the time frame go to should be date pickers with underlayed data density. the result shall be date and to times and a +1 if days span which is rare. the session thing: the ui placements move on text size and ziggag while reloading. stable and clean it shall be. we can overhaul to teh core." On the UI designer's mocks v1 and its eleven questions: „i follow your recommendatins. they look good."
