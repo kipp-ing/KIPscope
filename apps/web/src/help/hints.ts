@@ -70,7 +70,8 @@ export const HINTS = {
       : kind === "agg"
         ? `agg ${width}: aggregated, each point stands for ${width} of data (min, mean, max). Zoom in for raw samples`
         : `part ${width}: some signals aggregated (${width} per point), others raw`,
-  range: (full: string) => `Time range shown: ${full}`,
+  /** Every duration slot (add-range-picker R6, D-093): range button, picker, drive chips, session bar. */
+  duration: "Duration (h:mm)",
   chartMode: "Display mode: Line joins points, Step holds each value, Markers draws points only",
   valuesMode: "Between points: linear interpolates, hold keeps the last value",
   windowMenu: "Window menu: line, step, markers, min/max, rename, remove",

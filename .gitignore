@@ -12,3 +12,4 @@ dist/
 *.local.test.ts
 # Project file with the real vehicle rules (D-077); see kipscope.example.yaml
 /kipscope.yaml
+*.tsbuildinfo

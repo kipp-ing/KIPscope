@@ -7,7 +7,7 @@ import {
   NS_PER_MS,
   parseTime,
 } from "@kipscope/shared";
-import { localDate, rangeParts, weekdayOf } from "./rangeLine.ts";
+import { localDate, rangeParts, startDuration, weekdayOf } from "./rangeLine.ts";
 import { rowsText } from "./stripGeometry.ts";
 
 // Pure model of the range picker's calendar: months, day bars, draft and presets (design R5, R7–R9
@@ -104,7 +104,7 @@ export function dayTip(
   day: CalendarDay,
   scope: ScopeKind,
 ): string {
-  const head = `${day.weekday} ${day.date}`;
+  const head = `${day.weekday} ${day.date.slice(2)}`;
   if (!answer) return head;
   const rows = dayBars(answer, day).reduce((sum, b) => sum + b.count, 0);
   if (rows === 0) {
@@ -129,7 +129,7 @@ export interface PickerDraft {
   phase: "start" | "end";
 }
 
-/** The draft of a shown range, by the range line's rules (an end at local midnight is 24:00:00 of the date before). */
+/** The draft of a shown range, exact (an end at local midnight is 24:00:00 of the date before). */
 export function draftOf(range: { from: bigint; to: bigint }): PickerDraft {
   const p = rangeParts(range.from, range.to);
   return {
@@ -148,7 +148,12 @@ export function pickDay(d: PickerDraft, date: string): PickerDraft {
 }
 
 const TIME = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
-const BAD_TIME = "Time as hh:mm:ss";
+const BAD_TIME = "Time as hh:mm";
+
+/** A filled time as its field shows it: cut to "HH:MM" ("15:06:03" → "15:06", "24:00:00" → "24:00"). */
+export function fieldText(time: string): string {
+  return /^\d{1,2}:\d{2}/.exec(time)?.[0] ?? time;
+}
 
 /** Local instant of `date` and a time text; `24:00[:00]` (To only) is the next local midnight. */
 function instantOf(date: string, time: string, isEnd: boolean): bigint | { error: string } {
@@ -179,19 +184,15 @@ export function draftRange(d: PickerDraft): { from: bigint; to: bigint } | { err
   return { from, to };
 }
 
-/** Drives overlapping the day, in time order, with chip labels "03:00–03:30 · 30 min" (minutes rounded; "⁺¹" after the end time when it lies on the next date). */
+/** Drives overlapping the day, in time order, with chip labels `${time}  ${duration}` of startDuration(drive): "03:00  0:30". */
 export function dayDrives(
   answer: CalendarDensity | undefined,
   day: CalendarDay,
 ): { drive: Drive; label: string }[] {
   if (!answer) return [];
   return dayDriveList(answer, day).map((drive) => {
-    const from = BigInt(drive.from);
-    const to = BigInt(drive.to);
-    const p = rangeParts(from, to);
-    const minutes = Math.round(Number(to - from) / Number(60n * 1_000n * NS_PER_MS));
-    const label = `${p.from.slice(0, 5)}–${p.to.slice(0, 5)}${p.days >= 1 ? "⁺¹" : ""} · ${minutes} min`;
-    return { drive, label };
+    const sd = startDuration(BigInt(drive.from), BigInt(drive.to));
+    return { drive, label: `${sd.time}  ${sd.duration}` };
   });
 }
 

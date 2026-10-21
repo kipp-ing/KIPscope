@@ -15,6 +15,7 @@ import {
   dayTip,
   draftOf,
   draftRange,
+  fieldText,
   localMonth,
   monthCells,
   openMonths,
@@ -23,7 +24,8 @@ import {
   type ScopeKind,
   wholeLabel,
 } from "../time/calendar.ts";
-import { rangeLine } from "../time/rangeLine.ts";
+import { DurationTag } from "../time/Duration.tsx";
+import { startDuration } from "../time/rangeLine.ts";
 import { wholeRange } from "../time/stripGeometry.ts";
 import "./rangePicker.css";
 
@@ -109,17 +111,18 @@ function todayText(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** The range line without its ⁺¹; the mark is drawn as a <sup>. */
-function RangeText({ from, to }: { from: bigint; to: bigint }) {
-  const line = rangeLine(from, to);
-  const text = line.plusOne && line.text.endsWith("⁺¹") ? line.text.slice(0, -2) : line.text;
+/** "26-10-13" of a local date "2026-10-13" (YY-MM-DD, D-093). */
+const shortDate = (date: string): string => date.slice(2);
+
+/** Start and duration of the draft's range (D-093): date and time, then the duration tag. */
+function ResultText({ from, to }: { from: bigint; to: bigint }) {
+  const sd = startDuration(from, to);
   return (
     <>
       <span className="result-text">
-        {text}
-        {line.plusOne && <sup>+1</sup>}
+        {sd.date} {sd.time}
       </span>
-      <span className="result-duration">{line.duration}</span>
+      <DurationTag text={sd.duration} />
     </>
   );
 }
@@ -163,6 +166,9 @@ export function RangePicker({
     () => openMonths(range)[0] ?? nextMonth(monthOfDate(draftOf(range).start), -1),
   );
   const [draft, setDraft] = useState<PickerDraft>(() => draftOf(range));
+  // A time field shows its filled time to the minute until the user types in it (R7): Go without
+  // an edit applies the exact draft.
+  const [edited, setEdited] = useState({ from: false, to: false });
   const [typedError, setTypedError] = useState<string | undefined>();
   const [density, setDensity] = useState<Density | undefined>();
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
@@ -266,6 +272,11 @@ export function RangePicker({
   const changeDraft = (d: PickerDraft) => {
     setDraft(d);
     setTypedError(undefined);
+  };
+  /** A preset or a range fills the draft: both fields show their filled times again. */
+  const fillDraft = (d: PickerDraft) => {
+    changeDraft(d);
+    setEdited({ from: false, to: false });
   };
   const result = draftRange(draft);
   const resultRange = "error" in result ? undefined : result;
@@ -472,25 +483,30 @@ export function RangePicker({
         <span className="chips-label">
           DRIVES {weekdayOf(draft.start).toUpperCase()} {Number(draft.start.slice(8, 10))}
         </span>
-        {drives.map((d) => (
-          <button
-            key={d.drive.from}
-            type="button"
-            className="chip"
-            onClick={() =>
-              changeDraft(draftOf({ from: BigInt(d.drive.from), to: BigInt(d.drive.to) }))
-            }
-          >
-            {d.label}
-          </button>
-        ))}
+        {drives.map((d) => {
+          const from = BigInt(d.drive.from);
+          const to = BigInt(d.drive.to);
+          const sd = startDuration(from, to);
+          return (
+            <button
+              key={d.drive.from}
+              type="button"
+              className="chip"
+              aria-label={d.label}
+              onClick={() => fillDraft(draftOf({ from, to }))}
+            >
+              {sd.time}
+              <DurationTag text={sd.duration} />
+            </button>
+          );
+        })}
         {drivesNote && <span className="chips-note">{drivesNote}</span>}
         <span className="chips-gap" />
         <button
           type="button"
           className="chip"
           onClick={() =>
-            changeDraft({
+            fillDraft({
               ...draft,
               end: draft.start,
               from: "00:00:00",
@@ -506,7 +522,7 @@ export function RangePicker({
           className="chip"
           disabled={!density}
           onClick={() => {
-            if (density) changeDraft(draftOf(wholeRange(density)));
+            if (density) fillDraft(draftOf(wholeRange(density)));
           }}
         >
           {wholeLabel(kind)}
@@ -517,34 +533,36 @@ export function RangePicker({
         <label htmlFor="range-picker-from" className="time-label from">
           From
         </label>
-        <span className="time-date">
-          {weekdayOf(draft.start)} {draft.start}
-        </span>
+        <span className="time-date">{shortDate(draft.start)}</span>
         <input
           id="range-picker-from"
           type="text"
           className="time"
           spellCheck={false}
           autoComplete="off"
-          value={draft.from}
-          onChange={(e) => changeDraft({ ...draft, from: e.target.value })}
+          value={edited.from ? draft.from : fieldText(draft.from)}
+          onChange={(e) => {
+            changeDraft({ ...draft, from: e.target.value });
+            setEdited((x) => ({ ...x, from: true }));
+          }}
           onKeyDown={timeKey}
         />
         <span className="times-gap" />
         <label htmlFor="range-picker-to" className="time-label to">
           To
         </label>
-        <span className="time-date">
-          {weekdayOf(draft.end)} {draft.end}
-        </span>
+        <span className="time-date">{shortDate(draft.end)}</span>
         <input
           id="range-picker-to"
           type="text"
           className="time"
           spellCheck={false}
           autoComplete="off"
-          value={draft.to}
-          onChange={(e) => changeDraft({ ...draft, to: e.target.value })}
+          value={edited.to ? draft.to : fieldText(draft.to)}
+          onChange={(e) => {
+            changeDraft({ ...draft, to: e.target.value });
+            setEdited((x) => ({ ...x, to: true }));
+          }}
           onKeyDown={timeKey}
         />
       </div>
@@ -554,7 +572,7 @@ export function RangePicker({
           {error !== undefined ? (
             <span className="result-error">{error}</span>
           ) : (
-            resultRange && <RangeText from={resultRange.from} to={resultRange.to} />
+            resultRange && <ResultText from={resultRange.from} to={resultRange.to} />
           )}
         </span>
         <button type="button" className="cancel" onClick={onClose}>

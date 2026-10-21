@@ -9,6 +9,7 @@ import {
   dayTip,
   draftOf,
   draftRange,
+  fieldText,
   localMonth,
   monthCells,
   openMonths,
@@ -76,6 +77,15 @@ describe("draftOf", () => {
       to: "01:52:43",
       phase: "start",
     });
+  });
+});
+
+describe("field text", () => {
+  it("shows filled times to the minute", () => {
+    expect(fieldText("15:06:03")).toBe("15:06");
+    expect(fieldText("24:00:00")).toBe("24:00");
+    expect(fieldText("15:08:00.093")).toBe("15:08");
+    expect(fieldText("00:00:00")).toBe("00:00");
   });
 });
 
@@ -195,23 +205,19 @@ describe("day bars", () => {
 
   it("words the day tooltip with rows, drives and the reason for no rows", () => {
     const month = drivecarMonth();
-    expect(dayTip(month, day("2026-10-02"), "none")).toBe(
-      "Fri 2026-10-02 · 233,161 rows · 2 drives",
-    );
-    expect(dayTip(month, day("2026-10-03"), "none")).toBe("Sat 2026-10-03 · no data");
+    expect(dayTip(month, day("2026-10-02"), "none")).toBe("Fri 26-10-02 · 233,161 rows · 2 drives");
+    expect(dayTip(month, day("2026-10-03"), "none")).toBe("Sat 26-10-03 · no data");
     // One drive: singular.
     const one = { ...month, drives: month.drives.slice(0, 1) };
-    expect(dayTip(one, day("2026-10-02"), "none")).toBe("Fri 2026-10-02 · 233,161 rows · 1 drive");
+    expect(dayTip(one, day("2026-10-02"), "none")).toBe("Fri 26-10-02 · 233,161 rows · 1 drive");
     // A day without rows outside the scope the answer carries names the scope or the session.
     const scoped: CalendarDensity = {
       ...month,
       scope: { from: "1790902800000000000", to: "1790906400000000000" },
     };
-    expect(dayTip(scoped, day("2026-10-10"), "scope")).toBe("Sat 2026-10-10 · outside the scope");
-    expect(dayTip(scoped, day("2026-10-10"), "session")).toBe(
-      "Sat 2026-10-10 · outside the session",
-    );
-    expect(dayTip(scoped, day("2026-10-10"), "object")).toBe("Sat 2026-10-10 · no data");
+    expect(dayTip(scoped, day("2026-10-10"), "scope")).toBe("Sat 26-10-10 · outside the scope");
+    expect(dayTip(scoped, day("2026-10-10"), "session")).toBe("Sat 26-10-10 · outside the session");
+    expect(dayTip(scoped, day("2026-10-10"), "object")).toBe("Sat 26-10-10 · no data");
   });
 });
 
@@ -282,12 +288,12 @@ describe("draftRange", () => {
       error: "To lies before From",
     });
     expect(draftRange(draft({ from: "25:00", to: "26:00" }))).toEqual({
-      error: "Time as hh:mm:ss",
+      error: "Time as hh:mm",
     });
-    expect(draftRange(draft({ from: "abc" }))).toEqual({ error: "Time as hh:mm:ss" });
+    expect(draftRange(draft({ from: "abc" }))).toEqual({ error: "Time as hh:mm" });
     // 24:00 is only an end.
     expect(draftRange(draft({ from: "24:00", to: "24:00" }))).toEqual({
-      error: "Time as hh:mm:ss",
+      error: "Time as hh:mm",
     });
 
     // 2026-10-25 02:30 happens twice (CEST and CET): refused, naming both offsets.
@@ -303,7 +309,7 @@ describe("presets", () => {
   it("lists the day's drives and names the whole span", () => {
     const month = drivecarMonth();
     const chips = dayDrives(month, day("2026-10-02"));
-    expect(chips.map((c) => c.label)).toEqual(["03:00–03:30 · 30 min", "05:00–05:10 · 10 min"]);
+    expect(chips.map((c) => c.label)).toEqual(["03:00  0:30", "05:00  0:10"]);
     expect(chips.map((c) => c.drive)).toEqual(month.drives);
     // A day without drives has no chip, and neither does a calendar that is not loaded.
     expect(dayDrives(month, day("2026-10-03"))).toEqual([]);
@@ -352,7 +358,7 @@ describe("picker states", () => {
     expect(settled).toBe(false);
     const oct13 = day("2026-10-13");
     expect(dayDrives(undefined, oct13)).toEqual([]);
-    expect(dayTip(undefined, oct13, "none")).toBe("Tue 2026-10-13");
+    expect(dayTip(undefined, oct13, "none")).toBe("Tue 26-10-13");
     expect(canPage(undefined, { year: 2026, month: 9 })).toEqual({ prev: true, next: true });
     const typed = draftRange({
       start: "2026-10-13",
@@ -406,5 +412,33 @@ describe("picker states", () => {
     expect(again).toEqual(answer);
     // Reopened: bars from the answer.
     expect(dayBars(again, day("2026-10-02")).map((b) => b.count)[1]).toBe(177_720);
+  });
+});
+
+describe("month grid size (round 2)", () => {
+  // Weekday of the 1st (Monday first) and day count, by hand: rows used = ceil((lead + days) / 7).
+  // 2026-02: Sunday, 28 days -> lead 6 -> 34 cells -> 5 rows. 2026-10: Thursday, 31 -> lead 3 -> 34 -> 5 rows.
+  // 2026-08: Saturday, 31 -> lead 5 -> 36 -> 6 rows. 2027-02: Monday, 28 -> lead 0 -> 28 -> 4 rows.
+  const cases: [number, number, number, number][] = [
+    [2026, 2, 5, 28],
+    [2026, 10, 5, 31],
+    [2026, 8, 6, 31],
+    [2027, 2, 4, 28],
+  ];
+  it.each(cases)(
+    "%i-%i always has 6 rows x 7 cells (42), %i used rows, %i days",
+    (y, m, used, days) => {
+      const cells = monthCells(y, m);
+      expect(cells).toHaveLength(42);
+      expect(cells.length / 7).toBe(6);
+      expect(cells.filter((c) => c !== null)).toHaveLength(days);
+      const rows = Array.from({ length: 6 }, (_, r) => cells.slice(r * 7, r * 7 + 7));
+      expect(rows.filter((row) => row.some((c) => c !== null))).toHaveLength(used);
+    },
+  );
+
+  it("an open pair of a 5-row and a 6-row month has the same cell count", () => {
+    expect(monthCells(2026, 10).length).toBe(monthCells(2026, 8).length);
+    expect(monthCells(2026, 2).length).toBe(monthCells(2026, 8).length);
   });
 });

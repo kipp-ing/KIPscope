@@ -1,80 +1,82 @@
+import { readFileSync } from "node:fs";
 import { fromIso } from "@kipscope/shared";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { DurationTag } from "../src/time/Duration.tsx";
 import {
   formatDuration,
   ownRangeText,
   rangeButtonEmpty,
-  rangeLine,
+  startDuration,
 } from "../src/time/rangeLine.ts";
 
-// Spec range-picker "Range line", "Range button" and timeseries-window "Own range of an unlinked
+// Spec range-picker "Start and duration texts", "Duration tag", "Range button" and timeseries-window "Own range of an unlinked
 // window". Tests run with TZ=Europe/Berlin: CEST (UTC+2) until 2026-10-25 03:00 local, then CET
 // (UTC+1). Expected texts are written by hand from the instants.
 
 const NS_PER_MS = 1_000_000n;
 const S = 1_000_000_000n;
 
-describe("rangeLine", () => {
-  it("formats a range on one day", () => {
-    const line = rangeLine(fromIso("2026-10-13T13:06:03Z"), fromIso("2026-10-13T13:18:33Z"));
-    expect(line.date).toBe("Tue 2026-10-13");
-    expect(line.from).toBe("15:06:03");
-    expect(line.to).toBe("15:18:33");
-    expect(line.plusOne).toBe(false);
-    expect(line.endDate).toBeUndefined();
-    expect(line.text).toBe("Tue 2026-10-13 15:06:03 – 15:18:33");
-    expect(line.duration).toBe("12 min 30 s");
-    expect(line.short).toBe("12.5 min");
+describe("startDuration", () => {
+  it("gives start and duration", () => {
+    const first = startDuration(fromIso("2026-10-13T13:06:03Z"), fromIso("2026-10-13T13:18:33Z"));
+    expect(first.date).toBe("26-10-13");
+    expect(first.time).toBe("15:06");
+    expect(first.duration).toBe("0:12");
+    expect(first.text).toBe("26-10-13 15:06  0:12"); // two spaces before the duration
+    expect(first.detail).toBe("26-10-13 15:06:03 · 12 min 30 s");
+
+    // No end time, no next-day mark: the start is local, the duration is to - from.
+    const text = (from: string, to: string) => startDuration(fromIso(from), fromIso(to)).text;
+    expect(text("2026-10-20T21:30:00Z", "2026-10-20T23:52:43Z")).toBe("26-10-20 23:30  2:22");
+    // A whole local day is 24:00 long.
+    expect(text("2026-10-12T22:00:00Z", "2026-10-13T22:00:00Z")).toBe("26-10-13 00:00  24:00");
+    expect(text("2026-10-13T13:06:03Z", "2026-10-15T13:18:33Z")).toBe("26-10-13 15:06  48:12");
+    // Hours are unbounded: 9 d 11 h 18 min 19 s = 227 h 18 min.
+    expect(text("2026-10-11T12:34:24Z", "2026-10-20T23:52:43Z")).toBe("26-10-11 14:34  227:18");
+    // The DST day of 25 hours (CEST to CET) reads 25:00.
+    expect(text("2026-10-24T22:00:00Z", "2026-10-25T23:00:00Z")).toBe("26-10-25 00:00  25:00");
+    // The 23 hour day of the spring change (2026-03-29, CET to CEST) reads 23:00.
+    expect(text("2026-03-28T23:00:00Z", "2026-03-29T22:00:00Z")).toBe("26-03-29 00:00  23:00");
   });
 
-  it("marks the next day, midnight and later days", () => {
-    // Ends on the next local date: ⁺¹ after the end time.
-    const next = rangeLine(fromIso("2026-10-20T21:30:00Z"), fromIso("2026-10-20T23:52:43Z"));
-    expect(next.text).toBe("Tue 2026-10-20 23:30:00 – 01:52:43⁺¹");
-    expect(next.plusOne).toBe(true);
-    expect(next.to).toBe("01:52:43");
-    expect(next.endDate).toBeUndefined();
-    expect(next.duration).toBe("2 h 22 min");
+  it("cuts to the second and below a minute", () => {
+    // Exactly one minute still reads H:MM.
+    expect(
+      startDuration(fromIso("2026-10-13T13:08:00Z"), fromIso("2026-10-13T13:09:00Z")).text,
+    ).toBe("26-10-13 15:08  0:01");
 
-    // A whole local day ends at the next midnight: 24:00:00, no ⁺¹.
-    const whole = rangeLine(fromIso("2026-10-12T22:00:00Z"), fromIso("2026-10-13T22:00:00Z"));
-    expect(whole.text).toBe("Tue 2026-10-13 00:00:00 – 24:00:00");
-    expect(whole.plusOne).toBe(false);
-    expect(whole.to).toBe("24:00:00");
-    expect(whole.duration).toBe("1 d");
+    // Below a minute: the start to the second and whole seconds, cut.
+    const s41 = startDuration(fromIso("2026-10-13T13:06:03Z"), fromIso("2026-10-13T13:06:44.600Z"));
+    expect(s41.text).toBe("26-10-13 15:06:03  41 s");
+    expect(s41.time).toBe("15:06:03");
+    expect(s41.duration).toBe("41 s");
 
-    // The end two dates later names its weekday and date.
-    const later = rangeLine(fromIso("2026-10-13T13:06:03Z"), fromIso("2026-10-15T13:18:33Z"));
-    expect(later.text).toBe("Tue 2026-10-13 15:06:03 – Thu 2026-10-15 15:18:33");
-    expect(later.endDate).toBe("Thu 2026-10-15");
-    expect(later.plusOne).toBe(false);
-    expect(later.duration).toBe("2 d");
-
-    // The DST day of 25 hours: local midnight to local midnight, from CEST to CET.
-    const dst = rangeLine(fromIso("2026-10-24T22:00:00Z"), fromIso("2026-10-25T23:00:00Z"));
-    expect(dst.text).toBe("Sun 2026-10-25 00:00:00 – 24:00:00");
-    expect(dst.plusOne).toBe(false);
-    expect(dst.duration).toBe("1 d 1 h");
-  });
-
-  it("shows milliseconds cut", () => {
-    const ms = rangeLine(fromIso("2026-10-13T13:08:00.093Z"), fromIso("2026-10-13T13:08:00.995Z"));
-    expect(ms.text).toBe("Tue 2026-10-13 15:08:00.093 – 15:08:00.995");
-    expect(ms.from).toBe("15:08:00.093");
-    expect(ms.to).toBe("15:08:00.995");
-    expect(ms.duration).toBe("902 ms");
-
-    // Nanoseconds are cut, never rounded: .999999999 shows .999; the end shows .000 because the
-    // start has milliseconds.
-    const cut = rangeLine(
+    // Nanoseconds are cut, never rounded: 59.000000001 s reads 59 s, the start 11:12:00.
+    const cut = startDuration(
       fromIso("2026-10-13T09:12:00.999999999Z"),
       fromIso("2026-10-13T09:13:00Z"),
     );
-    expect(cut.text).toBe("Tue 2026-10-13 11:12:00.999 – 11:13:00.000");
+    expect(cut.text).toBe("26-10-13 11:12:00  59 s");
 
-    // Whole seconds on both ends show no milliseconds.
-    const whole = rangeLine(fromIso("2026-10-13T13:08:00Z"), fromIso("2026-10-13T13:09:00Z"));
-    expect(whole.text).toBe("Tue 2026-10-13 15:08:00 – 15:09:00");
+    // Below a second: milliseconds, the start still to the second.
+    const ms = startDuration(
+      fromIso("2026-10-13T13:08:00.093Z"),
+      fromIso("2026-10-13T13:08:00.995Z"),
+    );
+    expect(ms.text).toBe("26-10-13 15:08:00  902 ms");
+    expect(ms.duration).toBe("902 ms");
+    expect(ms.detail).toBe("26-10-13 15:08:00 · 902 ms");
+  });
+
+  it("renders the duration with its icon and tooltip", () => {
+    const html = renderToStaticMarkup(createElement(DurationTag, { text: "0:12" }));
+    expect(html).toMatch(/<svg[^>]*class="duration-icon"/);
+    expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
+    expect(html.match(/<svg/g)).toHaveLength(1);
+    expect(html).toContain("0:12");
+    expect(html).toContain('title="Duration (h:mm)"');
   });
 });
 
@@ -103,7 +105,21 @@ describe("range button states", () => {
 describe("ownRangeText", () => {
   it("shows a window's own range only while unlinked", () => {
     const range = { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:33Z") };
-    expect(ownRangeText(range, false)).toBe("Tue 2026-10-13 15:06:03 – 15:18:33");
+    expect(ownRangeText(range, false)?.text).toBe("26-10-13 15:06  0:12");
     expect(ownRangeText(range, true)).toBeUndefined();
+  });
+});
+
+describe("own-range tooltip (round 2)", () => {
+  it("is ownRangeText(...).detail itself, without a 'Time range shown' prefix", () => {
+    const range = { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:33Z") };
+    const own = ownRangeText(range, false);
+    expect(own?.detail.startsWith("Time range shown")).toBe(false);
+    // No header render helper exists; the title source is checked instead (a grep-style check).
+    const tsx = readFileSync(new URL("../src/chart/TimeseriesWindow.tsx", import.meta.url), "utf8");
+    const span = tsx.match(/<span className="range own-range"[^>]*>/)?.[0] ?? "";
+    expect(span).toContain("title={ownRange.detail}");
+    expect(tsx).not.toContain("Time range shown");
+    expect(tsx).not.toMatch(/HINTS\.range\(/);
   });
 });

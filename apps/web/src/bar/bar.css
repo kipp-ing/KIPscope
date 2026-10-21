@@ -99,21 +99,21 @@
   background: var(--border);
 }
 
-/* The range button (add-range-picker R6): one fixed box whatever it shows, so a new range, a
-   pending reload or "No time window" moves nothing; the text cuts at the end, the duration keeps
-   its slot. The picker (rangePicker.css) hangs under it from .range-control. */
+/* The range button (add-range-picker R6, D-093): one fixed box whatever it shows, so a new range, a
+   pending reload or "No time window" moves nothing; the start cuts at its end, the duration keeps
+   its place at the right end. The picker (rangePicker.css) hangs under it from .range-control. */
 .option-bar .range-control {
   position: relative;
   display: flex;
-  flex: 0 0 318px;
+  flex: 0 0 212px;
 }
 
 .option-bar-slot .option-bar .range-button {
   display: flex;
-  flex: 0 0 318px;
-  gap: 6px;
+  flex: 0 0 212px;
+  gap: 8px;
   align-items: center;
-  width: 318px;
+  width: 212px;
   height: 26px;
   padding: 0 8px;
   font-variant-numeric: tabular-nums;
@@ -134,61 +134,63 @@
   color: var(--disabled);
 }
 
+/* Start date and time in one span that truncates. */
 .option-bar .range-button .range-text {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The date part: slate-600 weekday, weight-600 date, 6 px before the times (the mock's double
-   space). */
 .option-bar .range-button .range-date {
-  margin-right: 6px;
-}
-
-.option-bar .range-button .range-weekday {
-  color: var(--soft-ink);
-}
-
-.option-bar .range-button .range-day {
   font-weight: 600;
 }
 
-.option-bar .range-button sup {
-  margin-left: 1px;
-  font-size: 9px;
-  color: #0369a1;
+/* A duration in a slot (time/Duration.tsx, R6): stopwatch and text, never cut. Global: the
+   picker and the session bar use it too. */
+.duration-tag {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.option-bar .range-button .range-duration {
-  flex: 0 0 56px;
-  overflow: hidden;
-  color: var(--muted);
-  text-align: right;
-  white-space: nowrap;
+.duration-tag .duration-icon {
+  flex: none;
+}
+
+.option-bar .range-button .duration-tag {
+  margin-left: auto;
 }
 
 .option-bar .range-button[aria-expanded="true"] {
   border-color: var(--text);
 }
 
+/* Stand-ins for the leading slots before the first workspace state (OptionBar PENDING_SLOTS): they
+   take their boxes, so the "…" button sits where the enabled one will. */
+.option-bar .bar-placeholder {
+  visibility: hidden;
+}
+
 /* Top-row give-way steps (add-saved-views V7, design DW8), after the view title has shrunk to its
    minimum (views.css). Widths are the .option-bar-slot content box (container top-row), measured
    2026-10-21 in headless Chrome (scripts/cdp.mjs) on the dev server as the narrowest content box
-   with every item's centre on one line: sidebar icon 26 px + 8 px gap, Views 55 px (icon only
-   34 px), a modified view title held at its minimum (10ch + dot = 91 px), range control 318 px,
-   Back, Reset, Link 26 px each, A, B, Diff 30 + 30 + 43 px, Share… 64 px, "⋯" and "?" 26 px each,
-   6 px gaps:
-   - Views label and Share… in the row: 882 px (785 px without a view title).
-   - Views icon and Share… in the row: 861 px (764 px).
-   - Views icon, Share… in the "⋯" menu (the row after the move): 791 px (694 px).
-   So the Views label leaves at 881 px and Share… at 860 px. At 1440×900 the content box is
+   with every item's centre on one line, then 106 px less for the range control's 318 → 212 px
+   (add-range-picker D-093): sidebar icon 26 px + 8 px gap, Views 55 px (icon only 34 px), a
+   modified view title held at its minimum (10ch + dot = 91 px), range control 212 px, Back, Reset,
+   Link 26 px each, A, B, Diff 30 + 30 + 43 px, Share… 64 px, "⋯" and "?" 26 px each, 6 px gaps:
+   - Views label and Share… in the row: 776 px (679 px without a view title).
+   - Views icon and Share… in the row: 755 px (658 px).
+   - Views icon, Share… in the "⋯" menu (the row after the move): 685 px (588 px).
+   So the Views label leaves at 775 px and Share… at 754 px. At 1440×900 the content box is
    1153 px (1168 px without the main area's scroll bar): label and Share… in the row. At 1000×557 it
-   is 713 px (728 px): Share… in the menu; the row fits without a view title, with a view title at
-   its minimum it is 78 px short and wraps. */
-@container top-row (max-width: 881px) {
+   is 713 px (728 px): Share… in the menu, the row fits with a view title at its minimum. */
+@container top-row (max-width: 775px) {
   .option-bar .views-label {
     display: none;
   }
@@ -210,7 +212,7 @@
   display: none;
 }
 
-@container top-row (max-width: 860px) {
+@container top-row (max-width: 754px) {
   .option-bar .overflow-item {
     display: none;
   }

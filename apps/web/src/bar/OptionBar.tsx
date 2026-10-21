@@ -13,7 +13,8 @@ import { type ReactNode, type Ref, useEffect, useRef } from "react";
 import { useLinkedPreview } from "../chart/linkedPreview.ts";
 import { HINTS } from "../help/hints.ts";
 import type { ScopeKind } from "../time/calendar.ts";
-import { rangeButtonEmpty, rangeLine } from "../time/rangeLine.ts";
+import { DurationTag } from "../time/Duration.tsx";
+import { rangeButtonEmpty, startDuration } from "../time/rangeLine.ts";
 import { stripDataRef } from "../time/strip.ts";
 import { type TrackOpen, ViewsMenu } from "../views/ViewsMenu.tsx";
 import { ReadOnlyPill } from "../workspaces/ReadOnlyPill.tsx";
@@ -139,8 +140,26 @@ const LINK_ICON = icon(
 );
 
 /**
- * The range button (range-picker "Range button", design R6): one fixed 318 px box whatever it
- * shows, the range line or, without a range, "No time window" or "…" (disabled).
+ * Before the first workspace state the button stands alone in App's row: invisible stand-ins for
+ * the Views button (same classes, so the top row's give-way step applies) and the separator keep it
+ * at the enabled button's left x ("No reflow"). A view title or the Read-only pill is not known yet.
+ */
+const PENDING_SLOTS = (
+  <>
+    <div className="views-menu bar-placeholder" aria-hidden="true">
+      <button type="button" className="views-button" tabIndex={-1} disabled>
+        <svg className="views-icon" width="12" height="14" aria-hidden="true" />
+        <span className="views-label">Views</span>
+      </button>
+    </div>
+    <span className="separator bar-placeholder" />
+  </>
+);
+
+/**
+ * The range button (range-picker "Range button", design R6, D-093): one fixed 212 px box whatever
+ * it shows, start date and time with the duration, or, without a range, "No time window" or "…"
+ * (disabled, after PENDING_SLOTS). The start cuts at its end; the duration is never cut.
  */
 export function RangeButton({
   range,
@@ -159,39 +178,34 @@ export function RangeButton({
   onClick?: () => void;
   buttonRef?: Ref<HTMLButtonElement>;
 }) {
-  const line = range && rangeLine(range.from, range.to);
+  const start = range && startDuration(range.from, range.to);
   return (
-    <button
-      ref={buttonRef}
-      type="button"
-      className="range-button"
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      aria-label="Go to"
-      disabled={!line}
-      title={line ? `${line.text} · ${line.duration}\n${hint}` : hint}
-      onClick={onClick}
-    >
-      {CALENDAR_ICON}
-      <span className="range-text">
-        {line ? (
-          <>
-            <span className="range-date">
-              <span className="range-weekday">{line.date.slice(0, 3)}</span>{" "}
-              <span className="range-day">{line.date.slice(4)}</span>
-            </span>
-            <span className="range-times">
-              {line.from} – {line.endDate ? `${line.endDate} ` : ""}
-              {line.to}
-              {line.plusOne && <sup>+1</sup>}
-            </span>
-          </>
-        ) : (
-          rangeButtonEmpty(loaded)
-        )}
-      </span>
-      <span className="range-duration">{line?.short}</span>
-    </button>
+    <>
+      {!loaded && PENDING_SLOTS}
+      <button
+        ref={buttonRef}
+        type="button"
+        className="range-button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label="Go to"
+        disabled={!start}
+        title={start ? `${start.detail}\n${hint}` : hint}
+        onClick={onClick}
+      >
+        {CALENDAR_ICON}
+        <span className="range-text">
+          {start ? (
+            <>
+              <span className="range-date">{start.date}</span> {start.time}
+            </>
+          ) : (
+            rangeButtonEmpty(loaded)
+          )}
+        </span>
+        {start && <DurationTag text={start.duration} />}
+      </button>
+    </>
   );
 }
 
