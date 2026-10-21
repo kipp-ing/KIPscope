@@ -110,6 +110,7 @@ The class names in `SEL` are pinned (DW3, DW8, DW10, DW11, DW12; `.status-strip`
 | mode tag slot 64 px | mock | cuts `part 1.5 min` | 64 px less title in a 480 px window |
 | cursor column = width of `A 00:00:00.000` (≈ 84 px) | stable rule | cuts every header | 3 columns > 480 px window |
 | probe tolerance 1 px | fractional layout ≤ 0.5 px | flags sub-pixel rounding | still catches the measured 355 px moves |
+| flat y range: span ≤ 1e-9 of the magnitude, padding ± max(10 %, 1) (timeseries-window "Flat y range") | data fact LWS_SPEED; `yRange` flat line | 5 %: line still mid-plot, axis tighter; 5e-10: float noise of a constant mean (≈ 1e-15 of the value) is still flat | 20 %: line still mid-plot, axis wider; 2e-9: a span just above it still gives axis steps far above the float resolution (≈ 1e-16) |
 | "Step on smart451" screenshot within 200 ms | a step on smart451 takes ~1 s | hard for the browser tool | may miss the progress line on a cached step: the unit test then carries it, UI part `not_run` |
 
 ### DW3: Context row (`case/`)
@@ -328,6 +329,25 @@ export function stripPin(m: Mark): { shape: PinShape; color: string; drawn: Rect
 
 `NavKey` gains `"cursorA" | "cursorB"`: `navKey` maps `e.key === "A" && e.shiftKey` and `"B" && e.shiftKey` (same guards: no Ctrl/Meta/Alt, no text field, picker closed). `App.tsx` sends `centreRange(view, cursor)` for the bar target as a strip flag click does; nothing while that cursor is off. `SHORTCUTS` gains `{ group: "Time", keys: "Shift+A  Shift+B", action: "Bring cursor A or B into view", probe: [{ key: "A", shiftKey: true }, { key: "B", shiftKey: true }] }`; the strip group's `click a bar` becomes `click the line`.
 
+### DW24: Test setups on smart451 (UI user, lead)
+
+Design M1 of `improve-layout` names signals that smart451 lacks (`ICL_3A2h.SPEED_DISP`, `BRK_1A0h.WSPD_FL`, `ENG_5E0h.T_ENG`, `DCU_2B8h.HTR_HV_Volt`, `DCU_1F4h.COMP_HV_Volt`, `CLIM_A1.T_SET`; round 3 UI check). In this change, "the six-window setup" means M1 with these smart451 signals instead (same units: km/h, 1/min, two °C, two V; each in the smart451 catalog of 2026-10-21 with data from 2026-10-11 to 2026-10-20, `kipscope extent`). M1's snippet and its other rules (default heights, linked, cursors off unless the scenario says, no values window, list at the top) are unchanged.
+
+| Window | Signal | Unit |
+|---|---|---|
+| 1 | `COMBI_412h.V_ANZ` | km/h |
+| 2 | `BS_200h.DVL` | 1/min |
+| 3 | `AC_A1.T_INNEN` | °C |
+| 4 | `CPC_168h.EAC_HV_Volt` | V |
+| 5 | `CPC_448h.PTC_HV_Volt` | V |
+| 6 | `COMBI_408h.T_AUSSEN` | °C |
+
+- **Plain workspace** (scenarios without a catalog): `kipscope workspace new`, open its `local.url`, then in the explorer search each signal and press Enter (each Enter makes a new window), in table order.
+- **Case workspace** (scenarios with "an open catalog" or "a catalog from `kipscope case drives smart451`"): `kipscope case drives smart451 | jq '.data.origin.url = "http://localhost:5173/"' | kipscope case open -`, open its `local.url`, then add the six signals as above. `case drives` sets `origin.tool` only; the `jq` step adds an `origin.url` the server keeps in identity `none` (loopback, case-handoff "Back link only to the finder"), so the list shows `Back to search`. A scenario that changes an entry (a 90-character title) edits the document with `jq` before `case open -` the same way.
+- **Known metadata** (D-096): the shown signals' name and unit come from the session's catalog. A step probe starts only after every legend row shows its display name and `[unit]` (the page was loaded, or a step landed, at an entry whose session has data for every shown signal). After a cold load at an entry without that data the legend shows the raw name without a unit until the first step into a session with data, and the columns right of the name move once; D-096 accepts this as rare (backlog: signal metadata per data ref).
+
+Sample values in scenarios on smart451 come from `kipscope value` against the dev server (2026-10-21); a number the UI user cannot reproduce is a finding for the spec owner, not for an engineer.
+
 ### DW11: Window header and menu (`chart/`, `window/`)
 
 Header: `WindowTitle`, mark pill, `span.range` only while `!workspace.linkTime`, flex spacer, `span.mode-tag` (fixed width, right-aligned, 11 px muted, tabular), `WindowMenu`. `resolutionBadge` keeps its name; `short` becomes `agg <w>` / `part <w>` / `raw`, `full` `aggregated · <w> per point` etc., `<w> = tagWidth(ns)`:
@@ -431,6 +451,7 @@ Other areas call these and stub them until the help task lands:
 - [`ch`-based widths differ between fonts] → slots use the measured width of their longest text, checked by the probe at 1440×900 and 1000×557, not a fixed pixel count in code reviews.
 - [Hiding revision and build from view hurts debugging] → both stay one hover away and in `kipscope state`/`/api/meta`.
 - [`?` and Share always in the row might wrap at 1000×557 with a long view title or the Read-only pill (estimate: ≈ 765 px of controls in ≈ 790 px beside the 208 px sidebar)] → the title shrinks to `10ch` first (saved-views); "Top row stays one line" and "Share in the row when there is room" check it; if it still wraps, a finding for Jan (D-095 says Share stays in the row).
+- [After a cold load at a session without data for a shown signal the legend lacks its display name and unit, and the first step into a session with data moves the legend columns about 35–40 px once] → accepted as rare by D-096 („a, so lassen"); "Probe during a step" starts from known metadata (DW24); backlog: signal metadata per data ref (`docs/status.md`).
 - [Flags hang 7 px below the strip over the gap above the windows] → the gap is empty (no control there); a press there that misses a flag reaches the window grid as before.
 
 ## Migration Plan

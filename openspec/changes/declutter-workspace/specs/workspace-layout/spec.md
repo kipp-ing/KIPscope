@@ -19,8 +19,8 @@ The signal explorer SHALL be a sidebar of fixed width when open, 248 px, or 208 
 - **Evidence:** `apps/web/test/sidebar.test.ts` › "toggles with s outside text fields and selects only"; UI check (screenshot after the first `s`)
 
 #### Scenario: Slash opens the search
-- **WHEN** the sidebar is collapsed, the last query was `temp`, focus is on the page body and the user presses `/`, types `SPEED_DISP` and presses Enter
-- **THEN** the sidebar opens with the search focused and `temp` selected, the field then holds `SPEED_DISP`, and `ICL_3A2h.SPEED_DISP` is added to the "Add to" target
+- **WHEN** the sidebar is collapsed, the last query was `temp`, focus is on the page body and the user presses `/`, types `V_ANZ` and presses Enter
+- **THEN** the sidebar opens with the search focused and `temp` selected, the field then holds `V_ANZ`, and `COMBI_412h.V_ANZ` (the first match on smart451) is added to the "Add to" target
 - **Evidence:** UI check on smart451 (screenshot after `/` and after Enter)
 
 ### Requirement: Top row and status strip
@@ -60,7 +60,7 @@ Every window's header, of every kind, SHALL be one line at most 24 px tall: titl
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, measured heights)
 
 #### Scenario: No reflow on zoom
-- **WHEN** window 1 shows only `ICL_3A2h.SPEED_DISP` over its full extent (aggregated), the layout probe of design DW1 runs, and the window is zoomed to 2026-10-13T13:08:00Z–13:08:03Z (raw), during loading and after
+- **WHEN** window 1 on smart451 shows only `COMBI_412h.V_ANZ` over its full extent (aggregated), the layout probe of design DW1 runs, and the window is zoomed to 2026-10-13T13:08:00Z–13:08:03Z (raw), during loading and after
 - **THEN** the probe reports at most 1 px for the mode tag's box and the "⋯" button, while the tag's text changed from `agg …` to `raw`
 - **Evidence:** UI check on smart451 at 1440×900 (probe output, screenshot after)
 

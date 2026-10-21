@@ -37,12 +37,12 @@ The restyle SHALL keep every size other specs set for the page: sidebar 248 px (
 ## ADDED Requirements
 
 ### Requirement: Layout never moves
-A control or text slot SHALL keep its box while its content changes by loading, stepping, zooming, a cursor move or a live update: fixed widths sized for the longest text of their format, tabular figures, loading drawn inside the loaded box, overlong text cut with `…` and shown whole as tooltip. Boxes change only with the viewport, the sidebar, the grid, or a control the user adds or removes. The layout probe (design DW1) is the check. Origin: D-092; Jan: „stable and clean it shall be".
+A control or text slot SHALL keep its box while its content changes (loading, a step, a zoom, a cursor move, a live update): widths for the longest text of their format, tabular figures, loading drawn inside the loaded box, overlong text cut with `…`, whole in its tooltip. Boxes change only with viewport, sidebar, grid or a control added or removed; the layout probe (design DW1) checks it. Except a legend's first step after a cold load (D-096). Origin: D-092; Jan: „stable and clean it shall be".
 
 #### Scenario: Probe during a step
-- **WHEN** at 1440×900 with the sidebar open, an open catalog from `kipscope case drives smart451`, the six-window setup with A on, the UI user starts the layout probe of design DW1 and presses `]`, waits until the progress line is gone, and stops the probe
-- **THEN** every element the probe watches (each top-row control, the sidebar, each context-row slot, the strip and its end slots, each window's mode tag, "⋯" and legend header cells, the footer's status and attribution) moved and resized by at most 1 px
-- **Evidence:** UI check on smart451 at 1440×900 (probe output)
+- **WHEN** at 1440×900 with the sidebar open, the case workspace of design DW24 shows the six-window setup with A on and every legend row shows its display name and `[unit]` (known metadata, DW24), the UI user starts the layout probe of design DW1 and presses `]`, waits until the progress line is gone, and stops the probe
+- **THEN** every element the probe watches (each top-row control, the sidebar, each context-row slot, the strip and its end slots, each window's mode tag, "⋯" and legend header cells, the footer's status and attribution) moved and resized by at most 1 px, also when the target session lacks a shown signal (its row then reads `missing`)
+- **Evidence:** UI check on smart451 at 1440×900 (probe output, a screenshot of the legend before the step showing names with units). Not part of this scenario: the first step after a cold load at a session without data for a shown signal (raw name, no unit until then); it moves the legend columns once, accepted as rare by D-096 (backlog: signal metadata per data ref)
 
 #### Scenario: Tabular numbers in slots
 - **WHEN** the computed `font-variant-numeric` is read of the session position, the duration slot, the strip's end slots, the window's mode tag, the legend's header and value cells and the sidebar tab counts
