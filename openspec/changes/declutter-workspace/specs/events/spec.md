@@ -1,3 +1,18 @@
+## MODIFIED Requirements
+
+### Requirement: Event rows readable
+A row SHALL show the category glyph, the local time to the ms and the category in words, then the event's name without a repeated source and its text (a change `<from> → <to>`, an inferred one with ` · after a gap`), wrapping and never cut with an ellipsis (design P4). Origin: persona test 2026-10-17 (novice: "event text cut off in the narrow list", "show the description in the list, not only on hover"); D-058 („human way of thinking"); sidebar width: D-095.
+
+#### Scenario: Row names
+- **WHEN** `rowName` runs for a signal event (source `IgnMode`, name `DCU_1F4h.IgnMode`), a state event (source `BMS`, name `BMS.contactor`), a DTC (`BMS`, `P0CA700`) and an NRC (`BMS`, `SID 22`)
+- **THEN** `IgnMode`, `BMS.contactor`, `BMS P0CA700`, `BMS SID 22`
+- **Evidence:** `apps/web/test/eventsPanel.test.ts` › "names rows without a repeated source"
+
+#### Scenario: Longest text on smart451
+- **WHEN** on smart451 at 1440×900 the sidebar is open (248 px wide), the filter is `all`, window 1 shows 2026-10-15 07:17:12–07:37:12 local and the user expands the `Fault memory read` row
+- **THEN** the line of `P0D1A16` shows its whole 164-character text over several lines (no `…`; its element's `scrollWidth` ≤ `clientWidth`), and no row in the list has `text-overflow: ellipsis`
+- **Evidence:** UI check on smart451 at 1440×900 (screenshot, `scrollWidth`/`clientWidth` read in the page)
+
 ## ADDED Requirements
 
 ### Requirement: Events count on the Events tab

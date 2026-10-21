@@ -40,3 +40,18 @@ While a cursor is on, a timeseries window's legend SHALL have one header row abo
 - **WHEN** a window shows six signals in at most four units (the unit limit, D-019) with A and B on in diff mode
 - **THEN** the plot shows the curves, the cursor lines with their flags and the Δt label only; all values are in the legend rows
 - **Evidence:** UI check (screenshot)
+
+## ADDED Requirements
+
+### Requirement: Keys bring a cursor into view
+Outside text fields and selects, without Ctrl, Meta or Alt, while no drag runs and the range picker is closed, Shift+A and Shift+B SHALL centre the bar target's span on cursor A or B (span kept) with one `window.setRange` and one history entry, as its strip flag does (time-strip "Cursor markers on the strip"); with that cursor off they SHALL do nothing. The Keys tab SHALL list them. Origin: D-095 (critic 13: Shift+A / Shift+B bring A or B into view).
+
+#### Scenario: Key mapping
+- **WHEN** the key handler gets `A` with Shift, `B` with Shift, `a` without Shift, `A` with Shift and Ctrl, `A` with Shift in the explorer search, and `A` with Shift while the range picker is open
+- **THEN** `cursorA`, `cursorB`, nothing for the last four (lower-case `a` stays unbound)
+- **Evidence:** `apps/web/test/keys.test.ts` › "maps Shift+A and Shift+B to bring a cursor into view"; `apps/web/test/hints.test.ts` › "keeps every hint within the wording rule" (`Shift+A` and `Shift+B` in `SHORTCUTS`)
+
+#### Scenario: Keys on smart451
+- **WHEN** at 1440×900 A is at 2026-10-13 15:09 local and B is off, window 1 shows a 20 min range on 2026-10-17, and the user presses Shift+A, then Shift+B, then Backspace
+- **THEN** after Shift+A the range button shows a 20 min range centred on A (`26-10-13 14:59` and `0:20 h`), revision +1; Shift+B changes nothing (revision unchanged); Backspace returns to the range on 2026-10-17
+- **Evidence:** UI check on smart451 (range button and revision after each key)

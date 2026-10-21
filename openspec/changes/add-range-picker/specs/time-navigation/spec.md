@@ -5,7 +5,7 @@ The range picker (range-picker) SHALL have a typed field "Go to" at its top. Ent
 
 #### Scenario: Minute from the extent view
 - **WHEN** one window shows `ICL_3A2h.SPEED_DISP` at its extent view and the user opens the picker, types `15:08` into "Go to" and presses Enter
-- **THEN** the range button reads `26-10-13 15:08` and `0:01` (range-picker "Start and duration"), the picker is closed and the revision rose by exactly one
+- **THEN** the range button reads `26-10-13 15:08` and `0:01 h` (range-picker "Start and duration"), the picker is closed and the revision rose by exactly one
 - **Evidence:** UI check (screenshot of the button and the revision); `packages/shared/test/timenav.test.ts` › "takes the latest occurrence of a time of day inside the view"
 
 ### Requirement: Input forms
@@ -39,7 +39,7 @@ Outside text fields and selects, without Ctrl, Meta or Alt, while no drag runs a
 
 #### Scenario: Home
 - **WHEN** a SPEED_DISP window is zoomed to 13:08:00Z–13:08:04Z and the user presses `Home` with the pointer over it
-- **THEN** the range shown is the extent 2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221 (range button `26-10-11 14:34` and `48:43`)
+- **THEN** the range shown is the extent 2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221 (range button `26-10-11 14:34` and `2 d 0 h`, duration tooltip `Duration 2 d 43 min`)
 - **Evidence:** UI check (screenshot of the range button)
 
 #### Scenario: Keys in a text field
@@ -70,7 +70,7 @@ Each range picker apply ("Go", Enter in "Go to") and key step SHALL push the ran
 
 #### Scenario: Back through typed and key steps
 - **WHEN** a SPEED_DISP window at its extent view gets `15:08` entered in "Go to", then `+` pressed twice quickly, then Backspace three times
-- **THEN** after the presses the span is 15 s (15:08:22.5–15:08:37.5, range button `26-10-13 15:08:22` and `15 s`), and the three Backspaces show 15:08:15–15:08:45 (`15:08:15`, `30 s`), then 15:08:00–15:09:00 (`15:08`, `0:01`), then the extent
+- **THEN** after the presses the span is 15 s (15:08:22.5–15:08:37.5, range button `26-10-13 15:08:22` and `15 s`), and the three Backspaces show 15:08:15–15:08:45 (`15:08:15`, `30 s`), then 15:08:00–15:09:00 (`15:08`, `0:01 h`), then the extent
 - **Evidence:** UI check (range button after each step); `apps/web/test/keys.test.ts` › "joins auto-repeat steps to one history entry"
 
 #### Scenario: Held key
@@ -93,7 +93,7 @@ While the workspace has a scope, every navigation (keys, wheel, range picker, Ho
 
 #### Scenario: Zoom out and pan on smart451
 - **WHEN** a smart451 window shows 14:50 – 15:10 local inside a scope of 14:00 – 16:00, and the user presses `-` three times, then Shift+`→` twice, then types `2026-10-12` into "Go to"
-- **THEN** the range button shows `14:40` `0:40`, `14:20` `1:20`, then `14:00` `2:00` with the message; the pans leave it at `14:00` `2:00` (span kept, at the edge); "Go to" also gives `14:00` `2:00` with the message; the scope is unchanged throughout (`kipscope scope show`)
+- **THEN** the range button shows `14:40` `0:40 h`, `14:20` `1:20 h`, then `14:00` `2:00 h` with the message; the pans leave it at `14:00` `2:00 h` (span kept, at the edge); "Go to" also gives `14:00` `2:00 h` with the message; the scope is unchanged throughout (`kipscope scope show`)
 - **Evidence:** UI check on smart451 (range button and message after each step, `kipscope scope show` before and after)
 
 ## REMOVED Requirements

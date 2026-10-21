@@ -64,17 +64,22 @@ The calendar of one month SHALL be measured on carserver, first and second call,
 - **Evidence:** the commands (four times in the report)
 
 ### Requirement: Range button
-The top row SHALL show, in the slot of the former "Go to" field, a 212 px button (name "Go to") with a calendar icon, the bar target's start date and time and, at its right end, the duration tag ("Start and duration", design R6). Text changes SHALL move nothing; a cut text keeps its full text as tooltip. Origin: D-092 (1) (range button), D-092 („Layout never moves"); D-093; 212 px: mock `GoTo.dc.html` (×2 in design "Numbers").
+The top row SHALL show, in the former "Go to" field's slot, a 212 px button (name "Go to") with a calendar icon, the bar target's start date and time and the duration tag at its right end ("Start and duration", design R6), with the tooltips of design R6. Text changes SHALL move nothing; the worst-case texts fit uncut, the duration is never cut. Origin: D-092 (1), („Layout never moves"); D-093; tooltips, worst cases: D-095 (critic 1, 15); 212 px: mock `GoTo.dc.html` (design "Numbers").
 
 #### Scenario: Button text
 - **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local
-- **THEN** the button reads `26-10-13`, `15:06`, the stopwatch icon and `0:12`, with no weekday, no end time and no ⁺¹; the duration's own tooltip is `Duration (h:mm)`; the button's tooltip is `26-10-13 15:06:03 · 12 min 30 s` and on the next line `Go to: pick a range or type one · t`
-- **Evidence:** `apps/web/test/rangeLine.test.ts` › "gives start and duration"; UI check on smart451 (screenshot of the button, its two tooltips)
+- **THEN** the button reads `26-10-13`, `15:06`, the stopwatch icon and `0:12 h`, with no weekday, no end time and no ⁺¹; the date's and the time's tooltip is `Tue 2026-10-13 15:06`, the duration's `Duration 12 min`, the button's own `Go to: pick a range or type one · t`
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "gives start and duration"; UI check on smart451 (screenshot of the button, the three `title` values)
 
 #### Scenario: No reflow
 - **WHEN** at 1440×900 and at 1000×557 the left x and width of the range button and of every other top-row control are read with the bar target at a 20 min range, after zooming to 2026-10-13T13:08:00.093Z – 13:08:00.995Z, after typing `2026-10-13 .. 2026-10-16`, and while a reload is pending
-- **THEN** every value is the same in all four states (±0.5 px), the button is 212 px wide, and its texts read a start with `0:20`, `26-10-13 15:08:00` with `902 ms`, and `26-10-13 00:00` with the typed range's hours (`72:00` or more)
+- **THEN** every value is the same in all four states (±0.5 px), the button is 212 px wide, and its texts read a start with `0:20 h`, `26-10-13 15:08:00` with `902 ms`, and `26-10-13 00:00` with `3 d 0 h`
 - **Evidence:** UI check on smart451 (the x and width values per state and viewport, one screenshot each)
+
+#### Scenario: Worst cases fit
+- **WHEN** at 1440×900 the user types `2026-10-13 15:06:03 +41s`, then `2026-10-13 15:06 +47h59min`, then `2026-10-11 14:34 +9d11h` into "Go to"
+- **THEN** the button reads `26-10-13 15:06:03` with `41 s`, `26-10-13 15:06` with `47:59 h`, and `26-10-11 14:34` with `9 d 11 h`; in each state the button is 212 px wide and no text element inside it is cut (`scrollWidth ≤ clientWidth` for the date-and-time span and the duration tag)
+- **Evidence:** UI check on smart451 (button width, the two `scrollWidth`/`clientWidth` pairs per state, one screenshot each)
 
 #### Scenario: No timeseries window
 - **WHEN** the workspace holds only a values window, and before the first workspace state arrived
@@ -82,19 +87,24 @@ The top row SHALL show, in the slot of the former "Go to" field, a 212 px button
 - **Evidence:** `apps/web/test/rangeLine.test.ts` › "names the button state without a range"; UI check (screenshot, button rect equal to the enabled one)
 
 ### Requirement: Start and duration
-Every range and session time people read SHALL come from one formatter (`startDuration`, design R6) as `<YY-MM-DD> <HH:MM>  <H:MM>`, local: start and duration cut to the minute, hours unbounded; no weekday, end time or ⁺¹. Under 1 min: start to the second, duration in whole seconds; under 1 s the short span. Cursor readouts and typed input keep their precision. Origin: D-093 (Jan's words and the lead's defaults), superseding D-092 (4); < 1 s: necessary consequence (else `0 s`).
+Every range and session time people read SHALL come from one formatter (`startDuration`, design R6) as `<YY-MM-DD> <HH:MM>  <duration>`, local, start cut to the minute, the duration with its unit (`0:10 h`; from 48 h `9 d 11 h`; under 1 min `41 s`, the start then to the second); no weekday, end time or ⁺¹. Its full start and the duration in words SHALL be the tooltips. Cursor readouts and typed input keep their precision. Origin: D-093; unit, days, words, full date: D-095 (critic 1, 15).
 
 #### Scenario: Start and duration texts
-- **WHEN** `startDuration` gets 2026-10-13T13:06:03Z–13:18:33Z; 2026-10-20T21:30:00Z–23:52:43Z; 2026-10-12T22:00:00Z–2026-10-13T22:00:00Z; 2026-10-13T13:06:03Z–2026-10-15T13:18:33Z; 2026-10-11T12:34:24Z–2026-10-20T23:52:43Z; 2026-10-24T22:00:00Z–2026-10-25T23:00:00Z; 2026-10-13T13:08:00Z–13:09:00Z; 2026-10-13T13:06:03Z–13:06:44.600Z; 2026-10-13T09:12:00.999999999Z–09:13:00Z; 2026-10-13T13:08:00.093Z–13:08:00.995Z
-- **THEN** the texts are `26-10-13 15:06  0:12`; `26-10-20 23:30  2:22`; `26-10-13 00:00  24:00`; `26-10-13 15:06  48:12`; `26-10-11 14:34  227:18`; `26-10-25 00:00  25:00`; `26-10-13 15:08  0:01`; `26-10-13 15:06:03  41 s`; `26-10-13 11:12:00  59 s`; `26-10-13 15:08:00  902 ms`; `date`, `time` and `duration` are the three parts (`26-10-13`, `15:06`, `0:12` for the first); `detail` is `26-10-13 15:06:03 · 12 min 30 s` for the first and `26-10-13 15:08:00 · 902 ms` for the last
-- **Evidence:** `apps/web/test/rangeLine.test.ts` › "gives start and duration", "cuts to the second and below a minute"
+- **WHEN** `startDuration` gets 2026-10-13T13:06:03Z–13:18:33Z; 2026-10-20T21:30:00Z–23:52:43Z; 2026-10-12T22:00:00Z–2026-10-13T22:00:00Z; 2026-10-13T00:00:00Z–2026-10-14T23:59:30Z; 2026-10-13T00:00:00Z–2026-10-15T00:00:00Z; 2026-10-13T13:06:03Z–2026-10-15T13:18:33Z; 2026-10-11T12:34:24Z–2026-10-20T23:52:43Z; 2026-10-24T22:00:00Z–2026-10-25T23:00:00Z; 2026-10-13T13:08:00Z–13:09:00Z; 2026-10-13T13:06:03Z–13:06:44.600Z; 2026-10-13T09:12:00.999999999Z–09:13:00Z; 2026-10-13T13:08:00.093Z–13:08:00.995Z
+- **THEN** the texts are `26-10-13 15:06  0:12 h`; `26-10-20 23:30  2:22 h`; `26-10-13 00:00  24:00 h`; `26-10-13 02:00  47:59 h`; `26-10-13 02:00  2 d 0 h`; `26-10-13 15:06  2 d 0 h`; `26-10-11 14:34  9 d 11 h`; `26-10-25 00:00  25:00 h`; `26-10-13 15:08  0:01 h`; `26-10-13 15:06:03  41 s`; `26-10-13 11:12:00  59 s`; `26-10-13 15:08:00  902 ms`; the `durationTip`s are `Duration 12 min`, `Duration 2 h 22 min`, `Duration 24 h`, `Duration 47 h 59 min`, `Duration 2 d`, `Duration 2 d 12 min`, `Duration 9 d 11 h 18 min`, `Duration 25 h`, `Duration 1 min`, `Duration 41 s`, `Duration 59 s`, `Duration 902 ms`; `date`, `time` and `duration` are the three parts (`26-10-13`, `15:06`, `0:12 h` for the first); `full` is `Tue 2026-10-13 15:06` for the first, `Sun 2026-10-11 14:34` for the seventh, `Tue 2026-10-13 15:06:03` for the tenth and `Tue 2026-10-13 15:08:00` for the last; `tip` is `Tue 2026-10-13 15:06 · Duration 12 min` for the first
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "gives start and duration", "cuts to the second and below a minute", "switches to days from 48 hours and words the tooltip"
+
+#### Scenario: Full time with seconds
+- **WHEN** `fullTime` gets 2026-10-13T13:06:03.700Z with and without seconds, and 2026-10-20T23:52:43Z with seconds
+- **THEN** `Tue 2026-10-13 15:06:03`, `Tue 2026-10-13 15:06` and `Wed 2026-10-21 01:52:43`
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "writes the full local time with its weekday"
 
 ### Requirement: Duration tag
-A duration in a slot (range button, result line, drive chips; in `declutter-workspace` the session bar, scope row and catalog list) SHALL carry the stopwatch icon and the tooltip `Duration (h:mm)` (`DurationTag`, design R6). Origin: D-093; mocks `GoTo.dc.html`, `Main.dc.html`, `SessionBar.dc.html`.
+A duration in a slot (range button, result line, drive chips; in `declutter-workspace` the session bar, scope row and catalog list) SHALL carry the stopwatch icon and, as tooltip, that duration in words (`durationTip`, `DurationTag`, design R6). Origin: D-093; words: D-095 (critic 1: a bare `0:10` beside a stopwatch reads as seconds); mocks `GoTo.dc.html`, `Main.dc.html`, `SessionBar.dc.html`.
 
 #### Scenario: Duration tag
-- **WHEN** `DurationTag` with the text `0:12` is rendered to static markup
-- **THEN** it holds one `svg.duration-icon` with `aria-hidden="true"`, the text `0:12` and `title="Duration (h:mm)"`
+- **WHEN** `DurationTag` with the text `0:12 h` and the title `Duration 12 min` is rendered to static markup
+- **THEN** it holds one `svg.duration-icon` with `aria-hidden="true"`, the text `0:12 h` and `title="Duration 12 min"`
 - **Evidence:** `apps/web/test/rangeLine.test.ts` › "renders the duration with its icon and tooltip"
 
 ### Requirement: Picker opens
@@ -102,7 +112,7 @@ A click on the range button or `t` SHALL open the picker under the button, focus
 
 #### Scenario: Open on smart451
 - **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local and the user presses `t`
-- **THEN** the picker shows September 2026 and October 2026, days 13 marked as start and end, From `26-10-13` `15:06`, To `26-10-13` `15:18`, the typed field focused with its last text selected, and the result line `26-10-13 15:06` with the stopwatch and `0:12`; Go without an edit applies 15:06:03 – 15:18:33 unchanged
+- **THEN** the picker shows September 2026 and October 2026, days 13 marked as start and end, From `26-10-13` `15:06`, To `26-10-13` `15:18`, the typed field focused with its last text selected, and the result line `26-10-13 15:06` with the stopwatch and `0:12 h` (tooltips `Tue 2026-10-13 15:06` and `Duration 12 min`); Go without an edit applies 15:06:03 – 15:18:33 unchanged
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Draft from a range
@@ -129,7 +139,7 @@ The picker SHALL show two months side by side, each titled `<Month> <YYYY>`, wit
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "pages only towards data"
 
 ### Requirement: Day density
-Each day cell SHALL show its number and 12 bars of two local hours from local midnight (the last 1 h or 3 h on DST days), log-scaled over the shown months' largest bar, in the accent where a drive overlaps, none for 0 rows, and a tooltip with rows and drives (design R5). Origin: D-092 („date pickers with underlayed data density"); 12 two-hour bars, drives in the accent: mock `GoTo.dc.html`.
+Each day cell SHALL show its number and 12 bars of two local hours from local midnight (the last 1 h or 3 h on DST days), log-scaled over the shown months' largest bar, slate-700 where a drive overlaps, slate-400 elsewhere, none for 0 rows, and a tooltip with rows and drives (design R5). The accent SHALL mark only the selection. Origin: D-092 („date pickers with underlayed data density"); bars: mock `GoTo.dc.html`; slate drives: D-095 (critic 3).
 
 #### Scenario: Bars of a day
 - **WHEN** `dayBars` gets the drivecar answer of "One month of drivecar" and the day 2026-10-02; and an answer of M10 with every hour 1 and the day 2026-10-25
@@ -148,7 +158,7 @@ Each day cell SHALL show its number and 12 bars of two local hours from local mi
 
 #### Scenario: Calendar on smart451
 - **WHEN** the picker is opened on smart451 (no scope) showing September and October 2026
-- **THEN** October 11 … 21 show bars, accent bars on the days with drives (e.g. 13 and 17), days without rows are muted and disabled, and a day's tooltip names its rows and drives (`Tue 26-10-13 · … rows · … drives`)
+- **THEN** October 11 … 21 show bars, drive bars in `rgb(51, 65, 85)` on the days with drives (e.g. 13 and 17) and no bar outside the selected days in `rgb(2, 132, 199)`, days without rows are muted and marked `aria-disabled="true"`, and a day's tooltip names its rows and drives (`Tue 26-10-13 · … rows · … drives`)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot with one tooltip)
 
 ### Requirement: Day selection
@@ -158,6 +168,32 @@ A click on a day with data SHALL set start and end to that day and wait for the 
 - **WHEN** `pickDay` gets the draft of 2026-10-13 15:06:03 – 15:18:33 and `2026-10-15`, then `2026-10-17`, then `2026-10-16`, then `2026-10-14`
 - **THEN** start and end 15, waiting for the end; 15 to 17; start and end 16, waiting; start and end 14, waiting (14 lies before the start); From `15:06:03` and To `15:18:33` throughout
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "picks a start and an end day"
+
+### Requirement: Calendar as a grid
+Each shown month SHALL be a `role="grid"` labelled `<Month> <YYYY>` with weekday column heads named in full, gridcells whose `aria-selected` marks the start, end and days between, and day buttons labelled `<Ddd> <d>, <n> drives` or the day's reason for no data (design R5). Days without rows SHALL be `aria-disabled` and stay focusable. Origin: D-095 (critic 14: no grid semantics); labels: mock `GoTo.dc.html` after D-095.
+
+#### Scenario: Day names for screen readers
+- **WHEN** `dayLabel` gets the drivecar answer of "One month of drivecar" with the days 2026-10-02 and 2026-10-03 (kind `none`); that answer with `scope` 2026-10-02T01:00:00Z – 02:00:00Z and the day 2026-10-10 (kind `session`); an M10 answer with every hour 1 and no drives with 2026-10-25; and no answer with 2026-10-02
+- **THEN** `Fri 2, 2 drives`, `Sat 3, no data`, `Sat 10, outside the session`, `Sun 25, no drives` and `Fri 2`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "names each day for screen readers"
+
+#### Scenario: Grid markup
+- **WHEN** the picker is rendered to static markup for the range 2026-10-13 15:06:03 – 15:18:33 local with the drivecar answers of September and October 2026
+- **THEN** it holds two `role="grid"` elements labelled `September 2026` and `October 2026`, each with 7 `role="columnheader"` (the first labelled `Monday`) and 6 `role="row"` week rows below the head row; exactly one day button has `tabindex="0"`, the one of October 13; the cell of October 13 has `aria-selected="true"` and every other cell `"false"`; the button of October 2 has the `aria-label` `Fri 2, 2 drives` and the one of October 3 `aria-disabled="true"`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "renders each month as a keyboard grid"
+
+### Requirement: Calendar by keyboard
+Both grids together SHALL be one tab stop (roving tabindex, on open the start day when shown). ← and → SHALL move focus one day, ↑ and ↓ one week, PageUp and PageDown one month, paging the calendar when allowed ("Calendar months"), else focus stays; Enter or Space SHALL act as a click on the focused day. The legend SHALL name the keys. Origin: D-095 (critic 14: every day cell was a tab stop); keys: mock `GoTo.dc.html` after D-095.
+
+#### Scenario: Grid steps
+- **WHEN** `gridStep` gets `2026-10-13` with ←, →, ↑, ↓, PageUp, PageDown and Home; `2026-10-31` with → and PageDown; and `pageFor` gets left month September 2026 with the days `2026-10-05`, `2026-11-01` (next allowed), `2026-11-01` (next not allowed) and `2026-08-31` (previous allowed)
+- **THEN** `2026-10-12`, `2026-10-14`, `2026-10-06`, `2026-10-20`, `2026-09-13`, `2026-11-13` and undefined; `2026-11-01` and `2026-11-30`; left September (unchanged), left October, undefined (focus stays), left August
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "steps the focused day and pages to it"
+
+#### Scenario: Keyboard on smart451
+- **WHEN** at 1440×900 the bar target shows 2026-10-13 15:06 – 15:18 local, the user presses `t`, presses Tab until a day has focus, then →, →, Enter, →, →, Enter, ↓, Enter, then PageUp
+- **THEN** focus lands on October 13 after the Tabs (one Tab stop for both grids); the first Enter makes the 15th start and end day, the second makes the 17th the end day; ↓ moves focus to October 24 (`Sat 24, no data`, `aria-disabled`) and Enter there changes nothing; PageUp moves focus to September 24; the picker's rect is the same throughout (±0.5 px)
+- **Evidence:** UI check on smart451 (`document.activeElement`'s `aria-label` after each key, the From/To dates after each Enter, one screenshot after the second Enter)
 
 ### Requirement: Time fields
 From and To SHALL show their date as `YY-MM-DD` and a time field taking `hh:mm` (also `hh:mm:ss[.fff]`), local; To also `24:00`, the next local midnight. A bad time, an end not after the start, or a nonexistent or ambiguous local time SHALL show its reason in the result line and disable Go. Enter in a field SHALL act as Go. Origin: Jan („date and to times"); D-093 (HH:MM fields, typed precision kept); DST: time-navigation "Invalid input changes nothing".
@@ -176,16 +212,16 @@ A time filled into From or To (from the shown range, a day pick keeping it, or a
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "shows filled times to the minute"
 
 ### Requirement: Presets
-The picker SHALL offer one chip per drive of the start day reading its start and duration (`03:00  0:30`, "Start and duration"; `no drive` when none), **Whole day** (00:00 – 24:00) and the whole span the strip's double-click sets, labelled **Whole recording**, **Whole scope** (plain scope) or **Whole session** (linked catalog) (design R8). A preset fills the draft; Go applies it. Origin: D-092 (3) („that day's drives, Whole day, Whole recording"); labels: Q-3; chip text: D-093.
+The picker SHALL offer one chip per drive of the start day reading its start and duration (`03:00  0:30 h`, its `tip` as tooltip; `no drive` when none), **Whole day** (00:00 – 24:00) and the whole span of the strip's double-click, labelled **Whole recording**, **Whole scope** (plain scope) or **Whole session** (linked catalog) (design R8). A preset fills the draft; Go applies it. Origin: D-092 (3); labels: Q-3; chip text: D-093, D-095.
 
 #### Scenario: Presets of a day
 - **WHEN** `dayDrives` gets the drivecar answer and 2026-10-02, then 2026-10-03; and `wholeLabel` gets a workspace without scope, with a plain scope, with a linked catalog and unlinked
-- **THEN** the chips `03:00  0:30` and `05:00  0:10`, then none; the labels `Whole recording`, `Whole scope`, `Whole session`, `Whole recording`
+- **THEN** the chips `03:00  0:30 h` (tooltip `Fri 2026-10-02 03:00 · Duration 30 min`) and `05:00  0:10 h`, then none; the labels `Whole recording`, `Whole scope`, `Whole session`, `Whole recording`
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "lists the day's drives and names the whole span"
 
 #### Scenario: Drive preset on smart451
 - **WHEN** the user opens the picker, clicks 2026-10-17, clicks the chip of its first drive and Go
-- **THEN** the button shows that drive's start and duration (`26-10-17 10:01` and about `2:05`), the strip marks it, and Back returns to the range before
+- **THEN** the button shows that drive's start and duration (`26-10-17 10:01` and about `2:05 h`), the strip marks it, and Back returns to the range before
 - **Evidence:** UI check on smart451 (button and strip after Go and after Back)
 
 ### Requirement: Apply and cancel
@@ -193,7 +229,7 @@ Go and Enter in the typed field SHALL set the range with one command for the bar
 
 #### Scenario: Go and Back
 - **WHEN** two linked windows show smart451 at a 20 min range, the user opens the picker, clicks **Whole day** and Go, then clicks "Back"
-- **THEN** after Go both windows show the start day 00:00 – 24:00, the button reads `<YY-MM-DD> 00:00` and `24:00`, and the revision rose by exactly one; after Back both show the 20 min range (`0:20`)
+- **THEN** after Go both windows show the start day 00:00 – 24:00, the button reads `<YY-MM-DD> 00:00` and `24:00 h`, and the revision rose by exactly one; after Back both show the 20 min range (`0:20 h`)
 - **Evidence:** UI check on smart451 (revision and button text after each step)
 
 #### Scenario: Cancel, Esc and keys

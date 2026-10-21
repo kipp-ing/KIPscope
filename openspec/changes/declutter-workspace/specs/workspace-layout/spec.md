@@ -1,12 +1,17 @@
 ## MODIFIED Requirements
 
 ### Requirement: Collapsible sidebar
-The signal explorer SHALL be a sidebar 240 px wide when open that takes no width when collapsed. A 26 × 26 px icon button (a panel icon, `aria-label` `Hide sidebar` while open and `Show sidebar` while collapsed, `aria-expanded`, tooltip naming `s`) at the left end of the top row, and the key `s` pressed without modifiers while focus is not in a text field or select, SHALL switch it. `/` SHALL open a collapsed sidebar and focus the search with its text selected. Origin: D-026 („Seitenleiste einklappbar"; "just optimization. later WP"); width per design L1; `/` from D-020; icon: D-092 (mock `Main.dc.html`, the designer's top-row inventory).
+The signal explorer SHALL be a sidebar of fixed width when open, 248 px, or 208 px in a viewport narrower than 1200 px, that takes no width when collapsed; no content SHALL widen or narrow it (`width` and `min-width: 0`), and a text cut in it (a row's name, a group head, the "Add to" target) SHALL end in `…` with its full text as tooltip. A 26 × 26 px icon button (a panel icon, `aria-label` `Hide sidebar` while open and `Show sidebar` while collapsed, `aria-expanded`, tooltip naming `s`) at the left end of the top row, and the key `s` pressed without modifiers while focus is not in a text field or select, SHALL switch it. `/` SHALL open a collapsed sidebar and focus the search with its text selected. Origin: D-026 („Seitenleiste einklappbar"; "just optimization. later WP"); `/` from D-020; icon: D-092 (mock `Main.dc.html`, the designer's top-row inventory); fixed slot, 248/208 px, cut texts with tooltip: D-095 (critic 2: the mock's sidebar rendered 321 px instead of 248 px); 1200 px: the midpoint of the mocks' 1440 and 1000 px widths, design DW22.
 
 #### Scenario: Toggle by button
 - **WHEN** at 1440×900 the sidebar is open and the user clicks the sidebar button in the top row, then clicks it again
-- **THEN** the explorer measures 240 px wide (`getBoundingClientRect().width`, ±1) before, is not shown after the first click with the window grid starting within 16 px of the viewport's left edge, and is back at 240 px after the second; the button reads `Hide sidebar` / `Show sidebar` as its `aria-label` and shows no text
+- **THEN** the explorer measures 248 px wide (`getBoundingClientRect().width`, ±1) before, is not shown after the first click with the window grid starting within 16 px of the viewport's left edge, and is back at 248 px after the second; the button reads `Hide sidebar` / `Show sidebar` as its `aria-label` and shows no text
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after each click, measured widths, `aria-label` values)
+
+#### Scenario: Sidebar holds its width
+- **WHEN** the sidebar is open at 1440×900 and at 1000×557, the search is empty, then holds `HV_Volt`, then a window titled with 80 characters is the "Add to" target
+- **THEN** the explorer measures 248 px at 1440×900 and 208 px at 1000×557 (±1) in every state; no `.explorer .row` has `scrollWidth` greater than its `clientWidth` + 1; every row name, group head and the "Add to" select whose text is cut (`scrollWidth > clientWidth`) has a non-empty `title` holding its full text
+- **Evidence:** UI check on smart451 (widths per state and viewport, the snippet listing cut elements without a full `title`: empty)
 
 #### Scenario: Key s
 - **WHEN** focus is on the page body and the user presses `s`, then `s` again; then focuses the search field and types `s`; then focuses the "Add to" select and presses `s`
@@ -94,6 +99,19 @@ Each window's header SHALL end with a "⋯" button that opens a menu. A timeseri
 - **WHEN** `windowMenuItems` gets window `w1` in line mode with the envelope off, then `w1` in step mode, and a values window (no display)
 - **THEN** the first lists `Line` (radio, checked, no command), `Step` (radio, command `window.setDisplay {windowId: "w1", mode: "step"}`), `Markers`, `Min/max` (checkbox, unchecked, command `window.setDisplay {windowId: "w1", envelope: true}`), `Rename`, `Remove window` in that order; the second has `Step` checked without a command and `Line` with `mode: "line"`; the third lists `Rename` and `Remove window` only
 - **Evidence:** `apps/web/test/windowMenu.test.ts` › "offers display mode and min/max in the menu"
+
+### Requirement: Signals and Events in the sidebar
+The sidebar SHALL hold a switch `Signals | Events` above its content (explorer or events panel), kept per browser in local storage (Signals without usable storage), not in the workspace. `/` SHALL switch to Signals before focusing the search; `e` without Ctrl, Meta or Alt outside text fields and selects SHALL open a collapsed sidebar on Events, open the panel's `Refine` section and focus the filter field, its text selected. Origin: D-058; place: D-058 (Jan's answers); `e` like `/` (D-020); Refine: proposal E-4; width: D-095.
+
+#### Scenario: Switch and key e
+- **WHEN** at 1440×900 the sidebar is collapsed, `Refine` is closed, focus is on the page body and the user presses `e`; then clicks `Signals`; then reloads; then presses `/`
+- **THEN** the sidebar opens 248 px wide on Events with `Refine` open and the filter field focused, its text selected; then the explorer shows; after the reload the explorer still shows; `/` focuses the search
+- **Evidence:** UI check on smart451 at 1440×900 (screenshot after `e` and after the reload)
+
+#### Scenario: Stored part and key
+- **WHEN** the stored part is read from storage holding `events`, holding `nonsense`, and from storage that throws; and the key `e` is tested with Ctrl, in a text field, in a select and on the body
+- **THEN** `events`, `signals`, `signals`; only the body press opens the events
+- **Evidence:** `apps/web/test/sidebar.test.ts` › "loads and saves the sidebar part", "opens the events with e outside text fields and selects"
 
 ## ADDED Requirements
 

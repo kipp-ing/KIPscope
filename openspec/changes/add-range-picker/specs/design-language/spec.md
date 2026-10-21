@@ -5,7 +5,7 @@ Top-row buttons, selects and text fields SHALL be 26 px tall with a 1 px slate-3
 
 #### Scenario: Control boxes
 - **WHEN** a timeseries window is shown and "Back" is disabled (no history)
-- **THEN** "Reset", "Back", the Digits select and the range button measure 26 px tall (`getBoundingClientRect().height`, ±0.5) and the range button 212 px wide; "Reset" has `border-radius` 4 px and border colour `rgb(203, 213, 225)`; "Back" has border colour `rgb(226, 232, 240)` and text colour `rgb(148, 163, 184)`; the search field is 30 px tall; a window's mode select is 22 px tall
+- **THEN** "Reset", "Back" and the range button measure 26 px tall (`getBoundingClientRect().height`, ±0.5) and the range button 212 px wide; "Reset" has `border-radius` 4 px and border colour `rgb(203, 213, 225)`; "Back" has border colour `rgb(226, 232, 240)`; the search field is 30 px tall (the Digits select and the window's mode select left the row and the header in `declutter-workspace`)
 - **Evidence:** UI check on smart451 at 1440×900 (the measured values)
 
 #### Scenario: One line at both viewports
