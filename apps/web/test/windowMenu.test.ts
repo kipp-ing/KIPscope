@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { windowMenuItems } from "../src/window/WindowMenu.tsx";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { swallowPress, windowMenuItems } from "../src/window/WindowMenu.tsx";
 
 describe("window menu", () => {
   it("offers display mode and min/max in the menu", () => {
@@ -59,5 +59,59 @@ describe("window menu", () => {
     const values = windowMenuItems("w3", undefined);
     expect(values.map((i) => i.label)).toEqual(["Rename", "Remove window"]);
     expect(values.map((i) => i.role)).toEqual(["menuitem", "menuitem"]);
+  });
+});
+
+describe("press that closes the menu", () => {
+  // No DOM in the tests: the document is an EventTarget, so a listener's stopPropagation shows
+  // as the event's cancelBubble (it never reaches the plot).
+  afterEach(() => vi.unstubAllGlobals());
+  // Node's EventTarget does not match a boolean capture flag on removeEventListener; browsers do.
+  class Doc extends EventTarget {
+    override removeEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      super.removeEventListener(
+        type,
+        listener,
+        typeof options === "boolean" ? { capture: options } : options,
+      );
+    }
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const stopped = (type: string) => {
+    const e = new Event(type);
+    document.dispatchEvent(e);
+    return e.cancelBubble;
+  };
+
+  it("swallows the dblclick of a fast second press, and no later one", async () => {
+    vi.stubGlobal("document", new Doc());
+    // The closing press's pointerdown was stopped by the menu, which calls swallowPress.
+    swallowPress();
+    expect(["pointerup", "mouseup", "click"].map(stopped)).toEqual([true, true, true]);
+    await tick();
+    // The second press of a double-click reaches the page, its dblclick does not (no zoom reset).
+    expect(["pointerdown", "pointerup", "click"].map(stopped)).toEqual([false, false, false]);
+    expect(stopped("dblclick")).toBe(true);
+    await tick();
+    // A later double-click is the page's.
+    expect(["pointerdown", "pointerup", "click", "dblclick"].map(stopped)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("lets a dblclick through after a key", async () => {
+    vi.stubGlobal("document", new Doc());
+    swallowPress();
+    stopped("pointerup");
+    await tick();
+    stopped("keydown");
+    expect(stopped("dblclick")).toBe(false);
   });
 });

@@ -165,6 +165,35 @@ export function goSource(typed: string, typedThisOpen: boolean): "typed" | "draf
   return typedThisOpen && typed.trim() !== "" ? "typed" : "draft";
 }
 
+/** Whether Go follows the field and a refused text's reason (design R10: the last edit wins). */
+export interface GoState {
+  typedThisOpen: boolean;
+  typedError: string | undefined;
+}
+
+export const GO_OPENED: GoState = { typedThisOpen: false, typedError: undefined };
+
+/**
+ * "typed": the user typed in the field. "draft": a day click, preset, drive chip, grid Enter or
+ * time field changed the draft. "refused": the typed text was refused. Month paging is no edit.
+ */
+export type GoEdit = { kind: "typed" } | { kind: "draft" } | { kind: "refused"; error: string };
+
+export function goAfter(state: GoState, edit: GoEdit): GoState {
+  if (edit.kind === "refused") return { ...state, typedError: edit.error };
+  return { typedThisOpen: edit.kind === "typed", typedError: undefined };
+}
+
+/** What Go and Enter in any field apply: the typed text, the draft's range, or nothing (a draft error). */
+export function goAction(
+  typed: string,
+  typedThisOpen: boolean,
+  result: { from: bigint; to: bigint } | { error: string },
+): { typed: string } | { range: { from: bigint; to: bigint } } | undefined {
+  if (goSource(typed, typedThisOpen) === "typed") return { typed };
+  return "error" in result ? undefined : { range: result };
+}
+
 /**
  * The range picker under the range button (spec range-picker, design R10, mock `GoTo.dc.html`):
  * the typed "Go to" field, two months with per-day density bars and drives, the day's presets,
@@ -199,9 +228,11 @@ export function RangePicker({
   // A time field shows its filled time to the minute until the user types in it (R7): Go without
   // an edit applies the exact draft.
   const [edited, setEdited] = useState({ from: false, to: false });
-  const [typedError, setTypedError] = useState<string | undefined>();
-  // The field keeps its text across opens; only text typed in this open makes Go apply it (Q-7).
-  const [typedThisOpen, setTypedThisOpen] = useState(false);
+  // The field keeps its text across opens; only text typed in this open makes Go apply it (Q-7),
+  // until a later draft change (the last edit wins).
+  const [goState, setGoState] = useState<GoState>(GO_OPENED);
+  const { typedThisOpen, typedError } = goState;
+  const edit = (e: GoEdit) => setGoState((s) => goAfter(s, e));
   const [density, setDensity] = useState<Density | undefined>();
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
   // Bumped when an answer lands in the module cache.
@@ -310,7 +341,7 @@ export function RangePicker({
 
   const changeDraft = (d: PickerDraft) => {
     setDraft(d);
-    setTypedError(undefined);
+    edit({ kind: "draft" });
   };
   /** A preset or a range fills the draft: both fields show their filled times again. */
   const fillDraft = (d: PickerDraft) => {
@@ -319,17 +350,19 @@ export function RangePicker({
   };
   const result = draftRange(draft);
   const resultRange = "error" in result ? undefined : result;
+  const action = goAction(typed, typedThisOpen, result);
+  // Go and Enter in any field.
   const go = () => {
-    if (!resultRange) return;
-    onApply(resultRange);
-    onClose();
-  };
-  const goTyped = () => {
-    const error = onGoTo(typed);
+    if (!action) return;
+    if ("range" in action) {
+      onApply(action.range);
+      onClose();
+      return;
+    }
+    const error = onGoTo(action.typed);
     if (error === undefined) onClose();
-    else setTypedError(error);
+    else edit({ kind: "refused", error });
   };
-  const source = goSource(typed, typedThisOpen);
 
   // Month states: answered, loading (asked, no answer yet) or failed.
   const answerOf = (m: Month): CalendarDensity | undefined => {
@@ -396,7 +429,7 @@ export function RangePicker({
     setFocus(next);
     moveFocus.current = true;
   };
-  const timeKey = (e: KeyboardEvent<HTMLInputElement>) => {
+  const enterKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
     go();
@@ -429,14 +462,9 @@ export function RangePicker({
           aria-invalid={typedError !== undefined}
           onChange={(e) => {
             onTyped(e.target.value);
-            setTypedThisOpen(true);
-            setTypedError(undefined);
+            edit({ kind: "typed" });
           }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            e.preventDefault();
-            goTyped();
-          }}
+          onKeyDown={enterKey}
         />
       </div>
 
@@ -642,7 +670,7 @@ export function RangePicker({
             changeDraft({ ...draft, from: e.target.value });
             setEdited((x) => ({ ...x, from: true }));
           }}
-          onKeyDown={timeKey}
+          onKeyDown={enterKey}
         />
         <span className="times-gap" />
         <label htmlFor="range-picker-to" className="time-label to">
@@ -660,7 +688,7 @@ export function RangePicker({
             changeDraft({ ...draft, to: e.target.value });
             setEdited((x) => ({ ...x, to: true }));
           }}
-          onKeyDown={timeKey}
+          onKeyDown={enterKey}
         />
       </div>
 
@@ -675,12 +703,7 @@ export function RangePicker({
         <button type="button" className="cancel" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="go"
-          disabled={source === "draft" && !resultRange}
-          onClick={() => (source === "typed" ? goTyped() : go())}
-        >
+        <button type="button" className="go" disabled={!action} onClick={go}>
           Go
         </button>
       </div>

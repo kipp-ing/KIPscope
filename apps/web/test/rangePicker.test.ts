@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchCalendar } from "../src/api.ts";
-import { goSource, RangePicker } from "../src/bar/RangePicker.tsx";
+import { GO_OPENED, goAction, goAfter, goSource, RangePicker } from "../src/bar/RangePicker.tsx";
 import { HINTS } from "../src/help/hints.ts";
 import {
   canPage,
@@ -676,6 +676,68 @@ describe("go on typed text", () => {
     expect(goSource("15:08", false)).toBe("draft");
     expect(goSource("  ", true)).toBe("draft");
     expect(goSource("", true)).toBe("draft");
+  });
+
+  // The last edit wins (design R10): a later draft change hands Go back to the draft.
+  // The day 2026-10-13 is CEST: local 00:00 = 2026-10-12T22:00:00Z, the next local midnight 2026-10-13T22:00:00Z.
+  const DAY_FROM = fromIso("2026-10-12T22:00:00Z");
+  const DAY_TO = fromIso("2026-10-13T22:00:00Z");
+  const opened: PickerDraft = {
+    start: "2026-10-13",
+    end: "2026-10-13",
+    from: "15:06:03",
+    to: "15:18:00",
+    phase: "start",
+  };
+  // The Whole day preset's draft, by hand.
+  const wholeDay: PickerDraft = { ...opened, from: "00:00:00", to: "24:00:00" };
+
+  it("applies the whole day after 15:08 was typed and Whole day clicked", () => {
+    const typed = goAfter(GO_OPENED, { kind: "typed" });
+    expect(goAction("15:08", typed.typedThisOpen, draftRange(opened))).toEqual({ typed: "15:08" });
+    const after = goAfter(typed, { kind: "draft" });
+    expect(after).toEqual({ typedThisOpen: false, typedError: undefined });
+    expect(goAction("15:08", after.typedThisOpen, draftRange(wholeDay))).toEqual({
+      range: { from: DAY_FROM, to: DAY_TO },
+    });
+  });
+
+  it("applies the day after a refused 25:00 and Whole day, and drops the reason", () => {
+    let s = goAfter(GO_OPENED, { kind: "typed" });
+    s = goAfter(s, { kind: "refused", error: "No time 25:00" });
+    // Refused: the field still leads, the reason stays until the next edit.
+    expect(s).toEqual({ typedThisOpen: true, typedError: "No time 25:00" });
+    expect(goAction("25:00", s.typedThisOpen, draftRange(wholeDay))).toEqual({ typed: "25:00" });
+    s = goAfter(s, { kind: "draft" });
+    expect(s.typedError).toBeUndefined();
+    expect(goAction("25:00", s.typedThisOpen, draftRange(wholeDay))).toEqual({
+      range: { from: DAY_FROM, to: DAY_TO },
+    });
+  });
+
+  it("lets typing after a draft change lead again and clears a reason", () => {
+    let s = goAfter(GO_OPENED, { kind: "draft" });
+    s = goAfter(s, { kind: "refused", error: "x" });
+    s = goAfter(s, { kind: "typed" });
+    expect(s).toEqual({ typedThisOpen: true, typedError: undefined });
+  });
+
+  it("gives Enter in a field the same source as Go", () => {
+    // Go and Enter in the typed field, From and To all run goAction: text typed in this open is
+    // applied from any field, else the draft is, also from the typed field.
+    expect(goAction("15:08", true, draftRange(opened))).toEqual({ typed: "15:08" });
+    expect(goAction("15:08", false, draftRange(opened))).toEqual({
+      range: { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:00Z") },
+    });
+  });
+
+  it("keeps Go enabled with typed text while the draft has an error", () => {
+    const bad: PickerDraft = { ...opened, to: "25:00" };
+    expect(draftRange(bad)).toHaveProperty("error");
+    expect(goAction("15:08", true, draftRange(bad))).toEqual({ typed: "15:08" });
+    // Draft source with an error: nothing to apply, Go disabled.
+    expect(goAction("15:08", false, draftRange(bad))).toBeUndefined();
+    expect(goAction("", true, draftRange(bad))).toBeUndefined();
   });
 });
 

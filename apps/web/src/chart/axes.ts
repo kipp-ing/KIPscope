@@ -59,3 +59,20 @@ export function layoutAxes(inputs: AxisInput[]): AxisLayout {
   for (const [key, scale] of scaleOf) sideOf.set(key, sideByScale.get(scale));
   return { scaleOf, axes, sideOf };
 }
+
+/**
+ * A y range uPlot can split: a flat, near-flat or non-finite one would make its axis splits
+ * endless (RangeError: Invalid array length). Near-flat is a constant signal whose bucket means
+ * carry float noise (smart451 LWS_SPEED: min -1433.6, mean -1433.5999999999979); uPlot's step
+ * then adds nothing to the value. Such a range widens around its middle like yRange's flat line.
+ */
+export function spread([min, max]: [number, number]): [number, number] {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  // A span at most 1e-9 of the value's magnitude is flat: float noise, not data.
+  if (high - low > Math.max(Math.abs(low), Math.abs(high)) * 1e-9) return [low, high];
+  const mid = low + (high - low) / 2;
+  const pad = Math.max(Math.abs(mid) * 0.1, 1);
+  return [mid - pad, mid + pad];
+}

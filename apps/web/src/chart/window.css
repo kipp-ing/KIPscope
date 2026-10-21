@@ -476,7 +476,7 @@
   color: var(--name);
 }
 
-/* The name column is the legend's only flexible one (minmax(0, max-content), TimeseriesWindow):
+/* The name column is the legend's only flexible one (minmax(48px, max-content), TimeseriesWindow):
    in a narrow window the name is cut with "…" (full name as tooltip) before any fixed column
    reaches past the window. */
 .window .signals .grip {

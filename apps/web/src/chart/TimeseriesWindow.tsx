@@ -44,7 +44,7 @@ import {
 } from "../values/loader.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
-import type { AxisSpec } from "./axes.ts";
+import { type AxisSpec, spread } from "./axes.ts";
 import {
   buildModel,
   type ChartModel,
@@ -236,23 +236,6 @@ function textWidth(text: string): number {
   if (!measureContext) return text.length * 7;
   measureContext.font = AXIS_FONT;
   return measureContext.measureText(text).width;
-}
-
-/**
- * A y range uPlot can split: a flat, near-flat or non-finite one would make its axis splits
- * endless (RangeError: Invalid array length). Near-flat is a constant signal whose bucket means
- * carry float noise (smart451 LWS_SPEED: min -1433.6, mean -1433.5999999999979); uPlot's step
- * then adds nothing to the value. Such a range widens around its middle like yRange's flat line.
- */
-function spread([min, max]: [number, number]): [number, number] {
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
-  const low = Math.min(min, max);
-  const high = Math.max(min, max);
-  // A span at most 1e-9 of the value's magnitude is flat: float noise, not data.
-  if (high - low > Math.max(Math.abs(low), Math.abs(high)) * 1e-9) return [low, high];
-  const mid = low + (high - low) / 2;
-  const pad = Math.max(Math.abs(mid) * 0.1, 1);
-  return [mid - pad, mid + pad];
 }
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;

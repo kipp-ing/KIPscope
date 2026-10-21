@@ -58,12 +58,42 @@ const PRESS_EVENTS = ["pointerup", "pointercancel", "mousedown", "mouseup", "cli
 const PRESS_MAX_MS = 1000;
 
 /**
- * Keeps the rest of the press whose pointerdown was just stopped from reaching the page: its mouse
- * events and click (a plot places cursor A on mouseup). Ends after that press's release; if the
- * release never arrives (released outside the browser), at the next pointerdown or keydown or after
- * `PRESS_MAX_MS`, so a click made by the keyboard is never swallowed.
+ * Keeps the dblclick that a fast second press makes of the press just stopped from reaching the
+ * page (a plot resets its zoom on dblclick). Ends after the next press's release (its click and
+ * dblclick follow in the same task) or at a keydown, so a later double-click is never swallowed.
  */
-function swallowPress(): void {
+function swallowDblclick(): void {
+  let next = false;
+  const stop = (e: Event) => e.stopPropagation();
+  const down = () => {
+    next = true;
+  };
+  const release = () => {
+    if (next) setTimeout(end, 0);
+  };
+  const end = () => {
+    document.removeEventListener("dblclick", stop, true);
+    document.removeEventListener("pointerdown", down, true);
+    document.removeEventListener("pointerup", release, true);
+    document.removeEventListener("pointercancel", release, true);
+    document.removeEventListener("keydown", end, true);
+  };
+  document.addEventListener("dblclick", stop, true);
+  document.addEventListener("pointerdown", down, true);
+  document.addEventListener("pointerup", release, true);
+  document.addEventListener("pointercancel", release, true);
+  document.addEventListener("keydown", end, true);
+}
+
+/**
+ * Keeps the rest of the press whose pointerdown was just stopped from reaching the page: its mouse
+ * events and click (a plot places cursor A on mouseup), and the dblclick of a fast second press.
+ * Ends after that press's release; if the release never arrives (released outside the browser), at
+ * the next pointerdown or keydown or after `PRESS_MAX_MS`, so a click made by the keyboard is never
+ * swallowed.
+ */
+export function swallowPress(): void {
+  swallowDblclick();
   let ended = false;
   const end = () => {
     if (ended) return;

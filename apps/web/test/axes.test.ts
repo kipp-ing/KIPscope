@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { type AxisInput, layoutAxes } from "../src/chart/axes.ts";
+import { type AxisInput, layoutAxes, spread } from "../src/chart/axes.ts";
 import { buildModel } from "../src/chart/build.ts";
 
 const input = (key: string, unit: string | undefined, color: string, label = key): AxisInput => ({
@@ -168,18 +168,10 @@ describe("y axis tick colour (D-095, DW21)", () => {
 });
 
 describe("y scale range of a constant series (D-095, uPlot RangeError)", () => {
-  // The window's y range is `spread(yRange(...) ?? [dataMin, dataMax])` (TimeseriesWindow). `spread`
-  // is not exported, so its source is evaluated here: the chart's own function, not a copy. uPlot
+  // The window's y range is `spread(yRange(...) ?? [dataMin, dataMax])` (TimeseriesWindow). uPlot
   // splits an axis by stepping `val += incr` from the range's min; a flat or tiny span (a constant
   // LWS_SPEED of -1433.6) makes the step vanish against the value's ULP, the loop never ends and
   // pushes until `RangeError: Invalid array length`.
-  const src = readFileSync(new URL("../src/chart/TimeseriesWindow.tsx", import.meta.url), "utf8");
-  const match = src.match(/function spread\(([^)]*)\)[^{]*\{([\s\S]*?)\n\}/);
-  if (!match) throw new Error("function spread not found in TimeseriesWindow.tsx");
-  const params = (match[1] as string).replace(/:\s*\[number, number\]/g, "");
-  const spread = new Function(`return function spread(${params}) {${match[2]}\n}`)() as (
-    r: [number, number],
-  ) => [number, number];
 
   /** The splits loop of uPlot's numAxisSplits, with the increment uPlot would pick (~7 splits), capped. */
   const splitCount = (lo: number, hi: number) => {
