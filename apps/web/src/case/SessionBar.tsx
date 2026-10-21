@@ -23,14 +23,26 @@ interface Props {
   onCommand: (command: CommandInput) => void;
   /** No commands (read-only workspace, a command on its way): every control is disabled. */
   disabled?: boolean;
+  /** The open's report text (design X4a, openNoteText), shown after the session text until dismissed. */
+  openNote?: string | undefined;
+  /** ✕ on the open note. */
+  onDismissNote?: () => void;
 }
 
 /**
  * The session bar (add-case-open K14), in the strip head instead of the scope head while a
  * catalog is open. Linked: `SESSION ‹ <session> › <k> / <n> ▾ Unlink Align: <mode> ▾`; unlinked:
- * `VEHICLE ‹ › <vehicle> Link` with the arrows greyed. One line; the text truncates first.
+ * `VEHICLE ‹ › <vehicle> Link` with the arrows greyed. One line; the text truncates first. The
+ * open note (X4a, `⚠ <report> ✕`) follows the session text.
  */
-export function SessionBar({ caseState: c, scope, onCommand, disabled = false }: Props) {
+export function SessionBar({
+  caseState: c,
+  scope,
+  onCommand,
+  disabled = false,
+  openNote,
+  onDismissNote,
+}: Props) {
   const catalog = useCaseCatalog(c.catalogId);
   const bar = sessionBarText(c, scope, catalog?.origin);
   const arrow = (by: -1 | 1) => {
@@ -48,6 +60,22 @@ export function SessionBar({ caseState: c, scope, onCommand, disabled = false }:
       </button>
     );
   };
+  const note = openNote !== undefined && (
+    <>
+      <span className="session-open-note" title={openNote}>
+        ⚠ {openNote}
+      </span>
+      <button
+        type="button"
+        className="session-open-note-dismiss"
+        aria-label="Dismiss"
+        title={CASE_HINTS.dismissNote}
+        onClick={onDismissNote}
+      >
+        ✕
+      </button>
+    </>
+  );
   return (
     <span className="session-bar">
       <span className="section-label">{bar.label}</span>
@@ -57,6 +85,7 @@ export function SessionBar({ caseState: c, scope, onCommand, disabled = false }:
           <span className="session-text" title={bar.tooltip}>
             {bar.text}
           </span>
+          {note}
           {arrow(1)}
           <CatalogList
             caseState={c}
@@ -82,6 +111,7 @@ export function SessionBar({ caseState: c, scope, onCommand, disabled = false }:
           <span className="session-text" title={bar.tooltip}>
             {bar.text}
           </span>
+          {note}
           <button
             type="button"
             className="time-strip-button"

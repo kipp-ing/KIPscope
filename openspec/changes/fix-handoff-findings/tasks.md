@@ -43,7 +43,7 @@ Write areas (disjoint):
 - [x] 6.3 Web: `sessionBar.test.ts` › "shows open warnings with the case notice"; `filedrop.test.ts` › "carries the open report across the page load"; `workspaces.test.ts` › "shows a dropped catalog's report after the page load".
 - [x] 6.4 CLI: `cli.test.ts` › "trims a catalog link"; `args.test.ts` › "maps the case forms" (the `--trim` lists); the `--help` test names `--trim`.
 
-- [ ] 6.5 Web: `sessionBar.test.ts` › "shows the open report in the session bar".
+- [x] 6.5 Web: `sessionBar.test.ts` › "shows the open report in the session bar".
 
 ## 7. Checks outside the suite
 

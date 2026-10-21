@@ -36,7 +36,7 @@ import { OptionBar } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
 import { useCaseCatalog } from "./case/catalog.ts";
 import { SessionBar } from "./case/SessionBar.tsx";
-import { caseOpenEvents, caseResultEvents } from "./case/sessionBar.ts";
+import { caseOpenEvents, caseResultEvents, endsOpenNote, openNoteText } from "./case/sessionBar.ts";
 import {
   type AnyDragSource,
   canAdd,
@@ -503,6 +503,9 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   // add-case-open K14): it ends as the next command is sent, so only the latest result's message
   // stays (until its ✕); that command's result may show its own.
   const resultNotice = useRef<string | undefined>(undefined);
+  // The open's report in the session bar (fix-handoff-findings X4a): it stays until the session is
+  // left (an accepted case.go, case.step or case.unlink) or its ✕; a reload drops it.
+  const [openNote, setOpenNote] = useState<string | undefined>();
   const showResult = useCallback(
     (events: readonly StripEvent[]) => {
       for (const event of events) {
@@ -531,6 +534,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
           })
         : resultStripEvents(result, open);
       showResult(events);
+      if (endsOpenNote(input, result)) setOpenNote(undefined);
       return result;
     },
     [toStrip, showResult, preload],
@@ -1489,6 +1493,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     };
     // One case notice (fix-handoff-findings X4): it ends with the tab's next command.
     showResult(caseOpenEvents(report, openedCase, nameOf));
+    setOpenNote(openNoteText(report, openedCase, nameOf));
   }, [start, openedCase, showResult]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
@@ -1632,6 +1637,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     caseState={workspace.case}
                     scope={workspace.scope}
                     onCommand={caseCommand}
+                    openNote={openNote}
+                    onDismissNote={() => setOpenNote(undefined)}
                   />
                 )
               }

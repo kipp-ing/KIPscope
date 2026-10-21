@@ -9,11 +9,48 @@
   min-width: 0;
 }
 
+/* Shrinks long before the open note does (X4a), so the session stays named as far as it fits. */
 .session-text {
-  flex: 0 1 auto;
+  flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The open's report (X4a): warning tone, a pill like the buttons, truncated with its full text as
+   tooltip; stays until ✕ or the next accepted case.go, case.step or case.unlink. */
+.session-open-note {
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  min-width: 6em;
+  max-width: 40%;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--sna);
+  border-radius: var(--radius);
+  background: var(--sna-fill);
+  color: var(--sna-ink);
+  font: 11px / 14px var(--font-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-open-note-dismiss {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: -4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: 10px / 14px var(--font-sans);
+  cursor: pointer;
+}
+
+.session-open-note-dismiss:is(:hover, :focus-visible) {
+  color: var(--sna-ink);
 }
 
 /* ‹ and › take their space always; linked they show on hover and focus within the bar. */
@@ -112,6 +149,8 @@
 }
 
 .session-rows button {
+  /* A row never shrinks: with hundreds of rows the list scrolls instead of squeezing them to 0 px. */
+  flex: none;
   overflow: hidden;
   text-overflow: ellipsis;
 }

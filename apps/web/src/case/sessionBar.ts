@@ -43,6 +43,7 @@ export const CASE_HINTS = {
   list: "All sessions of the catalog",
   align: "What stays in place when you step to another session",
   noAnchor: "No session in this catalog has an anchor",
+  dismissNote: "Dismiss",
 } as const;
 
 /** Local "YYYY-MM-DD HH:MM" of `t` (decimal ns). */
@@ -326,13 +327,14 @@ function caseTexts(
   return parts;
 }
 
-/** The open's one notice (case-handoff "Open warnings shown"): alignment fallback and missing
- *  signals as caseResultEvents words them, then the report's warnings, joined by " · "; [] when empty. */
-export function caseOpenEvents(
+/** The open's one notice text (case-handoff "Open warnings shown", design X4a): alignment fallback
+ *  and missing signals as caseResultEvents words them, then the report's warnings, joined by " · ";
+ *  undefined when empty. The session bar shows it as its note. */
+export function openNoteText(
   report: CaseOpenReport,
   after: WorkspaceCase,
   nameOf?: (signalId: string) => string | undefined,
-): StripEvent[] {
+): string | undefined {
   const parts = [
     ...caseTexts(
       { missing: report.missing, ...(report.alignFallback ? { alignFallback: true } : {}) },
@@ -341,5 +343,22 @@ export function caseOpenEvents(
     ),
     ...report.warnings,
   ];
-  return parts.length > 0 ? [caseNotice(parts.join(" · "))] : [];
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
+
+/** The open's one notice in the message line (X4): openNoteText as a case notice; [] when empty. */
+export function caseOpenEvents(
+  report: CaseOpenReport,
+  after: WorkspaceCase,
+  nameOf?: (signalId: string) => string | undefined,
+): StripEvent[] {
+  const text = openNoteText(report, after, nameOf);
+  return text === undefined ? [] : [caseNotice(text)];
+}
+
+/** Whether a command result ends the session bar's open note (X4a): only an accepted `case.go`,
+ *  `case.step` or `case.unlink` leaves the opened session; window commands, `case.align` and
+ *  refusals keep it. */
+export const endsOpenNote = (input: CommandInput, result: CommandResult): boolean =>
+  result.ok &&
+  (input.type === "case.go" || input.type === "case.step" || input.type === "case.unlink");

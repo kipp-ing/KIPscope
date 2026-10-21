@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type {
   CaseEntry,
   CaseOpenReport,
+  CommandInput,
   CommandResult,
   WorkspaceCase,
   WorkspaceScope,
@@ -17,8 +18,10 @@ import {
   caseOpenEvents,
   caseResultEvents,
   catalogRows,
+  endsOpenNote,
   goFirstMatch,
   moreText,
+  openNoteText,
   sessionBarText,
   stepCommand,
 } from "../src/case/sessionBar.ts";
@@ -398,6 +401,83 @@ describe("case messages", () => {
     expect(loadStatusText({ ...missing, errorStatus: 502, errorCode: "source_error" }, true)).toBe(
       "failed: unknown_signal: unknown signal",
     );
+  });
+});
+
+describe("open report in the session bar", () => {
+  const warning =
+    "origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS";
+  const note = `1 signal not in this session: JITTER \u00b7 ${warning}`;
+  const report: CaseOpenReport = {
+    count: 4,
+    current: 0,
+    dataRefs: ["testcar"],
+    missing: ["othercar/Irr_200h.JITTER"],
+    warnings: [warning],
+  };
+  const scope: WorkspaceScope = { dataRef: "testcar", from: at(0, 59), to: at(1, 11) };
+  const bar = (openNote?: string, linked = true) =>
+    renderToStaticMarkup(
+      createElement(SessionBar, {
+        caseState: caseAt(0, linked),
+        scope,
+        onCommand: () => undefined,
+        ...(openNote === undefined ? {} : { openNote, onDismissNote: () => undefined }),
+      }),
+    );
+
+  it("shows the open report in the session bar", () => {
+    const html = bar(note);
+    // Exactly one note element, after the session text, with the text and the same title.
+    const notes = html.match(/<span[^>]*class="session-open-note"[^>]*>/g) ?? [];
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain(`title="${note}"`);
+    expect(html).toContain(`\u26a0 ${note}</span>`);
+    expect(html.indexOf("session-open-note")).toBeGreaterThan(html.indexOf("session-text"));
+    // A button labelled Dismiss right after it.
+    const dismiss = html.match(/<button[^>]*aria-label="Dismiss"[^>]*>/);
+    expect(dismiss, "no Dismiss button").not.toBeNull();
+    expect(dismiss?.[0]).toContain('title="Dismiss"');
+    expect(html.indexOf('aria-label="Dismiss"')).toBeGreaterThan(html.indexOf("session-open-note"));
+    expect(html.match(/aria-label="Dismiss"/g)).toHaveLength(1);
+
+    // Without a note: none of it.
+    const plain = bar();
+    expect(plain).not.toContain("session-open-note");
+    expect(plain).not.toContain("Dismiss");
+    // Unlinked: the note still shows, after the vehicle text.
+    const unlinked = bar(note, false);
+    expect(unlinked.match(/class="session-open-note"/g)).toHaveLength(1);
+    expect(unlinked.indexOf("session-open-note")).toBeGreaterThan(unlinked.indexOf("session-text"));
+
+    // The note's text is the very string caseOpenEvents puts into its notice.
+    const after = caseAt(0);
+    expect(openNoteText(report, after)).toBe(note);
+    expect(caseOpenEvents(report, after)).toEqual([{ kind: "notice", text: note }]);
+    const named = openNoteText(report, after, () => "Jitter (ms)");
+    expect(named).toBe(`1 signal not in this session: Jitter (ms) \u00b7 ${warning}`);
+    expect(caseOpenEvents(report, after, () => "Jitter (ms)")).toEqual([
+      { kind: "notice", text: named },
+    ]);
+    // A warning alone, and neither.
+    expect(openNoteText({ ...report, missing: [] }, after)).toBe(warning);
+    expect(openNoteText({ ...report, missing: [], warnings: [] }, after)).toBeUndefined();
+
+    // The note ends when the user leaves the session.
+    const ok: CommandResult = { ok: true, revision: 9 };
+    const refused: CommandResult = { ok: false, code: "case_end", message: "no next session" };
+    const step: CommandInput = { type: "case.step", by: 1 };
+    const go: CommandInput = { type: "case.go", index: 2 };
+    const unlink: CommandInput = { type: "case.unlink" };
+    const align: CommandInput = { type: "case.align", align: { mode: "end" } };
+    const window: CommandInput = { type: "window.remove", windowId: "w1" };
+    expect(endsOpenNote(step, ok)).toBe(true);
+    expect(endsOpenNote(go, ok)).toBe(true);
+    expect(endsOpenNote(unlink, ok)).toBe(true);
+    expect(endsOpenNote(align, ok)).toBe(false);
+    expect(endsOpenNote(window, ok)).toBe(false);
+    expect(endsOpenNote(step, refused)).toBe(false);
+    expect(endsOpenNote(go, refused)).toBe(false);
   });
 });
 
