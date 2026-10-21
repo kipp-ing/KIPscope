@@ -902,8 +902,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   );
 
   // "Go to" and the range picker act on the bar target (design S5, D-024).
-  // The Go to error is remembered so clearing the field drops only that message.
-  const goToMessageRef = useRef<string | undefined>(undefined);
+  // A refused text's reason is returned for the picker's result line only, never posted to the
+  // message line (add-range-picker R10), so it shows once.
   const onGoTo = useCallback(
     (text: string): string | undefined => {
       const ws = liveRef.current.workspace;
@@ -919,19 +919,12 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
           error = e instanceof Error ? e.message : String(e);
         }
       }
-      const previous = goToMessageRef.current;
-      goToMessageRef.current = error;
-      if (error !== undefined) setMessage(error);
-      else if (previous !== undefined) toStrip({ kind: "dismiss", tone: "error", text: previous });
       return error;
     },
-    [navView, navigate, setMessage, toStrip],
+    [navView, navigate],
   );
-  const onGoToClear = useCallback(() => {
-    const goToMessage = goToMessageRef.current;
-    goToMessageRef.current = undefined;
-    if (goToMessage !== undefined) toStrip({ kind: "dismiss", tone: "error", text: goToMessage });
-  }, [toStrip]);
+  // Kept as pinned in R11; with nothing posted to the message line there is nothing to dismiss.
+  const onGoToClear = useCallback(() => {}, []);
   // The range picker (add-range-picker R11): open state for the keys, the typed "Go to" text kept
   // across opens, and Go as one range command with one history entry, as the strip's commands.
   const [pickerOpen, setPickerOpen] = useState(false);
