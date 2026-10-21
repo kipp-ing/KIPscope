@@ -18,6 +18,7 @@ input{font:inherit}
 .day:not([aria-disabled="true"]):hover{outline:1px solid #0284c7;outline-offset:-1px}
 .chip:hover{border-color:#0284c7;color:#0369a1}
 .primary:hover{background:#1e293b}
+.day:focus-visible{outline:2px solid #0369a1;outline-offset:1px}
 </style>
 </helmet>
 <div style="width: 900px; height: 660px; position: relative; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; color: #0f172a; background: #f8fafc; overflow: hidden;">
@@ -27,15 +28,15 @@ input{font:inherit}
     <span style="width: 1px; height: 18px; background: #e2e8f0; margin: 0 4px;"></span>
     <button class="ib" onClick="{{toggle}}" aria-haspopup="dialog" aria-expanded="{{expanded}}" title="Go to: pick a range or type one · t" style="width: 212px; height: 26px; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid {{btnBorder}}; border-radius: 4px; background: {{btnBg}}; font-variant-numeric: tabular-nums; text-align: left;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line><line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line></svg>
-      <span style="font-weight: 600;">{{shown.date}}</span>
-      <span>{{shown.time}}</span>
-      <span title="Duration (h:mm)" style="margin-left: auto; display: inline-flex; align-items: center; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{shown.dur}}</span>
+      <span title="{{shown.full}}" style="font-weight: 600;">{{shown.date}}</span>
+      <span title="{{shown.full}}">{{shown.time}}</span>
+      <span title="{{shown.durTip}}" style="margin-left: auto; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{shown.dur}}</span>
     </button>
     <button class="ib" aria-label="Back" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
     </button>
-    <button class="ib" aria-label="Reset" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+    <button class="ib" aria-label="Reset: show all data" title="Reset: fit all data · Home" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="5" x2="3" y2="19"></line><line x1="21" y1="5" x2="21" y2="19"></line><line x1="7" y1="12" x2="17" y2="12"></line><polyline points="10 9 7 12 10 15"></polyline><polyline points="14 9 17 12 14 15"></polyline></svg>
     </button>
     <button class="ib" aria-label="Link time axes" aria-pressed="true" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #7dd3fc; border-radius: 4px; background: #e0f2fe; padding: 0;">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path></svg>
@@ -64,19 +65,29 @@ input{font:inherit}
 
       <div style="display: flex; gap: 24px; padding: 0 12px;">
         <sc-for list="{{months}}" as="m" hint-placeholder-count="2">
-          <div style="flex: 1 1 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;">
-            <sc-for list="{{weekdays}}" as="wd" hint-placeholder-count="7">
-              <span style="height: 18px; text-align: center; font-size: 11px; color: #64748b;">{{wd.n}}</span>
-            </sc-for>
-            <sc-for list="{{m.cells}}" as="c" hint-placeholder-count="42">
-              <button class="day" onClick="{{c.pick}}" aria-disabled="{{c.off}}" title="{{c.tip}}" aria-label="{{c.tip}}" style="position: relative; height: 40px; padding: 0; border: 0; border-radius: {{c.radius}}; background: {{c.bg}}; visibility: {{c.vis}}; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;">
-                <span style="margin-top: 5px; font-weight: {{c.weight}}; color: {{c.ink}}; font-variant-numeric: tabular-nums; text-decoration: {{c.under}};">{{c.day}}</span>
-                <span aria-hidden="true" style="position: absolute; left: 5px; right: 5px; bottom: 4px; height: 12px; display: flex; align-items: flex-end; gap: 1px;">
-                  <sc-for list="{{c.bars}}" as="b" hint-placeholder-count="12">
-                    <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
-                  </sc-for>
-                </span>
-              </button>
+          <div role="grid" aria-label="{{m.name}}" onKeyDown="{{gridKey}}" style="flex: 1 1 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;">
+            <div role="row" style="display: contents;">
+              <sc-for list="{{weekdays}}" as="wd" hint-placeholder-count="7">
+                <span role="columnheader" aria-label="{{wd.full}}" style="height: 18px; text-align: center; font-size: 11px; color: #64748b;">{{wd.n}}</span>
+              </sc-for>
+            </div>
+            <sc-for list="{{m.weeks}}" as="wk" hint-placeholder-count="6">
+              <div role="row" style="display: contents;">
+                <sc-for list="{{wk.cells}}" as="c" hint-placeholder-count="7">
+                  <div role="gridcell" aria-selected="{{c.sel}}" style="height: 40px;">
+                    <sc-if value="{{c.real}}" hint-placeholder-val="{{ true }}">
+                      <button class="day" data-day="{{c.iso}}" tabindex="{{c.tab}}" onClick="{{c.pick}}" aria-disabled="{{c.off}}" title="{{c.tip}}" aria-label="{{c.aria}}" style="position: relative; width: 100%; height: 40px; padding: 0; border: 0; border-radius: {{c.radius}}; background: {{c.bg}}; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;">
+                        <span style="margin-top: 5px; font-weight: {{c.weight}}; color: {{c.ink}}; font-variant-numeric: tabular-nums; text-decoration: {{c.under}};">{{c.day}}</span>
+                        <span aria-hidden="true" style="position: absolute; left: 5px; right: 5px; bottom: 4px; height: 12px; display: flex; align-items: flex-end; gap: 1px;">
+                          <sc-for list="{{c.bars}}" as="b" hint-placeholder-count="12">
+                            <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
+                          </sc-for>
+                        </span>
+                      </button>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
             </sc-for>
           </div>
         </sc-for>
@@ -84,14 +95,15 @@ input{font:inherit}
 
       <div style="display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 11px; color: #64748b;">
         <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 1px; background: #94a3b8;"></span>data per 2 h</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 1px; background: #0284c7;"></span>drive</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 1px; background: #334155;"></span>drive</span>
+        <span title="Arrows: a day or a week · PageUp / PageDown: a month · Enter: pick">Keys: arrows, PageUp/Down, Enter</span>
         <span style="margin-left: auto;">{{hint}}</span>
       </div>
 
       <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid #f1f5f9; min-height: 24px;">
         <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">{{drivesLabel}}</span>
         <sc-for list="{{drives}}" as="d" hint-placeholder-count="2">
-          <button class="chip" onClick="{{d.pick}}" style="height: 24px; display: inline-flex; align-items: center; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; font-variant-numeric: tabular-nums;">{{d.start}}<span title="Duration (h:mm)" style="display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{d.dur}}</span></button>
+          <button class="chip" onClick="{{d.pick}}" title="{{d.tip}}" style="height: 24px; display: inline-flex; align-items: center; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; font-variant-numeric: tabular-nums;">{{d.start}}<span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{d.dur}}</span></button>
         </sc-for>
         <sc-if value="{{noDrives}}" hint-placeholder-val="{{ false }}">
           <span style="color: #64748b;">no drive</span>
@@ -113,8 +125,8 @@ input{font:inherit}
 
       <div style="display: flex; align-items: center; gap: 10px; height: 34px; padding-top: 10px; border-top: 1px solid #f1f5f9;">
         <sc-if value="{{res.ok}}" hint-placeholder-val="{{ true }}">
-          <span style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;">{{res.text}}</span>
-          <span title="Duration (h:mm)" style="display: inline-flex; align-items: center; gap: 3px; color: #64748b; font-variant-numeric: tabular-nums;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{res.dur}}</span>
+          <span title="{{res.full}}" style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;">{{res.text}}</span>
+          <span title="{{res.durTip}}" style="display: inline-flex; align-items: center; gap: 3px; color: #64748b; font-variant-numeric: tabular-nums;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{res.dur}}</span>
         </sc-if>
         <sc-if value="{{res.bad}}" hint-placeholder-val="{{ false }}">
           <span style="color: #be123c;">{{res.err}}</span>
@@ -135,6 +147,7 @@ const FIRST = ['2026-10-11', '14:34:24'];
 const LAST = ['2026-10-21', '01:52:43'];
 const TODAY = '2026-10-21';
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WDFULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const START = {
   drive: { start: '2026-10-13', end: '2026-10-13', from: '15:06:03', to: '15:18:33' },
@@ -149,7 +162,22 @@ function secs(t) { const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t.trim()); 
 function yy(day) { return day.slice(2); }
 function hms(x) { return p2(Math.floor(x / 3600)) + ':' + p2(Math.floor((x % 3600) / 60)) + ':' + p2(x % 60); }
 function hm(t) { return t.length > 5 ? t.slice(0, 5) : t; }
-function hmDur(x) { return Math.floor(x / 3600) + ':' + p2(Math.floor((x % 3600) / 60)); }
+// durations carry a unit: 41 s under a minute, 0:10 h up to 48 h, then 9 d 11 h; the tooltip says it in words
+function dur(x) {
+  if (x < 60) return x + ' s';
+  if (x >= 48 * 3600) return Math.floor(x / 86400) + ' d ' + Math.floor((x % 86400) / 3600) + ' h';
+  return Math.floor(x / 3600) + ':' + p2(Math.floor((x % 3600) / 60)) + ' h';
+}
+function durLong(x) {
+  if (x < 60) return 'Duration ' + x + ' s';
+  const d = x >= 48 * 3600 ? Math.floor(x / 86400) : 0; const h = Math.floor((x - d * 86400) / 3600); const m = Math.floor((x % 3600) / 60);
+  return 'Duration ' + [d ? d + ' d' : '', h ? h + ' h' : '', m || (!d && !h) ? m + ' min' : ''].filter(Boolean).join(' ');
+}
+function addDays(day, n) { const t = new Date(ms(day) + n * 86400000); return iso(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()); }
+function addMonths(day, n) {
+  const y = Number(day.slice(0, 4)), m = Number(day.slice(5, 7)) + n, d = Number(day.slice(8));
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); return iso(y, m, Math.min(d, last));
+}
 function result(r) {
   const a = secs(r.from), b = secs(r.to);
   if (a === null || b === null) return { ok: false, bad: true, err: 'Times as hh:mm' };
@@ -157,14 +185,13 @@ function result(r) {
   const span = days * 86400 + b - a;
   if (span <= 0) return { ok: false, bad: true, err: 'To lies before From' };
   const time = span < 60 ? hms(a) : hms(a).slice(0, 5);
-  const d = span < 60 ? span + ' s' : hmDur(span);
-  return { ok: true, bad: false, date: yy(r.start), time: time, text: yy(r.start) + ' ' + time, dur: d, err: '' };
+  return { ok: true, bad: false, date: yy(r.start), time: time, text: yy(r.start) + ' ' + time, full: wd(r.start) + ' ' + r.start + ' ' + time, dur: dur(span), durTip: durLong(span), err: '' };
 }
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     const s = START[props.example || 'drive'] || START.drive;
-    this.state = { open: true, left: 9, start: s.start, end: s.end, from: s.from, to: s.to, phase: 'start', applied: Object.assign({}, s) };
+    this.state = { open: true, left: 9, start: s.start, end: s.end, from: s.from, to: s.to, phase: 'start', focus: s.start, applied: Object.assign({}, s) };
   }
   renderVals() {
     const st = this.state;
@@ -173,47 +200,73 @@ class Component extends DCLogic {
       if (st.phase === 'start' || ms(day) < ms(st.start)) set({ start: day, end: day, phase: 'end' });
       else set({ end: day, phase: 'start' });
     };
+    // the one tab stop: the focused day if it is on screen, else the first shown day
+    const inView = (day) => { const mo = Number(day.slice(5, 7)); return day.slice(0, 4) === '2026' && mo >= st.left && mo <= st.left + 1; };
+    const focusDay = inView(st.focus) ? st.focus : iso(2026, st.left, 1);
+    const gridKey = (e) => {
+      const steps = { ArrowLeft: (x) => addDays(x, -1), ArrowRight: (x) => addDays(x, 1), ArrowUp: (x) => addDays(x, -7), ArrowDown: (x) => addDays(x, 7),
+        PageUp: (x) => addMonths(x, -1), PageDown: (x) => addMonths(x, 1) };
+      if (!e || !e.key) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault(); const key = focusDay.slice(5); if (DENS[key]) pick(focusDay); return;
+      }
+      const f = steps[e.key]; if (!f) return;
+      e.preventDefault();
+      let next = f(focusDay);
+      if (next < '2026-08-01') next = '2026-08-01'; if (next > '2026-11-30') next = '2026-11-30';
+      const mo = Number(next.slice(5, 7));
+      const left = mo < st.left ? mo : mo > st.left + 1 ? mo - 1 : st.left;
+      const root = e.currentTarget && e.currentTarget.getRootNode ? e.currentTarget.getRootNode() : null;
+      set({ focus: next, left: Math.max(8, Math.min(10, left)) });
+      setTimeout(() => { const el = root && root.querySelector ? root.querySelector('[data-day="' + next + '"]') : null; if (el) el.focus(); }, 0);
+    };
     const months = [st.left, st.left + 1].map((m) => {
       const first = (new Date(Date.UTC(2026, m - 1, 1)).getUTCDay() + 6) % 7;
       const n = new Date(Date.UTC(2026, m, 0)).getUTCDate();
       const cells = [];
       for (let i = 0; i < 42; i++) {
         const d = i - first + 1;
-        if (d < 1 || d > n) { cells.push({ vis: 'hidden', off: 'true', day: '', bars: [], bg: 'transparent', ink: '#0f172a', weight: 400, radius: '4px', under: 'none', tip: '', pick: () => {} }); continue; }
+        if (d < 1 || d > n) { cells.push({ real: false, sel: 'false', iso: '', tab: '-1', aria: '', off: 'true', day: '', bars: [], bg: 'transparent', ink: '#0f172a', weight: 400, radius: '4px', under: 'none', tip: '', pick: () => {} }); continue; }
         const day = iso(2026, m, d);
         const key = p2(m) + '-' + p2(d);
         const dens = DENS[key];
         const isEnd = day === st.start || day === st.end;
         const inRange = ms(day) > ms(st.start) && ms(day) < ms(st.end);
         const drives = DRIVES.filter((x) => x[0] === key).length;
-        const bars = dens ? dens.map((v) => ({ h: v ? Math.max(2, Math.round((v - 4.5) / 3.5 * 12)) : 0, c: isEnd ? (v >= 7 ? '#ffffff' : 'rgba(255,255,255,0.65)') : (v >= 7 ? '#0284c7' : '#94a3b8') })) : [];
+        const bars = dens ? dens.map((v) => ({ h: v ? Math.max(2, Math.round((v - 4.5) / 3.5 * 12)) : 0, c: isEnd ? (v >= 7 ? '#ffffff' : 'rgba(255,255,255,0.65)') : (v >= 7 ? '#334155' : '#94a3b8') })) : [];
         cells.push({
-          vis: 'visible', off: dens ? 'false' : 'true', day: String(d), bars: bars,
+          real: true, iso: day, tab: day === focusDay ? '0' : '-1', sel: isEnd || inRange ? 'true' : 'false',
+          aria: wd(day) + ' ' + d + ', ' + (dens ? drives + (drives === 1 ? ' drive' : ' drives') : 'no data'),
+          off: dens ? 'false' : 'true', day: String(d), bars: bars,
           bg: isEnd ? '#0284c7' : inRange ? '#e0f2fe' : dens ? '#f8fafc' : 'transparent',
           ink: isEnd ? '#ffffff' : dens ? '#0f172a' : '#64748b',
           weight: dens ? 600 : 400, radius: '4px', under: day === TODAY ? 'underline' : 'none',
-          tip: wd(day) + ' ' + yy(day) + (dens ? ' · ' + ROWS[key] + ' rows · ' + drives + (drives === 1 ? ' drive' : ' drives') : ' · no data'),
-          pick: () => { if (dens) pick(day); }
+          tip: wd(day) + ' ' + day + (dens ? ' · ' + ROWS[key] + ' rows · ' + drives + (drives === 1 ? ' drive' : ' drives') : ' · no data'),
+          pick: () => { if (dens) { pick(day); set({ focus: day }); } }
         });
       }
-      return { name: MONTHS[m - 1] + ' 2026', cells: cells };
+      const weeks = [];
+      for (let w = 0; w < 6; w++) weeks.push({ cells: cells.slice(w * 7, w * 7 + 7) });
+      return { name: MONTHS[m - 1] + ' 2026', weeks: weeks };
     });
     const res = result(st);
     const shownRes = result(st.applied);
     const startKey = st.start.slice(5);
     const drives = DRIVES.filter((x) => x[0] === startKey).map((x) => ({
-      start: x[1].slice(0, 5), dur: hmDur(secs(x[2]) - secs(x[1])),
+      start: x[1].slice(0, 5), dur: dur(secs(x[2]) - secs(x[1])),
+      tip: wd(st.start) + ' ' + st.start + ' ' + x[1].slice(0, 5) + ' · ' + durLong(secs(x[2]) - secs(x[1])),
       pick: () => set({ end: st.start, from: x[1], to: x[2], phase: 'start' })
     }));
     return {
       open: st.open, expanded: st.open ? 'true' : 'false',
       btnBorder: st.open ? '#0284c7' : '#cbd5e1', btnBg: st.open ? '#f0f9ff' : '#ffffff',
-      shown: { date: shownRes.ok ? shownRes.date : '', time: shownRes.ok ? shownRes.time : '', dur: shownRes.ok ? shownRes.dur : '' },
+      shown: { date: shownRes.ok ? shownRes.date : '', time: shownRes.ok ? shownRes.time : '', full: shownRes.ok ? shownRes.full : '', dur: shownRes.ok ? shownRes.dur : '', durTip: shownRes.ok ? shownRes.durTip : '' },
+      gridKey: gridKey,
       toggle: () => set({ open: !st.open }),
       prev: () => { if (st.left > 8) set({ left: st.left - 1 }); }, next: () => { if (st.left < 10) set({ left: st.left + 1 }); },
       prevOff: st.left <= 8 ? 'true' : 'false', nextOff: st.left >= 10 ? 'true' : 'false',
       months: months,
-      weekdays: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((n) => ({ n: n })),
+      weekdays: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((n, i) => ({ n: n, full: WDFULL[i] })),
       hint: st.phase === 'end' ? 'Click the last day, or set the times' : 'Click a day; a second click ends the range',
       drivesLabel: 'DRIVES ' + wd(st.start).toUpperCase() + ' ' + Number(st.start.slice(8)),
       drives: drives, noDrives: drives.length === 0,

@@ -13,7 +13,7 @@ body{margin:0;background:#f8fafc}
 a{color:#0369a1}a:hover{color:#0c4a6e}
 </style>
 </helmet>
-<div style="width: 1440px; height: 860px; box-sizing: border-box; padding: 20px 24px 0; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; color: #0f172a; background: #f8fafc; overflow: hidden;">
+<div style="width: 1440px; height: 920px; box-sizing: border-box; padding: 20px 24px 0; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; color: #0f172a; background: #f8fafc; overflow: hidden;">
 
   <div style="display: flex; align-items: baseline; gap: 12px; height: 28px;">
     <span style="font-size: 16px; font-weight: 600;">Time strip</span>
@@ -36,8 +36,9 @@ a{color:#0369a1}a:hover{color:#0c4a6e}
               <span style="font-weight: 600; color: #0f172a;">{{s.cap}}</span>
               <span>{{s.cap2}}</span>
             </div>
-            <div title="{{s.tt}}" style="position: relative; width: 1192px; height: {{s.h}}px; padding: {{s.pt}}px 10px 0; box-sizing: border-box; background: #ffffff; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
-              <div style="position: relative; height: {{s.th}}px;">
+            <div title="{{s.tt}}" style="position: relative; width: 1192px; height: {{s.h}}px; padding: {{s.pt}}px 10px 0; box-sizing: border-box; display: flex; align-items: flex-start; background: #ffffff; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
+              <span title="{{s.lblLt}}" style="flex: 0 0 {{s.slot}}px; height: {{s.th}}px; display: flex; align-items: center; overflow: hidden; white-space: nowrap; font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums;">{{s.lblL}}</span>
+              <div style="position: relative; flex: 1 1 auto; min-width: 0; height: {{s.th}}px;">
                 <sc-for list="{{s.under}}" as="q" hint-placeholder-count="3">
                   <span title="{{q.tt}}" style="position: absolute; left: {{q.l}}; width: {{q.w}}; margin-left: {{q.ml}}px; top: {{q.t}}px; height: {{q.h}}px; background: {{q.bg}}; border-radius: {{q.rad}}px; box-shadow: {{q.sh}}; border-left: {{q.bl}}; box-sizing: border-box;"></span>
                 </sc-for>
@@ -59,15 +60,29 @@ a{color:#0369a1}a:hover{color:#0c4a6e}
                 <sc-for list="{{s.labels}}" as="t" hint-placeholder-count="10">
                   <span style="position: absolute; top: {{t.t}}px; left: {{t.l}}; margin-left: 3px; font-size: 10px; line-height: 10px; color: #475569; font-variant-numeric: tabular-nums;">{{t.x}}</span>
                 </sc-for>
+                <sc-for list="{{s.marks}}" as="m" hint-placeholder-count="1">
+                  <svg viewBox="0 0 10 10" preserveAspectRatio="none" aria-hidden="true" style="position: absolute; left: {{m.l}}; margin-left: {{m.ml}}px; top: {{m.t}}px; width: {{m.w}}px; height: {{m.h}}px; overflow: visible;"><path d="{{m.d}}" fill="{{m.fill}}"></path></svg>
+                </sc-for>
+                <sc-if value="{{s.hasHov}}" hint-placeholder-val="{{ false }}">
+                  <span aria-hidden="true" style="position: absolute; left: {{s.hovL}}; top: 0; width: 1px; height: {{s.th}}px; background: #475569;"></span>
+                  <span role="tooltip" style="position: absolute; z-index: 2; left: {{s.hovL}}; top: {{s.hovT}}px; transform: translateX(-50%); padding: 2px 6px; border-radius: 4px; background: #0f172a; color: #ffffff; font-size: 11px; line-height: 14px; white-space: nowrap; font-variant-numeric: tabular-nums;">{{s.hovText}}</span>
+                </sc-if>
                 <sc-for list="{{s.flags}}" as="f" hint-placeholder-count="2">
-                  <button aria-label="{{f.aria}}" title="{{f.tt}}" style="position: absolute; left: {{f.l}}; margin-left: {{f.ml}}px; top: 15px; width: 16px; height: 12px; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: flex-start; justify-content: center;">
-                    <span style="margin-top: 1px; width: 11px; height: 10px; border-radius: 2px; background: {{f.bg}}; color: {{f.fg}}; box-shadow: {{f.sh}}; font-size: 9px; font-weight: 700; line-height: 10px; text-align: center; box-sizing: border-box;">{{f.x}}</span>
+                  <button aria-label="{{f.aria}}" title="{{f.tt}}" style="position: absolute; z-index: 1; left: {{f.l}}; margin-left: {{f.ml}}px; top: 10px; width: {{f.hw}}px; height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: flex-start; justify-content: {{f.jc}}; gap: 2px;">
+                    <sc-if value="{{f.cl}}" hint-placeholder-val="{{ false }}">
+                      <svg width="5" height="8" viewBox="0 0 5 8" aria-hidden="true" style="margin-top: 7px;"><path d="M5 0 L0 4 L5 8 Z" fill="#0f172a"></path></svg>
+                    </sc-if>
+                    <span style="margin-top: 5px; width: {{f.vw}}px; height: 12px; border-radius: 2px; background: {{f.bg}}; color: {{f.fg}}; box-shadow: {{f.sh}}; outline: {{f.ol}}; outline-offset: 1px; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; box-sizing: border-box;">{{f.x}}</span>
+                    <sc-if value="{{f.cr}}" hint-placeholder-val="{{ false }}">
+                      <svg width="5" height="8" viewBox="0 0 5 8" aria-hidden="true" style="margin-top: 7px;"><path d="M0 0 L5 4 L0 8 Z" fill="#0f172a"></path></svg>
+                    </sc-if>
                   </button>
                 </sc-for>
                 <sc-if value="{{s.hasText}}" hint-placeholder-val="{{ false }}">
                   <span style="position: absolute; left: 0; top: 0; height: {{s.th}}px; display: flex; align-items: center; padding-right: 8px; background: #ffffff; font-size: 11px; color: #64748b;">{{s.text}}</span>
                 </sc-if>
               </div>
+              <span title="{{s.lblRt}}" style="flex: 0 0 {{s.slot}}px; height: {{s.th}}px; display: flex; align-items: center; justify-content: flex-end; overflow: hidden; white-space: nowrap; font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums;">{{s.lblR}}</span>
               <sc-if value="{{s.hasTip}}" hint-placeholder-val="{{ false }}">
                 <div role="tooltip" style="position: absolute; z-index: 2; top: {{s.tipTop}}px; left: {{s.tipLeft}}px; width: 300px; padding: 6px 8px; background: #0f172a; color: #ffffff; border-radius: 4px; font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; box-shadow: 0 4px 12px rgba(15,23,42,0.18);">
                   <div style="font-weight: 600;">{{s.tipHead}}</div>
@@ -83,22 +98,26 @@ a{color:#0369a1}a:hover{color:#0c4a6e}
     </div>
   </sc-for>
 
-  <div style="display: flex; align-items: center; gap: 18px; height: 36px; padding-left: 200px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #334155;">
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #7c3aed;"></span>Change</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #be123c;"></span>Fault</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #b45309;"></span>Stored</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #64748b;"></span>Other</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 5px; height: 7px; border-radius: 1px; background: #ffffff; box-shadow: inset 0 0 0 1px #be123c;"></span>Fault memory read</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 3px; border-radius: 1px; background: #94a3b8;"></span>Data</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="display: inline-flex; gap: 3px;"><span style="width: 8px; height: 3px; background: #94a3b8;"></span><span style="width: 8px; height: 3px; background: #94a3b8;"></span></span>Gap (no rows ≥ 2 s)</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 10px; background: rgba(2,132,199,0.10); border-left: 1px solid #0284c7; border-right: 1px solid #0284c7;"></span>Shown range</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 5px; border-radius: 1px; background: #475569;"></span>Drive</span>
-    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 11px; height: 10px; border-radius: 2px; background: #0f172a; color: #ffffff; font-size: 9px; font-weight: 700; line-height: 10px; text-align: center;">A</span><span style="width: 11px; height: 10px; border-radius: 2px; background: #ffffff; box-shadow: inset 0 0 0 1px #0f172a; color: #0f172a; font-size: 9px; font-weight: 700; line-height: 10px; text-align: center; box-sizing: border-box;">B</span>Cursor flags (click: back into view)</span>
+  <div style="display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; row-gap: 4px; min-height: 36px; padding: 8px 0 8px 200px; border-top: 1px solid #e2e8f0; box-sizing: border-box; font-size: 11px; color: #334155;">
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 2px; height: 7px; border-radius: 1px; background: #7c3aed;"></span>Change (short tick)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="position: relative; width: 7px; height: 14px;"><span style="position: absolute; left: 2.5px; top: 0; width: 2px; height: 14px; background: #be123c;"></span><span style="position: absolute; left: 0; top: 0; width: 7px; height: 4px; border-radius: 1px; background: #be123c;"></span></span>Fault (full height, head)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 6px; height: 7px; border-radius: 1px; background: #ffffff; box-shadow: inset 0 0 0 1.5px #b45309;"></span>Stored · fault memory read (hollow)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 4px; height: 4px; border-radius: 2px; background: #64748b;"></span>Other (dot)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 3px; border-radius: 1px; background: #64748b;"></span>Data</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="display: inline-flex; gap: 3px;"><span style="width: 8px; height: 3px; background: #64748b;"></span><span style="width: 8px; height: 3px; background: #64748b;"></span></span>Gap (no rows ≥ 2 s)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 10px; background: rgba(2,132,199,0.10); border-left: 1px solid #0284c7; border-right: 1px solid #0284c7;"></span>Shown range (the only accent; ≥ 3 px, caret when narrow)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 5px; border-radius: 1px; background: #334155;"></span>Drive</span>
+    <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 14px; height: 12px; border-radius: 2px; background: #0f172a; color: #ffffff; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center;">A</span><span style="width: 14px; height: 12px; border-radius: 2px; background: #ffffff; box-shadow: inset 0 0 0 1px #0f172a; color: #0f172a; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; box-sizing: border-box;">B</span><span style="margin-left: 2px;">Cursor flags 14 × 12, hit 24 × 24 (click or Shift+A / Shift+B: into view)</span></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 26px; height: 12px; border-radius: 2px; background: #ffffff; box-shadow: inset 0 0 0 1px #0f172a; color: #0f172a; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; box-sizing: border-box;">A·B</span>A and B closer than 18 px</span>
+    <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 14px; height: 12px; border-radius: 2px; background: #ffffff; box-shadow: inset 0 0 0 1px #0f172a; color: #0f172a; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; box-sizing: border-box;">B</span><svg width="5" height="8" viewBox="0 0 5 8" aria-hidden="true"><path d="M0 0 L5 4 L0 8 Z" fill="#0f172a"></path></svg><span style="margin-left: 2px;">Cursor beyond the strip (edge caret)</span></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums;">15:06 … 15:18</span>End labels in 48 px slots</span>
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":920}}'>
 const TRACK = 1172;
+// recommended strip: 48 px end-label slots on both sides (fit 15:06:03 at 10 px), track 1192 - 20 - 96 = 1076 px
+const TRACK_R = 1076;
 const ACC = '#0284c7';
 const COL = { change: '#7c3aed', active: '#be123c', stored: '#b45309', other: '#64748b' };
 // smart451 density, 10 s buckets from 15:06:00 (Drive 3 scope 15:06:03 + 750 s)
@@ -124,11 +143,11 @@ const S2 = { cov: [[1.38, 32.204], [32.279, 98.68]], gaps: [[32.241, 'No data 11
 
 function R(o) { return Object.assign({ l: '0%', w: '100%', ml: 0, t: 0, h: 1, bg: 'transparent', rad: 0, sh: 'none', bl: 'none', tt: '' }, o); }
 function P(v) { return v + '%'; }
-function px(pct) { return pct / 100 * TRACK; }
-function cov(s, t, h) {
-  const out = []; const r0 = s.range[0], r1 = s.range[1];
+function px(pct, tr) { return pct / 100 * (tr || TRACK); }
+function cov(s, t, h, ink) {
+  const out = []; const r0 = s.range[0], r1 = s.range[1]; const k = ink || '#94a3b8';
   s.cov.forEach(function (c) {
-    [[c[0], Math.min(c[1], r0), '#94a3b8'], [Math.max(c[0], r0), Math.min(c[1], r1), ACC], [Math.max(c[0], r1), c[1], '#94a3b8']].forEach(function (p) {
+    [[c[0], Math.min(c[1], r0), k], [Math.max(c[0], r0), Math.min(c[1], r1), ACC], [Math.max(c[0], r1), c[1], k]].forEach(function (p) {
       if (p[1] > p[0]) out.push(R({ l: P(p[0]), w: P((p[1] - p[0]).toFixed(3)), t: t, h: h, bg: p[2], rad: 1 }));
     });
   });
@@ -162,14 +181,14 @@ function area(counts, off, span, bw, sqrt, floor) {
   });
   return 'M0 100 L' + pts.map(function (p) { return p[0] + ' ' + p[1]; }).join(' L') + ' L1000 100 Z';
 }
-function base(o) { return Object.assign({ mb: 0, cap2: '', tt: '', pt: 0, under: [], over: [], labels: [], flags: [], bars: [], hasArea: false, hasBars: false, hasText: false, hasTip: false, area: '', aT: 0, aH: 0, aFill: 'none', bT: 0, bH: 0, text: '', tipTop: 0, tipLeft: 0, tipHead: '', tipLines: [] }, o); }
+function base(o) { return Object.assign({ mb: 0, cap2: '', tt: '', pt: 0, under: [], over: [], labels: [], flags: [], bars: [], marks: [], slot: 0, lblL: '', lblR: '', lblLt: '', lblRt: '', hasHov: false, hovL: '0%', hovT: 0, hovText: '', hasArea: false, hasBars: false, hasText: false, hasTip: false, area: '', aT: 0, aH: 0, aFill: 'none', bT: 0, bH: 0, text: '', tipTop: 0, tipLeft: 0, tipHead: '', tipLines: [] }, o); }
 
-const CAP3 = 'Session · Drive 3 · 26-10-13 15:06  0:10';
-const CAP3b = 'shown 26-10-13 15:06  0:12 · 1 of 2 events · A 15:09:12 · B 15:11:40';
-const CAP2 = 'Session · Drive 2 · 26-10-13 11:06  1:06';
-const CAP2b = 'shown 26-10-13 11:52  0:08 · 4 of 258 events · one logger gap of 3 s at 11:27:54';
-const CAPV = 'Unlinked · smart451 · 26-10-11 14:34  227:18';
-const CAPVb = 'shown 26-10-13 15:06  0:12 · 147 of 1,687 events · 17 drives';
+const CAP3 = 'Session · Drive 3 · 26-10-13 15:06  0:10 h';
+const CAP3b = 'shown 26-10-13 15:06  0:12 h · 1 of 2 events · A 15:09:12 · B 15:11:40';
+const CAP2 = 'Session · Drive 2 · 26-10-13 11:06  1:06 h';
+const CAP2b = 'shown 26-10-13 11:52  0:08 h · 4 of 258 events · one logger gap of 3 s at 11:27:54';
+const CAPV = 'Unlinked · smart451 · 26-10-11 14:34  9 d 11 h';
+const CAPVb = 'shown 26-10-13 15:06  0:12 h · 147 of 1,687 events · 17 drives';
 
 class Component extends DCLogic {
   renderVals() {
@@ -211,50 +230,87 @@ class Component extends DCLogic {
       return R({ l: P(d[0]), w: w.toFixed(1) + 'px', t: (11 + 22 - hb).toFixed(1), h: hb.toFixed(1), bg: ACC, rad: 1 });
     });
     const v4 = base({ cap: CAPV, cap2: CAPVb, h: 46, th: 44, hasArea: true, area: arV, aT: 11, aH: 22, aFill: '#cbd5e1',
-      under: mids(34), over: v4drives.concat([R({ l: '21.535%', w: '4px', ml: -2, t: 8, h: 27, sh: 'inset 0 0 0 1px #0f172a', rad: 1, tt: 'Shown 26-10-13 15:06  0:12' })], pins(VPINS, 1, 7)),
+      under: mids(34), over: v4drives.concat([R({ l: '21.535%', w: '4px', ml: -2, t: 8, h: 27, sh: 'inset 0 0 0 1px #0f172a', rad: 1, tt: 'Shown 26-10-13 15:06  0:12 h' })], pins(VPINS, 1, 7)),
       labels: VMID.map(function (m) { return { l: P(m[0]), t: 34, x: m[1] }; }) });
 
-    // 5 recommended, 28 px in every state (27 px track): pins y 2-9, presence line y 12-15, flags y 16-26 (hit 16 x 12 at y 15-27)
+    // 5 recommended, 28 px in every state (27 px track between two 48 px end-label slots):
+    // events lane y 0-10 (shapes y 2-9, hit 10 x 11), presence line y 12-15, flags 14 x 12 at y 15-27,
+    // flag hit 24 x 24 at y 10-34 (overhangs the strip by 6 px into the gap below, clear of the events' hit areas)
     const TH = 27;
-    const flag = function (k, at, ml, hover) {
+    const SLOT = 48;
+    // one shape per kind: change = short tick, fault (active, pending) = full-height tick with a head,
+    // stored or fault memory read = hollow, other = dot; every pin gets an invisible 10 px hit area on top
+    const evs = function (list) {
+      const vis = [], hit = [];
+      list.forEach(function (p) {
+        const kind = p[3] ? 'stored' : p[2]; const c = p[3] ? (COL[p[2]] || COL.other) : (COL[kind] || COL.other); const many = p[1] > 1;
+        const l = P(p[0]);
+        if (kind === 'change') vis.push(R({ l: l, w: (many ? 4 : 2) + 'px', ml: many ? -2 : -1, t: 2, h: 7, bg: c, rad: 1 }));
+        else if (kind === 'active' || kind === 'pending') { vis.push(R({ l: l, w: '2px', ml: -1, t: 0, h: TH, bg: c })); vis.push(R({ l: l, w: '7px', ml: -3.5, t: 0, h: 4, bg: c, rad: 1 })); }
+        else if (kind === 'stored') vis.push(R({ l: l, w: (many ? 8 : 6) + 'px', ml: many ? -4 : -3, t: 2, h: 7, bg: '#ffffff', sh: 'inset 0 0 0 1.5px ' + c, rad: 1 }));
+        else vis.push(R({ l: l, w: '4px', ml: -2, t: 4, h: 4, bg: c, rad: 2 }));
+        hit.push(R({ l: l, w: '10px', ml: -5, t: 0, h: 11, tt: p[4] || (p[1] + (many ? ' events' : ' event') + (p[3] ? ' · fault memory read' : '')) }));
+      });
+      return vis.concat(hit);
+    };
+    const flag = function (k, at, time, o) {
       const a = k === 'A';
-      return { l: P(at), ml: ml, x: k, aria: 'Bring cursor ' + k + ' into view',
-        tt: k + ' ' + (a ? '15:09:12' : '15:11:40') + ' · click: bring ' + k + ' into view',
-        bg: hover ? ACC : (a ? '#0f172a' : '#ffffff'), fg: hover || a ? '#ffffff' : '#0f172a', sh: hover || a ? 'none' : 'inset 0 0 0 1px #0f172a' };
+      return Object.assign({ l: P(at), ml: -12, hw: 24, vw: 14, jc: 'center', cl: false, cr: false, ol: 'none', x: k,
+        aria: 'Bring cursor ' + k + ' into view',
+        tt: k + ' ' + time + ' · click or Shift+' + k + ': bring ' + k + ' into view',
+        bg: a ? '#0f172a' : '#ffffff', fg: a ? '#ffffff' : '#0f172a', sh: a ? 'none' : 'inset 0 0 0 1px #0f172a' }, o || {});
+    };
+    // A and B closer than 18 px: one flag, hit 32 x 24
+    const flagAB = function (at, tt) {
+      return { l: P(at), ml: -16, hw: 32, vw: 26, jc: 'center', cl: false, cr: false, ol: 'none', x: 'A·B',
+        aria: 'Bring cursors A and B into view', tt: tt, bg: '#ffffff', fg: '#0f172a', sh: 'inset 0 0 0 1px #0f172a' };
     };
     const lines = function (list) {
       return list.map(function (c) { return c[1] ? R({ l: P(c[0]), w: '1px', t: 0, h: TH, bl: '1px dashed #0f172a' }) : R({ l: P(c[0]), w: '1px', t: 0, h: TH, bg: '#0f172a' }); });
     };
+    const ends = function (o, l, lt, r, rt) { return Object.assign(o, { slot: SLOT, lblL: l, lblLt: lt, lblR: r, lblRt: rt }); };
     const recS = function (s, cap, cap2) {
       return base({ cap: cap, cap2: cap2, h: 29, th: TH,
         under: brush(s.range, TH).slice(0, 1).concat([R({ t: 13, h: 1, bg: '#e2e8f0' })]),
-        over: cov(s, 12, 3).concat(gaps(s, 11, 5), brush(s.range, TH).slice(1), pins(s.pins, 2, 7)) });
+        over: cov(s, 12, 3, '#64748b').concat(gaps(s, 11, 5), brush(s.range, TH).slice(1), evs(s.pins)) });
     };
-    const r3 = recS(S3, CAP3, CAP3b);
+    // Drive 3: whole session shown; pointer over 62 % shows its time under the strip
+    const r3 = ends(recS(S3, CAP3, CAP3b + ' · pointer at 15:13:48'), '15:06', 'Tue 2026-10-13 15:06:03', '15:18', 'Tue 2026-10-13 15:18:33');
     r3.over = r3.over.concat(lines([[S3.a, 0], [S3.b, 1]]));
-    r3.flags = [flag('A', S3.a, -8, false), flag('B', S3.b, -8, false)];
-    // Drive 2: A at 11:31:10 lies outside the shown 11:52 + 0:08 and is hovered; B at 11:56:58.869 inside
-    const r2 = recS(S2, CAP2, 'shown 26-10-13 11:52  0:08 · 4 of 258 events · gap 3 s at 11:27:54 · A 11:31:10 · B 11:56:58.869');
-    r2.over = r2.over.concat(lines([[37.01, 0], [74.97, 1]]));
-    const fa = flag('A', 37.01, -8, true); fa.tt = 'A 11:31:10 · outside the view · click: bring A into view';
-    const fb = flag('B', 74.97, -8, false); fb.tt = 'B 11:56:58.869 · click: bring B into view';
+    r3.flags = [flag('A', S3.a, '15:09:12'), flag('B', S3.b, '15:11:40')];
+    r3.hasHov = true; r3.hovL = '62%'; r3.hovT = 31; r3.hovText = '15:13:48'; r3.mb = 22;
+    // Drive 2 (scope 11:06:00 - 12:14:00): A at 11:31:10 lies outside the shown 11:52 + 0:08 h and is hovered (flag stays black);
+    // B at 12:31:40 lies beyond the session end: no line, its flag sits at the edge with a caret
+    const r2 = ends(recS(S2, CAP2, 'shown 26-10-13 11:52  0:08 h · 4 of 258 events · gap 3 s at 11:27:54 · A 11:31:10 · B 12:31:40 (after the end)'),
+      '11:06', 'Tue 2026-10-13 11:06:00', '12:14', 'Tue 2026-10-13 12:14:00');
+    r2.over = r2.over.concat(lines([[37.01, 0]]));
+    const fa = flag('A', 37.01, '11:31:10', { ol: '2px solid #94a3b8' }); fa.tt = 'A 11:31:10 · outside the view · click or Shift+A: bring A into view';
+    const fb = flag('B', 100, '12:31:40', { ml: -24, jc: 'flex-end', cr: true });
+    fb.tt = 'B 26-10-13 12:31:40 · after the end of this session · click or Shift+B: bring B into view'; fb.aria = 'Cursor B lies after this session: bring it into view';
     r2.flags = [fa, fb];
-    r2.mb = 46; r2.hasTip = true; r2.tipTop = 31; r2.tipLeft = 404; r2.tipHead = 'A 26-10-13 11:31:10 · outside the view';
-    r2.tipLines = [{ t: 'Click: centre the view on A, span kept', n: '', x: '' }];
+    r2.mb = 46; r2.hasTip = true; r2.tipTop = 36; r2.tipLeft = 312; r2.tipHead = 'A 26-10-13 11:31:10 · outside the view';
+    r2.tipLines = [{ t: 'Click or Shift+A: centre the view on A, span kept', n: '', x: '' }];
+    // unlinked: day labels in the flag lane, drives in slate, the 0:12 h range at its 3 px minimum with an accent caret,
+    // A and B 0.2 px apart merge into one A·B flag
     const rvPres = VPRES.map(function (q) {
-      return R({ l: P(q[0]), w: Math.max(2, px(q[1])).toFixed(1) + 'px', t: 12, h: 3, bg: '#94a3b8', rad: 1 });
+      return R({ l: P(q[0]), w: Math.max(2, px(q[1], TRACK_R)).toFixed(1) + 'px', t: 12, h: 3, bg: '#64748b', rad: 1 });
     });
     const rvDrives = VDRIVES.map(function (d, i) {
-      return R({ l: P(d[0]), w: Math.max(3, px(d[1])).toFixed(1) + 'px', t: 11, h: 5, bg: i === 2 ? ACC : '#475569', rad: 1, tt: 'Drive ' + (i + 1) + ' of 17' });
+      return R({ l: P(d[0]), w: Math.max(3, px(d[1], TRACK_R)).toFixed(1) + 'px', t: 11, h: 5, bg: '#334155', rad: 1, tt: 'Drive ' + (i + 1) + ' of 17' });
     });
-    const rv = base({ cap: CAPV, cap2: CAPVb + ' · A, B on 10-13', h: 29, th: TH,
+    const rvPins = VPINS.map(function (p) { return p[2] === 'active' && p[3] ? [p[0], p[1], 'active', 1, '26-10-15 · 13 faults · fault memory read'] : p; });
+    const rv = ends(base({ cap: CAPV, cap2: CAPVb + ' · A, B on 10-13, 0.2 px apart', h: 29, th: TH, mb: 8,
       under: mids(TH).concat([R({ t: 13, h: 1, bg: '#e2e8f0' })]),
-      over: rvPres.concat(rvDrives, [R({ l: '21.535%', w: '3px', ml: -1.5, t: 0, h: TH, bg: 'rgba(2,132,199,0.35)', rad: 1, tt: 'Shown 26-10-13 15:06  0:12' })], lines([[21.558, 0]]), pins(VPINS, 2, 7)),
-      flags: [flag('A', 21.558, -8, false), flag('B', 21.577, 4, false)] });
-    const rl = base({ cap: CAP3, cap2: 'loading: the same 28 px box; shown range, cursors and flags already drawn', h: 29, th: TH, hasText: true, text: 'Loading recording…',
+      over: rvPres.concat(rvDrives, [R({ l: '21.535%', w: '3px', ml: -1.5, t: 0, h: TH, bg: ACC, rad: 1, tt: 'Shown 26-10-13 15:06  0:12 h' })], lines([[21.558, 0]]), evs(rvPins)),
+      marks: [{ l: '21.535%', ml: -4, t: -1, w: 8, h: 5, d: 'M0 0 L10 0 L5 10 Z', fill: ACC }],
+      labels: VMID.filter(function (m) { return m[0] < 96; }).map(function (m) { return { l: P(m[0]), t: 17, x: m[1] }; }),
+      flags: [flagAB(21.567, 'A 15:09:12 · B 15:11:40 on Tue 2026-10-13 · click: bring both into view · Shift+A / Shift+B: one of them')] }),
+      '10-11', 'Sun 2026-10-11 14:34:24', '10-21', 'Wed 2026-10-21 01:52:43');
+    const rl = ends(base({ cap: CAP3, cap2: 'loading: the same 28 px box; end labels, shown range, cursors and flags already drawn', h: 29, th: TH, hasText: true, text: 'Loading recording…',
       under: brush([0, 100], TH).slice(0, 1).concat([R({ t: 13, h: 1, bg: '#e2e8f0' })]),
       over: brush([0, 100], TH).slice(1).concat(lines([[S3.a, 0], [S3.b, 1]])),
-      flags: [flag('A', S3.a, -8, false), flag('B', S3.b, -8, false)] });
+      flags: [flag('A', S3.a, '15:09:12'), flag('B', S3.b, '15:11:40')] }),
+      '15:06', 'Tue 2026-10-13 15:06:03', '15:18', 'Tue 2026-10-13 15:18:33');
 
     const grey = { badgeBg: '#e2e8f0', badgeFg: '#0f172a' };
     return {
@@ -263,7 +319,7 @@ class Component extends DCLogic {
         Object.assign({ n: '2', title: 'Session · A', sub: '20 px · events, data line, gaps', strips: [sessA(S3, CAP3, CAP3b), sessA(S2, CAP2, CAP2b)] }, grey),
         Object.assign({ n: '3', title: 'Session · B', sub: '20 px · A plus density silhouette', strips: [sessB(S3, CAP3, CAP3b, ar3), sessB(S2, CAP2, CAP2b, ar2)] }, grey),
         Object.assign({ n: '4', title: 'Vehicle · long scope', sub: '46 px · area, drives in accent, days', strips: [v4] }, grey),
-        { n: '5', title: 'Recommended', sub: '28 px · presence line, A/B flags', badgeBg: '#0284c7', badgeFg: '#ffffff', strips: [r3, r2, rv, rl] }
+        { n: '5', title: 'Recommended', sub: '28 px · end labels, event shapes, A/B flags', badgeBg: '#0284c7', badgeFg: '#ffffff', strips: [r3, r2, rv, rl] }
       ]
     };
   }

@@ -22,14 +22,14 @@ input{font:inherit}
   <sc-for list="{{states}}" as="s" hint-placeholder-count="8">
     <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: {{s.mb}}px;">
       <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">{{s.caption}}</span>
-      <div style="position: relative; width: {{s.w}}px; height: 32px; display: flex; align-items: center; padding: 0 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; box-sizing: border-box; font-variant-numeric: tabular-nums;">
+      <div style="position: relative; width: {{s.w}}px; height: 32px; display: flex; align-items: center; padding: 0 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: {{s.barRad}}; box-sizing: border-box; font-variant-numeric: tabular-nums;">
         <sc-if value="{{s.showLabel}}" hint-placeholder-val="{{ true }}">
           <span style="flex: 0 0 64px; outline: {{slot}}; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">{{s.label}}</span>
         </sc-if>
         <button class="ib" aria-label="Previous session" title="Previous session · [" style="flex: 0 0 26px; height: 26px; outline: {{slot}}; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{s.arrowInk}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"></polyline></svg>
         </button>
-        <button class="ib" aria-haspopup="dialog" title="Sessions of the catalog, align" style="flex: 0 0 72px; height: 22px; outline: {{slot}}; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0; color: {{s.posInk}}; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">{{s.pos}} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.4" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <button class="ib" aria-haspopup="dialog" aria-label="{{s.posAria}}" title="{{s.posTip}}" style="flex: 0 0 88px; height: 24px; outline: {{slot}}; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0 2px; box-sizing: border-box; color: {{s.posInk}}; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap;">{{s.pos}}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="{{s.alX}}" y1="3" x2="{{s.alX}}" y2="21"></line><line x1="{{s.al1a}}" y1="9" x2="{{s.al1b}}" y2="9"></line><line x1="{{s.al2a}}" y1="15" x2="{{s.al2b}}" y2="15"></line></svg><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.6" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         <button class="ib" aria-label="Next session" title="Next session · ]" style="flex: 0 0 26px; height: 26px; outline: {{slot}}; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{s.arrowInk}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
         </button>
@@ -38,71 +38,84 @@ input{font:inherit}
             <span style="flex: 0 0 160px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
           </sc-if>
           <sc-if value="{{s.titleText}}" hint-placeholder-val="{{ true }}">
-            <span title="{{s.title}}" style="flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; color: {{s.titleInk}};">{{s.title}}</span>
+            <span title="{{s.titleTip}}" style="flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; color: {{s.titleInk}};">{{s.title}}</span>
           </sc-if>
           <sc-if value="{{s.note}}" hint-placeholder-val="{{ false }}">
-            <span role="status" title="{{s.noteText}}" style="flex: 0 0 auto; max-width: 470px; margin-left: auto; height: 22px; display: inline-flex; align-items: center; gap: 6px; padding: 0 2px 0 8px; border: 1px solid #fcd34d; border-radius: 999px; background: #fffbeb; color: #92400e; box-sizing: border-box;">
+            <span role="status" title="{{s.noteText}}" style="flex: 0 0 auto; max-width: 560px; margin-left: auto; height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 1px 0 8px; border: 1px solid #fcd34d; border-radius: 999px; background: #fffbeb; color: #92400e; box-sizing: border-box;">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12" y2="17"></line></svg>
               <span style="min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{s.noteText}}</span>
-              <button class="ib" aria-label="Dismiss" title="Dismiss the note" style="flex: 0 0 18px; width: 18px; height: 18px; border: 0; border-radius: 999px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+              <button class="ib" aria-label="Dismiss the note" title="Dismiss the note" style="flex: 0 0 22px; width: 22px; height: 22px; border: 0; border-radius: 999px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
               </button>
             </span>
           </sc-if>
         </span>
-        <span style="flex: 0 0 116px; height: 26px; outline: {{slot}}; display: flex; align-items: center; gap: 4px; color: #334155; white-space: nowrap;">
+        <span style="flex: 0 0 64px; height: 26px; outline: {{slot}}; display: flex; align-items: center; justify-content: flex-end; color: #64748b; white-space: nowrap;">
           <sc-if value="{{s.timeSkel}}" hint-placeholder-val="{{ false }}">
-            <span style="width: 90px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
+            <span style="width: 40px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
           </sc-if>
           <sc-if value="{{s.timeText}}" hint-placeholder-val="{{ true }}">
-            <span>{{s.time}}</span>
+            <span title="{{s.durTip}}" style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{s.dur}}</span>
           </sc-if>
         </span>
-        <span style="flex: 0 0 60px; height: 26px; outline: {{slot}}; display: flex; align-items: center; justify-content: flex-end; color: #64748b;">
-          <sc-if value="{{s.timeSkel}}" hint-placeholder-val="{{ false }}">
-            <span style="width: 36px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
-          </sc-if>
-          <sc-if value="{{s.timeText}}" hint-placeholder-val="{{ true }}">
-            <span title="Duration (h:mm)" style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{s.dur}}</span>
-          </sc-if>
-        </span>
-        <button class="ib" title="{{s.btnHint}}" style="flex: 0 0 64px; margin-left: 10px; height: 22px; outline: {{slot}}; border: 1px solid {{s.btnBorder}}; border-radius: 999px; background: {{s.btnBg}}; color: {{s.btnInk}}; padding: 0;">{{s.btn}}</button>
+        <button class="ib" title="{{s.btnHint}}" style="flex: 0 0 64px; margin-left: 10px; height: 24px; outline: {{slot}}; border: 1px solid {{s.btnBorder}}; border-radius: 999px; background: {{s.btnBg}}; color: {{s.btnInk}}; padding: 0;">{{s.btn}}</button>
         <sc-if value="{{s.loading}}" hint-placeholder-val="{{ false }}">
           <span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden;">
             <span style="position: absolute; left: 24%; width: 30%; height: 2px; border-radius: 2px; background: #0284c7;"></span>
           </span>
         </sc-if>
         <sc-if value="{{s.tip}}" hint-placeholder-val="{{ false }}">
-          <span role="tooltip" style="position: absolute; left: 150px; top: 34px; z-index: 2; padding: 4px 8px; border-radius: 4px; background: #0f172a; color: #ffffff; font-size: 11px; white-space: nowrap;">{{s.title}} · driving · rows 6.35e+7</span>
+          <span role="tooltip" style="position: absolute; left: 150px; top: 34px; z-index: 2; padding: 4px 8px; border-radius: 4px; background: #0f172a; color: #ffffff; font-size: 11px; white-space: nowrap;">{{s.titleTip}}</span>
         </sc-if>
       </div>
       <sc-if value="{{s.strip}}" hint-placeholder-val="{{ false }}">
-        <div style="position: relative; width: {{s.w}}px; height: 36px; padding: 5px 10px 0; margin-top: -5px; background: #ffffff; border: 1px solid #e2e8f0; border-top: 0; border-radius: 0 0 4px 4px; box-sizing: border-box;">
-          <div style="position: relative; height: 26px;">
-            <div style="position: absolute; left: 0; right: 0; top: 4px; height: 16px; display: flex; align-items: flex-end; gap: 1px;">
-              <sc-for list="{{s.bars}}" as="b" hint-placeholder-count="75">
-                <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
-              </sc-for>
-            </div>
-            <div style="position: absolute; left: 0; right: 0; top: 3px; height: 18px; border: 1px solid {{s.winInk}}; border-radius: 2px;"></div>
-            <span style="position: absolute; top: 22px; left: {{s.driveL}}%; width: {{s.driveW}}%; height: 3px; border-radius: 2px; background: {{s.driveInk}};"></span>
+        <div title="{{s.stripTip}}" style="position: relative; width: {{s.w}}px; height: 29px; margin-top: -4px; padding: 0 10px; display: flex; align-items: flex-start; background: #ffffff; border: 1px solid #e2e8f0; border-top-color: #f1f5f9; border-radius: 0 0 4px 4px; box-sizing: border-box;">
+          <span title="{{s.lblLt}}" style="flex: 0 0 48px; height: 27px; display: flex; align-items: center; overflow: hidden; white-space: nowrap; font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums;">
+            <sc-if value="{{s.lblSkel}}" hint-placeholder-val="{{ false }}"><span style="width: 28px; height: 8px; border-radius: 3px; background: #e2e8f0;"></span></sc-if>{{s.lblL}}
+          </span>
+          <div style="position: relative; flex: 1 1 auto; min-width: 0; height: 27px;">
+            <sc-for list="{{s.parts}}" as="q" hint-placeholder-count="8">
+              <span title="{{q.tt}}" style="position: absolute; left: {{q.l}}; width: {{q.w}}; margin-left: {{q.ml}}px; top: {{q.t}}px; height: {{q.h}}px; background: {{q.bg}}; border-radius: {{q.rad}}px; border-left: {{q.bl}}; box-sizing: border-box;"></span>
+            </sc-for>
+            <sc-for list="{{s.flags}}" as="f" hint-placeholder-count="2">
+              <button aria-label="{{f.aria}}" title="{{f.tt}}" style="position: absolute; z-index: 1; left: {{f.l}}; margin-left: -12px; top: 10px; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: flex-start; justify-content: center;"><span style="margin-top: 5px; width: 14px; height: 12px; border-radius: 2px; box-sizing: border-box; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; background: {{f.bg}}; color: {{f.fg}}; box-shadow: {{f.sh}};">{{f.x}}</span></button>
+            </sc-for>
+            <sc-if value="{{s.stripText}}" hint-placeholder-val="{{ false }}">
+              <span style="position: absolute; left: 0; top: 0; height: 27px; display: flex; align-items: center; padding-right: 8px; background: #ffffff; font-size: 11px; color: #64748b;">Loading recording…</span>
+            </sc-if>
           </div>
+          <span title="{{s.lblRt}}" style="flex: 0 0 48px; height: 27px; display: flex; align-items: center; justify-content: flex-end; overflow: hidden; white-space: nowrap; font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums;">
+            <sc-if value="{{s.lblSkel}}" hint-placeholder-val="{{ false }}"><span style="width: 28px; height: 8px; border-radius: 3px; background: #e2e8f0;"></span></sc-if>{{s.lblR}}
+          </span>
         </div>
       </sc-if>
     </div>
   </sc-for>
 
   <div style="display: flex; flex-direction: column; gap: 4px;">
-    <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">9 · LIST OPEN (3 / 17 ▾): FILTER, SESSIONS, ALIGN, BACK LINK</span>
+    <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">9 · TOOLBAR RANGE BUTTON, 212 PX: A RANGE, UNDER 1 MIN, THE WHOLE RECORDING; FULL DATE ON HOVER</span>
+    <div style="display: flex; align-items: center; gap: 16px; height: 32px; font-variant-numeric: tabular-nums;">
+      <sc-for list="{{ranges}}" as="r" hint-placeholder-count="3">
+        <button class="ib" aria-haspopup="dialog" title="Go to: pick a range or type one · t" style="flex: 0 0 212px; width: 212px; height: 26px; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; box-sizing: border-box; text-align: left; white-space: nowrap; outline: {{slot}};">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line><line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line></svg>
+          <span title="{{r.full}}" style="font-weight: 600;">{{r.date}}</span>
+          <span title="{{r.full}}">{{r.time}}</span>
+          <span title="{{r.durTip}}" style="margin-left: auto; display: inline-flex; align-items: center; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{r.dur}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 4px;">
+    <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">10 · LIST OPEN (3 / 17 ▾): FILTER, SESSIONS WITH THEIR START, ALIGN, BACK LINK</span>
     <div style="position: relative; width: 1192px; height: 32px; display: flex; align-items: center; padding: 0 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; box-sizing: border-box; font-variant-numeric: tabular-nums;">
       <span style="flex: 0 0 64px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">SESSION</span>
       <button class="ib" aria-label="Previous session" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"></polyline></svg></button>
-      <button aria-expanded="true" style="flex: 0 0 72px; height: 22px; border: 1px solid #0284c7; border-radius: 999px; background: #f0f9ff; padding: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">3 / 17 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2.4" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg></button>
+      <button aria-expanded="true" aria-label="Session 3 of 17, aligned at the start: sessions and align" style="flex: 0 0 88px; height: 24px; border: 1px solid #7dd3fc; border-radius: 999px; background: #e0f2fe; color: #0369a1; padding: 0 2px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 3px;">3 / 17<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="3" x2="4" y2="21"></line><line x1="9" y1="9" x2="20" y2="9"></line><line x1="9" y1="15" x2="16" y2="15"></line></svg><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2.6" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg></button>
       <button class="ib" aria-label="Next session" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg></button>
-      <span style="flex: 1 1 auto; margin-left: 12px; font-weight: 600;">Drive 3</span>
-      <span style="flex: 0 0 116px; color: #334155;">26-10-13 15:06</span>
-      <span title="Duration (h:mm)" style="flex: 0 0 60px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>0:10</span>
-      <button class="ib" style="flex: 0 0 64px; margin-left: 10px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0;">Unlink</button>
+      <span title="Drive 3 · Tue 2026-10-13 15:06 · 0:10 h · driving · rows 9.91e+6" style="flex: 1 1 auto; margin-left: 12px; font-weight: 600;">Drive 3</span>
+      <span title="Duration 10 min" style="flex: 0 0 64px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>0:10 h</span>
+      <button class="ib" style="flex: 0 0 64px; margin-left: 10px; height: 24px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0;">Unlink</button>
 
       <div role="dialog" aria-label="Sessions" style="position: absolute; top: 30px; left: 92px; z-index: 3; width: 560px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 8px 24px rgba(15,23,42,0.12); box-sizing: border-box;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -110,15 +123,15 @@ input{font:inherit}
             <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Filter sessions</span>
             <input type="search" placeholder="Filter sessions" style="width: 100%; height: 26px; padding: 0 8px; border: 1px solid #0284c7; border-radius: 4px; box-sizing: border-box;">
           </label>
-          <a href="#" style="white-space: nowrap;">Back to the finder</a>
+          <a href="#" title="Back to the search tool that opened these sessions" style="white-space: nowrap;">Back to search</a>
         </div>
         <div style="display: flex; flex-direction: column; font-variant-numeric: tabular-nums;">
           <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
-            <button class="lr" aria-current="{{r.cur}}" style="display: grid; grid-template-columns: 28px 1fr 116px 60px; align-items: center; height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: {{r.bg}}; text-align: left; font-weight: {{r.weight}};">
+            <button class="lr" aria-current="{{r.cur}}" style="display: grid; grid-template-columns: 28px 1fr 116px 64px; align-items: center; height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: {{r.bg}}; text-align: left; font-weight: {{r.weight}};">
               <span style="color: #64748b; text-align: right; padding-right: 8px;">{{r.n}}</span>
-              <span style="min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{r.title}}</span>
-              <span style="color: #334155;">{{r.time}}</span>
-              <span title="Duration (h:mm)" style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{r.dur}}</span>
+              <span title="{{r.title}}" style="min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{r.title}}</span>
+              <span title="{{r.full}}" style="color: #334155;">{{r.time}}</span>
+              <span title="{{r.durTip}}" style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: #64748b; white-space: nowrap;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{r.dur}}</span>
             </button>
           </sc-for>
           <span style="padding: 2px 6px; color: #64748b;">11 more · type to filter</span>
@@ -126,12 +139,12 @@ input{font:inherit}
         <div style="display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;">
           <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">ALIGN</span>
           <div role="radiogroup" aria-label="Align" style="display: flex; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
-            <button role="radio" aria-checked="true" style="padding: 0 10px; border: 0; background: #0f172a; color: #ffffff;">Start</button>
+            <button role="radio" aria-checked="true" style="padding: 0 10px; border: 0; background: #e0f2fe; color: #0369a1; font-weight: 600; box-shadow: inset 0 0 0 1px #7dd3fc;">Start</button>
             <button role="radio" aria-checked="false" style="padding: 0 10px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff;">End</button>
             <button role="radio" aria-checked="false" style="padding: 0 10px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff; color: #64748b;" title="No entry has an anchor">Anchor</button>
             <button role="radio" aria-checked="false" style="padding: 0 10px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff;">Event…</button>
           </div>
-          <span style="color: #64748b;">windows keep their offset to the session start</span>
+          <span style="color: #64748b;">windows keep their offset to the session start; the glyph on 3 / 17 shows it</span>
         </div>
       </div>
     </div>
@@ -139,45 +152,80 @@ input{font:inherit}
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"slots":{"editor":"boolean","default":false,"section":"Show"},"$preview":{"width":1240,"height":1040}}'>
-function bars(skel) {
-  const out = [];
-  for (let i = 0; i < 75; i++) {
-    const inDrive = i >= 5 && i < 70;
-    out.push(skel ? { h: 8, c: '#f1f5f9' } : { h: inDrive ? 11 + ((i * 7) % 5) : 3, c: inDrive ? '#94a3b8' : '#cbd5e1' });
-  }
-  return out;
+const ACC = '#0284c7';
+function R(o) { return Object.assign({ l: '0%', w: '100%', ml: 0, t: 0, h: 1, bg: 'transparent', rad: 0, bl: 'none', tt: '' }, o); }
+function flag(k, at, time) {
+  const a = k === 'A';
+  return { l: at + '%', x: k, aria: 'Bring cursor ' + k + ' into view', tt: k + ' ' + time + ' · click or Shift+' + k + ': bring ' + k + ' into view',
+    bg: a ? '#0f172a' : '#ffffff', fg: a ? '#ffffff' : '#0f172a', sh: a ? 'none' : 'inset 0 0 0 1px #0f172a' };
 }
+function lines(a, b) { return [R({ l: a + '%', w: '1px', h: 27, bg: '#0f172a' }), R({ l: b + '%', w: '1px', h: 27, bl: '1px dashed #0f172a' })]; }
+// the strip of Strip.dc.html "Recommended": shown range tint and edges, base line, presence line, events, cursors
+function frame() { return [R({ h: 27, bg: 'rgba(2,132,199,0.08)' }), R({ t: 13, h: 1, bg: '#e2e8f0' }), R({ w: '1px', h: 27, bg: ACC }), R({ l: '100%', w: '1px', ml: -1, h: 27, bg: ACC })]; }
+// Drive 3, 15:06:03 - 15:18:33: data 15:07:03 - 15:17:33, KEYON at 15:07:14.560, A 15:09:12, B 15:11:40
+const STRIP3 = frame().concat([
+  R({ l: '8.1%', w: '83.94%', t: 12, h: 3, bg: ACC, rad: 1, tt: 'Data 15:07:03 – 15:17:33' }),
+  R({ l: '9.54%', w: '2px', ml: -1, t: 2, h: 7, bg: '#7c3aed', rad: 1 }),
+  R({ l: '9.54%', w: '10px', ml: -5, t: 0, h: 11, tt: '15:07:14.560 · Change · IgnCurMode NONE → KEYON' })
+], lines(25.2, 44.93));
+// Drive 4, 18:59:06 - 19:22:12 while loading: the frame, cursors at their offset to the start (A 19:02:15, B 19:04:43)
+const STRIP4 = frame().concat(lines(13.64, 24.31));
 const BASE = {
-  w: 1192, mb: 0, showLabel: true, label: 'SESSION', arrowInk: '#334155', posInk: '#0f172a',
-  titleSkel: false, titleText: true, titleInk: '#0f172a', note: false, noteText: '', timeSkel: false, timeText: true,
+  w: 1192, mb: 0, barRad: '4px', showLabel: true, label: 'SESSION', arrowInk: '#334155', posInk: '#0f172a', pos: '3 / 17', align: 'start',
+  titleSkel: false, titleText: true, titleInk: '#0f172a', titleTip: '', note: false, noteText: '', timeSkel: false, timeText: true, dur: '', durTip: '',
   btn: 'Unlink', btnHint: 'Unlink: the whole vehicle smart451', btnBorder: '#cbd5e1', btnBg: '#ffffff', btnInk: '#0f172a',
-  loading: false, tip: false, strip: false, bars: [], winInk: '#0284c7', driveL: 6.8, driveW: 86.4, driveInk: '#0f172a'
+  loading: false, tip: false, strip: false, stripTip: '', stripText: false, lblSkel: false, lblL: '', lblR: '', lblLt: '', lblRt: '', parts: [], flags: []
 };
 const STATES = [
-  { caption: '1 · LOADED', pos: '3 / 17', title: 'Drive 3', time: '26-10-13 15:06', dur: '0:10', strip: true, bars: bars(false) },
-  { caption: '2 · STEPPING (] PRESSED): TEXT FROM THE CATALOG AT ONCE, DATA LOADING; SAME BOXES, NOTHING MOVES', pos: '4 / 17', title: 'Drive 4 · motorway', time: '26-10-15 18:59', dur: '0:23', loading: true, strip: true, bars: bars(true), winInk: '#cbd5e1', driveInk: '#e2e8f0' },
-  { caption: '3 · FIRST OPEN, CATALOG STILL LOADING: SKELETONS IN THE SAME SLOTS', pos: '1 / 17', posInk: '#64748b', titleSkel: true, titleText: false, timeSkel: true, timeText: false, time: '', dur: '', loading: true },
-  { caption: '4 · LONG TITLE: TRUNCATED, FULL TEXT ON HOVER', mb: 18, pos: '2 / 17', title: 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', time: '26-10-13 11:06', dur: '1:06', tip: true },
-  { caption: '5 · OPEN REPORT NOTE: IN THE TITLE SLOT, THE TITLE GIVES WAY; GONE ON ✕, THE NEXT STEP, GO OR UNLINK', pos: '1 / 2', title: 'Drive 1 again', note: true, noteText: '4 signals not in this session: current, pack_voltage, soc, temperature_max · back link dropped: origin not allowed', time: '26-10-13 15:07', dur: '0:10' },
-  { caption: '6 · UNLINKED: THE WHOLE VEHICLE; SAME SLOTS, LINK WHERE UNLINK WAS', label: 'VEHICLE', arrowInk: '#cbd5e1', pos: '3 / 17', posInk: '#64748b', title: 'smart451 · whole series', titleInk: '#334155', time: '26-10-11 14:34', dur: '227:18', btn: 'Link', btnHint: 'Link to session 3 again', btnBorder: '#0284c7', btnBg: '#e0f2fe', btnInk: '#075985' },
-  { caption: '7 · SESSION CROSSING MIDNIGHT (RARE): START AND DURATION, NO +1 NEEDED', pos: '17 / 18', title: 'Standby overnight, 12 V trickle', time: '26-10-20 23:31', dur: '2:21' },
-  { caption: '8 · COMPACT (1000 PX WINDOW): NO LABEL, SAME SLOTS', w: 780, showLabel: false, pos: '3 / 17', title: 'Drive 3', time: '26-10-13 15:06', dur: '0:10' }
+  { caption: '1 · LOADED: TITLE AND DURATION; THE START IS IN THE TITLE TOOLTIP AND THE LIST', title: 'Drive 3', titleTip: 'Drive 3 · Tue 2026-10-13 15:06 · 0:10 h · driving · rows 9.91e+6', dur: '0:10 h', durTip: 'Duration 10 min',
+    strip: true, stripTip: 'Shown 0:12 h of 0:12 h in scope · data 15:07 – 15:17 · 1 of 2 events', lblL: '15:06', lblLt: 'Tue 2026-10-13 15:06:03', lblR: '15:18', lblRt: 'Tue 2026-10-13 15:18:33', parts: STRIP3,
+    flags: [flag('A', 25.2, '15:09:12'), flag('B', 44.93, '15:11:40')] },
+  { caption: '2 · STEPPING (] PRESSED): TEXT AND END LABELS FROM THE CATALOG AT ONCE, DATA LOADING; SAME BOXES, NOTHING MOVES', pos: '4 / 17', title: 'Drive 4 · motorway', titleTip: 'Drive 4 · motorway · Thu 2026-10-15 18:59 · 0:23 h · driving', dur: '0:23 h', durTip: 'Duration 23 min', loading: true,
+    strip: true, stripText: true, stripTip: 'Loading recording…', lblL: '18:59', lblLt: 'Thu 2026-10-15 18:59:06', lblR: '19:22', lblRt: 'Thu 2026-10-15 19:22:12', parts: STRIP4,
+    flags: [flag('A', 13.64, '19:02:15'), flag('B', 24.31, '19:04:43')] },
+  { caption: '3 · FIRST OPEN, CATALOG STILL LOADING: SKELETONS IN THE SAME SLOTS, THE STRIP IN ITS 28 PX BOX', pos: '1 / 17', posInk: '#64748b', titleSkel: true, titleText: false, timeSkel: true, timeText: false, loading: true,
+    strip: true, lblSkel: true, parts: [R({ t: 13, h: 1, bg: '#e2e8f0' })] },
+  { caption: '4 · LONG TITLE: TRUNCATED, FULL TEXT AND START ON HOVER', mb: 18, pos: '2 / 17', title: 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', titleTip: 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot · Tue 2026-10-13 11:06 · 1:06 h · driving · rows 6.35e+7', dur: '1:06 h', durTip: 'Duration 1 h 6 min', tip: true },
+  { caption: '5 · OPEN REPORT NOTE: IN THE TITLE SLOT, THE TITLE GIVES WAY; GONE ON ✕ (22 PX), THE NEXT STEP, GO OR UNLINK', pos: '1 / 2', title: 'Drive 1 again', titleTip: 'Drive 1 again · Tue 2026-10-13 15:07 · 0:10 h', note: true, noteText: '4 signals not in this session: current, pack_voltage, soc, temperature_max · back link dropped: origin not allowed', dur: '0:10 h', durTip: 'Duration 10 min' },
+  { caption: '6 · UNLINKED: THE WHOLE VEHICLE; SAME SLOTS, LINK WHERE UNLINK WAS; FROM 48 H ON DAYS AND HOURS', label: 'VEHICLE', arrowInk: '#cbd5e1', posInk: '#64748b', title: 'smart451 · whole series', titleTip: 'smart451 · whole series · Sun 2026-10-11 14:34 – Wed 2026-10-21 01:52', titleInk: '#334155', dur: '9 d 11 h', durTip: 'Duration 9 d 11 h 18 min', btn: 'Link', btnHint: 'Link to session 3 again', btnBorder: '#7dd3fc', btnBg: '#e0f2fe', btnInk: '#0369a1' },
+  { caption: '7 · WORST CASE SLOTS: 123 / 456 IN THE 88 PX POSITION, 9 D 11 H IN THE 64 PX DURATION, ALIGNED AT THE END', pos: '123 / 456', align: 'end', title: 'Parked, 12 V trickle and wake-ups', titleTip: 'Parked, 12 V trickle and wake-ups · Sun 2026-10-11 14:34 · 9 d 11 h · parked', dur: '9 d 11 h', durTip: 'Duration 9 d 11 h 18 min' },
+  { caption: '8 · COMPACT (1000 PX WINDOW): NO LABEL, SAME SLOTS', w: 780, showLabel: false, title: 'Drive 3', titleTip: 'Drive 3 · Tue 2026-10-13 15:06 · 0:10 h · driving · rows 9.91e+6', dur: '0:10 h', durTip: 'Duration 10 min' }
+];
+const RANGES = [
+  { date: '26-10-13', time: '15:06', full: 'Tue 2026-10-13 15:06', dur: '0:12 h', durTip: 'Duration 12 min' },
+  { date: '26-10-13', time: '15:06:03', full: 'Tue 2026-10-13 15:06:03', dur: '41 s', durTip: 'Duration 41 s' },
+  { date: '26-10-11', time: '14:34', full: 'Sun 2026-10-11 14:34', dur: '9 d 11 h', durTip: 'Duration 9 d 11 h 18 min' }
 ];
 const ROWS = [
-  [1, 'Drive 1', '26-10-11 15:38', '0:04'],
-  [2, 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', '26-10-13 11:06', '1:06'],
-  [3, 'Drive 3', '26-10-13 15:06', '0:10'],
-  [4, 'Drive 4 · motorway', '26-10-15 18:59', '0:23'],
-  [5, 'Drive 5', '26-10-15 21:12', '0:22'],
-  [6, 'Drive 6', '26-10-16 18:45', '0:23']
+  [1, 'Drive 1', '26-10-11 15:38', 'Sun 2026-10-11 15:38', '0:04 h', 'Duration 4 min'],
+  [2, 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', '26-10-13 11:06', 'Tue 2026-10-13 11:06', '1:06 h', 'Duration 1 h 6 min'],
+  [3, 'Drive 3', '26-10-13 15:06', 'Tue 2026-10-13 15:06', '0:10 h', 'Duration 10 min'],
+  [4, 'Drive 4 · motorway', '26-10-15 18:59', 'Thu 2026-10-15 18:59', '0:23 h', 'Duration 23 min'],
+  [5, 'Drive 5', '26-10-15 21:12', 'Thu 2026-10-15 21:12', '0:22 h', 'Duration 22 min'],
+  [6, 'Drive 6', '26-10-16 18:45', 'Fri 2026-10-16 18:45', '0:23 h', 'Duration 23 min']
 ];
+// the k/n glyph: a bar where the sessions are aligned (start left, end right) and two lines that keep their offset to it
+const GLYPH = {
+  start: { alX: 4, al1a: 9, al1b: 20, al2a: 9, al2b: 16, word: 'the session start' },
+  end: { alX: 20, al1a: 4, al1b: 15, al2a: 8, al2b: 15, word: 'the session end' }
+};
 class Component extends DCLogic {
   renderVals() {
     const slot = this.props.slots ? '1px dashed #f59e0b' : 'none';
     return {
       slot: slot,
-      states: STATES.map((s) => Object.assign({}, BASE, s)),
-      rows: ROWS.map((r) => ({ n: r[0], title: r[1], time: r[2], dur: r[3], cur: r[0] === 3 ? 'true' : 'false', bg: r[0] === 3 ? '#e0f2fe' : 'transparent', weight: r[0] === 3 ? 600 : 400 }))
+      states: STATES.map((s) => {
+        const o = Object.assign({}, BASE, s);
+        const g = GLYPH[o.align];
+        const n = o.pos.split(' / ');
+        return Object.assign(o, g, {
+          barRad: o.strip ? '4px 4px 0 0' : '4px',
+          posTip: 'Sessions of the catalog · aligned at ' + g.word,
+          posAria: 'Session ' + n[0] + ' of ' + n[1] + ', aligned at ' + g.word + ': sessions and align'
+        });
+      }),
+      ranges: RANGES,
+      rows: ROWS.map((r) => ({ n: r[0], title: r[1], time: r[2], full: r[3], dur: r[4], durTip: r[5], cur: r[0] === 3 ? 'true' : 'false', bg: r[0] === 3 ? '#e0f2fe' : 'transparent', weight: r[0] === 3 ? 600 : 400 }))
     };
   }
 }
