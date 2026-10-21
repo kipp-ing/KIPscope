@@ -1,5 +1,7 @@
 import type { CaseCatalog, CommandInput, WorkspaceCase, WorkspaceScope } from "@kipscope/shared";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { HINTS } from "../help/hints.ts";
+import { DurationTag } from "../time/Duration.tsx";
 import { useCaseCatalog } from "./catalog.ts";
 import {
   alignItems,
@@ -8,6 +10,7 @@ import {
   catalogRows,
   goFirstMatch,
   moreText,
+  type SessionSlots,
   sessionSlots,
   stepCommand,
 } from "./sessionBar.ts";
@@ -52,10 +55,55 @@ const chevron = (left: boolean) => (
   </svg>
 );
 
+/** The align glyph's lines per mode (DW3; mock SessionBar.dc.html GLYPH): a bar at the left for
+ *  `start`, at the right for `end`, in the middle for anchor and event; [x1, y1, x2, y2]. */
+const GLYPH: Record<SessionSlots["align"], readonly (readonly [number, number, number, number])[]> =
+  {
+    start: [
+      [4, 3, 4, 21],
+      [9, 9, 20, 9],
+      [9, 15, 16, 15],
+    ],
+    end: [
+      [20, 3, 20, 21],
+      [4, 9, 15, 9],
+      [8, 15, 15, 15],
+    ],
+    anchor: [
+      [12, 3, 12, 21],
+      [5, 9, 19, 9],
+      [8, 15, 16, 15],
+    ],
+    event: [
+      [12, 3, 12, 21],
+      [5, 9, 19, 9],
+      [8, 15, 16, 15],
+    ],
+  };
+
+/** The position button's align glyph, 10 px, slate-600 (DW3). */
+const alignGlyph = (align: SessionSlots["align"]) => (
+  <svg
+    className="session-align-glyph"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#475569"
+    strokeWidth="2.6"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    {GLYPH[align].map(([x1, y1, x2, y2]) => (
+      <line key={`${x1} ${y1}`} x1={x1} y1={y1} x2={x2} y2={y2} />
+    ))}
+  </svg>
+);
+
 /**
  * The session bar (case-navigation "Session bar", design DW3): the context row's fixed slots
- * `SESSION ‹ <k> / <n> ▾ › <title> <times> <duration> Unlink`, unlinked `VEHICLE … Link` with the
- * arrows greyed. Every slot's box depends on the row's width only: the title takes the rest and
+ * `SESSION ‹ <glyph> <k> / <n> ▾ › <title> <duration> Unlink`, unlinked `VEHICLE … Link` with the
+ * arrows greyed; the start lives in the title's tooltip and the list (D-095). Every slot's box depends on the row's width only: the title takes the rest and
  * truncates, the label leaves below the compact width (case.css). A step on its way shows its
  * target at once (DW4) with the progress line; texts not known yet are skeletons in their slots.
  * The open note (X4a, DW7) sits in the title slot after the title.
@@ -110,8 +158,7 @@ export function SessionBar({
       <CatalogList
         caseState={shown}
         catalog={catalog}
-        position={s.position}
-        positionCh={s.positionCh}
+        slots={s}
         disabled={disabled || !c}
         onCommand={onCommand}
       />
@@ -126,17 +173,13 @@ export function SessionBar({
         )}
         {note}
       </span>
-      <span className="slot-times" title={s.timesTooltip}>
-        {s.times === undefined ? (
+      <span className="slot-duration">
+        {s.duration === undefined ? (
           <Skeleton />
         ) : (
-          <>
-            <span className="slot-weekday">{s.weekday}</span> {s.times}
-            {s.plusOne && <sup className="slot-plus">+1</sup>}
-          </>
+          <DurationTag text={s.duration} title={s.durationTooltip ?? ""} />
         )}
       </span>
-      <span className="slot-duration">{s.duration === undefined ? <Skeleton /> : s.duration}</span>
       {c ? (
         <button
           type="button"
@@ -195,25 +238,24 @@ function Popover({ className, children }: { className: string; children: ReactNo
 }
 
 /**
- * `<k> / <n> ▾` and its catalog list (K14): a focused filter, one row per matching session up to
- * CASE_LIST_ROWS, the current row marked; Enter goes to the first match, a click to its row. At
- * its foot the `Align` radio group (DW6). The button is as wide as `<n> / <n> ▾` (positionCh).
- * Exported with `defaultOpen` for the markup tests of the open list.
+ * The position button `<glyph> <k> / <n> ▾` (88 px, pressed while open) and its catalog list (K14,
+ * DW6): a focused filter, `Back to search`, one row per matching session up to CASE_LIST_ROWS in
+ * the columns position, name, start, duration, the current row marked; Enter goes to the first
+ * match, a click to its row. At its foot the `Align` radio group. Exported with `defaultOpen` for
+ * the markup tests of the open list.
  */
 export function CatalogList({
   caseState: c,
   catalog,
-  position,
-  positionCh,
+  slots,
   disabled = false,
   onCommand,
   defaultOpen = false,
 }: {
   caseState: WorkspaceCase | undefined;
   catalog: CaseCatalog | undefined;
-  /** `<k> / <n>`; "" → skeleton (sessionSlots). */
-  position: string;
-  positionCh: number;
+  /** The position button's text, glyph and words; position "" → skeleton (sessionSlots). */
+  slots: Pick<SessionSlots, "position" | "align" | "positionTooltip" | "positionLabel">;
   disabled?: boolean;
   onCommand: (command: CommandInput) => void;
   defaultOpen?: boolean;
@@ -236,20 +278,27 @@ export function CatalogList({
     onCommand(command);
   };
   const origin = catalog?.origin;
-  const width = { "--position-ch": positionCh } as CSSProperties;
   return (
     <span className="session-menu" ref={root}>
       <button
         type="button"
         ref={button}
-        className="session-position"
-        style={width}
-        title={CASE_HINTS.list}
+        className="session-position toggle"
+        title={slots.positionTooltip}
+        aria-label={slots.positionLabel}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen(!open)}
       >
-        {position === "" ? <Skeleton /> : `${position} ▾`}
+        {slots.position === "" ? (
+          <Skeleton />
+        ) : (
+          <>
+            {alignGlyph(slots.align)}
+            <span className="session-position-text">{slots.position}</span>
+            <span aria-hidden="true">▾</span>
+          </>
+        )}
       </button>
       {open && c && (
         <Popover className="session-list">
@@ -257,6 +306,7 @@ export function CatalogList({
             className="session-filter"
             type="search"
             placeholder="Filter sessions"
+            title={HINTS.filterSessions}
             ref={field}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -268,8 +318,14 @@ export function CatalogList({
             }}
           />
           {origin?.url && (
-            <a className="session-back" href={origin.url} target="_blank" rel="noopener noreferrer">
-              Back to {origin.tool ?? "the finder"}
+            <a
+              className="session-back"
+              href={origin.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={HINTS.backToSearch}
+            >
+              Back to search
             </a>
           )}
           <div className="session-rows">
@@ -280,9 +336,18 @@ export function CatalogList({
                 type="button"
                 className={row.current ? "current" : undefined}
                 aria-current={row.current || undefined}
+                // Shows on the position cell and the gaps; name, start and duration have their own.
+                title={HINTS.catalogRow}
                 onClick={() => go({ type: "case.go", index: row.index })}
               >
-                {row.text}
+                <span className="session-row-position">{row.position}</span>
+                <span className="session-row-name" title={row.name}>
+                  {row.name}
+                </span>
+                <span className="session-row-start" title={row.startTooltip}>
+                  {row.start}
+                </span>
+                <DurationTag text={row.duration} title={row.durationTooltip} />
               </button>
             ))}
             {moreText(more) && <div className="session-note">{moreText(more)}</div>}
@@ -302,6 +367,7 @@ export function CatalogList({
                 key={item.label}
                 type="button"
                 role="radio"
+                className="toggle"
                 aria-checked={item.checked}
                 title={item.title}
                 disabled={item.disabled}

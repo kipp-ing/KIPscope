@@ -121,8 +121,10 @@ const GRID_STROKE = "#e2e8f0";
 const GAP_FILL = "#f1f5f9";
 /** A logger-gap band is at least this many CSS px wide. */
 const GAP_MIN_WIDTH = 1;
-/** Ticks and labels of an axis without its own signal colour, the --muted value (design T4). */
-const AXIS_STROKE = "#64748b";
+/** Ticks and labels of every axis, slate-700 (design DW21, D-095: series colours failed contrast). */
+const AXIS_STROKE = "#334155";
+/** The axis title's swatch, 8 px and a 3 px gap (window.css `.axis-swatch`). */
+const AXIS_SWATCH_W = 11;
 /** y axis size beyond the widest tick label: tick (4) + gap (5) + spare (3). */
 const AXIS_PAD = 12;
 /** An axis is at least as wide as its title (+ 4 px), up to this many CSS px. */
@@ -133,8 +135,17 @@ const AXIS_TICK = 4;
 /** uPlot side codes. */
 const LEFT = 3;
 const RIGHT = 1;
-/** Inset of a side without y axis (uPlot's own default), room for the edge x tick label. */
-const NO_AXIS_INSET = 25;
+/** The widest x tick label line an edge tick may carry: the date line, a clock with ms. */
+const EDGE_LABEL_SAMPLE = "00:00:00.000";
+let noAxisInsetPx: number | undefined;
+/**
+ * Inset of a side without y axis: half the widest edge x tick label and 2 px, so a label centred
+ * on the plot's edge (the date line under the first tick of a window without signals) is not cut.
+ */
+function noAxisInset(): number {
+  noAxisInsetPx ??= Math.ceil(textWidth(EDGE_LABEL_SAMPLE) / 2) + 2;
+  return noAxisInsetPx;
+}
 /** Room above the plot area for half of the top y tick label (uPlot's default is 16; design L4). */
 const PLOT_HEADROOM = 6;
 const HINT_TARGET = "Drop to move · Alt/Ctrl+drop to copy";
@@ -195,7 +206,7 @@ interface Props {
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
 
-/** Total y axis width per side; a side without axis counts as NO_AXIS_INSET. */
+/** Total y axis width per side; a side without axis counts as noAxisInset(). */
 function axisWidths(drawn: AxisSpec[], sizes: number[]) {
   let left = 0;
   let right = 0;
@@ -206,7 +217,7 @@ function axisWidths(drawn: AxisSpec[], sizes: number[]) {
   return {
     left,
     right,
-    natural: { left: left || NO_AXIS_INSET, right: right || NO_AXIS_INSET },
+    natural: { left: left || noAxisInset(), right: right || noAxisInset() },
   };
 }
 
@@ -228,14 +239,20 @@ function textWidth(text: string): number {
 }
 
 /**
- * A y range uPlot can split: a flat or non-finite one (a constant signal whose data arrived before
- * the model) would make its axis splits endless (RangeError: Invalid array length).
+ * A y range uPlot can split: a flat, near-flat or non-finite one would make its axis splits
+ * endless (RangeError: Invalid array length). Near-flat is a constant signal whose bucket means
+ * carry float noise (smart451 LWS_SPEED: min -1433.6, mean -1433.5999999999979); uPlot's step
+ * then adds nothing to the value. Such a range widens around its middle like yRange's flat line.
  */
 function spread([min, max]: [number, number]): [number, number] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
-  if (min < max) return [min, max];
-  const pad = Math.max(Math.abs(min) * 0.1, 1);
-  return [min - pad, max + pad];
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  // A span at most 1e-9 of the value's magnitude is flat: float noise, not data.
+  if (high - low > Math.max(Math.abs(low), Math.abs(high)) * 1e-9) return [low, high];
+  const mid = low + (high - low) / 2;
+  const pad = Math.max(Math.abs(mid) * 0.1, 1);
+  return [mid - pad, mid + pad];
 }
 
 const sameRange = (a: Range, b: Range) => a.from === b.from && a.to === b.to;
@@ -702,6 +719,12 @@ function CursorHead({ cell }: { cell: HeaderCell | undefined }) {
 /** The text a cursor column is as wide as (cursors "Readout row"), in the header's font. */
 const CURSOR_COL_SAMPLE = "A 00:00:00.000";
 
+/** A failure's pill in the 56 px status column; the full `failed: <message>` is its tooltip. */
+const FAILED_PILL = "failed";
+
+/** The name column's least width: swatch, gap and about four characters of the name. */
+const NAME_COL_MIN = 48;
+
 /**
  * The L cell of one legend row (design L4): the drawn value at L in this window. Only these cells
  * re-render per published frame.
@@ -1114,6 +1137,7 @@ export function TimeseriesWindow({
         size: 48,
         font: AXIS_FONT,
         stroke: AXIS_STROKE,
+        ticks: { stroke: AXIS_STROKE },
         grid: { stroke: GRID_STROKE },
         splits: (u) => {
           const min = u.scales.x?.min ?? 0;
@@ -1171,10 +1195,11 @@ export function TimeseriesWindow({
         scale: axis.scale,
         side: axis.side === "L" || axis.side === "L2" ? LEFT : RIGHT,
         font: AXIS_FONT,
-        // An axis still loading keeps its place and title but shows no ticks or values.
-        ticks: { show: loaded, size: AXIS_TICK },
+        // An axis still loading keeps its place and title but shows no ticks or values. Tick
+        // marks in the labels' slate (DW21), not uPlot's faint default.
+        ticks: { show: loaded, size: AXIS_TICK, stroke: AXIS_STROKE },
         values: loaded ? tickValues : (_u: uPlot, splits: number[]) => splits.map(() => ""),
-        stroke: axis.color ?? AXIS_STROKE,
+        stroke: AXIS_STROKE,
         grid: { show: j === gridAxis, stroke: GRID_STROKE },
         size: (_u, values, _i, cycle) => {
           const last = sizes[j];
@@ -1184,8 +1209,9 @@ export function TimeseriesWindow({
           const widest = loaded
             ? Math.max(0, ...(values ?? []).map(textWidth))
             : textWidth(LOADING_TICK_TEXT);
-          // Wide enough for the title too, so a unit like "rpm/10ms" is not cut.
-          const title = Math.min(MAX_TITLE_WIDTH, textWidth(titles[j] ?? axis.title) + 4);
+          // Wide enough for the title (and its swatch) too, so a unit like "rpm/10ms" is not cut.
+          const swatch = axis.color ? AXIS_SWATCH_W : 0;
+          const title = Math.min(MAX_TITLE_WIDTH, textWidth(titles[j] ?? axis.title) + 4 + swatch);
           sizes[j] = Math.ceil(Math.max(widest + AXIS_PAD, title));
           return sizes[j];
         },
@@ -1788,12 +1814,9 @@ export function TimeseriesWindow({
       </header>
       <div className="axis-titles" ref={titleRow}>
         {drawnAxes.map((a, j) => (
-          <span
-            key={a.scale}
-            data-side={a.side}
-            title={axisTitle(j, a)}
-            style={a.color ? { color: a.color } : undefined}
-          >
+          <span key={a.scale} data-side={a.side} title={axisTitle(j, a)}>
+            {/* The axis' only signal's colour as a swatch before the title (DW21). */}
+            {a.color && <span className="axis-swatch" style={{ background: a.color }} />}
             {axisTitle(j, a)}
           </span>
         ))}
@@ -1803,7 +1826,11 @@ export function TimeseriesWindow({
       <ul
         className="signals"
         ref={legendRef}
-        style={{ gridTemplateColumns: `repeat(${columns}, auto)` }}
+        // The name column alone shrinks below its content (cut with "…", down to NAME_COL_MIN),
+        // so the fixed columns stay inside the window (DW12); every other one fits its content.
+        style={{
+          gridTemplateColumns: `minmax(${NAME_COL_MIN}px, max-content) repeat(${columns - 1}, auto)`,
+        }}
       >
         {headers && w.signals.length > 0 && (
           // Heads of the cursor columns (cursors "Readout row"); the name cell holds the hint.
@@ -1824,10 +1851,12 @@ export function TimeseriesWindow({
           const meta = info(s.signalId);
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
-          const name = meta ? shownName(meta) : s.signalId;
+          const parsed = parseSignalId(s.signalId);
+          // Without metadata (a signal the shown data ref lacks has none) the bare name, as a
+          // loaded row shows it, so the first step to a session with the signal moves no column.
+          const name = meta ? shownName(meta) : (parsed?.name ?? s.signalId);
           // The shown data ref lacks the signal (DW13): a muted pill, "—" cells with the reason.
           const missing = isMissing(state);
-          const parsed = parseSignalId(s.signalId);
           const missingSignal = parsed && {
             dataRef: parsed.dataRef,
             name: meta ? shownName(meta) : parsed.name,
@@ -1868,9 +1897,10 @@ export function TimeseriesWindow({
                 }
               >
                 <span className="swatch" style={{ background: colorOf(s.signalId) }} />
+                {/* Cut in a narrow window: the full name, or the source name, as tooltip. */}
                 <span
                   className="sig"
-                  title={meta?.displayName !== undefined ? meta.name : undefined}
+                  title={meta ? (meta.displayName !== undefined ? meta.name : name) : s.signalId}
                 >
                   {name}
                 </span>
@@ -1903,16 +1933,24 @@ export function TimeseriesWindow({
                 info={meta}
                 gaps={gaps}
               />
-              {/* Only loading, missing or failed is news; complete shows nothing but keeps the column. */}
+              {/* Only loading, missing or failed is news; complete shows nothing but keeps the column.
+                  The column has one width (DW12), so a failure reads `failed`, its text as tooltip. */}
               <span
                 className={`status ${missing ? "missing" : state?.error ? "error" : (state?.status ?? "loading")}`}
-                title={missing ? missingTitle : undefined}
+                title={
+                  missing ? missingTitle : state?.error ? loadStatusText(state, inCase) : undefined
+                }
               >
-                {loadStatusText(state, inCase)}
+                {!missing && state?.error ? FAILED_PILL : loadStatusText(state, inCase)}
               </span>
-              <span className="sna sna-share" title={sna && HINTS.sna(sna.replace(/^SNA /, ""))}>
-                {sna}
-              </span>
+              {/* Without a share an empty cell keeps the column; only a shown share is the share. */}
+              {sna ? (
+                <span className="sna sna-share" title={HINTS.sna(sna.replace(/^SNA /, ""))}>
+                  {sna}
+                </span>
+              ) : (
+                <span className="sna" />
+              )}
               <button
                 type="button"
                 className="remove"

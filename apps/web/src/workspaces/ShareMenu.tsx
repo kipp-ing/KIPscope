@@ -23,18 +23,16 @@ export interface ShareMenuProps {
   onNotice: (text: string) => void;
   /** Error in the strip. */
   onMessage: (text: string) => void;
-  /** In the "⋯" menu: closes it after a copy. Absent in the row, where it is an overflow item. */
-  after?: () => void;
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * "Share…" (add-multiuser M12): an overflow item of the top row, in the row or in "⋯". Its popover
+ * "Share…" (add-multiuser M12): at the top row's end, always in the row (D-095). Its popover
  * offers "Copy link (own copy)", a link holding this layout as a view, and "Invite to this
  * workspace": the share level for the owner on a server, and the link of this live workspace
  * (with the identity `none` only that link, without the heading).
- * Esc closes the popover only (an open "⋯" menu stays), with focus back on "Share…".
+ * Esc closes the popover only, with focus back on "Share…".
  */
 export function ShareMenu({
   workspace,
@@ -43,7 +41,6 @@ export function ShareMenu({
   me,
   onNotice,
   onMessage,
-  after,
 }: ShareMenuProps) {
   const [open, setOpen] = useState(false);
   // The share level shown: the owner's own rights do not change with it, so the live channel may
@@ -68,7 +65,7 @@ export function ShareMenu({
     const onDown = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) close();
     };
-    // Capture phase, stopped there: the first Esc closes this popover, not the "⋯" menu around it.
+    // Capture phase, stopped there: the first Esc closes this popover and nothing else.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -84,13 +81,8 @@ export function ShareMenu({
     };
   }, [open, close]);
 
-  const done = () => {
-    close();
-    after?.();
-  };
-
   const copyOwn = async () => {
-    done();
+    close();
     try {
       onNotice(await copyViewLink(workspace));
     } catch (e) {
@@ -99,7 +91,7 @@ export function ShareMenu({
   };
 
   const copyWorkspaceLink = async () => {
-    done();
+    close();
     try {
       await writeClipboard(`${location.origin}${workspacePath(workspaceId)}`);
       onNotice("Workspace link copied");
@@ -119,7 +111,7 @@ export function ShareMenu({
   const items = me ? shareItems(me, summary) : undefined;
 
   return (
-    <div className={`share-menu${after ? "" : " overflow-item"}`} ref={root}>
+    <div className="share-menu" ref={root}>
       <button
         type="button"
         ref={button}

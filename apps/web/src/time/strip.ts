@@ -8,8 +8,6 @@ import {
 } from "@kipscope/shared";
 import { barTarget } from "../bar/bar.ts";
 
-/** Height of the strip's tallest bar in px (design T8). */
-export const BAR_PX = 24;
 /** Delay before a failed density fetch is retried (time-strip "Time strip states"). */
 export const RETRY_MS = 30_000;
 
@@ -22,27 +20,10 @@ export function stripDataRef(ws: Workspace): string | undefined {
   return first && parseSignalId(first.signalId)?.dataRef;
 }
 
-/** Per bucket: height (0 rows → 1, else max(3, round(BAR_PX * count / max))) and whether [start_i, start_i + width) meets [from, to). */
-export function stripBars(
-  d: Density,
-  range?: { from: bigint; to: bigint },
-): { height: number; shown: boolean }[] {
-  const start = BigInt(d.start);
-  const width = BigInt(d.width);
-  const max = Math.max(0, ...d.counts);
-  return d.counts.map((count, i) => {
-    const from = start + BigInt(i) * width;
-    return {
-      height: count === 0 ? 1 : Math.max(3, Math.round((BAR_PX * count) / max)),
-      shown: range !== undefined && from < range.to && from + width > range.from,
-    };
-  });
-}
-
 /**
- * "<shown> of <recorded> recorded · 1 bar = <width>"; without range "<recorded> recorded · 1 bar = <width>".
- * recorded = last − first. A density of a scope reads "<shown> of <span> in scope · …" (add-scope Z12),
- * a coarse one of an object scope "<shown> of <span> recorded · …" (add-case-open K14).
+ * "<shown> of <recorded> recorded"; without range "<recorded> recorded" (no bars, D-094).
+ * recorded = last − first. A density of a scope reads "<shown> of <span> in scope" (add-scope Z12),
+ * a coarse one of an object scope "<shown> of <span> recorded" (add-case-open K14).
  */
 export function stripLabel(d: Density, range?: { from: bigint; to: bigint }): string {
   const span = d.scope
@@ -50,7 +31,7 @@ export function stripLabel(d: Density, range?: { from: bigint; to: bigint }): st
     : BigInt(d.last) - BigInt(d.first);
   const recorded = `${formatSpan(span)} ${d.scope && !d.coarse ? "in scope" : "recorded"}`;
   const shown = range ? `${formatSpan(range.to - range.from)} of ` : "";
-  return `${shown}${recorded} · 1 bar = ${formatSpan(BigInt(d.width))}`;
+  return `${shown}${recorded}`;
 }
 
 /**

@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionBar } from "../src/case/SessionBar.tsx";
 import {
   alignItems,
+  alignWords,
   arrowHint,
   CASE_MESSAGES,
   caseResultEvents,
@@ -27,7 +28,9 @@ import {
   stepCommand,
   timesSlot,
 } from "../src/case/sessionBar.ts";
+import { HINTS } from "../src/help/hints.ts";
 import { caseStepKey } from "../src/keys.ts";
+import { fullTime, startDuration } from "../src/time/rangeLine.ts";
 import { ScopeRow } from "../src/time/ScopeRow.tsx";
 import { resultStripEvents } from "../src/time/scope.ts";
 import { nextStrip, type StripEvent, type StripItem } from "../src/views/notice.ts";
@@ -86,7 +89,6 @@ const SLOTS = [
   "session-arrow",
   "session-position",
   "slot-title",
-  "slot-times",
   "slot-duration",
   "slot-action",
 ];
@@ -109,25 +111,36 @@ describe("session slots", () => {
     const linked = sessionSlots(caseAt(0), undefined, { ...C4, origin: { tool: "search tool" } });
     expect(linked.label).toBe("SESSION");
     expect(linked.position).toBe("1 / 4");
+    expect(linked.align).toBe("start");
+    expect(linked.positionTooltip).toBe("Sessions of the catalog, aligned at the session start");
+    expect(linked.positionLabel).toBe(
+      "Session 1 of 4, aligned at the session start: sessions and align",
+    );
     expect(linked.title).toBe("testcar");
+    // Line 1: title or object, the full start, the duration and the kind; then meta, id and tool.
     const tip = (linked.titleTooltip ?? "").split("\n");
-    expect(tip[0]).toBe("testcar · driving");
+    expect(tip[0]).toBe("testcar · Thu 2026-10-01 03:00 · 0:10 h · driving");
     expect(tip).toContain("distance_km: 6.2");
     expect(tip).toContain(`id: ${entryAt(0).id}`);
     expect(tip).toContain("from search tool");
-    expect(linked.weekday).toBe("Thu");
-    expect(linked.times).toBe("2026-10-01  03:00:00 – 03:10:00");
-    expect(linked.duration).toBe("10 min");
+    expect(linked.duration).toBe("0:10 h");
+    expect(linked.durationTooltip).toBe("Duration 10 min");
     expect(linked.action).toBe("Unlink");
-    expect(linked.plusOne).toBe(false);
     expect(linked.pending).toBe(false);
+    // The bar shows no start (D-095): none of the removed fields is left.
+    for (const gone of ["start", "times", "timesTooltip", "weekday", "plusOne", "positionCh"]) {
+      expect(linked, gone).not.toHaveProperty(gone);
+    }
 
     // Unlinked: the vehicle's whole series, 02:00 – 12:00 local (00:00Z – 10:00Z).
     const unlinked = sessionSlots(caseAt(0, false), scope, C4);
     expect(unlinked.label).toBe("VEHICLE");
     expect(unlinked.title).toBe("testcar · whole series");
-    expect(unlinked.times).toBe("2026-10-01  02:00:00 – 12:00:00");
-    expect(unlinked.duration).toBe("10 h");
+    expect((unlinked.titleTooltip ?? "").split("\n")[0]).toBe(
+      "testcar · whole series · Thu 2026-10-01 02:00 · 10:00 h",
+    );
+    expect(unlinked.duration).toBe("10:00 h");
+    expect(unlinked.durationTooltip).toBe("Duration 10 h");
     expect(unlinked.action).toBe("Link");
 
     // A titled session: once unlinked the bar names the vehicle, never the dropped session's title.
@@ -135,15 +148,26 @@ describe("session slots", () => {
     const bar = sessionSlots(titled, scope, C4);
     expect(bar.label).toBe("VEHICLE");
     expect(bar.title).toBe("testcar · whole series");
+    expect((bar.titleTooltip ?? "").split("\n")[0]).toBe(
+      "testcar · whole series · Thu 2026-10-01 02:00 · 10:00 h",
+    );
     expect(JSON.stringify(bar)).not.toContain("Drive 1");
 
-    // `<k> / <n>` is as wide for every entry: positionCh is the length of `<n> / <n>`.
-    const last = sessionSlots(caseAt(3), undefined, C4);
+    // Entry 3 in end mode: 04:58 – 05:02 UTC; the position and its words follow the mode.
+    const last = sessionSlots({ ...caseAt(3), align: { mode: "end" } }, undefined, C4);
     expect(last.position).toBe("4 / 4");
-    expect(last.positionCh).toBe(linked.positionCh);
-    expect(linked.positionCh).toBe("4 / 4".length);
-    // 04:58 – 05:02 UTC = 06:58 – 07:02 CEST.
-    expect(last.times).toBe("2026-10-01  06:58:00 – 07:02:00");
+    expect(last.align).toBe("end");
+    expect(last.positionTooltip).toBe("Sessions of the catalog, aligned at the session end");
+    expect(last.positionLabel).toBe(
+      "Session 4 of 4, aligned at the session end: sessions and align",
+    );
+    expect(last.duration).toBe("0:04 h");
+    expect(alignWords({ mode: "start" })).toBe("the session start");
+    expect(alignWords({ mode: "end" })).toBe("the session end");
+    expect(alignWords({ mode: "anchor" })).toBe("the anchor");
+    expect(
+      alignWords({ mode: "event", event: { kind: "dtc", source: "ECU1", name: "B1234" } }),
+    ).toContain("B1234");
   });
 
   it("shows a title instead of the object and every meta entry in the tooltip", () => {
@@ -155,7 +179,7 @@ describe("session slots", () => {
     const slots = sessionSlots({ ...caseAt(0), entry }, undefined, C4);
     expect(slots.title).toBe("F-104");
     const tip = (slots.titleTooltip ?? "").split("\n");
-    expect(tip[0]).toBe("F-104 · driving");
+    expect(tip[0]).toBe("F-104 · Thu 2026-10-01 03:00 · 0:10 h · driving");
     for (const line of ["a: 1", "b: two", "c: true", "d: 4"]) expect(tip).toContain(line);
     expect(tip.some((l) => /^km: 6\.23/.test(l))).toBe(true);
   });
@@ -165,16 +189,20 @@ describe("session slots", () => {
     const pending = sessionSlots(caseAt(0), undefined, C4, 2);
     expect(pending.position).toBe("3 / 4");
     expect(pending.title).toBe("testcar");
-    expect(pending.times).toBe("2026-10-01  06:50:00 – 07:10:00");
-    expect(pending.duration).toBe("20 min");
+    expect((pending.titleTooltip ?? "").split("\n")[0]).toBe(
+      "testcar · Thu 2026-10-01 06:50 · 0:20 h · charging",
+    );
+    expect(pending.duration).toBe("0:20 h");
+    expect(pending.durationTooltip).toBe("Duration 20 min");
     expect(pending.pending).toBe(true);
 
-    // Catalog not loaded: the position is known, title, times and duration are skeletons.
+    // Catalog not loaded: the position is known, title and duration are skeletons.
     const unknown = sessionSlots(caseAt(0), undefined, undefined, 2);
     expect(unknown.position).toBe("3 / 4");
     expect(unknown.title).toBeUndefined();
-    expect(unknown.times).toBeUndefined();
+    expect(unknown.titleTooltip).toBeUndefined();
     expect(unknown.duration).toBeUndefined();
+    expect(unknown.durationTooltip).toBeUndefined();
     expect(unknown.pending).toBe(true);
 
     // The target of a command: step from the current or the pending index, go, never past an end.
@@ -187,58 +215,72 @@ describe("session slots", () => {
     expect(pendingTarget({ ...c, linked: false }, undefined, step)).toBeUndefined();
   });
 
-  it("marks a session crossing midnight", () => {
+  it("gives start and duration across midnight and days", () => {
     const session = (from: string, to: string): WorkspaceCase => ({
       ...caseAt(0),
       entry: { ...entryAt(0), from, to },
     });
-    // 2026-10-20 23:31:05 – 2026-10-21 01:52:43 local: the next day, a small +1.
+    const first = (c: WorkspaceCase) =>
+      (sessionSlots(c, undefined, C4).titleTooltip ?? "").split("\n")[0] ?? "";
+    // 2026-10-20 23:31:05 – 2026-10-21 01:52:43 local: 2 h 21 min, no +1, no end time.
     const over = sessionSlots(
       session(local(2026, 10, 20, 23, 31, 5), local(2026, 10, 21, 1, 52, 43)),
       undefined,
       C4,
     );
-    expect(over.weekday).toBe("Tue");
-    expect(over.times).toBe("2026-10-20  23:31:05 – 01:52:43");
-    expect(over.plusOne).toBe(true);
-
-    // Two or more days: both dates, both full times in the tooltip.
-    const multi = sessionSlots(
-      session(local(2026, 10, 11, 10, 0), local(2026, 10, 21, 9, 0)),
-      undefined,
-      C4,
-    );
-    expect(multi.weekday).toBe("Sun");
-    expect(multi.times).toBe("2026-10-11 – Wed 2026-10-21");
-    expect(multi.timesTooltip).toContain("2026-10-11 10:00:00 – 2026-10-21 09:00:00");
-    expect(multi.plusOne).toBe(false);
-
-    // Ending exactly at midnight: the exclusive end is the next calendar day, still +1.
-    const midnight = sessionSlots(
-      session(local(2026, 10, 20, 23, 0), local(2026, 10, 21, 0, 0)),
-      undefined,
-      C4,
-    );
-    expect(midnight.times).toContain("23:00:00 – 00:00:00");
-    expect(midnight.plusOne).toBe(true);
-
-    // Within one day: no +1.
-    expect(sessionSlots(caseAt(0), undefined, C4).plusOne).toBe(false);
-
-    // The times slot of any range, as the scope row uses it.
+    expect(over.duration).toBe("2:21 h");
+    expect(over.durationTooltip).toBe("Duration 2 h 21 min");
     expect(
-      timesSlot(BigInt(local(2026, 10, 13, 14, 0)), BigInt(local(2026, 10, 13, 16, 0))),
-    ).toMatchObject({
-      weekday: "Tue",
-      times: "2026-10-13  14:00:00 – 16:00:00",
-      plusOne: false,
+      first(session(local(2026, 10, 20, 23, 31, 5), local(2026, 10, 21, 1, 52, 43))),
+    ).toContain("Tue 2026-10-20 23:31");
+
+    // Ten days: days and hours, the weekday only in the tooltip.
+    const multiCase = session(local(2026, 10, 11, 10, 0), local(2026, 10, 21, 9, 0));
+    const multi = sessionSlots(multiCase, undefined, C4);
+    expect(multi.duration).toBe("9 d 23 h");
+    expect(multi.durationTooltip).toBe("Duration 9 d 23 h");
+    expect(first(multiCase)).toContain("Sun 2026-10-11 10:00");
+
+    // 41 s: whole seconds, and the start with seconds.
+    const shortCase = session(local(2026, 10, 13, 15, 6, 3), local(2026, 10, 13, 15, 6, 44));
+    const short = sessionSlots(shortCase, undefined, C4);
+    expect(short.duration).toBe("41 s");
+    expect(first(shortCase)).toContain("Tue 2026-10-13 15:06:03");
+
+    // No visible slot holds a weekday, an end time or a +1; only the tooltips name the start.
+    for (const slots of [over, multi, short]) {
+      const visible = [slots.label, slots.position, slots.title, slots.duration, slots.action];
+      expect(visible.join(" ")).not.toMatch(
+        /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b|\u207a\u00b9|\+1| – /,
+      );
+    }
+
+    // The start and duration of any range, as the scope row and the catalog list use them.
+    const range = [BigInt(local(2026, 10, 13, 14, 0)), BigInt(local(2026, 10, 13, 16, 0))] as const;
+    expect(timesSlot(...range)).toEqual({
+      start: "26-10-13 14:00",
+      startTooltip: "Tue 2026-10-13 14:00",
+      duration: "2:00 h",
+      durationTooltip: "Duration 2 h",
     });
-    expect(
-      timesSlot(BigInt(local(2026, 10, 20, 23, 31, 5)), BigInt(local(2026, 10, 21, 1, 52, 43))),
-    ).toMatchObject({
-      times: "2026-10-20  23:31:05 – 01:52:43",
-      plusOne: true,
+    const sec = [
+      BigInt(local(2026, 10, 13, 15, 6, 3)),
+      BigInt(local(2026, 10, 13, 15, 6, 44)),
+    ] as const;
+    expect(timesSlot(...sec)).toMatchObject({
+      start: "26-10-13 15:06:03",
+      startTooltip: "Tue 2026-10-13 15:06:03",
+      duration: "41 s",
     });
+    // One formatter: the slots are startDuration's fields (add-range-picker), not a second one.
+    const sd = startDuration(...range);
+    expect(timesSlot(...range)).toEqual({
+      start: `${sd.date} ${sd.time}`,
+      startTooltip: sd.full,
+      duration: sd.duration,
+      durationTooltip: sd.durationTip,
+    });
+    expect(sd.full).toBe(fullTime(range[0], false));
   });
 
   it("describes the arrows by their neighbour", () => {
@@ -354,7 +396,6 @@ describe("session bar markup", () => {
     "session-position",
     "session-arrow",
     "slot-title",
-    "slot-times",
     "slot-duration",
     "slot-action",
   ];
@@ -365,26 +406,90 @@ describe("session bar markup", () => {
     const linked = bar();
     expect(slotOrder(opening)).toEqual(SLOT_ORDER);
     expect(slotOrder(linked)).toEqual(SLOT_ORDER);
+    // No start slot in either (D-095).
+    expect(opening).not.toContain("slot-times");
+    expect(linked).not.toContain("slot-times");
 
-    // Title, times and duration each hold one skeleton and no text while the case is unknown.
-    for (const slot of ["slot-title", "slot-times", "slot-duration"]) {
+    // Title and duration each hold one skeleton and no text while the case is unknown.
+    for (const slot of ["slot-title", "slot-duration"]) {
       const inner = slotHtml(opening, slot);
       expect(inner, `${slot} in the opening markup`).toBeDefined();
       expect(inner?.match(/class="[^"]*\bskeleton\b/g), `${slot} skeletons`).toHaveLength(1);
       expect(textIn(inner), `${slot} text`).toBe("");
       expect(slotHtml(linked, slot), `${slot} loaded`).not.toMatch(/skeleton/);
     }
-    // The loaded bar has its texts.
+    // The loaded bar has its texts: the title, the duration with its words as tooltip, the action.
     expect(textIn(slotHtml(linked, "slot-title"))).toContain("testcar");
-    expect(textIn(slotHtml(linked, "slot-times"))).toContain("03:00:00 – 03:10:00");
-    expect(textIn(slotHtml(linked, "slot-duration"))).toBe("10 min");
+    expect(slotHtml(linked, "slot-title")).toContain(
+      "testcar · Thu 2026-10-01 03:00 · 0:10 h · driving",
+    );
+    const duration = slotHtml(linked, "slot-duration") ?? "";
+    expect(textIn(duration)).toBe("0:10 h");
+    expect(duration).toMatch(
+      /class="duration-tag"[^>]*title="Duration 10 min"|title="Duration 10 min"[^>]*class="duration-tag"/,
+    );
     expect(textIn(slotHtml(linked, "slot-action"))).toBe("Unlink");
 
     // A pending target outside the loaded catalog shows skeletons in its slots as well.
     const pending = bar({ pending: 2 });
     expect(slotOrder(pending)).toEqual(SLOT_ORDER);
     expect(slotHtml(pending, "slot-title")).toMatch(/skeleton/);
+    expect(slotHtml(pending, "slot-duration")).toMatch(/skeleton/);
     expect(textIn(slotHtml(pending, "session-position"))).toContain("3 / 4");
+  });
+
+  it("gives the position button its glyph, words and pressed state", () => {
+    // The glyph's lines as [x1, y1, x2, y2], whatever the attribute order of the markup.
+    const lines = (html: string) =>
+      [...(slotHtml(html, "session-position") ?? "").matchAll(/<line\b([^>]*)>/g)].map((m) => {
+        const attr = (n: string) =>
+          Number(new RegExp(`\\b${n}="([^"]*)"`).exec(m[1] as string)?.[1]);
+        return [attr("x1"), attr("y1"), attr("x2"), attr("y2")];
+      });
+    const START = [
+      [4, 3, 4, 21],
+      [9, 9, 20, 9],
+      [9, 15, 16, 15],
+    ];
+    const END = [
+      [20, 3, 20, 21],
+      [4, 9, 15, 9],
+      [8, 15, 15, 15],
+    ];
+    const MIDDLE = [
+      [12, 3, 12, 21],
+      [5, 9, 19, 9],
+      [8, 15, 16, 15],
+    ];
+    const html = bar();
+    const button = /<button[^>]*class="[^"]*\bsession-position\b[^"]*"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(button).toContain('title="Sessions of the catalog, aligned at the session start"');
+    expect(button).toContain(
+      'aria-label="Session 1 of 4, aligned at the session start: sessions and align"',
+    );
+    expect(button).toContain('aria-expanded="false"');
+    expect(textIn(slotHtml(html, "session-position"))).toContain("1 / 4");
+    expect(lines(html)).toEqual(START);
+    // End mode: the bar at the right; anchor and event modes: in the middle.
+    expect(lines(bar({ caseState: { ...caseAt(3), align: { mode: "end" } } }))).toEqual(END);
+    expect(lines(bar({ caseState: { ...caseAt(0), align: { mode: "anchor" } } }))).toEqual(MIDDLE);
+    const event = {
+      ...caseAt(0),
+      align: { mode: "event", event: { kind: "dtc", source: "ECU1", name: "B1234" } },
+    } as WorkspaceCase;
+    expect(lines(bar({ caseState: event }))).toEqual(MIDDLE);
+    // While its list is open the button is pressed (DW8: aria-expanded in the pressed style).
+    shown.open = true;
+    try {
+      shown.catalog = C4;
+      const open =
+        /<button[^>]*class="[^"]*\bsession-position\b[^"]*"[^>]*>/.exec(bar())?.[0] ?? "";
+      expect(open).toContain('aria-expanded="true"');
+      expect(open).toMatch(/class="[^"]*\btoggle\b/);
+    } finally {
+      shown.open = false;
+      shown.catalog = undefined;
+    }
   });
 
   it("shows the progress line only while a step is on its way", () => {
@@ -405,6 +510,8 @@ describe("session bar markup", () => {
           text: textIn(r[0]),
           checked: r[0].includes('aria-checked="true"'),
           disabled: /\sdisabled(=|\s|>)/.test(r[0]),
+          // The checked item takes the pressed style (`.toggle[aria-checked="true"]`, DW8).
+          pressable: /class="[^"]*\btoggle\b/.test(r[0]),
         }));
       };
       const noAnchors: CaseCatalog = {
@@ -416,10 +523,12 @@ describe("session bar markup", () => {
       shown.catalog = C4;
       const start = bar();
       expect(radios(start)).toEqual([
-        { text: "Session start", checked: true, disabled: false },
-        { text: "Session end", checked: false, disabled: false },
-        { text: "Anchor from the finder", checked: false, disabled: false },
+        { text: "Session start", checked: true, disabled: false, pressable: true },
+        { text: "Session end", checked: false, disabled: false, pressable: true },
+        { text: "Anchor from the finder", checked: false, disabled: false, pressable: true },
       ]);
+      // The button's words name the mode.
+      expect(start).toContain("aligned at the session start: sessions and align");
       // No C4 entry has an anchor: the item is disabled.
       shown.catalog = noAnchors;
       expect(radios(bar()).map((r) => r.disabled)).toEqual([false, false, true]);
@@ -433,6 +542,12 @@ describe("session bar markup", () => {
       const event = radios(bar({ caseState: eventCase }));
       expect(event).toHaveLength(4);
       expect(event.filter((r) => r.checked).map((r) => r.text)).toEqual(["Event: ECU1 B1234"]);
+      const eventButton = /<button[^>]*class="[^"]*\bsession-position\b[^"]*"[^>]*>/.exec(
+        bar({ caseState: eventCase }),
+      )?.[0];
+      expect(eventButton).toMatch(
+        /aria-label="Session 1 of 4, aligned at [^"]*B1234[^"]*: sessions and align"/,
+      );
 
       // The radio group sits in the list, and no button of the bar starts with `Align`.
       expect(start.indexOf("session-list")).toBeGreaterThanOrEqual(0);
@@ -456,7 +571,7 @@ describe("catalog list", () => {
     expect(more).toBe(0);
     expect(rows[0]?.index).toBe(2);
     expect(goFirstMatch(rows)).toEqual({ type: "case.go", index: 2 });
-    expect(rows[0]?.text).toContain("charging");
+    expect(rows[0]?.name).toContain("charging");
 
     // No filter: every row in catalog order with the current one marked.
     const all = catalogRows(C4_ENTRIES, "", 0);
@@ -485,9 +600,92 @@ describe("catalog list", () => {
     expect(moreText(0)).toBeUndefined();
   });
 
-  it("builds a row from position, kind, name, local start, duration and meta", () => {
-    const row = catalogRows(C4_ENTRIES, "", 0).rows[0];
-    expect(row?.text).toBe("1 · driving · testcar · 2026-10-01 03:00 · 10 min · distance_km 6.2");
+  it("fills the catalog row columns", () => {
+    // Row 1 of C4 at entry 0: 01:00 – 01:10 UTC = 03:00 CEST on Thu 2026-10-01.
+    const first = catalogRows(C4_ENTRIES, "", 0).rows[0];
+    expect(first?.index).toBe(0);
+    expect(first?.position).toBe("1");
+    expect(first?.name.startsWith("testcar · driving")).toBe(true);
+    expect(first?.name).toContain("6.2");
+    expect(first?.start).toBe("26-10-01 03:00");
+    expect(first?.startTooltip).toBe("Thu 2026-10-01 03:00");
+    expect(first?.duration).toBe("0:10 h");
+    expect(first?.durationTooltip).toBe("Duration 10 min");
+    expect(first?.current).toBe(true);
+    // The old one-line text is gone (D-093: four columns).
+    expect(first).not.toHaveProperty("text");
+    // A typed start in the shown form matches the stored one.
+    expect(catalogRows(C4_ENTRIES, "26-10-01 03:00", 0).rows.map((r) => r.index)).toEqual([0]);
+
+    // The rendered list: one duration tag per row, the start with its full tooltip, and the back link.
+    shown.open = true;
+    try {
+      const render = (tool?: string) => {
+        shown.catalog = {
+          ...C4,
+          origin: { url: "https://finder.example/search", ...(tool ? { tool } : {}) },
+        };
+        return renderToStaticMarkup(
+          createElement(SessionBar, {
+            caseState: caseAt(0),
+            scope: undefined,
+            onCommand: () => undefined,
+          }),
+        );
+      };
+      for (const tool of ["search tool", undefined]) {
+        const list = slotHtml(render(tool), "session-list") ?? "";
+        expect(list, "the open list").not.toBe("");
+        expect(list.match(/class="duration-tag"/g), "duration tags").toHaveLength(4);
+        expect(list).toContain('title="Thu 2026-10-01 03:00"');
+        expect(list).toContain('title="Duration 10 min"');
+        expect(list).toContain(">26-10-01 03:00<");
+        // `Back to search` whatever the origin names, with its tooltip from the hints table.
+        const back = /<a[^>]*class="session-back"[^>]*>(.*?)<\/a>/s.exec(list);
+        expect(textIn(back?.[0]), `tool ${tool}`).toBe("Back to search");
+        expect(back?.[0]).toContain(`title="${HINTS.backToSearch}"`);
+        expect(list).not.toContain("Back to the finder");
+      }
+    } finally {
+      shown.open = false;
+      shown.catalog = undefined;
+    }
+  });
+
+  it("gives the filter and every catalog row a tooltip (D-095)", () => {
+    shown.open = true;
+    try {
+      shown.catalog = { ...C4, origin: { url: "https://finder.example/search" } };
+      const html = renderToStaticMarkup(
+        createElement(SessionBar, {
+          caseState: caseAt(0),
+          scope: undefined,
+          onCommand: () => undefined,
+        }),
+      );
+      const list = slotHtml(html, "session-list") ?? "";
+      expect(list, "the open list").not.toBe("");
+      const filter = /<input\b[^>]*class="session-filter"[^>]*>/.exec(list)?.[0];
+      expect(filter, "the filter input").toBeDefined();
+      expect(filter).toMatch(/\btitle="[^"]+"/);
+      const rows = slotHtml(list, "session-rows") ?? "";
+      const buttons = [...rows.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
+      expect(buttons, "one button per catalog row").toHaveLength(4);
+      for (const b of buttons) expect(b).toMatch(/\btitle="[^"]+"/);
+    } finally {
+      shown.open = false;
+      shown.catalog = undefined;
+    }
+  });
+
+  it("holds the pinned column widths in the styles", () => {
+    // No layout in the tests: the CSS source is read. List grid 28 px / rest / 116 px / 64 px (DW6);
+    // slots 88 px (position) and 64 px (duration, label, action).
+    const css = readFileSync(new URL("../src/case/case.css", import.meta.url), "utf8");
+    expect(css).toMatch(/28px\s+1fr\s+116px\s+64px/);
+    expect(css).toMatch(/\b88px\b/);
+    expect(css).toMatch(/\b64px\b/);
+    expect(css).not.toContain("slot-times");
   });
 });
 
@@ -761,8 +959,12 @@ describe("context row", () => {
     expect(full).toContain("context-row");
     expect(textIn(slotHtml(full, "slot-label"))).toBe("SCOPE");
     expect(textIn(slotHtml(full, "slot-title"))).toContain("smart451");
-    expect(textIn(slotHtml(full, "slot-times"))).toContain("14:00:00 – 16:00:00");
-    expect(textIn(slotHtml(full, "slot-duration"))).toBe("2 h");
+    // Start and duration (D-095): the start only in the title's tooltip, the duration in its tag.
+    expect(full).not.toContain("slot-times");
+    expect(slotHtml(full, "slot-title")).toContain("smart451 · Tue 2026-10-13 14:00 · 2:00 h");
+    const duration = slotHtml(full, "slot-duration") ?? "";
+    expect(textIn(duration)).toBe("2:00 h");
+    expect(duration).toContain('title="Duration 2 h"');
     expect(full).toContain("Widen");
     expect(full).toContain("Clear");
     expect(row("scoped")).toContain("Widen");
@@ -771,7 +973,8 @@ describe("context row", () => {
     const sessionRow = renderToStaticMarkup(
       createElement(SessionBar, { caseState: caseAt(0), scope, onCommand: () => undefined }),
     );
-    expect(slotOrder(full).slice(0, 8)).toEqual(slotOrder(sessionRow));
+    // (the scope row adds a second action slot for Clear).
+    expect(slotOrder(full).slice(0, 7)).toEqual(slotOrder(sessionRow));
 
     // Neither a case nor a scope: no context row. App picks the row; its wiring is read from the source.
     const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");

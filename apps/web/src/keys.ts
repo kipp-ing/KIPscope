@@ -43,7 +43,8 @@ export function isHelpKey(e: KeyLike, focused: Element | null): boolean {
 
 /**
  * Navigation keys (design N6): zoom, pan, page, reset, the range picker (`goTo` opens it,
- * add-range-picker R11), the strip's drives (S9) and its events (improve-events P7).
+ * add-range-picker R11), the strip's drives (S9), its events (improve-events P7) and a cursor
+ * brought into view (declutter-workspace DW23).
  */
 export type NavKey =
   | "in"
@@ -57,13 +58,16 @@ export type NavKey =
   | "prevDrive"
   | "nextDrive"
   | "prevEvent"
-  | "nextEvent";
+  | "nextEvent"
+  | "cursorA"
+  | "cursorB";
 
 /**
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
  * Ctrl, Meta or Alt, nothing while the range picker is open (its day cells are buttons, so focus
- * alone does not tell). `+` needs Shift on some layouts, so Shift only matters for the arrows. `s`,
- * `e` and `/` stay free (sidebar toggle, events panel, explorer search).
+ * alone does not tell). `+` needs Shift on some layouts, so Shift only matters for the arrows and
+ * A/B (lower-case `a` and `b` stay unbound). `s`, `e` and `/` stay free (sidebar toggle, events
+ * panel, explorer search).
  */
 export function navKey(
   e: KeyLike & { shiftKey: boolean },
@@ -93,6 +97,10 @@ export function navKey(
       return "prevEvent";
     case "n":
       return "nextEvent";
+    case "A":
+      return e.shiftKey ? "cursorA" : undefined;
+    case "B":
+      return e.shiftKey ? "cursorB" : undefined;
     default:
       return undefined;
   }

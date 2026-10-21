@@ -103,6 +103,33 @@ describe("navKey", () => {
       expect(navKey(key(k), null), k).toBeUndefined();
     }
   });
+
+  it("maps Shift+A and Shift+B to bring a cursor into view", () => {
+    // D-095, design DW23: the key of a strip flag; `A` and `B` with Shift, nothing else.
+    for (const focused of [null, el("BUTTON"), el("DIV"), el("INPUT", { type: "checkbox" })]) {
+      expect(navKey(key("A", { shiftKey: true }), focused)).toBe("cursorA");
+      expect(navKey(key("B", { shiftKey: true }), focused)).toBe("cursorB");
+    }
+    // Without Shift the letters are no navigation keys.
+    for (const k of ["a", "b", "A", "B"]) expect(navKey(key(k), null), k).toBeUndefined();
+    // Not in fields that take typed text, not with Ctrl, Meta or Alt, not while the picker is open.
+    for (const field of [
+      el("INPUT", { type: "text" }),
+      el("INPUT", { type: "search" }),
+      el("TEXTAREA"),
+      el("SELECT"),
+      el("DIV", { isContentEditable: true }),
+    ]) {
+      expect(navKey(key("A", { shiftKey: true }), field), field.tagName).toBeUndefined();
+      expect(navKey(key("B", { shiftKey: true }), field), field.tagName).toBeUndefined();
+    }
+    for (const mods of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(navKey(key("A", { shiftKey: true, ...mods }), null)).toBeUndefined();
+      expect(navKey(key("B", { shiftKey: true, ...mods }), null)).toBeUndefined();
+    }
+    expect(navKey(key("A", { shiftKey: true }), null, true)).toBeUndefined();
+    expect(navKey(key("B", { shiftKey: true }), null, true)).toBeUndefined();
+  });
 });
 
 describe("navKey with the range picker", () => {

@@ -88,6 +88,15 @@ export const SHORTCUTS: Shortcut[] = [
     action: "Previous or next session of the catalog",
     probe: [{ key: "[" }, { key: "]" }],
   },
+  {
+    group: "Time",
+    keys: "Shift+A  Shift+B",
+    action: "Bring cursor A or B into view",
+    probe: [
+      { key: "A", shiftKey: true },
+      { key: "B", shiftKey: true },
+    ],
+  },
 
   { group: "Signal list", keys: "↑  ↓", action: "Move through the list" },
   { group: "Signal list", keys: "Enter", action: "Add to the Add to target" },
@@ -117,7 +126,7 @@ export const SHORTCUTS: Shortcut[] = [
     action: "Copy a legend row instead of moving it",
   },
 
-  { group: "Time strip", keys: "click a bar", action: "Jump there" },
+  { group: "Time strip", keys: "click the line", action: "Jump there" },
   { group: "Time strip", keys: "drag", action: "Zoom to the dragged range" },
   { group: "Time strip", keys: "drag the shown range", action: "Pan" },
   { group: "Time strip", keys: "double-click", action: "Show all" },

@@ -1,26 +1,36 @@
-import { type CaseEntry, type Density, type Drive, MIN_SPAN_NS } from "@kipscope/shared";
+import {
+  type CaseEntry,
+  type Density,
+  type Drive,
+  floorDiv,
+  type LoggerGap,
+  MIN_SPAN_NS,
+  NS_PER_MS,
+} from "@kipscope/shared";
 import { DOUBLE_CLICK_MS } from "../chart/cursors.ts";
 import { DRAG_THRESHOLD_PX } from "../chart/drag.ts";
 import { extentRange, type Range } from "../chart/zoom.ts";
 import { PIN_LANE_PX } from "../events/marks.ts";
-import { formatRange } from "./axis.ts";
-import { formatSpan } from "./strip.ts";
+import { fullTime, startDuration } from "./rangeLine.ts";
 
-// Pure geometry of the interactive strip (design S6–S10 of add-strip-navigation, D-057).
+// Pure geometry of the interactive strip (design S6–S10 of add-strip-navigation, D-057; one row
+// with a presence line, flags and end labels: declutter-workspace DW10, DW19).
 
-/** Bar gap in px (strip.css). */
+/** Strip height: track 27 px + 1 px border, in every state (DW10). */
+export const STRIP_PX = 28;
+/** End slack of the bucket pitch in px (the former bar gap): the track mapping keeps its numbers. */
 export const GAP_PX = 2;
-/** Bars area height; y ≥ BARS_PX is the drive row. */
-export const BARS_PX = 24;
-export const DRIVE_ROW_PX = 7;
+/** y ≥ this is the lower lane (day labels, flags): a press there hits a drive or the track, never
+ *  the window (time-strip "Strip hit zones", "Zones": the drive row without drives is the track). */
+export const LOWER_LANE_PX = 17;
 /** An edge zone reaches 4 px to each side of a drawn edge. */
 export const EDGE_PX = 4;
 /** Windows drawn narrower have no edge zones. */
 export const EDGES_MIN_PX = 16;
 /** Grab area of the window body. */
 export const MIN_GRAB_PX = 12;
-/** Drawn window. */
-export const MIN_WINDOW_PX = 2;
+/** Drawn window (D-095: was 2). */
+export const MIN_WINDOW_PX = 3;
 /** Drawn drive. */
 export const MIN_DRIVE_PX = 4;
 /** Drive hit width. */
@@ -102,12 +112,20 @@ function widen(tr: Track, r: Rect, min: number): Rect {
 }
 
 /** drawn: [xOf(from), xOf(to)] clamped to [0, px], widened about its centre to MIN_WINDOW_PX and shifted inside [0, px];
- *  grab: drawn widened the same way to MIN_GRAB_PX. Undefined when the range does not meet [start, start + n·width). */
-export function windowRects(tr: Track, range: Range): { drawn: Rect; grab: Rect } | undefined {
+ *  grab: drawn widened the same way to MIN_GRAB_PX; caret: the clamped width is below MIN_WINDOW_PX (the window is
+ *  drawn wider than the range). Undefined when the range does not meet [start, start + n·width). */
+export function windowRects(
+  tr: Track,
+  range: Range,
+): { drawn: Rect; grab: Rect; caret: boolean } | undefined {
   if (range.to <= tr.start || range.from >= endOf(tr)) return undefined;
   const clamped = { left: clampPx(tr, xOf(tr, range.from)), right: clampPx(tr, xOf(tr, range.to)) };
   const drawn = widen(tr, clamped, MIN_WINDOW_PX);
-  return { drawn, grab: widen(tr, drawn, MIN_GRAB_PX) };
+  return {
+    drawn,
+    grab: widen(tr, drawn, MIN_GRAB_PX),
+    caret: clamped.right - clamped.left < MIN_WINDOW_PX,
+  };
 }
 
 /** Widens r about its centre to at least min px (no clamping). */
@@ -159,11 +177,11 @@ export function caseMarks(
   return marks;
 }
 
-/** `Session <k> of <n> · <kind> · <local from> – <local to> · <title>`; absent parts left out (K14). */
+/** `Session <k> of <n> · <kind> · <start and duration> · <title>`; absent parts left out (K14, D-093). */
 export function caseMarkTitle(entry: CaseEntry, index: number, count: number): string {
   const parts = [`Session ${index + 1} of ${count}`];
   if (entry.kind) parts.push(entry.kind);
-  parts.push(formatRange(BigInt(entry.from), BigInt(entry.to)));
+  parts.push(startDuration(BigInt(entry.from), BigInt(entry.to)).text);
   if (entry.title) parts.push(entry.title);
   return parts.join(" · ");
 }
@@ -197,9 +215,10 @@ function nearestHit(rects: readonly Rect[], x: number): number {
 }
 
 /** x, y relative to the track's top left. range: the bar target's range; undefined without a target.
- *  pins: the hit rects of the event pins (add-events V3), checked first in the pin lane (y < PIN_LANE_PX).
- *  sessions: the hit rects of the catalog marks (add-case-open K14), checked before the drives in
- *  the drive row; the zone's index is the mark's position in that list. */
+ *  pins: the hit rects of the event pins (DW20), checked first in the pin lane (y < PIN_LANE_PX); where
+ *  two hold x, the nearer centre. sessions: the hit rects of the catalog marks (add-case-open K14),
+ *  checked before the drives below the pin lane; the zone's index is the mark's position in that list.
+ *  Then the window's edges and body above LOWER_LANE_PX, else the track (`bars`). */
 export function hitZone(
   tr: Track,
   x: number,
@@ -213,14 +232,15 @@ export function hitZone(
     const pin = nearestHit(pins, x);
     if (pin >= 0) return { kind: "pin", index: pin };
   }
-  if (y >= BARS_PX) {
+  if (y >= PIN_LANE_PX) {
     const session = nearestHit(sessions, x);
     if (session >= 0) return { kind: "session", index: session };
     const index = nearestHit(
       driveRects(tr, drives).map((r) => r.hit),
       x,
     );
-    return index >= 0 ? { kind: "drive", index } : { kind: "bars" };
+    if (index >= 0) return { kind: "drive", index };
+    if (y >= LOWER_LANE_PX) return { kind: "bars" };
   }
   const rects = range && windowRects(tr, range);
   if (!range || !rects) return { kind: "bars" };
@@ -392,20 +412,250 @@ export function rowsText(n: number): string {
   return `${n.toLocaleString("en-US")} rows`;
 }
 
-/** `${formatRange(start_i, start_i + width)} · ${rowsText(counts[i])}` (formatRange of time/axis.ts:
- *  local time as the header), then `\n<info>` when given (the strip's info, time-strip "Strip tooltips"). */
-export function barTitle(d: Density, i: number, info?: string): string {
-  const width = BigInt(d.width);
-  const from = BigInt(d.start) + BigInt(i) * width;
-  const line = `${formatRange(from, from + width)} · ${rowsText(d.counts[i] ?? 0)}`;
-  return info === undefined ? line : `${line}\n${info}`;
-}
-
-/** `Drive ${i + 1} of ${n} · ${formatRange(from, to)} · ${formatSpan(to − from)} · ${rowsText(rows)}`. */
+/** `Drive ${i + 1} of ${n} · ${startDuration(from, to).text} · ${rowsText(rows)}` (D-093, D-095). */
 export function driveTitle(d: Density, i: number): string {
   const drive = d.drives[i];
   if (!drive) return "";
-  const from = BigInt(drive.from);
-  const to = BigInt(drive.to);
-  return `Drive ${i + 1} of ${d.drives.length} · ${formatRange(from, to)} · ${formatSpan(to - from)} · ${rowsText(drive.rows)}`;
+  const range = startDuration(BigInt(drive.from), BigInt(drive.to)).text;
+  return `Drive ${i + 1} of ${d.drives.length} · ${range} · ${rowsText(drive.rows)}`;
+}
+
+// Presence line, flags, end labels, day labels and hover time (declutter-workspace DW19, D-094, D-095).
+
+/** A break of the presence line is drawn at least this wide. */
+export const BREAK_MIN_PX = 3;
+export interface PresenceRun {
+  left: number;
+  right: number;
+  /** Inside the shown range's drawn window: drawn in the accent. */
+  shown: boolean;
+}
+export interface PresenceBreak {
+  left: number;
+  right: number;
+  title: string;
+}
+
+interface Span {
+  from: bigint;
+  to: bigint;
+}
+
+/** A break before drawing: its px rect, the time span it covers and how many gaps it merges. */
+interface Hole extends Rect, Span {
+  n: number;
+}
+
+/** Data intervals: maximal runs of buckets with count > 0, clipped to [first, last]; breaks: the empty-bucket
+ *  runs between them and every logger gap inside [first, last], each widened about its centre to ≥ BREAK_MIN_PX,
+ *  overlapping breaks merged; title "No data · <startDuration text>" (one) or "No data · <n> gaps · <startDuration
+ *  from the first's from to the last's to>". Runs: data intervals in px minus the drawn breaks, split at the
+ *  shown range's drawn edges (`shown` inside). */
+export function presence(
+  tr: Track,
+  d: Density,
+  logger: readonly LoggerGap[] | undefined,
+  range: Range | undefined,
+): { runs: PresenceRun[]; breaks: PresenceBreak[] } {
+  const start = BigInt(d.start);
+  const width = BigInt(d.width);
+  const first = BigInt(d.first);
+  const last = BigInt(d.last);
+  const data: Span[] = [];
+  d.counts.forEach((count, i) => {
+    if (count <= 0) return;
+    const from = start + BigInt(i) * width;
+    const to = from + width;
+    const prev = data.at(-1);
+    if (prev && prev.to === from) prev.to = to;
+    else data.push({ from, to });
+  });
+  const clipped = data.flatMap(({ from, to }) => {
+    const f = from > first ? from : first;
+    const t = to < last ? to : last;
+    return f < t ? [{ from: f, to: t }] : [];
+  });
+  const spans: Span[] = [];
+  for (let i = 1; i < clipped.length; i++) {
+    spans.push({ from: (clipped[i - 1] as Span).to, to: (clipped[i] as Span).from });
+  }
+  for (const g of logger ?? []) {
+    const from = g.from > first ? g.from : first;
+    const to = g.to < last ? g.to : last;
+    if (from < to) spans.push({ from, to });
+  }
+  const holes: Hole[] = spans
+    .map((s) => {
+      const r = widenAbout({ left: xOf(tr, s.from), right: xOf(tr, s.to) }, BREAK_MIN_PX);
+      return { ...r, ...s, n: 1 };
+    })
+    .sort((a, b) => a.left - b.left);
+  const merged: Hole[] = [];
+  for (const h of holes) {
+    const prev = merged.at(-1);
+    if (prev && h.left <= prev.right) {
+      prev.right = Math.max(prev.right, h.right);
+      if (h.from < prev.from) prev.from = h.from;
+      if (h.to > prev.to) prev.to = h.to;
+      prev.n += h.n;
+    } else merged.push({ ...h });
+  }
+  const breaks = merged.map((h) => {
+    const text = startDuration(h.from, h.to).text;
+    return {
+      left: h.left,
+      right: h.right,
+      title: h.n === 1 ? `No data · ${text}` : `No data · ${h.n} gaps · ${text}`,
+    };
+  });
+  const win = range && windowRects(tr, range)?.drawn;
+  const runs: PresenceRun[] = [];
+  const push = (left: number, right: number) => {
+    if (right <= left) return;
+    if (!win) {
+      runs.push({ left, right, shown: false });
+      return;
+    }
+    const cuts = [left, ...[win.left, win.right].filter((x) => x > left && x < right), right];
+    for (let i = 1; i < cuts.length; i++) {
+      const l = cuts[i - 1] as number;
+      const r = cuts[i] as number;
+      runs.push({ left: l, right: r, shown: l >= win.left && r <= win.right });
+    }
+  };
+  for (const s of clipped) {
+    let left = xOf(tr, s.from);
+    const right = xOf(tr, s.to);
+    for (const b of breaks) {
+      if (b.right <= left || b.left >= right) continue;
+      push(left, Math.min(b.left, right));
+      left = Math.max(left, b.right);
+    }
+    push(left, right);
+  }
+  return { runs, breaks };
+}
+
+// Cursor flags (D-095: 14 × 12 face, 24 × 24 hit from y 11, A·B under 18 px, edge flags with a caret).
+export const FLAG_FACE_W = 14;
+export const FLAG_FACE_H = 12;
+export const FLAG_HIT = 24;
+export const FLAG_HIT_TOP = 11;
+export const FLAG_AB_FACE_W = 26;
+export const FLAG_AB_HIT_W = 32;
+export const FLAG_EDGE_AB_HIT_W = 36;
+export const FLAG_MERGE_PX = 18;
+
+export interface StripFlag {
+  name: "A" | "B" | "AB";
+  /** Face centre x in track px. Inside: the line's x (AB: the lines' midpoint). Edge: 14 / px − 14 (AB 20 / px − 20). */
+  x: number;
+  /** Hit rect in track px: inside centred on x, FLAG_HIT (AB FLAG_AB_HIT_W) wide; edge from the edge, 24 (AB 36) wide. */
+  hit: Rect;
+  /** The cursor lies before the track's start or after its end: no line, a caret beside the face. */
+  edge?: "before" | "after";
+}
+
+/** A flag inside the track, centred on x. */
+function insideFlag(name: StripFlag["name"], x: number): StripFlag {
+  const w = name === "AB" ? FLAG_AB_HIT_W : FLAG_HIT;
+  return { name, x, hit: { left: x - w / 2, right: x + w / 2 } };
+}
+
+/** A flag at the track's edge: the hit rect from the edge, the face centre half the face plus 7 px in. */
+function edgeFlag(tr: Track, name: StripFlag["name"], edge: "before" | "after"): StripFlag {
+  const w = name === "AB" ? FLAG_EDGE_AB_HIT_W : FLAG_HIT;
+  const inset = name === "AB" ? 20 : 14;
+  return edge === "before"
+    ? { name, x: inset, hit: { left: 0, right: w }, edge }
+    : { name, x: tr.px - inset, hit: { left: tr.px - w, right: tr.px }, edge };
+}
+
+/** Lines (markerX of the cursors inside the track) and flags: two inside cursors less than FLAG_MERGE_PX apart,
+ *  or two on the same edge, give one "AB" flag. */
+export function stripFlags(
+  tr: Track,
+  a: bigint | undefined,
+  b: bigint | undefined,
+): { lines: { name: "A" | "B"; x: number }[]; flags: StripFlag[] } {
+  type Where = { x: number } | { edge: "before" | "after" } | undefined;
+  const where = (t: bigint | undefined): Where => {
+    if (t === undefined) return undefined;
+    const x = markerX(tr, t);
+    if (x !== undefined) return { x };
+    return { edge: t < tr.start ? "before" : "after" };
+  };
+  const wa = where(a);
+  const wb = where(b);
+  const lines: { name: "A" | "B"; x: number }[] = [];
+  if (wa && "x" in wa) lines.push({ name: "A", x: wa.x });
+  if (wb && "x" in wb) lines.push({ name: "B", x: wb.x });
+  if (wa && wb && "x" in wa && "x" in wb && Math.abs(wb.x - wa.x) < FLAG_MERGE_PX) {
+    return { lines, flags: [insideFlag("AB", (wa.x + wb.x) / 2)] };
+  }
+  if (wa && wb && "edge" in wa && "edge" in wb && wa.edge === wb.edge) {
+    return { lines, flags: [edgeFlag(tr, "AB", wa.edge)] };
+  }
+  const flags: StripFlag[] = [];
+  const one = (name: "A" | "B", w: Where) => {
+    if (!w) return;
+    flags.push("x" in w ? insideFlag(name, w.x) : edgeFlag(tr, name, w.edge));
+  };
+  one("A", wa);
+  one("B", wb);
+  return { lines, flags };
+}
+
+/** Range of an "AB" click: centred on (a + b) / 2, span max(view span, 2·|b − a|). */
+export function bothRange(view: Range, a: bigint, b: bigint): Range {
+  const distance = b > a ? b - a : a - b;
+  const viewSpan = view.to - view.from;
+  const span = viewSpan > 2n * distance ? viewSpan : 2n * distance;
+  return centreRange({ from: 0n, to: span }, a + (b - a) / 2n);
+}
+
+/** Width of each end-label slot (DW10). */
+export const END_SLOT_PX = 48;
+const DAY_NS = 86_400_000_000_000n;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const localOf = (t: bigint) => new Date(Number(floorDiv(t, NS_PER_MS)));
+const hhmm = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const mmdd = (d: Date) => `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/** Left and right end label of the strip span [from, to]: "HH:MM" when to − from < 24 h, else "MM-DD", cut, local;
+ *  title fullTime(t, true). from/to: the scope's bounds, else density first/last. */
+export function endLabels(
+  from: bigint,
+  to: bigint,
+): { left: { text: string; title: string }; right: { text: string; title: string } } {
+  const text = to - from < DAY_NS ? hhmm : mmdd;
+  const label = (t: bigint) => ({ text: text(localOf(t)), title: fullTime(t, true) });
+  return { left: label(from), right: label(to) };
+}
+
+export const DAY_LABEL_GAP_PX = 32;
+export const DAY_LABEL_END_PX = 24;
+
+/** Local midnights m with from < m < to, x = xOf(tr, m), text "MM-DD" of the day starting at m; a label is kept when
+ *  x − (previous kept x) ≥ DAY_LABEL_GAP_PX and x ≤ tr.px − DAY_LABEL_END_PX. */
+export function dayTicks(tr: Track, from: bigint, to: bigint): { x: number; text: string }[] {
+  const ticks: { x: number; text: string }[] = [];
+  const d = localOf(from);
+  let day = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  for (;;) {
+    const m = BigInt(day.getTime()) * NS_PER_MS;
+    if (m >= to) break;
+    const x = xOf(tr, m);
+    if (x > tr.px - DAY_LABEL_END_PX) break;
+    const prev = ticks.at(-1);
+    if (m > from && (!prev || x - prev.x >= DAY_LABEL_GAP_PX)) ticks.push({ x, text: mmdd(day) });
+    day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+  }
+  return ticks;
+}
+
+/** Pointer time below the strip: "HH:MM:SS" (cut) when spanNs < 24 h, else "MM-DD HH:MM". */
+export function hoverText(t: bigint, spanNs: bigint): string {
+  const d = localOf(t);
+  return spanNs < DAY_NS ? `${hhmm(d)}:${pad2(d.getSeconds())}` : `${mmdd(d)} ${hhmm(d)}`;
 }

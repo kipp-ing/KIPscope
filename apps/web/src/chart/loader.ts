@@ -745,6 +745,7 @@ export class SeriesLoader {
           if (extent && (index * span > extent.last || (index + 1n) * span <= extent.first))
             continue;
           if (!this.cache.storable(range.level, index)) continue;
+          if (this.cache.outsideScope(range.level, index)) continue;
           if (this.cache.find(request.signalId, range.level, index)) continue;
           indices.push(index);
           budget--;

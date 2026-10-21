@@ -51,9 +51,45 @@ export function windowMenuItems(
   return items;
 }
 
+/** Events of one press that follow its pointerdown. */
+const PRESS_EVENTS = ["pointerup", "pointercancel", "mousedown", "mouseup", "click"] as const;
+
+/** Longest wait for the press's release; a press held longer reaches the page on release. */
+const PRESS_MAX_MS = 1000;
+
+/**
+ * Keeps the rest of the press whose pointerdown was just stopped from reaching the page: its mouse
+ * events and click (a plot places cursor A on mouseup). Ends after that press's release; if the
+ * release never arrives (released outside the browser), at the next pointerdown or keydown or after
+ * `PRESS_MAX_MS`, so a click made by the keyboard is never swallowed.
+ */
+function swallowPress(): void {
+  let ended = false;
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    clearTimeout(timer);
+    for (const type of PRESS_EVENTS) document.removeEventListener(type, stop, true);
+    document.removeEventListener("pointerdown", end, true);
+    document.removeEventListener("keydown", end, true);
+  };
+  function stop(e: Event) {
+    e.stopPropagation();
+    if (e.type === "click") e.preventDefault();
+    // The click, if any, follows the release in the same task.
+    if (e.type === "pointerup" || e.type === "pointercancel") setTimeout(end, 0);
+  }
+  for (const type of PRESS_EVENTS) document.addEventListener(type, stop, true);
+  document.addEventListener("pointerdown", end, true);
+  document.addEventListener("keydown", end, true);
+  const timer = setTimeout(end, PRESS_MAX_MS);
+}
+
 /**
  * The window's "⋯" menu (design L4, DW11): `windowMenuItems` in a popover below the button.
  * Choosing an item, Esc or a pointer down outside closes it; only Esc returns the focus to "⋯".
+ * A press outside only closes it and reaches nothing else (workspace-layout "Close without a
+ * command"): a click into a plot places no cursor.
  * `windowId` and `onCommand` are needed only with `display` (a values window sends no command).
  */
 export function WindowMenu({
@@ -77,7 +113,11 @@ export function WindowMenu({
     if (!open) return;
     root.current?.querySelector<HTMLButtonElement>("[role^=menuitem]")?.focus();
     const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      if (root.current?.contains(e.target as Node)) return;
+      e.stopPropagation();
+      e.preventDefault();
+      swallowPress();
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -85,7 +125,7 @@ export function WindowMenu({
       setOpen(false);
       button.current?.focus();
     };
-    // Capture phase: the plot's own pointer handling must not hide the click from us.
+    // Capture phase: seen before the plot's own pointer handling, which it then never gets.
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     return () => {

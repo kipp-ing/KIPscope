@@ -239,6 +239,16 @@ export class SeriesCache {
   }
 
   /**
+   * True when the tile lies wholly outside the workspace's scope: the server answers it with 409
+   * out_of_scope, so it is never prefetched (half-open, like the series route's cut).
+   */
+  outsideScope(level: number, index: bigint): boolean {
+    if (!this.scope) return false;
+    const span = tileSpan(level);
+    return (index + 1n) * span <= this.scope.from || index * span >= this.scope.to;
+  }
+
+  /**
    * True when `find` would answer the tile under `scope` (default: the workspace's), without
    * marking anything as used: a pure lookup for the preload plan (K13).
    */

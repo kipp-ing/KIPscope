@@ -7,17 +7,14 @@ import {
 } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import {
-  BAR_PX,
   formatSpan,
   nearbyHint,
   nextWorkWindow,
   RETRY_MS,
-  stripBars,
   stripDataRef,
   stripLabel,
 } from "../src/time/strip.ts";
 import {
-  BARS_PX,
   caseMarks,
   caseMarkTitle,
   hitZone,
@@ -44,29 +41,9 @@ const density = (over: Partial<Density> = {}): Density => ({
   ...over,
 });
 
-describe("stripBars", () => {
-  it("sizes and marks the bars", () => {
-    expect(BAR_PX).toBe(24);
+describe("strip retry", () => {
+  it("retries a failed load every 30 s", () => {
     expect(RETRY_MS).toBe(30_000);
-    const bars = stripBars(density(), { from: 12n * S, to: 31n * S });
-    // Empty 1 px; the largest count 24 px; 5 of 10 round(12) = 12; 1 of 10 is 2.4, floored up to 3.
-    expect(bars.map((b) => b.height)).toEqual([1, 24, 12, 1, 3]);
-    // [10 s, 20 s), [20 s, 30 s) and the empty [30 s, 40 s) meet [12 s, 31 s).
-    expect(bars.map((b) => b.shown)).toEqual([false, true, true, true, false]);
-  });
-
-  it("treats the range as half-open and marks nothing without one", () => {
-    // [10 s, 20 s) exactly: bucket 1 only; bucket 2 starts at the exclusive end, bucket 0 ends at the start.
-    const exact = stripBars(density(), { from: 10n * S, to: 20n * S });
-    expect(exact.map((b) => b.shown)).toEqual([false, true, false, false, false]);
-    expect(stripBars(density()).map((b) => b.shown)).toEqual([false, false, false, false, false]);
-  });
-
-  it("counts buckets from a start before 1970", () => {
-    const d = density({ start: (-20n * S).toString(), counts: [4, 4, 1] });
-    const bars = stripBars(d, { from: -5n * S, to: 0n });
-    expect(bars.map((b) => b.height)).toEqual([24, 24, 6]);
-    expect(bars.map((b) => b.shown)).toEqual([false, true, false]);
   });
 });
 
@@ -103,15 +80,14 @@ describe("strip label and data ref with a scope (add-scope)", () => {
       counts: [1],
       scope: { from: T1.toString(), to: T2.toString() },
     });
-    expect(stripLabel(d, { from: T1 + 10n * MIN, to: T1 + 20n * MIN })).toBe(
-      "10 min of 1 h in scope · 1 bar = 30 s",
-    );
-    expect(stripLabel(d)).toBe("1 h in scope · 1 bar = 30 s");
-    // Without `scope` the label is the existing "recorded" text (last - first = 59 min 59.999999999 s).
+    const view = { from: T1 + 10n * MIN, to: T1 + 20n * MIN };
+    // No `1 bar =` any more (D-094: the strip has no bars).
+    expect(stripLabel(d, view)).toBe("10 min of 1 h in scope");
+    expect(stripLabel(d)).toBe("1 h in scope");
+    // Without `scope` the label reads "recorded": first = T1, last 6 d later.
     const { scope: _scope, ...plain } = d;
-    expect(stripLabel(plain, { from: T1 + 10n * MIN, to: T1 + 20n * MIN })).toBe(
-      "10 min of 60 min recorded · 1 bar = 30 s",
-    );
+    const sixDays = { ...plain, last: (T1 + 6n * D).toString() };
+    expect(stripLabel(sixDays, view)).toBe("10 min of 6 d recorded");
   });
 
   it("takes the scope's data ref", () => {
@@ -133,10 +109,9 @@ describe("stripLabel", () => {
       start: "0",
       counts: [1],
     });
-    expect(stripLabel(d, { from: 12n * S, to: 31n * S })).toBe(
-      "19 s of 6 d recorded · 1 bar = 3 h",
-    );
-    expect(stripLabel(d)).toBe("6 d recorded · 1 bar = 3 h");
+    expect(stripLabel(d, { from: 12n * S, to: 31n * S })).toBe("19 s of 6 d recorded");
+    expect(stripLabel(d)).toBe("6 d recorded");
+    expect(stripLabel(d, { from: 12n * S, to: 31n * S })).not.toContain("bar");
   });
 });
 
@@ -197,6 +172,8 @@ describe("strip drop text for a selection", () => {
 });
 
 describe("strip in an object scope (add-case-open)", () => {
+  /** A y in the drive row, below the line area (the old bars area is gone, the zones keep their y). */
+  const DRIVE_ROW_Y = 26;
   const DAYS = 86_400n * S;
   const ms = (y: number, m: number, d: number, h = 0, min = 0) =>
     BigInt(Date.UTC(y, m - 1, d, h, min)) * 1_000_000n;
@@ -214,7 +191,7 @@ describe("strip in an object scope (add-case-open)", () => {
       coarse: true,
     });
     expect(stripLabel(coarse, { from: ms(2026, 6, 10, 12), to: ms(2026, 6, 10, 12, 10) })).toBe(
-      "10 min of 1.1 y recorded · 1 bar = 7 d",
+      "10 min of 1.1 y recorded",
     );
     // A scope's density that is not coarse still reads "in scope".
     expect(
@@ -222,7 +199,7 @@ describe("strip in an object scope (add-case-open)", () => {
         density({ scope: { from: "0", to: (2n * H).toString() }, width: (30n * S).toString() }),
         { from: 0n, to: 10n * MIN },
       ),
-    ).toBe("10 min of 2 h in scope · 1 bar = 30 s");
+    ).toBe("10 min of 2 h in scope");
   });
 
   it("asks the detail density for the work window", () => {
@@ -270,8 +247,9 @@ describe("strip in an object scope (add-case-open)", () => {
     }
     const title = caseMarkTitle(C4_ENTRIES[2] as (typeof C4_ENTRIES)[number], 2, 4);
     expect(title.startsWith("Session 3 of 4 · charging · ")).toBe(true);
-    expect(title).toContain("06:50");
-    expect(title).toContain("07:10");
+    // The range reads as start and duration (D-093): 04:50 – 05:10 UTC = 06:50 CEST, 20 min.
+    expect(title).toContain("26-10-01 06:50  0:20 h");
+    expect(title).not.toContain("07:10");
     // A title is the last part.
     expect(
       caseMarkTitle(
@@ -286,19 +264,19 @@ describe("strip in an object scope (add-case-open)", () => {
     const hits = marks.map((m) => m.hit);
     const x =
       ((Number(BigInt(at(4, 52)) - BigInt(at(0, 0))) / Number(10n * MIN)) * (1438 + 2)) / 60;
-    const zone = hitZone(tr, x, BARS_PX + 2, undefined, [], [], hits);
+    const zone = hitZone(tr, x, DRIVE_ROW_Y, undefined, [], [], hits);
     expect(zone).toEqual({ kind: "session", index: 1 });
     const g = new StripGesture();
-    g.down(x, BARS_PX + 2, zone, 0);
-    const action = g.up(x, BARS_PX + 2, 40);
+    g.down(x, DRIVE_ROW_Y, zone, 0);
+    const action = g.up(x, DRIVE_ROW_Y, 40);
     expect(action).toEqual({ kind: "session", mark: 1 });
     // The mark at that position is catalog entry 2: the command is case.go {index: 2}.
     expect(marks[(action as { mark: number }).mark]?.index).toBe(2);
 
     // A drive under the mark does not win.
     const drive = { from: at(4, 51), to: at(5, 9), rows: 10 };
-    expect(hitZone(tr, x, BARS_PX + 2, undefined, [drive], [], hits).kind).toBe("session");
+    expect(hitZone(tr, x, DRIVE_ROW_Y, undefined, [drive], [], hits).kind).toBe("session");
     // Without marks the drive is hit.
-    expect(hitZone(tr, x, BARS_PX + 2, undefined, [drive], [], []).kind).toBe("drive");
+    expect(hitZone(tr, x, DRIVE_ROW_Y, undefined, [drive], [], []).kind).toBe("drive");
   });
 });

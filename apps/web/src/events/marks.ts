@@ -21,8 +21,11 @@ export const PIN_W = 3;
 export const PIN_W_MANY = 5;
 /** Minimum hit width. */
 export const PIN_HIT_PX = 8;
-/** Strip: y < this is the pin lane for hits. */
-export const PIN_LANE_PX = 8;
+/** Strip: y < this is the pin lane for hits (declutter-workspace DW20). */
+export const PIN_LANE_PX = 11;
+/** Minimum hit width and height of a strip pin (DW20). */
+export const STRIP_PIN_HIT_W = 10;
+export const STRIP_PIN_HIT_H = 11;
 
 export interface Mark {
   x0: number;
@@ -86,6 +89,39 @@ export function markColor(c: EventCategory): string {
   if (c === "stored") return EVENT_COLORS.stored;
   if (c === "change") return EVENT_COLORS.change;
   return EVENT_COLORS.info;
+}
+
+/** How a strip pin is drawn (DW20): a fault's tick with a head, a change's short tick, a hollow
+ *  stored event or DTC read, else a dot. */
+export type PinShape = "fault" | "change" | "hollow" | "dot";
+
+/** read (all DTC reads) → "hollow"; else by category: active, pending → "fault"; stored → "hollow";
+ *  change → "change"; else "dot" (DW20). */
+export function pinShape(m: Mark): PinShape {
+  if (m.read) return "hollow";
+  if (m.category === "active" || m.category === "pending") return "fault";
+  if (m.category === "stored") return "hollow";
+  return m.category === "change" ? "change" : "dot";
+}
+
+/** Drawn width of a strip pin per shape, one event and several (DW20). */
+const SHAPE_W: Record<PinShape, [one: number, many: number]> = {
+  fault: [7, 7],
+  change: [2, 4],
+  hollow: [6, 8],
+  dot: [4, 4],
+};
+
+/** Shape geometry on the strip, centred on (x0 + x1) / 2, x in track px (DW20): fault 7 (the head),
+ *  change 2 (4 for several), hollow 6 (8 for several), dot 4; hit = drawn widened about the centre
+ *  to at least STRIP_PIN_HIT_W. */
+export function stripPin(m: Mark): { shape: PinShape; color: string; drawn: Rect; hit: Rect } {
+  const shape = pinShape(m);
+  const [one, many] = SHAPE_W[shape];
+  const width = m.events.length > 1 ? many : one;
+  const centre = (m.x0 + m.x1) / 2;
+  const drawn = { left: centre - width / 2, right: centre + width / 2 };
+  return { shape, color: markColor(m.category), drawn, hit: widenAbout(drawn, STRIP_PIN_HIT_W) };
 }
 
 /** Inline style of a pin or glyph: hollow in the category's colour for a read, else filled. */

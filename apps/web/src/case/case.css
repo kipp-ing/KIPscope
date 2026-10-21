@@ -1,18 +1,19 @@
-/* Context row (declutter-workspace DW3): the session bar (SessionBar) and the scope row
+/* Context row (declutter-workspace DW3, D-095): the session bar (SessionBar) and the scope row
    (time/ScopeRow) in one row of fixed slots between the top row and the strip. Every slot's box
-   depends on the row's width only, never on its text: label 64 px, arrows 26 px, position
-   `<n> / <n> ▾` in ch, title the rest, times 268 px, duration and action 64 px each (the mock's
-   measures, design DW2). Slots are placed on named grid lines, not by order, so the label's
-   leaving (compact row) and the scope row's missing second action keep every other slot in its
-   column; there is no column gap (an empty column takes no room), the slots pad themselves. */
+   depends on the row's width only, never on its text: label 64 px, arrows 26 px, position button
+   88 × 24 px, title the rest, duration 64 px, action 64 × 24 px (the mock SessionBar.dc.html). No
+   start slot: the start lives in the title's tooltip and the catalog list. Slots are placed on
+   named grid lines, not by order, so the label's leaving (compact row) and the scope row's missing
+   second action keep every other slot in its column; there is no column gap (an empty column takes
+   no room), the slots pad themselves. */
 
 .context-row {
   position: relative;
   container: context-row / inline-size;
   display: grid;
   grid-template-columns:
-    [label] auto [prev] 26px [pos] auto [next] 26px [title] minmax(0, 1fr)
-    [times] 268px [duration] 64px [action] auto [action2] auto;
+    [label] auto [prev] 26px [pos] 88px [next] 26px [title] minmax(0, 1fr)
+    [duration] 64px [action] auto [action2] auto;
   align-items: center;
   box-sizing: border-box;
   height: 32px;
@@ -40,14 +41,14 @@
   letter-spacing: 0.05em;
 }
 
-/* Compact row (case-navigation "Session bar"): the label leaves where the title slot would drop
-   below 160 px. Measured 2026-10-21 in headless Chrome (scripts/cdp.mjs, system-ui 12 px, this
-   file's slots): the title slot is 160 px at a content box of 750 px for `9 / 9`, 765 px for
-   `99 / 99`, 781 px for `999 / 999` and 796 px for `9999 / 9999`; the threshold, one width for
-   every catalog so the rule never depends on the catalog, is 800 px (design DW3 estimated ≈ 860).
-   The longest times text (`Wed 2026-10-28  23:31:05 – 01:52:43+1`) is 239 px of its 268 px. At
-   1000×557 with the sidebar open the row is compact (≈ 760 px), at 1440×900 not (≈ 1200 px). */
-@container context-row (max-width: 800px) {
+/* Compact row (case-navigation "Session bar"): the label leaves below 860 px of content box.
+   Measured 2026-10-21 from this file's fixed slots (no slot depends on its text since D-095):
+   label 64 + arrows 2 × 26 + position 88 + duration 64 + action 10 + 64 = 342 px, so the title
+   keeps 160 px down to 502 px (572 px for the scope row with Clear, + 6 + 64). The threshold
+   stays at design DW3's 860 px, which the mock's compact state (row 780 px in a 1000 px window)
+   and the scenarios "Bar on smart451" and "Scope on smart451" ask for: compact at 1000×557 with
+   the sidebar open (content ≈ 770 px), not at 1440×900 (≈ 1170 px). */
+@container context-row (max-width: 860px) {
   .context-row .slot-label {
     display: none;
   }
@@ -89,28 +90,43 @@
   display: flex;
 }
 
-/* `<k> / <n> ▾`: as wide as `<n> / <n> ▾` of the open catalog (--position-ch, sessionSlots). */
+/* `<glyph> <k> / <n> ▾` in 88 × 24 px (fits `123 / 456`), pressed while its list is open (DW8). */
 .context-row .session-position {
   grid-column: pos;
   display: inline-flex;
+  gap: 3px;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: calc(var(--position-ch, 5) * 1ch + 30px);
-  height: 22px;
-  padding: 0 8px;
+  width: 88px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 2px;
   border: 1px solid var(--control-border);
   border-radius: 999px;
   background: var(--panel);
   color: var(--text);
   font: inherit;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.context-row .session-position:hover:not(:disabled),
-.context-row .session-position[aria-expanded="true"] {
+.context-row .session-align-glyph {
+  flex: none;
+}
+
+.context-row .session-position:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+/* The pressed style of bar.css (DW8), here too so the row does not depend on its load order. */
+.context-row .session-position[aria-expanded="true"],
+.session-popover .session-align button[aria-checked="true"] {
+  border: 1px solid #7dd3fc;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 600;
 }
 
 .context-row .session-position:disabled {
@@ -139,31 +155,12 @@
   font-weight: 600;
 }
 
-/* `pre` keeps the double space between date and times (sessionSlots). */
-.context-row .slot-times {
-  grid-column: times;
-  overflow: hidden;
-  color: var(--label);
-  text-overflow: ellipsis;
-  white-space: pre;
-}
-
-.context-row .slot-weekday {
-  color: var(--soft-ink);
-}
-
-.context-row .slot-plus {
-  margin-left: 1px;
-  color: var(--accent-ink);
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 0;
-}
-
+/* The duration tag, right-aligned in 64 px (fits `9 d 11 h`). */
 .context-row .slot-duration {
   grid-column: duration;
   display: flex;
   justify-content: flex-end;
+  width: 64px;
   overflow: hidden;
   color: var(--muted);
 }
@@ -184,7 +181,7 @@
 }
 
 .context-row button.slot-action {
-  height: 22px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--control-border);
   border-radius: 999px;
@@ -213,18 +210,12 @@
   background: var(--border);
 }
 
-.context-row .slot-times .skeleton {
-  display: inline-block;
-  max-width: 220px;
-  vertical-align: middle;
-}
-
 .context-row :is(.slot-duration, .slot-action) .skeleton {
   max-width: 44px;
 }
 
 .context-row .session-position .skeleton {
-  width: 3ch;
+  width: 44px;
 }
 
 /* A step or go on its way (DW4): 2 px on the row's bottom edge, over its border, taking no room. */
@@ -277,9 +268,9 @@
   box-sizing: border-box;
   min-width: 0;
   max-width: 470px;
-  height: 22px;
+  height: 24px;
   margin-left: auto;
-  padding: 0 2px 0 8px;
+  padding: 0 1px 0 8px;
   border: 1px solid var(--sna);
   border-radius: 999px;
   background: var(--sna-fill);
@@ -293,16 +284,17 @@
   text-overflow: ellipsis;
 }
 
+/* ✕: 22 × 22 px (D-095, critic 15). */
 .context-row .session-open-note-dismiss {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: 999px;
   background: none;
   color: var(--sna-ink);
-  font: 10px / 18px var(--font-sans);
+  font: 10px / 22px var(--font-sans);
   cursor: pointer;
 }
 
@@ -310,7 +302,7 @@
   background: rgb(146 64 14 / 0.1);
 }
 
-/* Catalog list (K14) under `<k> / <n> ▾`, with the Align group at its foot (DW6). */
+/* Catalog list (K14) under the position button, with the Align group at its foot (DW6). */
 .session-popover {
   position: absolute;
   top: calc(100% + 4px);
@@ -363,6 +355,7 @@
 }
 
 .session-back {
+  align-self: flex-start;
   padding: 0 10px 4px;
   color: var(--accent);
 }
@@ -375,11 +368,35 @@
   font-variant-numeric: tabular-nums;
 }
 
-.session-rows button {
+/* Columns position, name, start, duration (mock grid `28px 1fr 116px 64px`, D-093, D-095). */
+.session-popover .session-rows button {
   /* A row never shrinks: with hundreds of rows the list scrolls instead of squeezing them to 0 px. */
   flex: none;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 116px 64px;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+}
+
+.session-row-position {
+  padding-right: 8px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.session-row-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-row-start {
+  color: var(--label);
+}
+
+.session-rows .duration-tag {
+  justify-content: flex-end;
 }
 
 .session-rows button.current {
@@ -392,7 +409,7 @@
   color: var(--muted);
 }
 
-/* ALIGN, then the modes as one segmented control; the checked one inverted. */
+/* ALIGN, then the modes as one segmented control; the checked one in the pressed style (DW8). */
 .session-align {
   display: flex;
   flex: none;
@@ -416,10 +433,4 @@
   padding: 0 10px;
   border: 1px solid var(--control-border);
   border-radius: var(--radius);
-}
-
-.session-popover .session-align button[aria-checked="true"] {
-  border-color: var(--text);
-  background: var(--text);
-  color: #fff;
 }

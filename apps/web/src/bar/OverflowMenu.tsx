@@ -35,7 +35,7 @@ export const OverflowTailContext = createContext<OverflowTail | undefined>(undef
 
 /**
  * "⋯" (`More`) near the end of the top row, always shown (design DW8): its menu holds Digits and
- * "+ Values window", and Share… below the Share threshold (bar.css), where the row's Share… hides.
+ * "+ Values window", nothing else (Share… stays in the row, D-095).
  * Enter, Space or ArrowDown opens it and focuses the first control; Esc closes it and returns
  * focus to "⋯"; Tab past the last control or a pointer down outside closes it. App's "?"
  * (OverflowTailContext) follows "⋯" in the row.
@@ -51,20 +51,6 @@ export function OverflowMenu({
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  // Whether Share… is inside the menu, i.e. the row's Share… is hidden (bar.css), for the tooltip.
-  const [shareInside, setShareInside] = useState(false);
-
-  useEffect(() => {
-    const bar = root.current?.parentElement;
-    if (!bar) return;
-    const observer = new ResizeObserver(() => {
-      const share = bar.querySelector(":scope > .share-menu.overflow-item");
-      setShareInside(share !== null && share.getClientRects().length === 0);
-    });
-    observer.observe(bar);
-    return () => observer.disconnect();
-  }, []);
-
   const close = useCallback((refocus = false) => {
     setOpen(false);
     if (refocus) button.current?.focus();
@@ -103,7 +89,7 @@ export function OverflowMenu({
           aria-label="More"
           aria-haspopup="menu"
           aria-expanded={open}
-          title={HINTS.more(shareInside)}
+          title={HINTS.more}
           onClick={() => setOpen((o) => !o)}
           onKeyDown={(e) => {
             if (e.key !== "ArrowDown" || open) return;

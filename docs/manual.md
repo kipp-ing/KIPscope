@@ -6,10 +6,10 @@ KIPscope shows recorded vehicle data over time: CAN signals and diagnostic data 
 
 The screen, from left to right and top to bottom:
 
-- **Signal list**, with the tabs Signals and Events; each tab shows its count. The sidebar icon at the start of the top row, or `s`, hides or shows it.
-- **Top row**: the sidebar icon, Views, the range button, the icons Back, Reset and Link time axes, the cursor pills A, B and Diff, Share…, the ⋯ menu with Digits and + Values window, and `?` for help. The range button shows the time range on screen and opens the range picker. Every icon names itself in its tooltip. On a narrow screen, Share… moves into the ⋯ menu too; Help (`?`) always stays last in the row.
+- **Signal list**, with the tabs Signals and Events and their counts, 248 px wide (208 px below 1200 px); a cut name shows whole in its tooltip. The sidebar icon at the start of the top row, or `s`, hides or shows it.
+- **Top row**: the sidebar icon, Views, the range button, the icons Back, Reset and Link time axes, the toggles A, B and Diff, then at the end Share…, ⋯ (More: Digits and + Values window) and `?` for help. The range button shows the time range on screen and opens the range picker. Icons name themselves in their tooltips; a toggle that is on is tinted blue. On a narrow screen the Views label becomes an icon, nothing moves into ⋯, and Help (`?`) stays last.
 - **Context row**, only with a session list or a scope: the session bar, or the scope with Widen and Clear.
-- **Time strip**: the whole recording as bars, the drives under them, and the event pins. Its tooltip gives the strip info.
+- **Time strip**: the whole recording in one row: a line where data exists, drives, event pins, the shown range and the cursor flags.
 - **Windows**: signals over time, or a table of values, in two columns on a wide screen.
 - **Status strip**: `connected` or `disconnected`, the last error and the measurement info. Hover `connected` for the revision, the source and the build.
 
@@ -45,7 +45,7 @@ For many signals at one moment, use **+ Values window** in the ⋯ menu: a table
 
 ## Measure
 
-Click in a plot to set **cursor A**; `Shift+click` sets **cursor B**. A plain second click moves A again. Both cursors mark the same time in every window. Drag a line to move it. The A and B pills switch them on and off.
+Click in a plot to set **cursor A**; `Shift+click` sets **cursor B**. A plain second click moves A again. Both cursors mark the same time in every window. Drag a line to move it. The A and B toggles in the top row switch them on and off.
 
 Each legend row shows the signal's exact value at A and at B, read from the recording at any zoom. The legend's header row heads these columns with the cursor times, such as `A 07:44:22.950`; with Diff on, the Δ column's header shows Δt. **Diff** adds Δ, the value at B minus the value at A, and Δt, the time from A to B, which also shows between the flags at the top of the plot.
 
@@ -59,13 +59,13 @@ Signals with states show the state name: Gear reads `P`, `R`, `N` or `D`. For st
 
 In a plot, drag across to zoom to that range; `Ctrl+wheel` or `Shift+wheel` zooms around the pointer; the plain wheel scrolls the page; a horizontal swipe pans; double-click shows all data of the window.
 
-On the time strip:
+On the time strip, one row from the recording's start to its end:
 
-- Click a bar to jump there, keeping the span.
-- Drag across the bars to zoom.
-- Drag the highlighted shown range to pan, or its edges to resize it.
-- Double-click shows the whole recording.
-- Click a drive (the dark segments under the bars) to fit it; `,` and `.` step to the previous and next drive.
+- The grey **line** shows where data exists, blue in the shown range; a break is a gap (hover it for its time). The **end labels** read the start and end (`15:06` within a day, else `10-13`; hover for the full date); small labels such as `10-14` mark midnights (not in a linked session), and the time under the pointer shows below the strip.
+- Click the line to jump there, keeping the span; drag across it to zoom; double-click shows the whole recording.
+- Drag the highlighted shown range to pan, or its edges to resize it; a range too narrow to see keeps a caret.
+- Click a drive (a dark segment on the line) to fit it; `,` and `.` step between drives.
+- Click the **flag** A or B, or press `Shift+A` or `Shift+B`, to centre the view on that cursor, keeping the span. Close cursors share one `A·B` flag that centres on both; a cursor beyond the strip's end shows its flag there with ◂ or ▸.
 
 The **range button** in the top row reads the range on screen as start and duration: `26-10-13 15:06` and, after the stopwatch, `0:12 h`, `41 s` or, from two days, `9 d 11 h`. Hovering the start shows its full date (`Tue 2026-10-13 15:06`), hovering the duration its words (`Duration 12 min`). Click it or press `t` to open the **range picker**:
 
@@ -75,37 +75,37 @@ The **range button** in the top row reads the range on screen as start and durat
 - **From** and **To** each show a date as YY-MM-DD and a time field that takes `HH:MM`; To also takes `24:00`, the end of the day.
 - **Go** shows the range, as one step that **Back** undoes. **Cancel**, `Esc` or a click outside closes the picker and changes nothing. While it is open, the navigation keys do nothing.
 
-Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (the arrow icon after the range button, `Backspace`) returns to the previous range, up to 50 steps. **Reset** (the icon after Back, `Home`) shows all data.
+Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (the arrow icon after the range button, `Backspace`) returns to the previous range, up to 50 steps. **Reset** (the fit icon after Back: two bars with an arrow between, `Home`) shows all data.
 
 ### Sessions from the search tool
 
-The search tool (finder) is a separate tool that finds sessions; it is not part of KIPscope. Its "Open in KIPscope", or a dropped catalog file, opens a new workspace on one session of the list it found. The context row above the strip then shows the session bar instead of the scope, each part in a fixed place: `SESSION`, `‹`, the position such as `3 / 17 ▾`, `›`, the vehicle or title, the weekday, date and times, the length, and **Unlink**. An end on the next day carries a small +1; a session over two or more days shows both dates. Hover the title for the kind and the meta values; the session list has a `Back to` link to the finder.
+The search tool, a separate tool, finds sessions; its "Open in KIPscope", or a dropped catalog file, opens a new workspace on one session of its list. The context row then shows the session bar: `SESSION`, `‹`, the position button such as `3 / 17` with the alignment's glyph, `›`, the title, the duration such as `0:10 h`, and **Unlink**. Hover the title for the start, kind and meta values, the position button for the alignment.
 
-- `‹` and `›` on the bar, or the keys `[` and `]`, step to the previous and next session in the order the search tool sent. The windows, signals and filter stay; each window keeps its distance from the alignment point, so the same moment of the next session shows. The bar shows the next session at once and a thin line under it runs until the windows have drawn. A signal the next vehicle lacks stays in its window and reads `missing`.
-- `3 / 17 ▾` opens the list of all sessions; type to filter by vehicle, kind, time or a meta value, then `Enter` or click a row.
-- **Align**, at the foot of the session list (`3 / 17 ▾`), sets what lines up between sessions: `Session start`, `Session end`, `Anchor from the finder`, or an event: right-click a pin and choose `Align sessions to this event`, or use `Align` on an Events row. Each later session lines up on its first matching event; without one it aligns to its start and the message line says so.
-- **Unlink**, at the end of the bar, shows the vehicle's whole recording around the session: the bar reads `VEHICLE` and greys the arrows, the strip shows the catalog's sessions of this vehicle as marks, and the Events tab lists the events near the view (`Nearby`). Click a mark, or **Link**, to go back to a session with the layout you had.
-- **Back** remembers the zoom steps of each session; stepping back to a session restores them.
+- `‹` and `›` on the bar, or the keys `[` and `]`, step through the sessions in the search tool's order. Windows, signals and filter stay, and each window keeps its distance from the alignment point. A thin line under the bar runs until the windows have drawn. A signal the next vehicle lacks reads `missing`.
+- `3 / 17` opens the session list, each row with number, name, start such as `26-10-01 03:00` and duration; type to filter, then `Enter` or click a row. **Back to search** at its foot returns to the search tool.
+- **Align**, at the list's foot, sets what lines up between sessions: `Session start`, `Session end`, `Anchor from the finder`, or an event: right-click a pin and choose `Align sessions to this event`, or use `Align` on an Events row. A session without a matching event aligns to its start, and the message line says so.
+- **Unlink** shows the vehicle's whole recording: the bar reads `VEHICLE`, the strip marks the catalog's sessions of this vehicle, and the Events tab lists those near the view (`Nearby`). Click a mark, or **Link**, to return to a session.
+- **Back** keeps each session's zoom steps.
 
 ### Workspaces and sharing
 
-Each browser tab works in its own **workspace**: the windows, signals, cursors, scope and session list you see, kept on the server under the address `/w/<id>`. A second tab never mirrors the first; a reload, or opening the address again, brings the workspace back as you left it. There is nothing to manage: an untouched workspace without an open tab is removed after 30 days.
+Each browser tab works in its own **workspace**: the windows, signals, cursors, scope and session list, kept on the server at `/w/<id>`. A reload, or opening the address again, brings it back as you left it; an untouched workspace without an open tab is removed after 30 days.
 
-**Share…** (in the top row, or in the ⋯ menu when the row is narrow):
+**Share…**, near the end of the top row at every width:
 
-- **Copy link (own copy)** copies a link with this layout. The receiver gets their own workspace; their changes stay apart from yours.
-- **Copy workspace link (same live workspace)** copies the address of this workspace. Whoever opens it works in the same workspace with you.
+- **Copy link (own copy)** copies a link with this layout; the receiver gets their own workspace.
+- **Copy workspace link (same live workspace)** copies this workspace's address; whoever opens it works in it with you.
 - **Invite to this workspace** (on a shared server, owner only): `Private` keeps it to you, `Read` lets others with the link watch live, `Write` lets them change it with you. The setting applies at once.
 
-Opening a shared workspace with `Read` shows the pill `Read-only`; zoom and other changes are refused, and "Copy link (own copy)" gives you a copy to work in.
+With `Read`, the pill `Read-only` shows and changes are refused; "Copy link (own copy)" gives you a copy to work in.
 
-**Recent workspaces** in the Views menu lists your latest workspaces with their time; `●` marks one open in a tab, the tick the one you are in. Saved views (Save, Open, Import file…) are your own layouts; opening one puts it into a new workspace.
+**Recent workspaces** in the Views menu lists your latest workspaces; `●` marks one open in a tab. Saved views (Save, Open, Import file…) are your own layouts; opening one makes a new workspace.
 
-**On a shared server** you sign in through your company's login, and the search tool decides which vehicles you may see: a new workspace shows "Open a session from the search tool" until you open a session there. "No access to this workspace" means its owner keeps it private; "My latest workspace" and "New workspace" take you on. The status strip, and the gate pages, show who you are signed in as.
+**On a shared server** you sign in through your company's login, and the search tool decides which vehicles you may see; a new workspace waits until you open a session there. "No access to this workspace" means its owner keeps it private. The status strip shows who you are signed in as.
 
 ## Events
 
-Events are faults (diagnostic trouble codes), state changes and logger errors. They show as pins on the time strip and as lines in the plots, with a glyph above the plot; hover one for its time, source and text. A click on a pin centres the view on it; a click on a glyph sets cursor A there.
+Events are faults (diagnostic trouble codes), state changes and logger errors. They show as pins on the time strip and as lines in the plots, with a glyph above the plot; hover one for its time, source and text. A click on a pin centres the view on it; a click on a glyph sets cursor A there. Strip pins by kind: an active fault a red tick with a head, a stored fault or a read a hollow mark, a change a violet block, else a grey dot.
 
 The count on the Events tab, such as `Events 13`, means 13 events pass the filter in the whole recording, not only in the time shown; its tooltip adds the total, such as 669 in the recording. A click on the tab opens it.
 
@@ -125,9 +125,9 @@ A hollow mark or glyph is a fault memory read: the time the DTCs were read out, 
 
 **No data:** where the logger recorded nothing for 2 s or more, the plot shows a grey band and the curves break. A cursor there reads `no data`; `—` means no value for another reason, named in the tooltip.
 
-**The strip info**, the first line of the time strip's tooltip, such as `2.5 h of 5.6 d recorded · 1 bar = 2 h`, gives the time shown, the length of the recording, and the time each bar covers: with `1 bar = 2 h` each bar is two hours, its height how many rows the logger wrote. Bars in the shown range are blue.
+**The strip info**, the first line of the time strip's tooltip, such as `2.5 h of 5.6 d recorded`, gives the time shown and the recording's length (with a scope: `10 min of 1 h in scope`).
 
-**Loading:** a legend row shows a signal's loading state, or `failed:` with the message; the window keeps the last curve and retries. `missing` means the recording has no such signal; the row keeps its place and the plot draws no axis for it. The strip shows grey placeholder bars while it loads, or `Recording unavailable`.
+**Loading:** a legend row shows a signal's loading state, or `failed:` with the message; the window keeps the last curve and retries. `missing` means the recording has no such signal; the row keeps its place and the plot draws no axis for it. The strip reads `Loading recording…` while it loads, also after a step to the next session, or `Recording unavailable`.
 
 ## Keys
 
@@ -146,7 +146,7 @@ Press `?` in the app for every key and gesture.
 - **SNA**: signal not available, a value the sender marked invalid; never drawn.
 - **raw**: every recorded sample drawn as it is.
 - **aggregated**: each point stands for a stretch of time.
-- **drive**: a stretch of dense logging, shown under the strip bars.
+- **drive**: a stretch of dense logging, a dark segment on the strip's line.
 - **event**: a fault, a state change or a logger error at one time.
 - **data ref**: one recording, for example smart-ed.
 - **session**: a section of one vehicle's data found by the search tool, such as a drive or a charge.

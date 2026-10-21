@@ -121,13 +121,15 @@ const BACK_ICON = icon(
   </>,
 );
 
+/** The fit glyph (D-095): two edges and a double arrow between them, not a fullscreen corner. */
 const RESET_ICON = icon(
-  14,
+  15,
   <>
-    <polyline points="15 3 21 3 21 9" />
-    <polyline points="9 21 3 21 3 15" />
-    <line x1="21" y1="3" x2="14" y2="10" />
-    <line x1="3" y1="21" x2="10" y2="14" />
+    <line x1="3" y1="5" x2="3" y2="19" />
+    <line x1="21" y1="5" x2="21" y2="19" />
+    <line x1="7" y1="12" x2="17" y2="12" />
+    <polyline points="10 9 7 12 10 15" />
+    <polyline points="14 9 17 12 14 15" />
   </>,
 );
 
@@ -288,8 +290,8 @@ function RangeControl({
 /**
  * Sticky bar above the windows (D-023, design DW8): Views with the open view's title and the
  * Read-only pill (add-multiuser M12) | the range control (add-range-picker) | Back, Reset and the
- * "Link time axes" toggle as icon buttons | A, B, Diff, then at the row's end Share… and "⋯"
- * (Digits, "+ Values window", and Share… below its threshold); App's "?" follows "⋯".
+ * "Link time axes" toggle as icon buttons | A, B, Diff as toggles, then at the row's end Share… (at
+ * every width, D-095) and "⋯" (Digits, "+ Values window"); App's "?" follows "⋯".
  */
 export function OptionBar({
   workspace,
@@ -330,22 +332,27 @@ export function OptionBar({
       t: defaultCursorTime(range, cursor).toString(),
     });
   };
-  const cursorToggle = (cursor: CursorName) => (
-    <label className="toggle pill" title={target ? HINTS.cursor(cursor) : HINTS.cursorDisabled}>
-      <input
-        type="checkbox"
-        checked={cursors[cursor] !== undefined}
+  // A, B and Diff as toggle buttons in the one pressed style (design DW8, D-095); Space switches.
+  const cursorToggle = (cursor: CursorName) => {
+    const on = cursors[cursor] !== undefined;
+    return (
+      <button
+        type="button"
+        className="toggle"
+        aria-pressed={on}
         disabled={!target}
-        onChange={(e) => toggleCursor(cursor, e.target.checked)}
-      />
-      {cursor.toUpperCase()}
-    </label>
-  );
+        title={target ? HINTS.cursor(cursor) : HINTS.cursorDisabled}
+        onClick={() => toggleCursor(cursor, !on)}
+      >
+        {cursor.toUpperCase()}
+      </button>
+    );
+  };
   // While unlinked, the bar's navigation acts on one window; the tooltip names it (design C5).
   const targetTitle = target ? windowTitle(target) : undefined;
 
-  // Digits and "+ Values window" live in the "⋯" menu only (D-092 (7)); Share… is in the row
-  // above the Share threshold and in the menu below it (bar.css).
+  // Digits and "+ Values window" live in the "⋯" menu only (D-092 (7)); Share… stays in the row at
+  // every width (D-095).
   const digitsSelect = (
     <select
       aria-label="Digits"
@@ -376,18 +383,6 @@ export function OptionBar({
     >
       + Values window
     </button>
-  );
-
-  const shareMenu = (after?: () => void) => (
-    <ShareMenu
-      workspace={workspace}
-      workspaceId={workspaceId}
-      summary={summary}
-      me={me}
-      onNotice={onNotice}
-      onMessage={onMessage}
-      {...(after ? { after } : {})}
-    />
   );
 
   return (
@@ -437,7 +432,7 @@ export function OptionBar({
       </button>
       <button
         type="button"
-        className="icon-button link-toggle"
+        className="icon-button toggle"
         aria-label="Link time axes"
         aria-pressed={linkTime}
         title={HINTS.link(linkTime)}
@@ -448,22 +443,29 @@ export function OptionBar({
       <span className="separator" />
       {cursorToggle("a")}
       {cursorToggle("b")}
-      <label className="toggle pill" title={HINTS.diff}>
-        <input
-          type="checkbox"
-          checked={cursors.diff}
-          onChange={(e) => void onCommand({ type: "cursor.setDiff", diff: e.target.checked })}
-        />
+      <button
+        type="button"
+        className="toggle"
+        aria-pressed={cursors.diff}
+        title={HINTS.diff}
+        onClick={() => void onCommand({ type: "cursor.setDiff", diff: !cursors.diff })}
+      >
         Diff
-      </label>
+      </button>
       <span className="bar-spacer" />
-      {shareMenu()}
+      <ShareMenu
+        workspace={workspace}
+        workspaceId={workspaceId}
+        summary={summary}
+        me={me}
+        onNotice={onNotice}
+        onMessage={onMessage}
+      />
       <OverflowMenu>
         {(close) => (
           <>
             {digitsSelect}
             {newValuesButton(() => close(true))}
-            {shareMenu(() => close(true))}
           </>
         )}
       </OverflowMenu>

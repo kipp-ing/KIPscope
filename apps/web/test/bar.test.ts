@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { barTarget, defaultCursorTime, resetSignals } from "../src/bar/bar.ts";
 import { OptionBar } from "../src/bar/OptionBar.tsx";
+import { ShareMenu } from "../src/workspaces/ShareMenu.tsx";
 
 // useSyncExternalStore has no server snapshot, so the linked preview is stubbed for static markup.
 vi.mock("../src/chart/linkedPreview.ts", async (importActual) => ({
@@ -152,12 +153,24 @@ describe("option bar order", () => {
   });
 
   it("renders the top row in order", () => {
-    const html = bar(ws([ts("w1", ["c/SPEED_DISP"])]));
+    // A and B on, Diff off: the toggles show both states.
+    const html = bar(
+      ws([ts("w1", ["c/SPEED_DISP"])], { cursors: { a: "3", b: "6", diff: false } }),
+    );
     // First position of each control in the markup, in the order timeseries-window "Option bar" names.
     const find = (name: string, pattern: RegExp) => {
       const i = html.search(pattern);
       expect(i, `${name} is in the row`).toBeGreaterThanOrEqual(0);
       return i;
+    };
+    // The opening tag and the inner markup of the button holding exactly `text` (D-095: A, B and Diff are buttons).
+    const toggle = (text: string) => {
+      for (const m of html.matchAll(/<button([^>]*)>(.*?)<\/button>/gs)) {
+        if ((m[2] as string).replace(/<[^>]*>/g, "").trim() === text) {
+          return { attrs: m[1] as string, index: m.index as number };
+        }
+      }
+      return undefined;
     };
     const order = [
       find("Views", />Views</),
@@ -165,13 +178,17 @@ describe("option bar order", () => {
       find("Back", /aria-label="Back"/),
       find("Reset", /aria-label="Reset"/),
       find("Link time axes", /aria-label="Link time axes"/),
-      find("A", /<label[^>]*>(?:<input[^>]*>)?\s*A\s*<\/label>/),
-      find("B", /<label[^>]*>(?:<input[^>]*>)?\s*B\s*<\/label>/),
-      find("Diff", /<label[^>]*>(?:<input[^>]*>)?\s*Diff\s*<\/label>/),
+      toggle("A")?.index ?? -1,
+      toggle("B")?.index ?? -1,
+      toggle("Diff")?.index ?? -1,
       find("Share…", /Share…/),
       find("More", /aria-label="More"/),
     ];
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(
+      order.every((i) => i >= 0),
+      "A, B and Diff are buttons",
+    ).toBe(true);
 
     // Back and Reset are icon buttons without visible text; Link time axes is a pressed-state button.
     const button = (label: string) =>
@@ -183,9 +200,64 @@ describe("option bar order", () => {
     }
     expect(button("Link time axes")?.[0]).toContain("aria-pressed");
 
+    // Reset carries the fit glyph of D-095 (DW8): the two end bars and the two arrows pointing in.
+    const reset = button("Reset")?.[1] ?? "";
+    expect(reset).toContain("<svg");
+    expect(reset).toContain('points="10 9 7 12 10 15"');
+    expect(reset).toContain('points="14 9 17 12 14 15"');
+    expect(reset.match(/<line\b/g)).toHaveLength(3);
+
+    // A, B and Diff are `button.toggle[aria-pressed]`: on while the cursor is on, Diff off here.
+    for (const [text, pressed] of [
+      ["A", "true"],
+      ["B", "true"],
+      ["Diff", "false"],
+    ] as const) {
+      const t = toggle(text);
+      expect(t?.attrs, text).toMatch(/class="[^"]*\btoggle\b[^"]*"/);
+      expect(t?.attrs, text).toContain(`aria-pressed="${pressed}"`);
+    }
+    // No checkbox labels left in the row.
+    expect(html).not.toMatch(/<input[^>]*type="checkbox"/);
+    // Link time axes keeps its pressed state as well (on in EMPTY_WORKSPACE).
+    expect(button("Link time axes")?.[0]).toContain('aria-pressed="true"');
+
     // Digits and + Values window are items of the "⋯" menu only (closed here).
     expect(html).not.toContain('aria-label="Digits"');
     expect(html).not.toContain("+ Values");
     expect(html).not.toContain("New values window");
+
+    // Share… stays in the row at every width: one Share element, no overflow copy, and none in the menu.
+    expect(html.match(/Share…/g)).toHaveLength(1);
+    expect(html).not.toContain("overflow-item");
+    const source = readFileSync(new URL("../src/bar/OptionBar.tsx", import.meta.url), "utf8");
+    const menu = source.slice(source.indexOf("<OverflowMenu>"), source.indexOf("</OverflowMenu>"));
+    expect(menu, "the OverflowMenu block").toContain("digitsSelect");
+    expect(menu).not.toMatch(/shareMenu|Share|ShareMenu/);
+    const css = readFileSync(new URL("../src/bar/bar.css", import.meta.url), "utf8");
+    expect(css).not.toContain("overflow-item");
+    const overflow = readFileSync(new URL("../src/bar/OverflowMenu.tsx", import.meta.url), "utf8");
+    expect(overflow).not.toContain("overflow-item");
+  });
+});
+
+describe("share menu markup", () => {
+  // Share… is no overflow item any more (D-095): it always stands in the row, its wrapper keeps
+  // `share-menu`, and `overflow-item` appears nowhere in the markup.
+  const html = renderToStaticMarkup(
+    createElement(ShareMenu, {
+      workspace: EMPTY_WORKSPACE,
+      workspaceId: "w1",
+      summary: undefined,
+      me: undefined,
+      onNotice: () => undefined,
+      onMessage: () => undefined,
+    }),
+  );
+
+  it("keeps share-menu and carries no overflow-item", () => {
+    expect(html).toMatch(/class="share-menu[" ]/);
+    expect(html).not.toContain("overflow-item");
+    expect(html).toContain("Share…");
   });
 });

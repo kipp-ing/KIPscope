@@ -427,6 +427,27 @@ describe("status bar markup (app-footer)", () => {
     expect(conn).toContain("revision 7");
   });
 
+  it("colours the status dot by connection and source", () => {
+    // Ok colour while connected with the source reachable (also before the first meta answer);
+    // the error colour when disconnected or when the source is unreachable.
+    const conn = (over: Record<string, unknown>) =>
+      /<span[^>]*class="(conn[^"]*)"/.exec(render(over))?.[1] ?? "";
+    const down = metaOf({
+      source: {
+        kind: "clickhouse",
+        database: "sdlog",
+        table: "signals",
+        reachable: false,
+        checkedAt: "2026-10-16T13:08:01.000Z",
+        error: "connect ECONNREFUSED",
+      },
+    });
+    expect(conn({ meta: metaOf() })).not.toContain("dot-error");
+    expect(conn({})).not.toContain("dot-error");
+    expect(conn({ connected: false, meta: metaOf() })).toContain("dot-error");
+    expect(conn({ meta: down })).toContain("dot-error");
+  });
+
   it("renders the attribution with both links", () => {
     const html = render();
     expect(textOf(html)).toContain("KIPscope · kipp.ing · AAL");

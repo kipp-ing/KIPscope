@@ -86,11 +86,11 @@ import {
   isSidebarKey,
   loadSidebar,
   loadSidebarPart,
-  SIDEBAR_WIDTH_PX,
   type SidebarPart,
   type SidebarState,
   saveSidebar,
   saveSidebarPart,
+  sidebarWidthPx,
 } from "./layout/sidebar.ts";
 import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
@@ -278,6 +278,13 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   );
   const openSidebar = useCallback(() => setSidebar("open"), []);
   const sidebarOpen = sidebar === "open";
+  // 248 px, 208 px below a 1200 px viewport (design DW22); follows the viewport.
+  const [sidebarWidth, setSidebarWidth] = useState(() => sidebarWidthPx(window.innerWidth));
+  useEffect(() => {
+    const onResize = () => setSidebarWidth(sidebarWidthPx(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   // The part under the sidebar's switch (design V11): per browser like the sidebar itself.
   const [part, setPart] = useState<SidebarPart>(() => loadSidebarPart(localStore()));
   useEffect(() => saveSidebarPart(localStore(), part), [part]);
@@ -1020,6 +1027,16 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         if (next) onJump(BigInt(next.t), "a");
         return;
       }
+      if (key === "cursorA" || key === "cursorB") {
+        // Centres the bar target's span on the cursor as its strip flag does (design DW23): one
+        // window.setRange, one history entry; nothing while that cursor is off.
+        const t = cursorsRef.current[key === "cursorA" ? "a" : "b"];
+        if (t === undefined || !barTarget(ws)) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        stripNavigate((view) => centreRange(view, t), true);
+        return;
+      }
       const hoveredId = ws.windows.some((w) => w.id === hovered.current && isTimeseries(w))
         ? hovered.current
         : undefined;
@@ -1093,6 +1110,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     navView,
     navigate,
     onJump,
+    stripNavigate,
     toggleSidebar,
     openEvents,
     toggleHelp,
@@ -1581,7 +1599,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   return (
     <div
       className={appClass}
-      style={{ "--sidebar-width": `${SIDEBAR_WIDTH_PX}px` } as React.CSSProperties}
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
     >
       {eventRefsKey
         .split(",")

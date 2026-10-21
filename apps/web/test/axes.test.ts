@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { type AxisInput, layoutAxes } from "../src/chart/axes.ts";
 import { buildModel } from "../src/chart/build.ts";
@@ -141,5 +142,82 @@ describe("axes of a window whose data has not loaded", () => {
       ["km/h", "R"],
     ]);
     expect(bare.axes.some((a) => a.title === "X")).toBe(false);
+  });
+});
+
+describe("y axis tick colour (D-095, DW21)", () => {
+  // The uPlot axis config is built inline in the window component, so the source is pinned: every
+  // axis colours its labels with AXIS_STROKE (slate-700, `#334155`) and every `ticks` block of an
+  // axis does the same; series colours failed contrast on the ticks.
+  const src = readFileSync(new URL("../src/chart/TimeseriesWindow.tsx", import.meta.url), "utf8");
+
+  it("defines AXIS_STROKE as slate-700", () => {
+    expect(src).toMatch(/const AXIS_STROKE = "#334155";/);
+  });
+
+  it("sets the stroke of the ticks of every axis that shows ticks to AXIS_STROKE", () => {
+    const blocks = [...src.matchAll(/\bticks:\s*\{[^}]*\}/g)].map((m) => m[0]);
+    // The y axes' block carries the tick size; the x axis's ticks (the `ticks(` function call is
+    // not an object literal) may follow the same rule.
+    const yTicks = blocks.filter((b) => b.includes("AXIS_TICK"));
+    expect(yTicks.length, "the y axis ticks block").toBeGreaterThan(0);
+    for (const b of yTicks) expect(b).toMatch(/stroke:\s*AXIS_STROKE/);
+    // And the label stroke stays on the axis itself.
+    expect(src.match(/^\s*stroke: AXIS_STROKE,$/gm)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("y scale range of a constant series (D-095, uPlot RangeError)", () => {
+  // The window's y range is `spread(yRange(...) ?? [dataMin, dataMax])` (TimeseriesWindow). `spread`
+  // is not exported, so its source is evaluated here: the chart's own function, not a copy. uPlot
+  // splits an axis by stepping `val += incr` from the range's min; a flat or tiny span (a constant
+  // LWS_SPEED of -1433.6) makes the step vanish against the value's ULP, the loop never ends and
+  // pushes until `RangeError: Invalid array length`.
+  const src = readFileSync(new URL("../src/chart/TimeseriesWindow.tsx", import.meta.url), "utf8");
+  const match = src.match(/function spread\(([^)]*)\)[^{]*\{([\s\S]*?)\n\}/);
+  if (!match) throw new Error("function spread not found in TimeseriesWindow.tsx");
+  const params = (match[1] as string).replace(/:\s*\[number, number\]/g, "");
+  const spread = new Function(`return function spread(${params}) {${match[2]}\n}`)() as (
+    r: [number, number],
+  ) => [number, number];
+
+  /** The splits loop of uPlot's numAxisSplits, with the increment uPlot would pick (~7 splits), capped. */
+  const splitCount = (lo: number, hi: number) => {
+    const incr = (hi - lo) / 7;
+    let n = 0;
+    for (let v = lo; v <= hi && n < 1000; v += incr) n++;
+    return n;
+  };
+
+  const cases: [string, [number, number]][] = [
+    ["constant negative (LWS_SPEED -1433.6)", [-1433.6, -1433.6]],
+    ["constant zero", [0, 0]],
+    ["constant large", [1e9, 1e9]],
+    ["tiny span beside -1433.6", [-1433.6, -1433.6 + 1e-12]],
+    ["tiny span beside 0", [0, 1e-12]],
+    ["float noise span", [0.3, 0.1 + 0.2]],
+  ];
+
+  for (const [name, input] of cases) {
+    it(`gives a finite, splittable range for ${name}`, () => {
+      const [lo, hi] = spread(input);
+      expect(Number.isFinite(lo) && Number.isFinite(hi)).toBe(true);
+      expect(lo).toBeLessThan(hi);
+      // The span is many ULPs of the value, so the splits loop advances and ends.
+      expect(hi - lo).toBeGreaterThanOrEqual(1e-9 * Math.max(Math.abs(lo), Math.abs(hi)));
+      expect(lo + (hi - lo) / 20).toBeGreaterThan(lo);
+      const n = splitCount(lo, hi);
+      expect(n).toBeGreaterThan(1);
+      expect(n).toBeLessThan(1000);
+      // The range still contains the data.
+      expect(lo).toBeLessThanOrEqual(Math.min(...input));
+      expect(hi).toBeGreaterThanOrEqual(Math.max(...input));
+    });
+  }
+
+  it("falls back to [0, 1] for a non-finite range and keeps a healthy one", () => {
+    expect(spread([Number.NaN, 5])).toEqual([0, 1]);
+    expect(spread([0, Number.POSITIVE_INFINITY])).toEqual([0, 1]);
+    expect(spread([-2, 10])).toEqual([-2, 10]);
   });
 });

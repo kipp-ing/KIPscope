@@ -122,6 +122,9 @@
   grid-column: -3;
   box-sizing: border-box;
   width: 12ch;
+  /* One height with or without text, so the slot does not move when the first data arrives. */
+  height: 16px;
+  line-height: 16px;
   overflow: hidden;
   text-align: right;
   color: var(--muted);
@@ -238,21 +241,34 @@
   }
 }
 
+/* Axis titles on their own line, 8 px clear of the top tick label (design DW21, D-095). 12 px
+   high (the font's size), so border, padding, header, titles and gap end 48 px below the
+   window's top ("Axis colours on smart451"); the titles clip sideways only, so no descender is cut. */
 .window .axis-titles {
   position: relative;
-  height: 14px;
+  height: 12px;
+  margin-bottom: 8px;
   font-size: 12px;
-  line-height: 14px;
-  color: var(--text);
+  line-height: 12px;
+  color: #334155;
 }
 
 .window .axis-titles > span {
   position: absolute;
   top: 0;
-  overflow: hidden;
+  overflow-x: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
+}
+
+/* 8 × 2 px in the axis' only signal's colour, 3 px before the title. */
+.window .axis-titles .axis-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 2px;
+  margin-right: 3px;
+  vertical-align: middle;
 }
 
 .window .plot {
@@ -426,9 +442,19 @@
   color: var(--accent);
 }
 
-/* Legend clearance (design G3): with the 8 px window padding, content ends 4 px left of the grip. */
+/* Legend clearance (design G3): with the 8 px window padding, content ends 4 px left of the grip.
+   A window too narrow for the fixed columns even with the names cut scrolls its legend sideways,
+   so no pill draws over the neighbouring window. 3 px of padding, taken back by the margins, keep
+   the near row's ring and underline (design L5) inside the clip. Every row is at least as high as
+   a status pill (16 px), so a pill coming or going on a step moves no window below. */
 .timeseries-window .signals {
+  grid-auto-rows: minmax(16px, auto);
   margin-right: 12px;
+  margin-bottom: -3px;
+  margin-left: -3px;
+  padding-bottom: 3px;
+  padding-left: 3px;
+  overflow-x: auto;
 }
 
 /* Legend names and swatches (design T2, T4): a 12 × 3 line swatch like the curve. */
@@ -439,14 +465,23 @@
 }
 
 .window .signals .sig {
+  min-width: 0;
+  /* Clipped sideways only, so the near row's underline (below the box) still shows. */
+  overflow-x: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--name-size);
   font-weight: 500;
   color: var(--name);
 }
 
+/* The name column is the legend's only flexible one (minmax(0, max-content), TimeseriesWindow):
+   in a narrow window the name is cut with "…" (full name as tooltip) before any fixed column
+   reaches past the window. */
 .window .signals .grip {
   display: inline-flex;
+  min-width: 0;
   gap: 6px;
   align-items: center;
   cursor: grab;
@@ -507,8 +542,27 @@
   font-weight: 600;
 }
 
-/* Status and SNA share as pills (design T4), inside their own auto columns; complete and a
-   signal without SNA keep an empty cell. */
+/* The status cell has one width (DW12; fits "loading" and "missing"), empty when complete, so a
+   signal starting or ending a load moves no column; a failure is cut, its text in the tooltip. */
+.window .signals .status {
+  box-sizing: border-box;
+  width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The SNA cell has one width too, empty without a share, so a step that brings or drops a share
+   moves nothing. 80 px (padding included) fits every share of formatSnaShare in the pill's 11 px
+   font (widest "SNA < 0.1 %", 79 px) but the rare "SNA > 99.9 %" (86 px), which is cut with "…"
+   (its share stays in the tooltip). */
+.window .signals .sna {
+  box-sizing: border-box;
+  width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status and SNA share as pills (design T4); a signal without SNA keeps an empty cell. */
 .window .signals :is(.status.loading, .status.missing, .status.error, .sna:not(:empty)) {
   justify-self: start;
   padding: 0 6px;

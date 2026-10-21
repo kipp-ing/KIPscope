@@ -86,8 +86,24 @@ export const HINTS = {
   /** A signal the shown data ref does not have (design DW13): legend, readout and values cells. */
   missing: (dataRef: string, name: string) => `Missing: ${dataRef} has no signal ${name}`,
   envelope: "Min/max: shade the range between the lowest and highest value of each bucket",
-  stripInfo: (recorded: string, width: string) =>
-    `Time strip: the whole recording (${recorded}). Each bar is ${width}, its height the amount logged. Click to jump, drag to zoom, double-click for all`,
+  /** DW18's ", a break a gap" left out: with it a recording of "3 d 4 h" reads 141 characters (W1). */
+  stripInfo: (recorded: string) =>
+    `Time strip: the whole recording (${recorded}); the line shows where data exists. Click to jump, drag to zoom, double-click for all`,
+  /** A cursor flag on the strip (D-094, D-095); `clock` carries the date for `before`/`after`. */
+  stripFlag: (name: "A" | "B", clock: string, where: "view" | "outside" | "before" | "after") => {
+    const at =
+      where === "view"
+        ? ""
+        : where === "outside"
+          ? ", outside the view"
+          : where === "before"
+            ? ", before the strip's start"
+            : ", after the strip's end";
+    return `${name} ${clock}${at}: click centres the view on ${name}, span kept · Shift+${name}`;
+  },
+  /** The merged `A·B` flag (D-095). */
+  stripFlagAB: (clockA: string, clockB: string) =>
+    `A ${clockA} and B ${clockB}: click centres the view on both; Shift+A or Shift+B for one`,
   /** With no filter sentence and nothing filtered out, the count names no filter (W1). */
   eventsCount: (shown: number, total: number, sentence?: string) => {
     const n = shown.toLocaleString("en-US");
@@ -102,8 +118,7 @@ export const HINTS = {
   // Top row, add-saved-views (V7): Views menu, overflow menu, open view.
   views: "Views: save, open and import named views; back to a recent workspace",
   viewModified: "Changed since saved or opened",
-  more: (share: boolean) =>
-    share ? "More: digits, + values window, share" : "More: digits, + values window",
+  more: "More: digits, + values window",
 
   // Share… and Recent workspaces, add-multiuser (M12).
   share: "Share: a link to an own copy of this layout, or an invite to this workspace",
@@ -113,4 +128,10 @@ export const HINTS = {
     "Copy workspace link: the address of this workspace, for whoever it is shared with",
   sharingOff: "Sharing is turned off on this server",
   openElsewhere: "Open in another tab",
+
+  // Case catalog list (D-095).
+  backToSearch: "Back to search: the tool that opened these sessions",
+  filterSessions:
+    "Filter sessions: by title, object, kind, id, start or a meta value; Enter opens the first match",
+  catalogRow: "Step to this session, aligned as set under Align",
 } as const;

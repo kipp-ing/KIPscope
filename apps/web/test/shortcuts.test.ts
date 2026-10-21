@@ -45,6 +45,8 @@ const STEP: Record<string, NavKey> = {
   ".": "nextDrive",
   n: "nextEvent",
   p: "prevEvent",
+  "Shift+A": "cursorA",
+  "Shift+B": "cursorB",
 };
 
 describe("shortcut table", () => {
@@ -74,6 +76,8 @@ describe("shortcut table", () => {
       { key: "." },
       { key: "n" },
       { key: "p" },
+      { key: "A", shiftKey: true },
+      { key: "B", shiftKey: true },
       { key: "/" },
       { key: "s" },
       { key: "e" },
@@ -88,6 +92,20 @@ describe("shortcut table", () => {
       );
       expect(listed, `key ${h.shiftKey ? "Shift+" : ""}${h.key} has no probe`).toBe(true);
     }
+  });
+
+  it("lists Shift+A and Shift+B in the Time group and the strip's click on the line (D-095)", () => {
+    const entry = SHORTCUTS.find((s) => s.group === "Time" && s.keys.includes("Shift+A"));
+    expect(entry?.keys).toBe("Shift+A  Shift+B");
+    expect(entry?.action).toBe("Bring cursor A or B into view");
+    expect(entry?.probe).toEqual([
+      { key: "A", shiftKey: true },
+      { key: "B", shiftKey: true },
+    ]);
+    // The strip has no bars to click any more.
+    const strip = SHORTCUTS.filter((s) => s.group === "Time strip").map((s) => s.keys);
+    expect(strip).toContain("click the line");
+    expect(strip).not.toContain("click a bar");
   });
 
   it("has the six groups in order, with Shift+click for B and the drive keys", () => {

@@ -8,57 +8,97 @@
   margin: 0 -16px 8px;
 }
 
-/* Time strip without a head line (declutter-workspace DW10): 6 + 31 + 6 + 1 = 44 px in every
-   state (goal 44, at most 56); the track keeps its height while empty. */
+/* Time strip as one row (declutter-workspace DW10, D-094, D-095): a 48 px end-label slot, the track
+   (27 px) and another slot; 27 + 1 px border = 28 px (STRIP_PX) in every state. Flags and the hover
+   time hang below it into the gap above the windows. */
 .time-strip {
   display: flex;
-  flex-direction: column;
-  padding: 6px 16px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
-/* Bars (24 px) and drive row (7 px); the cursor is set per hit zone (TimeStrip.tsx, design S7). */
+/* End labels (time-strip "Strip end labels"): 10 px slate-500, tabular; empty while unknown. */
+.strip-end {
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 10px / 12px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-end.right {
+  justify-content: flex-end;
+}
+
+/* Lanes in track y (DW10): pins 0–11, baseline 13, presence 12–15, drives 11–16, day labels from 17,
+   flags from 11; the cursor is set per hit zone (TimeStrip.tsx, design S7). */
 .time-strip-track {
   position: relative;
-  flex: none;
-  height: 31px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 27px;
   touch-action: none;
   user-select: none;
 }
 
-.time-strip-bars {
-  height: 24px;
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.time-strip-bars > span {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 1px;
-  border-radius: 1px 1px 0 0;
-  background: var(--control-border);
-}
-
-/* Hit area over the bar's whole column, so short and empty bars show their tooltip too
-   (time-strip "Strip tooltips"). */
-.time-strip-bars > span::before {
-  content: "";
+.strip-baseline {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 24px;
+  top: 13px;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
 }
 
-.time-strip-bars > span.shown {
+/* Data presence line (time-strip "Data presence line"): slate-500, the accent inside the shown range. */
+.strip-run {
+  position: absolute;
+  top: 12px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--muted);
+  pointer-events: none;
+}
+
+.strip-run.shown {
   background: var(--accent);
 }
 
-/* State text and drop text (DW10), centred in the track's box so the strip never changes height;
-   the panel behind it keeps it readable over bars. */
+/* A break carries its tooltip; the line is simply not drawn under it. */
+.strip-break {
+  position: absolute;
+  top: 10px;
+  height: 7px;
+}
+
+/* Local midnights while unlinked (DW19): a hairline over the track and its MM-DD 3 px right of it. */
+.strip-day {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 27px;
+  background: var(--band);
+  pointer-events: none;
+}
+
+.strip-day-label {
+  position: absolute;
+  top: 17px;
+  left: 3px;
+  color: var(--soft-ink);
+  font: 10px / 10px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* State text and drop text (DW10) inside the track's box, so the strip never changes height. */
 .time-strip-note {
   position: absolute;
   top: 50%;
@@ -78,6 +118,13 @@
   pointer-events: none;
 }
 
+/* Loading: at the track's left over the baseline. */
+.time-strip-note.loading {
+  left: 0;
+  padding-left: 0;
+  transform: translateY(-50%);
+}
+
 .time-strip-note.drop {
   font-weight: 600;
   color: var(--accent);
@@ -87,14 +134,15 @@
   color: var(--error);
 }
 
-/* Over the bars, in this order: window, brush, markers; none takes pointer input, so the bar
-   under them keeps its tooltip (design S5, S10). */
+/* Window, caret, brush and lines take no pointer input, so drives, breaks and pins keep their
+   tooltips (design S5, S10; time-strip "Strip tooltips"). */
 .time-strip-window,
 .time-strip-brush,
-.time-strip-marker {
+.strip-line,
+.strip-caret {
   position: absolute;
   top: 0;
-  height: 24px;
+  height: 27px;
   pointer-events: none;
 }
 
@@ -102,7 +150,17 @@
   box-sizing: border-box;
   border: 1px solid var(--accent);
   border-radius: 2px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* The window drawn wider than its range (MIN_WINDOW_PX): an 8 × 5 px accent caret points down at it. */
+.strip-caret {
+  width: 0;
+  height: 0;
+  margin-left: -4px;
+  border-top: 5px solid var(--accent);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
 }
 
 .time-strip-brush {
@@ -112,103 +170,204 @@
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-.time-strip-marker {
+/* Cursor lines: A solid, B dashed, L slate-500 without a flag. */
+.strip-line {
   width: 0;
   border-left: 1px solid var(--text);
 }
 
-.time-strip-marker.l {
+.strip-line.b {
+  border-left-style: dashed;
+}
+
+.strip-line.l {
   border-left-color: var(--muted);
 }
 
-.time-strip-flag {
+/* Cursor flags (DW19): a 24 px tall button from track y 11, hanging 7 px below the strip, above the
+   track but below the hover time; the 14 × 12 face at y 15–27 (A·B 26 wide). */
+.strip-flag {
   position: absolute;
-  top: 0;
-  left: 0;
-  height: 10px;
-  min-width: 10px;
+  top: 11px;
+  z-index: 3;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.strip-flag:disabled {
+  cursor: default;
+}
+
+.strip-flag:focus-visible {
+  outline: none;
+}
+
+.strip-flag-face {
+  position: absolute;
+  top: 4px;
+  height: 12px;
   box-sizing: border-box;
   border-radius: 2px;
-  font: 600 9px / 10px var(--font-sans);
-  text-align: center;
-}
-
-/* Flag turned inward at the track's right end. */
-.time-strip-flag.flip {
-  left: auto;
-  right: 0;
-}
-
-.time-strip-marker.a .time-strip-flag {
   background: var(--text);
   color: #fff;
+  font: 700 9px / 12px var(--font-sans);
+  text-align: center;
+  white-space: nowrap;
 }
 
-.time-strip-marker.b .time-strip-flag {
+.strip-flag.b .strip-flag-face,
+.strip-flag.ab .strip-flag-face {
   background: var(--panel);
   color: var(--text);
-  border: 1px solid var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
 }
 
-/* Drive row under the bars: transparent hit spans, drawn segments inside (design S5, S6). */
-.time-strip-drives {
-  position: relative;
-  height: 7px;
+/* Hover and focus outline the face in slate-400, never the accent. */
+.strip-flag:hover .strip-flag-face,
+.strip-flag:focus-visible .strip-flag-face {
+  outline: 2px solid var(--disabled);
+  outline-offset: 1px;
 }
 
-.time-strip-drive {
+/* An edge flag's 5 × 8 px caret, 2 px outside the face: ◂ before the strip, ▸ after it. */
+.strip-flag-caret {
+  position: absolute;
+  top: 6px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+.strip-flag-caret.before {
+  border-right: 5px solid var(--text);
+}
+
+.strip-flag-caret.after {
+  border-left: 5px solid var(--text);
+}
+
+/* Hover hairline and the pointer's time below the strip (DW10); moves nothing. */
+.strip-hover-line {
   position: absolute;
   top: 0;
-  height: 7px;
+  width: 0;
+  height: 27px;
+  border-left: 1px solid var(--soft-ink);
+  pointer-events: none;
+}
+
+.strip-hover {
+  position: absolute;
+  top: 29px;
+  z-index: 4;
+  padding: 0 4px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: 10px / 14px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Drives (time-strip "Drive row"): transparent hit spans from y 11 down, the 5 px slate-700 segment
+   at y 11–16 inside, slate-900 on hover, never the accent (D-095). */
+.time-strip-drive {
+  position: absolute;
+  top: 11px;
+  height: 16px;
 }
 
 .time-strip-drive-bar {
   position: absolute;
-  top: 1px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--soft-ink);
+  top: 0;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--label);
 }
 
 .time-strip-drive.hover > .time-strip-drive-bar {
   background: var(--text);
 }
 
-/* Event pins (add-events V3): a 6 px lane at the top of the bars, drawn after the bars and before
-   the window, so window, brush and markers lie on top; colour per pin from markColor. */
-.time-strip-pins {
+/* Event pins (DW20): one shape per kind in its colour (--pin, markColor). */
+.strip-pin {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 6px;
   pointer-events: none;
 }
 
-.time-strip-pin {
-  position: absolute;
+.strip-pin.fault {
   top: 0;
-  height: 6px;
-  box-sizing: border-box;
-  border-radius: 1px;
-  outline: 1px solid var(--panel);
+  height: 27px;
 }
 
-/* Transparent tooltip spans over the pin lane (PIN_LANE_PX), like the drive hit spans; the bar
-   below keeps its tooltip elsewhere. */
+.strip-pin.fault::before,
+.strip-pin.fault::after {
+  content: "";
+  position: absolute;
+  background: var(--pin);
+}
+
+/* The tick over the full track height … */
+.strip-pin.fault::before {
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 1px);
+  width: 2px;
+}
+
+/* … and the 7 × 4 px head. */
+.strip-pin.fault::after {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 1px;
+}
+
+.strip-pin.change {
+  top: 2px;
+  height: 7px;
+  border-radius: 1px;
+  background: var(--pin);
+}
+
+.strip-pin.hollow {
+  top: 2px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 1px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1.5px var(--pin);
+}
+
+.strip-pin.dot {
+  top: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--pin);
+}
+
+/* Invisible hit elements over the pin lane (PIN_LANE_PX, at least 10 × 11 px): their tooltips. */
 .time-strip-pin-hits {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 8px;
+  height: 11px;
   pointer-events: none;
 }
 
-.time-strip-pin-hits > span {
+.time-strip-pin-hits > .pin-hit {
   position: absolute;
   top: 0;
-  height: 8px;
+  height: 11px;
   pointer-events: auto;
 }
 
@@ -247,20 +406,21 @@
   cursor: default;
 }
 
-/* Catalog sessions of the vehicle in an object scope (add-case-open K14): accent segments over the
-   drives, hit first; the session left with Unlink outlined. */
+/* Catalog sessions of the vehicle in an object scope (add-case-open K14): slate-900 segments in the
+   drive lane (the accent marks only the shown range, D-095), hit first; the session left with Unlink
+   outlined. */
 .time-strip-session {
   position: absolute;
-  top: 0;
-  height: 7px;
+  top: 11px;
+  height: 16px;
 }
 
 .time-strip-session-bar {
   position: absolute;
-  top: 1px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--accent);
+  top: 0;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--text);
 }
 
 .time-strip-session-bar.left {
@@ -294,10 +454,4 @@
 .time-strip-menu > button:hover,
 .time-strip-menu > button:focus-visible {
   background: var(--bg);
-}
-
-/* Skeleton bars while the density loads or a step runs (DW4): 3 px, slate-200, no accent. */
-.time-strip-bars.skeleton > span {
-  height: 3px;
-  background: var(--border);
 }

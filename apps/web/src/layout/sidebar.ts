@@ -1,10 +1,18 @@
 import { isTextField } from "../keys.ts";
 
-/** Explorer sidebar (design L1): open at SIDEBAR_WIDTH_PX or collapsed, remembered per browser. */
+/** Explorer sidebar (design L1): open at sidebarWidthPx or collapsed, remembered per browser. */
 export type SidebarState = "open" | "collapsed";
 
 export const SIDEBAR_STORAGE_KEY = "kipscope.sidebar";
-export const SIDEBAR_WIDTH_PX = 240;
+/** Open width (design DW22, D-095); SIDEBAR_COMPACT_PX below a SIDEBAR_COMPACT_BELOW_PX viewport. */
+export const SIDEBAR_WIDTH_PX = 248;
+export const SIDEBAR_COMPACT_PX = 208;
+export const SIDEBAR_COMPACT_BELOW_PX = 1200;
+
+/** The open sidebar's width for a viewport `innerWidth`. */
+export function sidebarWidthPx(viewportPx: number): number {
+  return viewportPx < SIDEBAR_COMPACT_BELOW_PX ? SIDEBAR_COMPACT_PX : SIDEBAR_WIDTH_PX;
+}
 
 /** Unknown value, missing or throwing storage → "open". */
 export function loadSidebar(storage: Pick<Storage, "getItem"> | undefined): SidebarState {

@@ -6,8 +6,8 @@ import {
 } from "@kipscope/shared";
 import { useState } from "react";
 import { timesSlot } from "../case/sessionBar.ts";
-import { SCOPE_HINTS, scopeText } from "./scope.ts";
-import { formatSpan } from "./strip.ts";
+import { DurationTag } from "./Duration.tsx";
+import { SCOPE_HINTS } from "./scope.ts";
 
 /** Placeholders of the session bar's arrows and position: same boxes, never seen (DW3). */
 const HIDDEN = { visibility: "hidden" } as const;
@@ -22,16 +22,15 @@ export interface ScopeRowProps {
 
 /**
  * The context row of a scope without an open catalog (time-strip "Strip scope controls",
- * declutter-workspace DW3, DW17): the session bar's slots with `SCOPE`, the data ref, the scope's
- * local times, its span, Widen and, in full mode, Clear. Arrows and position stay as hidden
- * placeholders, so the slots line up with the session bar's.
+ * declutter-workspace DW3, DW17): the session bar's slots with `SCOPE`, the data ref (its start
+ * and duration in the tooltip), the scope's duration, Widen and, in full mode, Clear; no start slot
+ * (D-095). Arrows and position stay as hidden placeholders, so the slots line up with the session
+ * bar's.
  */
 export function ScopeRow({ scope, mode, onScopeCommand }: ScopeRowProps) {
   // A scope command on its way: Widen and Clear wait for its result.
   const [pending, setPending] = useState(false);
-  const from = BigInt(scope.from);
-  const to = BigInt(scope.to);
-  const times = timesSlot(from, to);
+  const times = timesSlot(BigInt(scope.from), BigInt(scope.to));
 
   /** Sends one scope command; the buttons stay disabled until its result arrives. */
   const send = (command: CommandInput) => {
@@ -49,16 +48,16 @@ export function ScopeRow({ scope, mode, onScopeCommand }: ScopeRowProps) {
       </span>
       <span className="session-arrow" aria-hidden="true" style={HIDDEN} />
       <span className="slot-title">
-        <span className="slot-title-text" title={scopeText(scope)}>
+        <span
+          className="slot-title-text"
+          title={`${scope.dataRef} · ${times.startTooltip} · ${times.duration}`}
+        >
           {scope.dataRef}
         </span>
       </span>
-      <span className="slot-times" title={times.timesTooltip}>
-        {times.weekday !== undefined && <span className="slot-weekday">{times.weekday}</span>}
-        {times.weekday !== undefined ? ` ${times.times ?? ""}` : times.times}
-        {times.plusOne && <sup className="slot-plus">+1</sup>}
+      <span className="slot-duration">
+        <DurationTag text={times.duration} title={times.durationTooltip} />
       </span>
-      <span className="slot-duration">{formatSpan(to - from)}</span>
       {onScopeCommand && (
         <button
           type="button"

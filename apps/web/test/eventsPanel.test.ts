@@ -9,7 +9,7 @@ import {
 } from "@kipscope/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { alignToEvent } from "../src/case/sessionBar.ts";
 import { EventsPanel } from "../src/events/EventsPanel.tsx";
 import { appliedFilter, previewedFilter } from "../src/events/eventsData.ts";
@@ -29,6 +29,13 @@ import { nearbyHint } from "../src/time/strip.ts";
 import { TimeStrip } from "../src/time/TimeStrip.tsx";
 import { caseWorkspace } from "./caseFixtures.ts";
 import { atB, fakeEvent } from "./fakeEvents.ts";
+
+// The strip reads the logger gaps through useSyncExternalStore (DW10), which has no server snapshot in
+// static markup: stubbed as "no answer yet" (an empty state) (the presence line then breaks at empty buckets only).
+vi.mock("../src/chart/gaps.ts", async (importActual) => ({
+  ...(await importActual<typeof import("../src/chart/gaps.ts")>()),
+  useGapInfo: () => ({ infos: new Map(), errors: [], settled: false }),
+}));
 
 // Tests run with TZ=Europe/Berlin (see package.json).
 

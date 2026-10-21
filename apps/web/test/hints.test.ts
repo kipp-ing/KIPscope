@@ -30,7 +30,15 @@ const SAMPLES: Record<string, unknown[][]> = {
     ["°C", "right"],
   ],
   sna: [["4.0 %"]],
-  stripInfo: [["3 d 4 h", "2 h"]],
+  stripInfo: [["3 d 4 h"]],
+  // D-094, D-095 (design DW18): the flag's clock is HH:MM:SS.mmm, with the date before / after the strip.
+  stripFlag: [
+    ["A", "15:09:12.000", "view"],
+    ["A", "11:31:10.000", "outside"],
+    ["A", "26-10-13 10:02:00.000", "before"],
+    ["B", "26-10-13 12:31:40.000", "after"],
+  ],
+  stripFlagAB: [["15:09:12.000", "15:09:12.950"]],
   eventsCount: [[13, 669, "faults and state changes"]],
 };
 
@@ -143,10 +151,48 @@ describe("hints table", () => {
     expect(t.toLowerCase()).not.toContain("amber");
   });
 
-  it("words the strip info as design H5", () => {
-    expect(HINTS.stripInfo("3 d 4 h", "2 h")).toBe(
-      "Time strip: the whole recording (3 d 4 h). Each bar is 2 h, its height the amount logged. Click to jump, drag to zoom, double-click for all",
+  it("words the strip info for the presence line (D-094)", () => {
+    const t = HINTS.stripInfo("3 d 4 h");
+    // DW18 words it "…; the line shows where data exists, a break a gap. Click …", which is 141 characters for
+    // "3 d 4 h" (W1: at most 140), so the test pins the parts both wordings share.
+    expect(
+      t.startsWith("Time strip: the whole recording (3 d 4 h); the line shows where data exists"),
+    ).toBe(true);
+    expect(t.endsWith(". Click to jump, drag to zoom, double-click for all")).toBe(true);
+    // No bars any more.
+    expect(t).not.toMatch(/\bbars?\b/);
+    expect(t.length).toBeLessThanOrEqual(140);
+  });
+
+  it("words the strip's cursor flags (D-094, D-095)", () => {
+    // One flag's tooltip per place of the cursor; the key it ends on is a shortcut (W1).
+    expect(HINTS.stripFlag("A", "15:09:12.000", "view")).toBe(
+      "A 15:09:12.000: click centres the view on A, span kept · Shift+A",
     );
+    expect(HINTS.stripFlag("A", "11:31:10.000", "outside")).toBe(
+      "A 11:31:10.000, outside the view: click centres the view on A, span kept · Shift+A",
+    );
+    expect(HINTS.stripFlag("A", "26-10-13 10:02:00.000", "before")).toBe(
+      "A 26-10-13 10:02:00.000, before the strip's start: click centres the view on A, span kept · Shift+A",
+    );
+    expect(HINTS.stripFlag("B", "26-10-13 12:31:40.000", "after")).toBe(
+      "B 26-10-13 12:31:40.000, after the strip's end: click centres the view on B, span kept · Shift+B",
+    );
+    expect(HINTS.stripFlagAB("15:09:12.000", "15:09:12.950")).toBe(
+      "A 15:09:12.000 and B 15:09:12.950: click centres the view on both; Shift+A or Shift+B for one",
+    );
+    // The key tails are in the shortcut table (the wording-rule test checks every sample too).
+    const keys = SHORTCUTS.flatMap((x) => x.keys.split(/\s+/));
+    expect(keys).toContain("Shift+A");
+    expect(keys).toContain("Shift+B");
+  });
+
+  it("words More without Share and the way back to the search (D-095)", () => {
+    // Share stays in the row, so "⋯" holds digits and the values window only; no argument any more.
+    expect(HINTS.more).toBe("More: digits, + values window");
+    expect(String(HINTS.more)).not.toMatch(/share/i);
+    expect(HINTS.backToSearch).toBe("Back to search: the tool that opened these sessions");
+    expect(HINTS.backToSearch.length).toBeLessThanOrEqual(140);
   });
 
   it("puts the filter sentence of the events count in parentheses, and none without one", () => {

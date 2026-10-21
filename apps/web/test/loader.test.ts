@@ -557,6 +557,20 @@ describe("SeriesLoader with the window options", () => {
     ]);
     loader.dispose();
   });
+
+  it("prefetches no tile outside the workspace's scope", async () => {
+    const t = wsetup({ prefetch: true }, null);
+    // The view starts at the scope's start, as after a case step: the tiles before it answer 409.
+    t.cache.setScope({ dataRef: "c", from: "0", to: (2n ** 40n).toString() });
+    const loader = t.make();
+    loader.update([wide()]);
+    await t.drain();
+    await tick(300);
+    await t.drain();
+    expect(t.calls.length).toBeGreaterThan(1); // prefetch ran
+    expect(t.calls.every((c) => BigInt(c.request.to) > 0n)).toBe(true);
+    loader.dispose();
+  });
 });
 
 describe("SeriesLoader retries", () => {

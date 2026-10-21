@@ -1,7 +1,10 @@
 import type { LiveServerMessage, OpenView, ViewSummary, Workspace } from "@kipscope/shared";
 import { EMPTY_WORKSPACE } from "@kipscope/shared";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
+import { HINTS } from "../src/help/hints.ts";
 import { applyLiveMessage, type LiveState } from "../src/live.ts";
 import {
   existingTitle,
@@ -17,6 +20,7 @@ import {
   openNotice,
   titleParts,
 } from "../src/views/notice.ts";
+import { ViewsMenu } from "../src/views/ViewsMenu.tsx";
 
 // Scenario tests for the pure helpers of add-saved-views V7 (round 2). Signatures from design V7;
 // where V7 leaves a shape open (strip slot, events, `own`), the adapters below are the one place to adjust.
@@ -262,5 +266,27 @@ describe("opened elsewhere, push before the HTTP answer", () => {
     expect(tab.notices).toHaveLength(1); // held back
     tab.answer(8); // own open got revision 8; 7 was foreign
     expect(tab.notices).toEqual(['"Speeds" opened elsewhere', '"Other" opened elsewhere']);
+  });
+});
+
+describe("views menu markup", () => {
+  it("puts the tooltip on the Views button, not on the hidden file input", () => {
+    // Every visible control has a tooltip (guidance "Coverage in the app"); the import's file input
+    // is hidden, nobody can hover it.
+    const html = renderToStaticMarkup(
+      createElement(ViewsMenu, {
+        workspace: EMPTY_WORKSPACE,
+        workspaceId: "w1",
+        trackOpen: (request) => request(),
+        onOpened: () => undefined,
+        onNotice: () => undefined,
+        onMessage: () => undefined,
+      }),
+    );
+    const input = /<input\b[^>]*type="file"[^>]*>/.exec(html)?.[0];
+    expect(input, "the file input").toBeDefined();
+    expect(input).toMatch(/\bhidden=""/);
+    expect(input).not.toMatch(/\btitle=/);
+    expect(html).toContain(`title="${HINTS.views}"`);
   });
 });

@@ -5,48 +5,51 @@ import {
   type Density,
   type DiagEvent,
   type Drive,
-  MAX_DENSITY_BARS,
+  parseSignalId,
   scopeKey,
   type TimeRange,
   type Workspace,
   type WorkspaceScope,
 } from "@kipscope/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
 import { alignToEvent } from "../case/sessionBar.ts";
+import { useGapInfo } from "../chart/gaps.ts";
 import { useLiveCursor } from "../chart/live.ts";
 import { clampRange, type Range } from "../chart/zoom.ts";
-import { groupMarks, type Mark, markStyle, markTitle } from "../events/marks.ts";
+import { groupMarks, type Mark, markTitle, stripPin } from "../events/marks.ts";
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
-import { formatRange } from "./axis.ts";
+import { formatDate, formatTime } from "./axis.ts";
 import { NO_SCOPE, SCOPE_HINTS, scopeRange } from "./scope.ts";
+import { formatSpan, nextWorkWindow, RETRY_MS, stripDataRef, stripLabel } from "./strip.ts";
 import {
-  formatSpan,
-  nextWorkWindow,
-  RETRY_MS,
-  stripBars,
-  stripDataRef,
-  stripLabel,
-} from "./strip.ts";
-import {
-  barTitle,
+  bothRange,
   brushRange,
   caseMarks,
   caseMarkTitle,
   centreRange,
+  dayTicks,
   driveRects,
   driveTitle,
+  endLabels,
+  FLAG_AB_FACE_W,
+  FLAG_FACE_W,
   hitZone,
+  hoverText,
   jumpRange,
   markerX,
   panRange,
+  presence,
   type Rect,
   resizeRange,
   type StripAction,
+  type StripFlag,
   StripGesture,
+  stripFlags,
   type Track,
+  tOf,
   trackOf,
   wholeRange,
   windowRects,
@@ -256,12 +259,12 @@ export function stripDropText(d: StripDrop): string {
 }
 
 /** Tooltip spans of the pins: each hit rect cut at the midpoints to its overlapping neighbours, so
- *  the tooltip under the pointer belongs to the pin a click hits (nearest centre, design V3). */
-function pinTipRects(marks: readonly Mark[]): Rect[] {
+ *  the tooltip under the pointer belongs to the pin a click hits (nearest centre, design DW20). */
+function pinTipRects(hits: readonly Rect[]): Rect[] {
   const centre = (r: Rect) => (r.left + r.right) / 2;
-  return marks.map(({ hit }, i) => {
-    const prev = marks[i - 1]?.hit;
-    const next = marks[i + 1]?.hit;
+  return hits.map((hit, i) => {
+    const prev = hits[i - 1];
+    const next = hits[i + 1];
     const left = prev ? Math.max(hit.left, (centre(prev) + centre(hit)) / 2) : hit.left;
     const right = next ? Math.min(hit.right, (centre(hit) + centre(next)) / 2) : hit.right;
     return { left, right: Math.max(left, right) };
@@ -299,37 +302,119 @@ interface Committed {
   base: string;
 }
 
-/** A vertical marker over the bars (design S10): A and B with a flag, L without. */
-function Marker({ name, x, px }: { name: "a" | "b" | "l"; x: number; px: number }) {
+/** L's line in its own component, so the frame-rate updates of L do not re-render the strip (S10). */
+function LiveLine({ tr }: { tr: Track }) {
+  const t = useLiveCursor()?.t;
+  const x = t === undefined ? undefined : markerX(tr, t);
+  return x === undefined ? null : <div className="strip-line l" style={{ left: x }} />;
+}
+
+/** The hover hairline and the time below the strip (DW10, DW19) in their own component: a pointer
+ *  move re-renders only this. `show` receives its setter. */
+function HoverTime({
+  tr,
+  spanNs,
+  show,
+}: {
+  tr: Track;
+  spanNs: bigint;
+  show: RefObject<((x: number | undefined) => void) | undefined>;
+}) {
+  const [x, setX] = useState<number>();
+  useEffect(() => {
+    show.current = setX;
+    return () => {
+      show.current = undefined;
+    };
+  }, [show]);
+  if (x === undefined) return null;
   return (
-    <div className={`time-strip-marker ${name}`} style={{ left: x }}>
-      {name !== "l" && (
-        <span className={x + 10 > px ? "time-strip-flag flip" : "time-strip-flag"}>
-          {name.toUpperCase()}
-        </span>
-      )}
-    </div>
+    <>
+      <div className="strip-hover-line" style={{ left: x }} />
+      <div className="strip-hover" style={{ left: x }}>
+        {hoverText(tOf(tr, x), spanNs)}
+      </div>
+    </>
   );
 }
 
-/** L's marker in its own component, so the frame-rate updates of L do not re-render the bars. */
-function LiveMarker({ tr }: { tr: Track }) {
-  const t = useLiveCursor()?.t;
-  const x = t === undefined ? undefined : markerX(tr, t);
-  return x === undefined ? null : <Marker name="l" x={x} px={tr.px} />;
+/** The clock of a flag's tooltip (DW18): `HH:MM:SS.mmm`, with `YY-MM-DD ` before it at an edge. */
+const flagClock = (t: bigint, edge: boolean) =>
+  edge ? `${formatDate(t).slice(2)} ${formatTime(t, 3)}` : formatTime(t, 3);
+
+/** aria-label of a strip flag (time-strip "Cursor markers on the strip"). */
+function flagLabel(f: StripFlag): string {
+  if (f.name === "AB") {
+    return f.edge
+      ? `Cursors A and B lie ${f.edge} the strip: bring them into view`
+      : "Bring cursors A and B into view";
+  }
+  return f.edge
+    ? `Cursor ${f.name} lies ${f.edge} the strip: bring it into view`
+    : `Bring cursor ${f.name} into view`;
 }
 
-/** Skeleton bars before any density is known: the most a density has (declutter-workspace DW4). */
-const SKELETON_BARS = MAX_DENSITY_BARS;
+/** Tooltip of a strip flag: HINTS.stripFlag (view, outside, before, after) or HINTS.stripFlagAB. */
+function flagTitle(f: StripFlag, a: bigint | undefined, b: bigint | undefined, view?: Range) {
+  const edge = f.edge !== undefined;
+  if (f.name === "AB") {
+    return a !== undefined && b !== undefined
+      ? HINTS.stripFlagAB(flagClock(a, edge), flagClock(b, edge))
+      : "";
+  }
+  const t = f.name === "A" ? a : b;
+  if (t === undefined) return "";
+  const where = f.edge ?? (view && view.from <= t && t <= view.to ? "view" : "outside");
+  return HINTS.stripFlag(f.name, flagClock(t, edge), where);
+}
+
+/** A cursor flag (DW19): a button over the track's lower part with the face and, at an edge, a caret. */
+function Flag({
+  flag,
+  title,
+  onClick,
+}: {
+  flag: StripFlag;
+  title: string;
+  onClick: (() => void) | undefined;
+}) {
+  const faceW = flag.name === "AB" ? FLAG_AB_FACE_W : FLAG_FACE_W;
+  const faceLeft = flag.x - flag.hit.left - faceW / 2;
+  return (
+    <button
+      type="button"
+      className={`strip-flag ${flag.name.toLowerCase()}`}
+      style={{ left: flag.hit.left, width: flag.hit.right - flag.hit.left }}
+      aria-label={flagLabel(flag)}
+      title={title}
+      disabled={onClick === undefined}
+      // A flag starts no strip gesture.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={onClick}
+    >
+      <span className="strip-flag-face" style={{ left: faceLeft, width: faceW }}>
+        {flag.name === "AB" ? "A·B" : flag.name}
+      </span>
+      {flag.edge && (
+        <span
+          className={`strip-flag-caret ${flag.edge}`}
+          style={{ left: flag.edge === "before" ? faceLeft - 7 : faceLeft + faceW + 2 }}
+        />
+      )}
+    </button>
+  );
+}
 
 /**
- * Time strip below the context row (design T8, S5–S10 of add-strip-navigation; a track without a
- * head line, declutter-workspace DW10): the density of the shown recording over its whole extent,
- * the bar target's range as a window, the drives and the cursor markers. With `navigate`, clicks
- * jump, drags zoom, the window pans and resizes, a double-click shows the whole recording and a
- * click on a drive fits it. Event pins (add-events V3) mark the shown events in a lane at the top
- * of the bars; a click on one centres it. The info is the track's tooltip; states and, while a
- * signal is dragged over the strip, what a drop does (V10) show as a note inside the track.
+ * Time strip below the context row (design T8, S5–S10 of add-strip-navigation; one 28 px row
+ * between two end-label slots, declutter-workspace DW10, DW19, D-094, D-095): over the shown
+ * recording's whole extent the data presence line with its breaks, the drives (none while a
+ * catalog is linked), event pins in the top lane (DW20), day labels while unlinked, the bar
+ * target's range as a window, and the cursor lines with flags that bring a cursor into view. With
+ * `navigate`, clicks jump, drags zoom, the window pans and resizes, a double-click shows the whole
+ * recording, a click on a drive fits it and one on a pin centres it. The info is the track's
+ * tooltip; states and, while a signal is dragged over the strip, what a drop does (V10) show as a
+ * note inside the track.
  */
 export function TimeStrip({
   workspace,
@@ -356,15 +441,33 @@ export function TimeStrip({
   caseCatalog?: CaseCatalog | undefined;
   /** In an object scope: the work window of the bar target's range (`useWorkWindow`). */
   workWindow?: TimeRange | undefined;
-  /** A case step on its way (DW4): skeleton bars, no accent, window or pins until its density is loaded. */
+  /** A case step on its way (DW4): the loading state until its density is loaded. */
   stepping?: boolean | undefined;
 }) {
   const scope = workspace.scope;
   const open = workspace.case;
+  const linked = open?.linked === true;
   const object = scope?.object === true;
   const dataRef = stripDataRef(workspace);
   const load = useDensity(dataRef, scope);
   const detail = useDetailDensity(dataRef, scope, object ? workWindow : undefined);
+  // Logger gaps of the strip's data ref from the windows' shared gap info (DW10): the signals of
+  // that data ref the windows show, so no request of its own; none shown, breaks at empty buckets only.
+  const gapIds = useMemo(
+    () =>
+      dataRef === undefined
+        ? []
+        : workspace.windows.flatMap((w) =>
+            w.signals.map((s) => s.signalId).filter((id) => parseSignalId(id)?.dataRef === dataRef),
+          ),
+    [workspace.windows, dataRef],
+  );
+  const gapInfo = useGapInfo(gapIds, scopeKey(scope), object ? workWindow : undefined);
+  const loggerJson = dataRef === undefined ? undefined : gapInfo.infos.get(dataRef)?.logger;
+  const logger = useMemo(
+    () => loggerJson?.map((g) => ({ from: BigInt(g.from), to: BigInt(g.to) })),
+    [loggerJson],
+  );
   // The pin a right click opened `Align sessions to this event` for (K14), and where.
   const [pinMenu, setPinMenu] = useState<{ pin: number; x: number }>();
   const targetWindow = barTarget(workspace);
@@ -372,12 +475,10 @@ export function TimeStrip({
   const range = target ? { from: BigInt(target.from), to: BigInt(target.to) } : undefined;
   const targetKey = target ? `${targetWindow?.id} ${target.from} ${target.to}` : "";
   const density = load?.state === "loaded" ? load.density : undefined;
-  // Skeleton (DW4, time-strip "Time strip states"): while a step runs, and while the density of
-  // the current key loads; the bars of the last density keep their count, so nothing moves.
-  const skeleton =
-    dataRef !== undefined && (stepping === true || (!density && load?.state !== "failed"));
-  const lastCount = useRef(SKELETON_BARS);
-  if (density) lastCount.current = density.counts.length;
+  // Loading (DW4, time-strip "Time strip states"): while a step runs, and while the density of the
+  // current key loads: no presence line, drives, pins, window or flags.
+  const loading =
+    dataRef !== undefined && load?.state !== "failed" && (stepping === true || !density);
 
   const trackRef = useRef<HTMLDivElement>(null);
   const [px, setPx] = useState(0);
@@ -388,6 +489,7 @@ export function TimeStrip({
   const [drag, setDrag] = useState<DragPreview>();
   const [committed, setCommitted] = useState<Committed>();
   const [hoverDrive, setHoverDrive] = useState<number>();
+  const showHover = useRef<(x: number | undefined) => void>(undefined);
 
   useEffect(() => {
     const el = trackRef.current;
@@ -409,10 +511,11 @@ export function TimeStrip({
     [],
   );
 
-  const tr = density && px > 0 ? trackOf(density, px) : undefined;
-  // In an object scope the drive row shows the work window's drives (K14).
+  const tr = density && px > 0 && !loading ? trackOf(density, px) : undefined;
+  // In an object scope the drive row shows the work window's drives (K14); a linked session is
+  // the drive, so none then (D-094).
   const driveDensity = object ? detail : density;
-  const drives = driveDensity?.drives ?? [];
+  const drives = linked ? [] : (driveDensity?.drives ?? []);
   const sessions = useMemo(
     () =>
       tr && object && scope && open && caseCatalog?.catalogId === open.catalogId
@@ -423,17 +526,17 @@ export function TimeStrip({
   const sessionHits = useMemo(() => sessions.map((m) => m.hit), [sessions]);
   const shownEvents = events?.shown;
   const marks = useMemo(() => {
-    if (!density || px <= 0 || !shownEvents || skeleton) return [];
+    if (!density || px <= 0 || !shownEvents || loading) return [];
     const t = trackOf(density, px);
     return groupMarks(shownEvents, (ns) => xOf(t, ns), px);
-  }, [density, px, shownEvents, skeleton]);
-  const pinHits = useMemo(() => marks.map((m) => m.hit), [marks]);
+  }, [density, px, shownEvents, loading]);
+  const pins = useMemo(() => marks.map(stripPin), [marks]);
+  const pinHits = useMemo(() => pins.map((p) => p.hit), [pins]);
   const pinTips = useMemo(
-    () => pinTipRects(marks).map((rect, i) => ({ rect, title: markTitle(marks[i] as Mark) })),
-    [marks],
+    () => pinTipRects(pinHits).map((rect, i) => ({ rect, title: markTitle(marks[i] as Mark) })),
+    [pinHits, marks],
   );
-  const interactive =
-    navigate !== undefined && density !== undefined && tr !== undefined && !skeleton;
+  const interactive = navigate !== undefined && density !== undefined && tr !== undefined;
 
   // The server range moved away from the committed step's base: drop the step for good, so a
   // later "Back" to that base shows the server range, not the step again (design S8).
@@ -447,8 +550,16 @@ export function TimeStrip({
   const labelRange =
     drag?.kind === "brush" && tr ? (brushRange(tr, drag.x0, drag.x1) ?? shown) : shown;
 
+  // The strip's span (DW19): the scope's bounds, else the recording's first and last row.
+  const span =
+    scope && !object
+      ? { from: BigInt(scope.from), to: BigInt(scope.to) }
+      : density
+        ? { from: BigInt(density.first), to: BigInt(density.last) }
+        : undefined;
+  const ends = dataRef !== undefined && span ? endLabels(span.from, span.to) : undefined;
+
   // The track's tooltip (DW10): the info line and the hint while loaded; the state else.
-  const info = density ? stripLabel(density, labelRange) : undefined;
   let note: string | undefined;
   let trackTitle: string;
   if (dataRef === undefined) {
@@ -457,20 +568,17 @@ export function TimeStrip({
   } else if (load?.state === "failed") {
     note = "Recording unavailable";
     trackTitle = load.message;
-  } else if (density && info !== undefined) {
+  } else if (density && !loading) {
     // An object scope is the vehicle's whole recording, no window the user set (K14).
     const hint =
       density.scope && !density.coarse
-        ? SCOPE_HINTS.info(
-            formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)),
-            formatSpan(BigInt(density.width)),
-          )
-        : HINTS.stripInfo(
-            formatSpan(BigInt(density.last) - BigInt(density.first)),
-            formatSpan(BigInt(density.width)),
-          );
-    trackTitle = `${info}\n${hint}`;
-  } else trackTitle = "Loading recording…";
+        ? SCOPE_HINTS.info(formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)))
+        : HINTS.stripInfo(formatSpan(BigInt(density.last) - BigInt(density.first)));
+    trackTitle = `${stripLabel(density, labelRange)}\n${hint}`;
+  } else {
+    note = "Loading recording…";
+    trackTitle = note;
+  }
 
   /** Ends the press: releases capture, text selection and the Escape listener; drops the drag preview. */
   const endPress = () => {
@@ -568,6 +676,7 @@ export function TimeStrip({
     if (!interactive || e.button !== 0) return;
     e.preventDefault();
     endPress();
+    showHover.current?.(undefined);
     const { x, y } = point(e);
     setPinMenu(undefined);
     gesture.down(x, y, hitZone(tr, x, y, shown, drives, pinHits, sessionHits), e.timeStamp);
@@ -601,6 +710,9 @@ export function TimeStrip({
       }
       return;
     }
+    // Over a flag (it hangs below the track) the hairline gives way to the flag's own tooltip.
+    const onFlag = e.target instanceof Element && e.target.closest(".strip-flag") !== null;
+    showHover.current?.(onFlag || x < 0 || x > tr.px ? undefined : x);
     const zone = hitZone(tr, x, y, shown, drives, pinHits, sessionHits);
     el.style.cursor = ZONE_CURSOR[zone.kind];
     setHoverDrive(zone.kind === "drive" ? zone.index : undefined);
@@ -653,7 +765,7 @@ export function TimeStrip({
   // Unlink, a step or new pins end the menu.
   if (pinMenu && (!open?.linked || !marks[pinMenu.pin])) setPinMenu(undefined);
 
-  const win = tr && shown && !skeleton ? windowRects(tr, shown)?.drawn : undefined;
+  const win = tr && shown ? windowRects(tr, shown) : undefined;
   const brush =
     drag?.kind === "brush" && tr
       ? {
@@ -661,21 +773,33 @@ export function TimeStrip({
           right: Math.min(tr.px, Math.max(drag.x0, drag.x1)),
         }
       : undefined;
-  const cursorX = (t: string | undefined) =>
-    tr && t !== undefined ? markerX(tr, BigInt(t)) : undefined;
-  const xa = cursorX(workspace.cursors.a);
-  const xb = cursorX(workspace.cursors.b);
+  const lines = tr && density ? presence(tr, density, logger, shown) : undefined;
+  const days = tr && span && !linked ? dayTicks(tr, span.from, span.to) : [];
+  const cursorT = (t: string | undefined) => (t === undefined ? undefined : BigInt(t));
+  const ta = cursorT(workspace.cursors.a);
+  const tb = cursorT(workspace.cursors.b);
+  const cursors = tr ? stripFlags(tr, ta, tb) : undefined;
+
+  /** A flag click centres the bar target's span on its cursor (A·B: on both), as a pin click does. */
+  const flagClick = (f: StripFlag): (() => void) | undefined => {
+    if (!navigate) return undefined;
+    if (f.name === "AB") {
+      return ta !== undefined && tb !== undefined
+        ? () => commit((view) => bothRange(view, ta, tb), true)
+        : undefined;
+    }
+    const t = f.name === "A" ? ta : tb;
+    return t === undefined ? undefined : () => commit((view) => centreRange(view, t), true);
+  };
 
   return (
     <div
       className={`time-strip${drop ? (drop.ok ? " drop-target" : " drop-refused") : ""}`}
       data-drop="events"
-      {...(density
-        ? {
-            title: `${density.dataRef} · ${formatRange(BigInt(density.first), BigInt(density.last))}`,
-          }
-        : {})}
     >
+      <span className="strip-end left" title={ends?.left.title}>
+        {ends?.left.text}
+      </span>
       <div
         ref={trackRef}
         className="time-strip-track"
@@ -688,49 +812,97 @@ export function TimeStrip({
               onPointerUp,
               onPointerCancel,
               onLostPointerCapture: onPointerCancel,
-              onPointerLeave: () => setHoverDrive(undefined),
+              onPointerLeave: () => {
+                setHoverDrive(undefined);
+                showHover.current?.(undefined);
+              },
               onContextMenu,
             }
           : {})}
       >
-        <div
-          className={skeleton ? "time-strip-bars skeleton" : "time-strip-bars"}
-          aria-hidden="true"
-        >
-          {skeleton
-            ? Array.from({ length: lastCount.current }, (_, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: skeleton bars have no identity
-                <span key={i} />
-              ))
-            : density &&
-              stripBars(density, shown).map((bar, i) => (
-                <span
-                  // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional buckets of one density
-                  key={i}
-                  className={bar.shown ? "shown" : undefined}
-                  style={{ height: bar.height }}
-                  title={barTitle(density, i, info)}
-                />
-              ))}
-        </div>
-        <div className="time-strip-pins" aria-hidden="true">
-          {marks.map((m, i) => (
+        {days.map(({ x, text }) => (
+          <span key={x} className="strip-day" style={{ left: x }} aria-hidden="true">
+            <span className="strip-day-label">{text}</span>
+          </span>
+        ))}
+        <div className="strip-baseline" aria-hidden="true" />
+        {lines?.runs.map((r) => (
+          <span
+            key={r.left}
+            className={r.shown ? "strip-run shown" : "strip-run"}
+            style={{ left: r.left, width: r.right - r.left }}
+            aria-hidden="true"
+          />
+        ))}
+        {tr &&
+          driveRects(tr, drives).map(({ drawn, hit }, i) => (
             <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: pins are positional in one grouping
+              // biome-ignore lint/suspicious/noArrayIndexKey: drives are positional in one density
               key={i}
-              className="time-strip-pin"
-              style={{
-                left: m.drawn.left,
-                width: m.drawn.right - m.drawn.left,
-                ...markStyle(m),
-              }}
-            />
+              className={hoverDrive === i ? "time-strip-drive hover" : "time-strip-drive"}
+              style={{ left: hit.left, width: hit.right - hit.left }}
+              title={driveDensity ? driveTitle(driveDensity, i) : undefined}
+            >
+              <span
+                className="time-strip-drive-bar"
+                style={{ left: drawn.left - hit.left, width: drawn.right - drawn.left }}
+              />
+            </span>
           ))}
-        </div>
+        {open &&
+          caseCatalog &&
+          sessions.map(({ index, drawn, hit, left }) => {
+            const entry = caseCatalog.entries[index];
+            return (
+              entry && (
+                <span
+                  key={index}
+                  className="time-strip-session"
+                  style={{ left: hit.left, width: hit.right - hit.left }}
+                  title={caseMarkTitle(entry, index, open.count)}
+                >
+                  <span
+                    className={left ? "time-strip-session-bar left" : "time-strip-session-bar"}
+                    style={{ left: drawn.left - hit.left, width: drawn.right - drawn.left }}
+                  />
+                </span>
+              )
+            );
+          })}
+        {lines?.breaks.map((b) => (
+          <span
+            key={b.left}
+            className="strip-break"
+            style={{ left: b.left, width: b.right - b.left }}
+            title={b.title}
+          />
+        ))}
+        {pins.map((p, i) => (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: pins are positional in one grouping
+            key={i}
+            className={`strip-pin ${p.shape}`}
+            style={
+              {
+                left: p.drawn.left,
+                width: p.drawn.right - p.drawn.left,
+                "--pin": p.color,
+              } as CSSProperties
+            }
+            aria-hidden="true"
+          />
+        ))}
         {win && (
           <div
             className="time-strip-window"
-            style={{ left: win.left, width: win.right - win.left }}
+            style={{ left: win.drawn.left, width: win.drawn.right - win.drawn.left }}
+          />
+        )}
+        {win?.caret && (
+          <span
+            className="strip-caret"
+            style={{ left: (win.drawn.left + win.drawn.right) / 2 }}
+            aria-hidden="true"
           />
         )}
         {brush && (
@@ -739,59 +911,29 @@ export function TimeStrip({
             style={{ left: brush.left, width: brush.right - brush.left }}
           />
         )}
-        {tr && xa !== undefined && <Marker name="a" x={xa} px={tr.px} />}
-        {tr && xb !== undefined && <Marker name="b" x={xb} px={tr.px} />}
-        {tr && <LiveMarker tr={tr} />}
+        {cursors?.lines.map(({ name, x }) => (
+          <div key={name} className={`strip-line ${name.toLowerCase()}`} style={{ left: x }} />
+        ))}
+        {tr && <LiveLine tr={tr} />}
         <div className="time-strip-pin-hits">
           {pinTips.map(({ rect, title }, i) => (
             <span
               // biome-ignore lint/suspicious/noArrayIndexKey: pins are positional in one grouping
               key={i}
+              className="pin-hit"
               style={{ left: rect.left, width: rect.right - rect.left }}
               title={title}
             />
           ))}
         </div>
-        <div className="time-strip-drives">
-          {density &&
-            tr &&
-            driveRects(tr, drives).map(({ drawn, hit }, i) => (
-              <span
-                // biome-ignore lint/suspicious/noArrayIndexKey: drives are positional in one density
-                key={i}
-                className={hoverDrive === i ? "time-strip-drive hover" : "time-strip-drive"}
-                style={{ left: hit.left, width: hit.right - hit.left }}
-                title={driveDensity ? driveTitle(driveDensity, i) : undefined}
-              >
-                <span
-                  className="time-strip-drive-bar"
-                  style={{ left: drawn.left - hit.left, width: drawn.right - drawn.left }}
-                />
-              </span>
-            ))}
-          {open &&
-            caseCatalog &&
-            sessions.map(({ index, drawn, hit, left }) => {
-              const entry = caseCatalog.entries[index];
-              return (
-                entry && (
-                  <span
-                    key={index}
-                    className="time-strip-session"
-                    style={{ left: hit.left, width: hit.right - hit.left }}
-                    title={caseMarkTitle(entry, index, open.count)}
-                  >
-                    <span
-                      className={left ? "time-strip-session-bar left" : "time-strip-session-bar"}
-                      style={{ left: drawn.left - hit.left, width: drawn.right - drawn.left }}
-                    />
-                  </span>
-                )
-              );
-            })}
-        </div>
+        {tr && span && <HoverTime tr={tr} spanNs={span.to - span.from} show={showHover} />}
+        {cursors?.flags.map((f) => (
+          <Flag key={f.name} flag={f} title={flagTitle(f, ta, tb, shown)} onClick={flagClick(f)} />
+        ))}
         {(drop || note) && (
-          <span className={`time-strip-note${drop ? (drop.ok ? " drop" : " drop refused") : ""}`}>
+          <span
+            className={`time-strip-note${drop ? (drop.ok ? " drop" : " drop refused") : loading ? " loading" : ""}`}
+          >
             {drop ? stripDropText(drop) : note}
           </span>
         )}
@@ -817,6 +959,9 @@ export function TimeStrip({
           </div>
         )}
       </div>
+      <span className="strip-end right" title={ends?.right.title}>
+        {ends?.right.text}
+      </span>
     </div>
   );
 }

@@ -9,56 +9,16 @@
   white-space: nowrap;
 }
 
-.option-bar .toggle {
-  display: flex;
-  gap: 4px;
-  align-items: center;
+/* A, B and Diff (design DW8, D-095): toggle buttons in the top row's control box (styles.css),
+   26 px tall, 4 px radius. Ink and weight while released sit in `.option-bar .toggle` below, which
+   the pressed style can override. */
+.option-bar-slot .option-bar .toggle:not(.icon-button) {
+  flex: none;
+  min-width: 30px;
   height: var(--control-h);
-  cursor: pointer;
+  padding: 0 9px;
+  border-radius: 4px;
   user-select: none;
-}
-
-.option-bar .toggle:has(input:disabled) {
-  color: var(--muted);
-  cursor: not-allowed;
-}
-
-/* A, B and Diff as pills (T3): the checkbox inside stays the control (keys, tooltip, onChange) and
-   is only hidden; the pill draws its state. */
-.option-bar .pill {
-  position: relative;
-  height: var(--control-h);
-  padding: 0 10px;
-  border: 1px solid var(--control-border);
-  border-radius: 999px;
-  background: var(--panel);
-  font-weight: 500;
-}
-
-.option-bar .pill input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.option-bar .pill:has(input:checked) {
-  border-color: var(--text);
-  background: var(--text);
-  color: #fff;
-}
-
-.option-bar .pill:has(input:disabled) {
-  border-color: var(--border);
-  background: var(--panel);
-  color: var(--disabled);
-}
-
-.option-bar .pill:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 
 .option-bar .new-values {
@@ -66,8 +26,9 @@
 }
 
 /* Back, Reset and "Link time axes" (design DW8): 26 × 26 px icon buttons, the name in aria-label
-   and tooltip; the link toggle pressed in the accent (mock Main.dc.html). */
-.option-bar-slot .option-bar .icon-button {
+   and tooltip (mock Main.dc.html); the link toggle takes the pressed style below. The color rules
+   here have the pressed style's specificity, so they come before it. */
+.option-bar .icon-button {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -77,14 +38,27 @@
   color: var(--label);
 }
 
-.option-bar-slot .option-bar .icon-button:disabled {
+.option-bar .toggle {
+  color: var(--label);
+  font-weight: 500;
+}
+
+.option-bar-slot .option-bar .icon-button:disabled,
+.option-bar-slot .option-bar .toggle:disabled {
   color: var(--disabled);
 }
 
-.option-bar-slot .option-bar .link-toggle[aria-pressed="true"] {
-  border-color: var(--accent-ring);
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+/* The one pressed style of every toggle (design DW8, D-095; case/case.css reuses it): A, B, Diff
+   and "Link time axes" on, the position button while its list is open, the checked ALIGN item.
+   Icons stroke in currentColor. It comes after the released ink rules of equal specificity; the
+   released look is the plain control box. */
+.toggle[aria-pressed="true"],
+.toggle[aria-expanded="true"],
+.toggle[aria-checked="true"] {
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  color: #0369a1;
+  font-weight: 600;
 }
 
 /* Pushes Share…, "⋯" and "?" to the row's end. */
@@ -178,18 +152,17 @@
 }
 
 /* Top-row give-way steps (add-saved-views V7, design DW8), after the view title has shrunk to its
-   minimum (views.css). Widths are the .option-bar-slot content box (container top-row), measured
+   minimum (views.css); Share… stays in the row at every width (D-095). Widths are the
+   .option-bar-slot content box (container top-row), measured
    2026-10-21 in headless Chrome (scripts/cdp.mjs) on the dev server as the narrowest content box
    with every item's centre on one line, then 106 px less for the range control's 318 → 212 px
    (add-range-picker D-093): sidebar icon 26 px + 8 px gap, Views 55 px (icon only 34 px), a
    modified view title held at its minimum (10ch + dot = 91 px), range control 212 px, Back, Reset,
    Link 26 px each, A, B, Diff 30 + 30 + 43 px, Share… 64 px, "⋯" and "?" 26 px each, 6 px gaps:
-   - Views label and Share… in the row: 776 px (679 px without a view title).
-   - Views icon and Share… in the row: 755 px (658 px).
-   - Views icon, Share… in the "⋯" menu (the row after the move): 685 px (588 px).
-   So the Views label leaves at 775 px and Share… at 754 px. At 1440×900 the content box is
-   1153 px (1168 px without the main area's scroll bar): label and Share… in the row. At 1000×557 it
-   is 713 px (728 px): Share… in the menu, the row fits with a view title at its minimum. */
+   - Views label in the row: 776 px (679 px without a view title).
+   - Views icon in the row: 755 px (658 px).
+   So the Views label leaves at 775 px. At 1440×900 the content box is 1153 px (1168 px without the
+   main area's scroll bar): the label in the row. At 1000×557 it is 713 px (728 px). */
 @container top-row (max-width: 775px) {
   .option-bar .views-label {
     display: none;
@@ -200,26 +173,10 @@
   }
 }
 
-/* "⋯" is always shown (DW8); its menu holds Digits and "+ Values window", and Share… only below
-   the Share threshold, where the row's Share… (the one `overflow-item`) leaves the row
-   (display: none, so also the tab order). */
+/* "⋯" is always shown (DW8); its menu holds Digits and "+ Values window". */
 .option-bar .overflow-menu {
   position: relative;
   flex: none;
-}
-
-.option-bar .overflow-popover .share-menu {
-  display: none;
-}
-
-@container top-row (max-width: 754px) {
-  .option-bar .overflow-item {
-    display: none;
-  }
-
-  .option-bar .overflow-popover .share-menu {
-    display: block;
-  }
 }
 
 .option-bar-slot .option-bar .overflow-button,

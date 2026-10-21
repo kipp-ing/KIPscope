@@ -423,9 +423,14 @@ export function SignalExplorer({
         aria-controls={listId}
         aria-activedescendant={items.length > 0 ? optionId(activeItem) : undefined}
       />
+      {/* A cut window title is read whole in the select's tooltip (design DW22). */}
       <label className="target">
         Add to{" "}
-        <select value={target} title={HINTS.target} onChange={(e) => onTarget(e.target.value)}>
+        <select
+          value={target}
+          title={targetWindow ? `${windowTitle(targetWindow)}\n${HINTS.target}` : HINTS.target}
+          onChange={(e) => onTarget(e.target.value)}
+        >
           <option value={NEW_WINDOW}>New window</option>
           {windows.map((w) => (
             <option key={w.id} value={w.id}>
@@ -474,7 +479,9 @@ export function SignalExplorer({
                   <span className="chevron" aria-hidden="true">
                     {item.open ? "▾" : "▸"}
                   </span>
-                  <span className="group-name">{item.name}</span>
+                  <span className="group-name" title={item.name}>
+                    {item.name}
+                  </span>
                   <span className="group-count">{item.count}</span>
                 </div>
               );
@@ -519,7 +526,8 @@ export function SignalExplorer({
                 )}
                 <span
                   className={onDragStart ? "name draggable" : "name"}
-                  title={s.displayName !== undefined ? s.name : undefined}
+                  // The source name, whole even where the shown name is cut (design DW22).
+                  title={s.name}
                   onPointerDown={(e) => {
                     if (e.button !== 0 || !onDragStart) return;
                     // A selected row of two or more drags the selection (L2).

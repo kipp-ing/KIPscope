@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { sidebarTabs } from "../src/explorer/tabs.ts";
 import {
@@ -5,6 +6,8 @@ import {
   isSidebarKey,
   loadSidebar,
   loadSidebarPart,
+  SIDEBAR_COMPACT_BELOW_PX,
+  SIDEBAR_COMPACT_PX,
   SIDEBAR_PART_KEY,
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_PX,
@@ -27,7 +30,10 @@ const key = (k: string, mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: b
 describe("sidebar state", () => {
   it("loads and saves the sidebar state, open by default and when storage fails", () => {
     expect(SIDEBAR_STORAGE_KEY).toBe("kipscope.sidebar");
-    expect(SIDEBAR_WIDTH_PX).toBe(240);
+    // D-095: 248 px, 208 px below a 1200 px viewport (design DW22).
+    expect(SIDEBAR_WIDTH_PX).toBe(248);
+    expect(SIDEBAR_COMPACT_PX).toBe(208);
+    expect(SIDEBAR_COMPACT_BELOW_PX).toBe(1200);
 
     const data = new Map<string, string>();
     const storage = {
@@ -140,6 +146,24 @@ describe("sidebar part", () => {
     expect(isEventsKey(key("e"), el("SELECT"))).toBe(false);
     expect(isEventsKey(key("E"), el("BODY"))).toBe(false);
     expect(isEventsKey(key("s"), el("BODY"))).toBe(false);
+  });
+});
+
+describe("sidebar width in the styles", () => {
+  it("holds the explorer at --sidebar-width and cuts long names with an ellipsis", () => {
+    // No layout in the tests: the CSS source is read (as bar.test.ts reads the option bar).
+    const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+    const block = (selector: string): string => {
+      const i = css.search(new RegExp(`(^|\\n)${selector.replace(/[.]/g, "\\.")}\\s*\\{`));
+      expect(i, `${selector} has a rule`).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", i), css.indexOf("}", i));
+    };
+    const explorer = block(".explorer");
+    expect(explorer).toMatch(/width:\s*var\(--sidebar-width\b/);
+    expect(explorer).toMatch(/min-width:\s*0/);
+    expect(explorer).toMatch(/overflow:\s*hidden/);
+    // Row names cut with an ellipsis instead of widening the sidebar.
+    expect(css).toMatch(/\.explorer \.row \.name[^{]*\{[^}]*text-overflow:\s*ellipsis/);
   });
 });
 

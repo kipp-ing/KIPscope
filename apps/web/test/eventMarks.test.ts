@@ -9,7 +9,12 @@ import {
   markTitle,
   PIN_HIT_PX,
   PIN_LANE_PX,
+  type PinShape,
+  pinShape,
   READ_LINE,
+  STRIP_PIN_HIT_H,
+  STRIP_PIN_HIT_W,
+  stripPin,
 } from "../src/events/marks.ts";
 import { trackOf, xOf } from "../src/time/stripGeometry.ts";
 import { atB, fakeEvent, TESTCAR_DTCS } from "./fakeEvents.ts";
@@ -41,7 +46,8 @@ describe("event marks", () => {
   it("clusters events into pins", () => {
     expect(GROUP_PX).toBe(6);
     expect(PIN_HIT_PX).toBe(8);
-    expect(PIN_LANE_PX).toBe(8);
+    // The hit lane of the strip's pins grew to y 0-11 with the 10 x 11 px hit area (D-095, DW20).
+    expect(PIN_LANE_PX).toBe(11);
     // Events at 5 h (active), 5 h 20 min (change), 5 h 40 min (snapshot) and 130 h (off the track).
     const marks = groupMarks(
       [
@@ -71,6 +77,93 @@ describe("event marks", () => {
     near(one?.hit.left ?? Number.NaN, 64);
     near(one?.hit.right ?? Number.NaN, 72);
     expect(markColor(one?.category ?? "other")).toBe("#64748b");
+  });
+
+  it("shapes strip pins by kind", () => {
+    expect([STRIP_PIN_HIT_W, STRIP_PIN_HIT_H]).toEqual([10, 11]);
+    const on = (events: DiagEvent[]) => groupMarks(events, (t) => xOf(tr, t), tr.px);
+    const state = (t: bigint, category: DiagEvent["category"]) =>
+      fakeEvent(t, category, { kind: "state" });
+    const edges = (r: { left: number; right: number }, left: number, right: number) => {
+      near(r.left, left);
+      near(r.right, right);
+    };
+
+    // Events at 5 h (active), 5 h 20 min (change), 5 h 40 min (snapshot) and 130 h (off the track).
+    const marks = on([
+      state(5n * H, "active"),
+      state(5n * H + 20n * MIN, "change"),
+      state(5n * H + 40n * MIN, "snapshot"),
+      state(130n * H, "active"),
+    ]);
+    expect(marks).toHaveLength(2);
+    const [fault, dot] = marks.map((m) => stripPin(m));
+    // The most severe category of the group decides: active beats change.
+    expect(fault?.shape).toBe("fault");
+    expect(fault?.color).toBe("#be123c");
+    edges(fault?.drawn as never, 58.5, 65.5);
+    edges(fault?.hit as never, 57, 67);
+    expect(marks[0]?.events).toHaveLength(2);
+    expect(dot?.shape).toBe("dot");
+    expect(dot?.color).toBe("#64748b");
+    edges(dot?.drawn as never, 66, 70);
+    edges(dot?.hit as never, 63, 73);
+
+    // One change at 10 h: a 2 px tick; its hit is widened to 10 px.
+    const [one] = on([state(10n * H, "change")]).map((m) => stripPin(m));
+    expect(one?.shape).toBe("change");
+    expect(one?.color).toBe("#7c3aed");
+    edges(one?.drawn as never, 119, 121);
+    edges(one?.hit as never, 115, 125);
+
+    // Two changes at 15 h and 15 h 10 min share one pin, 4 px wide.
+    const many = on([state(15n * H, "change"), state(15n * H + 10n * MIN, "change")]);
+    expect(many).toHaveLength(1);
+    const [several] = many.map((m) => stripPin(m));
+    expect(several?.shape).toBe("change");
+    edges(several?.drawn as never, 179, 183);
+    edges(several?.hit as never, 176, 186);
+
+    // An active DTC read at 20 h: hollow in the fault colour, 6 px.
+    const [read] = on([fakeEvent(20n * H, "active")]).map((m) => stripPin(m));
+    expect(read?.shape).toBe("hollow");
+    expect(read?.color).toBe("#be123c");
+    edges(read?.drawn as never, 237, 243);
+    edges(read?.hit as never, 235, 245);
+
+    // Several reads are 8 px wide.
+    const reads = on([
+      fakeEvent(20n * H, "active", { name: "P1" }),
+      fakeEvent(20n * H, "stored", { name: "P2" }),
+    ]);
+    expect(reads).toHaveLength(1);
+    const wide = stripPin(reads[0] as never);
+    expect(wide.shape).toBe("hollow");
+    edges(wide.drawn, 236, 244);
+  });
+
+  it("names the pin shape of a mark by kind and category", () => {
+    const shape = (e: DiagEvent): PinShape =>
+      pinShape(groupMarks([e], () => 10, 100)[0] as NonNullable<ReturnType<typeof groupMarks>[0]>);
+    // Faults: active and pending, whatever else is in the group.
+    expect(shape(fakeEvent(S, "active", { kind: "state" }))).toBe("fault");
+    expect(shape(fakeEvent(S, "pending", { kind: "state" }))).toBe("fault");
+    // A stored event, and every DTC read, is hollow.
+    expect(shape(fakeEvent(S, "stored", { kind: "state" }))).toBe("hollow");
+    expect(shape(fakeEvent(S, "active"))).toBe("hollow");
+    expect(shape(fakeEvent(S, "passed"))).toBe("hollow");
+    // A change is a tick; anything else a dot.
+    expect(shape(fakeEvent(S, "change", { kind: "state" }))).toBe("change");
+    for (const c of ["refused", "transport", "untested", "passed", "snapshot", "other"] as const) {
+      expect(shape(fakeEvent(S, c, { kind: "state" })), c).toBe("dot");
+    }
+    // A DTC next to a state change is no read: the most severe category decides.
+    const mixed = groupMarks(
+      [fakeEvent(S, "active"), fakeEvent(S, "change", { kind: "state" })],
+      () => 10,
+      100,
+    )[0];
+    expect(pinShape(mixed as NonNullable<typeof mixed>)).toBe("fault");
   });
 
   it("colours by category family", () => {

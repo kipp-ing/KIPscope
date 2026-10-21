@@ -8,14 +8,12 @@ import {
   type CommandResult,
   type DiagEvent,
   eventMatchOf,
-  floorDiv,
-  NS_PER_MS,
   type WorkspaceCase,
   type WorkspaceScope,
 } from "@kipscope/shared";
 import { formatDate, formatFull, formatTime } from "../time/axis.ts";
+import { startDuration } from "../time/rangeLine.ts";
 import { caseNotice, endedEvents } from "../time/scope.ts";
-import { formatSpan } from "../time/strip.ts";
 import type { StripEvent } from "../views/notice.ts";
 
 /** Meta entries a catalog list row shows (design K14). */
@@ -44,6 +42,11 @@ export const CASE_HINTS = {
   align: "What stays in place when you step to another session",
   noAnchor: "No session in this catalog has an anchor",
   dismissNote: "Dismiss",
+  /** The position button's tooltip (D-095): what it opens and the alignment. */
+  position: (words: string) => `Sessions of the catalog, aligned at ${words}`,
+  /** The position button's `aria-label` (D-095). */
+  positionLabel: (k: number, n: number, words: string) =>
+    `Session ${k} of ${n}, aligned at ${words}: sessions and align`,
 } as const;
 
 /** Local "YYYY-MM-DD HH:MM" of `t` (decimal ns). */
@@ -79,61 +82,52 @@ export const positionText = (c: Pick<WorkspaceCase, "current" | "count">): strin
 /** The slots of the session bar; a slot whose text is undefined shows a skeleton (DW5). */
 export interface SessionSlots {
   label: "SESSION" | "VEHICLE";
-  /** `<k> / <n>`; `positionCh` = length of `<n> / <n>` (constant per catalog). */
+  /** `<k> / <n>` in the fixed 88 px button (D-095); "" → skeleton. */
   position: string;
-  positionCh: number;
+  /** The current alignment, for the position button's glyph and words. */
+  align: CaseAlign["mode"];
+  /** "Sessions of the catalog, aligned at the session start". */
+  positionTooltip: string;
+  /** "Session 1 of 4, aligned at the session start: sessions and align". */
+  positionLabel: string;
   /** undefined → skeleton. */
   title: string | undefined;
+  /** Line 1 `<title or object> · <full start> · <duration> · <kind>` (unlinked `<object> · whole
+   *  series · <full start> · <duration>`), then the meta, id and tool lines. */
   titleTooltip: string | undefined;
-  /** "Tue" */
-  weekday: string | undefined;
-  /** "2026-10-13  15:06:54 – 15:17:42" or "2026-10-11 – Wed 2026-10-21" */
-  times: string | undefined;
-  /** Full local from – to. */
-  timesTooltip: string | undefined;
-  plusOne: boolean;
-  /** formatSpan of the span. */
+  /** startDuration's duration: "0:10 h", "41 s", "9 d 23 h". undefined → skeleton. */
   duration: string | undefined;
+  /** startDuration's durationTip: "Duration 10 min". */
+  durationTooltip: string | undefined;
   action: "Unlink" | "Link";
   /** The slots show the target of a step or go on its way (DW4). */
   pending: boolean;
 }
 
-/** Width of `<k> / <n>` in ch for every k of a catalog of `count` (tabular numbers): `<n> / <n>`. */
-export const positionCh = (count: number): number => `${count} / ${count}`.length;
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const MS_PER_DAY = 86_400_000;
-
-/** The local calendar day of `t` as a day count, and its English weekday abbreviation. */
-function localDay(t: bigint): { day: number; weekday: string } {
-  const d = new Date(Number(floorDiv(t, NS_PER_MS)));
-  return {
-    day: Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / MS_PER_DAY,
-    weekday: WEEKDAYS[d.getDay()] ?? "",
-  };
-}
-
 /**
- * The times slot of any range (also the scope row's, DW5): `<date>  <from> – <to>` on one local
- * day, the same with `plusOne` when `to` is on the next local day (a `to` at midnight is that
- * day's, `to` exclusive or not), `<date> – <weekday> <date>` from 2 days; the weekday of `from`
- * apart, the full local times as tooltip.
+ * The start and duration of any range (the session bar's title tooltip and duration slot, the scope
+ * row's, the catalog list's; DW5, D-093, D-095) from startDuration: `start` "26-10-01 03:00", its
+ * full form "Thu 2026-10-01 03:00" as `startTooltip`, `duration` "0:10 h" and its words.
  */
 export function timesSlot(
   from: bigint,
   to: bigint,
-): Pick<SessionSlots, "weekday" | "times" | "timesTooltip" | "plusOne"> {
-  const start = localDay(from);
-  const end = localDay(to);
-  const days = end.day - start.day;
-  const timesTooltip = `${formatFull(from)} – ${formatFull(to)}`;
-  if (days >= 2) {
-    const times = `${formatDate(from)} – ${end.weekday} ${formatDate(to)}`;
-    return { weekday: start.weekday, times, timesTooltip, plusOne: false };
-  }
-  const times = `${formatDate(from)}  ${formatTime(from, 0)} – ${formatTime(to, 0)}`;
-  return { weekday: start.weekday, times, timesTooltip, plusOne: days === 1 };
+): { start: string; startTooltip: string; duration: string; durationTooltip: string } {
+  const sd = startDuration(from, to);
+  return {
+    start: `${sd.date} ${sd.time}`,
+    startTooltip: sd.full,
+    duration: sd.duration,
+    durationTooltip: sd.durationTip,
+  };
+}
+
+/** "the session start" | "the session end" | "the anchor" | the event item's label (alignItems). */
+export function alignWords(align: CaseAlign): string {
+  if (align.mode === "start") return "the session start";
+  if (align.mode === "end") return "the session end";
+  if (align.mode === "anchor") return "the anchor";
+  return alignEventText(align);
 }
 
 /** The index a case command will reach: go → its index; step → (pending ?? current) + by inside
@@ -162,20 +156,27 @@ const titleTooltip = (entry: CaseEntry, head: string, tool: string | undefined):
     ...(tool ? [`from ${tool}`] : []),
   ].join("\n");
 
-type Content = Omit<SessionSlots, "position" | "positionCh" | "pending">;
+type Position = Pick<SessionSlots, "position" | "align" | "positionTooltip" | "positionLabel">;
+type Content = Omit<SessionSlots, keyof Position | "pending">;
 
-/** A session's slots: its title or object, `<name> · <kind>` heading the tooltip, its times. */
+/** `<head> · <full start> · <duration>[ · <kind>]` of a range: line 1 of the title's tooltip. */
+const headLine = (name: string, from: bigint, to: bigint, kind?: string): string => {
+  const t = timesSlot(from, to);
+  return [name, t.startTooltip, t.duration, ...(kind ? [kind] : [])].join(" · ");
+};
+
+/** A session's slots: its title or object, its start in the tooltip, its duration. */
 function sessionContent(entry: CaseEntry, tool: string | undefined): Content {
   const from = BigInt(entry.from);
   const to = BigInt(entry.to);
   const name = entryName(entry);
-  const head = entry.kind ? `${name} · ${entry.kind}` : name;
+  const t = timesSlot(from, to);
   return {
     label: "SESSION",
     title: name,
-    titleTooltip: titleTooltip(entry, head, tool),
-    ...timesSlot(from, to),
-    duration: formatSpan(to - from),
+    titleTooltip: titleTooltip(entry, headLine(name, from, to, entry.kind), tool),
+    duration: t.duration,
+    durationTooltip: t.durationTooltip,
     action: "Unlink",
   };
 }
@@ -184,19 +185,28 @@ function sessionContent(entry: CaseEntry, tool: string | undefined): Content {
 const SKELETON: Omit<Content, "label" | "action"> = {
   title: undefined,
   titleTooltip: undefined,
-  weekday: undefined,
-  times: undefined,
-  timesTooltip: undefined,
-  plusOne: false,
   duration: undefined,
+  durationTooltip: undefined,
 };
+
+/** The position button's text, glyph and words for index `k` (0-based) of `c` (D-095). */
+function positionSlots(c: WorkspaceCase, k: number): Position {
+  const words = alignWords(c.align);
+  return {
+    position: positionText({ current: k, count: c.count }),
+    align: c.align.mode,
+    positionTooltip: CASE_HINTS.position(words),
+    positionLabel: CASE_HINTS.positionLabel(k + 1, c.count, words),
+  };
+}
 
 /**
  * The session bar's slots (case-navigation "Session bar", DW5). Linked: the entry's title or
- * object, its local times and duration, `Unlink`; unlinked: `<object> · whole series` (the vehicle,
- * never the dropped session's title) with the scope's times and span, `Link`. With `pending` (a
- * step or go on its way, DW4) the target's slots from the loaded catalog, skeletons where it is not
- * loaded; without a case (an opening `/open#cases=` page) every text slot a skeleton.
+ * object, its duration, `Unlink`; unlinked: `<object> · whole series` (the vehicle, never the
+ * dropped session's title) with the scope's duration, `Link`; the start only in the title's
+ * tooltip (D-095). With `pending` (a step or go on its way, DW4) the target's slots from the loaded
+ * catalog, skeletons where it is not loaded; without a case (an opening `/open#cases=` page) every
+ * text slot a skeleton.
  */
 export function sessionSlots(
   c: WorkspaceCase | undefined,
@@ -205,14 +215,16 @@ export function sessionSlots(
   pending?: number,
 ): SessionSlots {
   if (!c) {
-    const position = { position: "", positionCh: positionCh(0), pending: false };
-    return { label: "SESSION", ...SKELETON, action: "Unlink", ...position };
+    const position: Position = {
+      position: "",
+      align: "start",
+      positionTooltip: CASE_HINTS.list,
+      positionLabel: CASE_HINTS.list,
+    };
+    return { label: "SESSION", ...SKELETON, action: "Unlink", ...position, pending: false };
   }
   const tool = catalog?.origin?.tool;
-  const position = {
-    position: positionText({ current: pending ?? c.current, count: c.count }),
-    positionCh: positionCh(c.count),
-  };
+  const position = positionSlots(c, pending ?? c.current);
   if (pending !== undefined) {
     const entry = pending === c.current ? c.entry : catalog?.entries[pending];
     const content: Content = entry
@@ -225,12 +237,13 @@ export function sessionSlots(
   const from = BigInt(scope?.from ?? e.from);
   const to = BigInt(scope?.to ?? e.to);
   const title = `${e.object} · whole series`;
+  const t = timesSlot(from, to);
   return {
     label: "VEHICLE",
     title,
-    titleTooltip: titleTooltip(e, title, tool),
-    ...timesSlot(from, to),
-    duration: formatSpan(to - from),
+    titleTooltip: titleTooltip(e, headLine(title, from, to), tool),
+    duration: t.duration,
+    durationTooltip: t.durationTooltip,
     action: "Link",
     ...position,
     pending: false,
@@ -267,21 +280,32 @@ export function alignToEvent(event: DiagEvent): CommandInput {
 export interface CatalogRow {
   /** 0-based catalog index. */
   index: number;
-  text: string;
+  /** "1" */
+  position: string;
+  /** `<title or object> · <kind> · <first 2 meta>`, truncating, full text as tooltip. */
+  name: string;
+  /** "26-10-01 03:00", its full form "Thu 2026-10-01 03:00" as tooltip. */
+  start: string;
+  startTooltip: string;
+  /** "0:10 h" in the duration tag, its words as the tag's title. */
+  duration: string;
+  durationTooltip: string;
   current: boolean;
 }
 
-/** `<k> · <kind> · <title or object> · <local from> · <duration> · <first 2 meta>`. */
-export function catalogRowText(entry: CaseEntry, index: number): string {
-  const span = BigInt(entry.to) - BigInt(entry.from);
-  return [
-    String(index + 1),
-    ...(entry.kind ? [entry.kind] : []),
-    entryName(entry),
-    localMinute(entry.from),
-    formatSpan(span),
-    ...metaText(entry, ROW_META),
-  ].join(" · ");
+/** A catalog list row's columns (D-093, D-095, mock grid `28px 1fr 116px 64px`). */
+function catalogRow(entry: CaseEntry, index: number, current: number): CatalogRow {
+  return {
+    index,
+    position: String(index + 1),
+    name: [
+      entryName(entry),
+      ...(entry.kind ? [entry.kind] : []),
+      ...metaText(entry, ROW_META),
+    ].join(" · "),
+    ...timesSlot(BigInt(entry.from), BigInt(entry.to)),
+    current: index === current,
+  };
 }
 
 /** Whether `filter` (lower case) is a substring of title, object, kind, id, local start or a meta value. */
@@ -292,6 +316,7 @@ function matches(entry: CaseEntry, filter: string): boolean {
     entry.kind ?? "",
     entry.id,
     localMinute(entry.from),
+    timesSlot(BigInt(entry.from), BigInt(entry.to)).start,
     formatFull(BigInt(entry.from)),
     ...Object.values(entry.meta ?? {}).map(metaValueText),
   ];
@@ -317,7 +342,7 @@ export function catalogRows(
       more++;
       return;
     }
-    rows.push({ index, text: catalogRowText(entry, index), current: index === current });
+    rows.push(catalogRow(entry, index, current));
   });
   return { rows, more };
 }
