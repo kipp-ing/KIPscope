@@ -172,6 +172,9 @@ interface Req {
 const get = (url: string): Req => ({ method: "GET", url });
 const post = (url: string, body: unknown): Req => ({ method: "POST", url, body });
 
+/** The local month October 2026 (TZ=Europe/Berlin), a valid calendar window. */
+const CALENDAR_M10 = "from=2026-09-30T22:00:00Z&to=2026-10-31T23:00:00Z";
+
 /** Requests that name data ref `ref`, per route (design M6 table); the keys are the registered routes. */
 const CASES: Record<string, (ref: string) => Req[]> = {
   "GET /api/extent": (r) => [get(`/api/extent?signal=${r}/${SIG}`)],
@@ -184,6 +187,11 @@ const CASES: Record<string, (ref: string) => Req[]> = {
     // The same parameter twice: every value is checked, not only the first.
     get(`/api/density?dataRef=testcar&dataRef=${r}`),
     get(`/api/density?dataRef=${r}&dataRef=testcar`),
+  ],
+  "GET /api/calendar": (r) => [
+    get(`/api/calendar?dataRef=${r}&${CALENDAR_M10}`),
+    get(`/api/calendar?dataRef=testcar&dataRef=${r}&${CALENDAR_M10}`),
+    get(`/api/calendar?dataRef=${r}&dataRef=testcar&${CALENDAR_M10}`),
   ],
   "GET /api/gaps": (r) => [
     get(`/api/gaps?dataRef=${r}`),

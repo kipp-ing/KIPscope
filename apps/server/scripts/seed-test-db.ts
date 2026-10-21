@@ -427,6 +427,20 @@ const checks: [string, string][] = [
     SPAN_POINTS.map(([ms]) => ms).join(","),
   ],
   ["SELECT count() FROM sdlog.signals WHERE vehicle = 'drivecar'", "233161"],
+  // Hour slots of the range picker's calendar (add-range-picker): hours 01:00Z..04:00Z of the base day
+  // hold 177,360 (FAST 177,000 + trickle 360), 3,360 (WAKE 3,000), 51,360 (FAST 51,000), and the minute
+  // 03:05..03:06 holds the 6 trickle rows that make the 90 s pause one empty-ish minute on a 60 s grid.
+  ...(
+    [
+      ["01:00:00", "02:00:00", "177360"],
+      ["02:00:00", "03:00:00", "3360"],
+      ["03:00:00", "04:00:00", "51360"],
+      ["03:05:00", "03:06:00", "6"],
+    ] as const
+  ).map(([from, to, count]): [string, string] => [
+    `SELECT count() FROM sdlog.signals WHERE vehicle = 'drivecar' AND utc >= toDateTime64('2026-10-02 ${from}', 3, 'UTC') AND utc < toDateTime64('2026-10-02 ${to}', 3, 'UTC')`,
+    count,
+  ]),
   [
     "SELECT toString(max(utc)) FROM sdlog.signals WHERE vehicle = 'drivecar'",
     "2026-10-02 06:00:00.000",

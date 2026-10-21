@@ -42,6 +42,7 @@ const TABLE: Record<string, { level: Level | "body"; dataRefs: boolean }> = {
   "GET /api/series": { level: "workspace", dataRefs: true },
   "GET /api/value": { level: "workspace", dataRefs: true },
   "GET /api/density": { level: "workspace", dataRefs: true },
+  "GET /api/calendar": { level: "workspace", dataRefs: true },
   "GET /api/gaps": { level: "workspace", dataRefs: true },
   "GET /api/events": { level: "workspace", dataRefs: true },
 };

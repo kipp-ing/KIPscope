@@ -76,13 +76,79 @@
   background: var(--border);
 }
 
-/* Up to 24em, wide enough for the header range text it shows after the view changed. Line breaking
-   counts only the 6em basis, so the bar stays on one line as long as the field fits at 6em (1000 px
-   with the sidebar open), and the field takes what the line leaves. Only a narrower page wraps. */
-.option-bar .go-to {
-  flex: 1 1 6em;
+/* The range button (add-range-picker R6): one fixed box whatever it shows, so a new range, a
+   pending reload or "No time window" moves nothing; the text cuts at the end, the duration keeps
+   its slot. The picker (rangePicker.css) hangs under it from .range-control. */
+.option-bar .range-control {
+  position: relative;
+  display: flex;
+  flex: 0 0 318px;
+}
+
+.option-bar-slot .option-bar .range-button {
+  display: flex;
+  flex: 0 0 318px;
+  gap: 6px;
+  align-items: center;
+  width: 318px;
+  height: 26px;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option-bar .range-button .range-icon {
+  flex: none;
+  color: var(--soft-ink);
+}
+
+.option-bar .range-button:disabled {
+  cursor: default;
+}
+
+.option-bar .range-button:disabled .range-icon {
+  color: var(--disabled);
+}
+
+.option-bar .range-button .range-text {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 24em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The date part: slate-600 weekday, weight-600 date, 6 px before the times (the mock's double
+   space). */
+.option-bar .range-button .range-date {
+  margin-right: 6px;
+}
+
+.option-bar .range-button .range-weekday {
+  color: var(--soft-ink);
+}
+
+.option-bar .range-button .range-day {
+  font-weight: 600;
+}
+
+.option-bar .range-button sup {
+  margin-left: 1px;
+  font-size: 9px;
+  color: #0369a1;
+}
+
+.option-bar .range-button .range-duration {
+  flex: 0 0 56px;
+  overflow: hidden;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.option-bar .range-button[aria-expanded="true"] {
+  border-color: var(--text);
 }
 
 /* Top-row give-way steps (add-saved-views V7), after the view title has shrunk to its minimum
@@ -91,25 +157,27 @@
    narrowest content box with every item's top equal, the view title held at the minimum of a
    120-character modified view (10ch + dot = 91 px), "Go to" at its 6em basis, "Signals" 63 px +
    8 px gap, and add-guidance's "?" (26 px + 6 px gap) right before "⋯":
-   - Full labels with the "Views" label: 981 px → the label words go at 990 px and below (step 2).
-   - Short labels with the "Views" label: 905 px → the Views button shows only its icon at 910 px
-     and below (step 3).
-   - Overflow items in the row (short labels, Views icon): 884 px → T = 890 px; at T and below
-     Digits, "+ Values window", Span and the "?" go into the "⋯" menu (step 4), the "?" as "Help".
+   - Full labels with the "Views" label: 981 px.
+   - Short labels with the "Views" label: 905 px.
+   - Overflow items in the row (short labels, Views icon): 884 px.
    - Row after the move, with "⋯": 653 px.
-   At 1000×557 (an iframe of that size) the content box is 713 px with the main area's classic
-   scroll bar (15 px, six windows) and 728 px without: "⋯" shows, and "⋯", Reset and "Signals" share
-   one top (4 px). At 1440×900 it is 1153 px with the scroll bar (1168 px without): the full row
-   with "?" and no "⋯".
+   add-range-picker replaced "Go to" (72 px at 6em) by the 318 px range button (+246 px) and
+   removed Span (about 61 px with its gap): estimated, not yet measured, +185 px for the first
+   three rows and +246 px for the last, so the steps are 1175 px (label words, step 2), 1095 px
+   (Views icon, step 3) and T = 1075 px (step 4: Digits, "+ Values window" and the "?" go into the
+   "⋯" menu, the "?" as "Help"); the row after the move is about 899 px. At 1000×557 the content
+   box is 713 px with the main area's classic scroll bar (15 px, six windows) and 728 px without, so
+   that row wraps until declutter-workspace (DW8) shortens it. At 1440×900 it is 1153 px with the
+   scroll bar (1168 px without): short labels with the "Views" label, "?" and no "⋯".
    Lower-priority label words ("Link time axes", "+ Values window") collapse; title and aria-label
    keep the full name. */
-@container top-row (max-width: 990px) {
+@container top-row (max-width: 1175px) {
   .option-bar .long {
     display: none;
   }
 }
 
-@container top-row (max-width: 910px) {
+@container top-row (max-width: 1095px) {
   .option-bar .views-label {
     display: none;
   }
@@ -119,8 +187,8 @@
   }
 }
 
-/* Step 4, the overflow items (V7 "Top-row overflow rule"): Digits, "+ Values window", Span and the
-   "?" leave the row (display: none, so also the tab order) and "⋯", the row's last item, holds them in its
+/* Step 4, the overflow items (V7 "Top-row overflow rule"): Digits, "+ Values window" and the "?"
+   leave the row (display: none, so also the tab order) and "⋯", the row's last item, holds them in its
    menu. T: see the give-way comment above. */
 .option-bar .overflow-menu {
   position: relative;
@@ -128,7 +196,7 @@
   display: none;
 }
 
-@container top-row (max-width: 890px) {
+@container top-row (max-width: 1075px) {
   .option-bar .overflow-item {
     display: none;
   }
@@ -165,10 +233,4 @@
 /* The menu shows the full label at every width. */
 .option-bar .overflow-popover .long {
   display: inline;
-}
-
-.option-bar .go-to.invalid {
-  border-color: var(--error);
-  outline-color: var(--error);
-  background: var(--error-fill);
 }

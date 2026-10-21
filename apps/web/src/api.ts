@@ -1,5 +1,6 @@
 import {
   type ApiError,
+  type CalendarDensity,
   type CaseCatalog,
   type CasePreview,
   type CatalogSnapshot,
@@ -169,6 +170,23 @@ export function fetchDensity(
   const params = new URLSearchParams({ dataRef });
   appendRange(params, range);
   return getJson(`/api/density?${params}`, signal);
+}
+
+/**
+ * Rows per hour and the drives of one calendar window of a data ref (add-range-picker R2, R10):
+ * `from` and `to` as decimal ns, ≤ 32 d apart, on the minute grid; cut to the scope by the server.
+ */
+export function fetchCalendar(
+  dataRef: string,
+  window: { from: bigint; to: bigint },
+  signal?: AbortSignal,
+): Promise<CalendarDensity> {
+  const params = new URLSearchParams({
+    dataRef,
+    from: window.from.toString(),
+    to: window.to.toString(),
+  });
+  return getJson(`/api/calendar?${params}`, signal);
 }
 
 /**

@@ -9,15 +9,21 @@ import {
   type WorkspaceSummary,
   windowTitle,
 } from "@kipscope/shared";
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef } from "react";
+import { useLinkedPreview } from "../chart/linkedPreview.ts";
 import { HINTS } from "../help/hints.ts";
-import { formatRange } from "../time/axis.ts";
+import type { ScopeKind } from "../time/calendar.ts";
+import { rangeButtonEmpty, rangeLine } from "../time/rangeLine.ts";
+import { stripDataRef } from "../time/strip.ts";
 import { type TrackOpen, ViewsMenu } from "../views/ViewsMenu.tsx";
 import { ReadOnlyPill } from "../workspaces/ReadOnlyPill.tsx";
 import { ShareMenu } from "../workspaces/ShareMenu.tsx";
 import "./bar.css";
-import { defaultCursorTime, SPAN_PRESETS } from "./bar.ts";
+import { defaultCursorTime } from "./bar.ts";
 import { OverflowMenu } from "./OverflowMenu.tsx";
+import { RangePicker } from "./RangePicker.tsx";
+
+type Range = { from: bigint; to: bigint };
 
 interface OptionBarProps {
   workspace: Workspace;
@@ -32,10 +38,20 @@ interface OptionBarProps {
   onReset: () => void;
   /** Resolves and applies "Go to" text; returns the error message, or undefined when applied. */
   onGoTo: (text: string) => string | undefined;
-  /** A span preset in ns, centred on the navigation anchor. */
-  onSpan: (span: bigint) => void;
-  /** The "Go to" error is void (text edited, target or its range changed): App clears the message. */
+  /** The "Go to" error is void (text edited, picker closed): App clears the message. */
   onGoToClear?: () => void;
+  /** The bar target's server range; undefined without a timeseries window. */
+  range: Range | undefined;
+  /** The workspace state arrived (else the button shows "…"). */
+  rangeLoaded: boolean;
+  /** The range picker is open (App, so the navigation keys can wait, design R11). */
+  pickerOpen: boolean;
+  onPickerOpen: (open: boolean) => void;
+  /** The picker's typed "Go to" text, kept by App across opens. */
+  typed: string;
+  onTyped: (text: string) => void;
+  /** One range command for the bar target, one history entry (design R11). */
+  onApply: (range: Range) => void;
   /** App: the open notice after the push, or the error of a refused open (add-saved-views V7). */
   onOpened: (result: CommandResult, warnings?: readonly string[]) => void;
   /** App: sends an open as this tab's own (add-saved-views V7 round 3). */
@@ -52,10 +68,167 @@ interface OptionBarProps {
   me: Me | undefined;
 }
 
+/** What the picker's whole-span preset names (design R8): the scope, session or vehicle. */
+export function scopeKind(ws: Workspace): ScopeKind {
+  if (!ws.scope) return "none";
+  if (ws.scope.object) return "object";
+  return ws.case?.linked ? "session" : "scope";
+}
+
+/** The range button's calendar icon (mock GoTo.dc.html). */
+const CALENDAR_ICON = (
+  <svg
+    className="range-icon"
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <rect x="3" y="5" width="18" height="16" rx="2" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+    <line x1="8" y1="3" x2="8" y2="7" />
+    <line x1="16" y1="3" x2="16" y2="7" />
+  </svg>
+);
+
+/**
+ * The range button (range-picker "Range button", design R6): one fixed 318 px box whatever it
+ * shows, the range line or, without a range, "No time window" or "…" (disabled).
+ */
+export function RangeButton({
+  range,
+  loaded,
+  open = false,
+  hint,
+  onClick,
+  buttonRef,
+}: {
+  range: Range | undefined;
+  /** The workspace state arrived. */
+  loaded: boolean;
+  open?: boolean;
+  /** Tooltip's second line, `HINTS.goTo(...)`. */
+  hint: string;
+  onClick?: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
+}) {
+  const line = range && rangeLine(range.from, range.to);
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className="range-button"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-label="Go to"
+      disabled={!line}
+      title={line ? `${line.text} · ${line.duration}\n${hint}` : hint}
+      onClick={onClick}
+    >
+      {CALENDAR_ICON}
+      <span className="range-text">
+        {line ? (
+          <>
+            <span className="range-date">
+              <span className="range-weekday">{line.date.slice(0, 3)}</span>{" "}
+              <span className="range-day">{line.date.slice(4)}</span>
+            </span>
+            <span className="range-times">
+              {line.from} – {line.endDate ? `${line.endDate} ` : ""}
+              {line.to}
+              {line.plusOne && <sup>+1</sup>}
+            </span>
+          </>
+        ) : (
+          rangeButtonEmpty(loaded)
+        )}
+      </span>
+      <span className="range-duration">{line?.short}</span>
+    </button>
+  );
+}
+
+/**
+ * The range button and, while open, the range picker under it (design R10, R11). Shows the bar
+ * target's range with a linked gesture's preview; subscribes to the preview here so a wheel
+ * gesture re-renders only this control, not the bar or App.
+ */
+function RangeControl({
+  workspace,
+  range,
+  loaded,
+  hint,
+  open,
+  onOpen,
+  typed,
+  onTyped,
+  onGoTo,
+  onGoToClear,
+  onApply,
+}: {
+  workspace: Workspace;
+  range: Range | undefined;
+  loaded: boolean;
+  hint: string;
+  open: boolean;
+  onOpen: (open: boolean) => void;
+  typed: string;
+  onTyped: (text: string) => void;
+  onGoTo: (text: string) => string | undefined;
+  onGoToClear: (() => void) | undefined;
+  onApply: (range: Range) => void;
+}) {
+  const shared = useLinkedPreview();
+  const shown = workspace.linkTime && shared && range ? shared.range : range;
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // Without a timeseries window there is nothing to pick for.
+  useEffect(() => {
+    if (open && !range) onOpen(false);
+  }, [open, range, onOpen]);
+  const close = () => {
+    onOpen(false);
+    onGoToClear?.();
+    buttonRef.current?.focus();
+  };
+  return (
+    <span className="range-control">
+      <RangeButton
+        range={shown}
+        loaded={loaded}
+        open={open}
+        hint={hint}
+        buttonRef={buttonRef}
+        onClick={() => (open ? close() : onOpen(true))}
+      />
+      {open && shown && (
+        <RangePicker
+          range={shown}
+          dataRef={stripDataRef(workspace)}
+          scope={workspace.scope}
+          kind={scopeKind(workspace)}
+          typed={typed}
+          onTyped={(text) => {
+            onTyped(text);
+            onGoToClear?.();
+          }}
+          onGoTo={onGoTo}
+          onApply={onApply}
+          onClose={close}
+        />
+      )}
+    </span>
+  );
+}
+
 /**
  * Sticky bar above the windows (D-023): Views menu, the open view's title and the Read-only pill
- * (add-multiuser M12), cursors, link, Go to, span presets, Back, Reset, digits, new values window
- * and Share…; on a short row digits, new values window, span and Share… move into the "⋯" menu (V7).
+ * (add-multiuser M12), cursors, link, the range button (add-range-picker), Back, Reset, digits,
+ * new values window and Share…; on a short row digits, new values window and Share… move into the
+ * "⋯" menu (V7).
  */
 export function OptionBar({
   workspace,
@@ -65,8 +238,14 @@ export function OptionBar({
   onBack,
   onReset,
   onGoTo,
-  onSpan,
   onGoToClear,
+  range,
+  rangeLoaded,
+  pickerOpen,
+  onPickerOpen,
+  typed,
+  onTyped,
+  onApply,
   onOpened,
   trackOpen,
   onNotice,
@@ -77,31 +256,6 @@ export function OptionBar({
 }: OptionBarProps) {
   const { cursors, linkTime } = workspace;
   const digits = workspace.options?.digits ?? 3;
-  // The last Enter in "Go to" failed: field marked invalid until the text, the target or its range
-  // changes (App shows the message).
-  const [goToError, setGoToError] = useState<string | undefined>();
-  const [goToText, setGoToText] = useState("");
-  const goToRef = useRef<HTMLInputElement>(null);
-  // Focus by click selects the text too; the click's mouseup would otherwise drop the selection.
-  const selectOnMouseUp = useRef(false);
-  const clearGoToError = () => {
-    if (goToError === undefined) return;
-    setGoToError(undefined);
-    onGoToClear?.();
-  };
-  const clearRef = useRef(clearGoToError);
-  clearRef.current = clearGoToError;
-  // The target's view changed by other means: an error about the old view is void, and text the
-  // user is not editing would be stale, so it shows the new range as the header does.
-  const targetId = target?.id;
-  const from = target?.range.from;
-  const to = target?.range.to;
-  useEffect(() => {
-    clearRef.current();
-    if (targetId === undefined || from === undefined || to === undefined) return;
-    if (goToRef.current === document.activeElement) return;
-    setGoToText((text) => (text === "" ? text : formatRange(BigInt(from), BigInt(to))));
-  }, [targetId, from, to]);
   const toggleCursor = (cursor: CursorName, on: boolean) => {
     if (!on) {
       void onCommand({ type: "cursor.remove", cursor });
@@ -129,33 +283,8 @@ export function OptionBar({
   // While unlinked, the bar's navigation acts on one window; the tooltip names it (design C5).
   const targetTitle = target ? windowTitle(target) : undefined;
 
-  // The overflow items (V7 "Top-row overflow rule"; Span joined, bar.css): in the row, or the same
-  // controls in the "⋯" menu below the threshold.
-  const spanSelect = (inMenu: boolean, after?: () => void) => (
-    <select
-      className={inMenu ? undefined : "overflow-item"}
-      aria-label="Span"
-      value=""
-      disabled={!target}
-      title={HINTS.span(linkTime, targetTitle)}
-      onChange={(e) => {
-        const preset = SPAN_PRESETS.find((p) => p.label === e.target.value);
-        // Navigation keys go to the page again, not to the select.
-        e.currentTarget.blur();
-        after?.();
-        if (preset) onSpan(preset.ns);
-      }}
-    >
-      <option value="" disabled>
-        Span
-      </option>
-      {SPAN_PRESETS.map((p) => (
-        <option key={p.label} value={p.label}>
-          {p.label}
-        </option>
-      ))}
-    </select>
-  );
+  // The overflow items (V7 "Top-row overflow rule", bar.css): in the row, or the same controls in
+  // the "⋯" menu below the threshold.
   const digitsSelect = (inMenu: boolean) => (
     <select
       className={inMenu ? undefined : "overflow-item"}
@@ -237,38 +366,19 @@ export function OptionBar({
         />
         Link<span className="long"> time</span> axes
       </label>
-      <input
-        id="go-to"
-        ref={goToRef}
-        className={`go-to${goToError ? " invalid" : ""}`}
-        type="text"
-        placeholder="Go to"
-        aria-label="Go to"
-        aria-invalid={goToError !== undefined}
-        disabled={!target}
-        title={[goToError, HINTS.goTo(linkTime, targetTitle)].filter(Boolean).join("\n")}
-        value={goToText}
-        onChange={(e) => {
-          setGoToText(e.target.value);
-          clearGoToError();
-        }}
-        onFocus={(e) => e.currentTarget.select()}
-        onMouseDown={(e) => {
-          selectOnMouseUp.current = document.activeElement !== e.currentTarget;
-        }}
-        onMouseUp={(e) => {
-          if (selectOnMouseUp.current) e.preventDefault();
-          selectOnMouseUp.current = false;
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter") return;
-          const field = e.currentTarget;
-          const error = onGoTo(field.value);
-          setGoToError(error);
-          if (error === undefined) field.select();
-        }}
+      <RangeControl
+        workspace={workspace}
+        range={range}
+        loaded={rangeLoaded}
+        hint={HINTS.goTo(linkTime, targetTitle)}
+        open={pickerOpen}
+        onOpen={onPickerOpen}
+        typed={typed}
+        onTyped={onTyped}
+        onGoTo={onGoTo}
+        onGoToClear={onGoToClear}
+        onApply={onApply}
       />
-      {spanSelect(false)}
       <button
         type="button"
         disabled={!target || !canGoBack}
@@ -294,7 +404,6 @@ export function OptionBar({
           <>
             {digitsSelect(true)}
             {newValuesButton(() => close(true))}
-            {spanSelect(true, close)}
             {shareMenu(() => close(true))}
           </>
         )}

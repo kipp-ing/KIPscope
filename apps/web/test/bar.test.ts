@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   EMPTY_WORKSPACE,
   fromIso,
@@ -70,5 +71,18 @@ describe("defaultCursorTime", () => {
     const odd = { from: 0n, to: 3_000_000_100n };
     expect(defaultCursorTime(odd, "a")).toBe(1_000_000_000n);
     expect(defaultCursorTime(odd, "b")).toBe(2_000_000_000n);
+  });
+});
+
+describe("option bar row", () => {
+  // No DOM in the tests: the row's source is read as text (as hints.test.ts does for tooltips).
+  const source = readFileSync(new URL("../src/bar/OptionBar.tsx", import.meta.url), "utf8");
+
+  it("holds the range button and no Span select", () => {
+    // Range picker design R11: the Go to field and both Span selects (row and ⋯ menu) are gone.
+    expect(source).not.toMatch(/spanSelect|onSpan|SPAN_PRESETS/);
+    expect(source).not.toMatch(/>\s*Span\s*</);
+    expect(source).toContain("range-button");
+    expect(source).toContain('aria-haspopup="dialog"');
   });
 });

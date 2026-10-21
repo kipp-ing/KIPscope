@@ -47,7 +47,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Anywhere", keys: "/", action: "Search signals", probe: [{ key: "/" }] },
   { group: "Anywhere", keys: "s", action: "Show or hide the signal list", probe: [{ key: "s" }] },
   { group: "Anywhere", keys: "e", action: "Events", probe: [{ key: "e" }] },
-  { group: "Anywhere", keys: "t", action: "Go to a time or range", probe: [{ key: "t" }] },
+  { group: "Anywhere", keys: "t", action: "Open the range picker (Go to)", probe: [{ key: "t" }] },
   { group: "Anywhere", keys: "?", action: "Help", probe: [{ key: "?" }] },
   { group: "Anywhere", keys: "Backspace", action: "Back: the previous time range" },
   { group: "Anywhere", keys: "Esc", action: "Cancel a drag" },

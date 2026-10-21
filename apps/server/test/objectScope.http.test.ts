@@ -169,6 +169,45 @@ describe("an object scope (add-case-open)", () => {
     }
   });
 
+  it("answers the calendar of a month while unlinked", async () => {
+    const facts = await testcarFacts();
+    const { t, id, calls } = await unlinked();
+    await unlink(t.anon, id);
+    const { workspace } = await stateOf(t.anon, id);
+    // M10 = local October 2026 (TZ=Europe/Berlin): 2026-09-30T22:00:00Z .. 2026-10-31T23:00:00Z.
+    const M10_FROM = 1790805600n * 1_000_000_000n;
+    const M10_TO = 1793487600n * 1_000_000_000n;
+    const month = "from=2026-09-30T22:00:00Z&to=2026-10-31T23:00:00Z";
+    // Let the unlink's own background work finish, so only the calendar's calls follow the mark.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const mark = calls.length;
+    const answer = await t.anon.get(`/api/w/${id}/calendar?dataRef=testcar&${month}`);
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    expect(answer.body.scope).toEqual({ from: workspace.scope.from, to: workspace.scope.to });
+    expect(answer.body.scope).toEqual({ from: facts.first.toString(), to: facts.end.toString() });
+    const hours = answer.body.hours as number[];
+    expect(hours).toHaveLength(745);
+    expect(hours.reduce((a, b) => a + b, 0)).toBe(await facts.rowsIn());
+    // testcar's rows lie on 2026-10-01 from 00:00:00Z to 10:00:00Z (SLOW's last point): hours 2 … 12.
+    expect(hours.slice(0, 2).every((n) => n === 0)).toBe(true);
+    expect(hours.slice(13).every((n) => n === 0)).toBe(true);
+    expect(hours[2]).toBeGreaterThan(0);
+    const asked = calls.slice(mark).filter((c) => scopeOfCall(c) !== undefined);
+    expect(asked.length).toBeGreaterThan(0);
+    for (const call of asked) {
+      const scope = scopeOfCall(call) as Scope;
+      expect(scope.from >= M10_FROM && scope.to <= M10_TO, `${call.method} inside M10`).toBe(true);
+    }
+    expect(calls.slice(mark).filter((c) => c.method === "refExtent")).toEqual([]);
+
+    // The 32-day rule holds here too.
+    const wide = await t.anon.get(
+      `/api/w/${id}/calendar?dataRef=testcar&from=2026-09-30T22:00:00Z&to=2026-11-02T22:00:00Z`,
+    );
+    expect(wide.status).toBe(400);
+    expect(codeOf(wide.body)).toBe("invalid_request");
+  });
+
   it("needs a work window for gaps and events in an object scope", async () => {
     const { t, id, calls } = await unlinked();
     await unlink(t.anon, id);

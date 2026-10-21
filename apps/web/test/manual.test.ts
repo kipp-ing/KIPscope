@@ -87,13 +87,13 @@ describe("markdown subset", () => {
     expect(words, `manual has ${words} words`).toBeLessThanOrEqual(3000);
   });
 
-  it("names Span and Help among the items moving into the overflow menu (Top row)", () => {
+  it("names Help, not the removed Span, among the items moving into the overflow menu (Top row)", () => {
     const src = readFileSync(new URL("../../../docs/manual.md", import.meta.url), "utf8");
     const line = src.split("\n").find((l) => l.includes("**Top row**")) ?? "";
     expect(line.length).toBeGreaterThan(0);
     const [, after = ""] = line.split(/on a narrow screen/i);
     expect(after, "no narrow-screen sentence in the Top row paragraph").not.toBe("");
-    expect(after).toMatch(/Span/);
+    expect(after).not.toMatch(/Span/);
     expect(after).toMatch(/Help/i);
     expect(after).toContain("⋯");
   });

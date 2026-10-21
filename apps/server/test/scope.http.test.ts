@@ -422,6 +422,36 @@ describe("scoped mode", () => {
     });
   }
 
+  it("bounds the calendar by the scope in scoped mode", async () => {
+    const t = await open({ adapter: memoryAdapter(MEMORY), mode: "scoped" });
+    const flush = async () => {
+      for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(0);
+    };
+    // M10 = local October 2026 (TZ=Europe/Berlin): hour 3 of it is 01:00Z .. 02:00Z, the scope.
+    const month = "from=2026-09-30T22:00:00Z&to=2026-10-31T23:00:00Z";
+
+    // Without a scope: 409 and nothing but pings reach the source.
+    const without = await t.get(`/api/calendar?dataRef=testcar&${month}`);
+    expect(without.status).toBe(409);
+    expect(codeOf(without.body)).toBe("scope_required");
+    expect(t.calls.every((c) => c.method === "ping")).toBe(true);
+
+    expect((await t.command(SCOPE_CMD)).status).toBe(200);
+    await flush();
+    const within = await t.get(`/api/calendar?dataRef=testcar&${month}`);
+    expect(within.status, JSON.stringify(within.body)).toBe(200);
+    await flush();
+    expect(within.body.scope).toEqual({ from: T1.toString(), to: T2.toString() });
+    const hours = within.body.hours as number[];
+    expect(hours).toHaveLength(745);
+    // SIG_A 6 rows, SIG_B 4, MODE 2 inside the scope; Early.X (T1 - 10 min) lies outside.
+    expect(hours[3]).toBe(12);
+    expect(hours.filter((n) => n !== 0)).toHaveLength(1);
+
+    expect(t.guardLog).toEqual([]);
+    expectBounded(t.calls, { dataRef: "testcar", from: T1, to: T2 });
+  });
+
   it("keeps an open workspace's scope list loaded", async () => {
     // Two stored workspaces, one on testcar and one on othercar, both of alice.
     const dir = mkdtempSync(join(tmpdir(), "kipscope-scope-workspaces-"));

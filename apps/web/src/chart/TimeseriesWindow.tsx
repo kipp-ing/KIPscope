@@ -33,6 +33,7 @@ import { groupMarks, type Mark, markColor, markStyle, markTitle, PIN_H } from ".
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
+import { ownRangeText } from "../time/rangeLine.ts";
 import {
   type Cell,
   formatClock,
@@ -1692,7 +1693,10 @@ export function TimeseriesWindow({
   };
 
   const shown = view;
-  const range = formatRange(shown.from, shown.to);
+  // Unlinked, the window's own range in the range-line format (add-range-picker R13); linked,
+  // today's header range until declutter-workspace defines that slot.
+  const ownRange = ownRangeText(shown, linked);
+  const range = ownRange ?? formatRange(shown.from, shown.to);
   // Readout (design N3, N4): value columns while a cursor is on, from the drawn data.
   const { a, b } = cursors;
   const readout = a !== undefined || b !== undefined;
@@ -1736,7 +1740,7 @@ export function TimeseriesWindow({
             {badge.short}
           </span>
         )}
-        <span className="range" title={HINTS.range(range)}>
+        <span className={ownRange ? "range own-range" : "range"} title={HINTS.range(range)}>
           {range}
         </span>
         <div className="window-controls" title="">

@@ -1,4 +1,6 @@
 import {
+  CALENDAR_GRID_NS,
+  CALENDAR_SPAN_MAX_NS,
   type CursorValue,
   type CursorValueResult,
   type Extent,
@@ -18,6 +20,7 @@ import {
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
+import { CalendarCache } from "../calendar.ts";
 import type { RawPoint, Scope, SeriesRef } from "../datasource.ts";
 import { type CacheScope, DensityCache, type DensityPart } from "../density.ts";
 import { GapCache, workspaceSignals } from "../gaps.ts";
@@ -75,6 +78,19 @@ const pairedRange = <T extends z.ZodType<{ from?: bigint | undefined; to?: bigin
 const DensityQuery = pairedRange(
   z.object({ dataRef: z.string().min(1), from: Time.optional(), to: Time.optional() }),
 );
+
+/** A calendar window (design R4 of add-range-picker): on the 60 s grid, at most 32 days. */
+const CalendarQuery = z
+  .object({ dataRef: z.string().min(1), from: Time, to: Time })
+  .refine((q) => q.to > q.from, { message: "to must be after from", path: ["to"] })
+  .refine((q) => q.to - q.from <= CALENDAR_SPAN_MAX_NS, {
+    message: "from and to lie at most 32 days apart",
+    path: ["to"],
+  })
+  .refine((q) => q.from % CALENDAR_GRID_NS === 0n && q.to % CALENDAR_GRID_NS === 0n, {
+    message: "from and to are whole minutes",
+    path: ["from"],
+  });
 
 const GapsQuery = pairedRange(
   z.object({
@@ -188,13 +204,15 @@ export const seriesRoutes =
     const scopeCatalog = (scope: CacheScope) => catalogs.get(workspaceScope(scope));
     // An object scope's density follows the vehicle's own list, not the session's that stands in
     // for it while that loads (K11).
-    const density = new DensityCache(source, (scope) =>
+    const loadedAt = (scope?: CacheScope) =>
       scope
         ? scope.object
           ? catalogs.own(workspaceScope(scope))?.loadedAt
           : scopeCatalog(scope)?.loadedAt
-        : catalog.loadedAt,
-    );
+        : catalog.loadedAt;
+    const density = new DensityCache(source, loadedAt);
+    // The range picker's calendar follows the same catalog loads (add-range-picker R3).
+    const calendar = new CalendarCache(source, loadedAt);
     // Periods are measured for the open workspaces' signals and the requests' only (design P6, M9).
     const gaps = new GapCache(source, catalog, () => openSignals(workspaces), scopeCatalog);
     const warn = (message: string) => app.log.warn(message);
@@ -336,6 +354,35 @@ export const seriesRoutes =
         const body = await density.get(dataRef, scoped.scope && cacheScopeOf(scoped.scope), part);
         if (!body) return apiError(reply, 404, "no_data", `no data for data ref: ${dataRef}`);
         return body;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return apiError(reply, 502, "source_error", message);
+      }
+    });
+
+    /**
+     * Rows per hour and drives of one window of ≤ 32 d for the range picker (spec range-picker,
+     * design R4 of add-range-picker), cut to the scope; an empty window answers zeros.
+     */
+    app.get("/api/calendar", { config: { access: DENSITY_ACCESS } }, async (request, reply) => {
+      const query = parseInput(CalendarQuery, request.query, reply);
+      if (!query) return reply;
+      const { dataRef } = query;
+      const scoped = routeScope(deps, request, reply);
+      if (!scoped) return reply;
+      const scope = scoped.source;
+      if (scope && dataRef !== scope.dataRef) {
+        return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
+      }
+      const visible = scoped.catalog;
+      if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
+        return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
+      }
+      try {
+        // Shared and cached, so a client close does not abort it (as the density, design T7).
+        return await withRequestClass(request, () =>
+          calendar.get(dataRef, query.from, query.to, scoped.scope && cacheScopeOf(scoped.scope)),
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);

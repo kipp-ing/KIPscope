@@ -1,0 +1,400 @@
+/* Range picker (add-range-picker R10, mock docs/design/declutter/GoTo.dc.html). Every row has a
+   fixed height, so loading, failure, errors and paging never change the picker's size. Selectors
+   carry the element or one class more than the top row's control boxes (.option-bar-slot button,
+   input[type="text"] in styles.css), which the picker sits inside. It hangs from bar.css's .range-control, left edges equal. */
+
+.range-picker {
+  --day-h: 40px;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 640px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.12);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Fits 1000×557 (R10). */
+@media (max-height: 639.98px) {
+  .range-picker {
+    --day-h: 30px;
+  }
+}
+
+.range-picker .picker-typed {
+  display: flex;
+  height: 28px;
+}
+
+.range-picker input[type="text"].typed {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.range-picker input[type="text"].typed[aria-invalid="true"] {
+  border-color: var(--error);
+  outline-color: var(--error);
+  background: var(--error-fill);
+}
+
+/* Month titles with ‹ and ›. */
+.range-picker .picker-months {
+  display: flex;
+  align-items: center;
+  height: 26px;
+}
+
+.range-picker button.page {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+}
+
+.range-picker button.page:hover:not(:disabled) {
+  background: var(--band);
+}
+
+.range-picker button.page:disabled {
+  color: var(--disabled);
+}
+
+.range-picker .month-title {
+  flex: 1 1 0;
+  text-align: center;
+  font-weight: 600;
+}
+
+/* Two grids of 7 columns: the weekday heads and 6 rows of days, always. */
+.range-picker .picker-grids {
+  display: flex;
+  gap: 24px;
+  padding: 0 12px;
+}
+
+.range-picker .month-grid {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: 18px repeat(6, var(--day-h));
+  gap: 2px;
+}
+
+.range-picker .weekday {
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.range-picker .day.empty {
+  visibility: hidden;
+}
+
+.range-picker button.day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  height: var(--day-h);
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.range-picker button.day.has-data {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.range-picker button.day[aria-disabled="true"] {
+  cursor: default;
+}
+
+.range-picker button.day:not([aria-disabled="true"]):hover {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.range-picker button.day.between {
+  background: var(--accent-soft);
+}
+
+.range-picker button.day.edge {
+  background: var(--accent);
+  color: #fff;
+}
+
+.range-picker .day-number {
+  margin-top: 5px;
+  line-height: 14px;
+}
+
+.range-picker .day.today .day-number {
+  text-decoration: underline;
+}
+
+/* 12 bars of two local hours, up to 12 px, at the cell's foot (R5). */
+.range-picker .day-bars {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  left: 5px;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 12px;
+}
+
+.range-picker .bar {
+  flex: 1 1 0;
+  border-radius: 1px 1px 0 0;
+  background: var(--disabled);
+}
+
+.range-picker .bar.drive {
+  background: var(--accent);
+}
+
+.range-picker .day.edge .bar {
+  background: rgb(255 255 255 / 0.65);
+}
+
+.range-picker .day.edge .bar.drive {
+  background: #fff;
+}
+
+@media (max-height: 639.98px) {
+  .range-picker .day-number {
+    margin-top: 2px;
+  }
+
+  .range-picker .day-bars {
+    bottom: 2px;
+  }
+}
+
+/* Legend and hint. */
+.range-picker .picker-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 14px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.range-picker .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.range-picker .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--disabled);
+}
+
+.range-picker .swatch.drive {
+  background: var(--accent);
+}
+
+.range-picker .picker-hint {
+  margin-left: auto;
+}
+
+/* The day's presets: one line, scrolling sideways, never wrapping (R8). */
+.range-picker .picker-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  height: 35px;
+  padding-top: 10px;
+  border-top: 1px solid var(--band);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.range-picker .chips-label {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.range-picker .chips-note {
+  flex: none;
+  color: var(--muted);
+}
+
+.range-picker .chips-gap {
+  flex: 1 1 auto;
+}
+
+.range-picker button.chip {
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--panel);
+}
+
+.range-picker button.chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.range-picker button.chip:disabled {
+  border-color: var(--border);
+  color: var(--disabled);
+}
+
+/* From and To, each with its date. */
+.range-picker .picker-times {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+}
+
+.range-picker .time-label {
+  color: var(--soft-ink);
+}
+
+.range-picker .time-label.from {
+  width: 34px;
+}
+
+.range-picker .time-label.to {
+  width: 20px;
+}
+
+.range-picker .time-date {
+  width: 108px;
+  color: var(--label);
+}
+
+.range-picker input[type="text"].time {
+  width: 84px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.range-picker .times-gap {
+  width: 24px;
+}
+
+/* The result line with Cancel and Go. */
+.range-picker .picker-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding-top: 10px;
+  border-top: 1px solid var(--band);
+}
+
+.range-picker .result {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.range-picker .result-text {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.range-picker .result-text sup {
+  margin-left: 1px;
+  font-size: 9px;
+  color: #0369a1;
+}
+
+.range-picker .result-duration {
+  flex: none;
+  color: var(--muted);
+}
+
+.range-picker .result-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--error);
+}
+
+.range-picker button.cancel {
+  flex: none;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.range-picker button.go {
+  flex: none;
+  height: 26px;
+  padding: 0 16px;
+  border: 1px solid var(--text);
+  border-radius: var(--radius);
+  background: var(--text);
+  color: #fff;
+  font-weight: 600;
+}
+
+.range-picker button.go:hover:not(:disabled) {
+  background: var(--name);
+}
+
+.range-picker button.go:disabled {
+  border-color: var(--disabled);
+  background: var(--disabled);
+  color: #fff;
+}

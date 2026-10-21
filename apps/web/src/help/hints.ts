@@ -36,10 +36,8 @@ export const HINTS = {
   link: "Link time axes: on, zooming or panning one window moves all windows; off, each keeps its own range",
   goTo: (linked: Linked, title?: string) =>
     one(linked, title)
-      ? `Go to: a time or range in ${title} · t`
-      : "Go to: a time or range in all windows, e.g. 15:08, 15:07 .. 15:09, 1h, +10min · t",
-  span: (linked: Linked, title?: string) =>
-    `Span: show this much time around cursor A, or the centre, in ${one(linked, title) ? title : "all windows"}`,
+      ? `Go to: pick a range or type one in ${title} · t`
+      : "Go to: pick a range or type one · t",
   back: (linked: Linked, title: string | undefined, can: boolean) =>
     can
       ? `Back: the previous time range of ${one(linked, title) ? title : "all windows"} · Backspace`

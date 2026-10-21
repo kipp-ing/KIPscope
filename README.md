@@ -146,8 +146,7 @@ The [manual](docs/manual.md) explains every part; `?` in the app shows it and al
 | Plain vertical wheel | scrolls the page, never the chart |
 | `+` / `-` | zoom in / out around cursor A when it is in view, else the centre |
 | `←` / `→`, Shift+`←` / `→` | pan by half / a whole span |
-| `t`, or the "Go to" field | type a time or range: `15:08`, `15:07 .. 15:09`, `15:08 ±30s`, `a..b`, `1h`, `+10min` |
-| Span presets | 1 s … 1 day around the anchor |
+| `t`, or the range button | open the range picker: a calendar with the data per day, presets, From/To, or type into "Go to": `15:08`, `15:07 .. 15:09`, `15:08 ±30s`, `a..b`, `1h`, `+10min` |
 | Backspace, "Back" | previous range |
 | Double-click, `Home`, "Reset" | the signals' full extent |
 | TIME strip | click jumps, drag zooms, click a drive fits it, `,` / `.` step drives |

@@ -7,7 +7,7 @@ KIPscope shows recorded vehicle data over time: CAN signals and diagnostic data 
 The screen, from left to right and top to bottom:
 
 - **Signal list**, with the tabs Signals and Events. `s` hides or shows it.
-- **Top row**: the cursor pills A, B and Diff, Link time axes, Go to, Span, Back, Reset, Digits, + Values window and `?` for help. On a narrow screen, Digits, + Values window, Span and Help (`?`) move into the ⋯ menu.
+- **Top row**: the cursor pills A, B and Diff, Link time axes, the range button, Back, Reset, Digits, + Values window and `?` for help. The range button shows the time range on screen and opens the range picker. On a narrow screen, Digits, + Values window and Help (`?`) move into the ⋯ menu.
 - **TIME strip**: the whole recording as bars, the drives under them, and the events count.
 - **Windows**: signals over time, or a table of values, in two columns on a wide screen.
 - **Status strip**: connection, revision, the last error and the measurement info.
@@ -38,7 +38,7 @@ Drag a legend row onto another window to move the signal; hold Alt or Ctrl while
 
 A timeseries window holds up to four units, with one y axis per unit. Signals with the same unit share an axis, so the 93 cell voltages in V compare on one scale.
 
-**Link time axes** decides whether windows share one time range. On (the default), zooming or panning one window moves all windows. Off, each window keeps its own range, and Go to, Span, Back and Reset act on the window you zoomed last; their tooltips name it.
+**Link time axes** decides whether windows share one time range. On (the default), zooming or panning one window moves all windows. Off, each window keeps its own range and shows it small in its header, and the range button, Back and Reset act on the window you zoomed last; their tooltips name it.
 
 For many signals at one moment, use **+ Values window**: a table with one row per signal and its value at A, at B, with Diff on the difference, and at L. Add signals to it as to any window.
 
@@ -52,7 +52,7 @@ The column **L** follows the pointer: it shows each value under the pointer, a t
 
 Signals with states show the state name: Gear reads `P`, `R`, `N` or `D`. For states, Δ shows `=` or `≠`.
 
-**Example, an acceleration in the demo recording:** add VehSpeed (vehicle speed), type `2026-10-14 07:44:10 +30s` into Go to and press `Enter`. Click where the speed leaves 0 at 07:44:22.950 for A, `Shift+click` where it reaches 40 km/h at 07:44:28.350 for B, and switch on Diff. The row reads A 0, B 40.1, Δ 40.1 [km/h], Δt +5.400 s: about 2.1 m/s².
+**Example, an acceleration in the demo recording:** add VehSpeed (vehicle speed), press `t`, type `2026-10-14 07:44:10 +30s` into Go to and press `Enter`. Click where the speed leaves 0 at 07:44:22.950 for A, `Shift+click` where it reaches 40 km/h at 07:44:28.350 for B, and switch on Diff. The row reads A 0, B 40.1, Δ 40.1 [km/h], Δt +5.400 s: about 2.1 m/s².
 
 ## Move in time
 
@@ -66,7 +66,13 @@ On the TIME strip:
 - Double-click shows the whole recording.
 - Click a drive (the dark segments under the bars) to fit it; `,` and `.` step to the previous and next drive.
 
-**Go to** (`t`) takes a time or range: `15:08`, `15:07 .. 15:09`, `2026-10-13 15:15:30 +30s`, `1h` around the anchor, `+10min` to pan, `a` to centre on cursor A. A time without a date takes the date the view shows. **Span** sets 1 s to 1 day around cursor A, or the centre.
+The **range button** in the top row reads the range on screen, such as `Tue 2026-10-13 15:06:03 – 15:18:33` and `12.5 min`; an end on the next day carries a small +1, an end at midnight reads `24:00:00`. Click it or press `t` to open the **range picker**:
+
+- **Go to** at the top takes a time or range: `15:08`, `15:07 .. 15:09`, `2026-10-13 15:15:30 +30s`, `1h` around the anchor, `+10min` to pan, `a` to centre on cursor A. A time without a date takes the date the view shows. `Enter` goes there and closes the picker; text it cannot read stays with the reason below.
+- The **calendar** shows two months. Under each day, small bars show how much was recorded in each two hours, blue where a drive ran; days without data are greyed out. Click a start day, then an end day; ‹ and › page to months with data.
+- The **presets** line lists the drives of the start day, **Whole day**, and the whole recording, scope or session.
+- **From** and **To** hold the times of the start and end day; `24:00:00` is the end of the day.
+- **Go** shows the range, as one step that **Back** undoes. **Cancel**, `Esc` or a click outside closes the picker and changes nothing. While it is open, the navigation keys do nothing.
 
 Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (`Backspace`) returns to the previous range, up to 50 steps. **Reset** (`Home`) shows all data.
 

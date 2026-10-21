@@ -105,6 +105,31 @@ describe("navKey", () => {
   });
 });
 
+describe("navKey with the range picker", () => {
+  const key = (
+    k: string,
+    mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {},
+  ) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+
+  it("ignores navigation keys while the range picker is open", () => {
+    const keys = ["+", "=", "-", "ArrowLeft", "ArrowRight", "Home", "t", ",", ".", "n", "p"];
+    // The picker's day cells are buttons, so the focused element alone does not tell: the open
+    // state does. No key maps to an action, whatever has focus.
+    for (const focused of [null, el("BUTTON"), el("DIV"), el("INPUT", { type: "checkbox" })]) {
+      for (const k of keys) {
+        expect(navKey(key(k), focused, true), `${k} in ${focused?.tagName}`).toBeUndefined();
+      }
+      expect(navKey(key("ArrowLeft", { shiftKey: true }), focused, true)).toBeUndefined();
+      expect(navKey(key("ArrowRight", { shiftKey: true }), focused, true)).toBeUndefined();
+    }
+    // The same keys work again with the picker closed (explicitly or by default).
+    expect(navKey(key("+"), el("BUTTON"), false)).toBe("in");
+    expect(navKey(key("-"), el("BUTTON"))).toBe("out");
+    expect(navKey(key("Home"), null, false)).toBe("home");
+    expect(navKey(key("t"), null, false)).toBe("goTo");
+  });
+});
+
 describe("drive keys", () => {
   const key = (
     k: string,

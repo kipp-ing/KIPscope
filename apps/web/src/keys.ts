@@ -42,8 +42,8 @@ export function isHelpKey(e: KeyLike, focused: Element | null): boolean {
 }
 
 /**
- * Navigation keys (design N6): zoom, pan, page, reset, "Go to", the strip's drives (S9) and its
- * events (improve-events P7).
+ * Navigation keys (design N6): zoom, pan, page, reset, the range picker (`goTo` opens it,
+ * add-range-picker R11), the strip's drives (S9) and its events (improve-events P7).
  */
 export type NavKey =
   | "in"
@@ -61,14 +61,16 @@ export type NavKey =
 
 /**
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
- * Ctrl, Meta or Alt. `+` needs Shift on some layouts, so Shift only matters for the arrows. `s`,
+ * Ctrl, Meta or Alt, nothing while the range picker is open (its day cells are buttons, so focus
+ * alone does not tell). `+` needs Shift on some layouts, so Shift only matters for the arrows. `s`,
  * `e` and `/` stay free (sidebar toggle, events panel, explorer search).
  */
 export function navKey(
   e: KeyLike & { shiftKey: boolean },
   focused: Element | null,
+  pickerOpen = false,
 ): NavKey | undefined {
-  if (e.ctrlKey || e.metaKey || e.altKey || isTextField(focused)) return undefined;
+  if (pickerOpen || e.ctrlKey || e.metaKey || e.altKey || isTextField(focused)) return undefined;
   switch (e.key) {
     case "+":
     case "=":

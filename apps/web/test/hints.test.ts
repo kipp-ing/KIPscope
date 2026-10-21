@@ -12,7 +12,6 @@ const SAMPLES: Record<string, unknown[][]> = {
   sidebarToggle: [[true], [false]],
   addButton: [["Speed"], [undefined]],
   goTo: [[true], [false, "Window 2"]],
-  span: [[true], [false, "Window 2"]],
   back: [
     [true, undefined, true],
     [false, "Window 2", true],
@@ -109,6 +108,19 @@ describe("hints table", () => {
         });
     }
     expect(bad).toEqual([]);
+  });
+
+  it("words the Go to hint for the range picker and has no Span hint", () => {
+    // Range picker design R11: the button's tooltip, unlinked with the target's title.
+    expect(HINTS.goTo(true)).toBe("Go to: pick a range or type one · t");
+    const unlinked = HINTS.goTo(false, "Window 2");
+    expect(unlinked).toContain("Window 2");
+    expect(unlinked.startsWith("Go to: pick a range or type one")).toBe(true);
+    expect(unlinked.endsWith(" · t")).toBe(true);
+    // The Span select is gone (time-navigation "Span presets" removed).
+    expect("span" in HINTS).toBe(false);
+    const t = SHORTCUTS.find((s) => s.keys === "t");
+    expect(t?.action).toBe("Open the range picker (Go to)");
   });
 
   it("words the SNA hint with the strip in the signal's colour (design H5)", () => {

@@ -106,6 +106,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* An unlinked window's own range (add-range-picker R13): small muted text, cut first. */
+.window .window-header .range.own-range {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .window .window-header .window-controls {
   grid-column: -2;
   display: flex;

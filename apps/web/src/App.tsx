@@ -20,7 +20,6 @@ import {
   scopeKey,
   shownName,
   signalColor,
-  spanAround,
   type TimeRange,
   type Workspace,
   type WorkspaceCase,
@@ -32,7 +31,7 @@ import { Acknowledger } from "./ack.ts";
 import { runPlan } from "./addSignals.ts";
 import { fetchExtent, isCatalogLoading, sendCommand, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
-import { OptionBar } from "./bar/OptionBar.tsx";
+import { OptionBar, RangeButton } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
 import { useCaseCatalog } from "./case/catalog.ts";
 import { SessionBar } from "./case/SessionBar.tsx";
@@ -868,7 +867,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     [stripNavigate, onCursorCommit],
   );
 
-  // "Go to" and span presets act on the bar target (design S5, D-024).
+  // "Go to" and the range picker act on the bar target (design S5, D-024).
   // The Go to error is remembered so clearing the field drops only that message.
   const goToMessageRef = useRef<string | undefined>(undefined);
   const onGoTo = useCallback(
@@ -899,15 +898,17 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     goToMessageRef.current = undefined;
     if (goToMessage !== undefined) toStrip({ kind: "dismiss", tone: "error", text: goToMessage });
   }, [toStrip]);
-  const onSpan = useCallback(
-    (span: bigint) => {
-      const ws = liveRef.current.workspace;
-      const target = ws && barTarget(ws);
-      const view = target && navView(target.id);
-      if (!target || !view) return;
-      navigate(target.id, spanAround(span, navAnchor(view, cursorsRef.current.a)), true);
+  // The range picker (add-range-picker R11): open state for the keys, the typed "Go to" text kept
+  // across opens, and Go as one range command with one history entry, as the strip's commands.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerOpenRef = useRef(false);
+  pickerOpenRef.current = pickerOpen;
+  const [typed, setTyped] = useState("");
+  const onApply = useCallback(
+    (r: Range) => {
+      stripNavigate(() => r, true);
     },
-    [navView, navigate],
+    [stripNavigate],
   );
 
   // Plot insets (natural, per window): every window gets the widest left and right inset, so the
@@ -953,18 +954,18 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       if (!e.relatedTarget) hovered.current = undefined;
     };
     const onNavKey = (e: KeyboardEvent) => {
-      const key = navKey(e, document.activeElement);
+      const key = navKey(e, document.activeElement, pickerOpenRef.current);
       if (!key || dragRef.current) return;
-      if (key === "goTo") {
-        const field = document.getElementById("go-to");
-        if (!(field instanceof HTMLInputElement)) return;
-        e.preventDefault();
-        field.focus();
-        field.select();
-        return;
-      }
       const ws = liveRef.current.workspace;
       if (!ws) return;
+      if (key === "goTo") {
+        // Opens the picker with "Go to" focused and selected (OptionBar); nothing without a
+        // timeseries window.
+        if (!barTarget(ws)) return;
+        e.preventDefault();
+        setPickerOpen(true);
+        return;
+      }
       if (key === "prevDrive" || key === "nextDrive") {
         // The drives belong to the strip, which shows the bar target, not the hovered window (S9).
         const target = barTarget(ws);
@@ -1029,6 +1030,9 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         if (!e.repeat) toggleHelp("keys");
         return;
       }
+      // While the range picker is open no key changes a range (add-range-picker R11); its own
+      // fields and Esc handle the keys.
+      if (pickerOpenRef.current) return;
       // `[` and `]` step the open catalog while linked (add-case-open K14), once per press.
       const step = caseStepKey(e, document.activeElement, liveRef.current.workspace?.case);
       if (step) {
@@ -1596,7 +1600,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
               >
                 Signals
               </button>
-              {workspace && (
+              {workspace ? (
                 <OverflowTailContext.Provider value={helpTail}>
                   <OptionBar
                     workspace={workspace}
@@ -1606,7 +1610,13 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     onBack={onBack}
                     onGoTo={onGoTo}
                     onGoToClear={onGoToClear}
-                    onSpan={onSpan}
+                    range={barWindow ? toRange(barWindow.range) : undefined}
+                    rangeLoaded
+                    pickerOpen={pickerOpen}
+                    onPickerOpen={setPickerOpen}
+                    typed={typed}
+                    onTyped={setTyped}
+                    onApply={onApply}
                     onReset={() => {
                       if (barWindow) void onReset(barWindow.id, resetSignals(workspace));
                     }}
@@ -1619,6 +1629,11 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     me={start.me}
                   />
                 </OverflowTailContext.Provider>
+              ) : (
+                // Before the first workspace state: the range button's box, showing "…".
+                <div className="option-bar">
+                  <RangeButton range={undefined} loaded={false} hint={HINTS.goTo(true)} />
+                </div>
               )}
             </div>
             <TimeStrip
