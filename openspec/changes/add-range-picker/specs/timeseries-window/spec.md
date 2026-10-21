@@ -1,16 +1,16 @@
 ## ADDED Requirements
 
 ### Requirement: Own range of an unlinked window
-While "Link time axes" is off, each timeseries window's header SHALL show its own range in its range slot as small muted text in the range-line format (range-picker "Range line"), equal to the plotted range also during a preview, truncated first with the full text as tooltip. Origin: D-092 (1) („a window with link off shows its own range"); preview: "Header shows the plotted range". What a linked window's header shows is `declutter-workspace`'s.
+While "Link time axes" is off, each timeseries window's header SHALL show its own range in its range slot as small muted start and duration (range-picker "Start and duration"), equal to the plotted range also during a preview, truncated first, the formatter's `detail` as tooltip. Origin: D-092 (1) („a window with link off shows its own range"); D-093; preview: "Header shows the plotted range". A linked window's header is `declutter-workspace`'s.
 
 #### Scenario: Own range text
 - **WHEN** `ownRangeText` gets 2026-10-13T13:06:03Z–13:18:33Z with link off, and the same with link on
-- **THEN** `Tue 2026-10-13 15:06:03 – 15:18:33`, then nothing
+- **THEN** `26-10-13 15:06  0:12`, then nothing
 - **Evidence:** `apps/web/test/rangeLine.test.ts` › "shows a window's own range only while unlinked"
 
 #### Scenario: Two unlinked windows
 - **WHEN** "Link time axes" is off on smart451, window 1 shows a 20 min range and window 2 was zoomed to 2026-10-13 15:08:00 – 15:09:00, then window 2 is wheel-zoomed once
-- **THEN** window 1's header shows its 20 min range, window 2's header `Tue 2026-10-13 15:08:00 – 15:09:00`, then its new range matching its axis during and after the zoom; the range button shows window 2's range
+- **THEN** window 1's header shows its 20 min range (`… 0:20`), window 2's header `26-10-13 15:08  0:01`, then its new range matching its axis during and after the zoom; the range button shows window 2's range
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of both headers and the button after each step)
 
 ## MODIFIED Requirements

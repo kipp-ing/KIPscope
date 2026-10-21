@@ -17,6 +17,9 @@ See proposal.md (Why). Facts this design rests on:
 | A 404 `unknown_signal` reads `not in this session` only inside a case with `errorCode` set; else `failed: …` red; the axis title falls back to the label | `chart/loader.ts:72-84`, `chart/axes.ts` |
 | The explorer's count line `<n> signals · drag a row onto a window, or press +` | `explorer/SignalExplorer.tsx:431` |
 | A CLI open already prints the open report as `data.case` (`CreateWorkspaceAnswer.case`) | `apps/cli/src/case.ts:38-45`, `packages/shared/src/workspaces.ts:104-112` |
+| D-093 (after round 1): ranges and sessions read as start and duration (`26-10-13 15:06  0:10`); `add-range-picker` implements the one formatter `startDuration` and `DurationTag` (its design R6) | `docs/decisions.md` D-093; `apps/web/src/time/rangeLine.ts` |
+| D-094: the strip is one 28 px row: presence line, drives, events lane, shown range, A/B flags that jump back; no density bars | `docs/decisions.md` D-094; mock `Strip.dc.html` row "Recommended" |
+| `/api/density` answers `first`, `last`, ≤ 120 `counts` and `drives`; `/api/gaps` the logger gaps (≥ 2 s) per data ref, scope or work window, cached; the web already fetches gap info for the windows' data refs | `apps/server/src/routes/series.ts`, `apps/web/src/chart/gaps.ts`, `apps/web/src/api.ts:196` |
 
 ## Goals / Non-Goals
 
@@ -29,6 +32,8 @@ See proposal.md (Why). Facts this design rests on:
 ### DW0: Split with `add-range-picker`
 
 This change does not touch `time-navigation` or timeseries-window "Header shows the plotted range" / "Header range in milliseconds". It refers to "the range control": today the Go to field and the Span select, after `add-range-picker` its range button. The **slot contract**: `bar/OptionBar.tsx` renders the range control inside one `<span className="range-control">` placed after Views' separator and before Back; `add-range-picker` puts its button inside that span and drops Span there. With link off, the window header's range (`span.range`) keeps today's text until `add-range-picker` defines it; with link on, this change removes it, but only once the range button shows the range (task 3.4 waits for it; workspace-layout "Linked windows show the range once"), so the range is never unreadable. Until then other specs' scenarios that read "the header shows <range>" keep working.
+
+Start and duration (D-093): this change implements no formatter of its own. The session bar, scope row, catalog list and strip tooltips import `startDuration`, `formatDuration` and `DurationTag` from `add-range-picker` (its design R6, tasks 3.1 and 3.5) and stub them until those land.
 
 Requirements this change MODIFIES that a sibling might also want: timeseries-window "Option bar" and "Link toggle", design-language "Controls", guidance "Explained labels" (Span left out of the list; its tooltip stays while the select exists), workspace-layout "Compact window header" and "Header truncation". Whichever change archives second rebases its delta on the synced text.
 
@@ -81,11 +86,15 @@ The class names in `SEL` are pinned (DW3, DW8, DW10, DW11, DW12; `.status-strip`
 
 | Number | Origin | ×½ | ×2 |
 |---|---|---|---|
-| times slot 268 px (12 px font) | mock | cuts every time text | at a 760 px row (1000×557, sidebar open) leaves the title < 0 |
-| duration and action slots 64 px | mock | cut `10.8 min`, `Unlink` | 64 px less title each |
+| start slot 116 px (12 px font) | mock after D-093 | cuts `26-10-13 15:06` to the date | 116 px less title; a 41 s session's `26-10-13 15:06:03` fits at 116 px, cut with tooltip if a font is wider |
+| duration slot 60 px | mock after D-093 | cuts `227:18` with its icon | 60 px less title |
+| action slot 64 px | mock | cuts `Unlink` | 64 px less title |
 | `k / n ▾` width from `<n> / <n> ▾` | stable rule | n/a (derived) | n/a |
 | title ≥ 160 px before the label drops | judgment | 11 characters left at compact width, still a hint with tooltip | label drops at 1440×900 never (1200 px row leaves 568 px) — harmless |
-| row ≤ 32 px, strip goal 44 px, ≤ 56 px | mock, D-056 | below 26 px controls / 24 px bars: impossible | costs plot share (Screen use ≥ 30 %) |
+| row ≤ 32 px | mock, D-056 | below 26 px controls: impossible | costs plot share (Screen use ≥ 30 %) |
+| strip 28 px (27 track + 1 border) | D-094, mock `Strip.dc.html` | 14 px: pins (y 2–9) or flags (y 16–26), not both | 56 px: the old ceiling, 28 px of plot lost per page |
+| presence break ≥ 3 px | mock | 1.5 px vanishes on the 3 px line | 6 px hides data around every gap |
+| flag 11 × 10 px, button 16 × 12 px, nudge 12 px | mock | 5 px letters unreadable, 8 × 6 px hard to hit | flags 22 px tall overflow the 28 px strip |
 | progress line 2 px | mock | 1 px hard to see | 4 px still no layout effect (absolute) |
 | note ≤ 470 px, title ≥ 8 ch | mock | note ~30 chars + tooltip | no title left at 1000 px |
 | mode tag slot 64 px | mock | cuts `part 1.5 min` | 64 px less title in a 480 px window |
@@ -120,7 +129,7 @@ interface ScopeRowProps {
 }
 ```
 
-Pinned classes (CSS in `case/case.css`, imported by both): `.context-row` (grid, one line, ≤ 32 px, `position: relative`, `container-type: inline-size`), children in order `.slot-label`, `button.session-arrow[aria-label="Previous session"]`, `.session-menu > button.session-position`, `button.session-arrow[aria-label="Next session"]`, `.slot-title` (holds `.slot-title-text` and, when present, `.session-open-note`), `.slot-times` (holds `.slot-weekday`, the text, and `sup.slot-plus` for `⁺¹`), `.slot-duration`, `.slot-action` (second `.slot-action` for Clear in the scope row), `.session-progress` (absolute, 2 px, bottom edge, only while `progress`), `.skeleton` (grey block inside a slot). The scope row puts empty `.session-arrow` and `.session-position` placeholders of the same width with `visibility: hidden`, so its slots line up with the session bar's. Widths: label 64 px, arrows 26 px, position `calc(<n> / <n> ▾ in ch)`, times 268 px, duration 64 px, action 64 px; the title takes the rest (`minmax(0, 1fr)`). Below a measured row width (≈ 860 px: the width at which the title keeps 160 px with the label; written as a comment in `case.css`) a container query hides `.slot-label` (`display: none`; it is a mode, not a step). All slots `font-variant-numeric: tabular-nums`.
+Pinned classes (CSS in `case/case.css`, imported by both): `.context-row` (grid, one line, ≤ 32 px, `position: relative`, `container-type: inline-size`), children in order `.slot-label`, `button.session-arrow[aria-label="Previous session"]`, `.session-menu > button.session-position`, `button.session-arrow[aria-label="Next session"]`, `.slot-title` (holds `.slot-title-text` and, when present, `.session-open-note`), `.slot-times` (the start, D-093: no weekday, no `⁺¹`), `.slot-duration` (holds `DurationTag`), `.slot-action` (second `.slot-action` for Clear in the scope row), `.session-progress` (absolute, 2 px, bottom edge, only while `progress`), `.skeleton` (grey block inside a slot). The scope row puts empty `.session-arrow` and `.session-position` placeholders of the same width with `visibility: hidden`, so its slots line up with the session bar's. Widths: label 64 px, arrows 26 px, position `calc(<n> / <n> ▾ in ch)`, start (`.slot-times`) 116 px, duration 60 px, action 64 px; the title takes the rest (`minmax(0, 1fr)`). Below a measured row width (≈ 860 px: the width at which the title keeps 160 px with the label; written as a comment in `case.css`) a container query hides `.slot-label` (`display: none`; it is a mode, not a step). All slots `font-variant-numeric: tabular-nums`.
 
 ### DW4: Pending step (root + `case/`)
 
@@ -135,7 +144,7 @@ export function pendingTarget(
 ): number | undefined;
 ```
 
-`App.tsx` keeps `pending: number | undefined` and `progress: boolean`. In `caseCommand` it sets `pending = pendingTarget(…)` and `progress = true` before sending; on a refused result both clear at once; on an accepted one it keeps both until the result's revision is rendered. `ack.ts` gains `onRendered?: (revision: number) => void`, called when `trySend` sends a revision (every window reported it; with no window at once). `TimeStrip` gets `stepping?: boolean` (`= progress`): while true, and afterwards until the density for the current `(dataRef, scope)` key is loaded, bars draw in the skeleton colour (slate-200), no accent bars, no window, no pins.
+`App.tsx` keeps `pending: number | undefined` and `progress: boolean`. In `caseCommand` it sets `pending = pendingTarget(…)` and `progress = true` before sending; on a refused result both clear at once; on an accepted one it keeps both until the result's revision is rendered. `ack.ts` gains `onRendered?: (revision: number) => void`, called when `trySend` sends a revision (every window reported it; with no window at once). `TimeStrip` gets `stepping?: boolean` (`= progress`): while true, and afterwards until the density for the current `(dataRef, scope)` key is loaded, the strip shows its loading state (DW10: `Loading recording…`, no presence line, drives or pins).
 
 ### DW5: Session slots (`case/sessionBar.ts`, pure)
 
@@ -148,11 +157,12 @@ export interface SessionSlots {
   /** undefined → skeleton. */
   title: string | undefined;
   titleTooltip: string | undefined;
-  weekday: string | undefined;          // "Tue"
-  times: string | undefined;            // "2026-10-13  15:06:54 – 15:17:42" or "2026-10-11 – Wed 2026-10-21"
-  timesTooltip: string | undefined;     // full local from – to
-  plusOne: boolean;
-  duration: string | undefined;         // formatSpan
+  /** startDuration(from, to): `${date} ${time}`, "26-10-13 15:06" (D-093). undefined → skeleton. */
+  start: string | undefined;
+  /** startDuration(from, to).duration: "0:10", "41 s". undefined → skeleton. */
+  duration: string | undefined;
+  /** startDuration(from, to).detail: tooltip of the start and duration slots. */
+  timesTooltip: string | undefined;
   action: "Unlink" | "Link";
   pending: boolean;
 }
@@ -162,15 +172,29 @@ export function sessionSlots(
   catalog?: CaseCatalog,
   pending?: number,
 ): SessionSlots;
-/** The times slot of any range (also the scope row's): same day, ⁺¹, or dates only from 2 days. */
-export function timesSlot(from: bigint, to: bigint): Pick<SessionSlots, "weekday" | "times" | "timesTooltip" | "plusOne">;
+/** The start and duration slots of any range (also the scope row's), from add-range-picker's startDuration. */
+export function timesSlot(from: bigint, to: bigint): Pick<SessionSlots, "start" | "duration" | "timesTooltip">;
 ```
 
-Day boundaries are local calendar days of `from` and `to` (`to` exclusive is still its own calendar day: 23:00 – 00:00 next day is `⁺¹`). `sessionBarText` goes; its test "describes the session" is replaced by "fills the session slots".
+`weekday`, `times` and `plusOne` (D-092 (4)) go with D-093; `sessionBarText` goes; its test "describes the session" is replaced by "fills the session slots".
 
 ### DW6: Catalog list with Align (`case/SessionBar.tsx`)
 
-`CatalogList` gains, at its foot, `<div role="radiogroup" aria-label="Align">` with one `button role="radio"` per `alignItems(c.align, catalog?.entries)` item (labels unchanged); `AlignMenu` and its button are removed. Choosing an unchecked item: close the list, send `case.align`. The list's rows, filter and back link are unchanged (the mock's column layout and `Event…` are illustration).
+`CatalogList` gains, at its foot, `<div role="radiogroup" aria-label="Align">` with one `button role="radio"` per `alignItems(c.align, catalog?.entries)` item (labels unchanged); `AlignMenu` and its button are removed. Choosing an unchecked item: close the list, send `case.align`. Rows (D-093, mock grid `28px 1fr 116px 60px`):
+
+```ts
+export interface CatalogRow {
+  index: number;      // 0-based
+  position: string;   // "1"
+  /** `<title or object> · <kind> · <first 2 meta>`, truncating, full text as tooltip. */
+  name: string;
+  start: string;      // timesSlot(...).start
+  duration: string;   // timesSlot(...).duration, rendered in DurationTag
+  current: boolean;
+}
+```
+
+`catalogRowText` goes. The filter keeps its fields (a typed `26-10-01 03:00` matches the stored `2026-10-01 03:00`); filter, back link and `… more` are unchanged; the mock's `Event…` item is illustration.
 
 ### DW7: Open note (`case/`, root)
 
@@ -196,7 +220,39 @@ export function statusTooltip(
 
 ### DW10: Strip (`time/`)
 
-`TimeStrip` loses the head (`time-strip-head`, `time-strip-range`, `time-strip-events`, `time-strip-info`) and the props `sessionBar` and `onOpenEvents`; it gains `stepping`. The track (`.time-strip-track`) gets `title` = `[info, hint].join("\n")` where `info = stripLabel(density, labelRange)` and `hint` = `HINTS.stripInfo(…)` (reworded to start `Time strip: the whole recording (`) or `SCOPE_HINTS.info(…)`; while loading `Loading recording…`; failure: its message. State texts (`No signal shown`, `No scope set`, `Recording unavailable`) and the drop text render in one `.time-strip-note` absolutely centred in the track. `barTitle(d, i, info?: string)` appends `\n<info>` when given. Strip height goal 44 px: bars 24 + drive row 7 + pins, paddings.
+`TimeStrip` loses the head (`time-strip-head`, `time-strip-range`, `time-strip-events`, `time-strip-info`) and the props `sessionBar` and `onOpenEvents`; it gains `stepping`. D-094 replaces the bars: the strip is one row of `STRIP_PX = 28` (track 27 px + 1 px border) in every state, lanes in track coordinates: pins y 2–9, baseline y 13 (1 px slate-200), presence line y 12–15 (3 px slate-400, accent inside the shown range), drives y 11–16 (5 px slate-600, accent when overlapping the shown range; none while a catalog is linked), cursor lines full height, flags y 16–26 (DW19). The track (`.time-strip-track`) gets `title` = `[info, hint].join("\n")` with `info = stripLabel(density, labelRange)` (now without ` · 1 bar = <w>`) and `hint` = `HINTS.stripInfo(recorded)` or `SCOPE_HINTS.info(span)`; while loading `Loading recording…`; failure: its message. State texts (`No signal shown`, `No scope set`, `Recording unavailable`, `Loading recording…`) and the drop text render in one `.time-strip-note` inside the track (loading: at its left over the baseline). `stripBars`, `barTitle` and `BAR_PX`/`BARS_PX` go; the track mapping `trackOf`/`xOf`/`tOf` (bucket pitch, 2 px end slack) stays, so the geometry scenarios keep their numbers. Hit zone kinds keep their names (`bars` = the track's line area). `driveTitle(d, i)` reads `Drive <k> of <n> · <startDuration text> · <rows>`; `caseMarkTitle` uses `startDuration` for its range.
+
+Server: no change. `/api/density` still feeds the strip (`first`/`last` for the span and the double-click, `counts` > 0 for presence, `drives`); `/api/gaps` (data-gaps, already cached per data ref, scope and work window) gives the logger gaps; the strip reads it through the shared `gapInfoStore` (`chart/gaps.ts`, `useGapInfo`) for its data ref, scope and work window, so it shares the windows' cached answer (no second request when a window shows that data ref); until the answer is there, breaks come from empty buckets only. No new route, no payload change. The range picker's per-day calendar density (`/api/calendar`) stays (D-094).
+
+### DW19: Presence and flags (`time/stripGeometry.ts`, pure; pinned)
+
+```ts
+export const STRIP_PX = 28;
+export const BREAK_MIN_PX = 3;
+export interface PresenceRun { left: number; right: number; shown: boolean }
+export interface PresenceBreak { left: number; right: number; title: string }
+/** Data intervals: maximal runs of buckets with count > 0, clipped to [first, last]; breaks: the empty-bucket
+ *  runs between them and every logger gap inside [first, last], each widened about its centre to ≥ BREAK_MIN_PX,
+ *  overlapping breaks merged; title "No data · <startDuration text>" (one) or "No data · <n> gaps · <startDuration
+ *  from the first's from to the last's to>". Runs: data intervals in px minus the drawn breaks, split at the
+ *  shown range's drawn edges (`shown` inside). */
+export function presence(
+  tr: Track,
+  d: Density,
+  logger: readonly LoggerGap[] | undefined,
+  range: Range | undefined,
+): { runs: PresenceRun[]; breaks: PresenceBreak[] };
+
+export const FLAG_W = 11, FLAG_H = 10, FLAG_HIT_W = 16, FLAG_HIT_H = 12, FLAG_NUDGE_PX = 12;
+/** Line x (markerX) and flag centre x per cursor; B's flag at A's flag + FLAG_NUDGE_PX when |xB − xA| < 12. */
+export function flagXs(
+  tr: Track,
+  a: bigint | undefined,
+  b: bigint | undefined,
+): { a?: { line: number; flag: number }; b?: { line: number; flag: number } };
+```
+
+Flags render as `<button class="strip-flag" aria-label="Bring cursor A into view" title={HINTS.stripFlag(...)}>` above the track (y 15–27 hit, the 11 × 10 face at y 16–26, radius 2, 9 px bold letter; A slate-900 fill, white letter; B white, 1 px slate-900 inset outline, dashed line; hover: accent fill). `pointerdown` on a flag stops propagation (no strip gesture); its click sends `centreRange(view, t)` through the same path as a pin click (one `window.setRange`, one history entry). B's button renders after A's, so it wins where they overlap.
 
 ### DW11: Window header and menu (`chart/`, `window/`)
 
@@ -279,7 +335,9 @@ The scope head moves into the same row and slots (`SCOPE`, ref, times, span, Wid
 Other areas call these and stub them until the help task lands:
 
 - `HINTS.link(on: boolean)`: `Link time axes: on, all windows show one range` / `Link time axes: off, each window keeps its own range`
-- `HINTS.stripInfo(recorded, width)`: starts `Time strip: the whole recording (<recorded>).`, rest as today
+- `HINTS.stripInfo(recorded)` (D-094): `Time strip: the whole recording (<recorded>); the line shows where data exists, a break a gap. Click to jump, drag to zoom, double-click for all`; `SCOPE_HINTS.info(span)` likewise without `Each bar is …`
+- `HINTS.stripFlag(name: "A" | "B", clock: string, outside: boolean)` (D-094): `A 15:09:12.000: click centres the view on A, span kept`, outside the shown range `A 11:31:10.000, outside the view: click centres the view on A, span kept` (clock `HH:MM:SS.mmm`, cursor precision)
+- `HINTS.duration`: owned by `add-range-picker` (`Duration (h:mm)`)
 - `HINTS.badge(kind, width?)`: `raw: …`, `agg <w>: …`, `part <w>: …` (no ` · ` after the kind)
 - `HINTS.missing(dataRef, name)`: `Missing: <dataRef> has no signal <name>`
 - `HINTS.tabSignals(n: number, matches?: number)`: `Signals: <n> signals; drag a row onto a window, or press + · /`, searching `Signals: <k> of <n> match; drag a row onto a window, or press + · /` (replaces the string)

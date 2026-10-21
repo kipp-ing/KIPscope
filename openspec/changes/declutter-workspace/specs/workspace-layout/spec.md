@@ -37,13 +37,13 @@ There SHALL be no separate top bar. The top row SHALL hold the sidebar button an
 - **Evidence:** UI check (rects read before and during the drag, screenshot during the drag)
 
 #### Scenario: Drop on the attribution
-- **WHEN** the user drags the `BRK_1A0h.WSPD_FL` explorer row onto the attribution text in the strip and releases there
-- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows WSPD_FL, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
+- **WHEN** the user drags the `COMBI_412h.V_ANZ` explorer row onto the attribution text in the strip and releases there
+- **THEN** while dragging the whole strip is highlighted as "+ New window"; after the release a new window shows V_ANZ, no new browser tab opened, and the revision rose by two, as for a drop on "+ New window"
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot while holding, revision and tab count after); `apps/web/test/drag.test.ts` › "maps drop elements to targets" stays green
 
 #### Scenario: Compact bars
 - **WHEN** the six-window setup is shown at 1440×900 and the list is scrolled to the end, once without and once with an open catalog
-- **THEN** the top row is fully visible; goals, measured and reported but not pass/fail: top row ≤ 40 px, context row ≤ 32 px, time strip ≤ 44 px and bottom strip ≤ 32 px tall (mock `Main.dc.html`: 40, 32, 44, 24)
+- **THEN** the top row is fully visible; goals, measured and reported but not pass/fail: top row ≤ 40 px, context row ≤ 32 px and bottom strip ≤ 32 px tall (mock `Main.dc.html`: 40, 32, 24); the time strip is 28 px (time-strip "Time strip", D-094), measured
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, measured heights)
 
 ### Requirement: Compact window header

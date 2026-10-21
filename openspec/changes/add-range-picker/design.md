@@ -2,7 +2,7 @@
 
 ## Context
 
-D-092: Jan accepted the UI designer's mocks v1 (`docs/design/declutter/`), among them the range picker (`GoTo.dc.html`, interactive) and its placement in the top row (`Main.dc.html`, `Compact.dc.html`: a 318 px button right after Views, before Back, Reset, Link). Facts this design rests on:
+D-092: Jan accepted the UI designer's mocks v1 (`docs/design/declutter/`), among them the range picker (`GoTo.dc.html`, interactive) and its placement in the top row (`Main.dc.html`, `Compact.dc.html`: a button right after Views, before Back, Reset, Link). D-093 (after round 2): every range reads as start and duration, `26-10-13 15:06  0:10`; the mocks were redrawn for it (button 212 px, From/To dates 60 px, time fields 56 px). It supersedes the range line of D-092 (4) (⁺¹, full end date), which rounds 1–2 built. Facts this design rests on:
 
 | # | Fact | Where |
 |---|---|---|
@@ -16,6 +16,7 @@ D-092: Jan accepted the UI designer's mocks v1 (`docs/design/declutter/`), among
 | 8 | Tests run with `TZ=Europe/Berlin`; local time helpers use the runtime zone | `packages/*/package.json`; `packages/shared/src/localtime.ts` |
 | 9 | `wholeRange(density)` gives the strip double-click's range (first to just after last, up to the next ms) | `apps/web/src/time/stripGeometry.ts:372` |
 | 10 | `formatSpan(ns)` gives the short span (`12.5 min`) | `apps/web/src/time/strip.ts:85` |
+| 11 | Rounds 1–2 built `rangeLine`, `rangeParts`, `formatDuration`, `ownRangeText`, `rangeButtonEmpty` in `time/rangeLine.ts`; `declutter-workspace` built `timesSlot` (weekday, ⁺¹) in `case/sessionBar.ts` | `apps/web/src/time/rangeLine.ts`, `apps/web/src/case/sessionBar.ts:123` |
 
 ## Goals / Non-Goals
 
@@ -103,33 +104,40 @@ export function dayTip(answer: CalendarDensity | undefined, day: CalendarDay, sc
 export type ScopeKind = "none" | "scope" | "session" | "object";
 ```
 
-`max` is the largest bar of all days of both shown months. Bar colour: `drive` → accent `#0284c7`, else slate-400 `#94a3b8`; on the start and end day white (drive) or `rgba(255,255,255,0.65)` (mock). Tooltip: `Tue 2026-10-13 · 74.5 M rows · 2 drives` (rows with the strip tooltip's number format; `1 drive`), `· no data`, `· outside the session` (linked catalog), `· outside the scope` (plain scope). Disabled: a day with 0 rows once its month answered; while a month loads or failed, the days inside the scope are enabled.
+`max` is the largest bar of all days of both shown months. Bar colour: `drive` → accent `#0284c7`, else slate-400 `#94a3b8`; on the start and end day white (drive) or `rgba(255,255,255,0.65)` (mock). Tooltip: `Tue 26-10-13 · 233,161 rows · 2 drives` (the weekday stays in a calendar day's tooltip as in the mock after D-093, the date `YY-MM-DD`; rows with the strip tooltip's number format; `1 drive`), `· no data`, `· outside the session` (linked catalog), `· outside the scope` (plain scope). Disabled: a day with 0 rows once its month answered; while a month loads or failed, the days inside the scope are enabled.
 
-### R6: Range line and button (pinned, new `apps/web/src/time/rangeLine.ts`)
+### R6: Start and duration, the one formatter (pinned, `apps/web/src/time/rangeLine.ts`, this change implements it)
+
+D-093 replaces the range line. **One** formatter makes every range, session time and date people read, in both changes; `declutter-workspace` imports it (session bar, scope row, catalog list, strip tooltips) and implements nothing of its own. It stays in `apps/web` (no reader in server, CLI or `packages/shared`; the shared package keeps no display format).
 
 ```ts
-export interface RangeLine {
-  date: string;      // "Tue 2026-10-13"
-  from: string;      // "15:06:03" or "15:08:00.093"
-  to: string;        // "15:18:33", "24:00:00", "01:52:43"
-  plusOne: boolean;  // end on the next local date (not at its midnight)
-  endDate?: string;  // "Thu 2026-10-15" when the end lies ≥ 2 dates later
-  text: string;      // "Tue 2026-10-13 15:06:03 – 15:18:33" ("⁺¹" appended when plusOne; endDate before `to`)
-  duration: string;  // long: "12 min 30 s"
-  short: string;     // formatSpan: "12.5 min"
+export interface StartDuration {
+  /** Local start date "26-10-13" (YY-MM-DD). */
+  date: string;
+  /** Local start "15:06", cut to the minute; under 1 min cut to the second: "15:06:03". */
+  time: string;
+  /** "0:12" (H:MM, cut to whole minutes, hours unbounded: "227:18"); under 1 min whole seconds cut: "41 s";
+   *  under 1 s formatSpan: "902 ms". */
+  duration: string;
+  /** `${date} ${time}  ${duration}`: "26-10-13 15:06  0:12" (two spaces before the duration). */
+  text: string;
+  /** Tooltip line: `${date} ${start cut to the second} · ${formatDuration(to − from)}`: "26-10-13 15:06:03 · 12 min 30 s". */
+  detail: string;
 }
-export function rangeLine(from: bigint, to: bigint): RangeLine;
-/** < 1 s: formatSpan; < 1 min: seconds cut to ms, zeros dropped ("1.5 s"); < 1 h: "M min S s"; < 1 d: "H h M min"; else "D d H h"; a zero lower part dropped; parts cut, never rounded up. */
+export function startDuration(from: bigint, to: bigint): StartDuration;
+/** Kept as built: < 1 s formatSpan; < 1 min "1.5 s"; < 1 h "M min S s"; < 1 d "H h M min"; else "D d H h"; cut. */
 export function formatDuration(ns: bigint): string;
-/** linkTime ? undefined : rangeLine(range.from, range.to).text */
-export function ownRangeText(range: { from: bigint; to: bigint }, linkTime: boolean): string | undefined;
-/** The button's text without a range: "No time window" (no timeseries window) or "…" (state not loaded yet). */
+/** linkTime ? undefined : startDuration(range.from, range.to) */
+export function ownRangeText(range: { from: bigint; to: bigint }, linkTime: boolean): StartDuration | undefined;
+/** Unchanged: "No time window" or "…". */
 export function rangeButtonEmpty(loaded: boolean): string;
 ```
 
-Rules: an end exactly at a local midnight is shown as `24:00:00` of the date before, and the date difference is taken from that date (whole day = `00:00:00 – 24:00:00`, no ⁺¹). Milliseconds on both ends when either end has a nonzero ms part after cutting to ms; nanoseconds are cut, never rounded (timeseries-window "Header range in milliseconds").
+Rules: the duration is `to − from` in ns (DST days give `23:00` or `25:00`, a whole day `24:00`); the 1 min and 1 s thresholds compare `to − from` with 60 s and 1 s; nothing is rounded up. `RangeLine` and `rangeLine` are removed (no reader left); `rangeParts` stays internal for `draftOf`.
 
-Button box (pinned, `bar/bar.css` class `.range-button`): `width: 318px; height: 26px; flex: 0 0 318px`; inside: 14 px icon, the text slot `flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap`, the duration slot `flex: 0 0 56px; text-align: right`; `font-variant-numeric: tabular-nums`. The date part in slate-600 weekday plus weight-600 date, a 6 px gap before the times (the mock's double space; the `text` uses one). ⁺¹ as `<sup>` 9 px in `#0369a1`. Tooltip: the full `text` and duration on line 1, then `Go to: pick a range or type one · t`, unlinked with the target's title (`HINTS.goTo(linked, title)`).
+Duration tag (pinned, new `apps/web/src/time/Duration.tsx`, this change): `export function DurationTag({ text }: { text: string }): JSX.Element` renders `<span class="duration-tag" title={HINTS.duration}><svg class="duration-icon" width="11" height="11" aria-hidden="true">…</svg>{text}</span>`, the stopwatch of the mocks (`circle cx 12 cy 14 r 8`, `line 12 14 → 12 10`, `line 10 2 → 14 2`, stroke `currentColor` 2.2), gap 3 px, slate-500. `HINTS.duration` = `Duration (h:mm)` (one entry, W1 rule). Every duration in a slot uses it: range button, picker result line, drive chips; in `declutter-workspace` the session bar's and scope row's duration slots and the catalog list's duration column.
+
+Button box (pinned, `bar/bar.css` class `.range-button`): `width: 212px; height: 26px; flex: 0 0 212px; padding: 0 8px; gap: 8px`; inside: 14 px calendar icon (mock path), the date in weight 600, the time, then `DurationTag` with `margin-left: auto`; `font-variant-numeric: tabular-nums`; date and time in one span that truncates (`min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap`), the duration never cut. Tooltip: `detail` on line 1, then `Go to: pick a range or type one · t`, unlinked with the target's title (`HINTS.goTo(linked, title)`).
 
 ### R7: Draft and selection (pinned, `apps/web/src/time/calendar.ts`)
 
@@ -146,17 +154,24 @@ export function pickDay(d: PickerDraft, date: string): PickerDraft;
 export function draftRange(d: PickerDraft): { from: bigint; to: bigint } | { error: string };
 ```
 
-`pickDay`: phase `start`, or a date before `start` → `{start: date, end: date, phase: "end"}`; else `{end: date, phase: "start"}`; times kept (the mock; Q-1). `draftRange`: times match `^\d{1,2}:\d{2}(:\d{2}(\.\d{1,3})?)?$`, hours ≤ 23 (To also `24:00` / `24:00:00` = next local midnight of `end`) else `Time as hh:mm:ss`; local instant via `parseTime("<date> <time>")` (its DST messages pass through); `to ≤ from` → `To lies before From`.
+`pickDay`: phase `start`, or a date before `start` → `{start: date, end: date, phase: "end"}`; else `{end: date, phase: "start"}`; times kept (the mock; Q-1). `draftRange`: times match `^\d{1,2}:\d{2}(:\d{2}(\.\d{1,3})?)?$`, hours ≤ 23 (To also `24:00` / `24:00:00` = next local midnight of `end`) else `Time as hh:mm` (D-093: the fields take HH:MM; seconds still accepted); local instant via `parseTime("<date> <time>")` (its DST messages pass through); `to ≤ from` → `To lies before From`.
+
+```ts
+/** A filled time as its field shows it: cut to "HH:MM" ("15:06:03" → "15:06", "24:00:00" → "24:00"). */
+export function fieldText(time: string): string;
+```
+
+`draftOf` is unchanged (exact times, `24:00:00`). Each time field shows `fieldText(draft.from)` until the user types in it, then the typed text; `RangePicker` keeps `edited: {from, to}`, reset when a preset or `draftOf` fills the draft (a day pick keeps it). So Go without an edit applies the exact draft (mock `GoTo.dc.html`: shows `hm(from)`, computes with the exact time).
 
 ### R8: Presets (pinned, `apps/web/src/time/calendar.ts`)
 
 ```ts
-/** Drives overlapping the day, in time order, with chip labels "03:00–03:30 · 30 min" (minutes rounded; "⁺¹" after the end time when it lies on the next date). */
+/** Drives overlapping the day, in time order, with chip labels `${time}  ${duration}` of startDuration(drive): "03:00  0:30". */
 export function dayDrives(answer: CalendarDensity | undefined, day: CalendarDay): { drive: Drive; label: string }[];
 export function wholeLabel(kind: ScopeKind): "Whole recording" | "Whole scope" | "Whole session";
 ```
 
-`ScopeKind`: `none` (no scope), `scope` (scope, no open catalog), `session` (open catalog, linked), `object` (unlinked) → labels Recording, Scope, Session, Recording (Q-3). The whole span is `wholeRange(density)` of the strip's density for the same data ref (the double-click's range; in a scope or object scope the density covers the scope). A drive chip fills the draft with `draftOf(drive)`; **Whole day** sets `{end: start, from: "00:00:00", to: "24:00:00"}`. The chip line is one line, `overflow-x: auto`, no wrap (fixed height).
+`ScopeKind`: `none` (no scope), `scope` (scope, no open catalog), `session` (open catalog, linked), `object` (unlinked) → labels Recording, Scope, Session, Recording (Q-3). The whole span is `wholeRange(density)` of the strip's density for the same data ref (the double-click's range; in a scope or object scope the density covers the scope). A drive chip fills the draft with `draftOf(drive)`; **Whole day** sets `{end: start, from: "00:00:00", to: "24:00:00"}` (fields `00:00`, `24:00`). The chip line is one line, `overflow-x: auto`, no wrap (fixed height).
 
 ### R9: Months and paging (pinned, `apps/web/src/time/calendar.ts`)
 
@@ -195,24 +210,25 @@ On mount it fetches `fetchDensity(dataRef)` (whole recording, scope or coarse ob
 
 New in `apps/web/src/api.ts` (pinned): `fetchCalendar(dataRef: string, window: { from: bigint; to: bigint }, signal?: AbortSignal): Promise<CalendarDensity>`.
 
-Layout (mock): popover `position: absolute` under the button, left edge at the button's, shifted left to stay inside the viewport, width 640 px, padding 12 px, gap 10 px, 6 px radius, shadow; rows: typed field 28 px; month titles with ‹ › 26 px; two grids (7 columns, gap 2 px) of 6 × 40 px day cells, 30 px when `innerHeight < 640` (fits 1000×557); legend line (`data per 2 h`, `drive`, the hint `Click a day; a second click ends the range` / `Click the last day, or set the times` / `Loading…` / `Density unavailable`); the chip line 24 px (`DRIVES TUE 13`, chips, Whole day, whole span); From and To, each with its date (108 px) and a 84 px mono field; the result line 34 px (13 px weight 600 text, muted duration, or the error in `#be123c`), Cancel and Go (dark primary, disabled on an error). `role="dialog"`, `aria-label="Go to"`. Esc anywhere in it and a pointer-down outside it and the button call `onClose`.
+Layout (mock): popover `position: absolute` under the button, left edge at the button's, shifted left to stay inside the viewport, width 640 px, padding 12 px, gap 10 px, 6 px radius, shadow; rows: typed field 28 px; month titles with ‹ › 26 px; two grids (7 columns, gap 2 px) of 6 × 40 px day cells, 30 px when `innerHeight < 640` (fits 1000×557); legend line (`data per 2 h`, `drive`, the hint `Click a day; a second click ends the range` / `Click the last day, or set the times` / `Loading…` / `Density unavailable`); the chip line 24 px (`DRIVES TUE 13`, chips, Whole day, whole span); From and To, each with its date `YY-MM-DD` (60 px) and a 56 px mono field showing `HH:MM`; the result line 34 px (date in 13 px weight 600, time, `DurationTag` of `startDuration(draftRange(draft))`, or the error in `#be123c`), Cancel and Go (dark primary, disabled on an error). `role="dialog"`, `aria-label="Go to"`. Esc anywhere in it and a pointer-down outside it and the button call `onClose`.
 
 ### R11: Top row, keys, App (pinned, `apps/web`)
 
 - `OptionBar.tsx`: the "Go to" `<input>` and both `spanSelect` uses go; in their place `<button class="range-button" aria-haspopup="dialog" aria-expanded aria-label="Go to">` (R6) and, while open, `<RangePicker>`. Props: `onSpan` removed; `range`, `rangeLoaded`, `pickerOpen`, `onPickerOpen(open: boolean)` added; `onGoTo`, `onGoToClear` stay. No other control of the row moves in this change.
 - `keys.ts`: `goTo` now means "open the picker"; the key mapping gets the picker's open state and answers no navigation action while it is open (test "ignores navigation keys while the range picker is open").
 - `App.tsx`: holds `pickerOpen` and the typed text; `goTo` → open (focus "Go to", select its text); `onApply` sends the bar target's `window.setRange` through the same path as the strip's range commands (history entry, linked/unlinked); the button is disabled without a timeseries window.
-- `help/hints.ts`: `goTo` reads `Go to: pick a range or type one · t` (unlinked: with the target); `span` removed. `help/shortcuts.ts`: `t` → `Open the range picker (Go to)`.
+- `help/hints.ts`: `goTo` reads `Go to: pick a range or type one · t` (unlinked: with the target); `span` removed; `duration` = `Duration (h:mm)` (R6). `help/shortcuts.ts`: `t` → `Open the range picker (Go to)`.
 
 ### R12: Coordination with `declutter-workspace`
 
 - Shared files: `bar/OptionBar.tsx`, `bar/bar.css`, `App.tsx`, `chart/TimeseriesWindow.tsx`. This change touches only the Go to slot, the Span select (row and ⋯ menu), the picker state and the header's range slot while unlinked. Whichever change builds second rebases on the other's diff; the pacer must not run both changes' web tasks in the same round.
 - Requirements this change modifies that `declutter-workspace` may also touch: timeseries-window "Option bar" and design-language "Controls". The lead archives `add-range-picker` first, or the second change's MODIFIED text is rebased on the first's before archiving.
 - Header: `declutter-workspace` removes the range text of linked windows and lays out the header; it keeps a range slot (the mock's 64 px mode tag area is not it) where R13's text goes while unlinked.
+- D-093 formatter: this change owns `startDuration`, `DurationTag` and `HINTS.duration` (R6) and builds them first (task 3.5); `declutter-workspace` imports them for the session bar, scope row, catalog list and strip tooltips (its design DW5) and stubs them until 3.5 lands.
 
 ### R13: Own range of an unlinked window (`chart/TimeseriesWindow.tsx`)
 
-While `linkTime` is false the header's range slot shows `ownRangeText(shownRange, false)` in 11 px slate-500 tabular figures, the plotted (preview) range as today's header range, truncating first (workspace-layout "Header truncation"), full text as tooltip. While linked the slot is left as `declutter-workspace` defines it (until then: today's header range).
+While `linkTime` is false the header's range slot shows `ownRangeText(shownRange, false).text` in 11 px slate-500 tabular figures with its `detail` as tooltip, the plotted (preview) range as today's header range, truncating first (workspace-layout "Header truncation"). While linked the slot is left as `declutter-workspace` defines it (until then: today's header range).
 
 ## Numbers: what if off by a factor of two
 
@@ -223,7 +239,9 @@ While `linkTime` is false the header's range slot shows `ownRangeText(shownRange
 | 32 d per request | D-089 | 16 d: two requests per month | 64 d: breaks D-089's work window in an object scope |
 | 12 bars per day | mock, Jan | 6 bars of 4 h: drive time of day lost | 24 bars: about 1 px per bar in a 41 px cell (640 px / 2 months / 7 days − insets) |
 | Bar 12 px, floor 2 px, 4 decades | R5 | 2 decades: smart451's trickle (160 k rows/h vs 50 M rows/h, D-057) sits at the floor | 8 decades: trickle and drives look alike; one ×2 in rows changes a bar by 0.9 px at 4 decades |
-| Button 318 px | mock | 159 px: not even the date and times fit | 636 px: the row at 1000×557 no longer fits on one line |
+| Button 212 px | mock after D-093 | 106 px: date and time no longer fit beside the duration | 424 px: the row at 1000×557 no longer fits on one line |
+| 1 min threshold for seconds | D-093 (lead's default) | 30 s: a 45 s range reads `0:00` | 2 min: a 90 s range reads `90 s` instead of `0:01`, harmless |
+| From/To date 60 px, field 56 px | mock after D-093 | `26-10-13` / `15:06` cut | the From/To line wider than the 640 px picker's half |
 | Picker 640 px wide, cells 40 px (30 px under 640 px height) | mock | cells 20 px: number and bars do not fit | 1,280 px / 80 px cells: outside a 1000×557 viewport |
 | LRU 12 windows | R3 | 6: paging a few months back and forth recomputes | 24: memory still trivial (≤ 745 numbers each) |
 | Goal full-mode month ≤ 10 s | fact 7 | 5 s: likely missed on carserver (the strip's 9.2 s) | 20 s: the picker shows `Loading…` for 20 s; typed input and Whole day still work; above that F1 |
@@ -243,10 +261,12 @@ UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "No 
 ## Questions for Jan (defaults taken unless he vetoes)
 
 - **Q-1** Picking a day keeps the From/To times (the mock); the alternative is that a day click sets 00:00 – 24:00. Default: keep the times, Whole day gives the whole day.
-- **Q-2** A range that ends at a local midnight reads `24:00:00` (`Tue 2026-10-13 00:00:00 – 24:00:00`), not `00:00:00⁺¹`, so a whole day carries no ⁺¹. Default: `24:00:00`.
+- **Q-2** Superseded by D-093 for every text (no end time is shown); the To field still reads `24:00` for an end at the next local midnight.
 - **Q-3** The whole-span preset reads `Whole session` with a linked catalog and `Whole scope` in a plain scope, `Whole recording` otherwise. Default: these labels.
-- **Q-4** A multi-day range does not fit the 318 px button in full; it is cut at the end with the full text as tooltip. Default: cut (D-092's truncation rule).
+- **Q-4** Superseded by D-093: start and duration fit the 212 px button for any range (hours unbounded).
+- **Q-5** (D-093) The tooltips of the button, an unlinked header and the session slots carry `detail`, the start to the second and the long duration (`26-10-13 15:06:03 · 12 min 30 s`), still no end time. Alternative: no tooltip. Default: `detail`.
+- **Q-6** (D-093) A calendar day's tooltip keeps its weekday (`Tue 26-10-13 · …`), as the mock does; a day is no range. Default: keep.
 
 ## Ledger entry on archive (proposed; the lead writes it)
 
-Range picker conventions: `GET /api/calendar` (hours from `from`, 60 s grid drives, ≤ 32 d, cut to the scope, cached per window, request class); the range line (`24:00:00`, ⁺¹, full end date, ms when needed); a linked catalog's calendar shows the session only; Q-1 … Q-4 as answered.
+Range picker conventions: `GET /api/calendar` (hours from `from`, 60 s grid drives, ≤ 32 d, cut to the scope, cached per window, request class); start and duration (D-093: one formatter `startDuration`, H:MM cut, seconds under 1 min, `DurationTag`); a linked catalog's calendar shows the session only; Q-1 … Q-4 as answered.

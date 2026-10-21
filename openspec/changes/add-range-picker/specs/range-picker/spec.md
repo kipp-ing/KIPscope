@@ -64,16 +64,16 @@ The calendar of one month SHALL be measured on carserver, first and second call,
 - **Evidence:** the commands (four times in the report)
 
 ### Requirement: Range button
-The top row SHALL show, in the slot of the former "Go to" field, a 318 px button (name "Go to") with the bar target's range ("Range line") and its short duration (design R6). Text changes SHALL move nothing; the text truncates with the full range as tooltip. Origin: D-092 (1) („one range button replaces the Go to field"); D-092 („Layout never moves", tabular numbers, truncation with a tooltip); 318 px: mock `GoTo.dc.html`.
+The top row SHALL show, in the slot of the former "Go to" field, a 212 px button (name "Go to") with a calendar icon, the bar target's start date and time and, at its right end, the duration tag ("Start and duration", design R6). Text changes SHALL move nothing; a cut text keeps its full text as tooltip. Origin: D-092 (1) (range button), D-092 („Layout never moves"); D-093; 212 px: mock `GoTo.dc.html` (×2 in design "Numbers").
 
 #### Scenario: Button text
 - **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local
-- **THEN** the button reads `Tue 2026-10-13`, `15:06:03 – 15:18:33` and `12.5 min`; its tooltip holds the full range text with its duration and `Go to: pick a range or type one · t`
-- **Evidence:** `apps/web/test/rangeLine.test.ts` › "formats a range on one day"; UI check on smart451 (screenshot of the button)
+- **THEN** the button reads `26-10-13`, `15:06`, the stopwatch icon and `0:12`, with no weekday, no end time and no ⁺¹; the duration's own tooltip is `Duration (h:mm)`; the button's tooltip is `26-10-13 15:06:03 · 12 min 30 s` and on the next line `Go to: pick a range or type one · t`
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "gives start and duration"; UI check on smart451 (screenshot of the button, its two tooltips)
 
 #### Scenario: No reflow
 - **WHEN** at 1440×900 and at 1000×557 the left x and width of the range button and of every other top-row control are read with the bar target at a 20 min range, after zooming to 2026-10-13T13:08:00.093Z – 13:08:00.995Z, after typing `2026-10-13 .. 2026-10-16`, and while a reload is pending
-- **THEN** every value is the same in all four states (±0.5 px), the button is 318 px wide, and the cut text shows its full range as tooltip
+- **THEN** every value is the same in all four states (±0.5 px), the button is 212 px wide, and its texts read a start with `0:20`, `26-10-13 15:08:00` with `902 ms`, and `26-10-13 00:00` with the typed range's hours (`72:00` or more)
 - **Evidence:** UI check on smart451 (the x and width values per state and viewport, one screenshot each)
 
 #### Scenario: No timeseries window
@@ -81,20 +81,28 @@ The top row SHALL show, in the slot of the former "Go to" field, a 318 px button
 - **THEN** the button is disabled and reads `No time window`, then shows `…`, in the same box as when enabled; `t` opens nothing
 - **Evidence:** `apps/web/test/rangeLine.test.ts` › "names the button state without a range"; UI check (screenshot, button rect equal to the enabled one)
 
-### Requirement: Range line
-A range SHALL read `<Www> <YYYY-MM-DD> <from> – <to>` in local time with seconds, cut milliseconds when needed, ⁺¹ for an end on the next date, `24:00:00` for an end at the next midnight, and the end's weekday and date two or more dates later; the duration long in the picker, short on the button (design R6). Origin: D-092 (4) („full end date, one day a small ⁺¹"); Jan („the result shall be date and to times"); `24:00:00`: Q-2.
+### Requirement: Start and duration
+Every range and session time people read SHALL come from one formatter (`startDuration`, design R6) as `<YY-MM-DD> <HH:MM>  <H:MM>`, local: start and duration cut to the minute, hours unbounded; no weekday, end time or ⁺¹. Under 1 min: start to the second, duration in whole seconds; under 1 s the short span. Cursor readouts and typed input keep their precision. Origin: D-093 (Jan's words and the lead's defaults), superseding D-092 (4); < 1 s: necessary consequence (else `0 s`).
 
-#### Scenario: Range lines
-- **WHEN** `rangeLine` gets 2026-10-13T13:06:03Z–13:18:33Z; 2026-10-20T21:30:00Z–23:52:43Z; 2026-10-12T22:00:00Z–2026-10-13T22:00:00Z; 2026-10-13T13:06:03Z–2026-10-15T13:18:33Z; 2026-10-13T13:08:00.093Z–13:08:00.995Z; 2026-10-13T09:12:00.999999999Z–09:13:00Z; 2026-10-24T22:00:00Z–2026-10-25T23:00:00Z
-- **THEN** the texts are `Tue 2026-10-13 15:06:03 – 15:18:33` (`12 min 30 s`, `12.5 min`); `Tue 2026-10-20 23:30:00 – 01:52:43⁺¹` with `plusOne` (`2 h 22 min`); `Tue 2026-10-13 00:00:00 – 24:00:00` without `plusOne` (`1 d`); `Tue 2026-10-13 15:06:03 – Thu 2026-10-15 15:18:33` (`2 d`); `Tue 2026-10-13 15:08:00.093 – 15:08:00.995` (`902 ms`); `Tue 2026-10-13 11:12:00.999 – 11:13:00.000`; `Sun 2026-10-25 00:00:00 – 24:00:00` (`1 d 1 h`)
-- **Evidence:** `apps/web/test/rangeLine.test.ts` › "formats a range on one day", "marks the next day, midnight and later days", "shows milliseconds cut"
+#### Scenario: Start and duration texts
+- **WHEN** `startDuration` gets 2026-10-13T13:06:03Z–13:18:33Z; 2026-10-20T21:30:00Z–23:52:43Z; 2026-10-12T22:00:00Z–2026-10-13T22:00:00Z; 2026-10-13T13:06:03Z–2026-10-15T13:18:33Z; 2026-10-11T12:34:24Z–2026-10-20T23:52:43Z; 2026-10-24T22:00:00Z–2026-10-25T23:00:00Z; 2026-10-13T13:08:00Z–13:09:00Z; 2026-10-13T13:06:03Z–13:06:44.600Z; 2026-10-13T09:12:00.999999999Z–09:13:00Z; 2026-10-13T13:08:00.093Z–13:08:00.995Z
+- **THEN** the texts are `26-10-13 15:06  0:12`; `26-10-20 23:30  2:22`; `26-10-13 00:00  24:00`; `26-10-13 15:06  48:12`; `26-10-11 14:34  227:18`; `26-10-25 00:00  25:00`; `26-10-13 15:08  0:01`; `26-10-13 15:06:03  41 s`; `26-10-13 11:12:00  59 s`; `26-10-13 15:08:00  902 ms`; `date`, `time` and `duration` are the three parts (`26-10-13`, `15:06`, `0:12` for the first); `detail` is `26-10-13 15:06:03 · 12 min 30 s` for the first and `26-10-13 15:08:00 · 902 ms` for the last
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "gives start and duration", "cuts to the second and below a minute"
+
+### Requirement: Duration tag
+A duration in a slot (range button, result line, drive chips; in `declutter-workspace` the session bar, scope row and catalog list) SHALL carry the stopwatch icon and the tooltip `Duration (h:mm)` (`DurationTag`, design R6). Origin: D-093; mocks `GoTo.dc.html`, `Main.dc.html`, `SessionBar.dc.html`.
+
+#### Scenario: Duration tag
+- **WHEN** `DurationTag` with the text `0:12` is rendered to static markup
+- **THEN** it holds one `svg.duration-icon` with `aria-hidden="true"`, the text `0:12` and `title="Duration (h:mm)"`
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "renders the duration with its icon and tooltip"
 
 ### Requirement: Picker opens
 A click on the range button or `t` SHALL open the picker under the button, focus its typed field with the last typed text selected, select the shown range (start and end day, From and To) and show the month of the range's start on the right and the month before on the left. The picker SHALL keep its size whatever it shows and lie inside the viewport. Origin: D-092 (mock `GoTo.dc.html`; „Layout never moves"); `t`: time-navigation "Navigation keys".
 
 #### Scenario: Open on smart451
 - **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local and the user presses `t`
-- **THEN** the picker shows September 2026 and October 2026, days 13 marked as start and end, From `15:06:03`, To `15:18:33`, the typed field focused with its last text selected, and the result line `Tue 2026-10-13 15:06:03 – 15:18:33` with `12 min 30 s`
+- **THEN** the picker shows September 2026 and October 2026, days 13 marked as start and end, From `26-10-13` `15:06`, To `26-10-13` `15:18`, the typed field focused with its last text selected, and the result line `26-10-13 15:06` with the stopwatch and `0:12`; Go without an edit applies 15:06:03 – 15:18:33 unchanged
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot)
 
 #### Scenario: Draft from a range
@@ -133,9 +141,14 @@ Each day cell SHALL show its number and 12 bars of two local hours from local mi
 - **THEN** 0, 12, 9, 6, 3 and 2 (clamped)
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "scales bar heights by decades"
 
+#### Scenario: Day tooltip
+- **WHEN** `dayTip` gets the drivecar answer of "One month of drivecar" with the day 2026-10-02 and 2026-10-03 (kind `none`), and that answer with `scope` 2026-10-02T01:00:00Z – 02:00:00Z with the day 2026-10-10 (kind `session`)
+- **THEN** `Fri 26-10-02 · 233,161 rows · 2 drives` (the calendar's weekday stays, the date is `YY-MM-DD`), `Sat 26-10-03 · no data` and `Sat 26-10-10 · outside the session`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "words the day tooltip with rows, drives and the reason for no rows"
+
 #### Scenario: Calendar on smart451
 - **WHEN** the picker is opened on smart451 (no scope) showing September and October 2026
-- **THEN** October 11 … 21 show bars, accent bars on the days with drives (e.g. 13 and 17), days without rows are muted and disabled, and a day's tooltip names its rows and drives
+- **THEN** October 11 … 21 show bars, accent bars on the days with drives (e.g. 13 and 17), days without rows are muted and disabled, and a day's tooltip names its rows and drives (`Tue 26-10-13 · … rows · … drives`)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot with one tooltip)
 
 ### Requirement: Day selection
@@ -147,24 +160,32 @@ A click on a day with data SHALL set start and end to that day and wait for the 
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "picks a start and an end day"
 
 ### Requirement: Time fields
-From and To SHALL show their day's weekday and date and take `hh:mm`, `hh:mm:ss` or `hh:mm:ss.fff` in local time; To also `24:00` or `24:00:00`, the next local midnight. A bad time, an end not after the start, or a nonexistent or ambiguous local time SHALL show its reason in the result line and disable Go. Enter in a field SHALL act as Go. Origin: Jan („the result shall be date and to times"); DST refused, not guessed: time-navigation "Invalid input changes nothing".
+From and To SHALL show their date as `YY-MM-DD` and a time field taking `hh:mm` (also `hh:mm:ss[.fff]`), local; To also `24:00`, the next local midnight. A bad time, an end not after the start, or a nonexistent or ambiguous local time SHALL show its reason in the result line and disable Go. Enter in a field SHALL act as Go. Origin: Jan („date and to times"); D-093 (HH:MM fields, typed precision kept); DST: time-navigation "Invalid input changes nothing".
 
 #### Scenario: Draft to range
 - **WHEN** `draftRange` gets {13, 13, `15:06:03`, `15:18:33`}, {13, 13, `00:00`, `24:00`}, {13, 13, `15:18`, `15:06`}, {13, 13, `25:00`, `26:00`} and {2026-10-25, 2026-10-25, `02:30`, `04:00`}
-- **THEN** 2026-10-13T13:06:03Z–13:18:33Z; 2026-10-12T22:00:00Z–2026-10-13T22:00:00Z; error `To lies before From`; error `Time as hh:mm:ss`; an error naming `+02:00 or +01:00`
+- **THEN** 2026-10-13T13:06:03Z–13:18:33Z; 2026-10-12T22:00:00Z–2026-10-13T22:00:00Z; error `To lies before From`; error `Time as hh:mm`; an error naming `+02:00 or +01:00`
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "turns the draft into a range or a reason"
 
+### Requirement: Filled times show the minute
+A time filled into From or To (from the shown range, a day pick keeping it, or a preset) SHALL show cut to the minute while the draft keeps it exact, so Go without an edit applies the exact time; a field the user typed in shows the typed text. Origin: D-093 (HH:MM fields); exact until edited: mock `GoTo.dc.html` (else a 41 s range would open as 15:06 – 15:06 and be refused).
+
+#### Scenario: Field text
+- **WHEN** `fieldText` gets `15:06:03`, `24:00:00`, `15:08:00.093` and `00:00:00`
+- **THEN** `15:06`, `24:00`, `15:08` and `00:00`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "shows filled times to the minute"
+
 ### Requirement: Presets
-The picker SHALL offer one chip per drive of the start day (`no drive` when none), **Whole day** (00:00:00 – 24:00:00) and the whole span the strip's double-click sets, labelled **Whole recording**, **Whole scope** (plain scope) or **Whole session** (linked catalog) (design R8). A preset fills the draft; Go applies it. Origin: D-092 (3) („that day's drives, Whole day, Whole recording"); labels: Q-3.
+The picker SHALL offer one chip per drive of the start day reading its start and duration (`03:00  0:30`, "Start and duration"; `no drive` when none), **Whole day** (00:00 – 24:00) and the whole span the strip's double-click sets, labelled **Whole recording**, **Whole scope** (plain scope) or **Whole session** (linked catalog) (design R8). A preset fills the draft; Go applies it. Origin: D-092 (3) („that day's drives, Whole day, Whole recording"); labels: Q-3; chip text: D-093.
 
 #### Scenario: Presets of a day
 - **WHEN** `dayDrives` gets the drivecar answer and 2026-10-02, then 2026-10-03; and `wholeLabel` gets a workspace without scope, with a plain scope, with a linked catalog and unlinked
-- **THEN** the chips `03:00–03:30 · 30 min` and `05:00–05:10 · 10 min`, then none; the labels `Whole recording`, `Whole scope`, `Whole session`, `Whole recording`
+- **THEN** the chips `03:00  0:30` and `05:00  0:10`, then none; the labels `Whole recording`, `Whole scope`, `Whole session`, `Whole recording`
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "lists the day's drives and names the whole span"
 
 #### Scenario: Drive preset on smart451
 - **WHEN** the user opens the picker, clicks 2026-10-17, clicks the chip of its first drive and Go
-- **THEN** the button shows that drive's range (starting about 10:01 local), the strip marks it, and Back returns to the range before
+- **THEN** the button shows that drive's start and duration (`26-10-17 10:01` and about `2:05`), the strip marks it, and Back returns to the range before
 - **Evidence:** UI check on smart451 (button and strip after Go and after Back)
 
 ### Requirement: Apply and cancel
@@ -172,7 +193,7 @@ Go and Enter in the typed field SHALL set the range with one command for the bar
 
 #### Scenario: Go and Back
 - **WHEN** two linked windows show smart451 at a 20 min range, the user opens the picker, clicks **Whole day** and Go, then clicks "Back"
-- **THEN** after Go both windows show the start day 00:00 – 24:00 and the revision rose by exactly one; after Back both show the 20 min range
+- **THEN** after Go both windows show the start day 00:00 – 24:00, the button reads `<YY-MM-DD> 00:00` and `24:00`, and the revision rose by exactly one; after Back both show the 20 min range (`0:20`)
 - **Evidence:** UI check on smart451 (revision and button text after each step)
 
 #### Scenario: Cancel, Esc and keys
