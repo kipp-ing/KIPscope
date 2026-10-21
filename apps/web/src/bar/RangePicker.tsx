@@ -160,6 +160,11 @@ const chevron = (points: string) => (
   </svg>
 );
 
+/** What Go applies: "typed" when the field holds non-blank text the user typed since this open, else "draft". */
+export function goSource(typed: string, typedThisOpen: boolean): "typed" | "draft" {
+  return typedThisOpen && typed.trim() !== "" ? "typed" : "draft";
+}
+
 /**
  * The range picker under the range button (spec range-picker, design R10, mock `GoTo.dc.html`):
  * the typed "Go to" field, two months with per-day density bars and drives, the day's presets,
@@ -195,6 +200,8 @@ export function RangePicker({
   // an edit applies the exact draft.
   const [edited, setEdited] = useState({ from: false, to: false });
   const [typedError, setTypedError] = useState<string | undefined>();
+  // The field keeps its text across opens; only text typed in this open makes Go apply it (Q-7).
+  const [typedThisOpen, setTypedThisOpen] = useState(false);
   const [density, setDensity] = useState<Density | undefined>();
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
   // Bumped when an answer lands in the module cache.
@@ -322,6 +329,7 @@ export function RangePicker({
     if (error === undefined) onClose();
     else setTypedError(error);
   };
+  const source = goSource(typed, typedThisOpen);
 
   // Month states: answered, loading (asked, no answer yet) or failed.
   const answerOf = (m: Month): CalendarDensity | undefined => {
@@ -421,6 +429,7 @@ export function RangePicker({
           aria-invalid={typedError !== undefined}
           onChange={(e) => {
             onTyped(e.target.value);
+            setTypedThisOpen(true);
             setTypedError(undefined);
           }}
           onKeyDown={(e) => {
@@ -666,7 +675,12 @@ export function RangePicker({
         <button type="button" className="cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="go" disabled={!resultRange} onClick={go}>
+        <button
+          type="button"
+          className="go"
+          disabled={source === "draft" && !resultRange}
+          onClick={() => (source === "typed" ? goTyped() : go())}
+        >
           Go
         </button>
       </div>

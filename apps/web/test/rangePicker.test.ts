@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchCalendar } from "../src/api.ts";
-import { RangePicker } from "../src/bar/RangePicker.tsx";
+import { goSource, RangePicker } from "../src/bar/RangePicker.tsx";
 import { HINTS } from "../src/help/hints.ts";
 import {
   canPage,
@@ -665,6 +665,17 @@ describe("picker states", () => {
     expect(again).toEqual(answer);
     // Reopened: bars from the answer.
     expect(dayBars(again, day("2026-10-02")).map((b) => b.count)[1]).toBe(177_720);
+  });
+});
+
+describe("go on typed text", () => {
+  it("lets Go apply text typed in this open", () => {
+    // Non-blank text typed during this open wins; the same text left from an earlier open, blank
+    // text and no text fall back to the draft.
+    expect(goSource("15:08", true)).toBe("typed");
+    expect(goSource("15:08", false)).toBe("draft");
+    expect(goSource("  ", true)).toBe("draft");
+    expect(goSource("", true)).toBe("draft");
   });
 });
 
