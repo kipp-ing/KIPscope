@@ -25,10 +25,11 @@ input{font:inherit}
   <div style="height: 40px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #ffffff; border-bottom: 1px solid #e2e8f0; box-sizing: border-box;">
     <button class="ib" style="height: 26px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;">Views</button>
     <span style="width: 1px; height: 18px; background: #e2e8f0; margin: 0 4px;"></span>
-    <button class="ib" onClick="{{toggle}}" aria-haspopup="dialog" aria-expanded="{{expanded}}" title="Go to: pick a range or type one · t" style="width: 318px; height: 26px; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid {{btnBorder}}; border-radius: 4px; background: {{btnBg}}; font-variant-numeric: tabular-nums; text-align: left;">
+    <button class="ib" onClick="{{toggle}}" aria-haspopup="dialog" aria-expanded="{{expanded}}" title="Go to: pick a range or type one · t" style="width: 212px; height: 26px; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid {{btnBorder}}; border-radius: 4px; background: {{btnBg}}; font-variant-numeric: tabular-nums; text-align: left;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line><line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line></svg>
-      <span style="flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{shown.text}}<sc-if value="{{shown.plus}}" hint-placeholder-val="{{ false }}"><sup style="font-size: 9px; color: #0369a1; margin-left: 1px;">+1</sup></sc-if></span>
-      <span style="color: #64748b;">{{shown.short}}</span>
+      <span style="font-weight: 600;">{{shown.date}}</span>
+      <span>{{shown.time}}</span>
+      <span title="Duration (h:mm)" style="margin-left: auto; display: inline-flex; align-items: center; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{shown.dur}}</span>
     </button>
     <button class="ib" aria-label="Back" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
@@ -90,7 +91,7 @@ input{font:inherit}
       <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid #f1f5f9; min-height: 24px;">
         <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">{{drivesLabel}}</span>
         <sc-for list="{{drives}}" as="d" hint-placeholder-count="2">
-          <button class="chip" onClick="{{d.pick}}" style="height: 24px; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; font-variant-numeric: tabular-nums;">{{d.label}}</button>
+          <button class="chip" onClick="{{d.pick}}" style="height: 24px; display: inline-flex; align-items: center; padding: 0 9px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; font-variant-numeric: tabular-nums;">{{d.start}}<span title="Duration (h:mm)" style="display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{d.dur}}</span></button>
         </sc-for>
         <sc-if value="{{noDrives}}" hint-placeholder-val="{{ false }}">
           <span style="color: #64748b;">no drive</span>
@@ -102,18 +103,18 @@ input{font:inherit}
 
       <div style="display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums;">
         <label for="goto-from" style="color: #475569; width: 34px;">From</label>
-        <span style="width: 108px; color: #334155;">{{fromDate}}</span>
-        <input id="goto-from" type="text" value="{{from}}" onInput="{{onFrom}}" style="width: 84px; height: 26px; padding: 0 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; box-sizing: border-box;">
+        <span style="width: 60px; color: #334155;">{{fromDate}}</span>
+        <input id="goto-from" type="text" value="{{from}}" onInput="{{onFrom}}" style="width: 56px; height: 26px; padding: 0 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; box-sizing: border-box;">
         <span style="width: 24px;"></span>
         <label for="goto-to" style="color: #475569; width: 20px;">To</label>
-        <span style="width: 108px; color: #334155;">{{toDate}}</span>
-        <input id="goto-to" type="text" value="{{to}}" onInput="{{onTo}}" style="width: 84px; height: 26px; padding: 0 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; box-sizing: border-box;">
+        <span style="width: 60px; color: #334155;">{{toDate}}</span>
+        <input id="goto-to" type="text" value="{{to}}" onInput="{{onTo}}" style="width: 56px; height: 26px; padding: 0 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; box-sizing: border-box;">
       </div>
 
       <div style="display: flex; align-items: center; gap: 10px; height: 34px; padding-top: 10px; border-top: 1px solid #f1f5f9;">
         <sc-if value="{{res.ok}}" hint-placeholder-val="{{ true }}">
-          <span style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;">{{res.text}}<sc-if value="{{res.plus}}" hint-placeholder-val="{{ false }}"><sup style="font-size: 9px; font-weight: 600; color: #0369a1; margin-left: 1px;">+1</sup></sc-if></span>
-          <span style="color: #64748b; font-variant-numeric: tabular-nums;">{{res.dur}}</span>
+          <span style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;">{{res.text}}</span>
+          <span title="Duration (h:mm)" style="display: inline-flex; align-items: center; gap: 3px; color: #64748b; font-variant-numeric: tabular-nums;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{res.dur}}</span>
         </sc-if>
         <sc-if value="{{res.bad}}" hint-placeholder-val="{{ false }}">
           <span style="color: #be123c;">{{res.err}}</span>
@@ -126,7 +127,7 @@ input{font:inherit}
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"example":{"editor":"enum","options":["drive","midnight"],"default":"drive","section":"Start"},"$preview":{"width":900,"height":660}}'>
+<script type="text/x-dc" data-dc-script data-props='{"example":{"editor":"enum","options":["drive","midnight","short"],"default":"drive","section":"Start"},"$preview":{"width":900,"height":660}}'>
 const DENS = {"10-11":[0,0,0,0,0,0,0,6.5,0,5.7,0,0],"10-12":[5.7,0,0,0,0,0,0,0,5.5,0,5.2,0],"10-13":[0,0,0,5.5,0,7.7,7.1,7,0,0,0,0],"10-14":[0,0,0,0,0,0,0,0,0,5.2,5.5,5.5],"10-15":[5.5,5.5,5.5,5.5,5.5,5.5,5.5,5.5,5.5,7.3,7.3,5.9],"10-16":[5.6,0,5.6,0,5.6,5.9,0,0,0,7.3,7.4,5.2],"10-17":[5.5,0,5.1,0,0,7.8,7.3,4.9,0,5.2,0,0],"10-18":[0,5.7,0,0,0,7.3,5.9,7.4,6,0,5.7,0],"10-19":[0,0,5.5,0,0,0,0,7,7.1,5.3,5.7,0],"10-20":[5.1,0,0,0,0,0,5.5,0,7.3,5.5,5.4,0],"10-21":[5.8,0,0,0,0,0,0,0,0,0,0,0]};
 const ROWS = {"10-11":"3.83 M","10-12":"0.95 M","10-13":"74.5 M","10-14":"0.82 M","10-15":"45.9 M","10-16":"47.9 M","10-17":"83.8 M","10-18":"47.1 M","10-19":"24.8 M","10-20":"19.9 M","10-21":"0.56 M"};
 const DRIVES = [["10-11","15:38:42","15:42:54",4.2],["10-13","11:06:54","12:13:12",66.3],["10-13","15:06:54","15:17:42",10.8],["10-15","18:59:06","19:22:12",23.1],["10-15","21:12:18","21:34:30",22.2],["10-16","18:45:36","19:08:42",23.1],["10-16","20:29:24","20:54:18",24.9],["10-17","10:01:12","12:06:54",125.7],["10-17","12:41:06","12:50:06",9],["10-17","13:05:42","13:14:42",9],["10-18","10:32:06","10:53:06",21],["10-18","14:24:54","14:44:42",19.8],["10-18","14:52:12","14:58:30",6.3],["10-19","15:24:54","15:36:36",11.7],["10-19","17:03:36","17:16:30",12.9],["10-20","17:15:00","17:24:00",9],["10-20","17:44:42","17:57:00",12.3]];
@@ -137,29 +138,27 @@ const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const START = {
   drive: { start: '2026-10-13', end: '2026-10-13', from: '15:06:03', to: '15:18:33' },
-  midnight: { start: '2026-10-20', end: '2026-10-21', from: '23:30:00', to: '01:52:43' }
+  midnight: { start: '2026-10-20', end: '2026-10-21', from: '23:30:00', to: '01:52:43' },
+  short: { start: '2026-10-13', end: '2026-10-13', from: '15:06:03', to: '15:06:44' }
 };
 function p2(n) { return String(n).padStart(2, '0'); }
 function iso(y, m, d) { return y + '-' + p2(m) + '-' + p2(d); }
 function ms(day) { const a = day.split('-'); return Date.UTC(Number(a[0]), Number(a[1]) - 1, Number(a[2])); }
 function wd(day) { return WD[new Date(ms(day)).getUTCDay()]; }
-function secs(t) { const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t.trim()); if (!m) return null; const h = Number(m[1]), mi = Number(m[2]), s = Number(m[3] || 0); if (h > 23 || mi > 59 || s > 59) return null; return h * 3600 + mi * 60 + s; }
-function dur(s) {
-  if (s < 60) return s + ' s';
-  if (s < 3600) { const m = Math.floor(s / 60), r = s % 60; return r ? m + ' min ' + r + ' s' : m + ' min'; }
-  if (s < 86400) { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h + ' h ' + p2(m) + ' min'; }
-  const d = Math.floor(s / 86400), h = Math.round((s % 86400) / 3600); return d + ' d ' + h + ' h';
-}
-function shortDur(s) { return s < 3600 ? (Math.round(s / 6) / 10) + ' min' : s < 86400 ? (Math.round(s / 360) / 10) + ' h' : (Math.round(s / 8640) / 10) + ' d'; }
+function secs(t) { const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t.trim()); if (!m) return null; const h = Number(m[1]), mi = Number(m[2]), s = Number(m[3] || 0); if (h === 24 && mi === 0 && s === 0) return 86400; if (h > 23 || mi > 59 || s > 59) return null; return h * 3600 + mi * 60 + s; }
+function yy(day) { return day.slice(2); }
+function hms(x) { return p2(Math.floor(x / 3600)) + ':' + p2(Math.floor((x % 3600) / 60)) + ':' + p2(x % 60); }
+function hm(t) { return t.length > 5 ? t.slice(0, 5) : t; }
+function hmDur(x) { return Math.floor(x / 3600) + ':' + p2(Math.floor((x % 3600) / 60)); }
 function result(r) {
   const a = secs(r.from), b = secs(r.to);
-  if (a === null || b === null) return { ok: false, bad: true, err: 'Times as hh:mm:ss' };
+  if (a === null || b === null) return { ok: false, bad: true, err: 'Times as hh:mm' };
   const days = Math.round((ms(r.end) - ms(r.start)) / 86400000);
   const span = days * 86400 + b - a;
   if (span <= 0) return { ok: false, bad: true, err: 'To lies before From' };
-  const head = wd(r.start) + ' ' + r.start + '  ' + r.from + ' – ';
-  const text = days > 1 ? head + wd(r.end) + ' ' + r.end + ' ' + r.to : head + r.to;
-  return { ok: true, bad: false, text: text, plus: days === 1, dur: dur(span), short: shortDur(span), err: '' };
+  const time = span < 60 ? hms(a) : hms(a).slice(0, 5);
+  const d = span < 60 ? span + ' s' : hmDur(span);
+  return { ok: true, bad: false, date: yy(r.start), time: time, text: yy(r.start) + ' ' + time, dur: d, err: '' };
 }
 class Component extends DCLogic {
   constructor(props) {
@@ -193,7 +192,7 @@ class Component extends DCLogic {
           bg: isEnd ? '#0284c7' : inRange ? '#e0f2fe' : dens ? '#f8fafc' : 'transparent',
           ink: isEnd ? '#ffffff' : dens ? '#0f172a' : '#64748b',
           weight: dens ? 600 : 400, radius: '4px', under: day === TODAY ? 'underline' : 'none',
-          tip: wd(day) + ' ' + day + (dens ? ' · ' + ROWS[key] + ' rows · ' + drives + (drives === 1 ? ' drive' : ' drives') : ' · no data'),
+          tip: wd(day) + ' ' + yy(day) + (dens ? ' · ' + ROWS[key] + ' rows · ' + drives + (drives === 1 ? ' drive' : ' drives') : ' · no data'),
           pick: () => { if (dens) pick(day); }
         });
       }
@@ -203,13 +202,13 @@ class Component extends DCLogic {
     const shownRes = result(st.applied);
     const startKey = st.start.slice(5);
     const drives = DRIVES.filter((x) => x[0] === startKey).map((x) => ({
-      label: x[1].slice(0, 5) + '–' + x[2].slice(0, 5) + ' · ' + Math.round(x[3]) + ' min',
+      start: x[1].slice(0, 5), dur: hmDur(secs(x[2]) - secs(x[1])),
       pick: () => set({ end: st.start, from: x[1], to: x[2], phase: 'start' })
     }));
     return {
       open: st.open, expanded: st.open ? 'true' : 'false',
       btnBorder: st.open ? '#0284c7' : '#cbd5e1', btnBg: st.open ? '#f0f9ff' : '#ffffff',
-      shown: { text: shownRes.ok ? shownRes.text : '', plus: shownRes.plus, short: shownRes.short || '' },
+      shown: { date: shownRes.ok ? shownRes.date : '', time: shownRes.ok ? shownRes.time : '', dur: shownRes.ok ? shownRes.dur : '' },
       toggle: () => set({ open: !st.open }),
       prev: () => { if (st.left > 8) set({ left: st.left - 1 }); }, next: () => { if (st.left < 10) set({ left: st.left + 1 }); },
       prevOff: st.left <= 8 ? 'true' : 'false', nextOff: st.left >= 10 ? 'true' : 'false',
@@ -218,10 +217,10 @@ class Component extends DCLogic {
       hint: st.phase === 'end' ? 'Click the last day, or set the times' : 'Click a day; a second click ends the range',
       drivesLabel: 'DRIVES ' + wd(st.start).toUpperCase() + ' ' + Number(st.start.slice(8)),
       drives: drives, noDrives: drives.length === 0,
-      wholeDay: () => set({ end: st.start, from: '00:00:00', to: '23:59:59', phase: 'start' }),
+      wholeDay: () => set({ end: st.start, from: '00:00', to: '24:00', phase: 'start' }),
       wholeRec: () => set({ start: FIRST[0], end: LAST[0], from: FIRST[1], to: LAST[1], phase: 'start' }),
-      fromDate: wd(st.start) + ' ' + st.start, toDate: wd(st.end) + ' ' + st.end,
-      from: st.from, to: st.to,
+      fromDate: yy(st.start), toDate: yy(st.end),
+      from: hm(st.from), to: hm(st.to),
       onFrom: (e) => set({ from: e && e.target ? e.target.value : st.from }),
       onTo: (e) => set({ to: e && e.target ? e.target.value : st.to }),
       res: res,

@@ -50,20 +50,20 @@ input{font:inherit}
             </span>
           </sc-if>
         </span>
-        <span style="flex: 0 0 268px; height: 26px; outline: {{slot}}; display: flex; align-items: center; gap: 4px; color: #334155; white-space: nowrap;">
+        <span style="flex: 0 0 116px; height: 26px; outline: {{slot}}; display: flex; align-items: center; gap: 4px; color: #334155; white-space: nowrap;">
           <sc-if value="{{s.timeSkel}}" hint-placeholder-val="{{ false }}">
-            <span style="width: 220px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
+            <span style="width: 90px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
           </sc-if>
           <sc-if value="{{s.timeText}}" hint-placeholder-val="{{ true }}">
-            <span><span style="color: #475569;">{{s.wd}}</span> {{s.time}}<sc-if value="{{s.plus}}" hint-placeholder-val="{{ false }}"><sup style="font-size: 9px; font-weight: 600; color: #0369a1; margin-left: 1px;">+1</sup></sc-if></span>
+            <span>{{s.time}}</span>
           </sc-if>
         </span>
-        <span style="flex: 0 0 64px; height: 26px; outline: {{slot}}; display: flex; align-items: center; justify-content: flex-end; color: #64748b;">
+        <span style="flex: 0 0 60px; height: 26px; outline: {{slot}}; display: flex; align-items: center; justify-content: flex-end; color: #64748b;">
           <sc-if value="{{s.timeSkel}}" hint-placeholder-val="{{ false }}">
-            <span style="width: 44px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
+            <span style="width: 36px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
           </sc-if>
           <sc-if value="{{s.timeText}}" hint-placeholder-val="{{ true }}">
-            <span>{{s.dur}}</span>
+            <span title="Duration (h:mm)" style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{s.dur}}</span>
           </sc-if>
         </span>
         <button class="ib" title="{{s.btnHint}}" style="flex: 0 0 64px; margin-left: 10px; height: 22px; outline: {{slot}}; border: 1px solid {{s.btnBorder}}; border-radius: 999px; background: {{s.btnBg}}; color: {{s.btnInk}}; padding: 0;">{{s.btn}}</button>
@@ -100,8 +100,8 @@ input{font:inherit}
       <button aria-expanded="true" style="flex: 0 0 72px; height: 22px; border: 1px solid #0284c7; border-radius: 999px; background: #f0f9ff; padding: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">3 / 17 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2.4" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg></button>
       <button class="ib" aria-label="Next session" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg></button>
       <span style="flex: 1 1 auto; margin-left: 12px; font-weight: 600;">Drive 3</span>
-      <span style="flex: 0 0 268px; color: #334155;"><span style="color: #475569;">Tue</span> 2026-10-13  15:06:54 – 15:17:42</span>
-      <span style="flex: 0 0 64px; text-align: right; color: #64748b;">10.8 min</span>
+      <span style="flex: 0 0 116px; color: #334155;">26-10-13 15:06</span>
+      <span title="Duration (h:mm)" style="flex: 0 0 60px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>0:10</span>
       <button class="ib" style="flex: 0 0 64px; margin-left: 10px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0;">Unlink</button>
 
       <div role="dialog" aria-label="Sessions" style="position: absolute; top: 30px; left: 92px; z-index: 3; width: 560px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 8px 24px rgba(15,23,42,0.12); box-sizing: border-box;">
@@ -114,11 +114,11 @@ input{font:inherit}
         </div>
         <div style="display: flex; flex-direction: column; font-variant-numeric: tabular-nums;">
           <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
-            <button class="lr" aria-current="{{r.cur}}" style="display: grid; grid-template-columns: 28px 1fr 172px 64px; align-items: center; height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: {{r.bg}}; text-align: left; font-weight: {{r.weight}};">
+            <button class="lr" aria-current="{{r.cur}}" style="display: grid; grid-template-columns: 28px 1fr 116px 60px; align-items: center; height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: {{r.bg}}; text-align: left; font-weight: {{r.weight}};">
               <span style="color: #64748b; text-align: right; padding-right: 8px;">{{r.n}}</span>
               <span style="min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{r.title}}</span>
               <span style="color: #334155;">{{r.time}}</span>
-              <span style="color: #64748b; text-align: right;">{{r.dur}}</span>
+              <span title="Duration (h:mm)" style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; color: #64748b;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="14" r="8"></circle><line x1="12" y1="14" x2="12" y2="10"></line><line x1="10" y1="2" x2="14" y2="2"></line></svg>{{r.dur}}</span>
             </button>
           </sc-for>
           <span style="padding: 2px 6px; color: #64748b;">11 more · type to filter</span>
@@ -149,27 +149,27 @@ function bars(skel) {
 }
 const BASE = {
   w: 1192, mb: 0, showLabel: true, label: 'SESSION', arrowInk: '#334155', posInk: '#0f172a',
-  titleSkel: false, titleText: true, titleInk: '#0f172a', note: false, noteText: '', timeSkel: false, timeText: true, plus: false,
+  titleSkel: false, titleText: true, titleInk: '#0f172a', note: false, noteText: '', timeSkel: false, timeText: true,
   btn: 'Unlink', btnHint: 'Unlink: the whole vehicle smart451', btnBorder: '#cbd5e1', btnBg: '#ffffff', btnInk: '#0f172a',
   loading: false, tip: false, strip: false, bars: [], winInk: '#0284c7', driveL: 6.8, driveW: 86.4, driveInk: '#0f172a'
 };
 const STATES = [
-  { caption: '1 · LOADED', pos: '3 / 17', title: 'Drive 3', wd: 'Tue', time: '2026-10-13  15:06:54 – 15:17:42', dur: '10.8 min', strip: true, bars: bars(false) },
-  { caption: '2 · STEPPING (] PRESSED): TEXT FROM THE CATALOG AT ONCE, DATA LOADING; SAME BOXES, NOTHING MOVES', pos: '4 / 17', title: 'Drive 4 · motorway', wd: 'Thu', time: '2026-10-15  18:59:06 – 19:22:12', dur: '23.1 min', loading: true, strip: true, bars: bars(true), winInk: '#cbd5e1', driveInk: '#e2e8f0' },
-  { caption: '3 · FIRST OPEN, CATALOG STILL LOADING: SKELETONS IN THE SAME SLOTS', pos: '1 / 17', posInk: '#64748b', titleSkel: true, titleText: false, timeSkel: true, timeText: false, wd: '', time: '', dur: '', loading: true },
-  { caption: '4 · LONG TITLE: TRUNCATED, FULL TEXT ON HOVER', mb: 18, pos: '2 / 17', title: 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', wd: 'Tue', time: '2026-10-13  11:06:54 – 12:13:12', dur: '66.3 min', tip: true },
-  { caption: '5 · OPEN REPORT NOTE: IN THE TITLE SLOT, THE TITLE GIVES WAY; GONE ON ✕, THE NEXT STEP, GO OR UNLINK', pos: '1 / 2', title: 'Drive 1 again', note: true, noteText: '4 signals not in this session: current, pack_voltage, soc, temperature_max · back link dropped: origin not allowed', wd: 'Tue', time: '2026-10-13  15:07:03 – 15:17:33', dur: '10.5 min' },
-  { caption: '6 · UNLINKED: THE WHOLE VEHICLE; SAME SLOTS, LINK WHERE UNLINK WAS', label: 'VEHICLE', arrowInk: '#cbd5e1', pos: '3 / 17', posInk: '#64748b', title: 'smart451 · whole series', titleInk: '#334155', wd: 'Sun', time: '2026-10-11 – Wed 2026-10-21', dur: '9.5 d', btn: 'Link', btnHint: 'Link to session 3 again', btnBorder: '#0284c7', btnBg: '#e0f2fe', btnInk: '#075985' },
-  { caption: '7 · SESSION CROSSING MIDNIGHT (RARE): +1 AFTER THE END TIME', pos: '17 / 18', title: 'Standby overnight, 12 V trickle', wd: 'Tue', time: '2026-10-20  23:31:05 – 01:52:43', plus: true, dur: '2.4 h' },
-  { caption: '8 · COMPACT (1000 PX WINDOW): NO LABEL, SAME SLOTS', w: 780, showLabel: false, pos: '3 / 17', title: 'Drive 3', wd: 'Tue', time: '2026-10-13  15:06:54 – 15:17:42', dur: '10.8 min' }
+  { caption: '1 · LOADED', pos: '3 / 17', title: 'Drive 3', time: '26-10-13 15:06', dur: '0:10', strip: true, bars: bars(false) },
+  { caption: '2 · STEPPING (] PRESSED): TEXT FROM THE CATALOG AT ONCE, DATA LOADING; SAME BOXES, NOTHING MOVES', pos: '4 / 17', title: 'Drive 4 · motorway', time: '26-10-15 18:59', dur: '0:23', loading: true, strip: true, bars: bars(true), winInk: '#cbd5e1', driveInk: '#e2e8f0' },
+  { caption: '3 · FIRST OPEN, CATALOG STILL LOADING: SKELETONS IN THE SAME SLOTS', pos: '1 / 17', posInk: '#64748b', titleSkel: true, titleText: false, timeSkel: true, timeText: false, time: '', dur: '', loading: true },
+  { caption: '4 · LONG TITLE: TRUNCATED, FULL TEXT ON HOVER', mb: 18, pos: '2 / 17', title: 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', time: '26-10-13 11:06', dur: '1:06', tip: true },
+  { caption: '5 · OPEN REPORT NOTE: IN THE TITLE SLOT, THE TITLE GIVES WAY; GONE ON ✕, THE NEXT STEP, GO OR UNLINK', pos: '1 / 2', title: 'Drive 1 again', note: true, noteText: '4 signals not in this session: current, pack_voltage, soc, temperature_max · back link dropped: origin not allowed', time: '26-10-13 15:07', dur: '0:10' },
+  { caption: '6 · UNLINKED: THE WHOLE VEHICLE; SAME SLOTS, LINK WHERE UNLINK WAS', label: 'VEHICLE', arrowInk: '#cbd5e1', pos: '3 / 17', posInk: '#64748b', title: 'smart451 · whole series', titleInk: '#334155', time: '26-10-11 14:34', dur: '227:18', btn: 'Link', btnHint: 'Link to session 3 again', btnBorder: '#0284c7', btnBg: '#e0f2fe', btnInk: '#075985' },
+  { caption: '7 · SESSION CROSSING MIDNIGHT (RARE): START AND DURATION, NO +1 NEEDED', pos: '17 / 18', title: 'Standby overnight, 12 V trickle', time: '26-10-20 23:31', dur: '2:21' },
+  { caption: '8 · COMPACT (1000 PX WINDOW): NO LABEL, SAME SLOTS', w: 780, showLabel: false, pos: '3 / 17', title: 'Drive 3', time: '26-10-13 15:06', dur: '0:10' }
 ];
 const ROWS = [
-  [1, 'Drive 1', 'Sun 2026-10-11  15:38', '4.2 min'],
-  [2, 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', 'Tue 2026-10-13  11:06', '66.3 min'],
-  [3, 'Drive 3', 'Tue 2026-10-13  15:06', '10.8 min'],
-  [4, 'Drive 4 · motorway', 'Thu 2026-10-15  18:59', '23.1 min'],
-  [5, 'Drive 5', 'Thu 2026-10-15  21:12', '22.2 min'],
-  [6, 'Drive 6', 'Fri 2026-10-16  18:45', '23.1 min']
+  [1, 'Drive 1', '26-10-11 15:38', '0:04'],
+  [2, 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', '26-10-13 11:06', '1:06'],
+  [3, 'Drive 3', '26-10-13 15:06', '0:10'],
+  [4, 'Drive 4 · motorway', '26-10-15 18:59', '0:23'],
+  [5, 'Drive 5', '26-10-15 21:12', '0:22'],
+  [6, 'Drive 6', '26-10-16 18:45', '0:23']
 ];
 class Component extends DCLogic {
   renderVals() {
