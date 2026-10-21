@@ -4,11 +4,19 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-095: The critic's findings (2026-10-21)
+
+Jan: „lets give this to mr critic once more and then done?" On the critic's 19 findings and the lead's proposal (do 1–15, backlog the power-user wishes): „nice. do as proposed".
+
+- **Decision:** The mocks and both changes take the critic's points 1–15 (list in the archived changes' design, source [docs/design/declutter/CRITIC.md](design/declutter/CRITIC.md)). In short: durations carry a unit (`0:10 h`, `9 d 11 h` from 48 h, tooltip in words); the sidebar is a fixed slot; events on the strip have one shape per kind and a hover area; the strip gets end labels, day labels unlinked, a hover time readout, a range at least 3 px wide, merged `A·B` flags and an edge caret for an off-screen cursor (accent only for the shown range); one pressed style for all toggles (sky-100, #0369a1); the session bar shows title and duration, its start in the tooltip; dark axis ticks with a series swatch and the unit on its own line; alignment shown on the `k/n` button, "Back to search"; flags with 24×24 hit areas and Shift+A / Shift+B; the calendar as a keyboard grid; worst-case slot widths, the full date as a tooltip, a fit glyph for Reset, Share in the row at every width (supersedes the compact-width move of D-092's mock).
+- **Why:** An independent design review before building further.
+- **Consequences:** Backlog: windows filling the height, event counts per session, A/B on an event, copy-link of view and cursors, a filter by event kind on the strip ([status.md](status.md)).
+
 ## D-094: The strip shows presence, events and cursors (2026-10-21)
 
 Jan, on the strip: „die timeline ist sehr wichtig für events. weniger wichtig, wenn wir session basiert arbeiten […] die balken wirken aktuell komisch". On the UI designer's strip variants and the lead's three questions: „color ok, density would be just strip or no strip? thats probably good enough. and a/b labels should be on the strip to jump back to it".
 
-- **Decision:** The time strip is one fixed-height row (24 px in the mock, same in a session, unlinked, scoped or loading). It shows: data presence as a thin line with breaks at data gaps (no density bars, no density area; "strip or no strip"), drives in slate, an events lane (pins by kind, fault-memory reads hollow), the shown range in the accent, and A/B as small flags that jump the view back to that cursor on click. Supersedes the density bars of D-055/D-057 on the strip; the range picker's per-day calendar density (D-092) stays.
+- **Decision:** The time strip is one fixed-height row (28 px in the mock; first written as 24 px, corrected by D-095; same in a session, unlinked, scoped or loading). It shows: data presence as a thin line with breaks at data gaps (no density bars, no density area; "strip or no strip"), drives in slate, an events lane (pins by kind, fault-memory reads hollow), the shown range in the accent, and A/B as small flags that jump the view back to that cursor on click. Supersedes the density bars of D-055/D-057 on the strip; the range picker's per-day calendar density (D-092) stays.
 - **Why:** In a session the bars are nearly uniform and read as a barcode; what matters there is events, gaps, where the view is and where the cursors are.
 - **Consequences:** `declutter-workspace` takes the strip over before it is archived; mock `Strip.dc.html` (row "Recommended").
 

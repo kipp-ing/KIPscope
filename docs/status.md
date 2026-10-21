@@ -105,7 +105,8 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
    - ADX speed: native batched `firstTimes` (offered as a contribution in the issue), periods kept per (data ref, signal) across sessions, gaps requests in chunks or below series (revisits D-081), preview's signal list loaded before the settle.
    - Catalog features: `aliases` for signals named differently per vehicle, per-kind `views`, `columns` for list and bar (units, order, table).
    - `POST /api/handoffs` with a one-time handle for lists beyond a link (security decision).
-6. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
+6. Backlog from the design critic (D-095): windows filling the height, event counts per session in the list, putting A or B on an event, copy-link of view and cursors, a filter by event kind on the strip.
+7. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
 ## Known limitations
 
