@@ -163,7 +163,7 @@ export function wholeLabel(kind: ScopeKind): "Whole recording" | "Whole scope" |
 ```ts
 /** Left and right month shown when the picker opens: right = local month of `range.from`, left = the one before. */
 export function openMonths(range: { from: bigint; to: bigint }): { year: number; month: number }[];
-/** ‹: data before the left month (first < localMonth(left).from); ›: data after the right month (last ≥ localMonth(right).to). Without a density both true. */
+/** ‹: data before the right month (first < localMonth(right).from), so a step back still shows data in the new right month; ›: data after the right month (last ≥ localMonth(right).to). Without a density both true (scenario "Paging bounds"). */
 export function canPage(density: Density | undefined, left: { year: number; month: number }): { prev: boolean; next: boolean };
 ```
 
