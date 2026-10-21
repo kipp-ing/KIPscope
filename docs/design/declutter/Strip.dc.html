@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Time strip</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f8fafc}
+a{color:#0369a1}a:hover{color:#0c4a6e}
+</style>
+</helmet>
+<div style="width: 1440px; height: 860px; box-sizing: border-box; padding: 20px 24px 0; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; color: #0f172a; background: #f8fafc; overflow: hidden;">
+
+  <div style="display: flex; align-items: baseline; gap: 12px; height: 28px;">
+    <span style="font-size: 16px; font-weight: 600;">Time strip</span>
+    <span style="color: #475569; font-variant-numeric: tabular-nums;">smart451 · strip width as in Main (1192 px) · real density, gaps and events from the server</span>
+  </div>
+
+  <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+    <div style="display: flex; gap: 0; padding: 12px 0; border-top: 1px solid #e2e8f0;">
+      <div style="flex: 0 0 200px; display: flex; flex-direction: column; gap: 3px; padding-top: 2px;">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span style="flex: 0 0 18px; height: 18px; border-radius: 4px; background: {{r.badgeBg}}; color: {{r.badgeFg}}; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center;">{{r.n}}</span>
+          <span style="font-weight: 600; font-size: 13px;">{{r.title}}</span>
+        </div>
+        <span style="padding-left: 26px; color: #475569; font-size: 11px;">{{r.sub}}</span>
+      </div>
+      <div style="flex: 0 0 1192px; display: flex; flex-direction: column; gap: 6px;">
+        <sc-for list="{{r.strips}}" as="s" hint-placeholder-count="2">
+          <div style="display: flex; flex-direction: column; margin-bottom: {{s.mb}}px;">
+            <div style="height: 18px; display: flex; align-items: center; gap: 10px; font-size: 11px; color: #475569; font-variant-numeric: tabular-nums; white-space: nowrap;">
+              <span style="font-weight: 600; color: #0f172a;">{{s.cap}}</span>
+              <span>{{s.cap2}}</span>
+            </div>
+            <div title="{{s.tt}}" style="position: relative; width: 1192px; height: {{s.h}}px; padding: {{s.pt}}px 10px 0; box-sizing: border-box; background: #ffffff; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
+              <div style="position: relative; height: {{s.th}}px;">
+                <sc-for list="{{s.under}}" as="q" hint-placeholder-count="3">
+                  <span title="{{q.tt}}" style="position: absolute; left: {{q.l}}; width: {{q.w}}; margin-left: {{q.ml}}px; top: {{q.t}}px; height: {{q.h}}px; background: {{q.bg}}; border-radius: {{q.rad}}px; box-shadow: {{q.sh}}; border-left: {{q.bl}}; box-sizing: border-box;"></span>
+                </sc-for>
+                <sc-if value="{{s.hasArea}}" hint-placeholder-val="{{ true }}">
+                  <svg viewBox="0 0 1000 100" preserveAspectRatio="none" style="position: absolute; left: 0; top: {{s.aT}}px; width: 100%; height: {{s.aH}}px;" aria-hidden="true">
+                    <path d="{{s.area}}" fill="{{s.aFill}}"></path>
+                  </svg>
+                </sc-if>
+                <sc-if value="{{s.hasBars}}" hint-placeholder-val="{{ false }}">
+                  <div style="position: absolute; left: 0; right: 0; top: {{s.bT}}px; height: {{s.bH}}px; display: flex; align-items: flex-end; gap: 1px;">
+                    <sc-for list="{{s.bars}}" as="b" hint-placeholder-count="75">
+                      <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-for list="{{s.over}}" as="q" hint-placeholder-count="4">
+                  <span title="{{q.tt}}" style="position: absolute; left: {{q.l}}; width: {{q.w}}; margin-left: {{q.ml}}px; top: {{q.t}}px; height: {{q.h}}px; background: {{q.bg}}; border-radius: {{q.rad}}px; box-shadow: {{q.sh}}; border-left: {{q.bl}}; box-sizing: border-box;"></span>
+                </sc-for>
+                <sc-for list="{{s.labels}}" as="t" hint-placeholder-count="10">
+                  <span style="position: absolute; top: {{t.t}}px; left: {{t.l}}; margin-left: 3px; font-size: 10px; line-height: 10px; color: #475569; font-variant-numeric: tabular-nums;">{{t.x}}</span>
+                </sc-for>
+                <sc-if value="{{s.hasText}}" hint-placeholder-val="{{ false }}">
+                  <span style="position: absolute; left: 0; top: 0; height: {{s.th}}px; display: flex; align-items: center; padding-right: 8px; background: #ffffff; font-size: 11px; color: #64748b;">{{s.text}}</span>
+                </sc-if>
+              </div>
+              <sc-if value="{{s.hasTip}}" hint-placeholder-val="{{ false }}">
+                <div role="tooltip" style="position: absolute; z-index: 2; top: {{s.tipTop}}px; left: {{s.tipLeft}}px; width: 300px; padding: 6px 8px; background: #0f172a; color: #ffffff; border-radius: 4px; font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; box-shadow: 0 4px 12px rgba(15,23,42,0.18);">
+                  <div style="font-weight: 600;">{{s.tipHead}}</div>
+                  <sc-for list="{{s.tipLines}}" as="l" hint-placeholder-count="2">
+                    <div style="display: flex; gap: 8px;"><span>{{l.t}}</span><span style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">{{l.n}}</span><span>{{l.x}}</span></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-for>
+
+  <div style="display: flex; align-items: center; gap: 18px; height: 36px; padding-left: 200px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #334155;">
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #7c3aed;"></span>Change</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #be123c;"></span>Fault</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #b45309;"></span>Stored</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 7px; border-radius: 1px; background: #64748b;"></span>Other</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 5px; height: 7px; border-radius: 1px; background: #ffffff; box-shadow: inset 0 0 0 1px #be123c;"></span>Fault memory read</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 3px; border-radius: 1px; background: #94a3b8;"></span>Data</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="display: inline-flex; gap: 3px;"><span style="width: 8px; height: 3px; background: #94a3b8;"></span><span style="width: 8px; height: 3px; background: #94a3b8;"></span></span>Gap (no rows ≥ 2 s)</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 10px; background: rgba(2,132,199,0.10); border-left: 1px solid #0284c7; border-right: 1px solid #0284c7;"></span>Shown range</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 2px; background: #475569;"></span>Drive</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 1px; height: 12px; background: #0f172a;"></span>A <span style="width: 0; height: 12px; border-left: 1px dashed #0f172a; margin-left: 4px;"></span>B</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+const TRACK = 1172;
+const ACC = '#0284c7';
+const COL = { change: '#7c3aed', active: '#be123c', stored: '#b45309', other: '#64748b' };
+// smart451 density, 10 s buckets from 15:06:00 (Drive 3 scope 15:06:03 + 750 s)
+const D3 = [0,0,0,0,0,0,54799,126223,159012,159070,159044,159059,159066,159022,158978,159015,159005,159006,158976,158960,159017,159022,158998,159020,158989,158982,158999,159030,159001,159002,158995,158974,159016,159011,159008,159011,158973,158998,159000,159009,159002,158987,158967,159011,159015,158982,159011,158975,158981,159009,158997,159004,159011,158976,159011,158976,159018,158989,159008,158969,158998,158996,159005,159001,158976,159009,134224,158996,159000,51662,0,0,0,0,0,0];
+// 60 s buckets from 11:06:00 (Drive 2 scope 11:06:00 + 4080 s)
+const D2 = [31186,924071,955897,972003,972221,971999,972192,972033,972172,972052,972202,972192,972170,971981,972153,972195,972210,972190,972089,972105,972198,900898,972088,972088,972205,928527,953992,953992,948143,972191,972135,972082,972117,972141,972195,972157,971957,972198,972191,972093,972167,972208,971921,930511,958691,962087,953990,953980,967734,971744,948217,954835,972192,972095,972139,972179,957310,956865,953924,953963,954011,958462,955946,955793,954019,954013,787190,61752];
+// 2 h buckets from 26-10-11 14:00, whole vehicle
+const DV = [3310056,0,515453,0,0,490810,0,0,0,0,0,0,0,315992,0,144472,0,0,0,0,354654,0,51597970,12639005,9907056,0,0,0,0,0,0,0,0,0,0,0,0,0,171773,324114,324020,324143,324025,324020,324128,323989,324020,324025,324027,324020,21768655,20429002,770461,375106,0,404103,0,415443,864308,0,0,0,22232681,23483676,167752,308928,0,112350,0,0,62557310,20541664,73381,0,168336,0,0,0,478238,0,0,0,19994971,732591,24450030,1000323,0,469843,0,0,0,288697,0,0,0,0,11037362,12828601,209238,476344,0,138320,0,0,0,0,0,315340,0,18877263,319070,241370,0,563371];
+// drives of smart451 [left %, width %] on the vehicle track
+const VDRIVES = [[0.721,0.031],[19.787,0.485],[21.542,0.079],[44.292,0.169],[45.265,0.162],[54.719,0.169],[55.478,0.182],[61.412,0.919],[62.581,0.066],[62.761,0.066],[72.164,0.154],[73.866,0.145],[74.066,0.046],[84.831,0.086],[85.553,0.094],[96.162,0.066],[96.379,0.09]];
+// pins of the default filter (active changes) over the vehicle, grouped at 6 px: [left %, events, category, fault memory read]
+const VPINS = [[0.73,2,'change',0],[20.03,6,'change',0],[21.54,1,'change',0],[33.9,17,'change',0],[34.33,1,'change',0],[36.28,1,'change',0],[39.23,13,'active',1],[44.37,3,'change',0],[45.35,2,'change',0],[50.79,2,'change',0],[51.69,3,'change',0],[54.8,6,'change',0],[55.57,6,'change',0],[61.43,8,'change',0],[62.57,14,'change',0],[72.24,6,'change',0],[73.99,12,'change',0],[75.18,7,'change',0],[76.81,3,'change',0],[84.86,12,'change',0],[85.6,6,'change',0],[96.31,16,'change',0]];
+const VMID = [[4.39,'10-12'],[14.91,'10-13'],[25.44,'10-14'],[35.96,'10-15'],[46.49,'10-16'],[57.02,'10-17'],[67.54,'10-18'],[78.07,'10-19'],[88.6,'10-20'],[99.12,'10-21']];
+
+// Drive 3: data 15:07:03.75 – 15:17:33.3, KEYON at 15:07:14.560, A 15:09:12, B 15:11:40, shown = whole scope
+const S3 = { cov: [[8.10, 92.04]], gaps: [], pins: [[9.54, 1, 'change', 0, '15:07:14.560 · Change · IgnCurMode CPC_168h.IgnCurMode NONE → KEYON']], range: [0, 100], a: 25.2, b: 44.93 };
+// Drive 2: data 11:06:56.4 – 12:13:06, logger gap 11:27:53.936 – 11:27:56.982, shown 11:52 + 0:08
+const S2 = { cov: [[1.38, 32.204], [32.279, 98.68]], gaps: [[32.241, 'No data 11:27:53.936 – 11:27:56.982 · 3.0 s']],
+  pins: [[1.575, 1, 'change', 0, '11:07:04.246 · Change · IgnCurMode NONE → KEYON'], [74.985, 2, 'change', 0, '2 events · 2 changes'], [97.79, 1, 'change', 0, '12:12:29.888 · Change · IgnCurMode KEYON → NONE']],
+  range: [67.65, 79.41], a: null, b: null };
+
+function R(o) { return Object.assign({ l: '0%', w: '100%', ml: 0, t: 0, h: 1, bg: 'transparent', rad: 0, sh: 'none', bl: 'none', tt: '' }, o); }
+function P(v) { return v + '%'; }
+function px(pct) { return pct / 100 * TRACK; }
+function cov(s, t, h) {
+  const out = []; const r0 = s.range[0], r1 = s.range[1];
+  s.cov.forEach(function (c) {
+    [[c[0], Math.min(c[1], r0), '#94a3b8'], [Math.max(c[0], r0), Math.min(c[1], r1), ACC], [Math.max(c[0], r1), c[1], '#94a3b8']].forEach(function (p) {
+      if (p[1] > p[0]) out.push(R({ l: P(p[0]), w: P((p[1] - p[0]).toFixed(3)), t: t, h: h, bg: p[2], rad: 1 }));
+    });
+  });
+  return out;
+}
+function gaps(s, t, h) { return s.gaps.map(function (g) { return R({ l: P(g[0]), w: '3px', ml: -1.5, t: t, h: h, bg: '#ffffff', tt: g[1] }); }); }
+function pins(list, t, h, square) {
+  return list.map(function (p) {
+    const c = COL[p[2]] || COL.other; const w = square ? 5 : (p[1] > 1 || p[3] ? 5 : 3);
+    return R({ l: P(p[0]), w: w + 'px', ml: -w / 2, t: t, h: square ? 5 : h, bg: p[3] ? '#ffffff' : c, sh: p[3] ? 'inset 0 0 0 1px ' + c : 'none', rad: 1, tt: p[4] || (p[1] + (p[1] > 1 ? ' events' : ' event')) });
+  });
+}
+function brush(range, h) {
+  const r0 = range[0], r1 = range[1];
+  return [R({ l: P(r0), w: P(r1 - r0), t: 0, h: h, bg: 'rgba(2,132,199,0.08)' }),
+    R({ l: P(r0), w: '1px', t: 0, h: h, bg: ACC }), R({ l: P(r1), w: '1px', ml: -1, t: 0, h: h, bg: ACC })];
+}
+function cursors(s, h) {
+  const out = [];
+  if (s.a !== null) out.push(R({ l: P(s.a), w: '1px', t: 0, h: h, bg: '#0f172a', tt: 'A 15:09:12' }));
+  if (s.b !== null) out.push(R({ l: P(s.b), w: '1px', t: 0, h: h, bl: '1px dashed #0f172a', tt: 'B 15:11:40' }));
+  return out;
+}
+// continuous area through bucket centres, in a 1000 x 100 box
+function area(counts, off, span, bw, sqrt, floor) {
+  const m = Math.max.apply(null, counts); const pts = [];
+  counts.forEach(function (c, i) {
+    const x = ((i + 0.5) * bw - off) / span * 1000; if (x < -50 || x > 1050) return;
+    const v = c === 0 ? 0 : Math.max(floor, (sqrt ? Math.sqrt(c / m) : c / m) * 100);
+    pts.push([Math.min(1000, Math.max(0, x)).toFixed(1), (100 - v).toFixed(1)]);
+  });
+  return 'M0 100 L' + pts.map(function (p) { return p[0] + ' ' + p[1]; }).join(' L') + ' L1000 100 Z';
+}
+function base(o) { return Object.assign({ mb: 0, cap2: '', tt: '', pt: 0, under: [], over: [], labels: [], bars: [], hasArea: false, hasBars: false, hasText: false, hasTip: false, area: '', aT: 0, aH: 0, aFill: 'none', bT: 0, bH: 0, text: '', tipTop: 0, tipLeft: 0, tipHead: '', tipLines: [] }, o); }
+
+const CAP3 = 'Session · Drive 3 · 26-10-13 15:06  0:10';
+const CAP3b = 'shown 26-10-13 15:06  0:12 · 1 of 2 events · A 15:09:12 · B 15:11:40';
+const CAP2 = 'Session · Drive 2 · 26-10-13 11:06  1:06';
+const CAP2b = 'shown 26-10-13 11:52  0:08 · 4 of 258 events · one logger gap of 3 s at 11:27:54';
+const CAPV = 'Unlinked · smart451 · 26-10-11 14:34  227:18';
+const CAPVb = 'shown 26-10-13 15:06  0:12 · 147 of 1,687 events · 17 drives';
+
+class Component extends DCLogic {
+  renderVals() {
+    // 1 today, as in Main.dc.html
+    const bars3 = []; for (let i = 0; i < 75; i++) { const d = i >= 5 && i < 70; bars3.push({ h: d ? 13 + ((i * 7) % 5) : 3, c: d ? '#94a3b8' : '#cbd5e1' }); }
+    const m2 = Math.max.apply(null, D2);
+    const bars2 = D2.map(function (c) { return { h: Math.max(3, Math.round(c / m2 * 18)), c: '#94a3b8' }; });
+    const todayBox = function (r) { return R({ l: P(r[0]), w: P(r[1] - r[0]), t: 6, h: 20, bg: 'rgba(2,132,199,0.06)', sh: 'inset 0 0 0 1px ' + ACC, rad: 2 }); };
+    const t3 = base({ cap: CAP3, cap2: CAP3b, h: 44, pt: 6, th: 30, tt: '6.2 min of 12.8 min in scope · 1 bar = 10 s', hasBars: true, bT: 7, bH: 18, bars: bars3,
+      over: [todayBox(S3.range), R({ l: '8.1%', w: '83.94%', t: 27, h: 3, bg: '#0f172a', rad: 2 })].concat(pins(S3.pins, 0, 5, true)) });
+    const t2 = base({ cap: CAP2, cap2: CAP2b, h: 44, pt: 6, th: 30, tt: '8 min of 1.1 h in scope · 1 bar = 1 min', hasBars: true, bT: 7, bH: 18, bars: bars2,
+      over: [todayBox(S2.range), R({ l: '1.38%', w: '97.3%', t: 27, h: 3, bg: '#0f172a', rad: 2 })].concat(pins(S2.pins, 0, 5, true)) });
+
+    // 2 session A, 20 px: events lane, data line with gaps, shown range
+    const sessA = function (s, cap, cap2) {
+      const th = 18;
+      return base({ cap: cap, cap2: cap2, h: 20, th: th,
+        under: brush(s.range, th).slice(0, 1).concat([R({ t: 12, h: 1, bg: '#e2e8f0' })]),
+        over: cov(s, 11, 3).concat(gaps(s, 10, 5), brush(s.range, th).slice(1), cursors(s, th), pins(s.pins, 2, 6)) });
+    };
+    // 3 session B, 20 px: plus a quiet density silhouette instead of the line
+    const sessB = function (s, cap, cap2, ar) {
+      const th = 18;
+      return base({ cap: cap, cap2: cap2, h: 20, th: th, hasArea: true, area: ar, aT: 5, aH: 13, aFill: '#e2e8f0',
+        under: brush(s.range, th).slice(0, 1),
+        over: gaps(s, 5, 13).concat(brush(s.range, th).slice(1), cursors(s, th), pins(s.pins, 1, 6)) });
+    };
+    const ar3 = area(D3, 3, 750, 10, false, 8);
+    const ar2 = area(D2, 0, 4080, 60, false, 8);
+
+    // 4 vehicle, 44 px: density area, drives in the accent, events lane, brush
+    const mv = Math.max.apply(null, DV);
+    const vSpan = 114 * 7200;
+    const arV = area(DV, 0, vSpan, 7200, true, 9);
+    const mids = function (h) { return VMID.map(function (m) { return R({ l: P(m[0]), w: '1px', t: 0, h: h, bg: '#f1f5f9', tt: '26-' + m[1] + ' 00:00' }); }); };
+    const v4drives = VDRIVES.map(function (d) {
+      const bin = Math.min(113, Math.floor(d[0] / 100 * 114)); const hb = Math.max(2, Math.sqrt(DV[bin] / mv) * 22);
+      const w = Math.max(3, px(d[1]));
+      return R({ l: P(d[0]), w: w.toFixed(1) + 'px', t: (11 + 22 - hb).toFixed(1), h: hb.toFixed(1), bg: ACC, rad: 1 });
+    });
+    const v4 = base({ cap: CAPV, cap2: CAPVb, h: 46, th: 44, hasArea: true, area: arV, aT: 11, aH: 22, aFill: '#cbd5e1',
+      under: mids(34), over: v4drives.concat([R({ l: '21.535%', w: '4px', ml: -2, t: 8, h: 27, sh: 'inset 0 0 0 1px #0f172a', rad: 1, tt: 'Shown 26-10-13 15:06  0:12' })], pins(VPINS, 1, 7)),
+      labels: VMID.map(function (m) { return { l: P(m[0]), t: 34, x: m[1] }; }) });
+
+    // 5 recommended, 24 px in every state
+    const recS = function (s, cap, cap2) {
+      const th = 22;
+      return base({ cap: cap, cap2: cap2, h: 24, th: th,
+        under: brush(s.range, th).slice(0, 1).concat([R({ t: 14, h: 1, bg: '#e2e8f0' })]),
+        over: cov(s, 13, 3).concat(gaps(s, 12, 5), brush(s.range, th).slice(1), cursors(s, th), pins(s.pins, 2, 7)) });
+    };
+    const r3 = recS(S3, CAP3, CAP3b);
+    const r2 = recS(S2, CAP2, CAP2b);
+    r2.mb = 62; r2.hasTip = true; r2.tipTop = 28; r2.tipLeft = 760; r2.tipHead = '2 events · 2 changes';
+    r2.tipLines = [{ t: '11:56:58.869', n: 'CPC_168h.IgnCurMode', x: 'KEYON → NONE' }, { t: '11:56:59.869', n: 'CPC_168h.IgnCurMode', x: 'NONE → KEYON' }];
+    r2.over.push(R({ l: '74.985%', w: '9px', ml: -4.5, t: 0, h: 11, sh: 'inset 0 0 0 1px #0f172a', rad: 2 }));
+    const rvDrives = VDRIVES.map(function (d, i) {
+      return R({ l: P(d[0]), w: Math.max(3, px(d[1])).toFixed(1) + 'px', t: 19, h: 2, bg: i === 2 ? ACC : '#475569', rad: 1, tt: 'Drive ' + (i + 1) + ' of 17' });
+    });
+    const rv = base({ cap: CAPV, cap2: CAPVb, h: 24, th: 22, hasArea: true, area: arV, aT: 9, aH: 10, aFill: '#cbd5e1',
+      under: mids(22), over: rvDrives.concat([R({ l: '21.535%', w: '3px', ml: -1.5, t: 0, h: 22, bg: ACC, rad: 1, tt: 'Shown 26-10-13 15:06  0:12' })], pins(VPINS, 2, 7)) });
+    const rl = base({ cap: CAP3, cap2: 'loading: the same 24 px box, the shown range and cursors already drawn', h: 24, th: 22, hasText: true, text: 'Loading recording…',
+      under: brush([0, 100], 22).slice(0, 1).concat([R({ t: 14, h: 1, bg: '#e2e8f0' })]), over: brush([0, 100], 22).slice(1).concat(cursors(S3, 22)) });
+
+    const grey = { badgeBg: '#e2e8f0', badgeFg: '#0f172a' };
+    return {
+      rows: [
+        Object.assign({ n: '1', title: 'Today', sub: 'Main.dc.html before · 44 px, bars', strips: [t3, t2] }, grey),
+        Object.assign({ n: '2', title: 'Session · A', sub: '20 px · events, data line, gaps', strips: [sessA(S3, CAP3, CAP3b), sessA(S2, CAP2, CAP2b)] }, grey),
+        Object.assign({ n: '3', title: 'Session · B', sub: '20 px · A plus density silhouette', strips: [sessB(S3, CAP3, CAP3b, ar3), sessB(S2, CAP2, CAP2b, ar2)] }, grey),
+        Object.assign({ n: '4', title: 'Vehicle · long scope', sub: '46 px · area, drives in accent, days', strips: [v4] }, grey),
+        { n: '5', title: 'Recommended', sub: '24 px in session, vehicle, loading', badgeBg: '#0284c7', badgeFg: '#ffffff', strips: [r3, r2, rv, rl] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -112,18 +112,16 @@ input,select{font:inherit}
       <button class="ib" title="Unlink: the whole vehicle smart451" style="flex: 0 0 64px; margin-left: 10px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0;">Unlink</button>
     </div>
 
-    <div title="6.2 min of 12.8 min in scope · 1 bar = 10 s" style="flex: 0 0 44px; position: relative; padding: 6px 10px 0; background: #ffffff; border-bottom: 1px solid #e2e8f0; box-sizing: border-box;">
-      <div style="position: relative; height: 30px;">
-        <sc-for list="{{pins}}" as="p" hint-placeholder-count="2">
-          <span style="position: absolute; top: 0; left: {{p.left}}%; width: 5px; height: 5px; margin-left: -2px; border-radius: 1px; background: #7c3aed;"></span>
-        </sc-for>
-        <div style="position: absolute; left: 0; right: 0; top: 7px; height: 18px; display: flex; align-items: flex-end; gap: 1px;">
-          <sc-for list="{{bars}}" as="b" hint-placeholder-count="75">
-            <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
-          </sc-for>
-        </div>
-        <div style="position: absolute; left: 0; right: 0; top: 6px; height: 20px; border: 1px solid #0284c7; border-radius: 2px; background: rgba(2,132,199,0.06);"></div>
-        <span style="position: absolute; top: 27px; left: 6.8%; width: 86.4%; height: 3px; border-radius: 2px; background: #0f172a;"></span>
+    <div title="Shown 0:12 of 0:12 in scope · data 15:07 – 15:17 · 1 of 2 events" style="flex: 0 0 24px; position: relative; padding: 0 10px; background: #ffffff; border-bottom: 1px solid #e2e8f0; box-sizing: border-box;">
+      <div style="position: relative; height: 23px;">
+        <span style="position: absolute; left: 0; right: 0; top: 0; height: 23px; background: rgba(2,132,199,0.08);"></span>
+        <span style="position: absolute; left: 0; right: 0; top: 14px; height: 1px; background: #e2e8f0;"></span>
+        <span title="Data 15:07:03 – 15:17:33" style="position: absolute; left: 8.1%; width: 83.94%; top: 13px; height: 3px; border-radius: 1px; background: #0284c7;"></span>
+        <span style="position: absolute; left: 0; top: 0; width: 1px; height: 23px; background: #0284c7;"></span>
+        <span style="position: absolute; right: 0; top: 0; width: 1px; height: 23px; background: #0284c7;"></span>
+        <span title="A 15:09:12" style="position: absolute; left: 25.2%; top: 0; width: 1px; height: 23px; background: #0f172a;"></span>
+        <span title="B 15:11:40" style="position: absolute; left: 44.93%; top: 0; width: 0; height: 23px; border-left: 1px dashed #0f172a;"></span>
+        <span title="15:07:14.560 · Change · IgnCurMode NONE → KEYON" style="position: absolute; left: 9.54%; top: 2px; width: 3px; height: 7px; margin-left: -1.5px; border-radius: 1px; background: #7c3aed;"></span>
       </div>
     </div>
 
@@ -280,17 +278,10 @@ class Component extends DCLogic {
       const rows = (ROWS[g[0]] || []).map(function (r) { return { name: r[0], desc: r[1], unit: r[2], dot: r[3] >= 0 ? PAL[r[3]] : 'transparent' }; });
       return { name: g[0], count: g[1], rows: rows, chev: rows.length ? '▼' : '▶', expanded: rows.length ? 'true' : 'false' };
     });
-    const bars = [];
-    for (let i = 0; i < 75; i++) {
-      const inDrive = i >= 5 && i < 70;
-      bars.push({ h: inDrive ? 13 + ((i * 7) % 5) : 3, c: inDrive ? '#94a3b8' : '#cbd5e1' });
-    }
     return {
       plotH: 300,
       groups: groups,
       toggles: [{ label: 'A', pressed: 'true' }, { label: 'B', pressed: 'true' }, { label: 'Diff', pressed: 'true' }],
-      pins: [{ left: 6.6 }, { left: 93.6 }],
-      bars: bars,
       grid: [0, 25, 50, 75].map(function (t) { return { top: t }; }),
       xticks: XT.map(function (x) { return { left: x[0] / 10, label: x[1] }; }),
       windows: windows
