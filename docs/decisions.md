@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-096: Legend without metadata after a cold load stays (2026-10-21)
+
+The lead found the cause of the declutter round's last open point ("Probe during a step", D-092): the catalog is scoped to the session, so after a page load in a session where a shown signal has no data, KIPscope has no metadata for it. The legend shows the raw name without a unit (`BS_200h.DVL`) and switches to the display name with unit (`DVL [1/min]`) on the first step into a session with data; the columns to its right move about 40 px once. Options put to Jan: accept as rare, or fix now with a server change. Jan: „a, so lassen."
+
+- **Decision:** Accepted as rare. Steps from a state with known metadata move nothing (probe at 1440×900 and 1000×557: nothing moved).
+- **Why:** It needs a cold load in exactly such a session; the proper fix is a server change outside the declutter change.
+- **Consequences:** Backlog: signal metadata per data ref instead of per scope, so the legend knows name and unit of a signal without data in the session ([status.md](status.md)).
+
 ## D-095: The critic's findings (2026-10-21)
 
 Jan: „lets give this to mr critic once more and then done?" On the critic's 19 findings and the lead's proposal (do 1–15, backlog the power-user wishes): „nice. do as proposed".
