@@ -106,6 +106,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
    - Catalog features: `aliases` for signals named differently per vehicle, per-kind `views`, `columns` for list and bar (units, order, table).
    - `POST /api/handoffs` with a one-time handle for lists beyond a link (security decision).
 6. Backlog from the design critic (D-095): windows filling the height, event counts per session in the list, putting A or B on an event, copy-link of view and cursors, a filter by event kind on the strip.
+   - Range picker: a live preview of typed text in the result line (Jan 2026-10-21: „so lassen wir das erstmal"; today the line shows the draft until Go).
    - Signal metadata per data ref instead of per scope (D-096): after a cold load in a session where a shown signal has no data, the legend lacks its display name and unit until the first step to a session with data.
 7. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
