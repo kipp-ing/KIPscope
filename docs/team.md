@@ -11,6 +11,7 @@ Adopted from the PCB-dev placer team (D-013), slimmed down for KIPscope: the sui
 | UI user | [ks-ui-user](../.claude/agents/ks-ui-user.md) | sonnet | nothing; reports with screenshots |
 | Reviewer | [ks-reviewer](../.claude/agents/ks-reviewer.md) | opus, round diff only | nothing; findings only |
 | Pacer | [ks-pacer](../.claude/agents/ks-pacer.md) | sonnet | `tasks.md` checkboxes, round log `rounds.md` (also does the scenario check) |
+| UI designer | [ks-ui-designer](../.claude/agents/ks-ui-designer.md) | opus | nothing in the repo; mocks (design canvas artboards) and a clutter inventory, before a UI change is specced |
 | Crash guard | [ks-smoke](../.claude/agents/ks-smoke.md) | sonnet | nothing; `pnpm build` + `pnpm smoke` (headless Chrome, [scripts/smoke.mjs](../scripts/smoke.mjs)) pass/fail |
 
 ## One change
