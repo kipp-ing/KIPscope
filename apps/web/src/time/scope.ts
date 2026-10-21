@@ -23,7 +23,7 @@ export function clampMessage(c: Pick<WorkspaceCase, "linked"> | undefined): stri
 /** Strip text in scoped mode without a scope (time-strip "Strip shows the scope"). */
 export const NO_SCOPE = "No scope set";
 
-/** Tooltips of the scope head (add-scope Z12). */
+/** Tooltips of the scope row and the strip track (add-scope Z12, declutter-workspace DW3). */
 export const SCOPE_HINTS = {
   widen: "Widen the scope by its span on each side (one step; navigation never leaves the scope)",
   clear: "Clear the scope: the strip, catalog and queries cover whole recordings again",

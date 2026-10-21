@@ -1,4 +1,4 @@
-/* Sticky wrapper of the top row and the time strip (design T8); the auto-scroll edge counts from
+/* Sticky wrapper of the top row, the context row and the time strip (design T8); the auto-scroll edge counts from
    its bottom (App.tsx barRef). */
 .top-area {
   flex: none;
@@ -8,37 +8,14 @@
   margin: 0 -16px 8px;
 }
 
-/* Time strip (design T8, S5 of add-strip-navigation): 4 + 16 + 3 + 31 + 0 + 1 = 55 px in every
-   state; the track keeps its height while empty. */
+/* Time strip without a head line (declutter-workspace DW10): 6 + 31 + 6 + 1 = 44 px in every
+   state (goal 44, at most 56); the track keeps its height while empty. */
 .time-strip {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 4px 16px 0;
+  padding: 6px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-}
-
-.time-strip-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  height: 16px;
-  line-height: 16px;
-  white-space: nowrap;
-}
-
-.time-strip-range {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.time-strip-info {
-  margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted);
 }
 
 /* Bars (24 px) and drive row (7 px); the cursor is set per hit zone (TimeStrip.tsx, design S7). */
@@ -78,6 +55,36 @@
 
 .time-strip-bars > span.shown {
   background: var(--accent);
+}
+
+/* State text and drop text (DW10), centred in the track's box so the strip never changes height;
+   the panel behind it keeps it readable over bars. */
+.time-strip-note {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 6px;
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+  font: 12px / 16px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.time-strip-note.drop {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.time-strip-note.drop.refused {
+  color: var(--error);
 }
 
 /* Over the bars, in this order: window, brush, markers; none takes pointer input, so the bar
@@ -205,26 +212,7 @@
   pointer-events: auto;
 }
 
-/* Events count after the range (add-events V5): never cut, range and info truncate first. */
-.time-strip-events {
-  flex: none;
-  box-sizing: border-box;
-  height: 16px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--band);
-  color: var(--muted);
-  font: 11px / 16px var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.time-strip-events:hover {
-  color: var(--text);
-}
-
-/* Signal drop on the strip (add-events V10): an outline drawn inside, so the strip stays 55 px. */
+/* Signal drop on the strip (add-events V10): an outline drawn inside, so the strip keeps its height. */
 .time-strip.drop-target {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -236,31 +224,7 @@
   cursor: not-allowed;
 }
 
-.time-strip-drop {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.time-strip-drop.refused {
-  color: var(--error);
-}
-
-/* Scope head (add-scope Z12): the scope text truncates after the range; the buttons are pills of
-   the events count's height, so the strip stays 55 px. */
-.time-strip-scope {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.time-strip-head .time-strip-range {
-  flex: 0 10 auto;
-  min-width: 0;
-}
-
+/* Pill button of the context row (session bar, scope row: Widen, Clear; add-scope Z12). */
 .time-strip-button {
   flex: none;
   box-sizing: border-box;
@@ -330,4 +294,10 @@
 .time-strip-menu > button:hover,
 .time-strip-menu > button:focus-visible {
   background: var(--bg);
+}
+
+/* Skeleton bars while the density loads or a step runs (DW4): 3 px, slate-200, no accent. */
+.time-strip-bars.skeleton > span {
+  height: 3px;
+  background: var(--border);
 }

@@ -35,7 +35,7 @@ import { OptionBar, RangeButton } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
 import { useCaseCatalog } from "./case/catalog.ts";
 import { SessionBar } from "./case/SessionBar.tsx";
-import { caseOpenEvents, caseResultEvents, endsOpenNote, openNoteText } from "./case/sessionBar.ts";
+import { caseResultEvents, endsOpenNote, openNoteText, pendingTarget } from "./case/sessionBar.ts";
 import {
   type AnyDragSource,
   canAdd,
@@ -72,6 +72,7 @@ import { appliedFilter, shownEvents, useEvents } from "./events/eventsData.ts";
 import { stepEvent } from "./events/list.ts";
 import { resolveTarget } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
+import type { TabEvents } from "./explorer/tabs.ts";
 import { ignoreFileDrops, openDroppedCatalog } from "./filedrop.ts";
 import { StatusBar } from "./footer/StatusBar.tsx";
 import { useMeta } from "./footer/useMeta.ts";
@@ -95,8 +96,9 @@ import { useLive } from "./live.ts";
 import { holdNoSelect } from "./noselect.ts";
 import { NeighbourPreload } from "./preload/preload.ts";
 import { FLASH_MS, markTarget, revealDelta } from "./reveal.ts";
+import { ScopeRow } from "./time/ScopeRow.tsx";
 import { resultStripEvents, scopeRange } from "./time/scope.ts";
-import { stripDataRef } from "./time/strip.ts";
+import { nearbyHint, stripDataRef } from "./time/strip.ts";
 import { centreRange, stepDrive } from "./time/stripGeometry.ts";
 import {
   loadedDrives,
@@ -305,29 +307,18 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     showStartAgain();
     setStartHidden(false);
   }, []);
+  // "?" is always the top row's last item, never in the "⋯" menu (design DW8).
   const helpTail = useMemo<OverflowTail>(
     () => ({
       row: (
         <button
           type="button"
-          className="help-button overflow-item"
+          className="help-button"
           aria-label="Help"
           title={HINTS.help}
           onClick={() => toggleHelp("manual")}
         >
           ?
-        </button>
-      ),
-      menu: (close) => (
-        <button
-          type="button"
-          title={HINTS.help}
-          onClick={() => {
-            close(true);
-            toggleHelp("manual");
-          }}
-        >
-          Help
         </button>
       ),
     }),
@@ -538,8 +529,44 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     },
     [toStrip, showResult, preload],
   );
+  // A case step or go on its way (design DW4): the session bar shows its target's slots at once,
+  // the progress line and the strip's skeleton bars run until the result's revision is rendered
+  // (Acknowledger.onRendered) or the command is refused.
+  const [pending, setPending] = useState<number | undefined>();
+  const [progress, setProgress] = useState(false);
+  const pendingRef = useRef<number | undefined>(undefined);
+  /** The latest case command; an older one's result no longer ends the step. */
+  const caseSeq = useRef(0);
+  /** The revision the pending step waits for, once its result is in. */
+  const awaitedRevision = useRef<number | undefined>(undefined);
+  const renderedRevision = useRef(-1);
+  const endStep = useCallback(() => {
+    pendingRef.current = undefined;
+    awaitedRevision.current = undefined;
+    setPending(undefined);
+    setProgress(false);
+  }, []);
   // The session bar sends without waiting; its result goes to the message line like any command.
-  const caseCommand = useCallback((input: CommandInput) => void command(input), [command]);
+  const caseCommand = useCallback(
+    (input: CommandInput) => {
+      const open = liveRef.current.workspace?.case;
+      const target = open ? pendingTarget(open, pendingRef.current, input) : undefined;
+      const seq = ++caseSeq.current;
+      if (target !== undefined) {
+        pendingRef.current = target;
+        awaitedRevision.current = undefined;
+        setPending(target);
+        setProgress(true);
+      }
+      const settle = (result: CommandResult | undefined) => {
+        if (seq !== caseSeq.current || pendingRef.current === undefined) return;
+        if (!result?.ok || renderedRevision.current >= result.revision) endStep();
+        else awaitedRevision.current = result.revision;
+      };
+      command(input).then(settle, () => settle(undefined));
+    },
+    [command, endStep],
+  );
 
   // Windows this tab created, and the target of an explorer add, are scrolled into view and flash
   // once the workspace lists them (add-guidance H3; the effect below the window list refs). Drops
@@ -1312,6 +1339,18 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     workspace?.scope,
     barWindow ? toRange(barWindow.range) : undefined,
   );
+  // The strip's events, counted on the sidebar's Events tab (design DW14); under a vehicle scope
+  // with "nearby" as tooltip.
+  const eventsTab = useMemo<TabEvents | undefined>(
+    () =>
+      stripEvents && {
+        shown: stripEvents.shown.length,
+        total: stripEvents.total,
+        ...(stripEvents.sentence !== undefined && { sentence: stripEvents.sentence }),
+        ...(workspace?.scope?.object && workWindow && { nearby: nearbyHint(workWindow) }),
+      },
+    [stripEvents, workspace?.scope?.object, workWindow],
+  );
   // A stale state without options still renders (design S3).
   const digits = workspace?.options?.digits ?? 3;
   const diff = workspace?.cursors?.diff ?? false;
@@ -1375,6 +1414,11 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     return sent;
   });
   const ack = ackRef.current;
+  ack.onRendered = (revision) => {
+    renderedRevision.current = revision;
+    const awaited = awaitedRevision.current;
+    if (awaited !== undefined && revision >= awaited) endStep();
+  };
   const onReady = useCallback(
     (windowId: string, revision: number, errors: RenderError[]) =>
       ack.report(windowId, revision, errors),
@@ -1495,10 +1539,9 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       const s = infos.current.get(id);
       return s && shownName(s);
     };
-    // One case notice (fix-handoff-findings X4): it ends with the tab's next command.
-    showResult(caseOpenEvents(report, openedCase, nameOf));
+    // The open's report goes into the session bar's note only, not the message line (design DW7).
     setOpenNote(openNoteText(report, openedCase, nameOf));
-  }, [start, openedCase, showResult]);
+  }, [start, openedCase]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -1570,6 +1613,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         onOpen={openSidebar}
         part={part}
         onPart={setPart}
+        eventsTab={eventsTab}
       >
         <EventsPanel
           list={stripList}
@@ -1594,11 +1638,26 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
               <button
                 type="button"
                 className="sidebar-toggle"
+                aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                 aria-expanded={sidebarOpen}
                 title={HINTS.sidebarToggle(sidebarOpen)}
                 onClick={toggleSidebar}
               >
-                Signals
+                {/* Panel icon of the mock (Main.dc.html), design DW8. */}
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <line x1="9" y1="4" x2="9" y2="20" />
+                </svg>
               </button>
               {workspace ? (
                 <OverflowTailContext.Provider value={helpTail}>
@@ -1636,27 +1695,37 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                 </div>
               )}
             </div>
+            {/* The context row (design DW3): the session bar for a case, with skeletons from the
+                first paint of an opening /open#cases= page; else the scope row; else nothing. */}
+            {workspace?.case || (start.cases && !workspace) ? (
+              <SessionBar
+                caseState={workspace?.case}
+                scope={workspace?.scope}
+                pending={pending}
+                progress={progress}
+                onCommand={caseCommand}
+                openNote={openNote}
+                onDismissNote={() => setOpenNote(undefined)}
+              />
+            ) : (
+              workspace?.scope && (
+                <ScopeRow
+                  scope={workspace.scope}
+                  mode={meta.meta?.catalog.mode}
+                  onScopeCommand={command}
+                />
+              )
+            )}
             <TimeStrip
               workspace={workspace ?? EMPTY_WORKSPACE}
               navigate={barWindow ? stripNavigate : undefined}
               events={stripEvents}
-              onOpenEvents={openEvents}
               drop={stripDrop}
               mode={meta.meta?.catalog.mode}
               onScopeCommand={command}
               caseCatalog={caseCatalog}
               workWindow={workWindow}
-              sessionBar={
-                workspace?.case && (
-                  <SessionBar
-                    caseState={workspace.case}
-                    scope={workspace.scope}
-                    onCommand={caseCommand}
-                    openNote={openNote}
-                    onDismissNote={() => setOpenNote(undefined)}
-                  />
-                )
-              }
+              stepping={progress}
             />
           </div>
           {/* Hidden during a drag but kept in place, so nothing below it moves (B1, B2). */}

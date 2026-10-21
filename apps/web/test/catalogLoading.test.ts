@@ -214,14 +214,14 @@ describe("series loader while the catalog loads", () => {
     const { loader, calls } = setup();
     loader.update([view]);
     await tick(LOAD_INTERVAL_MS);
-    await failCall(calls[0], new ApiRequestError(404, "unknown_signal", "no such signal"));
+    await failCall(calls[0], new ApiRequestError(404, "not_found", "no such thing"));
     await tick(120_000);
     expect(calls).toHaveLength(1);
     expect(loader.get("a1")).toMatchObject({
       status: "error",
-      error: "unknown_signal: no such signal",
+      error: "not_found: no such thing",
     });
-    expect(loadStatusText(loader.get("a1"))).toBe("failed: unknown_signal: no such signal");
+    expect(loadStatusText(loader.get("a1"))).toBe("failed: not_found: no such thing");
     loader.dispose();
   });
 

@@ -80,17 +80,6 @@
   line-height: 16px;
 }
 
-/* Neutral badge (design L4, T4): status colours would compete with the signal palette. */
-.window .window-header .badge {
-  grid-column: -4;
-  padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--band);
-  color: var(--soft-ink);
-  font-size: 11px;
-  line-height: 16px;
-}
-
 .window .window-header .cursor-times {
   grid-column: -4;
   display: flex;
@@ -110,6 +99,34 @@
 .window .window-header .range.own-range {
   font-size: 11px;
   white-space: nowrap;
+}
+
+/* Timeseries header (DW11): title | "Add to" | own range (only while unlinked, in the 1fr cell,
+   so it is cut first and its absence moves nothing) | mode tag | "⋯". The tag and "⋯" cells have
+   fixed widths, so their x depends only on the window's width. */
+.window.timeseries-window .window-header {
+  grid-template-columns: minmax(6ch, max-content) minmax(0, 1fr) auto auto;
+}
+
+.window.timeseries-window.marked .window-header {
+  grid-template-columns: minmax(6ch, max-content) auto minmax(0, 1fr) auto auto;
+}
+
+.window.timeseries-window .window-header .range {
+  grid-column: -4;
+}
+
+/* Mode tag (DW11): neutral, no pill (status colours would compete with the signal palette); a
+   slot as wide as the longest tag, "part 1.5 min" (12 characters), right-aligned, always there. */
+.window .window-header .mode-tag {
+  grid-column: -3;
+  box-sizing: border-box;
+  width: 12ch;
+  overflow: hidden;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .window .window-header .window-controls {
@@ -171,6 +188,23 @@
 
 .window .window-menu-items button:is(:hover, :focus-visible) {
   background: var(--border);
+}
+
+/* Display items (DW11): a check column in front of every item, so the labels line up. */
+.window .window-menu-items button::before {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+}
+
+.window .window-menu-items button[aria-checked="true"]::before {
+  content: "✓";
+}
+
+.window .window-menu-items button.separated {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
 /* Marked window (add-guidance H2): a 2 px accent frame; the border stays 1 px, so nothing moves,
@@ -420,18 +454,35 @@
   touch-action: none;
 }
 
-/* Readout (design N3): cursor times above the legend rows. */
-.window .readout-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 16px;
-  margin-top: 6px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+/* Legend header row (DW12): the cursor times head their columns. Cursor columns have one width,
+   --cursor-col (measured from "A 00:00:00.000" in TimeseriesWindow), so no cursor move resizes
+   one; a longer text is cut with "…" and keeps its full text as tooltip. */
+.window .signals .cursor-col {
+  box-sizing: border-box;
+  width: var(--cursor-col, 84px);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Next-step hint after the cursor times (add-guidance H7, S1). */
-.window .readout-row .next-hint {
+.window .signals .cursor-head {
+  color: var(--soft-ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Next-step hint in the name cell (add-guidance H7, DW15), over the name and unit columns. Its
+   width is 0 and its minimum the cells', so it adds nothing to the column widths: it moves no
+   column and is cut instead. */
+.window .signals .legend-head .next-hint {
+  grid-column: span 2;
+  width: 0;
+  min-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-family: var(--font-sans);
   font-size: 11px;
@@ -458,7 +509,7 @@
 
 /* Status and SNA share as pills (design T4), inside their own auto columns; complete and a
    signal without SNA keep an empty cell. */
-.window .signals :is(.status.loading, .status.error, .sna:not(:empty)) {
+.window .signals :is(.status.loading, .status.missing, .status.error, .sna:not(:empty)) {
   justify-self: start;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -467,7 +518,8 @@
   white-space: nowrap;
 }
 
-.window .signals .status.loading {
+/* A missing signal (DW13) reads as calm as one loading. */
+.window .signals :is(.status.loading, .status.missing) {
   background: var(--band);
   color: var(--soft-ink);
 }

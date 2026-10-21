@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
 import { SeriesCache } from "../src/chart/cache.ts";
 import {
+  isMissing,
   LOAD_INTERVAL_MS,
   type LoaderOptions,
   type LoadRequest,
@@ -18,6 +19,7 @@ import {
   SeriesLoader,
 } from "../src/chart/loader.ts";
 import { levelFor, tileable, touchedTiles } from "../src/chart/tiles.ts";
+import { apiError } from "./apiError.ts";
 import {
   densePoints,
   type FakeCall,
@@ -661,12 +663,13 @@ describe("SeriesLoader retries", () => {
     const t = rsetup();
     const loader = t.make();
     loader.update([view(0n)]);
-    await fail(t.calls[0], new ApiRequestError(404, "unknown_signal", "no such signal"));
+    // Not `unknown_signal`: that one reads as missing and stays so for the same view (DW13).
+    await fail(t.calls[0], new ApiRequestError(400, "bad_range", "no such range"));
     await tick(120000);
     expect(t.calls).toHaveLength(1);
     expect(loader.get("a1")).toMatchObject({
       status: "error",
-      error: "unknown_signal: no such signal",
+      error: "bad_range: no such range",
     });
 
     // Second half: the identical request again retries it.
@@ -675,6 +678,45 @@ describe("SeriesLoader retries", () => {
     expect(t.calls).toHaveLength(2);
     expect(t.calls[1]?.request).toEqual(t.calls[0]?.request);
     loader.dispose();
+  });
+
+  it("reads an unknown signal as missing", async () => {
+    // The API error of a 404 answer {error: {code: "unknown_signal", message: ...}}, as api.ts builds it.
+    const unknown = await apiError(404, "unknown_signal", "unknown signal: othercar/X");
+    expect(unknown).toBeInstanceOf(ApiRequestError);
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n)]);
+    await fail(t.calls[0], unknown);
+    const state = loader.get("a1");
+    // The status and code of the API error reach the loader state.
+    expect(state).toMatchObject({ status: "error", errorStatus: 404, errorCode: "unknown_signal" });
+    expect(isMissing(state)).toBe(true);
+    // missing outside and inside a case, never `failed: …` and never `not in this session`.
+    expect(loadStatusText(state, false)).toBe("missing");
+    expect(loadStatusText(state, true)).toBe("missing");
+    // Not retried: neither by backoff nor when the same view is asked again.
+    await tick(120000);
+    loader.update([view(0n)]);
+    await tick(120000);
+    expect(t.calls).toHaveLength(1);
+    loader.dispose();
+
+    // Another failure of the same request kind keeps `failed: <message>` and is not missing.
+    const other = rsetup();
+    const second = other.make();
+    second.update([view(0n)]);
+    await fail(other.calls[0], await apiError(502, "source_error", "down"));
+    expect(isMissing(second.get("a1"))).toBe(false);
+    expect(loadStatusText(second.get("a1"), true)).toBe("failed: source_error: down");
+    // A 404 with another code is a plain failure, too.
+    const odd = rsetup();
+    const third = odd.make();
+    third.update([view(0n)]);
+    await fail(odd.calls[0], await apiError(404, "not_found", "no such thing"));
+    expect(loadStatusText(third.get("a1"), true)).toBe("failed: not_found: no such thing");
+    second.dispose();
+    third.dispose();
   });
 
   it("retries at once when another request of the tab succeeds", async () => {

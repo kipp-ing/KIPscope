@@ -68,17 +68,22 @@ export function retryable(error: unknown): boolean {
   return !(error instanceof ApiRequestError && error.status >= 400 && error.status <= 499);
 }
 
-/** The error text of a signal the open catalog's session lacks (add-case-open K8, K14). */
-export const NOT_IN_SESSION = "not in this session";
+/** The status text of a signal the shown data ref lacks (design DW13, DW16). */
+export const MISSING = "missing";
+
+/** The failure is a 404 `unknown_signal`: the shown data ref lacks the signal (DW13). */
+export function isMissing(
+  state: { errorStatus?: number | undefined; errorCode?: string | undefined } | undefined,
+): boolean {
+  return state?.errorStatus === 404 && state.errorCode === "unknown_signal";
+}
 
 /**
- * The legend's status text of a signal: failed while an error is kept, empty when complete. In a
- * workspace with a catalog (`inCase`), a 404 `unknown_signal` reads NOT_IN_SESSION.
+ * The legend's status text of a signal: MISSING for a 404 `unknown_signal`, in a case or not
+ * (`_inCase` no longer changes it, DW13); failed while another error is kept; empty when complete.
  */
-export function loadStatusText(state: LoadState | undefined, inCase = false): string {
-  if (inCase && state?.errorStatus === 404 && state.errorCode === "unknown_signal") {
-    return NOT_IN_SESSION;
-  }
+export function loadStatusText(state: LoadState | undefined, _inCase = false): string {
+  if (isMissing(state)) return MISSING;
   if (state?.error !== undefined) return `failed: ${state.error}`;
   return state?.status === "complete" ? "" : "loading";
 }
@@ -219,8 +224,9 @@ export class SeriesLoader {
     for (const request of requests) {
       const state = this.states.get(request.key);
       if (state?.request === requestId(request)) {
-        // The same request again retries a failed load, a 4xx too, after the floor (R3 c).
-        if (this.options.retry && state.status === "error") {
+        // The same request again retries a failed load, a 4xx too, after the floor (R3 c); a
+        // missing signal stays missing for the same view (DW13).
+        if (this.options.retry && state.status === "error" && !isMissing(state)) {
           const at = (this.failures.get(request.key)?.at ?? 0) + RETRY_FLOOR_MS;
           if (at <= Date.now()) {
             this.clearRetry(request.key);
@@ -506,13 +512,17 @@ export class SeriesLoader {
   }
 
   /**
-   * The key's request failed: the shown result and placeholder stay (R5). With `retry`, the failure
-   * counts and a retryable one is retried after the next delay of the sequence (R2).
+   * The key's request failed: the shown result and placeholder stay (R5), except for a missing
+   * signal (DW13). With `retry`, the failure counts and a retryable one is retried after the next delay of the sequence (R2).
    */
   private fail(key: string, id: string, error: unknown): void {
     const shown = this.states.get(key);
     // The server still loads its catalog: with `retry` the key stays loading, without an error.
     const waits = this.options.retry === true && isCatalogLoading(error);
+    // A missing signal keeps no result: it belongs to a data ref that had the signal (DW13).
+    const missing =
+      error instanceof ApiRequestError &&
+      isMissing({ errorStatus: error.status, errorCode: error.code });
     this.states.set(key, {
       ...(waits
         ? { status: "loading", request: id }
@@ -524,8 +534,8 @@ export class SeriesLoader {
               ? { errorStatus: error.status, errorCode: error.code }
               : {}),
           }),
-      ...(shown?.result ? { result: shown.result } : {}),
-      ...(shown?.placeholder ? { placeholder: true } : {}),
+      ...(shown?.result && !missing ? { result: shown.result } : {}),
+      ...(shown?.placeholder && !missing ? { placeholder: true } : {}),
     });
     if (waits) this.waiting.add(key);
     if (!this.options.retry) return;
@@ -686,6 +696,7 @@ export class SeriesLoader {
       const state = this.states.get(request.key);
       if (!state || state.status === "complete" || state.request !== requestId(request)) continue;
       if (state.status === "error" && state.result && !state.placeholder) continue;
+      if (isMissing(state)) continue;
       const view = viewOf(request);
       if (!view.tileable) continue;
       const shown = this.placeholderOf(request.key, request.signalId, view);

@@ -67,7 +67,7 @@ export function nextWorkWindow(
   return workWindow({ from: view.from.toString(), to: view.to.toString() }, scope);
 }
 
-/** Tooltip of the events nearby, strip count and events switch (add-case-open K14). */
+/** Tooltip of the events nearby: Events tab count and events switch (add-case-open K14). */
 export const nearbyHint = (w: TimeRange): string =>
   `Events within ${formatSpan(BigInt(w.to) - BigInt(w.from))} around the view`;
 

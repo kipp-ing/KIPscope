@@ -16,9 +16,19 @@ export class Acknowledger {
   private revision = -1;
   private windowIds: readonly string[] = [];
   private lastSent = "";
+  private lastRendered = -1;
+  /**
+   * Called once per revision when every window reported it (at once with no window), whether or not
+   * the channel took the message: the end of a pending step's progress line (design DW4).
+   */
+  onRendered?: ((revision: number) => void) | undefined;
 
-  constructor(send: (message: RenderedMessage) => boolean) {
+  constructor(
+    send: (message: RenderedMessage) => boolean,
+    onRendered?: (revision: number) => void,
+  ) {
     this.send = send;
+    this.onRendered = onRendered;
   }
 
   /** The live state's revision and window IDs in workspace order. */
@@ -45,6 +55,10 @@ export class Acknowledger {
     if (revision < 0) return;
     const reports = this.windowIds.map((id) => this.reports.get(id));
     if (reports.some((r) => r?.revision !== revision)) return;
+    if (revision !== this.lastRendered) {
+      this.lastRendered = revision;
+      this.onRendered?.(revision);
+    }
     // Bounded like RenderedMessage (design H4), so the server never ignores it.
     const errors = reports
       .flatMap((r) => r?.errors ?? [])

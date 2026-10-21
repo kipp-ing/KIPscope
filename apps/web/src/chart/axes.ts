@@ -3,6 +3,8 @@ export interface AxisInput {
   label: string;
   unit?: string;
   color: string;
+  /** The shown data ref lacks the signal (DW13): no scale, no side, no axis title. */
+  missing?: true;
 }
 
 export type Side = "L" | "R" | "L2" | "R2";
@@ -15,11 +17,11 @@ export interface AxisSpec {
 }
 
 export interface AxisLayout {
-  /** Scale key per signal key: "u:<unit>" or "s:<key>" for signals without unit. */
+  /** Scale key per signal key: "u:<unit>" or "s:<key>" for signals without unit; none if missing. */
   scaleOf: Map<string, string>;
   /** Drawn axes, one per scale, at most four: "L", "R", "L2", "R2" in scale order. */
   axes: AxisSpec[];
-  /** Per signal key: its axis side; undefined only beyond four scales (guard, see design D3). */
+  /** Per signal key: its axis side; undefined beyond four scales (guard, see design D3) or if missing. */
   sideOf: Map<string, Side | undefined>;
 }
 
@@ -31,12 +33,14 @@ const SIDES: Side[] = ["L", "R", "L2", "R2"];
 
 /**
  * One y scale per unit (trimmed; empty counts as none), one per unit-less signal. Scales are
- * ordered by first appearance, so sides do not depend on which signals have loaded.
+ * ordered by first appearance, so sides do not depend on which signals have loaded. A missing
+ * signal gets no scale and no side.
  */
 export function layoutAxes(inputs: AxisInput[]): AxisLayout {
   const scaleOf = new Map<string, string>();
   const scales = new Map<string, { title: string; colors: string[] }>();
   for (const input of inputs) {
+    if (input.missing) continue;
     const unit = input.unit?.trim();
     const scale = unit ? `u:${unit}` : `s:${input.key}`;
     scaleOf.set(input.key, scale);

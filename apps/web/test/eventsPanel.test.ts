@@ -24,6 +24,8 @@ import {
   rowName,
   stepEvent,
 } from "../src/events/list.ts";
+import { sidebarTabs } from "../src/explorer/tabs.ts";
+import { nearbyHint } from "../src/time/strip.ts";
 import { TimeStrip } from "../src/time/TimeStrip.tsx";
 import { caseWorkspace } from "./caseFixtures.ts";
 import { atB, fakeEvent } from "./fakeEvents.ts";
@@ -378,7 +380,6 @@ describe("events panel with a catalog (add-case-open)", () => {
     expect(nearby).toContain("In view");
     expect(panel()).not.toContain("Nearby");
 
-    // The strip's count reads "<shown> of <total> events nearby".
     const workspace = {
       ...caseWorkspace({ current: 0 }),
       scope: {
@@ -388,6 +389,19 @@ describe("events panel with a catalog (add-case-open)", () => {
         object: true as const,
       },
     };
+    // The Events tab's count is the shown number; under a vehicle scope its tooltip is the work
+    // window's "nearby" hint, otherwise the events count (events "Events count on the Events tab").
+    const nearbyTab = sidebarTabs({
+      signals: 553,
+      events: { shown: 1, total: 9, nearby: nearbyHint(window) },
+    }).events;
+    expect(nearbyTab.count).toBe("1");
+    expect(nearbyTab.title).toBe("Events within 3 d around the view");
+    const linkedTab = sidebarTabs({ signals: 553, events: { shown: 1, total: 9 } }).events;
+    expect(linkedTab.count).toBe("1");
+    expect(linkedTab.title).toContain("9 in the recording");
+    expect(linkedTab.title).not.toContain("around the view");
+    // The strip has no head line any more: neither count text nor the label are in its markup.
     const strip = renderToStaticMarkup(
       createElement(TimeStrip, {
         workspace,
@@ -395,14 +409,7 @@ describe("events panel with a catalog (add-case-open)", () => {
         workWindow: window,
       }),
     );
-    expect(strip).toContain("1 of 9 events nearby");
-    const linked = renderToStaticMarkup(
-      createElement(TimeStrip, {
-        workspace: { ...workspace, scope: { ...workspace.scope, object: undefined } as never },
-        events: { shown: [dtc], total: 9 },
-      }),
-    );
-    expect(linked).toContain("1 of 9 events");
-    expect(linked).not.toContain("nearby");
+    expect(strip).not.toContain("events nearby");
+    expect(strip).not.toContain("time-strip-head");
   });
 });

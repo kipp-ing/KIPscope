@@ -20,7 +20,16 @@ import { useScopeChange } from "../chart/rescope.ts";
 import { HINTS } from "../help/hints.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
-import { type Cell, deltaCell, formatCell, headerTimes, loadingCell, NO_VALUE } from "./format.ts";
+import {
+  type Cell,
+  deltaCell,
+  formatCell,
+  headerTimes,
+  loadingCell,
+  NO_VALUE,
+  type RowStatus,
+  valueRowStatus,
+} from "./format.ts";
 import {
   cellState,
   type FetchValue,
@@ -96,27 +105,31 @@ interface Props {
 }
 
 /**
- * One value cell (state from cellState): "—" while its cursor is off, the request's error, the
- * loading state until the value for the current time arrives, then the value.
+ * One value cell (state from cellState): "—" while its cursor is off, `failed: <message>` for a
+ * failed request, "—" with the missing tooltip for a signal the data ref lacks (valueRowStatus,
+ * DW13), the loading state until the value for the current time arrives, then the value.
  */
 function ValueCell({
   state,
+  status,
   unit,
   digits,
   info,
 }: {
   state: ValueState | undefined;
+  status: RowStatus;
   unit: string | undefined;
   digits: Digits;
   info: SignalInfo | undefined;
 }) {
-  if (state?.status === "error") {
+  if (status.tone === "error") {
     return (
-      <td className="value error" title={state.error}>
-        failed: {state.error}
+      <td className="value error" title={status.title}>
+        {status.text}
       </td>
     );
   }
+  if (status.tone === "muted") return <CellView cell={missingCell(status)} />;
   const r = state?.result;
   const cell = formatCell(r?.value, r?.at, r?.next, unit, digits, info);
   return <CellView cell={state?.status === "loading" ? loadingCell(cell) : cell} />;
@@ -128,6 +141,7 @@ function ValueCell({
  */
 function LiveValueCell({
   state,
+  status,
   set,
   moving,
   unit,
@@ -135,6 +149,7 @@ function LiveValueCell({
   info,
 }: {
   state: ValueState | undefined;
+  status: RowStatus;
   set: boolean;
   moving: boolean;
   unit: string | undefined;
@@ -144,11 +159,17 @@ function LiveValueCell({
   if (!set) return <td className="value" />;
   const r = state?.result;
   const cell: Cell =
-    state?.status === "error"
-      ? { text: NO_VALUE, title: `failed: ${state.error}` }
-      : formatCell(r?.value, r?.at, r?.next, unit, digits, info);
+    status.tone === "muted"
+      ? missingCell(status)
+      : status.tone === "error"
+        ? { text: NO_VALUE, title: status.text }
+        : formatCell(r?.value, r?.at, r?.next, unit, digits, info);
   return <CellView cell={moving || state?.status === "loading" ? loadingCell(cell) : cell} />;
 }
+
+/** "—" with the missing tooltip (DW13). */
+const missingCell = (status: RowStatus): Cell =>
+  status.title === undefined ? { text: NO_VALUE } : { text: NO_VALUE, title: status.title };
 
 function CellView({ cell }: { cell: Cell }) {
   return (
@@ -338,6 +359,16 @@ export function ValuesWindow({
               const keyL = `${s.id}|l`;
               const stateA = cellState(loader.get(keyA), requestOf.get(keyA));
               const stateB = cellState(loader.get(keyB), requestOf.get(keyB));
+              const stateL = cellState(liveLoader.get(keyL), liveRequestOf.get(keyL));
+              // The missing tooltip names the data ref and the shown name, the ID's name part
+              // when the signal is unknown (DW13).
+              const slash = s.signalId.indexOf("/");
+              const dataRef = s.signalId.slice(0, slash);
+              const statusName = meta ? name : s.signalId.slice(slash + 1);
+              const statusA = valueRowStatus(stateA, dataRef, statusName);
+              const statusB = valueRowStatus(stateB, dataRef, statusName);
+              const statusL = valueRowStatus(stateL, dataRef, statusName);
+              const missing = [statusA, statusB, statusL].find((x) => x.tone === "muted");
               const unit = meta?.unit;
               const delta = deltaCell(
                 stateA?.result?.value,
@@ -365,10 +396,29 @@ export function ValuesWindow({
                       >
                         {name}
                       </span>
+                      {missing && (
+                        <span className="status missing" title={missing.title}>
+                          {missing.text}
+                        </span>
+                      )}
                     </span>
                   </td>
-                  <ValueCell state={stateA} unit={unit} digits={digits} info={meta} />
-                  {showB && <ValueCell state={stateB} unit={unit} digits={digits} info={meta} />}
+                  <ValueCell
+                    state={stateA}
+                    status={statusA}
+                    unit={unit}
+                    digits={digits}
+                    info={meta}
+                  />
+                  {showB && (
+                    <ValueCell
+                      state={stateB}
+                      status={statusB}
+                      unit={unit}
+                      digits={digits}
+                      info={meta}
+                    />
+                  )}
                   {diff && (
                     <CellView
                       cell={
@@ -379,7 +429,8 @@ export function ValuesWindow({
                     />
                   )}
                   <LiveValueCell
-                    state={cellState(liveLoader.get(keyL), liveRequestOf.get(keyL))}
+                    state={stateL}
+                    status={statusL}
                     set={liveT !== undefined}
                     moving={liveT !== rested}
                     unit={unit}

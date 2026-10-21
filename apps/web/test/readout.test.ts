@@ -10,6 +10,7 @@ import { snapCursorTime } from "../src/chart/cursors.ts";
 import {
   atLevel,
   chartValueAt,
+  legendHeaders,
   readoutCell,
   readoutDelta,
   readoutSource,
@@ -17,6 +18,8 @@ import {
   sourceDelta,
 } from "../src/chart/readout.ts";
 import { LOADING } from "../src/values/format.ts";
+import { ValueLoader } from "../src/values/loader.ts";
+import { apiError } from "./apiError.ts";
 
 // 2026-10-13T13:08:00Z in ns; everything below is an offset from it.
 const T0 = 1_791_896_880_000_000_000n;
@@ -609,5 +612,90 @@ describe("readouts across gaps (add-gap-display)", () => {
       false,
     );
     expect(sourceDelta(exact, ok, "V", 3)).toEqual({ text: "—" });
+  });
+});
+
+describe("legend header row", () => {
+  // A = 15:08:00.093456789 local (13:08:00.093Z), B = A + 902 ms; the clock is cut, never rounded up.
+  const A = 1791896880093456789n;
+  const B = A + 902_000_000n;
+
+  it("heads the legend columns with the cursor times", () => {
+    // Both cursors with diff: A, B and Δt.
+    const both = legendHeaders(A, B, true);
+    expect(both?.a).toEqual({ text: "A 15:08:00.093", title: "2026-10-13 15:08:00.093456789" });
+    expect(both?.b?.text).toBe("B 15:08:00.995");
+    expect(both?.b?.title).toBe("2026-10-13 15:08:00.995456789");
+    expect(both?.d?.text).toBe("Δt +902 ms");
+
+    // A alone: only the A cell.
+    const alone = legendHeaders(A, undefined, false);
+    expect(alone?.a?.text).toBe("A 15:08:00.093");
+    expect(alone?.b).toBeUndefined();
+    expect(alone?.d).toBeUndefined();
+
+    // B without diff: A and B, no Δt.
+    const noDiff = legendHeaders(A, B, false);
+    expect(noDiff?.a?.text).toBe("A 15:08:00.093");
+    expect(noDiff?.b?.text).toBe("B 15:08:00.995");
+    expect(noDiff?.d).toBeUndefined();
+
+    // Diff on while B is off: `B off`, no Δt.
+    const bOff = legendHeaders(A, undefined, true);
+    expect(bOff?.a?.text).toBe("A 15:08:00.093");
+    expect(bOff?.b?.text).toBe("B off");
+    expect(bOff?.d).toBeUndefined();
+
+    // No cursor: no header row.
+    expect(legendHeaders(undefined, undefined, false)).toBeUndefined();
+
+    // Next-step hints (guidance "Next-step hints at the cursors"): B after A, Diff after B.
+    const both_ = { b: true, diff: true };
+    expect(legendHeaders(A, undefined, false, both_)?.hint).toBe("Shift+click sets B");
+    expect(legendHeaders(A, B, false, both_)?.hint).toBe("Diff shows Δ and Δt");
+    expect(legendHeaders(A, B, true, both_)?.hint).toBeUndefined();
+    // A hint that was learned stays away.
+    expect(legendHeaders(A, undefined, false, { b: false, diff: true })?.hint).toBeUndefined();
+    expect(legendHeaders(A, B, false, { b: true, diff: false })?.hint).toBeUndefined();
+  });
+});
+
+describe("missing signal in the readout", () => {
+  const info = { id: "othercar/X", dataRef: "othercar", name: "X" } as SignalInfo;
+  const drawn = { kind: "aggregated" as const, value: 20 };
+
+  /** The value state of a request that failed with `error`, as the values loader keeps it. */
+  async function failed(error: Error) {
+    const loader = new ValueLoader(
+      () => Promise.reject(error),
+      () => {},
+    );
+    loader.update([{ key: "r:a", signalId: "othercar/X", t: "1", mode: "line" }]);
+    await new Promise((r) => setTimeout(r, 0));
+    return loader.get("r:a");
+  }
+
+  it("reads an unknown signal as missing", async () => {
+    const missing = readoutSource(
+      await failed(await apiError(404, "unknown_signal", "unknown signal: othercar/X")),
+      drawn,
+      false,
+    );
+    expect(missing).toMatchObject({ errorStatus: 404, errorCode: "unknown_signal" });
+    expect(sourceCell(missing, "V", 3, info)).toEqual({
+      text: "—",
+      title: "Missing: othercar has no signal X",
+    });
+
+    // Any other failure keeps its message.
+    const down = readoutSource(
+      await failed(await apiError(502, "source_error", "boom")),
+      drawn,
+      false,
+    );
+    expect(sourceCell(down, "V", 3, info)).toEqual({
+      text: "—",
+      title: "failed: source_error: boom",
+    });
   });
 });

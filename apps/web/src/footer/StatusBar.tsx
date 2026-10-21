@@ -2,7 +2,13 @@ import { ATTRIBUTION, type Me, type Measurement, type ServerMeta } from "@kipsco
 import { type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DROP_NEW } from "../chart/drag.ts";
 import { fitFooter } from "./fit.ts";
-import { browserZone, type FooterItem, footerItems, measurementItems } from "./items.ts";
+import {
+  browserZone,
+  type FooterItem,
+  footerItems,
+  measurementItems,
+  statusTooltip,
+} from "./items.ts";
 
 export interface StatusBarProps {
   connected: boolean;
@@ -145,7 +151,10 @@ export function StatusBar(props: StatusBarProps) {
   const shownMeasurement = measured.items.filter((i) => shown.has(i.key));
   const shownAutomatic = automatic.filter((i) => shown.has(i.key));
 
-  const statusText = connected ? `connected · revision ${revision}` : "disconnected";
+  // Revision, source, signal count and build live in the status tooltip (design DW9).
+  const statusText = connected ? "connected" : "disconnected";
+  const statusTitle = statusTooltip(revision, meta, metaStale);
+  const dotError = !connected || (meta !== undefined && !meta.source.reachable);
   // Widths are re-read when a text changes and on every resize of the bar (design F5 risks).
   const textKey = JSON.stringify([statusText, message ?? "", all.map((i) => [i.key, i.text])]);
   const measureRefLatest = useRef<() => void>(() => {});
@@ -185,7 +194,11 @@ export function StatusBar(props: StatusBarProps) {
       {...(dragging ? { "data-drop": DROP_NEW } : {})}
     >
       <div ref={leftRef} className="status-left">
-        <span ref={statusRef} className={`conn ${connected ? "ok" : "down"}`}>
+        <span
+          ref={statusRef}
+          className={`conn ${connected ? "ok" : "down"}${dotError ? " dot-error" : ""}`}
+          title={statusTitle}
+        >
           {statusText}
         </span>
         {message && (

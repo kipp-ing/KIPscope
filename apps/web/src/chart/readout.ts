@@ -16,10 +16,15 @@ import {
   type SignalGaps,
   type SignalInfo,
   shortLabel,
+  shownName,
   splitBuckets,
 } from "@kipscope/shared";
+import { HINTS } from "../help/hints.ts";
+import { formatTime } from "../time/axis.ts";
 import {
   type Cell,
+  formatCursorTime,
+  formatDeltaT,
   isNamed,
   labelTitle,
   loadingCell,
@@ -32,6 +37,7 @@ import {
 } from "../values/format.ts";
 import type { ValueState } from "../values/loader.ts";
 import { stateLevel, stateName } from "./build.ts";
+import { isMissing, MISSING } from "./loader.ts";
 
 /** A value of the chart readout: the values window's kinds plus a bucket mean (design N4). */
 export type ReadoutValue =
@@ -232,6 +238,18 @@ export interface ReadoutSource {
   value: ReadoutValue | undefined;
   loading: boolean;
   error?: string;
+  /** HTTP status and code of an API failure, like the loader state (DW13). */
+  errorStatus?: number;
+  errorCode?: string;
+}
+
+/** A value request's state; the API failure's status and code when the values loader keeps them. */
+type ExactState = ValueState & { errorStatus?: number; errorCode?: string };
+
+/** The signal a missing cell names (DW13): its data ref and shown name. */
+export interface MissingSignal {
+  dataRef: string;
+  name: string;
 }
 
 const isOutside = (v: ReadoutValue | undefined) =>
@@ -245,26 +263,40 @@ const isOutside = (v: ReadoutValue | undefined) =>
  * invisible.
  */
 export function readoutSource(
-  exact: ValueState | undefined,
+  exact: ExactState | undefined,
   drawn: ReadoutValue | undefined,
   previewing: boolean,
 ): ReadoutSource {
   const fallback = isOutside(drawn) ? exact?.result?.value : drawn;
   if (previewing) return { value: fallback, loading: false };
   if (exact?.status === "error") {
-    return { value: undefined, loading: false, error: exact.error ?? "error" };
+    return {
+      value: undefined,
+      loading: false,
+      error: exact.error ?? "error",
+      ...(exact.errorStatus !== undefined ? { errorStatus: exact.errorStatus } : {}),
+      ...(exact.errorCode !== undefined ? { errorCode: exact.errorCode } : {}),
+    };
   }
   if (exact?.status === "complete") return { value: exact.result?.value, loading: false };
   return { value: fallback, loading: true };
 }
 
-/** The cell of one readout source. */
+/**
+ * The cell of one readout source; a missing signal (404 `unknown_signal`) reads "—" with
+ * HINTS.missing, named by `signal`, else by `info` (DW13).
+ */
 export function sourceCell(
   source: ReadoutSource,
   unit: string | undefined,
   digits: Digits,
   info?: SignalInfo,
+  signal?: MissingSignal,
 ): Cell {
+  if (isMissing(source)) {
+    const named = signal ?? (info && { dataRef: info.dataRef, name: shownName(info) });
+    return { text: NO_VALUE, title: named ? HINTS.missing(named.dataRef, named.name) : MISSING };
+  }
   if (source.error !== undefined) return { text: NO_VALUE, title: `failed: ${source.error}` };
   const cell = readoutCell(source.value, unit, digits, info);
   return source.loading ? loadingCell(cell) : cell;
@@ -281,4 +313,47 @@ export function sourceDelta(
   if (a.error !== undefined || b.error !== undefined) return { text: NO_VALUE };
   const cell = readoutDelta(a.value, b.value, unit, digits, info);
   return a.loading || b.loading ? loadingCell(cell) : cell;
+}
+
+/** One cell of the legend's header row (DW12). */
+export interface HeaderCell {
+  text: string;
+  title?: string;
+}
+
+/** The legend's header row (DW12): the cursor columns' heads and the next-step hint (DW15). */
+export interface LegendHeaders {
+  a?: HeaderCell;
+  b?: HeaderCell;
+  d?: HeaderCell;
+  hint?: string;
+}
+
+/** The next-step hints of the name cell (guidance "Next-step hints at the cursors"). */
+export const HINT_B = "Shift+click sets B";
+export const HINT_DIFF = "Diff shows Δ and Δt";
+
+/**
+ * The legend header row (cursors "Readout row"): `A <clock>` (A off: `A off`), `B <clock>` while B
+ * is on or Diff is (`B off`), `Δt <signed>` in diff mode with both; the clock cut to ms, the full
+ * time as tooltip. `hints` (the ones not learned yet) give the name cell's next step. undefined
+ * when no cursor is on.
+ */
+export function legendHeaders(
+  a: bigint | undefined,
+  b: bigint | undefined,
+  diff: boolean,
+  hints?: { b: boolean; diff: boolean },
+): LegendHeaders | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  const time = (name: "A" | "B", t: bigint | undefined): HeaderCell =>
+    t === undefined
+      ? { text: `${name} off` }
+      : { text: `${name} ${formatTime(t, 3)}`, title: formatCursorTime(t) };
+  const headers: LegendHeaders = { a: time("A", a) };
+  if (b !== undefined || diff) headers.b = time("B", b);
+  if (diff && a !== undefined && b !== undefined) headers.d = { text: `Δt ${formatDeltaT(b - a)}` };
+  if (a !== undefined && b === undefined && hints?.b) headers.hint = HINT_B;
+  else if (a !== undefined && b !== undefined && !diff && hints?.diff) headers.hint = HINT_DIFF;
+  return headers;
 }

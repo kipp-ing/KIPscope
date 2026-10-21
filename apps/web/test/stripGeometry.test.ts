@@ -381,6 +381,17 @@ describe("strip geometry", () => {
     expect(barTitle(drivecar, 12)).toBe("2026-10-02 03:00:00 – 2026-10-02 03:05:00 · 30,030 rows");
     expect(barTitle(drivecar, 0)).toBe("2026-10-02 02:00:00 – 2026-10-02 02:05:00 · no rows");
     expect(barTitle(drivecar, 13)).toBe("2026-10-02 03:05:00 – 2026-10-02 03:10:00 · 1 row");
+    // The strip's info is the second line (time-strip "Strip tooltips").
+    const info = "19 s of 6 d recorded · 1 bar = 3 h";
+    expect(barTitle(drivecar, 12, info)).toBe(
+      `2026-10-02 03:00:00 – 2026-10-02 03:05:00 · 30,030 rows\n${info}`,
+    );
+    expect(barTitle(drivecar, 0, info)).toBe(
+      `2026-10-02 02:00:00 – 2026-10-02 02:05:00 · no rows\n${info}`,
+    );
+    expect(barTitle(drivecar, 13, info)).toBe(
+      `2026-10-02 03:05:00 – 2026-10-02 03:10:00 · 1 row\n${info}`,
+    );
     expect(driveTitle(drivecar, 0)).toBe(
       "Drive 1 of 3 · 2026-10-02 03:00:00 – 2026-10-02 03:30:00 · 30 min · 177,180 rows",
     );

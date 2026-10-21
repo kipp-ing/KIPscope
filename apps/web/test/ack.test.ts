@@ -62,4 +62,42 @@ describe("Acknowledger", () => {
     expect(t.accepted).toHaveLength(1);
     expect(t.accepted[0]).toMatchObject({ revision: 7, status: "complete" });
   });
+
+  it("reports a rendered revision once, when every window drew it", () => {
+    // The end of a pending step's progress line (design DW4).
+    const rendered: number[] = [];
+    const ack = new Acknowledger(
+      () => true,
+      (revision) => rendered.push(revision),
+    );
+    ack.setState(7, ["w1", "w2"]);
+    ack.report("w1", 7, []);
+    expect(rendered).toEqual([]); // w2 has not drawn revision 7 yet
+    ack.report("w2", 7, []);
+    expect(rendered).toEqual([7]);
+    ack.report("w1", 7, []); // the same revision again: not twice
+    expect(rendered).toEqual([7]);
+    // A window that reports an error is drawn, too (H6).
+    ack.setState(8, ["w1", "w2"]);
+    ack.report("w1", 8, [{ windowId: "w1", message: "failed" }]);
+    ack.report("w2", 8, []);
+    expect(rendered).toEqual([7, 8]);
+    // Even when the channel dropped the acknowledgement.
+    const dropped: number[] = [];
+    const offline = new Acknowledger(
+      () => false,
+      (revision) => dropped.push(revision),
+    );
+    offline.setState(9, ["w1"]);
+    offline.report("w1", 9, []);
+    expect(dropped).toEqual([9]);
+    // With no window the revision is rendered at once.
+    const none: number[] = [];
+    const empty = new Acknowledger(
+      () => true,
+      (revision) => none.push(revision),
+    );
+    empty.setState(10, []);
+    expect(none).toEqual([10]);
+  });
 });

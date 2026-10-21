@@ -15,11 +15,10 @@ export interface FooterItem {
 export const MEASUREMENT_CLIP = 40;
 
 // Ranks of design F3: lower hides first.
-const RANK_BUILD = 1;
 const RANK_ZONE = 2;
 const RANK_CATALOG = 3;
 const RANK_META = 4;
-// Who the user acts as stays longer than build, zone and catalog (add-multiuser M12).
+// Who the user acts as stays longer than zone and catalog (add-multiuser M12).
 const RANK_USER = 19;
 const RANK_SOURCE = 20;
 const RANK_OBJECT = 21;
@@ -87,9 +86,84 @@ function utcOffset(minutes: number): string {
   return `UTC${minutes < 0 ? "-" : "+"}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
+const sourceLabel = (source: ServerMeta["source"]) =>
+  `${KIND_LABEL[source.kind] ?? source.kind} ${source.database}`;
+
+function sourceTitle(source: ServerMeta["source"], now: Date): string {
+  const label = sourceLabel(source);
+  const checked = `checked ${localTime(source.checkedAt, now)}`;
+  return source.reachable
+    ? `${label}.${source.table} · reachable · ${checked}`
+    : `${label}.${source.table} · unreachable: ${source.error ?? "unknown error"} · ${checked}`;
+}
+
+const NO_SCOPE_TITLE =
+  "scoped catalog: no scope set; open a view link or run kipscope scope set REF FROM TO";
+
+const catalogText = (catalog: ServerMeta["catalog"]) =>
+  catalog.state === "loading" ? "catalog loading" : "catalog unavailable";
+
+function catalogTitle(catalog: ServerMeta["catalog"], now: Date): string {
+  if (catalog.state === "loaded")
+    return catalog.loadedAt
+      ? `catalog loaded ${localTime(catalog.loadedAt, now)}`
+      : "catalog loaded";
+  if (catalog.state === "no_scope") return NO_SCOPE_TITLE;
+  return catalog.reason ?? catalogText(catalog);
+}
+
+/** Build details; undefined without a commit. */
+function buildTitle(build: ServerMeta["build"]): string | undefined {
+  if (build.commit === null) return undefined;
+  const started = new Date(build.startedAt);
+  const startedText = Number.isNaN(started.getTime())
+    ? build.startedAt
+    : `${day(started)} ${clock(started)}`;
+  return [
+    `server commit ${build.commit}`,
+    ...(build.dirty ? ["uncommitted changes at start"] : []),
+    `started ${startedText}`,
+  ].join(" · ");
+}
+
 /**
- * Items `source`, `catalog`, `zone`, `build` in that order, then `user` unless the identity is
- * `none` (add-multiuser M12); [] when meta is undefined (design F3).
+ * Lines of the status tooltip (app-footer "Status tooltip", design DW9), joined by "\n": first
+ * `revision <n> · <source> · <count> signals · server <commit>`, prefixed when the last meta fetch
+ * failed; then the source, catalog and build details. `revision <n>` alone before the first answer.
+ */
+export function statusTooltip(
+  revision: number,
+  meta: ServerMeta | undefined,
+  stale: boolean,
+  now: Date = new Date(),
+): string {
+  if (!meta) return `revision ${revision}`;
+  const { source, catalog, build } = meta;
+  const count =
+    catalog.state === "loaded"
+      ? `${catalog.size} signals`
+      : catalog.state === "no_scope"
+        ? "No scope"
+        : catalogText(catalog);
+  const head = [
+    `revision ${revision}`,
+    sourceLabel(source),
+    count,
+    ...(build.commit !== null ? [`server ${build.commit}${build.dirty ? "*" : ""}`] : []),
+  ].join(" · ");
+  const details = buildTitle(build);
+  return [
+    stale ? `last known; server not reachable · ${head}` : head,
+    sourceTitle(source, now),
+    catalogTitle(catalog, now),
+    ...(details ? [details] : []),
+  ].join("\n");
+}
+
+/**
+ * Items `source` (only while unreachable), `catalog` (only failed or without a scope), `zone`, then
+ * `user` unless the identity is `none` (add-multiuser M12); [] when meta is undefined. Revision,
+ * a reachable source, the signal count and the build live in `statusTooltip` (design DW9).
  */
 export function footerItems(
   meta: ServerMeta | undefined,
@@ -101,28 +175,24 @@ export function footerItems(
   if (!meta) return [];
   const items: FooterItem[] = [];
 
-  const { source, catalog, build } = meta;
-  const label = `${KIND_LABEL[source.kind] ?? source.kind} ${source.database}`;
-  const checked = `checked ${localTime(source.checkedAt, now)}`;
-  const sourceTitle = source.reachable
-    ? `${label}.${source.table} · reachable · ${checked}`
-    : `${label}.${source.table} · unreachable: ${source.error ?? "unknown error"} · ${checked}`;
-  items.push({
-    key: "source",
-    text: source.reachable ? label : `${label} unreachable`,
-    title: stale ? `last known; server not reachable · ${sourceTitle}` : sourceTitle,
-    tone: stale ? "muted" : source.reachable ? "ok" : "error",
-    rank: RANK_SOURCE,
-  });
+  const { source, catalog } = meta;
+  if (!source.reachable) {
+    const title = sourceTitle(source, now);
+    items.push({
+      key: "source",
+      text: `${sourceLabel(source)} unreachable`,
+      title: stale ? `last known; server not reachable · ${title}` : title,
+      tone: stale ? "muted" : "error",
+      rank: RANK_SOURCE,
+    });
+  }
 
-  if (catalog.state === "loaded") {
+  if (catalog.state === "failed") {
     items.push({
       key: "catalog",
-      text: `${catalog.size} signals`,
-      title: catalog.loadedAt
-        ? `catalog loaded ${localTime(catalog.loadedAt, now)}`
-        : "catalog loaded",
-      tone: "plain",
+      text: catalogText(catalog),
+      title: catalogTitle(catalog, now),
+      tone: "error",
       rank: RANK_CATALOG,
     });
   } else if (catalog.state === "no_scope") {
@@ -130,18 +200,8 @@ export function footerItems(
     items.push({
       key: "catalog",
       text: "No scope",
-      title: "scoped catalog: no scope set; open a view link or run kipscope scope set REF FROM TO",
+      title: NO_SCOPE_TITLE,
       tone: "muted",
-      rank: RANK_CATALOG,
-    });
-  } else {
-    const loading = catalog.state === "loading";
-    const text = loading ? "catalog loading" : "catalog unavailable";
-    items.push({
-      key: "catalog",
-      text,
-      title: catalog.reason ?? text,
-      tone: loading ? "muted" : "error",
       rank: RANK_CATALOG,
     });
   }
@@ -153,24 +213,6 @@ export function footerItems(
     tone: "plain",
     rank: RANK_ZONE,
   });
-
-  if (build.commit !== null) {
-    const started = new Date(build.startedAt);
-    const startedText = Number.isNaN(started.getTime())
-      ? build.startedAt
-      : `${day(started)} ${clock(started)}`;
-    items.push({
-      key: "build",
-      text: build.dirty ? `${build.commit}*` : build.commit,
-      title: [
-        `server commit ${build.commit}`,
-        ...(build.dirty ? ["uncommitted changes at start"] : []),
-        `started ${startedText}`,
-      ].join(" · "),
-      tone: "plain",
-      rank: RANK_BUILD,
-    });
-  }
 
   const user = userItem(me);
   if (user) items.push(user);

@@ -115,4 +115,31 @@ describe("axes of a window whose data has not loaded", () => {
     ]);
     expect(empty.layout.axes).toEqual(layoutAxes(inputs).axes);
   });
+
+  it("leaves missing signals out of the axes", () => {
+    // SIG_A (V) beside a missing signal: one axis (V), none for the missing one.
+    const l = layoutAxes([
+      input("sigA", "V", "#111"),
+      { key: "x", label: "X", unit: "mV", color: "#222", missing: true },
+    ]);
+    expect(l.axes).toHaveLength(1);
+    expect(l.axes[0]).toMatchObject({ side: "L", title: "V", color: "#111" });
+    expect(l.scaleOf.get("x")).toBeUndefined();
+    expect(l.sideOf.get("x")).toBeUndefined();
+    expect(l.scaleOf.get("sigA")).toBe("u:V");
+    expect(l.sideOf.get("sigA")).toBe("L");
+
+    // A unit-less missing signal gets no axis titled with its label either, and the sides of the
+    // others do not shift.
+    const bare = layoutAxes([
+      { key: "x", label: "X", color: "#222", missing: true },
+      input("sigA", "V", "#111"),
+      input("vanz", "km/h", "#333"),
+    ]);
+    expect(bare.axes.map((a) => [a.title, a.side])).toEqual([
+      ["V", "L"],
+      ["km/h", "R"],
+    ]);
+    expect(bare.axes.some((a) => a.title === "X")).toBe(false);
+  });
 });

@@ -118,3 +118,18 @@
   user-select: none;
   touch-action: none;
 }
+
+/* A signal the shown data ref lacks (values-window "Missing signal in a values row", DW13): a
+   muted pill after the name, as the chart legend's loading pill. */
+.values-window .grip:has(.status) {
+  grid-template-columns: max-content minmax(0, max-content) max-content;
+}
+
+.values-window .status.missing {
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--band);
+  color: var(--soft-ink);
+  font-size: 11px;
+  line-height: 16px;
+}

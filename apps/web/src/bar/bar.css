@@ -23,11 +23,6 @@
   cursor: not-allowed;
 }
 
-/* "Link time axes" keeps its visible checkbox, ticked in the accent. */
-.option-bar .toggle input[type="checkbox"] {
-  accent-color: var(--accent);
-}
-
 /* A, B and Diff as pills (T3): the checkbox inside stays the control (keys, tooltip, onChange) and
    is only hidden; the pill draws its state. */
 .option-bar .pill {
@@ -68,6 +63,34 @@
 
 .option-bar .new-values {
   font-weight: 500;
+}
+
+/* Back, Reset and "Link time axes" (design DW8): 26 × 26 px icon buttons, the name in aria-label
+   and tooltip; the link toggle pressed in the accent (mock Main.dc.html). */
+.option-bar-slot .option-bar .icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  color: var(--label);
+}
+
+.option-bar-slot .option-bar .icon-button:disabled {
+  color: var(--disabled);
+}
+
+.option-bar-slot .option-bar .link-toggle[aria-pressed="true"] {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* Pushes Share…, "⋯" and "?" to the row's end. */
+.option-bar .bar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .option-bar .separator {
@@ -151,33 +174,21 @@
   border-color: var(--text);
 }
 
-/* Top-row give-way steps (add-saved-views V7), after the view title has shrunk to its minimum
-   (views.css). Widths are the .option-bar-slot content box (container top-row), measured
-   2026-10-17 in Chrome on smart451 with the six-window setup and the sidebar open, as the
-   narrowest content box with every item's top equal, the view title held at the minimum of a
-   120-character modified view (10ch + dot = 91 px), "Go to" at its 6em basis, "Signals" 63 px +
-   8 px gap, and add-guidance's "?" (26 px + 6 px gap) right before "⋯":
-   - Full labels with the "Views" label: 981 px.
-   - Short labels with the "Views" label: 905 px.
-   - Overflow items in the row (short labels, Views icon): 884 px.
-   - Row after the move, with "⋯": 653 px.
-   add-range-picker replaced "Go to" (72 px at 6em) by the 318 px range button (+246 px) and
-   removed Span (about 61 px with its gap): estimated, not yet measured, +185 px for the first
-   three rows and +246 px for the last, so the steps are 1175 px (label words, step 2), 1095 px
-   (Views icon, step 3) and T = 1075 px (step 4: Digits, "+ Values window" and the "?" go into the
-   "⋯" menu, the "?" as "Help"); the row after the move is about 899 px. At 1000×557 the content
-   box is 713 px with the main area's classic scroll bar (15 px, six windows) and 728 px without, so
-   that row wraps until declutter-workspace (DW8) shortens it. At 1440×900 it is 1153 px with the
-   scroll bar (1168 px without): short labels with the "Views" label, "?" and no "⋯".
-   Lower-priority label words ("Link time axes", "+ Values window") collapse; title and aria-label
-   keep the full name. */
-@container top-row (max-width: 1175px) {
-  .option-bar .long {
-    display: none;
-  }
-}
-
-@container top-row (max-width: 1095px) {
+/* Top-row give-way steps (add-saved-views V7, design DW8), after the view title has shrunk to its
+   minimum (views.css). Widths are the .option-bar-slot content box (container top-row), measured
+   2026-10-21 in headless Chrome (scripts/cdp.mjs) on the dev server as the narrowest content box
+   with every item's centre on one line: sidebar icon 26 px + 8 px gap, Views 55 px (icon only
+   34 px), a modified view title held at its minimum (10ch + dot = 91 px), range control 318 px,
+   Back, Reset, Link 26 px each, A, B, Diff 30 + 30 + 43 px, Share… 64 px, "⋯" and "?" 26 px each,
+   6 px gaps:
+   - Views label and Share… in the row: 882 px (785 px without a view title).
+   - Views icon and Share… in the row: 861 px (764 px).
+   - Views icon, Share… in the "⋯" menu (the row after the move): 791 px (694 px).
+   So the Views label leaves at 881 px and Share… at 860 px. At 1440×900 the content box is
+   1153 px (1168 px without the main area's scroll bar): label and Share… in the row. At 1000×557 it
+   is 713 px (728 px): Share… in the menu; the row fits without a view title, with a view title at
+   its minimum it is 78 px short and wraps. */
+@container top-row (max-width: 881px) {
   .option-bar .views-label {
     display: none;
   }
@@ -187,27 +198,33 @@
   }
 }
 
-/* Step 4, the overflow items (V7 "Top-row overflow rule"): Digits, "+ Values window" and the "?"
-   leave the row (display: none, so also the tab order) and "⋯", the row's last item, holds them in its
-   menu. T: see the give-way comment above. */
+/* "⋯" is always shown (DW8); its menu holds Digits and "+ Values window", and Share… only below
+   the Share threshold, where the row's Share… (the one `overflow-item`) leaves the row
+   (display: none, so also the tab order). */
 .option-bar .overflow-menu {
   position: relative;
   flex: none;
+}
+
+.option-bar .overflow-popover .share-menu {
   display: none;
 }
 
-@container top-row (max-width: 1075px) {
+@container top-row (max-width: 860px) {
   .option-bar .overflow-item {
     display: none;
   }
 
-  .option-bar .overflow-menu {
+  .option-bar .overflow-popover .share-menu {
     display: block;
   }
 }
 
 .option-bar-slot .option-bar .overflow-button,
 .option-bar-slot .option-bar .help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   padding: 0;
   font-weight: 600;
@@ -228,9 +245,4 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
-}
-
-/* The menu shows the full label at every width. */
-.option-bar .overflow-popover .long {
-  display: inline;
 }

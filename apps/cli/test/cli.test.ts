@@ -1875,6 +1875,36 @@ describe("catalogs (add-case-open K15)", () => {
     expect((await on("case", "show")).out.local.position).toBe("1 / 4");
   });
 
+  it("prints the open report", async () => {
+    m = await startMulti({ identity: "none", adapter: withExtents() });
+    // The catalog's origin.url is not among the finder origins: the open drops it and says so.
+    // (Without the 6.2 meta: a JSON text with exactly two dots reads as a signed catalog.)
+    const withOrigin = {
+      ...C4,
+      cases: C4.cases.map(({ meta: _meta, ...entry }) => entry),
+      origin: { tool: "search tool", url: "https://evil.example/" },
+    };
+    const opened = await caseCli(
+      m,
+      "case",
+      "open",
+      file("origin.json", JSON.stringify(withOrigin)),
+    );
+    expect(opened.code, opened.stdout.join("")).toBe(0);
+    // The open report is in the CLI's JSON line (case-handoff "CLI open reports in its output").
+    const report = opened.out.data.case;
+    expect(report.count).toBe(4);
+    expect(Array.isArray(report.missing)).toBe(true);
+    expect(report.warnings).toContain(
+      "origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS",
+    );
+    // The workspace itself does not carry the report: it is only in the answer.
+    const id = opened.out.data.workspace.id as string;
+    const shown = await caseCli(m, "--workspace", id, "case", "show");
+    expect(shown.code, shown.stdout.join("")).toBe(0);
+    expect(JSON.stringify(shown.out.data)).not.toContain("evil.example");
+  });
+
   it("refuses case commands in a workspace without a catalog", async () => {
     m = await startMulti({ identity: "none", adapter: withExtents() });
     const plain = await caseCli(m, "state");

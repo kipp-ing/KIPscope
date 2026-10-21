@@ -8,6 +8,7 @@ import {
   type CommandResult,
   type DiagEvent,
   eventMatchOf,
+  floorDiv,
   NS_PER_MS,
   type WorkspaceCase,
   type WorkspaceScope,
@@ -17,8 +18,7 @@ import { caseNotice, endedEvents } from "../time/scope.ts";
 import { formatSpan } from "../time/strip.ts";
 import type { StripEvent } from "../views/notice.ts";
 
-/** Meta entries the bar text shows; the list rows show 2 (design K14). */
-const BAR_META = 3;
+/** Meta entries a catalog list row shows (design K14). */
 const ROW_META = 2;
 /** Names a `missing` message lists before `, …`. */
 const MISSING_NAMES = 3;
@@ -52,17 +52,6 @@ export const localMinute = (t: string | bigint): string => {
   return `${formatDate(ns)} ${formatTime(ns, 0, false)}`;
 };
 
-/** "<from> – <to>" in local minutes; `to` without its date when on the same local day. */
-function localSpan(from: bigint, to: bigint, sameDayShort: boolean): string {
-  // A half-open end at midnight belongs to the day before.
-  const last = to - NS_PER_MS > from ? to - NS_PER_MS : to;
-  const end =
-    sameDayShort && formatDate(from) === formatDate(last)
-      ? formatTime(to, 0, false)
-      : localMinute(to);
-  return `${localMinute(from)} – ${end}`;
-}
-
 /** A meta value as the bar shows it: numbers with 3 significant digits (K14). */
 export function metaValueText(v: string | number | boolean | null): string {
   if (v === null) return "–";
@@ -85,47 +74,167 @@ export const entryName = (entry: CaseEntry): string => entry.title ?? entry.obje
 export const positionText = (c: Pick<WorkspaceCase, "current" | "count">): string =>
   `${c.current + 1} / ${c.count}`;
 
-export interface SessionBarText {
-  /** "SESSION" while linked, "VEHICLE" while unlinked. */
+// Session slots (design DW4, DW5): what each fixed slot of the context row shows.
+
+/** The slots of the session bar; a slot whose text is undefined shows a skeleton (DW5). */
+export interface SessionSlots {
   label: "SESSION" | "VEHICLE";
-  text: string;
+  /** `<k> / <n>`; `positionCh` = length of `<n> / <n>` (constant per catalog). */
   position: string;
-  /** Every meta entry, the id and the origin tool. */
-  tooltip: string;
+  positionCh: number;
+  /** undefined → skeleton. */
+  title: string | undefined;
+  titleTooltip: string | undefined;
+  /** "Tue" */
+  weekday: string | undefined;
+  /** "2026-10-13  15:06:54 – 15:17:42" or "2026-10-11 – Wed 2026-10-21" */
+  times: string | undefined;
+  /** Full local from – to. */
+  timesTooltip: string | undefined;
+  plusOne: boolean;
+  /** formatSpan of the span. */
+  duration: string | undefined;
+  action: "Unlink" | "Link";
+  /** The slots show the target of a step or go on its way (DW4). */
+  pending: boolean;
+}
+
+/** Width of `<k> / <n>` in ch for every k of a catalog of `count` (tabular numbers): `<n> / <n>`. */
+export const positionCh = (count: number): number => `${count} / ${count}`.length;
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const MS_PER_DAY = 86_400_000;
+
+/** The local calendar day of `t` as a day count, and its English weekday abbreviation. */
+function localDay(t: bigint): { day: number; weekday: string } {
+  const d = new Date(Number(floorDiv(t, NS_PER_MS)));
+  return {
+    day: Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / MS_PER_DAY,
+    weekday: WEEKDAYS[d.getDay()] ?? "",
+  };
 }
 
 /**
- * The session bar's text (design K14). Linked: `<title or object> · <kind> · <local from> – <local
- * to> (<duration>) · <up to 3 meta>`; unlinked: `<object> · whole series · <scope from> – <scope
- * to> (<span>)`, the vehicle, never the dropped session's title.
+ * The times slot of any range (also the scope row's, DW5): `<date>  <from> – <to>` on one local
+ * day, the same with `plusOne` when `to` is on the next local day (a `to` at midnight is that
+ * day's, `to` exclusive or not), `<date> – <weekday> <date>` from 2 days; the weekday of `from`
+ * apart, the full local times as tooltip.
  */
-export function sessionBarText(
-  c: WorkspaceCase,
-  scope?: WorkspaceScope,
-  origin?: CaseCatalog["origin"],
-): SessionBarText {
-  const e = c.entry;
-  const tooltip = [
-    ...Object.entries(e.meta ?? {}).map(([k, v]) => `${k}: ${metaValueText(v)}`),
-    `id: ${e.id}`,
-    ...(origin?.tool ? [`from ${origin.tool}`] : []),
-  ].join("\n");
-  const position = positionText(c);
-  if (!c.linked) {
-    const from = BigInt(scope?.from ?? e.from);
-    const to = BigInt(scope?.to ?? e.to);
-    const text = `${e.object} · whole series · ${localSpan(from, to, false)} (${formatSpan(to - from)})`;
-    return { label: "VEHICLE", text, position, tooltip };
+export function timesSlot(
+  from: bigint,
+  to: bigint,
+): Pick<SessionSlots, "weekday" | "times" | "timesTooltip" | "plusOne"> {
+  const start = localDay(from);
+  const end = localDay(to);
+  const days = end.day - start.day;
+  const timesTooltip = `${formatFull(from)} – ${formatFull(to)}`;
+  if (days >= 2) {
+    const times = `${formatDate(from)} – ${end.weekday} ${formatDate(to)}`;
+    return { weekday: start.weekday, times, timesTooltip, plusOne: false };
   }
-  const from = BigInt(e.from);
-  const to = BigInt(e.to);
-  const parts = [
-    entryName(e),
-    ...(e.kind ? [e.kind] : []),
-    `${localSpan(from, to, true)} (${formatSpan(to - from)})`,
-    ...metaText(e, BAR_META),
-  ];
-  return { label: "SESSION", text: parts.join(" · "), position, tooltip };
+  const times = `${formatDate(from)}  ${formatTime(from, 0)} – ${formatTime(to, 0)}`;
+  return { weekday: start.weekday, times, timesTooltip, plusOne: days === 1 };
+}
+
+/** The index a case command will reach: go → its index; step → (pending ?? current) + by inside
+ *  [0, count); anything else, unlinked, or outside the catalog → undefined (DW4). */
+export function pendingTarget(
+  c: Pick<WorkspaceCase, "current" | "count" | "linked">,
+  pending: number | undefined,
+  input: CommandInput,
+): number | undefined {
+  if (!c.linked) return undefined;
+  const index =
+    input.type === "case.go"
+      ? input.index
+      : input.type === "case.step"
+        ? (pending ?? c.current) + input.by
+        : undefined;
+  return index !== undefined && index >= 0 && index < c.count ? index : undefined;
+}
+
+/** The title's tooltip: `head`, then every meta entry, the id and the origin tool, one per line. */
+const titleTooltip = (entry: CaseEntry, head: string, tool: string | undefined): string =>
+  [
+    head,
+    ...Object.entries(entry.meta ?? {}).map(([k, v]) => `${k}: ${metaValueText(v)}`),
+    `id: ${entry.id}`,
+    ...(tool ? [`from ${tool}`] : []),
+  ].join("\n");
+
+type Content = Omit<SessionSlots, "position" | "positionCh" | "pending">;
+
+/** A session's slots: its title or object, `<name> · <kind>` heading the tooltip, its times. */
+function sessionContent(entry: CaseEntry, tool: string | undefined): Content {
+  const from = BigInt(entry.from);
+  const to = BigInt(entry.to);
+  const name = entryName(entry);
+  const head = entry.kind ? `${name} · ${entry.kind}` : name;
+  return {
+    label: "SESSION",
+    title: name,
+    titleTooltip: titleTooltip(entry, head, tool),
+    ...timesSlot(from, to),
+    duration: formatSpan(to - from),
+    action: "Unlink",
+  };
+}
+
+/** A slot set whose texts are not known yet: skeletons. */
+const SKELETON: Omit<Content, "label" | "action"> = {
+  title: undefined,
+  titleTooltip: undefined,
+  weekday: undefined,
+  times: undefined,
+  timesTooltip: undefined,
+  plusOne: false,
+  duration: undefined,
+};
+
+/**
+ * The session bar's slots (case-navigation "Session bar", DW5). Linked: the entry's title or
+ * object, its local times and duration, `Unlink`; unlinked: `<object> · whole series` (the vehicle,
+ * never the dropped session's title) with the scope's times and span, `Link`. With `pending` (a
+ * step or go on its way, DW4) the target's slots from the loaded catalog, skeletons where it is not
+ * loaded; without a case (an opening `/open#cases=` page) every text slot a skeleton.
+ */
+export function sessionSlots(
+  c: WorkspaceCase | undefined,
+  scope?: WorkspaceScope,
+  catalog?: CaseCatalog,
+  pending?: number,
+): SessionSlots {
+  if (!c) {
+    const position = { position: "", positionCh: positionCh(0), pending: false };
+    return { label: "SESSION", ...SKELETON, action: "Unlink", ...position };
+  }
+  const tool = catalog?.origin?.tool;
+  const position = {
+    position: positionText({ current: pending ?? c.current, count: c.count }),
+    positionCh: positionCh(c.count),
+  };
+  if (pending !== undefined) {
+    const entry = pending === c.current ? c.entry : catalog?.entries[pending];
+    const content: Content = entry
+      ? sessionContent(entry, tool)
+      : { label: "SESSION", ...SKELETON, action: "Unlink" };
+    return { ...content, ...position, pending: true };
+  }
+  if (c.linked) return { ...sessionContent(c.entry, tool), ...position, pending: false };
+  const e = c.entry;
+  const from = BigInt(scope?.from ?? e.from);
+  const to = BigInt(scope?.to ?? e.to);
+  const title = `${e.object} · whole series`;
+  return {
+    label: "VEHICLE",
+    title,
+    titleTooltip: titleTooltip(e, title, tool),
+    ...timesSlot(from, to),
+    duration: formatSpan(to - from),
+    action: "Link",
+    ...position,
+    pending: false,
+  };
 }
 
 /** Tooltip of `‹` or `›` (K14): the neighbour, or why the arrow is disabled. */
@@ -223,7 +332,7 @@ export function goFirstMatch(rows: readonly CatalogRow[]): CommandInput | undefi
   return first && { type: "case.go", index: first.index };
 }
 
-// Align menu (K14).
+// Align group of the catalog list (K14, DW6).
 
 export interface AlignItem {
   label: string;
@@ -259,13 +368,6 @@ const changeText = (event: Extract<CaseAlign, { mode: "event" }>["event"]): stri
 
 const alignEventText = (align: Extract<CaseAlign, { mode: "event" }>): string =>
   `Event: ${align.event.source} ${align.event.name}${changeText(align.event)}`;
-
-/**
- * The Align button's mode text: `start`, `end`, `anchor`, or the event's name with the state a
- * change goes to (`CPC_168h.IgnCurMode → KEYON`).
- */
-export const alignModeText = (align: CaseAlign): string =>
-  align.mode === "event" ? `${align.event.name}${changeText(align.event)}` : align.mode;
 
 // Messages (K14).
 

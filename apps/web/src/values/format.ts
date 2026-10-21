@@ -11,7 +11,9 @@ import {
   shortLabel,
   stateLabel,
 } from "@kipscope/shared";
+import { HINTS } from "../help/hints.ts";
 import { formatDate, formatFull } from "../time/axis.ts";
+import type { ValueState } from "./loader.ts";
 
 /** One value cell of the values window and the chart readout (design S4). */
 export interface Cell {
@@ -36,6 +38,32 @@ export function loadingCell(previous: Cell): Cell {
     loading: true,
     title: "loading",
   };
+}
+
+/** The status of a values row from one of its requests (design DW13). */
+export interface RowStatus {
+  /** "" while loading or complete, `missing`, or `failed: <message>`. */
+  text: string;
+  title?: string;
+  tone: "none" | "muted" | "error";
+}
+
+/**
+ * A values row's status (values-window "Missing signal in a values row"): a 404 `unknown_signal`
+ * (the shown data ref lacks the signal) reads `missing`, muted, with `Missing: <dataRef> has no
+ * signal <name>` as tooltip; any other failure `failed: <message>`; else nothing.
+ */
+export function valueRowStatus(
+  state: ValueState | undefined,
+  dataRef: string,
+  name: string,
+): RowStatus {
+  if (state?.status !== "error") return { text: "", tone: "none" };
+  if (state.errorStatus === 404 && state.errorCode === "unknown_signal") {
+    return { text: "missing", title: HINTS.missing(dataRef, name), tone: "muted" };
+  }
+  const message = state.error ?? "error";
+  return { text: `failed: ${message}`, title: message, tone: "error" };
 }
 
 /** Why a cell has no value: the values window's reasons plus the chart readout's (design N4). */

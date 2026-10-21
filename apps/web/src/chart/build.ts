@@ -350,6 +350,8 @@ export interface SignalInput {
   info?: SignalInfo;
   /** The signal's gap rule (design G7); absent = NO_GAPS. */
   gaps?: SignalGaps;
+  /** The shown data ref lacks the signal (DW13): no axis, nothing drawn. */
+  missing?: true;
 }
 
 /** One uPlot series, without uPlot runtime objects (paths are resolved by the component). */
@@ -410,7 +412,7 @@ export function buildModel(inputs: SignalInput[], origin: Timestamp, display: Di
     layout,
   };
   for (const input of inputs) {
-    if (!input.result) continue;
+    if (!input.result || input.missing) continue;
     const raw = input.result.kind === "raw";
     const path: PathKind = raw ? display.mode : "line";
     const gaps = input.gaps ?? NO_GAPS;
@@ -534,10 +536,37 @@ export function resolutionBadge(
   if (loaded.length === 0) return undefined;
   const widths = loaded.flatMap((r) => (r.kind === "buckets" ? [BigInt(r.width)] : []));
   if (widths.length === 0) return { short: "raw", full: "raw" };
-  const widest = formatDuration(widths.reduce((a, b) => (a > b ? a : b)));
+  const widest = tagWidth(widths.reduce((a, b) => (a > b ? a : b)));
   return widths.length === loaded.length
-    ? { short: `agg · ${widest}`, full: `aggregated · ${widest} per point` }
-    : { short: `part · ${widest}`, full: `partly aggregated · ${widest} per point` };
+    ? { short: `agg ${widest}`, full: `aggregated · ${widest} per point` }
+    : { short: `part ${widest}`, full: `partly aggregated · ${widest} per point` };
+}
+
+/** Units of the mode tag (design DW11), largest first. */
+const TAG_UNITS: [bigint, string][] = [
+  [86_400_000_000_000n, "d"],
+  [3_600_000_000_000n, "h"],
+  [60_000_000_000n, "min"],
+  [1_000_000_000n, "s"],
+  [1_000_000n, "ms"],
+  [1_000n, "µs"],
+  [1n, "ns"],
+];
+
+/**
+ * Largest of ns, µs, ms, s, min, h, d the width reaches; ≤ 3 significant figures: whole from 10,
+ * one decimal below, no ".0". 536.8 ms → "537 ms", 90 s → "1.5 min". A value rounded up to the
+ * next unit is written in it (59.7 s → "1 min").
+ */
+export function tagWidth(ns: bigint): string {
+  const found = TAG_UNITS.findIndex(([size]) => ns >= size);
+  const i = found < 0 ? TAG_UNITS.length - 1 : found;
+  const [size, name] = TAG_UNITS[i] as [bigint, string];
+  const value = Number((ns * 1000n) / size) / 1000;
+  const shown = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+  const up = TAG_UNITS[i - 1];
+  if (up && BigInt(Math.round(shown * 10)) * size >= up[0] * 10n) return `1 ${up[1]}`;
+  return `${shown} ${name}`;
 }
 
 export function formatDuration(ns: bigint): string {

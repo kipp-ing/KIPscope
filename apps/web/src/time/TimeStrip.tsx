@@ -5,13 +5,13 @@ import {
   type Density,
   type DiagEvent,
   type Drive,
+  MAX_DENSITY_BARS,
   scopeKey,
   type TimeRange,
   type Workspace,
   type WorkspaceScope,
-  widenScope,
 } from "@kipscope/shared";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchDensity } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
 import { alignToEvent } from "../case/sessionBar.ts";
@@ -21,10 +21,9 @@ import { groupMarks, type Mark, markStyle, markTitle } from "../events/marks.ts"
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatRange } from "./axis.ts";
-import { NO_SCOPE, SCOPE_HINTS, scopeRange, scopeText } from "./scope.ts";
+import { NO_SCOPE, SCOPE_HINTS, scopeRange } from "./scope.ts";
 import {
   formatSpan,
-  nearbyHint,
   nextWorkWindow,
   RETRY_MS,
   stripBars,
@@ -247,7 +246,7 @@ export type StripDrop = { name: string } & (
   | { ok: false; reason: "no_states" | "already_listed" | "none_new" }
 );
 
-/** Head text of a drag over the strip (time-strip "Signal drop on the strip"). */
+/** Note text of a drag over the strip (time-strip "Signal drop on the strip"). */
 export function stripDropText(d: StripDrop): string {
   if (d.ok) return `Drop to mark state changes of ${d.name}`;
   if (d.reason === "none_new") return `None of ${d.name} has new named states`;
@@ -320,44 +319,45 @@ function LiveMarker({ tr }: { tr: Track }) {
   return x === undefined ? null : <Marker name="l" x={x} px={tr.px} />;
 }
 
+/** Skeleton bars before any density is known: the most a density has (declutter-workspace DW4). */
+const SKELETON_BARS = MAX_DENSITY_BARS;
+
 /**
- * Time strip below the option bar (design T8, S5–S10 of add-strip-navigation): the density of
- * the shown recording over its whole extent, the bar target's range as a window, the drives and
- * the cursor markers. With `navigate`, clicks jump, drags zoom, the window pans and resizes, a
- * double-click shows the whole recording and a click on a drive fits it. Event pins (add-events V3)
- * mark the shown events in a lane at the top of the bars; a click on one centres it. The head counts
- * the events (V5) and, while a signal is dragged over the strip, says what a drop does (V10).
+ * Time strip below the context row (design T8, S5–S10 of add-strip-navigation; a track without a
+ * head line, declutter-workspace DW10): the density of the shown recording over its whole extent,
+ * the bar target's range as a window, the drives and the cursor markers. With `navigate`, clicks
+ * jump, drags zoom, the window pans and resizes, a double-click shows the whole recording and a
+ * click on a drive fits it. Event pins (add-events V3) mark the shown events in a lane at the top
+ * of the bars; a click on one centres it. The info is the track's tooltip; states and, while a
+ * signal is dragged over the strip, what a drop does (V10) show as a note inside the track.
  */
 export function TimeStrip({
   workspace,
   navigate,
   events,
-  onOpenEvents,
   drop,
   mode,
   onScopeCommand,
   caseCatalog,
-  sessionBar,
   workWindow,
+  stepping,
 }: {
   workspace: Workspace;
   navigate?: StripNavigate | undefined;
   /** Absent while the events of the strip's data ref load. */
   events?: StripEvents | undefined;
-  /** Opens the sidebar on the Events tab with the filter field focused (the head count's click). */
-  onOpenEvents?: (() => void) | undefined;
   /** Set while a signal is dragged over the strip. */
   drop?: StripDrop | undefined;
-  /** The server's catalog mode (meta); Clear shows in full mode only, `No scope set` in scoped mode (add-scope Z12). */
+  /** The server's catalog mode (meta); `No scope set` in scoped mode without a scope (add-scope Z12). */
   mode?: "full" | "scoped" | undefined;
-  /** Sends Widen's `scope.set` and Clear's `scope.clear`, a mark's `case.go` and a pin's `case.align`; absent → no scope buttons. */
+  /** Sends a mark's `case.go` and a pin's `case.align`. */
   onScopeCommand?: ((command: CommandInput) => Promise<CommandResult>) | undefined;
   /** The open catalog (add-case-open K14): its sessions of the vehicle are marks in an object scope. */
   caseCatalog?: CaseCatalog | undefined;
-  /** The session bar, shown in the head instead of the scope controls while a catalog is open. */
-  sessionBar?: ReactNode;
   /** In an object scope: the work window of the bar target's range (`useWorkWindow`). */
   workWindow?: TimeRange | undefined;
+  /** A case step on its way (DW4): skeleton bars, no accent, window or pins until its density is loaded. */
+  stepping?: boolean | undefined;
 }) {
   const scope = workspace.scope;
   const open = workspace.case;
@@ -367,13 +367,17 @@ export function TimeStrip({
   const detail = useDetailDensity(dataRef, scope, object ? workWindow : undefined);
   // The pin a right click opened `Align sessions to this event` for (K14), and where.
   const [pinMenu, setPinMenu] = useState<{ pin: number; x: number }>();
-  // A scope command on its way: Widen and Clear wait for its result.
-  const [scopePending, setScopePending] = useState(false);
   const targetWindow = barTarget(workspace);
   const target = targetWindow?.range;
   const range = target ? { from: BigInt(target.from), to: BigInt(target.to) } : undefined;
   const targetKey = target ? `${targetWindow?.id} ${target.from} ${target.to}` : "";
   const density = load?.state === "loaded" ? load.density : undefined;
+  // Skeleton (DW4, time-strip "Time strip states"): while a step runs, and while the density of
+  // the current key loads; the bars of the last density keep their count, so nothing moves.
+  const skeleton =
+    dataRef !== undefined && (stepping === true || (!density && load?.state !== "failed"));
+  const lastCount = useRef(SKELETON_BARS);
+  if (density) lastCount.current = density.counts.length;
 
   const trackRef = useRef<HTMLDivElement>(null);
   const [px, setPx] = useState(0);
@@ -419,16 +423,17 @@ export function TimeStrip({
   const sessionHits = useMemo(() => sessions.map((m) => m.hit), [sessions]);
   const shownEvents = events?.shown;
   const marks = useMemo(() => {
-    if (!density || px <= 0 || !shownEvents) return [];
+    if (!density || px <= 0 || !shownEvents || skeleton) return [];
     const t = trackOf(density, px);
     return groupMarks(shownEvents, (ns) => xOf(t, ns), px);
-  }, [density, px, shownEvents]);
+  }, [density, px, shownEvents, skeleton]);
   const pinHits = useMemo(() => marks.map((m) => m.hit), [marks]);
   const pinTips = useMemo(
     () => pinTipRects(marks).map((rect, i) => ({ rect, title: markTitle(marks[i] as Mark) })),
     [marks],
   );
-  const interactive = navigate !== undefined && density !== undefined && tr !== undefined;
+  const interactive =
+    navigate !== undefined && density !== undefined && tr !== undefined && !skeleton;
 
   // The server range moved away from the committed step's base: drop the step for good, so a
   // later "Back" to that base shows the server range, not the step again (design S8).
@@ -442,11 +447,30 @@ export function TimeStrip({
   const labelRange =
     drag?.kind === "brush" && tr ? (brushRange(tr, drag.x0, drag.x1) ?? shown) : shown;
 
-  let info: string;
-  if (dataRef === undefined) info = mode === "scoped" ? NO_SCOPE : "No signal shown";
-  else if (density) info = stripLabel(density, labelRange);
-  else if (load?.state === "failed") info = "Recording unavailable";
-  else info = "Loading recording…";
+  // The track's tooltip (DW10): the info line and the hint while loaded; the state else.
+  const info = density ? stripLabel(density, labelRange) : undefined;
+  let note: string | undefined;
+  let trackTitle: string;
+  if (dataRef === undefined) {
+    note = mode === "scoped" ? NO_SCOPE : "No signal shown";
+    trackTitle = note;
+  } else if (load?.state === "failed") {
+    note = "Recording unavailable";
+    trackTitle = load.message;
+  } else if (density && info !== undefined) {
+    // An object scope is the vehicle's whole recording, no window the user set (K14).
+    const hint =
+      density.scope && !density.coarse
+        ? SCOPE_HINTS.info(
+            formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)),
+            formatSpan(BigInt(density.width)),
+          )
+        : HINTS.stripInfo(
+            formatSpan(BigInt(density.last) - BigInt(density.first)),
+            formatSpan(BigInt(density.width)),
+          );
+    trackTitle = `${info}\n${hint}`;
+  } else trackTitle = "Loading recording…";
 
   /** Ends the press: releases capture, text selection and the Escape listener; drops the drag preview. */
   const endPress = () => {
@@ -629,7 +653,7 @@ export function TimeStrip({
   // Unlink, a step or new pins end the menu.
   if (pinMenu && (!open?.linked || !marks[pinMenu.pin])) setPinMenu(undefined);
 
-  const win = tr && shown ? windowRects(tr, shown)?.drawn : undefined;
+  const win = tr && shown && !skeleton ? windowRects(tr, shown)?.drawn : undefined;
   const brush =
     drag?.kind === "brush" && tr
       ? {
@@ -642,13 +666,6 @@ export function TimeStrip({
   const xa = cursorX(workspace.cursors.a);
   const xb = cursorX(workspace.cursors.b);
 
-  /** Sends one scope command; the buttons stay disabled until its result arrives. */
-  const sendScope = (command: CommandInput) => {
-    if (!onScopeCommand || scopePending) return;
-    setScopePending(true);
-    onScopeCommand(command).finally(() => setScopePending(false));
-  };
-
   return (
     <div
       className={`time-strip${drop ? (drop.ok ? " drop-target" : " drop-refused") : ""}`}
@@ -659,90 +676,10 @@ export function TimeStrip({
           }
         : {})}
     >
-      <div className="time-strip-head">
-        {open ? (
-          sessionBar
-        ) : scope ? (
-          <>
-            <span className="section-label">SCOPE</span>
-            <span className="time-strip-scope" title={scopeText(scope)}>
-              {scopeText(scope)}
-            </span>
-            {onScopeCommand && (
-              <button
-                type="button"
-                className="time-strip-button"
-                title={SCOPE_HINTS.widen}
-                disabled={scopePending}
-                onClick={() => sendScope({ type: "scope.set", ...widenScope(scope) })}
-              >
-                Widen
-              </button>
-            )}
-            {onScopeCommand && mode === "full" && (
-              <button
-                type="button"
-                className="time-strip-button"
-                title={SCOPE_HINTS.clear}
-                disabled={scopePending}
-                onClick={() => sendScope({ type: "scope.clear" })}
-              >
-                Clear
-              </button>
-            )}
-          </>
-        ) : (
-          <span className="section-label">TIME</span>
-        )}
-        {drop ? (
-          <span className={`time-strip-drop${drop.ok ? "" : " refused"}`}>
-            {stripDropText(drop)}
-          </span>
-        ) : (
-          labelRange && (
-            <span className="time-strip-range">{formatRange(labelRange.from, labelRange.to)}</span>
-          )
-        )}
-        {events && events.total > 0 && (
-          <button
-            type="button"
-            className="time-strip-events"
-            title={
-              object && workWindow
-                ? nearbyHint(workWindow)
-                : HINTS.eventsCount(events.shown.length, events.total, events.sentence)
-            }
-            {...(onOpenEvents ? { onClick: onOpenEvents } : {})}
-          >
-            {`${events.shown.length.toLocaleString("en-US")} of ${events.total.toLocaleString("en-US")} events${object && workWindow ? " nearby" : ""}`}
-          </button>
-        )}
-        <span
-          className="time-strip-info"
-          {...(density
-            ? {
-                // An object scope is the vehicle's whole recording, no window the user set (K14).
-                title:
-                  density.scope && !density.coarse
-                    ? SCOPE_HINTS.info(
-                        formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)),
-                        formatSpan(BigInt(density.width)),
-                      )
-                    : HINTS.stripInfo(
-                        formatSpan(BigInt(density.last) - BigInt(density.first)),
-                        formatSpan(BigInt(density.width)),
-                      ),
-              }
-            : load?.state === "failed"
-              ? { title: load.message }
-              : {})}
-        >
-          {info}
-        </span>
-      </div>
       <div
         ref={trackRef}
         className="time-strip-track"
+        title={trackTitle}
         style={interactive ? undefined : { cursor: "default" }}
         {...(interactive
           ? {
@@ -756,17 +693,25 @@ export function TimeStrip({
             }
           : {})}
       >
-        <div className="time-strip-bars" aria-hidden="true">
-          {density &&
-            stripBars(density, shown).map((bar, i) => (
-              <span
-                // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional buckets of one density
-                key={i}
-                className={bar.shown ? "shown" : undefined}
-                style={{ height: bar.height }}
-                title={barTitle(density, i)}
-              />
-            ))}
+        <div
+          className={skeleton ? "time-strip-bars skeleton" : "time-strip-bars"}
+          aria-hidden="true"
+        >
+          {skeleton
+            ? Array.from({ length: lastCount.current }, (_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: skeleton bars have no identity
+                <span key={i} />
+              ))
+            : density &&
+              stripBars(density, shown).map((bar, i) => (
+                <span
+                  // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional buckets of one density
+                  key={i}
+                  className={bar.shown ? "shown" : undefined}
+                  style={{ height: bar.height }}
+                  title={barTitle(density, i, info)}
+                />
+              ))}
         </div>
         <div className="time-strip-pins" aria-hidden="true">
           {marks.map((m, i) => (
@@ -845,6 +790,11 @@ export function TimeStrip({
               );
             })}
         </div>
+        {(drop || note) && (
+          <span className={`time-strip-note${drop ? (drop.ok ? " drop" : " drop refused") : ""}`}>
+            {drop ? stripDropText(drop) : note}
+          </span>
+        )}
         {pinMenu && marks[pinMenu.pin] && (
           <div
             className="time-strip-menu"

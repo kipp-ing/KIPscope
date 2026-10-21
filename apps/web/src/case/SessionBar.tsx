@@ -1,70 +1,97 @@
 import type { CaseCatalog, CommandInput, WorkspaceCase, WorkspaceScope } from "@kipscope/shared";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useCaseCatalog } from "./catalog.ts";
 import {
   alignItems,
-  alignModeText,
   arrowHint,
   CASE_HINTS,
   catalogRows,
   goFirstMatch,
   moreText,
-  sessionBarText,
+  sessionSlots,
   stepCommand,
 } from "./sessionBar.ts";
 import "./case.css";
 
-interface Props {
-  /** `workspace.case`. */
-  caseState: WorkspaceCase;
+interface SessionBarProps {
+  /** undefined while a /open#cases= page waits for its workspace: every slot a skeleton. */
+  caseState: WorkspaceCase | undefined;
   /** The workspace's scope: while unlinked the vehicle's extent the bar shows. */
   scope: WorkspaceScope | undefined;
+  /** Target index of a step or go on its way (DW4). */
+  pending?: number | undefined;
+  /** Progress line shown (DW4). */
+  progress?: boolean;
   /** Sends one case command; App shows its result in the message line (caseResultEvents). */
   onCommand: (command: CommandInput) => void;
   /** No commands (read-only workspace, a command on its way): every control is disabled. */
   disabled?: boolean;
-  /** The open's report text (design X4a, openNoteText), shown after the session text until dismissed. */
+  /** The open's report text (design X4a, openNoteText), shown in the title slot until dismissed. */
   openNote?: string | undefined;
   /** ✕ on the open note. */
   onDismissNote?: () => void;
 }
 
+/** A grey block standing in for a slot's text not known yet (DW3). */
+const Skeleton = () => <span className="skeleton" />;
+
+/** Chevron of `‹` (left) or `›` (mock SessionBar.dc.html). */
+const chevron = (left: boolean) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <polyline points={left ? "15 6 9 12 15 18" : "9 6 15 12 9 18"} />
+  </svg>
+);
+
 /**
- * The session bar (add-case-open K14), in the strip head instead of the scope head while a
- * catalog is open. Linked: `SESSION ‹ <session> › <k> / <n> ▾ Unlink Align: <mode> ▾`; unlinked:
- * `VEHICLE ‹ › <vehicle> Link` with the arrows greyed. One line; the text truncates first. The
- * open note (X4a, `⚠ <report> ✕`) follows the session text.
+ * The session bar (case-navigation "Session bar", design DW3): the context row's fixed slots
+ * `SESSION ‹ <k> / <n> ▾ › <title> <times> <duration> Unlink`, unlinked `VEHICLE … Link` with the
+ * arrows greyed. Every slot's box depends on the row's width only: the title takes the rest and
+ * truncates, the label leaves below the compact width (case.css). A step on its way shows its
+ * target at once (DW4) with the progress line; texts not known yet are skeletons in their slots.
+ * The open note (X4a, DW7) sits in the title slot after the title.
  */
 export function SessionBar({
   caseState: c,
   scope,
+  pending,
+  progress = false,
   onCommand,
   disabled = false,
   openNote,
   onDismissNote,
-}: Props) {
-  const catalog = useCaseCatalog(c.catalogId);
-  const bar = sessionBarText(c, scope, catalog?.origin);
+}: SessionBarProps) {
+  const catalog = useCaseCatalog(c?.catalogId);
+  const s = sessionSlots(c, scope, catalog, pending);
+  // The arrows act from the position shown, the pending target while a step is on its way.
+  const shown = c && pending !== undefined ? { ...c, current: pending } : c;
   const arrow = (by: -1 | 1) => {
-    const command = stepCommand(c, by);
+    const command = stepCommand(shown, by);
     return (
       <button
         type="button"
-        className={`session-arrow${c.linked ? "" : " unlinked"}`}
-        title={arrowHint(c, by, catalog)}
+        className={`session-arrow${shown && !shown.linked ? " unlinked" : ""}`}
+        title={shown ? arrowHint(shown, by, catalog) : undefined}
         aria-label={by < 0 ? "Previous session" : "Next session"}
         disabled={disabled || command === undefined}
         onClick={() => command && onCommand(command)}
       >
-        {by < 0 ? "‹" : "›"}
+        {chevron(by < 0)}
       </button>
     );
   };
   const note = openNote !== undefined && (
-    <>
-      <span className="session-open-note" title={openNote}>
-        ⚠ {openNote}
-      </span>
+    <span className="session-open-note" role="status" title={openNote}>
+      <span className="session-open-note-text">⚠ {openNote}</span>
       <button
         type="button"
         className="session-open-note-dismiss"
@@ -74,62 +101,71 @@ export function SessionBar({
       >
         ✕
       </button>
-    </>
+    </span>
   );
   return (
-    <span className="session-bar">
-      <span className="section-label">{bar.label}</span>
+    <div className="context-row" aria-busy={progress || undefined}>
+      <span className="slot-label">{s.label}</span>
       {arrow(-1)}
-      {c.linked ? (
-        <>
-          <span className="session-text" title={bar.tooltip}>
-            {bar.text}
+      <CatalogList
+        caseState={shown}
+        catalog={catalog}
+        position={s.position}
+        positionCh={s.positionCh}
+        disabled={disabled || !c}
+        onCommand={onCommand}
+      />
+      {arrow(1)}
+      <span className="slot-title">
+        {s.title === undefined ? (
+          <Skeleton />
+        ) : (
+          <span className="slot-title-text" title={s.titleTooltip}>
+            {s.title}
           </span>
-          {note}
-          {arrow(1)}
-          <CatalogList
-            caseState={c}
-            catalog={catalog}
-            position={bar.position}
-            disabled={disabled}
-            onCommand={onCommand}
-          />
-          <button
-            type="button"
-            className="time-strip-button"
-            title={CASE_HINTS.unlink}
-            disabled={disabled}
-            onClick={() => onCommand({ type: "case.unlink" })}
-          >
-            Unlink
-          </button>
-          <AlignMenu caseState={c} catalog={catalog} disabled={disabled} onCommand={onCommand} />
-        </>
+        )}
+        {note}
+      </span>
+      <span className="slot-times" title={s.timesTooltip}>
+        {s.times === undefined ? (
+          <Skeleton />
+        ) : (
+          <>
+            <span className="slot-weekday">{s.weekday}</span> {s.times}
+            {s.plusOne && <sup className="slot-plus">+1</sup>}
+          </>
+        )}
+      </span>
+      <span className="slot-duration">{s.duration === undefined ? <Skeleton /> : s.duration}</span>
+      {c ? (
+        <button
+          type="button"
+          className="slot-action"
+          title={s.action === "Unlink" ? CASE_HINTS.unlink : CASE_HINTS.link}
+          disabled={disabled}
+          onClick={() =>
+            onCommand(
+              s.action === "Unlink"
+                ? { type: "case.unlink" }
+                : { type: "case.go", index: c.current },
+            )
+          }
+        >
+          {s.action}
+        </button>
       ) : (
-        <>
-          {arrow(1)}
-          <span className="session-text" title={bar.tooltip}>
-            {bar.text}
-          </span>
-          {note}
-          <button
-            type="button"
-            className="time-strip-button"
-            title={CASE_HINTS.link}
-            disabled={disabled}
-            onClick={() => onCommand({ type: "case.go", index: c.current })}
-          >
-            Link
-          </button>
-        </>
+        <span className="slot-action">
+          <Skeleton />
+        </span>
       )}
-    </span>
+      {progress && <span className="session-progress" aria-hidden="true" />}
+    </div>
   );
 }
 
 /** A popover's open state, closed by a pointer down outside `root` or Escape (focus back on the button). */
-function usePopover() {
-  const [open, setOpen] = useState(false);
+function usePopover(initial = false) {
+  const [open, setOpen] = useState(initial);
   const root = useRef<HTMLSpanElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -160,31 +196,39 @@ function Popover({ className, children }: { className: string; children: ReactNo
 
 /**
  * `<k> / <n> ▾` and its catalog list (K14): a focused filter, one row per matching session up to
- * CASE_LIST_ROWS, the current row marked; Enter goes to the first match, a click to its row.
+ * CASE_LIST_ROWS, the current row marked; Enter goes to the first match, a click to its row. At
+ * its foot the `Align` radio group (DW6). The button is as wide as `<n> / <n> ▾` (positionCh).
+ * Exported with `defaultOpen` for the markup tests of the open list.
  */
-function CatalogList({
+export function CatalogList({
   caseState: c,
   catalog,
   position,
-  disabled,
+  positionCh,
+  disabled = false,
   onCommand,
+  defaultOpen = false,
 }: {
-  caseState: WorkspaceCase;
+  caseState: WorkspaceCase | undefined;
   catalog: CaseCatalog | undefined;
+  /** `<k> / <n>`; "" → skeleton (sessionSlots). */
   position: string;
-  disabled: boolean;
+  positionCh: number;
+  disabled?: boolean;
   onCommand: (command: CommandInput) => void;
+  defaultOpen?: boolean;
 }) {
-  const { open, setOpen, root, button } = usePopover();
+  const { open, setOpen, root, button } = usePopover(defaultOpen);
   const [filter, setFilter] = useState("");
   const field = useRef<HTMLInputElement>(null);
   // The list opens to type a filter (K14).
   useEffect(() => {
     if (open) field.current?.focus();
   }, [open]);
+  const current = c?.current ?? 0;
   const { rows, more } = useMemo(
-    () => catalogRows(catalog?.entries ?? [], filter, c.current),
-    [catalog, filter, c.current],
+    () => catalogRows(catalog?.entries ?? [], filter, current),
+    [catalog, filter, current],
   );
   const go = (command: CommandInput | undefined) => {
     if (!command) return;
@@ -192,20 +236,22 @@ function CatalogList({
     onCommand(command);
   };
   const origin = catalog?.origin;
+  const width = { "--position-ch": positionCh } as CSSProperties;
   return (
     <span className="session-menu" ref={root}>
       <button
         type="button"
         ref={button}
-        className="time-strip-button session-position"
+        className="session-position"
+        style={width}
         title={CASE_HINTS.list}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen(!open)}
       >
-        {position} ▾
+        {position === "" ? <Skeleton /> : `${position} ▾`}
       </button>
-      {open && (
+      {open && c && (
         <Popover className="session-list">
           <input
             className="session-filter"
@@ -241,57 +287,33 @@ function CatalogList({
             ))}
             {moreText(more) && <div className="session-note">{moreText(more)}</div>}
           </div>
-        </Popover>
-      )}
-    </span>
-  );
-}
-
-/** `Align: <mode> ▾` and its menu (K14): start, end, anchor, and the event in event mode. */
-function AlignMenu({
-  caseState: c,
-  catalog,
-  disabled,
-  onCommand,
-}: {
-  caseState: WorkspaceCase;
-  catalog: CaseCatalog | undefined;
-  disabled: boolean;
-  onCommand: (command: CommandInput) => void;
-}) {
-  const { open, setOpen, root, button } = usePopover();
-  return (
-    <span className="session-menu" ref={root}>
-      <button
-        type="button"
-        ref={button}
-        className="time-strip-button"
-        title={CASE_HINTS.align}
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen(!open)}
-      >
-        Align: {alignModeText(c.align)} ▾
-      </button>
-      {open && (
-        <Popover className="session-align">
-          {alignItems(c.align, catalog?.entries).map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitemradio"
-              aria-checked={item.checked}
-              title={item.title}
-              disabled={item.disabled}
-              onClick={() => {
-                setOpen(false);
-                if (!item.checked) onCommand({ type: "case.align", align: item.align });
-              }}
-            >
-              {item.checked ? "✓ " : ""}
-              {item.label}
-            </button>
-          ))}
+          <div
+            className="session-align"
+            role="radiogroup"
+            aria-label="Align"
+            title={CASE_HINTS.align}
+          >
+            <span className="session-align-label" aria-hidden="true">
+              ALIGN
+            </span>
+            {alignItems(c.align, catalog?.entries).map((item) => (
+              // biome-ignore lint/a11y/useSemanticElements: a segmented control of buttons (DW6), one click sends case.align
+              <button
+                key={item.label}
+                type="button"
+                role="radio"
+                aria-checked={item.checked}
+                title={item.title}
+                disabled={item.disabled}
+                onClick={() => {
+                  if (item.checked) return;
+                  go({ type: "case.align", align: item.align });
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </Popover>
       )}
     </span>

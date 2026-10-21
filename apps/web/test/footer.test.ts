@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { fitFooter } from "../src/footer/fit.ts";
-import { footerItems, measurementItems } from "../src/footer/items.ts";
+import { footerItems, measurementItems, statusTooltip } from "../src/footer/items.ts";
 import { contentWidth, StatusBar } from "../src/footer/StatusBar.tsx";
 import { metaLoader } from "../src/footer/useMeta.ts";
 
@@ -43,7 +43,7 @@ describe("measurement items (app-footer)", () => {
     expect(measurementItems({}).items).toEqual([]);
     const html = renderToStaticMarkup(createElement(StatusBar, barProps()));
     expect(html).not.toContain("Measurement");
-    expect(textOf(html)).toBe("connected · revision 7 KIPscope · kipp.ing · AAL");
+    expect(textOf(html)).toBe("connected KIPscope · kipp.ing · AAL");
   });
 
   it("turns measurement info into footer items", () => {
@@ -93,15 +93,14 @@ describe("signed-in user item (app-footer)", () => {
   };
 
   it("shows the signed-in user", () => {
+    // Build, source and catalog are no items any more (app-footer "Automatic meta items").
     const base = footerItems(metaOf(), false, ZONE);
-    expect(base.map((i) => i.key)).toEqual(["source", "catalog", "zone", "build"]);
+    expect(base.map((i) => i.key)).toEqual(["zone"]);
 
     const withAlice = footerItems(metaOf(), false, ZONE, new Date(), alice);
-    // The four items of "Items from meta", then the user.
-    expect(withAlice.slice(0, 4).map((i) => i.text)).toEqual(base.map((i) => i.text));
-    expect(withAlice).toHaveLength(5);
+    // The zone of "Items from meta", then the user.
+    expect(withAlice.map((i) => i.text)).toEqual(["Europe/Berlin", "alice"]);
     const user = withAlice.at(-1);
-    expect(user?.text).toBe("alice");
     expect(user?.title).toBe("Signed in as alice (oidc) · roles: testers, viewers");
 
     const bob = footerItems(metaOf(), false, ZONE, new Date(), {
@@ -119,10 +118,12 @@ describe("signed-in user item (app-footer)", () => {
       roles: [],
       canShare: true,
     };
-    expect(footerItems(metaOf(), false, ZONE, new Date(), local).map((i) => i.key)).toEqual(
-      base.map((i) => i.key),
-    );
-    expect(footerItems(metaOf(), false, ZONE, new Date(), undefined)).toHaveLength(4);
+    expect(footerItems(metaOf(), false, ZONE, new Date(), local).map((i) => i.text)).toEqual([
+      "Europe/Berlin",
+    ]);
+    expect(footerItems(metaOf(), false, ZONE, new Date(), undefined).map((i) => i.text)).toEqual([
+      "Europe/Berlin",
+    ]);
   });
 
   it("shows a module adapter's kind in the tooltip", () => {
@@ -135,70 +136,58 @@ describe("signed-in user item (app-footer)", () => {
   });
 
   it("keeps the user item longer than build, zone and catalog when the line is short", () => {
-    const items = footerItems(metaOf(), false, ZONE, new Date(), alice);
+    // A failed catalog is the only catalog state with an item beside `No scope`; the build has none.
+    const failed = metaOf({
+      catalog: { mode: "full", state: "failed", size: 0, reason: "source unreachable" },
+    });
+    const items = footerItems(failed, false, ZONE, new Date(), alice);
     const rank = (key: string) => items.find((i) => i.key === key)?.rank ?? -1;
-    expect(rank("user")).toBeGreaterThan(rank("build"));
+    expect(items.some((i) => i.key === "build")).toBe(false);
     expect(rank("user")).toBeGreaterThan(rank("zone"));
     expect(rank("user")).toBeGreaterThan(rank("catalog"));
   });
 });
 
 describe("automatic meta items (app-footer)", () => {
+  const sourceOf = (kind: string, database: string, reachable: boolean) =>
+    metaOf({
+      source: {
+        kind,
+        database,
+        table: "signals",
+        reachable,
+        checkedAt: "2026-10-17T10:00:00.000Z",
+        ...(reachable ? {} : { error: "connect ECONNREFUSED" }),
+      },
+    });
+
   it("turns meta into footer items", () => {
     const items = footerItems(metaOf(), false, ZONE, new Date("2026-10-16T13:30:00.000Z"));
-    expect(items.map((i) => i.text)).toEqual([
-      "ClickHouse sdlog",
-      "1234 signals",
-      "Europe/Berlin",
-      "7c1e2a9*",
-    ]);
-    expect(items.map((i) => i.key)).toEqual(["source", "catalog", "zone", "build"]);
-    expect(find(items, "source").tone).toBe("ok");
-    expect(find(items, "zone").title).toContain("UTC+02:00");
-    expect(find(items, "build").title).toContain("uncommitted changes");
-    expect(find(items, "build").title).toContain("7c1e2a9");
-    // Ranks of design F3: build 1, zone 2, catalog 3, source 20.
-    expect(items.map((i) => i.rank)).toEqual([20, 3, 2, 1]);
-
-    const clean = footerItems(
-      metaOf({ build: { commit: "7c1e2a9", dirty: false, startedAt: "2026-10-16T13:07:10.000Z" } }),
-      false,
-      ZONE,
-    );
-    expect(find(clean, "build").text).toBe("7c1e2a9");
-    expect(find(clean, "build").title).not.toContain("uncommitted");
+    // Reachable source, loaded catalog (1234 signals) and the dirty build 7c1e2a9 are no items.
+    expect(items.map((i) => i.key)).toEqual(["zone"]);
+    expect(items[0]?.text).toBe("Europe/Berlin");
+    expect(items[0]?.title).toContain("UTC+02:00");
+    expect(JSON.stringify(items)).not.toContain("7c1e2a9");
+    expect(JSON.stringify(items)).not.toContain("1234");
   });
 
   it("labels ADX and unknown source kinds", () => {
-    const sourceOf = (kind: string, database: string, reachable: boolean) =>
-      metaOf({
-        source: {
-          kind,
-          database,
-          table: "signals",
-          reachable,
-          checkedAt: "2026-10-17T10:00:00.000Z",
-          ...(reachable ? {} : { error: "connect ECONNREFUSED" }),
-        },
-      });
-    const sourceItem = (meta: ServerMeta) => find(footerItems(meta, false, ZONE), "source");
+    const firstLine = (meta: ServerMeta) => statusTooltip(4, meta, false).split("\n")[0] ?? "";
+    const sourceItems = (meta: ServerMeta) =>
+      footerItems(meta, false, ZONE).filter((i) => i.key === "source");
 
-    // ADX is labelled, ok when reachable and unreachable in the error tone when not.
-    expect(sourceItem(sourceOf("adx", "kipscope_test", true))).toMatchObject({
-      text: "ADX kipscope_test",
-      tone: "ok",
-    });
-    expect(sourceItem(sourceOf("adx", "kipscope_test", false))).toMatchObject({
-      text: "ADX kipscope_test unreachable",
-      tone: "error",
-    });
-    // Any other kind shows as the adapter named it.
-    expect(sourceItem(sourceOf("memory", "fixture", true))).toMatchObject({
-      text: "memory fixture",
-      tone: "ok",
-    });
+    // Reachable ADX: no item, the label leads the status tooltip.
+    expect(sourceItems(sourceOf("adx", "kipscope_test", true))).toEqual([]);
+    expect(firstLine(sourceOf("adx", "kipscope_test", true))).toContain("ADX kipscope_test");
+    // Unreachable ADX: the item in the error tone.
+    expect(sourceItems(sourceOf("adx", "kipscope_test", false))).toMatchObject([
+      { text: "ADX kipscope_test unreachable", tone: "error" },
+    ]);
+    // Any other kind shows as the adapter named it, in the tooltip only.
+    expect(sourceItems(sourceOf("memory", "fixture", true))).toEqual([]);
+    expect(firstLine(sourceOf("memory", "fixture", true))).toContain("memory fixture");
     // ClickHouse keeps its label.
-    expect(sourceItem(sourceOf("clickhouse", "sdlog", true)).text).toBe("ClickHouse sdlog");
+    expect(firstLine(sourceOf("clickhouse", "sdlog", true))).toContain("ClickHouse sdlog");
   });
 
   it("shows unreachable, loading and failed meta", () => {
@@ -225,8 +214,10 @@ describe("automatic meta items (app-footer)", () => {
       tone: "error",
     });
     expect(find(items, "source").title).toContain("connect ECONNREFUSED");
-    expect(find(items, "catalog")).toMatchObject({ text: "catalog loading", tone: "muted" });
+    // A loading catalog and a missing build are no items; the tooltip names the loading.
+    expect(items.some((i) => i.key === "catalog")).toBe(false);
     expect(items.some((i) => i.key === "build")).toBe(false);
+    expect(statusTooltip(4, down, false)).toContain("catalog loading");
 
     const failed = footerItems(
       metaOf({
@@ -253,54 +244,97 @@ describe("automatic meta items (app-footer)", () => {
       false,
       ZONE,
     );
-    expect(find(items, "catalog")).toMatchObject({ text: "No scope" });
-    // With a scope the list's size shows as for any loaded catalog.
-    const scoped = footerItems(
-      metaOf({
-        catalog: {
-          mode: "scoped",
-          state: "loaded",
-          size: 2300,
-          loadedAt: "2026-10-16T13:07:12.000Z",
-          scope: { dataRef: "smart451", from: "1", to: "2" },
-        },
-      }),
-      false,
-      ZONE,
-    );
-    expect(find(scoped, "catalog").text).toContain("2300");
+    expect(find(items, "catalog")).toMatchObject({ text: "No scope", tone: "muted" });
+    // With a scope the catalog is loaded: no item, the list's size is in the status tooltip.
+    const scopedMeta = metaOf({
+      catalog: {
+        mode: "scoped",
+        state: "loaded",
+        size: 2300,
+        loadedAt: "2026-10-16T13:07:12.000Z",
+        scope: { dataRef: "smart451", from: "1", to: "2" },
+      },
+    });
+    expect(footerItems(scopedMeta, false, ZONE).some((i) => i.key === "catalog")).toBe(false);
+    expect(statusTooltip(4, scopedMeta, false)).toContain("2300");
   });
 
   it("marks stale meta and shows none before the first answer", () => {
-    const stale = footerItems(metaOf(), true, ZONE);
-    expect(find(stale, "source").tone).toBe("muted");
-    expect(find(stale, "source").title.startsWith("last known; server not reachable")).toBe(true);
-    // Fresh meta does not carry the prefix.
-    expect(find(footerItems(metaOf(), false, ZONE), "source").title).not.toContain("last known");
+    // The status tooltip carries the stale mark and the revision alone before the first answer.
+    expect(statusTooltip(7, metaOf(), true).startsWith("last known; server not reachable")).toBe(
+      true,
+    );
+    expect(statusTooltip(7, metaOf(), false)).not.toContain("last known");
+    expect(statusTooltip(7, undefined, false)).toBe("revision 7");
+    expect(statusTooltip(7, undefined, true)).toBe("revision 7");
     expect(footerItems(undefined, false, ZONE)).toEqual([]);
     expect(footerItems(undefined, true, ZONE)).toEqual([]);
+    // An unreachable source of stale meta is muted and says so in its tooltip.
+    const stale = find(footerItems(sourceOf("clickhouse", "sdlog", false), true, ZONE), "source");
+    expect(stale.tone).toBe("muted");
+    expect(stale.title.startsWith("last known; server not reachable")).toBe(true);
+  });
+});
+
+describe("status tooltip (app-footer)", () => {
+  it("puts revision, source, catalog and build into the status tooltip", () => {
+    const meta = metaOf({
+      build: { commit: "3e849e8", dirty: false, startedAt: "2026-10-16T13:07:10.000Z" },
+      source: {
+        kind: "clickhouse",
+        database: "sdlog",
+        table: "sig",
+        reachable: true,
+        checkedAt: "2026-10-16T13:08:01.000Z",
+      },
+      catalog: { mode: "full", state: "loaded", size: 415, loadedAt: "2026-10-16T13:07:12.000Z" },
+    });
+    const now = new Date("2026-10-16T13:30:00.000Z");
+    const lines = statusTooltip(4, meta, false, now).split("\n");
+    expect(lines[0]).toBe("revision 4 · ClickHouse sdlog · 415 signals · server 3e849e8");
+    expect(lines.some((l) => l.startsWith("ClickHouse sdlog.sig · reachable · checked"))).toBe(
+      true,
+    );
+    expect(lines.some((l) => l.startsWith("catalog loaded"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("server commit 3e849e8"))).toBe(true);
+
+    // Dirty build and an unreachable source.
+    const worse = metaOf({
+      ...meta,
+      build: { commit: "3e849e8", dirty: true, startedAt: "2026-10-16T13:07:10.000Z" },
+      source: {
+        kind: "clickhouse",
+        database: "sdlog",
+        table: "sig",
+        reachable: false,
+        checkedAt: "2026-10-16T13:08:01.000Z",
+        error: "connect ECONNREFUSED",
+      },
+    });
+    const second = statusTooltip(4, worse, false, now).split("\n");
+    expect(second[0]).toContain("server 3e849e8*");
+    expect(second.some((l) => l.includes("connect ECONNREFUSED"))).toBe(true);
+    expect(second.some((l) => l.includes("uncommitted changes at start"))).toBe(true);
   });
 });
 
 describe("fitFooter (app-footer)", () => {
-  // Attribution about the width of `KIPscope · kipp.ing · AAL` at 11 px.
-  const base = { status: 160, attribution: 140, gap: 12 };
+  // Status `connected` about 110 px, attribution about 140 px (`KIPscope · kipp.ing · AAL` at 11 px).
+  const base = { status: 110, attribution: 140, gap: 12 };
   const auto = [
-    { key: "source", width: 100, rank: 20 },
-    { key: "catalog", width: 80, rank: 3 },
+    { key: "source", width: 160, rank: 20 },
     { key: "zone", width: 90, rank: 2 },
-    { key: "build", width: 60, rank: 1 },
+    { key: "user", width: 60, rank: 19 },
   ];
 
   it("hides whole meta items in a fixed order", () => {
     const at = (available: number) => fitFooter({ ...base, available, items: auto });
-    expect(at(780)).toEqual({ shown: ["source", "catalog", "zone", "build"], wrap: false });
-    expect(at(680)).toEqual({ shown: ["source", "catalog", "zone"], wrap: false });
-    expect(at(580)).toEqual({ shown: ["source", "catalog"], wrap: false });
-    expect(at(480)).toEqual({ shown: ["source"], wrap: false });
-    expect(at(380)).toEqual({ shown: [], wrap: false });
-    // 160 + 12 + 140 = 312 > 280: the attribution wraps, source stays on the first line.
-    expect(at(280)).toEqual({ shown: ["source"], wrap: true });
+    expect(at(620)).toEqual({ shown: ["source", "zone", "user"], wrap: false });
+    expect(at(600)).toEqual({ shown: ["source", "user"], wrap: false });
+    expect(at(500)).toEqual({ shown: ["source"], wrap: false });
+    expect(at(420)).toEqual({ shown: [], wrap: false });
+    // 110 + 12 + 140 = 262 > 240: the attribution wraps.
+    expect(at(240).wrap).toBe(true);
   });
 
   it("lets a message push out meta items before it truncates", () => {
@@ -316,18 +350,15 @@ describe("fitFooter (app-footer)", () => {
       { key: "m:object", width: 70, rank: 21 },
       { key: "m:meta:driver", width: 80, rank: 5 },
       { key: "m:meta:weather", width: 100, rank: 4 },
-      { key: "source", width: 100, rank: 20 },
-      { key: "catalog", width: 80, rank: 3 },
       { key: "zone", width: 90, rank: 2 },
-      { key: "build", width: 60, rank: 1 },
     ];
     const at = (available: number) => fitFooter({ ...base, available, items });
-    expect(at(780)).toEqual({
-      shown: ["m:name", "m:object", "m:meta:driver", "source"],
-      wrap: false,
-    });
-    expect(at(680)).toEqual({ shown: ["m:name", "m:object", "source"], wrap: false });
-    expect(at(580)).toEqual({ shown: ["m:name", "m:object"], wrap: false });
+    const keys = (available: number) => at(available).shown;
+    expect(keys(780)).toEqual(["m:name", "m:object", "m:meta:driver", "m:meta:weather", "zone"]);
+    expect(keys(700)).toEqual(["m:name", "m:object", "m:meta:driver", "m:meta:weather"]);
+    expect(keys(640)).toEqual(["m:name", "m:object", "m:meta:driver"]);
+    expect(keys(540)).toEqual(["m:name", "m:object"]);
+    for (const available of [780, 700, 640, 540]) expect(at(available).wrap).toBe(false);
   });
 });
 
@@ -364,14 +395,18 @@ describe("status bar markup (app-footer)", () => {
       meta: metaOf(),
     });
     const text = textOf(html);
-    const order = [
-      "connected · revision 7",
-      "Testfahrt A9",
-      "ClickHouse sdlog",
-      "KIPscope · kipp.ing · AAL",
-    ].map((part) => text.indexOf(part));
+    const order = ["connected", "Testfahrt A9", "Europe/Berlin", "KIPscope · kipp.ing · AAL"].map(
+      (part) => text.indexOf(part),
+    );
     for (const i of order) expect(i).toBeGreaterThanOrEqual(0);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Revision and source are in the status tooltip, not in the text.
+    expect(text).not.toContain("revision");
+    expect(text).not.toContain("ClickHouse sdlog");
+    const conn = /<span[^>]*class="conn[^"]*"[^>]*>/.exec(html)?.[0] ?? "";
+    const title = /title="([^"]*)"/.exec(conn)?.[1] ?? "";
+    expect(title).toContain("revision 7");
+    expect(title).toContain("ClickHouse sdlog");
 
     // One strip element; the attribution group is its last child. The hidden measuring copy
     // (aria-hidden, design F5) is not content and is left out of the check.
@@ -380,8 +415,16 @@ describe("status bar markup (app-footer)", () => {
     expect(content).toContain('<span class="attribution"');
     expect(content.endsWith("AAL</a></span></div>")).toBe(true);
     expect(content.lastIndexOf('<span class="attribution"')).toBeGreaterThan(
-      content.indexOf("ClickHouse sdlog"),
+      content.indexOf("Europe/Berlin"),
     );
+  });
+
+  it("shows connected and disconnected without the revision", () => {
+    expect(textOf(render({ connected: false }))).toContain("disconnected");
+    const down = render({ connected: false, meta: metaOf() });
+    expect(textOf(down)).not.toContain("revision");
+    const conn = /<span[^>]*class="conn[^"]*"[^>]*>/.exec(down)?.[0] ?? "";
+    expect(conn).toContain("revision 7");
   });
 
   it("renders the attribution with both links", () => {
@@ -406,21 +449,21 @@ describe("status bar markup (app-footer)", () => {
   });
 
   it("lists hidden items in the KIPscope tooltip", () => {
+    const alice: Me = { user: "alice", identity: "oidc", roles: [], canShare: false };
     // Without hidden items the leading KIPscope has no tooltip.
-    const plain = render({ meta: metaOf() });
+    const plain = render({ meta: metaOf(), me: alice });
     expect(plain).toMatch(/<span>KIPscope<\/span>/);
 
-    // The fit hides build and zone: their texts, one per line.
-    vi.mocked(fitFooter).mockReturnValueOnce({ shown: ["source", "catalog"], wrap: false });
-    const html = render({ meta: metaOf() });
+    // The fit hides zone and user: their texts, one per line.
+    vi.mocked(fitFooter).mockReturnValueOnce({ shown: [], wrap: false });
+    const html = render({ meta: metaOf(), me: alice });
     const title = /<span title="([^"]*)">KIPscope<\/span>/.exec(html)?.[1];
     expect(title).toBeDefined();
     const lines = (title as string).replace(/&#10;|&#xA;/gi, "\n").split("\n");
-    expect(lines).toEqual(["Europe/Berlin", "7c1e2a9*"]);
+    expect(lines).toEqual(["Europe/Berlin", "alice"]);
     // Hidden items are not rendered in the visible part.
     const content = html.replace(/<div[^>]*status-measure[^>]*>.*?<\/div>/s, "");
-    expect(content).not.toContain("7c1e2a9*</span>");
-    expect(content).toContain("1234 signals");
+    expect(content).not.toContain("alice</span>");
   });
 });
 

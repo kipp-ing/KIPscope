@@ -312,6 +312,22 @@ body {
   font-size: 12px;
 }
 
+/* Counts on the sidebar tabs (design DW14): the tabs share the width (flex 1 1 0 in events.css), so
+   a count never changes a tab's box; a long count truncates. */
+.sidebar-switch button {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Drawn from data-count, not a child element: the tab's text content stays "Signals"/"Events". */
+.sidebar-switch button[data-count]::after {
+  content: attr(data-count);
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
 /* Hover card (design E7); SignalCard sets left/top. Only the value table scrolls, the card does not. */
 .signal-card {
   position: fixed;
@@ -431,8 +447,9 @@ main {
   font-weight: 500;
 }
 
-/* The dot is part of .conn, so the footer fit measures it with the text (T4). */
-.conn.ok::before {
+/* The dot is part of .conn, so the footer fit measures it with the text (T4). Error colour while
+   disconnected or with the source unreachable (app-footer "Footer in the bottom bar"). */
+.conn::before {
   content: "";
   display: inline-block;
   width: 7px;
@@ -441,6 +458,11 @@ main {
   border-radius: 50%;
   background: var(--ok-dot);
   vertical-align: 0;
+}
+
+.conn.down::before,
+.conn.dot-error::before {
+  background: var(--error);
 }
 
 .conn.down,
@@ -606,15 +628,16 @@ button.link {
   outline-offset: 1px;
 }
 
-.sidebar-toggle {
+/* 26 × 26 icon button at the row's left end (workspace-layout "Collapsible sidebar", design DW8);
+   its aria-label and tooltip say the state, so it keeps one look. */
+.option-bar-slot .sidebar-toggle {
   flex: none;
-}
-
-/* Pressed while the sidebar is open; a pressed toggle, not a primary button. */
-.option-bar-slot .sidebar-toggle[aria-expanded="true"] {
-  border-color: var(--text);
-  background: var(--text);
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  padding: 0;
+  color: var(--text);
 }
 
 /* Legend-row drag (design D5); window highlights live in chart/window.css. */

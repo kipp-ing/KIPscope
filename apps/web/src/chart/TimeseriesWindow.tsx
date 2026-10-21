@@ -32,15 +32,9 @@ import { fetchCursorValue } from "../api.ts";
 import { groupMarks, type Mark, markColor, markStyle, markTitle, PIN_H } from "../events/marks.ts";
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
-import { calendarTicks, formatRange, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
+import { calendarTicks, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import { ownRangeText } from "../time/rangeLine.ts";
-import {
-  type Cell,
-  formatClock,
-  formatCursorTime,
-  formatDeltaT,
-  NO_VALUE,
-} from "../values/format.ts";
+import { type Cell, formatDeltaT, NO_VALUE } from "../values/format.ts";
 import {
   cellState,
   type FetchValue,
@@ -93,6 +87,7 @@ import {
   useLiveNear,
 } from "./live.ts";
 import {
+  isMissing,
   type LoadRequest,
   loadKey,
   loadStatusText,
@@ -103,6 +98,8 @@ import { WINDOW_LOADER_OPTIONS } from "./overview.ts";
 import {
   atLevel,
   chartValueAt,
+  type HeaderCell,
+  legendHeaders,
   type ReadoutSource,
   readoutSource,
   sourceCell,
@@ -261,7 +258,8 @@ const sameInputs = (a: SignalInput[], b: SignalInput[]) =>
       x.result === y.result &&
       x.states === y.states &&
       x.info === y.info &&
-      x.gaps === y.gaps
+      x.gaps === y.gaps &&
+      x.missing === y.missing
     );
   });
 
@@ -670,9 +668,13 @@ function placeLiveLine(u: uPlot, line: HTMLElement, t: bigint | undefined, origi
 const fetchValue: FetchValue = (r, abort) => fetchCursorValue(r.signalId, r.t, r.mode, abort);
 
 /** The badge's tooltip from its short text `raw`, `agg · <w>` or `part · <w>` (H5). */
+/** The mode tag's tooltip from its text: `agg <w>`, `part <w>` or `raw` (DW11). */
 function badgeHint(short: string): string {
-  const [kind, width] = short.split(" · ");
-  return HINTS.badge(kind === "agg" || kind === "part" ? kind : "raw", width);
+  const space = short.indexOf(" ");
+  const kind = space < 0 ? short : short.slice(0, space);
+  return kind === "agg" || kind === "part"
+    ? HINTS.badge(kind, short.slice(space + 1))
+    : HINTS.badge("raw");
 }
 
 /** One readout value in a legend row: number with unit, tag, SNA or gap style, reason as tooltip. */
@@ -687,6 +689,18 @@ function ReadoutCell({ cell, className }: { cell: Cell; className?: string }) {
     </span>
   );
 }
+
+/** A head of a cursor column (DW12): fixed width, cut with "…", the full text as tooltip. */
+function CursorHead({ cell }: { cell: HeaderCell | undefined }) {
+  return (
+    <span className="cursor-head cursor-col" title={cell?.title ?? cell?.text}>
+      {cell?.text}
+    </span>
+  );
+}
+
+/** The text a cursor column is as wide as (cursors "Readout row"), in the header's font. */
+const CURSOR_COL_SAMPLE = "A 00:00:00.000";
 
 /**
  * The L cell of one legend row (design L4): the drawn value at L in this window. Only these cells
@@ -746,6 +760,20 @@ export function TimeseriesWindow({
   const plotRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState(false);
   const titleRow = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLUListElement>(null);
+  // Cursor columns (cursors "Readout row"): one width, that of CURSOR_COL_SAMPLE in the header's
+  // font, measured once, so moving a cursor changes no column.
+  useLayoutEffect(() => {
+    const ul = legendRef.current;
+    if (!ul) return;
+    const probe = document.createElement("span");
+    probe.className = "cursor-head";
+    probe.textContent = CURSOR_COL_SAMPLE;
+    probe.style.cssText = "position: absolute; visibility: hidden; width: auto";
+    ul.append(probe);
+    ul.style.setProperty("--cursor-col", `${Math.ceil(probe.getBoundingClientRect().width)}px`);
+    probe.remove();
+  }, []);
   const uplot = useRef<uPlot | undefined>(undefined);
   const [width, setWidth] = useState(0);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
@@ -971,8 +999,10 @@ export function TimeseriesWindow({
       label: meta ? shownName(meta) : s.signalId,
       color: colorOf(s.signalId),
     };
-    const result = loader.get(s.id)?.result;
+    const state = loader.get(s.id);
+    const result = state?.result;
     const states = stateLevels(meta);
+    if (isMissing(state)) input.missing = true;
     if (meta?.unit) input.unit = meta.unit;
     if (result) input.result = result;
     if (states) input.states = states;
@@ -1692,11 +1722,9 @@ export function TimeseriesWindow({
     });
   };
 
-  const shown = view;
   // Unlinked, the window's own range in the range-line format (add-range-picker R13); linked,
-  // today's header range until declutter-workspace defines that slot.
-  const ownRange = ownRangeText(shown, linked);
-  const range = ownRange ?? formatRange(shown.from, shown.to);
+  // none: the range control shows it (DW0, DW11).
+  const ownRange = ownRangeText(view, linked);
   // Readout (design N3, N4): value columns while a cursor is on, from the drawn data.
   const { a, b } = cursors;
   const readout = a !== undefined || b !== undefined;
@@ -1705,6 +1733,8 @@ export function TimeseriesWindow({
   // The legend is always a grid (D-033): name, unit, A | B | Δ while a cursor is on, then L
   // (D-032, always, so filling and emptying it moves nothing), status, SNA share, remove.
   const columns = 6 + (readout ? 1 + (showB ? 1 : 0) + (diff ? 1 : 0) : 0);
+  // The legend's header row (DW12): cursor times over their columns, the next-step hint (DW15).
+  const headers = legendHeaders(a, b, diff, nextHints);
   const liveNear = useLiveNear(w.id);
   const badge = resolutionBadge(w.signals.map((s) => loader.get(s.id)?.result));
   const hint =
@@ -1735,44 +1765,22 @@ export function TimeseriesWindow({
           onCommand={onCommand}
         />
         {marked && <span className="mark-pill">Add to</span>}
-        {badge && (
-          <span className="badge" title={badgeHint(badge.short)}>
-            {badge.short}
+        {/* Linked, the range control shows the one range (workspace-layout "Linked windows show
+            the range once"); unlinked, the window's own range, cut first. */}
+        {ownRange !== undefined && (
+          <span className="range own-range" title={HINTS.range(ownRange)}>
+            {ownRange}
           </span>
         )}
-        <span className={ownRange ? "range own-range" : "range"} title={HINTS.range(range)}>
-          {range}
+        {/* Fixed slot (DW11): its text changes on zoom, its box never. */}
+        <span className="mode-tag" title={badge ? badgeHint(badge.short) : undefined}>
+          {badge?.short}
         </span>
         <div className="window-controls" title="">
-          <select
-            aria-label="Display mode"
-            title={HINTS.chartMode}
-            value={w.display.mode}
-            onChange={(e) => {
-              onCommand({
-                type: "window.setDisplay",
-                windowId: w.id,
-                mode: e.target.value as DisplayMode,
-              });
-              // A focused select swallows the navigation keys (keys.ts).
-              e.currentTarget.blur();
-            }}
-          >
-            <option value="line">Line</option>
-            <option value="step">Step</option>
-            <option value="markers">Markers</option>
-          </select>
-          <label title={HINTS.envelope}>
-            <input
-              type="checkbox"
-              checked={w.display.envelope}
-              onChange={(e) =>
-                onCommand({ type: "window.setDisplay", windowId: w.id, envelope: e.target.checked })
-              }
-            />
-            Min/max
-          </label>
           <WindowMenu
+            windowId={w.id}
+            display={w.display}
+            onCommand={onCommand}
             onRename={() => setRenaming(true)}
             onRemove={() => onCommand({ type: "window.remove", windowId: w.id })}
           />
@@ -1792,33 +1800,41 @@ export function TimeseriesWindow({
       </div>
       <div className="plot" ref={plotRef} style={{ height: plotHeight }} />
       <div className="height-handle" title={HINTS.grip} onPointerDown={startHeightDrag} />
-      {readout && (
-        <div className="readout-row">
-          <span className="cursor-time" title={a === undefined ? undefined : formatCursorTime(a)}>
-            {a === undefined ? "A off" : `A ${formatClock(a)}`}
-          </span>
-          {a !== undefined && b === undefined && nextHints?.b && (
-            <span className="next-hint">Shift+click sets B</span>
-          )}
-          {showB && (
-            <span className="cursor-time" title={b === undefined ? undefined : formatCursorTime(b)}>
-              {b === undefined ? "B off" : `B ${formatClock(b)}`}
+      <ul
+        className="signals"
+        ref={legendRef}
+        style={{ gridTemplateColumns: `repeat(${columns}, auto)` }}
+      >
+        {headers && w.signals.length > 0 && (
+          // Heads of the cursor columns (cursors "Readout row"); the name cell holds the hint.
+          <li className="legend-head">
+            <span className="next-hint" title={headers.hint}>
+              {headers.hint}
             </span>
-          )}
-          {a !== undefined && b !== undefined && !diff && nextHints?.diff && (
-            <span className="next-hint">Diff shows Δ and Δt</span>
-          )}
-          {diff && a !== undefined && b !== undefined && (
-            <span className="cursor-time">Δt {formatDeltaT(b - a)}</span>
-          )}
-        </div>
-      )}
-      <ul className="signals" style={{ gridTemplateColumns: `repeat(${columns}, auto)` }}>
+            <CursorHead cell={headers.a} />
+            {showB && <CursorHead cell={headers.b} />}
+            {diff && <CursorHead cell={headers.d} />}
+            <span />
+            <span />
+            <span />
+            <span />
+          </li>
+        )}
         {w.signals.map((s) => {
           const meta = info(s.signalId);
           const state = loader.get(s.id);
           const sna = state?.result && formatSnaShare(snaShare(state.result));
           const name = meta ? shownName(meta) : s.signalId;
+          // The shown data ref lacks the signal (DW13): a muted pill, "—" cells with the reason.
+          const missing = isMissing(state);
+          const parsed = parseSignalId(s.signalId);
+          const missingSignal = parsed && {
+            dataRef: parsed.dataRef,
+            name: meta ? shownName(meta) : parsed.name,
+          };
+          const missingTitle = missingSignal
+            ? HINTS.missing(missingSignal.dataRef, missingSignal.name)
+            : undefined;
           const gaps = gapsOf(s.signalId);
           const sourceOf = (name: CursorName) => {
             const t = cursors[name];
@@ -1837,7 +1853,7 @@ export function TimeseriesWindow({
           const cellAt = (name: CursorName, source: ReadoutSource) =>
             cursors[name] === undefined
               ? { text: NO_VALUE, title: "cursor off" }
-              : sourceCell(source, meta?.unit, digits, meta);
+              : sourceCell(source, meta?.unit, digits, meta, missingSignal);
           return (
             <li
               key={s.id}
@@ -1865,10 +1881,13 @@ export function TimeseriesWindow({
               >
                 {meta?.unit && `[${meta.unit}]`}
               </span>
-              {readout && <ReadoutCell cell={cellAt("a", sourceA)} />}
-              {readout && showB && <ReadoutCell cell={cellAt("b", sourceB)} />}
+              {readout && <ReadoutCell cell={cellAt("a", sourceA)} className="cursor-col" />}
+              {readout && showB && (
+                <ReadoutCell cell={cellAt("b", sourceB)} className="cursor-col" />
+              )}
               {readout && diff && (
                 <ReadoutCell
+                  className="cursor-col"
                   cell={
                     a === undefined || b === undefined
                       ? { text: NO_VALUE, title: "cursor off" }
@@ -1884,8 +1903,11 @@ export function TimeseriesWindow({
                 info={meta}
                 gaps={gaps}
               />
-              {/* Only loading or failed is news; complete shows nothing but keeps the column. */}
-              <span className={`status ${state?.error ? "error" : (state?.status ?? "loading")}`}>
+              {/* Only loading, missing or failed is news; complete shows nothing but keeps the column. */}
+              <span
+                className={`status ${missing ? "missing" : state?.error ? "error" : (state?.status ?? "loading")}`}
+                title={missing ? missingTitle : undefined}
+              >
                 {loadStatusText(state, inCase)}
               </span>
               <span className="sna sna-share" title={sna && HINTS.sna(sna.replace(/^SNA /, ""))}>

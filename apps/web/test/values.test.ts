@@ -12,6 +12,7 @@ import {
   LOADING,
   loadingCell,
   NO_VALUE,
+  valueRowStatus,
 } from "../src/values/format.ts";
 import {
   cellState,
@@ -21,6 +22,7 @@ import {
   valueErrors,
   valueRequests,
 } from "../src/values/loader.ts";
+import { apiError } from "./apiError.ts";
 
 process.env.TZ = "Europe/Berlin"; // also set by the package's test script
 
@@ -313,6 +315,27 @@ describe("ValueLoader", () => {
     // Both rows have finished, so the revision can be reported (with an error).
     expect(loader.settled(rows)).toBe(true);
     expect(changes).toHaveBeenCalled();
+  });
+
+  it("reads an unknown signal as missing", async () => {
+    const { fetch, pending } = controllableFetch();
+    const loader = new ValueLoader(fetch, () => {});
+    const rows = [row("100", "r1:a", "othercar/X"), row("100", "r2:a", "othercar/Y")];
+    loader.update(rows);
+    // The API error of a 404 answer, and one of a 500 `source_error`, as api.ts builds them.
+    pending[0]?.reject(await apiError(404, "unknown_signal", "unknown signal: othercar/X"));
+    pending[1]?.reject(await apiError(500, "source_error", "boom"));
+    await flush();
+
+    expect(valueRowStatus(loader.get("r1:a"), "othercar", "X")).toEqual({
+      text: "missing",
+      title: "Missing: othercar has no signal X",
+      tone: "muted",
+    });
+    const failed = valueRowStatus(loader.get("r2:a"), "othercar", "Y");
+    expect(failed.text).toBe("failed: source_error: boom");
+    expect(failed.tone).toBe("error");
+    expect(failed.text).not.toContain("missing");
   });
 
   it("shows a loading state distinct from no value", async () => {

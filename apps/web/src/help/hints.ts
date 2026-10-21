@@ -20,7 +20,15 @@ function cutSentence(sentence: string): string {
 export const HINTS = {
   sidebarToggle: (open: boolean) =>
     open ? "Signals: hide the signal list · s" : "Signals: show the signal list · s",
-  tabSignals: "Signals: search and add signals · /",
+  /** The Signals tab's count tooltip (guidance "Explorer names the drag"); `matches` while searching. */
+  tabSignals: (n: number, matches?: number) => {
+    const all = n.toLocaleString("en-US");
+    const head =
+      matches === undefined
+        ? `${all} signals`
+        : `${matches.toLocaleString("en-US")} of ${all} match`;
+    return `Signals: ${head}; drag a row onto a window, or press + · /`;
+  },
   tabEvents: "Events: faults and state changes, with a filter · e",
   search: "Search: name, description or unit; parts of words match · /",
   target:
@@ -33,7 +41,10 @@ export const HINTS = {
       : "Cursor B: Shift+click in a plot to place it, drag its line to move it",
   cursorDisabled: "Cursors need a timeseries window",
   diff: "Diff: show B − A (Δ) and the time between them (Δt)",
-  link: "Link time axes: on, zooming or panning one window moves all windows; off, each keeps its own range",
+  link: (on: boolean) =>
+    on
+      ? "Link time axes: on, all windows show one range"
+      : "Link time axes: off, each window keeps its own range",
   goTo: (linked: Linked, title?: string) =>
     one(linked, title)
       ? `Go to: pick a range or type one in ${title} · t`
@@ -57,12 +68,12 @@ export const HINTS = {
     kind === "raw"
       ? "raw: every recorded sample is drawn"
       : kind === "agg"
-        ? `agg · ${width}: aggregated, each point stands for ${width} of data (min, mean, max). Zoom in for raw samples`
-        : `part · ${width}: some signals aggregated (${width} per point), others raw`,
+        ? `agg ${width}: aggregated, each point stands for ${width} of data (min, mean, max). Zoom in for raw samples`
+        : `part ${width}: some signals aggregated (${width} per point), others raw`,
   range: (full: string) => `Time range shown: ${full}`,
   chartMode: "Display mode: Line joins points, Step holds each value, Markers draws points only",
   valuesMode: "Between points: linear interpolates, hold keeps the last value",
-  windowMenu: "Window menu: rename, remove",
+  windowMenu: "Window menu: line, step, markers, min/max, rename, remove",
   grip: "Drag to resize the height",
   legendDrag: "Drag onto another window to move it; Alt/Ctrl+drop copies",
   legendUnit: (unit: string | undefined, side: string) =>
@@ -70,9 +81,11 @@ export const HINTS = {
   sna: (share: string) =>
     `${share}: of the points in view are SNA (signal not available, marked invalid by the sender); strip in the signal's colour at the plot's foot`,
   legendRemove: "Remove from this window",
+  /** A signal the shown data ref does not have (design DW13): legend, readout and values cells. */
+  missing: (dataRef: string, name: string) => `Missing: ${dataRef} has no signal ${name}`,
   envelope: "Min/max: shade the range between the lowest and highest value of each bucket",
   stripInfo: (recorded: string, width: string) =>
-    `TIME: the whole recording (${recorded}). Each bar is ${width}, its height the amount logged. Click to jump, drag to zoom, double-click for all`,
+    `Time strip: the whole recording (${recorded}). Each bar is ${width}, its height the amount logged. Click to jump, drag to zoom, double-click for all`,
   /** With no filter sentence and nothing filtered out, the count names no filter (W1). */
   eventsCount: (shown: number, total: number, sentence?: string) => {
     const n = shown.toLocaleString("en-US");
@@ -87,7 +100,8 @@ export const HINTS = {
   // Top row, add-saved-views (V7): Views menu, overflow menu, open view.
   views: "Views: save, open and import named views; back to a recent workspace",
   viewModified: "Changed since saved or opened",
-  moreControls: "More controls: the top row items that do not fit",
+  more: (share: boolean) =>
+    share ? "More: digits, + values window, share" : "More: digits, + values window",
 
   // Share… and Recent workspaces, add-multiuser (M12).
   share: "Share: a link to an own copy of this layout, or an invite to this workspace",

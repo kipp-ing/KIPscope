@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   CasesDocument,
   CLOSE_NO_ACCESS,
@@ -13,6 +14,7 @@ import {
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { openNoteText } from "../src/case/sessionBar.ts";
 import { applyLiveMessage, FINAL_CLOSES, type LiveState } from "../src/live.ts";
 import { apiPath, resolvesWorkspace, withWorkspace } from "../src/workspaces/apiPath.ts";
 import { stashCaseReport } from "../src/workspaces/caseReport.ts";
@@ -23,6 +25,7 @@ import { recentRows } from "../src/workspaces/recent.ts";
 import { shareItems } from "../src/workspaces/share.ts";
 import { CASES_FAILED, startupTarget, startWorkspace } from "../src/workspaces/startup.ts";
 import { sinceText, workspaceTitle } from "../src/workspaces/title.ts";
+import { caseWorkspace } from "./caseFixtures.ts";
 
 const at = (path: string) => {
   const url = new URL(`http://localhost:7310${path}`);
@@ -524,6 +527,17 @@ describe("catalog start-up (add-case-open K14)", () => {
     stashCaseReport("abcdefghij", report);
     const started = await startWorkspace(at("/w/abcdefghij"));
     expect(started).toMatchObject({ kind: "ready", workspace: "abcdefghij", cases: report });
+    // The page shows it as the session bar's note, one text with the case text first; the message
+    // line gets no notice for it (case-handoff "Open warnings shown").
+    const opened = caseWorkspace({ current: 0 }).case;
+    if (started.kind !== "ready" || !started.cases || !opened) throw new Error("no report");
+    expect(openNoteText(started.cases, opened)).toBe(
+      "1 signal not in this session: JITTER \u00b7 origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS",
+    );
+    const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+    const handling = app.slice(app.indexOf("start.cases"));
+    expect(handling).toMatch(/setOpenNote\(\s*openNoteText\(/);
+    expect(app).not.toMatch(/showResult\(\s*caseOpenEvents/);
     // Taken once: a reload shows nothing.
     const again = await startWorkspace(at("/w/abcdefghij"));
     expect(again.kind).toBe("ready");

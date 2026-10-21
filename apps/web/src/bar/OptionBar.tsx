@@ -9,7 +9,7 @@ import {
   type WorkspaceSummary,
   windowTitle,
 } from "@kipscope/shared";
-import { type Ref, useEffect, useRef } from "react";
+import { type ReactNode, type Ref, useEffect, useRef } from "react";
 import { useLinkedPreview } from "../chart/linkedPreview.ts";
 import { HINTS } from "../help/hints.ts";
 import type { ScopeKind } from "../time/calendar.ts";
@@ -93,6 +93,49 @@ const CALENDAR_ICON = (
     <line x1="8" y1="3" x2="8" y2="7" />
     <line x1="16" y1="3" x2="16" y2="7" />
   </svg>
+);
+
+/** Inline icon of the top row (mock Main.dc.html, design DW8): stroke in the text colour. */
+const icon = (size: number, children: ReactNode) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    {children}
+  </svg>
+);
+
+const BACK_ICON = icon(
+  15,
+  <>
+    <polyline points="9 14 4 9 9 4" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </>,
+);
+
+const RESET_ICON = icon(
+  14,
+  <>
+    <polyline points="15 3 21 3 21 9" />
+    <polyline points="9 21 3 21 3 15" />
+    <line x1="21" y1="3" x2="14" y2="10" />
+    <line x1="3" y1="21" x2="10" y2="14" />
+  </>,
+);
+
+const LINK_ICON = icon(
+  15,
+  <>
+    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+  </>,
 );
 
 /**
@@ -225,10 +268,10 @@ function RangeControl({
 }
 
 /**
- * Sticky bar above the windows (D-023): Views menu, the open view's title and the Read-only pill
- * (add-multiuser M12), cursors, link, the range button (add-range-picker), Back, Reset, digits,
- * new values window and Share…; on a short row digits, new values window and Share… move into the
- * "⋯" menu (V7).
+ * Sticky bar above the windows (D-023, design DW8): Views with the open view's title and the
+ * Read-only pill (add-multiuser M12) | the range control (add-range-picker) | Back, Reset and the
+ * "Link time axes" toggle as icon buttons | A, B, Diff, then at the row's end Share… and "⋯"
+ * (Digits, "+ Values window", and Share… below its threshold); App's "?" follows "⋯".
  */
 export function OptionBar({
   workspace,
@@ -283,40 +326,37 @@ export function OptionBar({
   // While unlinked, the bar's navigation acts on one window; the tooltip names it (design C5).
   const targetTitle = target ? windowTitle(target) : undefined;
 
-  // The overflow items (V7 "Top-row overflow rule", bar.css): in the row, or the same controls in
-  // the "⋯" menu below the threshold.
-  const digitsSelect = (inMenu: boolean) => (
+  // Digits and "+ Values window" live in the "⋯" menu only (D-092 (7)); Share… is in the row
+  // above the Share threshold and in the menu below it (bar.css).
+  const digitsSelect = (
     <select
-      className={inMenu ? undefined : "overflow-item"}
       aria-label="Digits"
       title={HINTS.digits}
       value={digits}
-      onChange={(e) => {
-        // Navigation keys go to the page again, not to the select; in the menu, focus stays for
-        // Tab to the next control.
-        if (!inMenu) e.currentTarget.blur();
+      onChange={(e) =>
+        // Focus stays for Tab to the next control of the menu.
         void onCommand({
           type: "workspace.setOptions",
           digits: Number(e.target.value) as Digits,
-        });
-      }}
+        })
+      }
     >
       <option value={3}>3 digits</option>
       <option value={4}>4 digits</option>
     </select>
   );
-  const newValuesButton = (after?: () => void) => (
+  const newValuesButton = (after: () => void) => (
     <button
       type="button"
-      className={after ? "new-values" : "new-values overflow-item"}
+      className="new-values"
       aria-label="New values window"
       title={HINTS.valuesWindow}
       onClick={() => {
         void onCommand({ type: "window.create", kind: "values" });
-        after?.();
+        after();
       }}
     >
-      + Values<span className="long"> window</span>
+      + Values window
     </button>
   );
 
@@ -344,28 +384,6 @@ export function OptionBar({
       />
       <ReadOnlyPill summary={summary} />
       <span className="separator" />
-      {cursorToggle("a")}
-      {cursorToggle("b")}
-      <label className="toggle pill" title={HINTS.diff}>
-        <input
-          type="checkbox"
-          checked={cursors.diff}
-          onChange={(e) => void onCommand({ type: "cursor.setDiff", diff: e.target.checked })}
-        />
-        Diff
-      </label>
-      <span className="separator" />
-      <label className="toggle" title={HINTS.link}>
-        <input
-          type="checkbox"
-          aria-label="Link time axes"
-          checked={linkTime}
-          onChange={(e) =>
-            void onCommand({ type: "workspace.setLinkTime", linked: e.target.checked })
-          }
-        />
-        Link<span className="long"> time</span> axes
-      </label>
       <RangeControl
         workspace={workspace}
         range={range}
@@ -381,28 +399,51 @@ export function OptionBar({
       />
       <button
         type="button"
+        className="icon-button"
+        aria-label="Back"
         disabled={!target || !canGoBack}
         title={HINTS.back(linkTime, targetTitle, canGoBack)}
         onClick={() => target && onBack(target.id)}
       >
-        Back
+        {BACK_ICON}
       </button>
       <button
         type="button"
+        className="icon-button"
+        aria-label="Reset"
         disabled={!target}
         title={HINTS.reset(linkTime, targetTitle)}
         onClick={onReset}
       >
-        Reset
+        {RESET_ICON}
+      </button>
+      <button
+        type="button"
+        className="icon-button link-toggle"
+        aria-label="Link time axes"
+        aria-pressed={linkTime}
+        title={HINTS.link(linkTime)}
+        onClick={() => void onCommand({ type: "workspace.setLinkTime", linked: !linkTime })}
+      >
+        {LINK_ICON}
       </button>
       <span className="separator" />
-      {digitsSelect(false)}
-      {newValuesButton()}
+      {cursorToggle("a")}
+      {cursorToggle("b")}
+      <label className="toggle pill" title={HINTS.diff}>
+        <input
+          type="checkbox"
+          checked={cursors.diff}
+          onChange={(e) => void onCommand({ type: "cursor.setDiff", diff: e.target.checked })}
+        />
+        Diff
+      </label>
+      <span className="bar-spacer" />
       {shareMenu()}
       <OverflowMenu>
         {(close) => (
           <>
-            {digitsSelect(true)}
+            {digitsSelect}
             {newValuesButton(() => close(true))}
             {shareMenu(() => close(true))}
           </>

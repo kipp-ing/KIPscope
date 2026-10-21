@@ -39,6 +39,7 @@ import {
   selectClick,
   selectedInOrder,
 } from "./selection.ts";
+import { sidebarTabs, type TabEvents } from "./tabs.ts";
 
 export { NEW_WINDOW };
 
@@ -73,6 +74,8 @@ interface Props {
   onPart: (part: SidebarPart) => void;
   /** The events panel, shown in place of the explorer while `part` is "events". */
   children?: React.ReactNode;
+  /** The strip's events, counted on the Events tab (design DW14); absent while they load. */
+  eventsTab?: TabEvents | undefined;
 }
 
 /** The open hover card: index of a signal item, the row's rect, and how it was opened. */
@@ -105,6 +108,7 @@ export function SignalExplorer({
   part,
   onPart,
   children,
+  eventsTab,
 }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -369,29 +373,37 @@ export function SignalExplorer({
   const cardItem = card && items[card.index];
   const cardMatch = cardItem?.kind === "signal" ? cardItem.match : undefined;
   const more = nextShown(items.length, shown) - visible;
-  /** Signal rows rendered while items are cut off ("showing N"); undefined when all are rendered. */
-  const shownRows =
-    visible < items.length
-      ? items.slice(0, visible).filter((it) => it.kind === "signal").length
-      : undefined;
+  const tabs = sidebarTabs({
+    signals: catalog?.length ?? 0,
+    ...(query.trim() !== "" ? { matches: matches.length } : {}),
+    ...(eventsTab ? { events: eventsTab } : {}),
+  });
+  // No count and no count tooltip on Signals until the catalog is in.
+  const signalsTab = catalog ? tabs.signals : {};
 
   return (
     // While the events show, the explorer's own elements stay mounted but hidden (events.css), so
     // query, scroll position and active row survive the switch.
     <aside className={part === "events" ? "explorer part-events" : "explorer"}>
       <div className="sidebar-switch" role="tablist" aria-label="Sidebar">
-        {(["signals", "events"] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            role="tab"
-            aria-selected={part === p}
-            title={p === "signals" ? HINTS.tabSignals : HINTS.tabEvents}
-            onClick={() => onPart(p)}
-          >
-            {p === "signals" ? "Signals" : "Events"}
-          </button>
-        ))}
+        {(["signals", "events"] as const).map((p) => {
+          const tab: { count?: string; title?: string } =
+            p === "signals" ? signalsTab : tabs.events;
+          return (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={part === p}
+              title={tab.title}
+              // The count is drawn by CSS (styles.css), so the tab's text stays its name.
+              data-count={tab.count}
+              onClick={() => onPart(p)}
+            >
+              {p === "signals" ? "Signals" : "Events"}
+            </button>
+          );
+        })}
       </div>
       <input
         ref={inputRef}
@@ -424,23 +436,13 @@ export function SignalExplorer({
       </label>
       {error && <p className="error">{catalog ? error : `${error} (retrying)`}</p>}
       {catalog && partial && <p className="count partial">{partialText(session ?? 1)}</p>}
-      {catalog ? (
-        <p className="count">
-          {query.trim() === "" ? (
-            // Empty search: the catalog's size and how to chart a row (add-guidance S5).
-            `${catalog.length} signals · drag a row onto a window, or press +`
-          ) : (
-            <>
-              {matches.length} match{matches.length === 1 ? "" : "es"}
-              {shownRows !== undefined ? `, showing ${shownRows}` : ""}
-            </>
-          )}
-        </p>
-      ) : noScope ? (
-        <p className="count">{NO_SCOPE_TEXT}</p>
-      ) : (
-        !error && <p className="count">Loading catalog…</p>
-      )}
+      {/* The counts sit on the tabs (design DW14); only states keep a line here. */}
+      {!catalog &&
+        (noScope ? (
+          <p className="count">{NO_SCOPE_TEXT}</p>
+        ) : (
+          !error && <p className="count">Loading catalog…</p>
+        ))}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: only blocks text selection and focus loss (D-065) */}
       <div className="results" onScroll={onListScroll} onMouseDown={preventListPress}>
         <div

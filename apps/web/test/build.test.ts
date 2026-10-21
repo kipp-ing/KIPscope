@@ -17,6 +17,7 @@ import {
   snaShare,
   stateLevel,
   stateLevels,
+  tagWidth,
   toPoints,
   yRange,
 } from "../src/chart/build.ts";
@@ -141,24 +142,56 @@ describe("labels", () => {
 
 describe("resolutionBadge", () => {
   const wide: BucketSeries = { ...buckets, width: "120000000000" }; // 2 min
+  const at = (ns: bigint): BucketSeries => ({ ...buckets, width: ns.toString() });
 
   it("gives a short badge and the full resolution as tooltip", () => {
     expect(resolutionBadge([])).toBeUndefined();
     expect(resolutionBadge([undefined])).toBeUndefined();
     expect(resolutionBadge([raw([], [])])).toEqual({ short: "raw", full: "raw" });
     expect(resolutionBadge([wide, wide])).toEqual({
-      short: "agg · 2 min",
+      short: "agg 2 min",
       full: "aggregated · 2 min per point",
     });
     expect(resolutionBadge([wide, raw([], [])])).toEqual({
-      short: "part · 2 min",
+      short: "part 2 min",
       full: "partly aggregated · 2 min per point",
     });
     // The widest bucket decides, and unloaded signals are ignored.
     expect(resolutionBadge([buckets, wide, undefined])).toEqual({
-      short: "agg · 2 min",
+      short: "agg 2 min",
       full: "aggregated · 2 min per point",
     });
+    // 536.8 ms, 90 s and a partly aggregated 1 s (workspace-layout "Short badge").
+    expect(resolutionBadge([at(536_800_000n)])).toEqual({
+      short: "agg 537 ms",
+      full: "aggregated · 537 ms per point",
+    });
+    expect(resolutionBadge([at(90_000_000_000n)])).toEqual({
+      short: "agg 1.5 min",
+      full: "aggregated · 1.5 min per point",
+    });
+    expect(resolutionBadge([at(1_000_000_000n), raw([], [])])).toEqual({
+      short: "part 1 s",
+      full: "partly aggregated · 1 s per point",
+    });
+  });
+
+  it("writes the tag width in the largest unit it reaches", () => {
+    // ≤ 3 significant figures: whole from 10, one decimal below, no ".0".
+    expect(tagWidth(12n)).toBe("12 ns");
+    expect(tagWidth(999n)).toBe("999 ns");
+    expect(tagWidth(2_500n)).toBe("2.5 µs");
+    expect(tagWidth(536_800_000n)).toBe("537 ms");
+    expect(tagWidth(1_000_000_000n)).toBe("1 s");
+    expect(tagWidth(4_803_200_000n)).toBe("4.8 s");
+    expect(tagWidth(12_000_000_000n)).toBe("12 s");
+    expect(tagWidth(90_000_000_000n)).toBe("1.5 min");
+    expect(tagWidth(120_000_000_000n)).toBe("2 min");
+    expect(tagWidth(3_600_000_000_000n)).toBe("1 h");
+    expect(tagWidth(36_000_000_000_000n)).toBe("10 h");
+    expect(tagWidth(129_600_000_000_000n)).toBe("1.5 d");
+    expect(tagWidth(86_400_000_000_000n)).toBe("1 d");
+    expect(tagWidth(864_000_000_000_000n)).toBe("10 d");
   });
 });
 

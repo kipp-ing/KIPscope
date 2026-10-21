@@ -392,11 +392,13 @@ export function rowsText(n: number): string {
   return `${n.toLocaleString("en-US")} rows`;
 }
 
-/** `${formatRange(start_i, start_i + width)} · ${rowsText(counts[i])}` (formatRange of time/axis.ts: local time as the header). */
-export function barTitle(d: Density, i: number): string {
+/** `${formatRange(start_i, start_i + width)} · ${rowsText(counts[i])}` (formatRange of time/axis.ts:
+ *  local time as the header), then `\n<info>` when given (the strip's info, time-strip "Strip tooltips"). */
+export function barTitle(d: Density, i: number, info?: string): string {
   const width = BigInt(d.width);
   const from = BigInt(d.start) + BigInt(i) * width;
-  return `${formatRange(from, from + width)} · ${rowsText(d.counts[i] ?? 0)}`;
+  const line = `${formatRange(from, from + width)} · ${rowsText(d.counts[i] ?? 0)}`;
+  return info === undefined ? line : `${line}\n${info}`;
 }
 
 /** `Drive ${i + 1} of ${n} · ${formatRange(from, to)} · ${formatSpan(to − from)} · ${rowsText(rows)}`. */

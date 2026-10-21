@@ -131,7 +131,7 @@ describe("hints table", () => {
 
   it("words the strip info as design H5", () => {
     expect(HINTS.stripInfo("3 d 4 h", "2 h")).toBe(
-      "TIME: the whole recording (3 d 4 h). Each bar is 2 h, its height the amount logged. Click to jump, drag to zoom, double-click for all",
+      "Time strip: the whole recording (3 d 4 h). Each bar is 2 h, its height the amount logged. Click to jump, drag to zoom, double-click for all",
     );
   });
 

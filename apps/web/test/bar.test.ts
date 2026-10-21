@@ -1,13 +1,23 @@
 import { readFileSync } from "node:fs";
 import {
+  type CommandResult,
   EMPTY_WORKSPACE,
   fromIso,
   type TimeseriesWindow,
   type ValuesWindow,
   type Workspace,
 } from "@kipscope/shared";
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
 import { barTarget, defaultCursorTime, resetSignals } from "../src/bar/bar.ts";
+import { OptionBar } from "../src/bar/OptionBar.tsx";
+
+// useSyncExternalStore has no server snapshot, so the linked preview is stubbed for static markup.
+vi.mock("../src/chart/linkedPreview.ts", async (importActual) => ({
+  ...(await importActual<typeof import("../src/chart/linkedPreview.ts")>()),
+  useLinkedPreview: () => undefined,
+}));
 
 const ts = (id: string, signals: string[]): TimeseriesWindow => ({
   id,
@@ -84,5 +94,73 @@ describe("option bar row", () => {
     expect(source).not.toMatch(/>\s*Span\s*</);
     expect(source).toContain("range-button");
     expect(source).toContain('aria-haspopup="dialog"');
+  });
+});
+
+describe("option bar order", () => {
+  const noop = () => {};
+  const bar = (workspace: Workspace) =>
+    renderToStaticMarkup(
+      createElement(OptionBar, {
+        workspace,
+        target: workspace.windows.find((w): w is TimeseriesWindow => w.kind === "timeseries"),
+        canGoBack: true,
+        onCommand: async () => ({ ok: true, revision: 1 }) as CommandResult,
+        onBack: noop,
+        onReset: noop,
+        onGoTo: () => undefined,
+        range: { from: 0n, to: 10n },
+        rangeLoaded: true,
+        pickerOpen: false,
+        onPickerOpen: noop,
+        typed: "",
+        onTyped: noop,
+        onApply: noop,
+        onOpened: noop,
+        trackOpen: ((send: () => unknown) => send()) as never,
+        onNotice: noop,
+        onMessage: noop,
+        workspaceId: "w1",
+        summary: undefined,
+        me: undefined,
+      }),
+    );
+
+  it("renders the top row in order", () => {
+    const html = bar(ws([ts("w1", ["c/SPEED_DISP"])]));
+    // First position of each control in the markup, in the order timeseries-window "Option bar" names.
+    const find = (name: string, pattern: RegExp) => {
+      const i = html.search(pattern);
+      expect(i, `${name} is in the row`).toBeGreaterThanOrEqual(0);
+      return i;
+    };
+    const order = [
+      find("Views", />Views</),
+      find("range control", /class="range-control"/),
+      find("Back", /aria-label="Back"/),
+      find("Reset", /aria-label="Reset"/),
+      find("Link time axes", /aria-label="Link time axes"/),
+      find("A", /<label[^>]*>(?:<input[^>]*>)?\s*A\s*<\/label>/),
+      find("B", /<label[^>]*>(?:<input[^>]*>)?\s*B\s*<\/label>/),
+      find("Diff", /<label[^>]*>(?:<input[^>]*>)?\s*Diff\s*<\/label>/),
+      find("Share…", /Share…/),
+      find("More", /aria-label="More"/),
+    ];
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+
+    // Back and Reset are icon buttons without visible text; Link time axes is a pressed-state button.
+    const button = (label: string) =>
+      new RegExp(`<button[^>]*aria-label="${label}"[^>]*>(.*?)</button>`, "s").exec(html);
+    for (const label of ["Back", "Reset"]) {
+      const m = button(label);
+      expect(m, label).not.toBeNull();
+      expect((m?.[1] ?? "").replace(/<[^>]*>/g, "").trim(), `${label} text`).toBe("");
+    }
+    expect(button("Link time axes")?.[0]).toContain("aria-pressed");
+
+    // Digits and + Values window are items of the "⋯" menu only (closed here).
+    expect(html).not.toContain('aria-label="Digits"');
+    expect(html).not.toContain("+ Values");
+    expect(html).not.toContain("New values window");
   });
 });

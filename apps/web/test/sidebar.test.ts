@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sidebarTabs } from "../src/explorer/tabs.ts";
 import {
   isEventsKey,
   isSidebarKey,
@@ -139,5 +140,49 @@ describe("sidebar part", () => {
     expect(isEventsKey(key("e"), el("SELECT"))).toBe(false);
     expect(isEventsKey(key("E"), el("BODY"))).toBe(false);
     expect(isEventsKey(key("s"), el("BODY"))).toBe(false);
+  });
+});
+
+describe("sidebar tabs", () => {
+  it("shows the events count on the tab", () => {
+    // 43 of 629 match the filter: the count, the sentence and both numbers in the title.
+    const filtered = sidebarTabs({
+      signals: 553,
+      events: { shown: 43, total: 629, sentence: "Active faults and state changes" },
+    }).events;
+    expect(filtered.count).toBe("43");
+    expect(filtered.title).toContain("43 events match the filter");
+    expect(filtered.title).toContain("629 in the recording");
+
+    // No events: the label alone, no count.
+    expect(
+      sidebarTabs({ signals: 553, events: { shown: 0, total: 0 } }).events.count,
+    ).toBeUndefined();
+    expect(sidebarTabs({ signals: 553 }).events.count).toBeUndefined();
+
+    // Thousands commas.
+    const big = sidebarTabs({ signals: 553, events: { shown: 1234, total: 2000 } }).events;
+    expect(big.count).toBe("1,234");
+
+    // Under a vehicle scope the work window's tooltip replaces the count tooltip.
+    const nearby = sidebarTabs({
+      signals: 553,
+      events: { shown: 3, total: 9, nearby: "Events near this session" },
+    }).events;
+    expect(nearby.count).toBe("3");
+    expect(nearby.title).toBe("Events near this session");
+  });
+
+  it("counts the signals on the tab", () => {
+    const all = sidebarTabs({ signals: 553 }).signals;
+    expect(all.count).toBe("553");
+    expect(all.title).toBe("Signals: 553 signals; drag a row onto a window, or press + · /");
+
+    const searching = sidebarTabs({ signals: 553, matches: 4 }).signals;
+    expect(searching.count).toBe("4");
+    expect(searching.title).toContain("4 of 553 match");
+    expect(searching.title).toBe(
+      "Signals: 4 of 553 match; drag a row onto a window, or press + · /",
+    );
   });
 });

@@ -9,26 +9,36 @@ import {
 } from "react";
 import { HINTS } from "../help/hints.ts";
 
+/** Three dots (mock Main.dc.html). */
+const MORE_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="12" r="1.8" />
+    <circle cx="12" cy="12" r="1.8" />
+    <circle cx="19" cy="12" r="1.8" />
+  </svg>
+);
+
 /** Closes the "⋯" menu; `true` also focuses "⋯" (after an action). */
 type Close = (refocus?: boolean) => void;
 
 /**
- * Overflow items App adds after the bar's own (add-guidance "?", V7 "Top-row overflow rule"): `row`
- * in the row right before "⋯" (it carries `overflow-item`), `menu` at the end of the menu.
+ * What App adds after "⋯" (add-guidance "?", design DW8): `row`, always in the row, never in the
+ * menu. `menu` is no longer rendered ("?" is never in "⋯"); it stays optional until App drops it
+ * (declutter-workspace task 8.2).
  */
 export interface OverflowTail {
   row: ReactNode;
-  menu: (close: Close) => ReactNode;
+  menu?: (close: Close) => ReactNode;
 }
 
 export const OverflowTailContext = createContext<OverflowTail | undefined>(undefined);
 
 /**
- * "⋯" at the end of the top row (add-saved-views V7 "Top-row overflow rule"): shown only below the
- * measured threshold (bar.css), where the in-row overflow items hide; its menu renders the same
- * controls. Enter, Space or ArrowDown opens it and focuses the first control; Esc closes it and
- * returns focus to "⋯"; Tab past the last control, a pointer down outside, or "⋯" hiding closes it.
- * App's overflow items (OverflowTailContext) come last, in the row and in the menu.
+ * "⋯" (`More`) near the end of the top row, always shown (design DW8): its menu holds Digits and
+ * "+ Values window", and Share… below the Share threshold (bar.css), where the row's Share… hides.
+ * Enter, Space or ArrowDown opens it and focuses the first control; Esc closes it and returns
+ * focus to "⋯"; Tab past the last control or a pointer down outside closes it. App's "?"
+ * (OverflowTailContext) follows "⋯" in the row.
  */
 export function OverflowMenu({
   children,
@@ -41,6 +51,19 @@ export function OverflowMenu({
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  // Whether Share… is inside the menu, i.e. the row's Share… is hidden (bar.css), for the tooltip.
+  const [shareInside, setShareInside] = useState(false);
+
+  useEffect(() => {
+    const bar = root.current?.parentElement;
+    if (!bar) return;
+    const observer = new ResizeObserver(() => {
+      const share = bar.querySelector(":scope > .share-menu.overflow-item");
+      setShareInside(share !== null && share.getClientRects().length === 0);
+    });
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   const close = useCallback((refocus = false) => {
     setOpen(false);
@@ -58,18 +81,12 @@ export function OverflowMenu({
       e.preventDefault();
       close(true);
     };
-    // The row grew past the threshold: "⋯" is display: none and the menu closes with it.
-    const observer = new ResizeObserver(() => {
-      if (button.current && button.current.getClientRects().length === 0) close();
-    });
-    if (button.current) observer.observe(button.current);
     // Capture phase: the plot's own pointer handling must not hide the click from us.
     document.addEventListener("pointerdown", onOutside, true);
     // Focus moved outside (Tab past the last control).
     document.addEventListener("focusin", onOutside);
     document.addEventListener("keydown", onKey);
     return () => {
-      observer.disconnect();
       document.removeEventListener("pointerdown", onOutside, true);
       document.removeEventListener("focusin", onOutside);
       document.removeEventListener("keydown", onKey);
@@ -78,16 +95,15 @@ export function OverflowMenu({
 
   return (
     <>
-      {tail?.row}
       <div ref={root} className="overflow-menu">
         <button
           ref={button}
           type="button"
           className="overflow-button"
-          aria-label="More controls"
+          aria-label="More"
           aria-haspopup="menu"
           aria-expanded={open}
-          title={HINTS.moreControls}
+          title={HINTS.more(shareInside)}
           onClick={() => setOpen((o) => !o)}
           onKeyDown={(e) => {
             if (e.key !== "ArrowDown" || open) return;
@@ -95,15 +111,15 @@ export function OverflowMenu({
             setOpen(true);
           }}
         >
-          ⋯
+          {MORE_ICON}
         </button>
         {open && (
           <div ref={panel} className="overflow-popover">
             {children(close)}
-            {tail?.menu(close)}
           </div>
         )}
       </div>
+      {tail?.row}
     </>
   );
 }

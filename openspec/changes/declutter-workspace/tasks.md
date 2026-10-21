@@ -32,9 +32,9 @@ Write areas (disjoint per task):
 ## 3. apps/web/src/chart and window
 
 - [ ] 3.1 Window header (DW11): `span.mode-tag` in its fixed slot from `resolutionBadge` with `tagWidth`; display select and Min/max removed from the header; `windowMenuItems` and `WindowMenu` with display items (`window/WindowMenu.tsx`), values windows without them. Verify: scenarios "Short badge" (`build.test.ts`), "Display from the menu" (`windowMenu.test.ts`), "No reflow on zoom" (UI, 10.3).
-- [ ] 3.4 Linked header without range (DW0; deferred by the pacer until `add-range-picker`'s range button shows the range): `span.range` only while link is off. Verify: scenario "Range read once" (UI, 10.3).
+- [x] 3.4 Linked header without range (DW0; deferred by the pacer until `add-range-picker`'s range button shows the range): `span.range` only while link is off. Verify: scenario "Range read once" (UI, 10.3).
 - [ ] 3.2 Legend header row (DW12, DW15): `legendHeaders` in `readout.ts`; `li.legend-head` as the first grid row of `ul.signals` with fixed cursor column widths and truncation; next-step hint in its name cell; `.readout-row` removed. Verify: scenarios "Header helper", "Times and Δt" (`readout.test.ts`), "Columns hold still" (UI, 10.3).
-- [ ] 3.3 Missing signals (DW13): `loadStatusText` → `missing` for 404 `unknown_signal` in and outside a case, `isMissing`, no retry; muted pill; `AxisInput.missing` leaves the signal out of `layoutAxes`; `sourceCell` reads `—` with `HINTS.missing`; make sure the API error's code reaches the loader state. Verify: scenarios "Status and axes" (`loader.test.ts`, `axes.test.ts`, `readout.test.ts`).
+- [x] 3.3 Missing signals (DW13): `loadStatusText` → `missing` for 404 `unknown_signal` in and outside a case, `isMissing`, no retry; muted pill; `AxisInput.missing` leaves the signal out of `layoutAxes`; `sourceCell` reads `—` with `HINTS.missing`; make sure the API error's code reaches the loader state. Verify: scenarios "Status and axes" (`loader.test.ts`, `axes.test.ts`, `readout.test.ts`).
 
 ## 4. apps/web/src/time
 
@@ -43,16 +43,16 @@ Write areas (disjoint per task):
 
 ## 5. apps/web/src/footer
 
-- [ ] 5.1 Footer (DW9): `statusTooltip`; `footerItems` without build and without ok source/catalog items; `RANK_BUILD` removed; `StatusBar` shows `connected`/`disconnected` with the dot colour rule and the tooltip; fit order unchanged otherwise. Verify: scenarios "Order in the bar", "Items from meta", "ADX and other kinds", "Unhappy states", "Stale and missing meta", "Drop order", "Message beats meta", "Measurement outlives automatic items", "Hidden items in the tooltip", "User item", "Tooltip lines" (`footer.test.ts`).
+- [x] 5.1 Footer (DW9): `statusTooltip`; `footerItems` without build and without ok source/catalog items; `RANK_BUILD` removed; `StatusBar` shows `connected`/`disconnected` with the dot colour rule and the tooltip; fit order unchanged otherwise. Verify: scenarios "Order in the bar", "Items from meta", "ADX and other kinds", "Unhappy states", "Stale and missing meta", "Drop order", "Message beats meta", "Measurement outlives automatic items", "Hidden items in the tooltip", "User item", "Tooltip lines" (`footer.test.ts`).
 
 ## 6. apps/web/src/explorer and values
 
-- [ ] 6.1 Sidebar tabs (DW14): `explorer/tabs.ts` `sidebarTabs`; counts on the Signals and Events tabs with titles; the count line removed; `SignalExplorer` prop `eventsTab`. Verify: scenarios "Tab count" (events), "Count line" (guidance) (`sidebar.test.ts`).
-- [ ] 6.2 Missing values row (DW13): `valueRowStatus` in `values/format.ts`, used by `ValuesWindow` for the row status and cells. Verify: scenario "Missing row" (`values.test.ts`).
+- [x] 6.1 Sidebar tabs (DW14): `explorer/tabs.ts` `sidebarTabs`; counts on the Signals and Events tabs with titles; the count line removed; `SignalExplorer` prop `eventsTab`. Verify: scenarios "Tab count" (events), "Count line" (guidance) (`sidebar.test.ts`).
+- [x] 6.2 Missing values row (DW13): `valueRowStatus` in `values/format.ts`, used by `ValuesWindow` for the row status and cells. Verify: scenario "Missing row" (`values.test.ts`).
 
 ## 7. apps/web/src/help and the manual
 
-- [ ] 7.1 Hints (DW18): the entries listed in DW18; wording rule W1. `docs/manual.md`: words for the moved controls (sidebar icon, Back/Reset icons, link toggle, Digits and "+ Values window" in "⋯", session bar slots and Align in the list, events count on the tab, mode tag, display mode in the window menu, legend header row), headings unchanged. Verify: `hints.test.ts` › "keeps every hint within the wording rule", "takes every tooltip from the hints table"; `manual.test.ts` stays green.
+- [x] 7.1 Hints (DW18): the entries listed in DW18; wording rule W1. `docs/manual.md`: words for the moved controls (sidebar icon, Back/Reset icons, link toggle, Digits and "+ Values window" in "⋯", session bar slots and Align in the list, events count on the tab, mode tag, display mode in the window menu, legend header row), headings unchanged. Verify: `hints.test.ts` › "keeps every hint within the wording rule", "takes every tooltip from the hints table"; `manual.test.ts` stays green.
 
 ## 8. apps/web/src root (App.tsx, ack.ts, styles.css)
 
@@ -62,11 +62,11 @@ Write areas (disjoint per task):
 ## 9. Tests (tester, test-first)
 
 - [ ] 9.1 `apps/web/test/sessionBar.test.ts`: "fills the session slots" (replaces "describes the session"), "shows the step target at once", "renders skeletons in the same slots", "marks a session crossing midnight", "puts the align modes into the catalog list", "renders the context row for a case, a scope or neither"; update "shows the open report in the session bar" (note inside `slot-title`) and "shows open warnings with the case notice" (no message-line notice); "filters the catalog list", "steps with brackets", "greys the arrows while unlinked", "messages after a step", "clears a case message on the next command" stay green.
-- [ ] 9.2 `apps/web/test/bar.test.ts` › "renders the top row in order"; `apps/web/test/windowMenu.test.ts` (new) › "offers display mode and min/max in the menu"; `apps/web/test/build.test.ts` › "gives a short badge and the full resolution as tooltip" (new texts, `tagWidth` cases).
-- [ ] 9.3 `apps/web/test/readout.test.ts` › "heads the legend columns with the cursor times", "reads an unknown signal as missing"; `apps/web/test/loader.test.ts` › "reads an unknown signal as missing" (fetch fails with the real `ApiRequestError` of a 404 body); `apps/web/test/axes.test.ts` › "leaves missing signals out of the axes"; `apps/web/test/values.test.ts` › "reads an unknown signal as missing".
-- [ ] 9.4 `apps/web/test/stripGeometry.test.ts` › "formats bar and drive tooltips" (info line); `apps/web/test/footer.test.ts`: the updated scenarios of app-footer and "puts revision, source, catalog and build into the status tooltip"; `apps/web/test/sidebar.test.ts` › "shows the events count on the tab", "counts the signals on the tab".
-- [ ] 9.5 `apps/cli/test/cli.test.ts` › "prints the open report" (no CLI code change expected); `apps/web/test/workspaces.test.ts` › "shows a dropped catalog's report after the page load" updated to the note.
-- [ ] 9.6 Run `pnpm build && pnpm test && pnpm lint`; report per file.
+- [x] 9.2 `apps/web/test/bar.test.ts` › "renders the top row in order"; `apps/web/test/windowMenu.test.ts` (new) › "offers display mode and min/max in the menu"; `apps/web/test/build.test.ts` › "gives a short badge and the full resolution as tooltip" (new texts, `tagWidth` cases).
+- [x] 9.3 `apps/web/test/readout.test.ts` › "heads the legend columns with the cursor times", "reads an unknown signal as missing"; `apps/web/test/loader.test.ts` › "reads an unknown signal as missing" (fetch fails with the real `ApiRequestError` of a 404 body); `apps/web/test/axes.test.ts` › "leaves missing signals out of the axes"; `apps/web/test/values.test.ts` › "reads an unknown signal as missing".
+- [x] 9.4 `apps/web/test/stripGeometry.test.ts` › "formats bar and drive tooltips" (info line); `apps/web/test/footer.test.ts`: the updated scenarios of app-footer and "puts revision, source, catalog and build into the status tooltip"; `apps/web/test/sidebar.test.ts` › "shows the events count on the tab", "counts the signals on the tab".
+- [x] 9.5 `apps/cli/test/cli.test.ts` › "prints the open report" (no CLI code change expected); `apps/web/test/workspaces.test.ts` › "shows a dropped catalog's report after the page load" updated to the note.
+- [x] 9.6 Run `pnpm build && pnpm test && pnpm lint`; report per file.
 
 ## 10. Checks outside the suite (UI user on smart451, lead)
 

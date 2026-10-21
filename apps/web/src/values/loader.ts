@@ -1,5 +1,5 @@
 import type { CursorValueResult, RenderError, ValuesMode } from "@kipscope/shared";
-import { isCatalogLoading } from "../api.ts";
+import { ApiRequestError, isCatalogLoading } from "../api.ts";
 import { GAP_LOADING_RETRY_MS } from "../chart/gaps.ts";
 import { RETRY_DELAYS_MS } from "../chart/loader.ts";
 
@@ -19,6 +19,10 @@ export interface ValueState {
   /** While loading, the previous result stays here so the row keeps showing it (dimmed). */
   result?: CursorValueResult;
   error?: string;
+  /** HTTP status and API error code of a failed request (an ApiRequestError), as the chart's
+   *  loader keeps them: a 404 `unknown_signal` reads `missing` (design DW13, valueRowStatus). */
+  errorStatus?: number;
+  errorCode?: string;
 }
 
 export type FetchValue = (request: ValueRequest, abort: AbortSignal) => Promise<CursorValueResult>;
@@ -152,7 +156,14 @@ export class ValueLoader {
         }
         this.waits.delete(key);
         const message = error instanceof Error ? error.message : String(error);
-        this.states.set(key, { status: "error", request: id, error: message });
+        this.states.set(key, {
+          status: "error",
+          request: id,
+          error: message,
+          ...(error instanceof ApiRequestError
+            ? { errorStatus: error.status, errorCode: error.code }
+            : {}),
+        });
         this.onChange();
       },
     );
