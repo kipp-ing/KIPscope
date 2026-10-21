@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-20, session 9. New direction after issue #1 and Jan's answers (D-078 … D-089); see Next. Thirty-one changes are archived and the main specs describe the running app.
+As of 2026-10-21, session 10. New direction after issue #1 and Jan's answers (D-078 … D-091); see Next. Thirty-two changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -35,7 +35,7 @@ As of 2026-10-20, session 9. New direction after issue #1 and Jan's answers (D-0
 | HTTP API | [api-reference](../openspec/specs/api-reference/spec.md) | Every route documented in [http-api.md](http-api.md), checked by a test |
 | Server access | [server-access](../openspec/specs/server-access/spec.md) | `Host`/`Origin` guard with configured origins (`KIPSCOPE_ORIGINS`), the built UI served by the server, JSON bodies, size limits |
 | Identity, workspaces, access | [user-identity](../openspec/specs/user-identity/spec.md), [workspaces](../openspec/specs/workspaces/spec.md), [data-access](../openspec/specs/data-access/spec.md) | Identity adapter `none`/`oidc` (Ping)/`module:`; a workspace per tab at `/w/<id>` with owner, share level and a grant of data refs; one guard on every route; Share… and Recent; views per user; guide [deploy.md](deploy.md) (D-088) |
-| Case handoff | [case-handoff](../openspec/specs/case-handoff/spec.md), [case-navigation](../openspec/specs/case-navigation/spec.md), [object-view](../openspec/specs/object-view/spec.md), [case-preload](../openspec/specs/case-preload/spec.md) | Signed catalog from the finder by link, file or CLI (any order, any vehicles); session bar with ‹ › `[` `]`, `k / n`, Align, Unlink to the whole vehicle (queries bounded by the view); tiles kept across sessions, neighbours preloaded; guide for a search tool (finder, out of scope) [handoff.md](handoff.md) (D-089) |
+| Case handoff | [case-handoff](../openspec/specs/case-handoff/spec.md), [case-navigation](../openspec/specs/case-navigation/spec.md), [object-view](../openspec/specs/object-view/spec.md), [case-preload](../openspec/specs/case-preload/spec.md) | Signed catalog from the finder by link, file or CLI (any order, any vehicles); session bar with ‹ › `[` `]`, `k / n`, Align, Unlink to the whole vehicle (queries bounded by the view); tiles kept across sessions, neighbours preloaded; balanced trim (`case url --trim`), open warnings as a note in the session bar; guide for a search tool (finder, out of scope) [handoff.md](handoff.md) (D-089, D-091) |
 
 History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SNA handling, window workflow, signal explorer, cursors, CLI, navigation, layout, live cursor, display names, window handling, series cache, zoom speed, load recovery, robustness, footer, signal groups, design language, diag metadata, events, multi-select, gap display, saved views, guidance, events usability, ADX source). Decisions D-001 … D-075: [decisions.md](decisions.md). Tester feedback: [feedback/](feedback/).
 
@@ -100,7 +100,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 2. Rest of persistence (concept §8): snapshots, templates, undo. Save and load are done (D-070).
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
 4. Later: sidebar work package (D-026), playback, state signals from value tables, timezone selection.
-5. Backlog from the search tool team's findings on issue #1 (comment of 2026-10-21; the small fixes are `fix-handoff-findings`):
+5. Backlog from the search tool team's findings on issue #1 (comment of 2026-10-21; the small fixes were `fix-handoff-findings`, archived, D-091):
    - Sources without an events table (Jan: „this will be bigger"): today ADX answers SEM0100, events come back empty with a warning per catalog load, and the failing query is sent again for every scope. Open: remember the missing table (per run or recheck per catalog load), a capability in `/api/meta`, events from a stored function with scope pushdown, what the UI shows and hides.
    - ADX speed: native batched `firstTimes` (offered as a contribution in the issue), periods kept per (data ref, signal) across sessions, gaps requests in chunks or below series (revisits D-081), preview's signal list loaded before the settle.
    - Catalog features: `aliases` for signals named differently per vehicle, per-kind `views`, `columns` for list and bar (units, order, table).

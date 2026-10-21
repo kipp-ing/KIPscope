@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-091: Handoff findings of the search tool's team (2026-10-21)
+
+Jan, on the issue #1 comment of 2026-10-21: „start with group one as proposed"; on the missing events table: „this will be bigger" (backlog); on the open warning: „keep it until leaving the session"; after his hand check: „looks ok".
+
+- **Decision:** A link too long is trimmed by dropping the far end of the longer side around `current` (tie: before), shipped as `trimCases` and `kipscope case url --trim`. In identity `none` a loopback `origin.url` is kept on any port. The open report (warnings, missing signals, align fallback) shows on every open path: in the bottom bar's notice and as a note in the session bar that stays until ✕ or the next accepted step, go or unlink (the bottom bar keeps D-089's rule). The guide states UTF-16 lengths, whole-catalog refusal, the view's times and the opener rule.
+- **Why:** The finder team's findings; the warning in the bottom bar alone went unnoticed in Jan's check.
+- **Consequences:** A missing events table, ADX speed, aliases, per-kind views, columns and a handoff store are in the backlog ([status.md](status.md), Next 5). `pnpm smoke` skips an expected API 4xx (`unknown_signal`) by its body code. Archive: [2026-10-21-fix-handoff-findings](../openspec/changes/archive/2026-10-21-fix-handoff-findings/).
+
 ## D-090: The search tool is out of scope and not named (2026-10-20)
 
 Jan: „[Suchtool] ist nicht öffentlich. das ist private. also nicht [Suchtool] dokumentieren sondern ein Suchtool. dass klar ist, das ist hier out of scope."

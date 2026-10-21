@@ -25,7 +25,7 @@ Write areas (disjoint):
 
 - [x] 3.1 Open report on every path (X4): `workspaces/caseReport.ts` (`CASE_REPORT_KEY`, `stashCaseReport`, `takeCaseReport`, never throwing); `openDroppedCatalog` stashes the answer's report before `go`; the start-up takes it for the settled workspace; `caseOpenEvents` in `case/sessionBar.ts`; `App.tsx` shows the open with `showResult(caseOpenEvents(…))` and no separate `setNotice`. Verify: scenarios "One notice for case texts and warnings", "Report carried across the page load", "Link in the browser" (unchanged), "Dropped file" (unchanged).
 
-- [ ] 3.2 Open report in the session bar (X4a): `openNoteText`, `endsOpenNote`, `caseOpenEvents` built from `openNoteText`; `SessionBar` props `openNote`, `onDismissNote` with the note and its ✕ after the session text; the note's CSS; `App.tsx` holds the note, sets it on open, clears it on ✕ and on `endsOpenNote`. Verify: scenarios "Note in the bar", "One notice for case texts and warnings" (unchanged), "Bar on smart451" (strip ≤ 56 px).
+- [x] 3.2 Open report in the session bar (X4a): `openNoteText`, `endsOpenNote`, `caseOpenEvents` built from `openNoteText`; `SessionBar` props `openNote`, `onDismissNote` with the note and its ✕ after the session text; the note's CSS; `App.tsx` holds the note, sets it on open, clears it on ✕ and on `endsOpenNote`. Verify: scenarios "Note in the bar", "One notice for case texts and warnings" (unchanged), "Bar on smart451" (strip ≤ 56 px).
 
 ## 4. apps/cli/src
 
@@ -48,4 +48,4 @@ Write areas (disjoint):
 ## 7. Checks outside the suite
 
 - [x] 7.1 UI user on smart451: "Dropped file on smart451" (one screenshot of the message line).
-- [ ] 7.2 UI user on smart451: "Note on smart451" (dropped file and link, tooltip, gone after `]`).
+- [x] 7.2 UI user on smart451: "Note on smart451" (dropped file and link, tooltip, gone after `]`).
