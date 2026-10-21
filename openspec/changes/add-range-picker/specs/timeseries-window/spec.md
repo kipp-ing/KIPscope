@@ -16,18 +16,18 @@ While "Link time axes" is off, each timeseries window's header SHALL show its ow
 ## MODIFIED Requirements
 
 ### Requirement: Option bar
-Above the windows, an option bar SHALL stay visible while the window list scrolls. It SHALL hold, in this order: the cursor toggles "A", "B" and "Diff" (cursors spec), "Link time axes", the range button (range-picker), "Back", "Reset", the digits option (number-format) and "+ Values window". Origin: D-023 (cursor toggles, diff mode, "Link time axes", zoom back and reset in a bar); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option); D-092 (1), (2) (range button, no Span select).
+Above the windows, an option bar SHALL stay visible while the window list scrolls. After the sidebar button it SHALL hold, in this order (the order of `declutter-workspace`, design DW8): "Views" (with the open view's title and the Read-only pill); a separator; the range control holding the range button (range-picker) and no Span select; "Back"; "Reset"; "Link time axes"; a separator; "A", "B" and "Diff" (cursors spec); then "Share…", the "⋯" menu and "?". Digits (number-format) and "+ Values window" SHALL be items of the "⋯" menu, which holds no Span select. Origin: D-023 (cursor toggles, diff mode, "Link time axes", zoom back and reset in a bar); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option); D-092 (1), (2) (range button, no Span select); order and the "⋯" items: D-092 (7), D-095 (critic 15), as `declutter-workspace` specifies them.
 
 #### Scenario: Scrolled down
 - **WHEN** six windows exist and the list is scrolled to the end
-- **THEN** the option bar is fully visible above the windows with its controls in that order, and neither the row nor its ⋯ menu holds a Span select
+- **THEN** the option bar is fully visible above the windows with its controls in the order `Views`, range button (`Go to`), `Back`, `Reset`, `Link time axes`, `A`, `B`, `Diff`, `Share…`, `⋯`, `?`; the open ⋯ menu holds the digits option and `+ Values window`; neither the row nor the menu holds a Span select
 - **Evidence:** UI check (screenshot of the row and of the open ⋯ menu)
 
 ### Requirement: Linked time zoom
 While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-click reset, history back, "Reset", navigation keys and the range picker in or for any window SHALL change the time range of all windows. During a wheel, pan or key gesture in one window, every linked window SHALL show and load the previewed range in the same frame, each at its own resolution; the range command SHALL still be sent once, by the gesture's window. While unlinked, each window SHALL keep its own range. Origin: D-017; D-027; D-041; D-092.
 
 #### Scenario: Zoom one of two linked windows
-- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
+- **WHEN** "Link time axes" is on, window 1 shows `smart451/COMBI_412h.V_ANZ`, window 2 shows `smart451/BMS.cell_voltage_sum`, and the user Ctrl+wheel-zooms in window 1
 - **THEN** within 1 s window 2's time axis shows the same range as window 1 and its curve is reloaded for it
 - **Evidence:** UI check (screenshot of both axes); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
 
@@ -45,7 +45,7 @@ While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-cl
 Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, range picker apply, time-strip action and drive key SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. "Back" SHALL be disabled when there is no previous range. Origin: D-018; D-025; D-027; D-057 (strip actions as "Go to"; a strip double-click replaces its first click's entry); D-092.
 
 #### Scenario: Two steps back
-- **WHEN** the user zooms a SPEED_DISP window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
+- **WHEN** the user zooms a `smart451/COMBI_412h.V_ANZ` window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
 - **THEN** the window shows the morning range, then the full extent, and the bar's "Back" is disabled
 - **Evidence:** UI check (screenshots of the range button after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
 

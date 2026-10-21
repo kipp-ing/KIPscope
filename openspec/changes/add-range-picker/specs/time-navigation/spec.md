@@ -4,8 +4,8 @@
 The range picker (range-picker) SHALL have a typed field "Go to" at its top. Enter SHALL resolve its text against the bar target's current range ("Navigation targets"), set the resulting range with one command and close the picker; the field keeps the text for the next open. Origin: D-027 („type a time or range"); D-092 (1) (the field moves into the picker, typed input keeps working).
 
 #### Scenario: Minute from the extent view
-- **WHEN** one window shows `ICL_3A2h.SPEED_DISP` at its extent view and the user opens the picker, types `15:08` into "Go to" and presses Enter
-- **THEN** the range button reads `26-10-13 15:08` and `0:01 h` (range-picker "Start and duration"), the picker is closed and the revision rose by exactly one
+- **WHEN** one window shows `smart451/COMBI_412h.V_ANZ` at its extent view (data fact, `kipscope extent` on 2026-10-21: 2026-10-11 14:34:24.824 – 2026-10-21 01:52:39.670 local) and the user opens the picker, types `15:08` into "Go to" and presses Enter
+- **THEN** the range button reads `26-10-20 15:08` and `0:01 h` (the latest 15:08 inside the view; range-picker "Start and duration"), the picker is closed and the revision rose by exactly one
 - **Evidence:** UI check (screenshot of the button and the revision); `packages/shared/test/timenav.test.ts` › "takes the latest occurrence of a time of day inside the view"
 
 ### Requirement: Input forms
@@ -38,8 +38,8 @@ Outside text fields and selects, without Ctrl, Meta or Alt, while no drag runs a
 - **Evidence:** `packages/shared/test/timenav.test.ts` › "zooms around the anchor and pans by fractions of the span"; `apps/web/test/keys.test.ts` › "maps navigation keys outside text fields"; UI check (range button after each key)
 
 #### Scenario: Home
-- **WHEN** a SPEED_DISP window is zoomed to 13:08:00Z–13:08:04Z and the user presses `Home` with the pointer over it
-- **THEN** the range shown is the extent 2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221 (range button `26-10-11 14:34` and `2 d 0 h`, duration tooltip `Duration 2 d 43 min`)
+- **WHEN** a `smart451/COMBI_412h.V_ANZ` window (extent as in "Minute from the extent view") is zoomed to 2026-10-13T13:08:00Z–13:08:04Z and the user presses `Home` with the pointer over it
+- **THEN** the range shown is the extent 2026-10-11 14:34:24.824 – 2026-10-21 01:52:39.670 (range button `26-10-11 14:34` and `9 d 11 h`, duration tooltip `Duration 9 d 11 h 18 min`)
 - **Evidence:** UI check (screenshot of the range button)
 
 #### Scenario: Keys in a text field
@@ -69,8 +69,8 @@ The range picker SHALL act on the bar target (the window zoomed last, else the f
 Each range picker apply ("Go", Enter in "Go to") and key step SHALL push the range shown before it to the target's zoom history, so "Back" and Backspace return to it. Steps of a held key SHALL join the entry of the press that started them and come at most every 100 ms. Each step SHALL start from the previous step's range, even before the server confirmed it. Origin: D-025 (one "Back"); timeseries-window "Zoom history"; rate in design N6 of `add-time-navigation`.
 
 #### Scenario: Back through typed and key steps
-- **WHEN** a SPEED_DISP window at its extent view gets `15:08` entered in "Go to", then `+` pressed twice quickly, then Backspace three times
-- **THEN** after the presses the span is 15 s (15:08:22.5–15:08:37.5, range button `26-10-13 15:08:22` and `15 s`), and the three Backspaces show 15:08:15–15:08:45 (`15:08:15`, `30 s`), then 15:08:00–15:09:00 (`15:08`, `0:01 h`), then the extent
+- **WHEN** a `smart451/COMBI_412h.V_ANZ` window at its extent view (as in "Minute from the extent view") gets `15:08` entered in "Go to", then `+` pressed twice quickly, then Backspace three times
+- **THEN** after the presses the span is 15 s (2026-10-20 15:08:22.5–15:08:37.5, range button `26-10-20 15:08:22` and `15 s`), and the three Backspaces show 15:08:15–15:08:45 (`26-10-20 15:08:15`, `30 s`), then 15:08:00–15:09:00 (`26-10-20 15:08`, `0:01 h`), then the extent (`26-10-11 14:34`, `9 d 11 h`)
 - **Evidence:** UI check (range button after each step); `apps/web/test/keys.test.ts` › "joins auto-repeat steps to one history entry"
 
 #### Scenario: Held key

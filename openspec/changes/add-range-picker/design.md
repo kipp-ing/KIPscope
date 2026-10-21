@@ -230,6 +230,15 @@ export interface RangePickerProps {
 
 On mount it fetches `fetchDensity(dataRef)` (whole recording, scope or coarse object scope; served from the server cache) and `fetchCalendar(dataRef, localMonth(...))` for both shown months, each with its own `AbortController` aborted on unmount; paging fetches only the new month. The web keeps answers in a module `Map` keyed `dataRef|scopeKey|from` for the page's life, cleared when the scope key changes; failures are not kept.
 
+Go on typed text (range-picker "Apply and cancel", Q-7), pinned in `bar/RangePicker.tsx`:
+
+```ts
+/** What Go applies: "typed" when the field holds non-blank text the user typed since this open, else "draft". */
+export function goSource(typed: string, typedThisOpen: boolean): "typed" | "draft";
+```
+
+`RangePicker` keeps `typedThisOpen` (false on mount, true on the field's first change); Go calls `goTyped()` when `goSource(typed, typedThisOpen) === "typed"`, else `go()`; Go is `disabled` only when the source is `draft` and the draft has an error. No prop changes.
+
 New in `apps/web/src/api.ts` (pinned): `fetchCalendar(dataRef: string, window: { from: bigint; to: bigint }, signal?: AbortSignal): Promise<CalendarDensity>`.
 
 Layout (mock): popover `position: absolute` under the button, left edge at the button's, shifted left to stay inside the viewport, width 640 px, padding 12 px, gap 10 px, 6 px radius, shadow; rows: typed field 28 px; month titles with ‹ › 26 px; two grids (7 columns, gap 2 px) of 6 × 40 px day cells, 30 px when `innerHeight < 640` (fits 1000×557); legend line (`data per 2 h`, `drive` with a slate-700 swatch, `Keys: arrows, PageUp/Down, Enter` (R5), the hint `Click a day; a second click ends the range` / `Click the last day, or set the times` / `Loading…` / `Density unavailable`); the chip line 24 px (`DRIVES TUE 13`, chips, Whole day, whole span); From and To, each with its date `YY-MM-DD` (60 px) and a 56 px mono field showing `HH:MM`; the result line 34 px (date in 13 px weight 600 and time with `title={full}`, `DurationTag` of `startDuration(draftRange(draft))` with its `durationTip`, or the error in `#be123c`), Cancel and Go (dark primary, disabled on an error). `role="dialog"`, `aria-label="Go to"`. Esc anywhere in it and a pointer-down outside it and the button call `onClose`.
@@ -280,7 +289,7 @@ While `linkTime` is false the header's range slot shows `ownRangeText(shownRange
 
 ## Manual checks
 
-UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "Worst cases fit", "Keyboard on smart451", "No timeseries window", "Open on smart451", "Fits and keeps its size", "Calendar on smart451", "Drive preset on smart451", "Go and Back", "Cancel, Esc and keys", "Linked and unlinked on smart451", "Two unlinked windows", the time-navigation scenarios with UI checks. Lead: "Cost on carserver" (four `curl` times), "Slow and failing source" (stops the tunnel or source and restarts it).
+UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "Worst cases fit", "Keyboard on smart451", "No timeseries window", "Open on smart451", "Fits and keeps its size", "Calendar on smart451", "Drive preset on smart451", "Go and Back", "Go with typed text on smart451", "Cancel, Esc and keys", "Linked and unlinked on smart451", "Two unlinked windows", the time-navigation scenarios with UI checks. Lead: "Cost on carserver" (four `curl` times), "Slow and failing source" (stops the tunnel or source and restarts it).
 
 ## Questions for Jan (defaults taken unless he vetoes)
 
@@ -290,6 +299,7 @@ UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "Wor
 - **Q-4** Superseded by D-093: start and duration fit the 212 px button for any range (hours unbounded).
 - **Q-5** Superseded by D-095: the start's tooltip is the full date (`Tue 2026-10-13 15:06`), the duration's its words (`Duration 12 min`); seconds only under 1 min.
 - **Q-6** (D-093) A calendar day's tooltip keeps its weekday (`Tue 26-10-13 · …`), as the mock does; a day is no range. Default: keep.
+- **Q-7** (lead, 2026-10-21, after the UI user's finding that Go ignored typed text) Go applies text typed into "Go to" during this open as Enter does, and that text wins over the calendar draft. Alternative: the field only says Enter applies it. Default: Go applies it.
 
 ## Ledger entry on archive (proposed; the lead writes it)
 

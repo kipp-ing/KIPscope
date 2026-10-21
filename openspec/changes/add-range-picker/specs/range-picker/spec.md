@@ -77,7 +77,7 @@ The top row SHALL show, in the former "Go to" field's slot, a 212 px button (nam
 - **Evidence:** UI check on smart451 (the x and width values per state and viewport, one screenshot each)
 
 #### Scenario: Worst cases fit
-- **WHEN** at 1440×900 the user types `2026-10-13 15:06:03 +41s`, then `2026-10-13 15:06 +47h59min`, then `2026-10-11 14:34 +9d11h` into "Go to"
+- **WHEN** at 1440×900 the user types `2026-10-13 15:06:03 +41s`, then `2026-10-13 15:06 +2879min`, then `2026-10-11 14:34 +227h` into "Go to" (one unit per duration, time-navigation "Input forms"), each with Enter
 - **THEN** the button reads `26-10-13 15:06:03` with `41 s`, `26-10-13 15:06` with `47:59 h`, and `26-10-11 14:34` with `9 d 11 h`; in each state the button is 212 px wide and no text element inside it is cut (`scrollWidth ≤ clientWidth` for the date-and-time span and the duration tag)
 - **Evidence:** UI check on smart451 (button width, the two `scrollWidth`/`clientWidth` pairs per state, one screenshot each)
 
@@ -157,8 +157,8 @@ Each day cell SHALL show its number and 12 bars of two local hours from local mi
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "words the day tooltip with rows, drives and the reason for no rows"
 
 #### Scenario: Calendar on smart451
-- **WHEN** the picker is opened on smart451 (no scope) showing September and October 2026
-- **THEN** October 11 … 21 show bars, drive bars in `rgb(51, 65, 85)` on the days with drives (e.g. 13 and 17) and no bar outside the selected days in `rgb(2, 132, 199)`, days without rows are muted and marked `aria-disabled="true"`, and a day's tooltip names its rows and drives (`Tue 26-10-13 · … rows · … drives`)
+- **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local on smart451 (no scope) and the picker is opened, showing September and October 2026 with 13 selected
+- **THEN** October 11 … 21 show bars (data fact, `GET /api/calendar` on 2026-10-21: rows on 11 … 21, drives on 11, 13 and 15 … 20), drive bars in `rgb(51, 65, 85)` on the unselected days with drives (e.g. 15 and 17), the selected 13's bars in white on the accent, and no bar outside the selected days in `rgb(2, 132, 199)`, days without rows are muted and marked `aria-disabled="true"`, and a day's tooltip names its rows and drives (`Tue 26-10-13 · … rows · … drives`)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot with one tooltip)
 
 ### Requirement: Day selection
@@ -236,6 +236,19 @@ Go and Enter in the typed field SHALL set the range with one command for the bar
 - **WHEN** the user opens the picker, clicks a day and presses Esc; opens it, clicks a day and clicks Cancel; opens it, clicks a day cell and presses `-`, `→` and `Home`; and the key handler gets `+` while the picker is open
 - **THEN** the revision and the shown range never change and the picker is closed after Esc and Cancel; the handler returns no action
 - **Evidence:** `apps/web/test/keys.test.ts` › "ignores navigation keys while the range picker is open"; UI check (revision before and after)
+
+### Requirement: Go on typed text
+Go SHALL apply non-blank text typed into the field during this open as Enter does, ahead of the draft (a refused text: its reason, picker open, no command), and be enabled while such text is there; else Go applies the draft. Origin: lead's default of 2026-10-21 after the UI user found Go ignoring typed text (design Q-7, Jan may veto); "during this open": necessary consequence of the field keeping its text across opens.
+
+#### Scenario: Go takes the typed text
+- **WHEN** `goSource` gets (`15:08`, typed in this open), (`15:08`, not typed in this open), (`  `, typed in this open) and (``, typed in this open)
+- **THEN** `typed`, `draft`, `draft`, `draft`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "lets Go apply text typed in this open"
+
+#### Scenario: Go with typed text on smart451
+- **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local; the user opens the picker, types `15:08` and clicks Go; opens it, types `25:00` and clicks Go, then presses Esc; opens it again (the field holds `25:00`, untouched), clicks **Whole day** and Go
+- **THEN** the first Go closes the picker with `26-10-13 15:08` and `0:01 h` and the revision rose by exactly one; the second shows the invalid-time reason in the result line, the picker stays open and the revision is unchanged; the third applies the whole day (`26-10-13 00:00` and `24:00 h`), one revision more
+- **Evidence:** UI check on smart451 (button text and revision after each Go, screenshot with the reason)
 
 ### Requirement: Picker in a scope and a case
 The calendar SHALL show the strip's data ref and only rows inside the workspace's scope: in a linked catalog the session's scope, unlinked the vehicle's months. Days without rows in the scope SHALL be disabled with the tooltip `· outside the session`, `· outside the scope` or `· no data`. Applied ranges are clamped as every navigation is. Origin: D-082 (scope); D-086, D-089 (Unlink is the whole vehicle, queries bounded by what is shown).
