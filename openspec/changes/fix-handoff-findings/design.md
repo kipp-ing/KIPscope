@@ -1,0 +1,172 @@
+# Design
+
+## Context
+
+A search tool's team (finder; not part of KIPscope and not named here, D-090) built against `docs/handoff.md` and the `add-case-open` code and reported findings in GitHub issue #1 (comment 2026-10-21). The lead checked each against the code; Jan approved group 1. The facts this design rests on:
+
+| # | Finding | Where today |
+|---|---|---|
+| 1 | "drop … alternately before and after `current`" empties a short side first (current 2 of 3,540, budget 213: both predecessors dropped although they fit); the CLI only refuses | `docs/handoff.md:177`; `apps/cli/src/case.ts:66-71`; `MAX_LINK_CHARS = 8_192` in `packages/shared/src/views.ts:39` |
+| 2a | length limits are zod `min`/`max` on strings, i.e. JavaScript string length (UTF-16 code units) | `packages/shared/src/case.ts:44-84` |
+| 2b | one bad entry refuses the whole catalog | `case.ts:363-374`; case-handoff "Catalog document" („refused as a whole") |
+| 2c | with `view`, every timeseries window gets the session scope; cursors are dropped | `packages/shared/src/caseApply.ts:179-193`; case-handoff "View in the payload" |
+| 2d | the server sets no Cross-Origin-Opener-Policy; the named tab needs the opener relationship | `apps/server/src/web.ts:76-79`; `docs/handoff.md:178` |
+| 3 | the back-link warning is shown on the link path, but replaced in the single message slot when a case notice is shown just before; the file-drop path throws the answer away before `location.assign` | `apps/server/src/case.ts:212`; `apps/web/src/App.tsx:1481-1497`; `apps/web/src/filedrop.ts:66-73` |
+| 4 | `origin.url` is kept only on an exact `KIPSCOPE_FINDER_ORIGINS` match; the Host guard accepts loopback on any port | `apps/server/src/case.ts:236-246`; `apps/server/src/access.ts:7-12, 34-61` |
+| 5 | ADX `events()` answers `undefined` on SEM0100; `EventsCache.loadTable` warns and serves empty, but the query is sent again for every scope, work window and catalog load, from two caches (events route and case route) | `apps/server/src/adx.ts:358-361`; `apps/server/src/events.ts:184-196`; `routes/events.ts:77`, `routes/case.ts:66` |
+
+Align to an event lives in `apps/web/src/case/sessionBar.ts` (`alignToEvent`, `alignItems`), `apps/web/src/time/TimeStrip.tsx:601-865` (pin context menu) and `apps/web/src/events/EventsPanel.tsx:339, 380` (row and fault-memory-read actions). Every entry point hangs on a shown event; the Align menu itself offers only start, end, anchor and, in event mode, the chosen event.
+
+## Goals / Non-Goals
+
+**Goals:** close the five findings with the smallest change; ship the trim rule as code the finder can port; keep every interface two write areas share pinned below.
+
+**Non-Goals:** see the proposal's "Out of scope".
+
+## Decisions
+
+### X1: Balanced trim (pinned, new `packages/shared/src/caseTrim.ts`, exported from `index.ts`)
+
+```ts
+/** What trimCases needs of a catalog; unknown keys pass through unchanged. */
+export interface TrimmableCases {
+  cases: readonly unknown[];
+  /** Default 0. */
+  current?: number;
+}
+
+export type TrimResult<D> =
+  | {
+      ok: true;
+      /** The input object itself when nothing was dropped; else {...doc, cases: slice, current}. */
+      doc: D;
+      /** encode(doc): the text whose length was measured (the link, or what a signer gave). */
+      text: string;
+      dropped: { before: number; after: number };
+    }
+  | { ok: false; code: "link_too_long"; /** Length with current alone. */ chars: number };
+
+/**
+ * Balanced trim (case-handoff "Balanced trim"). Pure apart from `encode`. Throws RangeError when
+ * `cases` is empty or `current` is not an integer in [0, cases.length).
+ */
+export function trimCases<D extends TrimmableCases>(
+  doc: D,
+  options: { maxChars: number; encode: (doc: D) => string | Promise<string> },
+): Promise<TrimResult<D>>;
+```
+
+- **Drop order:** with `b` sessions before `current` and `a` after, the k-th drop removes the first session when `b ≥ a` and `b > 0` (then `b−1`, `current−1`), else the last (`a−1`). The window after k drops is computed without encoding.
+- **Search:** `encode` the untouched document (fits → return it, `===`); `encode` the window with `current` alone (`k = n − 1`; does not fit → `link_too_long`); then bisect k between them, keeping the smallest k that fits and its text. At most ⌈log2 n⌉ + 2 calls. Bisection assumes the length does not grow when a session is dropped; with deflate or a signature that can be off by a session in rare cases, and the result still fits.
+- **No session cap:** `trimCases` takes any length (the finder may trim a 3,540-session result list before it builds the 2,000-session document); the 2,000 limit stays the server's.
+- **Why the longer side:** it keeps the neighbours on both sides as long as either side has more than the other; a short side is never emptied while the long side has more.
+
+### X2: CLI `case url --trim` (pinned, `apps/cli/src/args.ts`, `apps/cli/src/case.ts`)
+
+- `CaseInvocation` `url` gains `trim?: true`; `--trim` joins `FLAG_OPTIONS` and is accepted only by `case url` (`take(1, ["--trim"])`).
+- With `--trim`: a JWS → `CliError("usage", "usage", "a signed catalog cannot be trimmed: trim the document before signing")`; an unsigned code → `decodeCasesLink`; a document → used as it is after checking `cases` is a non-empty array and `current` (default 0) an integer index into it (else usage). Then `trimCases(doc, {maxChars: MAX_LINK_CHARS, encode: async (d) => casesLinkUrl(origin, await encodeCasesLink(d))})`; `ok: false` → exit 2 `link_too_long` naming `chars`.
+- Output: `local` `{url, dropped: {before, after}, position: "<current + 1> / <cases.length>"}`. Without `--trim` nothing changes.
+- Help text: the `case url` line names `[--trim]`.
+
+### X3: Loopback back link in identity `none` (`apps/server/src/case.ts`)
+
+`listedOrigin(url, origins, identity)`: kept when the URL is `http:`/`https:` and either its origin is in `origins`, or `identity === "none"` and `isLoopbackHost(new URL(url).hostname)` (`access.ts`; `hostname` of `http://[::1]:8080/` is `[::1]`, which the set holds). The warning text stays `origin.url <url> dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS`.
+
+### X4: Open report shown on every path (pinned, `apps/web`)
+
+New `apps/web/src/workspaces/caseReport.ts`:
+
+```ts
+export const CASE_REPORT_KEY = "kipscope.caseOpenReport";
+type ReportStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+/** Stores {workspace, report} for the next page load of this tab; never throws. Default store: sessionStorage. */
+export function stashCaseReport(workspaceId: string, report: CaseOpenReport, store?: ReportStore): void;
+/** The stored report when it belongs to `workspaceId`; removes the entry in every case; never throws. */
+export function takeCaseReport(workspaceId: string, store?: ReportStore): CaseOpenReport | undefined;
+```
+
+- `openDroppedCatalog(file, deps)` gains `deps.store?: ReportStore` and calls `stashCaseReport(answer.workspace.id, answer.case, store)` before `go`. `sessionStorage` is per tab and survives `location.assign` in that tab.
+- `apps/web/src/workspaces/startup.ts`: after the workspace `id` is settled and when `cases` is still undefined, `cases = takeCaseReport(id)`. The `ready` result then carries it exactly as after a link, so `App.tsx` needs no second path.
+- New in `apps/web/src/case/sessionBar.ts`:
+
+```ts
+/** The open's one notice (case-handoff "Open warnings shown"): alignment fallback and missing
+ *  signals as caseResultEvents words them, then the report's warnings, joined by " · "; [] when empty. */
+export function caseOpenEvents(
+  report: CaseOpenReport,
+  after: WorkspaceCase,
+  nameOf?: (signalId: string) => string | undefined,
+): StripEvent[];
+```
+
+- `App.tsx` (the effect at :1481-1497) calls `showResult(caseOpenEvents(report, openedCase, nameOf))` and drops its separate `setNotice(warnings)`. Like every case notice it ends with the tab's next command (case-navigation "Case notices clear on the next command").
+
+### X5: Missing events table remembered (pinned, `apps/server/src/events.ts`)
+
+```ts
+import type { SourceEvents } from "@kipscope/shared"; // "table" | "none" | "unknown"
+/** What the server knows of the source's events table; per source object, shared by every EventsCache over it. */
+export function eventsTableState(source: EventsSource): SourceEvents;
+```
+
+- A module `WeakMap<EventsSource, {state: SourceEvents; warned: boolean}>`, initial state `unknown` (an adapter without `events` answers "no table" through `completeSource`, so it turns `none` on its first load).
+- `loadTable`: state `none` → answer no table events without calling the source. Otherwise call it; `undefined` → state `none` and, when not yet `warned`, warn `events: <table> does not exist; no events` and set `warned`; rows → state `table`. A thrown error leaves the state.
+- The case route's cache (`routes/case.ts` `eventsOf`) gets the app's `log.warn` instead of `() => {}`, so whichever cache meets the miss first logs it; the memory keeps it to one warning per run.
+- State changes of events-line signals are unaffected: `loadSignal` still runs (the empty table has no state names to skip).
+
+### X6: `source.events` in `/api/meta` (pinned)
+
+`packages/shared/src/meta.ts`:
+
+```ts
+/** Whether the source has an events table (events "Events table in meta"). */
+export type SourceEvents = "table" | "none" | "unknown";
+// ServerMeta.source gains:
+    /** Always sent by this server; absent from older ones. */
+    events?: SourceEvents;
+```
+
+`apps/server/src/meta.ts` sets `source.events = eventsTableState(deps.source)` on every answer (no query; the value is what the caches learned). `docs/http-api.md` meta row: "data source (kind, database, table, reachable, events table)".
+
+The web app does not read it: align to an event is already offered only on a shown event (Context), so with `source.events` `none` and no events-line signal nothing offers it. The change pins that with a test ("No events, no Align") and changes no web code for it.
+
+### X7: Documents
+
+- `docs/handoff.md`: "The link" bullet "Trimming" rewritten to the X1 rule with the 3,540/213 example and a pointer to `trimCases` and `kipscope case url --trim`; a "Lengths" note under the key tables (UTF-16 code units, `"é".length` 1, `"😀".length` 2; the inflated limit in UTF-8 bytes); under the errors table, `invalid_catalog` refuses the whole catalog, no session is skipped; under `view`, each chart opens at `[from − pad, to + pad)` of `current`, the view's chart times and cursors are not used; under the named tab, KIPscope sets no `Cross-Origin-Opener-Policy`, `window.open(url, "kipscope")` and `<a target="kipscope">` reuse the tab only while the finder keeps the opener relationship, so no `noopener`/`rel="noopener"` and no COOP `same-origin` on the finder page (nor on a proxy in front of KIPscope), else every click opens a new tab; the `origin.url` row and `KIPSCOPE_FINDER_ORIGINS` row name the loopback rule in `none`.
+- `docs/http-api.md`: the meta row (X6).
+- `README.md`: the `case url` row names `--trim`.
+
+## Numbers: what if off by a factor of two
+
+| Number | Source | ×2 or ÷2 |
+|---|---|---|
+| ⌈log2 n⌉ + 2 encodes | X1 bisection | 2,000 sessions: 13 encodes of ≤ ~300 KB JSON, a few ms each; twice the calls or twice the cost stays under 0.2 s. A linear search would need up to ~1,750 encodes. |
+| 8,192 characters | D-070, unchanged | Not this change's number. |
+| One warning per run | X5 | Twice is harmless; per scope (today) floods the log on ADX. |
+| Report in `sessionStorage` | X4 | A few hundred bytes (signal names, one URL) of a 5 MB quota. |
+
+## Security
+
+- **Loopback back link (X3):** only in identity `none`, where one local user owns the server and the Host guard already trusts loopback on any port. The link is a top-level navigation the user clicks; it can reach only the clicking user's own machine. On a server (any other identity) the rule is unchanged.
+- **Stored report (X4):** same tab, same origin, removed at its first read; it holds what the message line shows anyway.
+- **Meta (X6):** one word, no table name, no address.
+
+## Spec owner's defaults (Jan can veto)
+
+- A missing events table is remembered for the server run; an events table created while the server runs shows after a restart (X5). Alternative: forget it on each catalog load (one query per load, as for ClickHouse today).
+- `source.events` reports `unknown` until the first answer instead of probing the source at start-up (a probe needs a data ref and, in scoped mode, a scope).
+
+## Test fixtures (pinned for the tester)
+
+- L(n) and its encoder: case-handoff "Balanced trim".
+- C4: catalog of `add-case-open` design "Test fixtures" (`apps/web/test/caseFixtures.ts`, server and CLI tests).
+- The 2,000-session catalog: `apps/cli/test/cli.test.ts` › "prints a catalog link".
+
+## Manual checks
+
+- UI user: "Dropped file on smart451" (case-handoff), "Align on smart451" unchanged.
+- Lead: `curl -s localhost:7310/api/meta | jq -c .source.events` prints `"table"` on smart451 (app-footer "Real server").
+
+## Ledger entry on archive (proposed D-091; the lead writes it)
+
+**D-091: Handoff findings of the search tool's team.** A link too long is trimmed by dropping the far end of the longer side around `current` (tie: before), shipped as `trimCases` and `kipscope case url --trim`. In identity `none` a loopback `origin.url` is kept on any port. The open report's warnings show on every open path with the case notice. A missing events table is remembered for the server run and reported as `/api/meta` `source.events`. The guide states UTF-16 lengths, whole-catalog refusal, the view's times and the opener rule.
