@@ -196,7 +196,7 @@ Both grids together SHALL be one tab stop (roving tabindex, on open the start da
 - **Evidence:** UI check on smart451 (`document.activeElement`'s `aria-label` after each key, the From/To dates after each Enter, one screenshot after the second Enter)
 
 ### Requirement: Time fields
-From and To SHALL show their date as `YY-MM-DD` and a time field taking `hh:mm` (also `hh:mm:ss[.fff]`), local; To also `24:00`, the next local midnight. A bad time, an end not after the start, or a nonexistent or ambiguous local time SHALL show its reason in the result line and disable Go. Enter in a field SHALL act as Go. Origin: Jan („date and to times"); D-093 (HH:MM fields, typed precision kept); DST: time-navigation "Invalid input changes nothing".
+From and To SHALL show their date as `YY-MM-DD` and a time field taking `hh:mm` (also `hh:mm:ss[.fff]`), local; To also `24:00`, the next local midnight. A bad time, an end not after the start, or a nonexistent or ambiguous local time SHALL show its reason in the result line and disable Go. Origin: Jan („date and to times"); D-093 (HH:MM fields, typed precision kept); DST: time-navigation "Invalid input changes nothing".
 
 #### Scenario: Draft to range
 - **WHEN** `draftRange` gets {13, 13, `15:06:03`, `15:18:33`}, {13, 13, `00:00`, `24:00`}, {13, 13, `15:18`, `15:06`}, {13, 13, `25:00`, `26:00`} and {2026-10-25, 2026-10-25, `02:30`, `04:00`}
@@ -221,11 +221,11 @@ The picker SHALL offer one chip per drive of the start day reading its start and
 
 #### Scenario: Drive preset on smart451
 - **WHEN** the user opens the picker, clicks 2026-10-17, clicks the chip of its first drive and Go
-- **THEN** the button shows that drive's start and duration (`26-10-17 10:01` and about `2:05 h`), the strip marks it, and Back returns to the range before
+- **THEN** the button shows that drive's start and duration (`26-10-17 10:01` and `2:06 h`; data fact, `GET /api/calendar?dataRef=smart451` for 2026-10-17 on 2026-10-21: drives 10:01 – 12:07, 12:41 – 12:50 and 13:05 – 13:15 local), the strip marks it, and Back returns to the range before
 - **Evidence:** UI check on smart451 (button and strip after Go and after Back)
 
 ### Requirement: Apply and cancel
-Go and Enter in the typed field SHALL set the range with one command for the bar target, as "Go to" did (all windows while linked, the target only while unlinked, one zoom history entry), and close the picker. Cancel, Esc and a click outside SHALL close it without a command. While it is open the navigation keys SHALL do nothing. Origin: D-092 (mock: Go, Cancel); time-navigation "Navigation targets", "Navigation in the zoom history".
+Go and Enter in any of the picker's fields SHALL apply what "Go on typed text" names with one command for the bar target, as "Go to" did (all windows while linked, the target only while unlinked, one zoom history entry), and close the picker. Cancel, Esc and a click outside SHALL close it without a command. While it is open the navigation keys SHALL do nothing. Origin: D-092 (mock: Go, Cancel); time-navigation "Navigation targets", "Navigation in the zoom history".
 
 #### Scenario: Go and Back
 - **WHEN** two linked windows show smart451 at a 20 min range, the user opens the picker, clicks **Whole day** and Go, then clicks "Back"
@@ -238,24 +238,52 @@ Go and Enter in the typed field SHALL set the range with one command for the bar
 - **Evidence:** `apps/web/test/keys.test.ts` › "ignores navigation keys while the range picker is open"; UI check (revision before and after)
 
 ### Requirement: Go on typed text
-Go SHALL apply non-blank text typed into the field during this open as Enter does, ahead of the draft (a refused text: its reason, picker open, no command), and be enabled while such text is there; else Go applies the draft. Origin: lead's default of 2026-10-21 after the UI user found Go ignoring typed text (design Q-7, Jan may veto); "during this open": necessary consequence of the field keeping its text across opens.
+The last edit of this open SHALL decide what Go applies: while typing non-blank text is the latest edit, Go SHALL apply that text (refused: reason in the result line, no command) and stay enabled. A later draft change (day, chip, preset, From or To) SHALL hand Go back to the draft and clear the reason; typing again leads again; paging changes neither. Origin: lead's default of 2026-10-21, refined after round 6 (design Q-7, Jan may veto); "this open": the field keeps its text.
 
 #### Scenario: Go takes the typed text
 - **WHEN** `goSource` gets (`15:08`, typed in this open), (`15:08`, not typed in this open), (`  `, typed in this open) and (``, typed in this open)
 - **THEN** `typed`, `draft`, `draft`, `draft`
 - **Evidence:** `apps/web/test/rangePicker.test.ts` › "lets Go apply text typed in this open"
 
+#### Scenario: Typed then clicked
+- **WHEN** from `GO_OPENED` the field gets `15:08` (`goAfter` with `typed`), then **Whole day** changes the draft of 2026-10-13 15:06:03 – 15:18:00 to 00:00 – 24:00 (`goAfter` with `draft`), and `goAction` is asked before and after; and on smart451 with the bar target at 2026-10-13 15:06:03 – 15:18:33 local the user opens the picker, types `15:08`, clicks **Whole day** and Go
+- **THEN** before the click `{typed: "15:08"}`; after it the state is `{typedThisOpen: false, typedError: undefined}` and `goAction` gives the range 2026-10-12T22:00:00Z – 2026-10-13T22:00:00Z; in the UI the result line reads `26-10-13 00:00` and `24:00 h` after the click, and Go closes the picker with the button reading the same and the revision one higher
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "applies the whole day after 15:08 was typed and Whole day clicked"; UI check on smart451 (result line after the click, button text and revision after Go)
+
+#### Scenario: Refused then clicked
+- **WHEN** from `GO_OPENED` the field gets `25:00`, Go is refused with a reason (`goAfter` with `refused`), then **Whole day** changes the draft; and on smart451 as in "Typed then clicked" the user types `25:00`, clicks Go, then clicks **Whole day** and Go
+- **THEN** after the refusal the state keeps `typedThisOpen: true` with the reason and `goAction` still gives `{typed: "25:00"}`; after the click the reason is gone and `goAction` gives the whole day 2026-10-12T22:00:00Z – 2026-10-13T22:00:00Z; in the UI the first Go shows the reason in the result line only (the app's message line shows none), the picker stays open and the revision is unchanged; the click replaces the reason with `26-10-13 00:00` and `24:00 h`; the second Go applies that day, one revision more
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "applies the day after a refused 25:00 and Whole day, and drops the reason"; UI check on smart451 (screenshot with the reason, result line after the click, revision after each Go)
+
+#### Scenario: Typing leads again
+- **WHEN** from `GO_OPENED` a draft change, a refusal and then a change in the typed field follow (`goAfter` with `draft`, `refused`, `typed`)
+- **THEN** the state is `{typedThisOpen: true, typedError: undefined}`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "lets typing after a draft change lead again and clears a reason"
+
+#### Scenario: Go enabled with typed text and a draft error
+- **WHEN** `goAction` gets the draft 13, 13, `15:06:03`, `25:00` (an error) with (`15:08`, typed in this open), (`15:08`, not typed in this open) and (``, typed in this open)
+- **THEN** `{typed: "15:08"}` (Go enabled), `undefined` and `undefined` (Go disabled)
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "keeps Go enabled with typed text while the draft has an error"
+
 #### Scenario: Go with typed text on smart451
 - **WHEN** the bar target shows 2026-10-13 15:06:03 – 15:18:33 local; the user opens the picker, types `15:08` and clicks Go; opens it, types `25:00` and clicks Go, then presses Esc; opens it again (the field holds `25:00`, untouched), clicks **Whole day** and Go
 - **THEN** the first Go closes the picker with `26-10-13 15:08` and `0:01 h` and the revision rose by exactly one; the second shows the invalid-time reason in the result line, the picker stays open and the revision is unchanged; the third applies the whole day (`26-10-13 00:00` and `24:00 h`), one revision more
 - **Evidence:** UI check on smart451 (button text and revision after each Go, screenshot with the reason)
 
+### Requirement: Enter as Go
+Enter in the typed field, in From and in To SHALL act exactly as the Go button (same source, "Go on typed text"). So Enter in the typed field right after opening, without typing in this open, SHALL apply the draft (normally the range shown), not the text kept from an earlier open. Origin: design Q-7 (refined 2026-10-21; reviewer: Enter and Go had different sources).
+
+#### Scenario: Enter as Go
+- **WHEN** `goAction` gets (`15:08`, typed in this open, the draft 2026-10-13 15:06:03 – 15:18:00) and (`15:08`, not typed in this open, that draft); and on smart451 with the bar target at 2026-10-13 15:06:03 – 15:18:33 local the user opens the picker, types `15:08`, clicks into the From field without changing it and presses Enter; then clicks Back (the field still holds `15:08`), opens the picker and presses Enter at once
+- **THEN** `{typed: "15:08"}` and the range 2026-10-13T13:06:03Z – 13:18:00Z (the kept text is not applied); in the UI the first Enter closes the picker with the button reading `26-10-13 15:08` and `0:01 h`, one revision more; after Back the button reads `26-10-13 15:06` and `0:12 h`, and the second Enter applies the draft, so it still reads that, not `15:08`
+- **Evidence:** `apps/web/test/rangePicker.test.ts` › "gives Enter in a field the same source as Go"; UI check on smart451 (button text and revision after each Enter)
+
 ### Requirement: Picker in a scope and a case
 The calendar SHALL show the strip's data ref and only rows inside the workspace's scope: in a linked catalog the session's scope, unlinked the vehicle's months. Days without rows in the scope SHALL be disabled with the tooltip `· outside the session`, `· outside the scope` or `· no data`. Applied ranges are clamped as every navigation is. Origin: D-082 (scope); D-086, D-089 (Unlink is the whole vehicle, queries bounded by what is shown).
 
 #### Scenario: Linked and unlinked on smart451
-- **WHEN** a catalog from `kipscope case drives smart451` is open on a drive of 2026-10-17, the user opens the picker, then clicks **Unlink** and opens it again
-- **THEN** linked, only 2026-10-17 has bars, the other days are disabled with `outside the session`, and the whole-span chip reads `Whole session`; unlinked, every day of smart451 with rows shows bars and the chip reads `Whole recording`
+- **WHEN** a catalog from `kipscope case drives smart451` is open on one of its sessions (e.g. the case workspace of the UI checks on 2026-10-21: 2026-10-15 20:58:06 – 21:23:12 local, `kipscope scope show`), the user opens the picker, then clicks **Unlink** and opens it again
+- **THEN** linked, only the session's day (there 2026-10-15) has bars, the other days are disabled with `outside the session`, and the whole-span chip reads `Whole session`; unlinked, every day of smart451 with rows shows bars and the chip reads `Whole recording`
 - **Evidence:** UI check on smart451 (one screenshot each)
 
 ### Requirement: Picker states

@@ -4,7 +4,7 @@
 The range picker (range-picker) SHALL have a typed field "Go to" at its top. Enter SHALL resolve its text against the bar target's current range ("Navigation targets"), set the resulting range with one command and close the picker; the field keeps the text for the next open. Origin: D-027 („type a time or range"); D-092 (1) (the field moves into the picker, typed input keeps working).
 
 #### Scenario: Minute from the extent view
-- **WHEN** one window shows `smart451/COMBI_412h.V_ANZ` at its extent view (data fact, `kipscope extent` on 2026-10-21: 2026-10-11 14:34:24.824 – 2026-10-21 01:52:39.670 local) and the user opens the picker, types `15:08` into "Go to" and presses Enter
+- **WHEN** one window shows `smart451/COMBI_412h.V_ANZ` at its extent view (data fact, `kipscope extent` on 2026-10-21: first sample 2026-10-11 14:34:24.824, last 2026-10-21 01:52:39.670 local) and the user opens the picker, types `15:08` into "Go to" and presses Enter
 - **THEN** the range button reads `26-10-20 15:08` and `0:01 h` (the latest 15:08 inside the view; range-picker "Start and duration"), the picker is closed and the revision rose by exactly one
 - **Evidence:** UI check (screenshot of the button and the revision); `packages/shared/test/timenav.test.ts` › "takes the latest occurrence of a time of day inside the view"
 
@@ -22,12 +22,12 @@ The field SHALL accept, in local time unless the text carries `Z` or an offset: 
 - **Evidence:** `packages/shared/test/timenav.test.ts` › "accepts the header's own range text"
 
 ### Requirement: Invalid input changes nothing
-Text that does not parse, a nonexistent or ambiguous local time, an empty or reversed range, a span below 100 ns, or an anchor whose cursor is off SHALL send no command; the field SHALL be marked invalid with the reason in the picker's result line, and the picker stays open. A range beyond 1900 … 2262 SHALL be clamped into the bounds. Origin: D-021 (bounds); timeseries-window "Minimum zoom span"; add-cli "Time arguments" (DST refused, not guessed; concept §8).
+Text that does not parse, a nonexistent or ambiguous local time, an empty or reversed range, a span below 100 ns, or an anchor whose cursor is off SHALL send no command; the field SHALL be marked invalid with the reason in the picker's result line only (not also in the app's message line), and the picker stays open. A range beyond 1900 … 2262 SHALL be clamped into the bounds. Origin: D-021 (bounds); timeseries-window "Minimum zoom span"; add-cli "Time arguments" (DST refused, not guessed; concept §8); result line only: necessary consequence of D-092 (1) (the field and its reason live in the picker; round 6 found the reason shown twice).
 
 #### Scenario: Bad inputs
 - **WHEN** the user enters `25:00`, `2026-10-13 15:09 .. 2026-10-13 15:08`, `2026-10-25 02:30` and `a` (with A off) one after another into "Go to"
-- **THEN** each marks the field invalid with a reason in the result line (invalid time, reversed range, ambiguous local time naming `+02:00 or +01:00`, cursor A is off), the picker stays open, and the revision does not change
-- **Evidence:** `packages/shared/test/timenav.test.ts` › "refuses invalid, reversed, ambiguous and cursor-off input"; UI check (screenshot with the reason, revision before and after)
+- **THEN** each marks the field invalid with a reason in the result line (invalid time, reversed range, ambiguous local time naming `+02:00 or +01:00`, cursor A is off) and nowhere else (the app's message line stays empty), the picker stays open, and the revision does not change
+- **Evidence:** `packages/shared/test/timenav.test.ts` › "refuses invalid, reversed, ambiguous and cursor-off input"; UI check (screenshot with the reason and the empty message line, revision before and after)
 
 ### Requirement: Navigation keys
 Outside text fields and selects, without Ctrl, Meta or Alt, while no drag runs and while the range picker is closed, `+` or `=` SHALL halve the key target's span, `-` double it, `←`/`→` pan by half the span, Shift+`←`/`→` by the whole span, `Home` do what "Reset" does for that target, and `t` open the range picker with "Go to" focused and its text selected. Origin: D-027; keyboard tester (feedback 2026-10-15 item 1); text-field rule as for Backspace (D-020); picker: D-092 (1).
@@ -39,7 +39,7 @@ Outside text fields and selects, without Ctrl, Meta or Alt, while no drag runs a
 
 #### Scenario: Home
 - **WHEN** a `smart451/COMBI_412h.V_ANZ` window (extent as in "Minute from the extent view") is zoomed to 2026-10-13T13:08:00Z–13:08:04Z and the user presses `Home` with the pointer over it
-- **THEN** the range shown is the extent 2026-10-11 14:34:24.824 – 2026-10-21 01:52:39.670 (range button `26-10-11 14:34` and `9 d 11 h`, duration tooltip `Duration 9 d 11 h 18 min`)
+- **THEN** the range shown is the extent 2026-10-11 14:34:24.824 – 2026-10-21 01:52:39.671 (half-open: the last sample .670 rounded up to the next millisecond, `extentRange` in `apps/web/src/chart/zoom.ts`; range button `26-10-11 14:34` and `9 d 11 h`, duration tooltip `Duration 9 d 11 h 18 min`)
 - **Evidence:** UI check (screenshot of the range button)
 
 #### Scenario: Keys in a text field
@@ -57,7 +57,7 @@ The range picker SHALL act on the bar target (the window zoomed last, else the f
 
 #### Scenario: Unlinked go to
 - **WHEN** "Link time axes" is off, window 2 was zoomed last, and the user enters `15:08` into "Go to"
-- **THEN** the range button's tooltip named "Window 2", window 2 shows 15:08:00–15:09:00 and window 1 keeps its range
+- **THEN** the range button's tooltip named window 2 by its title (`Go to: pick a range or type one in <title> · t`, `HINTS.goTo`), window 2 shows 15:08:00–15:09:00 and window 1 keeps its range
 - **Evidence:** UI check (screenshot of the range button with its tooltip and of both windows' own ranges)
 
 #### Scenario: Linked keys

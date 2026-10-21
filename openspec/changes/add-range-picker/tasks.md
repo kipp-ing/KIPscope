@@ -13,6 +13,8 @@ Write areas (disjoint):
 - 3.4: `apps/web/src/chart/TimeseriesWindow.tsx` (and its header CSS)
 - 3.5: `apps/web/src/time/Duration.tsx` (new)
 - 3.6: `apps/web/src/bar/RangePicker.tsx` (after 3.2; not in the same round as another task on it)
+- 3.7: `apps/web/src/bar/RangePicker.tsx` (after 3.6)
+- 3.8: `apps/web/src/App.tsx`
 - 4.x: tests as listed per task
 - 5.1: `docs/http-api.md`; 5.2, 5.3: `docs/manual.md`, `README.md`
 
@@ -37,6 +39,8 @@ D-095 (the critic's findings) arrived after round 4: 3.1–3.5, 4.3, 4.4 and 6.1
 - [x] 3.4 Own range of an unlinked window (R13) in the header's range slot: `ownRangeText(…).text`, `tip` as tooltip (D-095). Verify: scenarios "Own range text", "Two unlinked windows".
 - [x] 3.5 `time/Duration.tsx` (R6, D-095): `DurationTag({text, title})` with the stopwatch icon, `title={title}`, `white-space: nowrap`. Verify: scenario "Duration tag" (`apps/web/test/rangeLine.test.ts` › "renders the duration with its icon and tooltip": static markup holds `svg.duration-icon`, `0:12 h` and `title="Duration 12 min"`).
 - [x] 3.6 Go on typed text (Q-7, write area of 3.2: `bar/RangePicker.tsx`): export `goSource` (design R10), track `typedThisOpen`, Go calls `goTyped` for `typed` and `go` for `draft`, disabled only for a draft error. Verify: scenarios "Go takes the typed text", "Go with typed text on smart451".
+- [x] 3.7 The last edit wins (Q-7 refined 2026-10-21, design R10; built in dd3d463): export `GoState`, `GO_OPENED`, `GoEdit`, `goAfter`, `goAction` as pinned; one `GoState` per open; `changeDraft` applies `draft`, the typed field's change `typed`, a reason from `onGoTo` `refused`; paging applies nothing; one `go()` from `goAction` for the Go button and Enter in the typed field, From and To (Enter right after opening applies the draft, not the kept text); Go disabled exactly when `goAction` is `undefined`. Verify: scenarios "Typed then clicked", "Refused then clicked", "Typing leads again", "Enter as Go", "Go enabled with typed text and a draft error" (unit halves).
+- [ ] 3.8 A refused typed text's reason once (design R10): `App.tsx`'s `onGoTo` returns the reason without posting it to the message line; props of R11 unchanged. Verify: scenario "Bad inputs" (UI: message line empty) and the UI half of "Refused then clicked".
 
 ## 4. Tests
 
@@ -46,6 +50,7 @@ D-095 (the critic's findings) arrived after round 4: 3.1–3.5, 4.3, 4.4 and 6.1
 - [x] 4.4 Web (reworked for D-093 and D-095: new "steps the focused day and pages to it", "names each day for screen readers", "renders each month as a keyboard grid"; new chip labels and titles in "lists the day's drives and names the whole span"; earlier: "shows filled times to the minute"; new expectations in "words the day tooltip with rows, drives and the reason for no rows", "turns the draft into a range or a reason", "lists the day's drives and names the whole span"; the others unchanged): `apps/web/test/rangePicker.test.ts` › "drafts the shown range", "shows filled times to the minute", "lays out a month Monday first", "pages only towards data", "sums local two-hour bars and marks drives", "scales bar heights by decades", "words the day tooltip with rows, drives and the reason for no rows", "picks a start and an end day", "turns the draft into a range or a reason", "lists the day's drives and names the whole span", "keeps the picker usable while the calendar loads or fails" (the fetch state helper or a rendered picker with held and failing `fetchCalendar`).
 - [x] 4.5 Web: `apps/web/test/keys.test.ts` › "ignores navigation keys while the range picker is open"; existing "maps navigation keys outside text fields" and "joins auto-repeat steps to one history entry" stay green; `bar.test.ts` and `hints.test.ts` updated for the removed Span hint.
 - [x] 4.6 Web: `apps/web/test/rangePicker.test.ts` › "lets Go apply text typed in this open" (the four `goSource` cases of "Go takes the typed text").
+- [x] 4.7 Web: `apps/web/test/rangePicker.test.ts` › "applies the whole day after 15:08 was typed and Whole day clicked", "applies the day after a refused 25:00 and Whole day, and drops the reason", "lets typing after a draft change lead again and clears a reason", "gives Enter in a field the same source as Go", "keeps Go enabled with typed text while the draft has an error" (scenarios of 3.7; in dd3d463).
 
 ## 5. Docs
 
@@ -57,4 +62,5 @@ D-095 (the critic's findings) arrived after round 4: 3.1–3.5, 4.3, 4.4 and 6.1
 ## 6. Checks outside the suite
 
 - [x] 6.1 UI user on smart451 at 1440×900 and 1000×557: the manual checks of design "Manual checks" (one screenshot per scenario, rects where the scenario names them), again after D-095 (new: "Worst cases fit", "Keyboard on smart451") and Q-7 (new: "Go with typed text on smart451"; data facts of "Minute from the extent view", "Home", "Back through typed and key steps" and "Calendar on smart451" re-derived on 2026-10-21).
+- [ ] 6.3 UI user on smart451 at 1440×900 (after 3.8): the UI halves of "Typed then clicked", "Refused then clicked" and "Enter as Go", and "Bad inputs" again with the message line in view (result line, button text and revision per step, one screenshot with a reason).
 - [x] 6.2 Lead: "Cost on carserver" (four `curl` times against their goals; a result over twice its goal goes to Jan with F1/F2) and "Slow and failing source".

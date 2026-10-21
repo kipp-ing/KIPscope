@@ -36,7 +36,7 @@ Owned by the sibling change `declutter-workspace` (D-092): the strip head line (
 
 Owned by `declutter-workspace` from D-095: the sidebar, the strip (event shapes, end labels, flags, Shift+A/B), the pressed style of toggles, the session bar, axes, the Reset glyph and Share.
 
-Not in this change: Home/End or year jumps inside the calendar grid; a live preview of the picked range in the windows before Go; parsing the button's own text (`YY-MM-DD` dates, `H:MM` durations) in the typed field; D-093 texts outside the range button, picker, unlinked header and `declutter-workspace`'s rows (events list, values window, CLI keep their formats); a web or server prefetch of calendar months (fallback F1 if the measurement misses its goal); events or gaps in the calendar; a year or decade view; a time zone other than the browser's; CLI changes (the CLI's time arguments stay as they are).
+Not in this change: Home/End or year jumps inside the calendar grid; a live preview of the picked range in the windows before Go; a live preview of what typed text would apply (the result line shows the draft until Go; design Q-7); parsing the button's own text (`YY-MM-DD` dates, `H:MM` durations) in the typed field; D-093 texts outside the range button, picker, unlinked header and `declutter-workspace`'s rows (events list, values window, CLI keep their formats); a web or server prefetch of calendar months (fallback F1 if the measurement misses its goal); events or gaps in the calendar; a year or decade view; a time zone other than the browser's; CLI changes (the CLI's time arguments stay as they are).
 
 ## Impact
 

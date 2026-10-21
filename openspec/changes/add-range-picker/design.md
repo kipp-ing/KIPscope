@@ -230,14 +230,31 @@ export interface RangePickerProps {
 
 On mount it fetches `fetchDensity(dataRef)` (whole recording, scope or coarse object scope; served from the server cache) and `fetchCalendar(dataRef, localMonth(...))` for both shown months, each with its own `AbortController` aborted on unmount; paging fetches only the new month. The web keeps answers in a module `Map` keyed `dataRef|scopeKey|from` for the page's life, cleared when the scope key changes; failures are not kept.
 
-Go on typed text (range-picker "Apply and cancel", Q-7), pinned in `bar/RangePicker.tsx`:
+Go on typed text (range-picker "Go on typed text", Q-7: the last edit wins), pinned in `bar/RangePicker.tsx`:
 
 ```ts
 /** What Go applies: "typed" when the field holds non-blank text the user typed since this open, else "draft". */
 export function goSource(typed: string, typedThisOpen: boolean): "typed" | "draft";
+
+/** Whether the field leads Go, and a refused text's reason. */
+export interface GoState { typedThisOpen: boolean; typedError: string | undefined }
+export const GO_OPENED: GoState;   // { typedThisOpen: false, typedError: undefined }
+/** "typed": a change in the typed field. "draft": any draft change (day click, Enter or Space on a day,
+ *  drive chip, Whole day, whole span, a From/To edit). "refused": onGoTo answered a reason. */
+export type GoEdit = { kind: "typed" } | { kind: "draft" } | { kind: "refused"; error: string };
+/** typed → {true, undefined}; draft → {false, undefined}; refused → reason set, typedThisOpen kept. */
+export function goAfter(state: GoState, edit: GoEdit): GoState;
+/** What Go and Enter in any field apply: the typed text, the draft's range, or nothing (draft source with an error). */
+export function goAction(
+  typed: string,
+  typedThisOpen: boolean,
+  result: { from: bigint; to: bigint } | { error: string },
+): { typed: string } | { range: { from: bigint; to: bigint } } | undefined;
 ```
 
-`RangePicker` keeps `typedThisOpen` (false on mount, true on the field's first change); Go calls `goTyped()` when `goSource(typed, typedThisOpen) === "typed"`, else `go()`; Go is `disabled` only when the source is `draft` and the draft has an error. No prop changes.
+`RangePicker` keeps one `GoState`, `GO_OPENED` on mount (the picker mounts per open). Every draft change goes through `changeDraft`, which also applies `{kind: "draft"}`; the typed field's `onChange` applies `{kind: "typed"}`; a reason from `onGoTo` applies `{kind: "refused"}`. Paging months (‹ ›, a grid key that pages) changes no draft and applies no edit. One `go()` runs `goAction(...)`: `{range}` → `onApply` and close; `{typed}` → `onGoTo`, close on `undefined`, else `refused`; `undefined` → nothing. The Go button, Enter in the typed field and Enter in From and To all call that `go()`; so Enter in the typed field right after opening, without typing in this open, applies the draft (normally the range shown), not the text kept from an earlier open; Go is `disabled` exactly when `goAction` answers `undefined`. The result line shows `typedError` when set, else the draft's range or error; so after a draft change it shows what Go applies. While the typed text leads and is not yet refused, the result line still shows the draft (a live preview of the typed text needs a resolve-only prop: out of scope, Jan's call). No prop changes.
+
+A refused typed text's reason shows in the result line only: `App.tsx`'s `onGoTo` returns it and no longer posts it to the message line (time-navigation "Invalid input changes nothing"; round 6 found it twice). `onGoTo` and `onGoToClear` stay as pinned in R11.
 
 New in `apps/web/src/api.ts` (pinned): `fetchCalendar(dataRef: string, window: { from: bigint; to: bigint }, signal?: AbortSignal): Promise<CalendarDensity>`.
 
@@ -289,7 +306,7 @@ While `linkTime` is false the header's range slot shows `ownRangeText(shownRange
 
 ## Manual checks
 
-UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "Worst cases fit", "Keyboard on smart451", "No timeseries window", "Open on smart451", "Fits and keeps its size", "Calendar on smart451", "Drive preset on smart451", "Go and Back", "Go with typed text on smart451", "Cancel, Esc and keys", "Linked and unlinked on smart451", "Two unlinked windows", the time-navigation scenarios with UI checks. Lead: "Cost on carserver" (four `curl` times), "Slow and failing source" (stops the tunnel or source and restarts it).
+UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "Worst cases fit", "Keyboard on smart451", "No timeseries window", "Open on smart451", "Fits and keeps its size", "Calendar on smart451", "Drive preset on smart451", "Go and Back", "Go with typed text on smart451", "Typed then clicked", "Refused then clicked", "Enter as Go", "Cancel, Esc and keys", "Linked and unlinked on smart451", "Two unlinked windows", the time-navigation scenarios with UI checks. Lead: "Cost on carserver" (four `curl` times), "Slow and failing source" (stops the tunnel or source and restarts it).
 
 ## Questions for Jan (defaults taken unless he vetoes)
 
@@ -300,6 +317,7 @@ UI user on smart451 at 1440×900 and 1000×557: "Button text", "No reflow", "Wor
 - **Q-5** Superseded by D-095: the start's tooltip is the full date (`Tue 2026-10-13 15:06`), the duration's its words (`Duration 12 min`); seconds only under 1 min.
 - **Q-6** (D-093) A calendar day's tooltip keeps its weekday (`Tue 26-10-13 · …`), as the mock does; a day is no range. Default: keep.
 - **Q-7** (lead, 2026-10-21, after the UI user's finding that Go ignored typed text) Go applies text typed into "Go to" during this open as Enter does, and that text wins over the calendar draft. Alternative: the field only says Enter applies it. Default: Go applies it.
+  Refined by the lead on 2026-10-21 after the reviewer's round-6 findings (still a default Jan can veto): **the last edit wins.** Go applies the typed text only while typing is the latest edit of this open; a later day click, Enter or Space on a day, drive chip, Whole day, whole span or From/To edit changes the draft and hands Go back to it (the result line then shows what Go applies). Typing again makes the typed text lead again. A refused text shows its reason until the next edit; a later draft change clears it. Paging months alone changes nothing. Enter in the typed field and in From and To acts exactly as Go (same source), so Enter right after opening applies the draft, not the text kept from an earlier open. Alternative: the result line previews the typed text and the typed text keeps winning (needs a resolve-only prop).
 
 ## Ledger entry on archive (proposed; the lead writes it)
 
