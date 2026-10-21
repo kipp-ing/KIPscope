@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-094: The strip shows presence, events and cursors (2026-10-21)
+
+Jan, on the strip: „die timeline ist sehr wichtig für events. weniger wichtig, wenn wir session basiert arbeiten […] die balken wirken aktuell komisch". On the UI designer's strip variants and the lead's three questions: „color ok, density would be just strip or no strip? thats probably good enough. and a/b labels should be on the strip to jump back to it".
+
+- **Decision:** The time strip is one fixed-height row (24 px in the mock, same in a session, unlinked, scoped or loading). It shows: data presence as a thin line with breaks at data gaps (no density bars, no density area; "strip or no strip"), drives in slate, an events lane (pins by kind, fault-memory reads hollow), the shown range in the accent, and A/B as small flags that jump the view back to that cursor on click. Supersedes the density bars of D-055/D-057 on the strip; the range picker's per-day calendar density (D-092) stays.
+- **Why:** In a session the bars are nearly uniform and read as a barcode; what matters there is events, gaps, where the view is and where the cursors are.
+- **Consequences:** `declutter-workspace` takes the strip over before it is archived; mock `Strip.dc.html` (row "Recommended").
+
 ## D-093: Start and duration, no seconds, two-digit year (2026-10-21)
 
 Jan, on the declutter mock's range „15:06:03 – 15:18:33": „passt nicht gut. sekunden braucht niemand. Jahr reicht YY"; then on „Tue 2026-10-13 15:06:54 – 15:17:42": „datum viel weniger daten. ehr start YY-MM-DD HH:MM Dauer: HH:MM".
