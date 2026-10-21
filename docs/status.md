@@ -100,7 +100,12 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 2. Rest of persistence (concept §8): snapshots, templates, undo. Save and load are done (D-070).
 3. carserver: the read-only ClickHouse user `letsview` lives in serverzoo commit `b3a70b9`, **not pushed yet**; the password is only in the local `.env`.
 4. Later: sidebar work package (D-026), playback, state signals from value tables, timezone selection.
-5. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
+5. Backlog from the search tool team's findings on issue #1 (comment of 2026-10-21; the small fixes are `fix-handoff-findings`):
+   - Sources without an events table (Jan: „this will be bigger"): today ADX answers SEM0100, events come back empty with a warning per catalog load, and the failing query is sent again for every scope. Open: remember the missing table (per run or recheck per catalog load), a capability in `/api/meta`, events from a stored function with scope pushdown, what the UI shows and hides.
+   - ADX speed: native batched `firstTimes` (offered as a contribution in the issue), periods kept per (data ref, signal) across sessions, gaps requests in chunks or below series (revisits D-081), preview's signal list loaded before the settle.
+   - Catalog features: `aliases` for signals named differently per vehicle, per-kind `views`, `columns` for list and bar (units, order, table).
+   - `POST /api/handoffs` with a one-time handle for lists beyond a link (security decision).
+6. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
 ## Known limitations
 

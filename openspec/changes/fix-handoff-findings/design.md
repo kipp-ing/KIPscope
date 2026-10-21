@@ -13,15 +13,13 @@ A search tool's team (finder; not part of KIPscope and not named here, D-090) bu
 | 2d | the server sets no Cross-Origin-Opener-Policy; the named tab needs the opener relationship | `apps/server/src/web.ts:76-79`; `docs/handoff.md:178` |
 | 3 | the back-link warning is shown on the link path, but replaced in the single message slot when a case notice is shown just before; the file-drop path throws the answer away before `location.assign` | `apps/server/src/case.ts:212`; `apps/web/src/App.tsx:1481-1497`; `apps/web/src/filedrop.ts:66-73` |
 | 4 | `origin.url` is kept only on an exact `KIPSCOPE_FINDER_ORIGINS` match; the Host guard accepts loopback on any port | `apps/server/src/case.ts:236-246`; `apps/server/src/access.ts:7-12, 34-61` |
-| 5 | ADX `events()` answers `undefined` on SEM0100; `EventsCache.loadTable` warns and serves empty, but the query is sent again for every scope, work window and catalog load, from two caches (events route and case route) | `apps/server/src/adx.ts:358-361`; `apps/server/src/events.ts:184-196`; `routes/events.ts:77`, `routes/case.ts:66` |
 
-Align to an event lives in `apps/web/src/case/sessionBar.ts` (`alignToEvent`, `alignItems`), `apps/web/src/time/TimeStrip.tsx:601-865` (pin context menu) and `apps/web/src/events/EventsPanel.tsx:339, 380` (row and fault-memory-read actions). Every entry point hangs on a shown event; the Align menu itself offers only start, end, anchor and, in event mode, the chosen event.
 
 ## Goals / Non-Goals
 
 **Goals:** close the five findings with the smallest change; ship the trim rule as code the finder can port; keep every interface two write areas share pinned below.
 
-**Non-Goals:** see the proposal's "Out of scope".
+**Non-Goals:** see the proposal's "Out of scope"; the missing events table (finding 5) is in the backlog (docs/status.md, Next 5).
 
 ## Decisions
 
@@ -101,39 +99,9 @@ export function caseOpenEvents(
 
 - `App.tsx` (the effect at :1481-1497) calls `showResult(caseOpenEvents(report, openedCase, nameOf))` and drops its separate `setNotice(warnings)`. Like every case notice it ends with the tab's next command (case-navigation "Case notices clear on the next command").
 
-### X5: Missing events table remembered (pinned, `apps/server/src/events.ts`)
-
-```ts
-import type { SourceEvents } from "@kipscope/shared"; // "table" | "none" | "unknown"
-/** What the server knows of the source's events table; per source object, shared by every EventsCache over it. */
-export function eventsTableState(source: EventsSource): SourceEvents;
-```
-
-- A module `WeakMap<EventsSource, {state: SourceEvents; warned: boolean}>`, initial state `unknown` (an adapter without `events` answers "no table" through `completeSource`, so it turns `none` on its first load).
-- `loadTable`: state `none` → answer no table events without calling the source. Otherwise call it; `undefined` → state `none` and, when not yet `warned`, warn `events: <table> does not exist; no events` and set `warned`; rows → state `table`. A thrown error leaves the state.
-- The case route's cache (`routes/case.ts` `eventsOf`) gets the app's `log.warn` instead of `() => {}`, so whichever cache meets the miss first logs it; the memory keeps it to one warning per run.
-- State changes of events-line signals are unaffected: `loadSignal` still runs (the empty table has no state names to skip).
-
-### X6: `source.events` in `/api/meta` (pinned)
-
-`packages/shared/src/meta.ts`:
-
-```ts
-/** Whether the source has an events table (events "Events table in meta"). */
-export type SourceEvents = "table" | "none" | "unknown";
-// ServerMeta.source gains:
-    /** Always sent by this server; absent from older ones. */
-    events?: SourceEvents;
-```
-
-`apps/server/src/meta.ts` sets `source.events = eventsTableState(deps.source)` on every answer (no query; the value is what the caches learned). `docs/http-api.md` meta row: "data source (kind, database, table, reachable, events table)".
-
-The web app does not read it: align to an event is already offered only on a shown event (Context), so with `source.events` `none` and no events-line signal nothing offers it. The change pins that with a test ("No events, no Align") and changes no web code for it.
-
-### X7: Documents
+### X5: Documents
 
 - `docs/handoff.md`: "The link" bullet "Trimming" rewritten to the X1 rule with the 3,540/213 example and a pointer to `trimCases` and `kipscope case url --trim`; a "Lengths" note under the key tables (UTF-16 code units, `"é".length` 1, `"😀".length` 2; the inflated limit in UTF-8 bytes); under the errors table, `invalid_catalog` refuses the whole catalog, no session is skipped; under `view`, each chart opens at `[from − pad, to + pad)` of `current`, the view's chart times and cursors are not used; under the named tab, KIPscope sets no `Cross-Origin-Opener-Policy`, `window.open(url, "kipscope")` and `<a target="kipscope">` reuse the tab only while the finder keeps the opener relationship, so no `noopener`/`rel="noopener"` and no COOP `same-origin` on the finder page (nor on a proxy in front of KIPscope), else every click opens a new tab; the `origin.url` row and `KIPSCOPE_FINDER_ORIGINS` row name the loopback rule in `none`.
-- `docs/http-api.md`: the meta row (X6).
 - `README.md`: the `case url` row names `--trim`.
 
 ## Numbers: what if off by a factor of two
@@ -142,19 +110,12 @@ The web app does not read it: align to an event is already offered only on a sho
 |---|---|---|
 | ⌈log2 n⌉ + 2 encodes | X1 bisection | 2,000 sessions: 13 encodes of ≤ ~300 KB JSON, a few ms each; twice the calls or twice the cost stays under 0.2 s. A linear search would need up to ~1,750 encodes. |
 | 8,192 characters | D-070, unchanged | Not this change's number. |
-| One warning per run | X5 | Twice is harmless; per scope (today) floods the log on ADX. |
 | Report in `sessionStorage` | X4 | A few hundred bytes (signal names, one URL) of a 5 MB quota. |
 
 ## Security
 
 - **Loopback back link (X3):** only in identity `none`, where one local user owns the server and the Host guard already trusts loopback on any port. The link is a top-level navigation the user clicks; it can reach only the clicking user's own machine. On a server (any other identity) the rule is unchanged.
 - **Stored report (X4):** same tab, same origin, removed at its first read; it holds what the message line shows anyway.
-- **Meta (X6):** one word, no table name, no address.
-
-## Spec owner's defaults (Jan can veto)
-
-- A missing events table is remembered for the server run; an events table created while the server runs shows after a restart (X5). Alternative: forget it on each catalog load (one query per load, as for ClickHouse today).
-- `source.events` reports `unknown` until the first answer instead of probing the source at start-up (a probe needs a data ref and, in scoped mode, a scope).
 
 ## Test fixtures (pinned for the tester)
 
@@ -164,9 +125,8 @@ The web app does not read it: align to an event is already offered only on a sho
 
 ## Manual checks
 
-- UI user: "Dropped file on smart451" (case-handoff), "Align on smart451" unchanged.
-- Lead: `curl -s localhost:7310/api/meta | jq -c .source.events` prints `"table"` on smart451 (app-footer "Real server").
+- UI user: "Dropped file on smart451" (case-handoff).
 
 ## Ledger entry on archive (proposed D-091; the lead writes it)
 
-**D-091: Handoff findings of the search tool's team.** A link too long is trimmed by dropping the far end of the longer side around `current` (tie: before), shipped as `trimCases` and `kipscope case url --trim`. In identity `none` a loopback `origin.url` is kept on any port. The open report's warnings show on every open path with the case notice. A missing events table is remembered for the server run and reported as `/api/meta` `source.events`. The guide states UTF-16 lengths, whole-catalog refusal, the view's times and the opener rule.
+**D-091: Handoff findings of the search tool's team.** A link too long is trimmed by dropping the far end of the longer side around `current` (tie: before), shipped as `trimCases` and `kipscope case url --trim`. In identity `none` a loopback `origin.url` is kept on any port. The open report's warnings show on every open path with the case notice. The guide states UTF-16 lengths, whole-catalog refusal, the view's times and the opener rule.
