@@ -99,7 +99,7 @@ describe("option bar row", () => {
 
 describe("option bar order", () => {
   const noop = () => {};
-  const bar = (workspace: Workspace) =>
+  const bar = (workspace: Workspace, range = { from: 0n, to: 10n }) =>
     renderToStaticMarkup(
       createElement(OptionBar, {
         workspace,
@@ -109,7 +109,7 @@ describe("option bar order", () => {
         onBack: noop,
         onReset: noop,
         onGoTo: () => undefined,
-        range: { from: 0n, to: 10n },
+        range,
         rangeLoaded: true,
         pickerOpen: false,
         onPickerOpen: noop,
@@ -125,6 +125,31 @@ describe("option bar order", () => {
         me: undefined,
       }),
     );
+
+  it("words the range button's three tooltips apart (D-095)", () => {
+    // Scenario "Button text": 2026-10-13 15:06:03 - 15:18:33 local.
+    const range = { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:33Z") };
+    const html = bar(ws([ts("w1", ["c/SPEED_DISP"])]), range);
+    const button = /<button[^>]*class="range-button"[^>]*>(.*?)<\/button>/s.exec(html);
+    expect(button, "the range button").not.toBeNull();
+    const open = /^<button[^>]*>/.exec(button?.[0] ?? "")?.[0] ?? "";
+    const inner = button?.[1] ?? "";
+    // The button's own tooltip is what it does, alone: no date, no duration.
+    expect(open).toContain('title="Go to: pick a range or type one \u00b7 t"');
+    expect(open).not.toContain("Tue 2026-10-13");
+    expect(open).not.toContain("Duration 12 min");
+    // The date and the time each name the full start; no weekday, end time or +1 in the text.
+    const text = inner.replace(/<svg.*?<\/svg>/gs, "").replace(/<[^>]*>/g, "");
+    expect(text).toBe("26-10-13 15:060:12 h"); // the tag follows the start without a space
+    expect(inner).toMatch(
+      /<span[^>]*class="range-date"[^>]*title="Tue 2026-10-13 15:06"[^>]*>26-10-13<\/span>/,
+    );
+    expect(inner).toContain('<span title="Tue 2026-10-13 15:06">15:06</span>');
+    // The duration tag: stopwatch, unit, words as its tooltip; the old fixed hint is gone.
+    expect(inner).toMatch(/<span[^>]*class="duration-tag"[^>]*title="Duration 12 min"[^>]*>/);
+    expect(inner).toContain("0:12 h");
+    expect(html).not.toContain("Duration (h:mm)");
+  });
 
   it("renders the top row in order", () => {
     const html = bar(ws([ts("w1", ["c/SPEED_DISP"])]));

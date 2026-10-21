@@ -49,6 +49,9 @@ export const HINTS = {
     one(linked, title)
       ? `Go to: pick a range or type one in ${title} · t`
       : "Go to: pick a range or type one · t",
+  /** The range picker's legend (add-range-picker R5, D-095); no key part, so W1's key check skips it. */
+  calendarKeys:
+    "Calendar keys: arrows move a day or a week, PageUp or PageDown a month, Enter picks",
   back: (linked: Linked, title: string | undefined, can: boolean) =>
     can
       ? `Back: the previous time range of ${one(linked, title) ? title : "all windows"} · Backspace`
@@ -70,8 +73,6 @@ export const HINTS = {
       : kind === "agg"
         ? `agg ${width}: aggregated, each point stands for ${width} of data (min, mean, max). Zoom in for raw samples`
         : `part ${width}: some signals aggregated (${width} per point), others raw`,
-  /** Every duration slot (add-range-picker R6, D-093): range button, picker, drive chips, session bar. */
-  duration: "Duration (h:mm)",
   chartMode: "Display mode: Line joins points, Step holds each value, Markers draws points only",
   valuesMode: "Between points: linear interpolates, hold keeps the last value",
   windowMenu: "Window menu: line, step, markers, min/max, rename, remove",

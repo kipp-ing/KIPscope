@@ -1,25 +1,32 @@
 import { type CalendarDensity, type Density, fromIso } from "@kipscope/shared";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchCalendar } from "../src/api.ts";
+import { RangePicker } from "../src/bar/RangePicker.tsx";
+import { HINTS } from "../src/help/hints.ts";
 import {
   canPage,
   dayBarHeight,
   dayBars,
   dayDrives,
+  dayLabel,
   dayTip,
   draftOf,
   draftRange,
   fieldText,
+  gridStep,
   localMonth,
   monthCells,
   openMonths,
   type PickerDraft,
+  pageFor,
   pickDay,
   wholeLabel,
 } from "../src/time/calendar.ts";
 
-// Spec range-picker (Calendar months, Day density, Day selection, Time fields, Presets, Picker
-// states). Tests run with TZ=Europe/Berlin: CEST (UTC+2) until 2026-10-25 03:00 local, then CET.
+// Spec range-picker (Calendar months, Day density, Day selection, Calendar as a grid, Calendar by
+// keyboard, Time fields, Presets, Picker states). Tests run with TZ=Europe/Berlin: CEST (UTC+2) until 2026-10-25 03:00 local, then CET.
 // Every expected value is computed by hand from the instants, never from the code under test.
 
 const S = 1_000_000_000n;
@@ -309,7 +316,12 @@ describe("presets", () => {
   it("lists the day's drives and names the whole span", () => {
     const month = drivecarMonth();
     const chips = dayDrives(month, day("2026-10-02"));
-    expect(chips.map((c) => c.label)).toEqual(["03:00  0:30", "05:00  0:10"]);
+    // Label `${time}  ${duration}` (two spaces, unit), tooltip the formatter's `tip` (D-095).
+    expect(chips.map((c) => c.label)).toEqual(["03:00  0:30 h", "05:00  0:10 h"]);
+    expect(chips.map((c) => c.title)).toEqual([
+      "Fri 2026-10-02 03:00 \u00b7 Duration 30 min",
+      "Fri 2026-10-02 05:00 \u00b7 Duration 10 min",
+    ]);
     expect(chips.map((c) => c.drive)).toEqual(month.drives);
     // A day without drives has no chip, and neither does a calendar that is not loaded.
     expect(dayDrives(month, day("2026-10-03"))).toEqual([]);
@@ -319,6 +331,247 @@ describe("presets", () => {
     expect(wholeLabel("scope")).toBe("Whole scope");
     expect(wholeLabel("session")).toBe("Whole session");
     expect(wholeLabel("object")).toBe("Whole recording");
+  });
+});
+
+describe("day labels", () => {
+  it("names each day for screen readers", () => {
+    const month = drivecarMonth();
+    expect(dayLabel(month, day("2026-10-02"), "none")).toBe("Fri 2, 2 drives");
+    expect(dayLabel(month, day("2026-10-03"), "none")).toBe("Sat 3, no data");
+    // One drive: singular.
+    const one = { ...month, drives: month.drives.slice(0, 1) };
+    expect(dayLabel(one, day("2026-10-02"), "none")).toBe("Fri 2, 1 drive");
+    // The answer's scope (2026-10-02 01:00Z - 02:00Z) names the reason for a day outside it.
+    const scoped: CalendarDensity = {
+      ...month,
+      scope: { from: "1790902800000000000", to: "1790906400000000000" },
+    };
+    expect(dayLabel(scoped, day("2026-10-10"), "session")).toBe("Sat 10, outside the session");
+    expect(dayLabel(scoped, day("2026-10-10"), "scope")).toBe("Sat 10, outside the scope");
+    // Rows but no drive: "no drives"; the DST day 2026-10-25 holds rows in an every-hour-1 answer.
+    const ones: CalendarDensity = {
+      dataRef: "drivecar",
+      from: M10_FROM,
+      to: M10_TO,
+      hours: new Array<number>(745).fill(1),
+      drives: [],
+    };
+    expect(dayLabel(ones, day("2026-10-25"), "none")).toBe("Sun 25, no drives");
+    // No answer yet: the plain day.
+    expect(dayLabel(undefined, day("2026-10-02"), "none")).toBe("Fri 2");
+  });
+});
+
+describe("grid keys", () => {
+  it("steps the focused day and pages to it", () => {
+    for (const [key, to] of [
+      ["ArrowLeft", "2026-10-12"],
+      ["ArrowRight", "2026-10-14"],
+      ["ArrowUp", "2026-10-06"],
+      ["ArrowDown", "2026-10-20"],
+      ["PageUp", "2026-09-13"],
+      ["PageDown", "2026-11-13"],
+    ] as const) {
+      expect(gridStep("2026-10-13", key), key).toBe(to);
+    }
+    // Any other key is not a grid step.
+    expect(gridStep("2026-10-13", "Home")).toBeUndefined();
+    expect(gridStep("2026-10-13", "Enter")).toBeUndefined();
+    // Month ends: the day crosses into the next month; a month step cuts to the month's length.
+    expect(gridStep("2026-10-31", "ArrowRight")).toBe("2026-11-01");
+    expect(gridStep("2026-10-31", "PageDown")).toBe("2026-11-30");
+    expect(gridStep("2026-03-31", "PageUp")).toBe("2026-02-28");
+    // Across the DST change (2026-10-25) a step is still one local calendar day.
+    expect(gridStep("2026-10-25", "ArrowLeft")).toBe("2026-10-24");
+    expect(gridStep("2026-10-24", "ArrowRight")).toBe("2026-10-25");
+    // Across the year.
+    expect(gridStep("2026-12-31", "ArrowRight")).toBe("2027-01-01");
+    expect(gridStep("2026-01-15", "PageUp")).toBe("2025-12-15");
+
+    const sep = { year: 2026, month: 9 };
+    const both = { prev: true, next: true };
+    // Inside the shown pair (September, October): unchanged.
+    expect(pageFor("2026-10-05", sep, both)).toEqual(sep);
+    expect(pageFor("2026-09-01", sep, { prev: false, next: false })).toEqual(sep);
+    // After the pair: its month becomes the right one (left October) when allowed, else focus stays.
+    expect(pageFor("2026-11-01", sep, { prev: false, next: true })).toEqual({
+      year: 2026,
+      month: 10,
+    });
+    expect(pageFor("2026-11-01", sep, { prev: true, next: false })).toBeUndefined();
+    // Before the pair: its month becomes the left one when allowed, else focus stays.
+    expect(pageFor("2026-08-31", sep, { prev: true, next: false })).toEqual({
+      year: 2026,
+      month: 8,
+    });
+    expect(pageFor("2026-08-31", sep, { prev: false, next: true })).toBeUndefined();
+    // Across the year boundary.
+    expect(pageFor("2026-01-31", { year: 2026, month: 12 }, both)).toEqual({
+      year: 2026,
+      month: 1,
+    });
+    expect(pageFor("2027-01-01", { year: 2026, month: 11 }, both)).toEqual({
+      year: 2026,
+      month: 12,
+    });
+  });
+});
+
+describe("grid markup", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const range = { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:33Z") };
+  const props = (dataRef: string | undefined) => ({
+    range,
+    dataRef,
+    scope: undefined,
+    kind: "none" as const,
+    typed: "",
+    onTyped: () => {},
+    onGoTo: () => undefined,
+    onApply: () => {},
+    onClose: () => {},
+  });
+
+  /** September 2026 as the server answers it for drivecar: 720 hours without a row. */
+  function drivecarSeptember(): CalendarDensity {
+    const m = localMonth(2026, 9);
+    return {
+      dataRef: "drivecar",
+      from: m.from.toString(),
+      to: m.to.toString(),
+      hours: new Array<number>(720).fill(0),
+      drives: [],
+    };
+  }
+
+  /**
+   * Static markup runs no effects, so the picker's module cache of answers (`dataRef|scopeKey|from`,
+   * design R10) is filled through its Map reads: a lookup of a drivecar month key answers the month.
+   */
+  function renderWithAnswers(): string {
+    const answers = new Map<string, CalendarDensity>([
+      [localMonth(2026, 9).from.toString(), drivecarSeptember()],
+      [localMonth(2026, 10).from.toString(), drivecarMonth()],
+    ]);
+    const key = /^drivecar\|\|(\d+)$/;
+    const get = Map.prototype.get;
+    const has = Map.prototype.has;
+    vi.spyOn(Map.prototype, "get").mockImplementation(function (this: Map<unknown, unknown>, k) {
+      const hit = typeof k === "string" ? key.exec(k) : null;
+      return hit ? answers.get(hit[1] as string) : get.call(this, k);
+    });
+    vi.spyOn(Map.prototype, "has").mockImplementation(function (this: Map<unknown, unknown>, k) {
+      const hit = typeof k === "string" ? key.exec(k) : null;
+      return hit ? answers.has(hit[1] as string) : has.call(this, k);
+    });
+    try {
+      return renderToStaticMarkup(createElement(RangePicker, props("drivecar")));
+    } finally {
+      vi.restoreAllMocks();
+    }
+  }
+
+  /** The opening tag of a day's button. */
+  const button = (html: string, date: string) =>
+    new RegExp(`<button[^>]*data-day="${date}"[^>]*>`).exec(html)?.[0] ?? "";
+
+  it("renders each month as a keyboard grid", () => {
+    const html = renderWithAnswers();
+    // The dialog is named "Go to" (design R10).
+    expect(html).toMatch(
+      /role="dialog"[^>]*aria-label="Go to"|aria-label="Go to"[^>]*role="dialog"/,
+    );
+
+    // Two grids, September then October, each labelled with its month.
+    const grids = html.split('role="grid"').slice(1);
+    expect(grids).toHaveLength(2);
+    expect(grids[0]).toContain('aria-label="September 2026"');
+    expect(grids[1]).toContain('aria-label="October 2026"');
+    expect(grids[0]).not.toContain('aria-label="October 2026"');
+    for (const g of grids) {
+      // Seven column heads named in full (the first Monday, the last Sunday), text Mo ... Su.
+      const heads = [...g.matchAll(/<span[^>]*role="columnheader"[^>]*>(.*?)<\/span>/g)];
+      expect(heads).toHaveLength(7);
+      expect(heads[0]?.[0]).toContain('aria-label="Monday"');
+      expect(heads[0]?.[1]).toBe("Mo");
+      expect(heads[6]?.[0]).toContain('aria-label="Sunday"');
+      expect(heads[6]?.[1]).toBe("Su");
+      // The head row and 6 week rows, 7 grid cells each.
+      expect(g.match(/role="row"/g)).toHaveLength(7);
+      expect(g.match(/role="gridcell"/g)).toHaveLength(42);
+    }
+
+    // One tab stop for both grids: the start day, October 13.
+    const stops = [...html.matchAll(/<button[^>]*class="day[^"]*"[^>]*>/g)].filter((m) =>
+      m[0].includes('tabindex="0"'),
+    );
+    expect(stops).toHaveLength(1);
+    expect(stops[0]?.[0]).toContain('data-day="2026-10-13"');
+    expect(html.match(/<button[^>]*data-day=[^>]*tabindex="-1"/g)).toHaveLength(60);
+
+    // aria-selected: start = end = October 13, every other cell false.
+    expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
+    expect(html.match(/aria-selected="false"/g)).toHaveLength(84 - 1);
+    expect(html).toMatch(
+      /<div[^>]*role="gridcell"[^>]*aria-selected="true"[^>]*><button[^>]*data-day="2026-10-13"/,
+    );
+
+    // Day names from dayLabel; a day without rows is aria-disabled (not disabled) and focusable.
+    expect(button(html, "2026-10-02")).toContain('aria-label="Fri 2, 2 drives"');
+    expect(button(html, "2026-10-02")).not.toContain("aria-disabled");
+    expect(button(html, "2026-10-02")).toContain(
+      'title="Fri 26-10-02 \u00b7 233,161 rows \u00b7 2 drives"',
+    );
+    expect(button(html, "2026-10-03")).toContain('aria-disabled="true"');
+    expect(button(html, "2026-10-03")).toContain('aria-label="Sat 3, no data"');
+    expect(button(html, "2026-10-13")).toContain('aria-disabled="true"');
+    expect(html).not.toMatch(/<button[^>]*data-day=[^>]*\sdisabled(?:=|\s|>)/);
+    // Every day of both months is a button with its own aria-label.
+    const days = [...html.matchAll(/<button[^>]*data-day="[^"]*"[^>]*>/g)].map((m) => m[0]);
+    expect(days).toHaveLength(61);
+    for (const d of days) expect(d, d).toMatch(/aria-label="\w{3} \d{1,2}(, [^"]+)?"/);
+
+    // The legend names the keys, the tooltip is the hints table's.
+    expect(html).toContain("Keys: arrows, PageUp/Down, Enter");
+    expect(html).toContain(`title="${HINTS.calendarKeys}"`);
+    // The chip of the start day's drives is not shown for October 13 (no drive that day).
+    expect(html).toContain("no drive");
+  });
+
+  it("puts the one tab stop on the start day of another month pair", () => {
+    // A range in December 2026 opens on November and December; the start day holds the stop.
+    const dec = { from: fromIso("2026-12-10T10:00:00Z"), to: fromIso("2026-12-10T11:00:00Z") };
+    const html = renderToStaticMarkup(
+      createElement(RangePicker, { ...props("drivecar"), range: dec }),
+    );
+    const stops = [...html.matchAll(/<button[^>]*class="day[^"]*"[^>]*>/g)].filter((m) =>
+      m[0].includes('tabindex="0"'),
+    );
+    expect(stops).toHaveLength(1);
+    expect(stops[0]?.[0]).toContain('data-day="2026-12-10"');
+  });
+
+  it("shows plain enabled days while no month has answered", () => {
+    // Nothing cached for this data ref: loading (R5: days in the scope stay enabled, no bars).
+    const html = renderToStaticMarkup(createElement(RangePicker, props("loadingcar")));
+    expect(html).not.toContain("aria-disabled");
+    expect(html).not.toContain("day-bars");
+    expect(html).toContain("Loading\u2026");
+    expect(button(html, "2026-10-02")).toContain('aria-label="Fri 2"');
+    // Without a data ref: no bars either and every day is enabled.
+    const none = renderToStaticMarkup(createElement(RangePicker, props(undefined)));
+    expect(none).not.toContain("aria-disabled");
+    expect(none).not.toContain("day-bars");
+    // Typed input, Whole day and Go are there in either state; Go is enabled for the shown range.
+    for (const h of [html, none]) {
+      expect(h).toContain('aria-label="Type a time or range"');
+      expect(h).toContain("Whole day");
+      expect(h).toMatch(/<button[^>]*class="go"(?![^>]*disabled)[^>]*>Go</);
+    }
   });
 });
 

@@ -1,12 +1,11 @@
-import { HINTS } from "../help/hints.ts";
-
 /**
- * A duration in a slot (add-range-picker R6, D-093): the stopwatch, then `text` ("0:12", "41 s",
- * "902 ms"); its tooltip says the format. Styles in bar/bar.css (`.duration-tag`).
+ * A duration in a slot (add-range-picker R6, D-093, D-095): the stopwatch, then `text` ("0:12 h",
+ * "41 s", "902 ms"); `title` says it in words (`startDuration(...).durationTip`). Styles in
+ * bar/bar.css (`.duration-tag`).
  */
-export function DurationTag({ text }: { text: string }) {
+export function DurationTag({ text, title }: { text: string; title: string }) {
   return (
-    <span className="duration-tag" title={HINTS.duration}>
+    <span className="duration-tag" title={title}>
       <svg
         className="duration-icon"
         width="11"

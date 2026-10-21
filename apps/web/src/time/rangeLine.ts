@@ -2,7 +2,7 @@ import { floorDiv, NS_PER_MS } from "@kipscope/shared";
 import { formatSpan } from "./strip.ts";
 
 // Start and duration of a range, the one format people read (range button, picker, an unlinked
-// window's own range; range-picker "Start and duration", design R6 of add-range-picker, D-093).
+// window's own range; range-picker "Start and duration", design R6 of add-range-picker, D-093, D-095).
 
 const MS = NS_PER_MS;
 const S = 1_000n * MS;
@@ -58,31 +58,72 @@ export interface StartDuration {
   date: string;
   /** Local start "15:06", cut to the minute; under 1 min cut to the second: "15:06:03". */
   time: string;
-  /** "0:12" (H:MM, cut to whole minutes, hours unbounded: "227:18"); under 1 min whole seconds cut: "41 s";
-   *  under 1 s formatSpan: "902 ms". */
+  /** < 1 s formatSpan ("902 ms"); < 1 min whole seconds cut ("41 s"); < 48 h "H:MM h" cut ("0:12 h", "47:59 h");
+   *  from 48 h "D d H h" cut ("2 d 0 h", "9 d 11 h"). */
   duration: string;
-  /** `${date} ${time}  ${duration}`: "26-10-13 15:06  0:12" (two spaces before the duration). */
+  /** `${date} ${time}  ${duration}`: "26-10-13 15:06  0:12 h" (two spaces before the duration). */
   text: string;
-  /** Tooltip line: `${date} ${start cut to the second} · ${formatDuration(to − from)}`: "26-10-13 15:06:03 · 12 min 30 s". */
-  detail: string;
+  /** fullTime(from, seconds = to − from < 1 min): "Tue 2026-10-13 15:06", "Tue 2026-10-13 15:06:03". */
+  full: string;
+  /** "Duration " + words: < 1 s "902 ms"; < 1 min "41 s"; else days (only from 48 h), hours, minutes, cut, zero
+   *  parts left out: "Duration 12 min", "Duration 1 h 6 min", "Duration 24 h", "Duration 9 d 11 h 18 min", "Duration 2 d". */
+  durationTip: string;
+  /** `${full} · ${durationTip}`: one tooltip where start and duration share an element. */
+  tip: string;
 }
 
-/** The one formatter of a range people read (D-093): local start and duration, both cut, never rounded up. */
+/** From here a duration counts days (design R6, D-095). */
+const DAYS_FROM = 48n * H;
+
+/** Local "Ddd YYYY-MM-DD HH:MM", with ":SS" (cut) when seconds: "Tue 2026-10-13 15:06:03". */
+export function fullTime(t: bigint, seconds: boolean): string {
+  const d = new Date(Number(floorDiv(t, MS)));
+  const minute = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${weekdayOf(d)} ${localDate(d)} ${seconds ? `${minute}:${pad(d.getSeconds())}` : minute}`;
+}
+
+/** Duration words after "Duration ": days only from 48 h, hours, minutes, cut; zero parts left out. */
+function durationWords(ns: bigint): string {
+  if (ns < S) return formatSpan(ns);
+  if (ns < MIN) return `${ns / S} s`;
+  const days = ns >= DAYS_FROM ? ns / D : 0n;
+  const rest = ns - days * D;
+  const parts: [bigint, string][] = [
+    [days, "d"],
+    [rest / H, "h"],
+    [(rest % H) / MIN, "min"],
+  ];
+  return parts
+    .filter(([n]) => n > 0n)
+    .map(([n, unit]) => `${n} ${unit}`)
+    .join(" ");
+}
+
+/** The one formatter of a range people read (D-093, D-095): local start and duration, both cut, never rounded up. */
 export function startDuration(from: bigint, to: bigint): StartDuration {
   const ns = to - from;
   const start = new Date(Number(floorDiv(from, MS)));
   const date = localDate(start).slice(2);
   const minute = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
-  const second = `${minute}:${pad(start.getSeconds())}`;
-  const time = ns < MIN ? second : minute;
+  const time = ns < MIN ? `${minute}:${pad(start.getSeconds())}` : minute;
   const duration =
-    ns < S ? formatSpan(ns) : ns < MIN ? `${ns / S} s` : `${ns / H}:${pad(Number((ns % H) / MIN))}`;
+    ns < S
+      ? formatSpan(ns)
+      : ns < MIN
+        ? `${ns / S} s`
+        : ns < DAYS_FROM
+          ? `${ns / H}:${pad(Number((ns % H) / MIN))} h`
+          : `${ns / D} d ${(ns % D) / H} h`;
+  const full = fullTime(from, ns < MIN);
+  const durationTip = `Duration ${durationWords(ns)}`;
   return {
     date,
     time,
     duration,
     text: `${date} ${time}  ${duration}`,
-    detail: `${date} ${second} · ${formatDuration(ns)}`,
+    full,
+    durationTip,
+    tip: `${full} · ${durationTip}`,
   };
 }
 

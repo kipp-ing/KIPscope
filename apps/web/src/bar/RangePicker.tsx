@@ -6,20 +6,24 @@ import {
 } from "@kipscope/shared";
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fetchCalendar, fetchDensity } from "../api.ts";
+import { HINTS } from "../help/hints.ts";
 import {
   type CalendarDay,
   canPage,
   dayBarHeight,
   dayBars,
   dayDrives,
+  dayLabel,
   dayTip,
   draftOf,
   draftRange,
   fieldText,
+  gridStep,
   localMonth,
   monthCells,
   openMonths,
   type PickerDraft,
+  pageFor,
   pickDay,
   type ScopeKind,
   wholeLabel,
@@ -66,7 +70,15 @@ const MONTH_NAMES = [
   "November",
   "December",
 ];
-const WEEKDAY_HEADS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const WEEKDAY_HEADS = [
+  ["Mo", "Monday"],
+  ["Tu", "Tuesday"],
+  ["We", "Wednesday"],
+  ["Th", "Thursday"],
+  ["Fr", "Friday"],
+  ["Sa", "Saturday"],
+  ["Su", "Sunday"],
+] as const;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const VIEWPORT_MARGIN_PX = 8;
 
@@ -114,15 +126,20 @@ function todayText(): string {
 /** "26-10-13" of a local date "2026-10-13" (YY-MM-DD, D-093). */
 const shortDate = (date: string): string => date.slice(2);
 
-/** Start and duration of the draft's range (D-093): date and time, then the duration tag. */
+const sameMonth = (a: Month, b: Month): boolean => a.year === b.year && a.month === b.month;
+
+const firstDay = (m: Month): string => `${m.year}-${String(m.month).padStart(2, "0")}-01`;
+
+/** Start and duration of the draft's range (D-093, D-095): date and time with the full date as
+ *  tooltip, then the duration tag with its words. */
 function ResultText({ from, to }: { from: bigint; to: bigint }) {
   const sd = startDuration(from, to);
   return (
     <>
-      <span className="result-text">
+      <span className="result-text" title={sd.full}>
         {sd.date} {sd.time}
       </span>
-      <DurationTag text={sd.duration} />
+      <DurationTag text={sd.duration} title={sd.durationTip} />
     </>
   );
 }
@@ -166,6 +183,14 @@ export function RangePicker({
     () => openMonths(range)[0] ?? nextMonth(monthOfDate(draftOf(range).start), -1),
   );
   const [draft, setDraft] = useState<PickerDraft>(() => draftOf(range));
+  // The grids' one tab stop (R5): on open the draft's start when shown, else the left month's first day.
+  const [focus, setFocus] = useState<string>(() => {
+    const start = draftOf(range).start;
+    const m = monthOfDate(start);
+    return sameMonth(m, left) || sameMonth(m, nextMonth(left, 1)) ? start : firstDay(left);
+  });
+  // Set by a grid key: the focused day's button takes focus after render.
+  const moveFocus = useRef(false);
   // A time field shows its filled time to the minute until the user types in it (R7): Go without
   // an edit applies the exact draft.
   const [edited, setEdited] = useState({ from: false, to: false });
@@ -183,6 +208,7 @@ export function RangePicker({
   closeRef.current = onClose;
 
   const months = [left, nextMonth(left, 1)];
+  const focusDay = months.some((m) => sameMonth(m, monthOfDate(focus))) ? focus : firstDay(left);
   const cache = answersFor(sKey);
   const keyOf = (m: Month) => (dataRef === undefined ? undefined : monthKey(dataRef, sKey, m));
 
@@ -269,6 +295,12 @@ export function RangePicker({
     return () => window.removeEventListener("resize", place);
   }, []);
 
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    root.current?.querySelector<HTMLButtonElement>(`button.day[data-day="${focusDay}"]`)?.focus();
+  }, [focusDay]);
+
   const changeDraft = (d: PickerDraft) => {
     setDraft(d);
     setTypedError(undefined);
@@ -342,6 +374,20 @@ export function RangePicker({
   else if (draft.phase === "end") hint = "Click the last day, or set the times";
 
   const error = typedError ?? ("error" in result ? result.error : undefined);
+  // Grid keys (R5): arrows and PageUp/PageDown move the tab stop, paging when allowed. Enter and
+  // Space are the day button's own click, which picks only an enabled day.
+  const gridKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const date = (e.target as Element).closest?.("button.day")?.getAttribute("data-day");
+    if (!date) return;
+    const next = gridStep(date, e.key);
+    if (next === undefined) return;
+    e.preventDefault();
+    const nextLeft = pageFor(next, left, paging);
+    if (!nextLeft) return;
+    if (!sameMonth(nextLeft, left)) setLeft(nextLeft);
+    setFocus(next);
+    moveFocus.current = true;
+  };
   const timeKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
@@ -413,56 +459,94 @@ export function RangePicker({
 
       <div className="picker-grids">
         {grids.map((g) => (
-          <div key={`${g.m.year}-${g.m.month}`} className="month-grid">
-            {WEEKDAY_HEADS.map((w) => (
-              <span key={w} className="weekday">
-                {w}
-              </span>
+          // biome-ignore lint/a11y/useSemanticElements: the pinned ARIA grid of divs (R5); CSS grid lays out its cells
+          <div
+            key={`${g.m.year}-${g.m.month}`}
+            className="month-grid"
+            role="grid"
+            aria-label={`${MONTH_NAMES[g.m.month - 1]} ${g.m.year}`}
+            onKeyDown={gridKey}
+          >
+            {/* biome-ignore lint/a11y/useSemanticElements: the pinned ARIA grid of divs (R5); CSS grid lays out its cells */}
+            {/* biome-ignore lint/a11y/useFocusableInteractive: the roving tab stop sits on the day buttons (R5) */}
+            <div className="week" role="row">
+              {WEEKDAY_HEADS.map(([short, name]) => (
+                // biome-ignore lint/a11y/useSemanticElements: the pinned ARIA grid of divs (R5); CSS grid lays out its cells
+                // biome-ignore lint/a11y/useFocusableInteractive: the roving tab stop sits on the day buttons (R5)
+                <span key={short} className="weekday" role="columnheader" aria-label={name}>
+                  {short}
+                </span>
+              ))}
+            </div>
+            {[0, 1, 2, 3, 4, 5].map((w) => (
+              // biome-ignore lint/a11y/useSemanticElements: the pinned ARIA grid of divs (R5); CSS grid lays out its cells
+              // biome-ignore lint/a11y/useFocusableInteractive: the roving tab stop sits on the day buttons (R5)
+              <div key={w} className="week" role="row">
+                {g.cells.slice(w * 7, w * 7 + 7).map((c, i) => {
+                  if (!c) {
+                    return (
+                      // biome-ignore lint/a11y/useSemanticElements: the pinned ARIA grid of divs (R5); CSS grid lays out its cells
+                      // biome-ignore lint/a11y/useFocusableInteractive: the roving tab stop sits on the day buttons (R5)
+                      <div
+                        // biome-ignore lint/suspicious/noArrayIndexKey: fixed 42-cell grid
+                        key={i}
+                        className="cell"
+                        role="gridcell"
+                        aria-selected="false"
+                      />
+                    );
+                  }
+                  const { day, bars } = c;
+                  const rows = bars?.reduce((s, b) => s + b.count, 0) ?? 0;
+                  const off = dataRef !== undefined && (g.answer ? rows === 0 : !inScope(day));
+                  const edge = day.date === draft.start || day.date === draft.end;
+                  const between = day.date > draft.start && day.date < draft.end;
+                  const classes = ["day"];
+                  if (edge) classes.push("edge");
+                  else if (between) classes.push("between");
+                  if (rows > 0) classes.push("has-data");
+                  if (day.date === today) classes.push("today");
+                  return (
+                    // biome-ignore lint/a11y/useSemanticElements: the pinned ARIA grid of divs (R5); CSS grid lays out its cells
+                    // biome-ignore lint/a11y/useFocusableInteractive: the roving tab stop sits on the day buttons (R5)
+                    <div
+                      key={day.date}
+                      className="cell"
+                      role="gridcell"
+                      aria-selected={edge || between}
+                    >
+                      <button
+                        type="button"
+                        className={classes.join(" ")}
+                        data-day={day.date}
+                        tabIndex={focusDay === day.date ? 0 : -1}
+                        aria-disabled={off ? "true" : undefined}
+                        aria-label={dayLabel(g.answer, day, kind)}
+                        title={dayTip(g.answer, day, kind)}
+                        onClick={() => {
+                          setFocus(day.date);
+                          if (!off) changeDraft(pickDay(draft, day.date));
+                        }}
+                      >
+                        <span className="day-number">{day.day}</span>
+                        {bars && (
+                          <span className="day-bars" aria-hidden="true">
+                            {bars.map((b, k) => (
+                              <span
+                                // biome-ignore lint/suspicious/noArrayIndexKey: 12 fixed bars per day
+                                key={k}
+                                className={b.drive ? "bar drive" : "bar"}
+                                style={{ height: dayBarHeight(b.count, max) }}
+                              />
+                            ))}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             ))}
-            {g.cells.map((c, i) => {
-              if (!c) {
-                // biome-ignore lint/suspicious/noArrayIndexKey: fixed 42-cell grid
-                return <span key={i} className="day empty" />;
-              }
-              const { day, bars } = c;
-              const rows = bars?.reduce((s, b) => s + b.count, 0) ?? 0;
-              const off = dataRef !== undefined && (g.answer ? rows === 0 : !inScope(day));
-              const edge = day.date === draft.start || day.date === draft.end;
-              const between = day.date > draft.start && day.date < draft.end;
-              const tip = dayTip(g.answer, day, kind);
-              const classes = ["day"];
-              if (edge) classes.push("edge");
-              else if (between) classes.push("between");
-              if (rows > 0) classes.push("has-data");
-              if (day.date === today) classes.push("today");
-              return (
-                <button
-                  key={day.date}
-                  type="button"
-                  className={classes.join(" ")}
-                  aria-disabled={off}
-                  title={tip}
-                  aria-label={tip}
-                  onClick={() => {
-                    if (!off) changeDraft(pickDay(draft, day.date));
-                  }}
-                >
-                  <span className="day-number">{day.day}</span>
-                  {bars && (
-                    <span className="day-bars" aria-hidden="true">
-                      {bars.map((b, k) => (
-                        <span
-                          // biome-ignore lint/suspicious/noArrayIndexKey: 12 fixed bars per day
-                          key={k}
-                          className={b.drive ? "bar drive" : "bar"}
-                          style={{ height: dayBarHeight(b.count, max) }}
-                        />
-                      ))}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
           </div>
         ))}
       </div>
@@ -475,6 +559,9 @@ export function RangePicker({
         <span className="legend-item">
           <span className="swatch drive" />
           drive
+        </span>
+        <span className="legend-item" title={HINTS.calendarKeys}>
+          Keys: arrows, PageUp/Down, Enter
         </span>
         <span className="picker-hint">{hint}</span>
       </div>
@@ -493,10 +580,11 @@ export function RangePicker({
               type="button"
               className="chip"
               aria-label={d.label}
+              title={d.title}
               onClick={() => fillDraft(draftOf({ from, to }))}
             >
               {sd.time}
-              <DurationTag text={sd.duration} />
+              <DurationTag text={sd.duration} title={sd.durationTip} />
             </button>
           );
         })}

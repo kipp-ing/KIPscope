@@ -90,7 +90,8 @@
   font-weight: 600;
 }
 
-/* Two grids of 7 columns: the weekday heads and 6 rows of days, always. */
+/* Two grids of 7 columns: the weekday heads and 6 rows of days, always. The ARIA rows (R5) do
+   not box: their cells are the grid's items. */
 .range-picker .picker-grids {
   display: flex;
   gap: 24px;
@@ -105,6 +106,10 @@
   gap: 2px;
 }
 
+.range-picker .week {
+  display: contents;
+}
+
 .range-picker .weekday {
   font-size: 11px;
   line-height: 18px;
@@ -112,13 +117,14 @@
   color: var(--muted);
 }
 
-.range-picker .day.empty {
-  visibility: hidden;
+.range-picker .cell {
+  min-width: 0;
 }
 
 .range-picker button.day {
   position: relative;
   display: flex;
+  width: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
@@ -146,6 +152,12 @@
   outline-offset: -1px;
 }
 
+/* The grid's tab stop moved by the keys (R5). */
+.range-picker button.day:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 1px;
+}
+
 .range-picker button.day.between {
   background: var(--accent-soft);
 }
@@ -164,7 +176,8 @@
   text-decoration: underline;
 }
 
-/* 12 bars of two local hours, up to 12 px, at the cell's foot (R5). */
+/* 12 bars of two local hours, up to 12 px, at the cell's foot (R5, D-095): slate, drives darker;
+   the accent marks only the selection. */
 .range-picker .day-bars {
   position: absolute;
   right: 5px;
@@ -183,7 +196,7 @@
 }
 
 .range-picker .bar.drive {
-  background: var(--accent);
+  background: var(--label);
 }
 
 .range-picker .day.edge .bar {
@@ -229,7 +242,7 @@
 }
 
 .range-picker .swatch.drive {
-  background: var(--accent);
+  background: var(--label);
 }
 
 .range-picker .picker-hint {

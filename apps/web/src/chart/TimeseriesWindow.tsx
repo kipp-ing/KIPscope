@@ -1722,8 +1722,8 @@ export function TimeseriesWindow({
     });
   };
 
-  // Unlinked, the window's own start and duration (add-range-picker R13, D-093); linked,
-  // none: the range control shows it (DW0, DW11).
+  // Unlinked, the window's own start and duration with its tip as tooltip (add-range-picker R13,
+  // D-093, D-095); linked, none: the range control shows it (DW0, DW11).
   const ownRange = ownRangeText(view, linked);
   // Readout (design N3, N4): value columns while a cursor is on, from the drawn data.
   const { a, b } = cursors;
@@ -1768,7 +1768,7 @@ export function TimeseriesWindow({
         {/* Linked, the range control shows the one range (workspace-layout "Linked windows show
             the range once"); unlinked, the window's own range, cut first. */}
         {ownRange !== undefined && (
-          <span className="range own-range" title={ownRange.detail}>
+          <span className="range own-range" title={ownRange.tip}>
             {ownRange.text}
           </span>
         )}

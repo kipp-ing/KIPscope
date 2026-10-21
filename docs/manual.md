@@ -67,12 +67,12 @@ On the time strip:
 - Double-click shows the whole recording.
 - Click a drive (the dark segments under the bars) to fit it; `,` and `.` step to the previous and next drive.
 
-The **range button** in the top row reads the range on screen as start and duration, such as `26-10-13 15:06` and `0:12`; the stopwatch icon marks the duration in h:mm, under a minute in seconds. Click it or press `t` to open the **range picker**:
+The **range button** in the top row reads the range on screen as start and duration: `26-10-13 15:06` and, after the stopwatch, `0:12 h`, `41 s` or, from two days, `9 d 11 h`. Hovering the start shows its full date (`Tue 2026-10-13 15:06`), hovering the duration its words (`Duration 12 min`). Click it or press `t` to open the **range picker**:
 
 - **Go to** at the top takes a time or range: `15:08`, `15:07 .. 15:09`, `2026-10-13 15:15:30 +30s`, `1h` around the anchor, `+30min` to pan, `a` to centre on cursor A. A time without a date takes the date the view shows. `Enter` goes there and closes the picker; text it cannot read stays with the reason below.
-- The **calendar** shows two months. Under each day, small bars show how much was recorded in each two hours, blue where a drive ran; days without data are greyed out. Click a start day, then an end day; ‹ and › page to months with data.
+- The **calendar** shows two months. Under each day, small bars show how much was recorded in each two hours, dark where a drive ran; days without data are greyed out. Click a start day, then an end day; ‹ and › page to months with data. By keyboard: `Tab` to the days, arrows move a day or a week, `PageUp`/`PageDown` a month, `Enter` picks.
 - The **presets** line lists the drives of the start day, **Whole day**, and the whole recording, scope or session.
-- **From** and **To** each show a date as YY-MM-DD and a time field that takes `hh:mm`; To also takes `24:00`, the end of the day.
+- **From** and **To** each show a date as YY-MM-DD and a time field that takes `HH:MM`; To also takes `24:00`, the end of the day.
 - **Go** shows the range, as one step that **Back** undoes. **Cancel**, `Esc` or a click outside closes the picker and changes nothing. While it is open, the navigation keys do nothing.
 
 Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (the arrow icon after the range button, `Backspace`) returns to the previous range, up to 50 steps. **Reset** (the icon after Back, `Home`) shows all data.

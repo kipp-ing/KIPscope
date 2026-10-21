@@ -98,6 +98,24 @@ export function dayBarHeight(count: number, max: number): number {
 const dayDriveList = (answer: CalendarDensity, day: CalendarDay): Drive[] =>
   answer.drives.filter((d) => overlaps(day.from, day.to, d));
 
+/** Rows and drives of the day, or the reason it has no rows (no data, outside the session or scope). */
+function dayFacts(
+  answer: CalendarDensity,
+  day: CalendarDay,
+  scope: ScopeKind,
+): { rows: number; drives: number } | { reason: string } {
+  const rows = dayBars(answer, day).reduce((sum, b) => sum + b.count, 0);
+  if (rows === 0) {
+    const outside = answer.scope !== undefined && !overlaps(day.from, day.to, answer.scope);
+    if (outside && scope === "session") return { reason: "outside the session" };
+    if (outside && scope === "scope") return { reason: "outside the scope" };
+    return { reason: "no data" };
+  }
+  return { rows, drives: dayDriveList(answer, day).length };
+}
+
+const drivesText = (n: number) => `${n} ${n === 1 ? "drive" : "drives"}`;
+
 /** Rows of the day (sum of its bars) and the drives overlapping it, for the tooltip. */
 export function dayTip(
   answer: CalendarDensity | undefined,
@@ -106,16 +124,22 @@ export function dayTip(
 ): string {
   const head = `${day.weekday} ${day.date.slice(2)}`;
   if (!answer) return head;
-  const rows = dayBars(answer, day).reduce((sum, b) => sum + b.count, 0);
-  if (rows === 0) {
-    const outside = answer.scope !== undefined && !overlaps(day.from, day.to, answer.scope);
-    if (outside && scope === "session") return `${head} · outside the session`;
-    if (outside && scope === "scope") return `${head} · outside the scope`;
-    return `${head} · no data`;
-  }
-  const n = dayDriveList(answer, day).length;
-  const drives = n === 0 ? "" : ` · ${n} ${n === 1 ? "drive" : "drives"}`;
-  return `${head} · ${rowsText(rows)}${drives}`;
+  const f = dayFacts(answer, day, scope);
+  if ("reason" in f) return `${head} · ${f.reason}`;
+  return `${head} · ${rowsText(f.rows)}${f.drives === 0 ? "" : ` · ${drivesText(f.drives)}`}`;
+}
+
+/** "Tue 13, 2 drives" | "1 drive" | "no drives" (rows, no drive) | "no data" | "outside the session" | "outside the scope"; "Tue 13" without an answer. */
+export function dayLabel(
+  answer: CalendarDensity | undefined,
+  day: CalendarDay,
+  scope: ScopeKind,
+): string {
+  const head = `${day.weekday} ${day.day}`;
+  if (!answer) return head;
+  const f = dayFacts(answer, day, scope);
+  if ("reason" in f) return `${head}, ${f.reason}`;
+  return `${head}, ${f.drives === 0 ? "no drives" : drivesText(f.drives)}`;
 }
 
 export interface PickerDraft {
@@ -184,15 +208,16 @@ export function draftRange(d: PickerDraft): { from: bigint; to: bigint } | { err
   return { from, to };
 }
 
-/** Drives overlapping the day, in time order, with chip labels `${time}  ${duration}` of startDuration(drive): "03:00  0:30". */
+/** Drives overlapping the day, in time order, with chip labels `${time}  ${duration}` of startDuration(drive): "03:00  0:30 h",
+ *  and the chip tooltip `tip`: "Fri 2026-10-02 03:00 · Duration 30 min". */
 export function dayDrives(
   answer: CalendarDensity | undefined,
   day: CalendarDay,
-): { drive: Drive; label: string }[] {
+): { drive: Drive; label: string; title: string }[] {
   if (!answer) return [];
   return dayDriveList(answer, day).map((drive) => {
     const sd = startDuration(BigInt(drive.from), BigInt(drive.to));
-    return { drive, label: `${sd.time}  ${sd.duration}` };
+    return { drive, label: `${sd.time}  ${sd.duration}`, title: sd.tip };
   });
 }
 
@@ -228,4 +253,39 @@ export function canPage(
   const next = shift(left, 1);
   const right = localMonth(next.year, next.month);
   return { prev: BigInt(density.first) < right.from, next: BigInt(density.last) >= right.to };
+}
+
+const parseDate = (date: string) => date.split("-").map(Number) as [number, number, number];
+
+const GRID_DAYS: Record<string, number> = {
+  ArrowLeft: -1,
+  ArrowRight: 1,
+  ArrowUp: -7,
+  ArrowDown: 7,
+};
+
+/** ← → ±1 day, ↑ ↓ ±7 days, PageUp/PageDown ±1 month (same day number, cut to the month's length); undefined for any other key. Local date strings. */
+export function gridStep(date: string, key: string): string | undefined {
+  const [y, m, d] = parseDate(date);
+  const days = GRID_DAYS[key];
+  if (days !== undefined) return localDate(new Date(y, m - 1, d + days));
+  const months = key === "PageUp" ? -1 : key === "PageDown" ? 1 : 0;
+  if (months === 0) return undefined;
+  const to = shift({ year: y, month: m }, months);
+  const length = new Date(to.year, to.month, 0).getDate();
+  return localDate(new Date(to.year, to.month - 1, Math.min(d, length)));
+}
+
+/** Left month after focus moved to `date`: unchanged when `date` lies in the shown pair; its month as left when earlier, as right when later, if `can` allows that direction; else undefined (focus stays). */
+export function pageFor(
+  date: string,
+  left: Month,
+  can: { prev: boolean; next: boolean },
+): Month | undefined {
+  const [year, month] = parseDate(date);
+  const at = { year, month };
+  const offset = year * 12 + month - (left.year * 12 + left.month);
+  if (offset === 0 || offset === 1) return left;
+  if (offset < 0) return can.prev ? at : undefined;
+  return can.next ? shift(at, -1) : undefined;
 }

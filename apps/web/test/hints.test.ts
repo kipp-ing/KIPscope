@@ -25,7 +25,6 @@ const SAMPLES: Record<string, unknown[][]> = {
     ["agg", "10 s"],
     ["part", "1 min"],
   ],
-  range: [["14:03:10.250 – 14:08:22.500"]],
   legendUnit: [
     ["km/h", "left"],
     ["°C", "right"],
@@ -121,6 +120,21 @@ describe("hints table", () => {
     expect("span" in HINTS).toBe(false);
     const t = SHORTCUTS.find((s) => s.keys === "t");
     expect(t?.action).toBe("Open the range picker (Go to)");
+  });
+
+  it("has no Duration hint and words the calendar keys (D-095)", () => {
+    // The tooltip of a duration is its words (`durationTip`), so the fixed hint is gone.
+    expect("duration" in HINTS).toBe(false);
+    expect(JSON.stringify(Object.values(table).filter((h) => typeof h === "string"))).not.toContain(
+      "Duration (h:mm)",
+    );
+    expect(HINTS.calendarKeys).toBe(
+      "Calendar keys: arrows move a day or a week, PageUp or PageDown a month, Enter picks",
+    );
+    // Within the wording rule, and it carries no ` · key` tail (W1's key check does not apply).
+    expect(HINTS.calendarKeys.length).toBeLessThanOrEqual(140);
+    expect(HINTS.calendarKeys).not.toContain(" \u00b7 ");
+    expect(HINTS.calendarKeys.endsWith(".")).toBe(false);
   });
 
   it("words the SNA hint with the strip in the signal's colour (design H5)", () => {

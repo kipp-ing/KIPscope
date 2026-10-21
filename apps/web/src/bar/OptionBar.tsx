@@ -157,9 +157,10 @@ const PENDING_SLOTS = (
 );
 
 /**
- * The range button (range-picker "Range button", design R6, D-093): one fixed 212 px box whatever
- * it shows, start date and time with the duration, or, without a range, "No time window" or "…"
- * (disabled, after PENDING_SLOTS). The start cuts at its end; the duration is never cut.
+ * The range button (range-picker "Range button", design R6, D-093, D-095): one fixed 212 px box
+ * whatever it shows, start date and time with the duration, or, without a range, "No time window"
+ * or "…" (disabled, after PENDING_SLOTS). The start cuts at its end; the duration is never cut.
+ * Date and time name the full start, the duration its words, the button only what it does.
  */
 export function RangeButton({
   range,
@@ -173,7 +174,7 @@ export function RangeButton({
   /** The workspace state arrived. */
   loaded: boolean;
   open?: boolean;
-  /** Tooltip's second line, `HINTS.goTo(...)`. */
+  /** The button's tooltip, `HINTS.goTo(...)`. */
   hint: string;
   onClick?: () => void;
   buttonRef?: Ref<HTMLButtonElement>;
@@ -190,20 +191,23 @@ export function RangeButton({
         aria-expanded={open}
         aria-label="Go to"
         disabled={!start}
-        title={start ? `${start.detail}\n${hint}` : hint}
+        title={hint}
         onClick={onClick}
       >
         {CALENDAR_ICON}
         <span className="range-text">
           {start ? (
             <>
-              <span className="range-date">{start.date}</span> {start.time}
+              <span className="range-date" title={start.full}>
+                {start.date}
+              </span>{" "}
+              <span title={start.full}>{start.time}</span>
             </>
           ) : (
             rangeButtonEmpty(loaded)
           )}
         </span>
-        {start && <DurationTag text={start.duration} />}
+        {start && <DurationTag text={start.duration} title={start.durationTip} />}
       </button>
     </>
   );
