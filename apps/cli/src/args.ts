@@ -126,7 +126,8 @@ Catalogs (ordered lists handed over by a search tool; N: 1-based position):
   case align start|end|anchor
   case align event KIND SOURCE NAME [TEXT]
                                    (align every entry to its first matching event)
-  case url FILE|-                  (prints the link /open#cases=…; at most ${MAX_LINK_CHARS} characters)
+  case url FILE|- [--trim]         (prints the link /open#cases=…; at most ${MAX_LINK_CHARS} characters;
+                                   --trim drops entries far from current until it fits)
   case drives REF                  (test aid: prints a catalog of REF's drives in the strip)
 
 Views (saved workspaces, stored by the server):
@@ -197,6 +198,7 @@ const FLAG_OPTIONS = new Set([
   "--table",
   "--overwrite",
   "--open",
+  "--trim",
 ]);
 const GLOBAL_OPTIONS = new Set([
   "--server",
@@ -676,10 +678,18 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       if (!WORKSPACE_ID.test(arg(0))) usage(`not a workspace ID: "${arg(0)}"`);
       return { kind: "workspace", action: "delete", id: arg(0) };
     case "case open":
-    case "case url":
       take(1);
       if (arg(0) === "") usage("FILE is empty");
-      return { kind: "case", action: form === "case open" ? "open" : "url", file: arg(0) };
+      return { kind: "case", action: "open", file: arg(0) };
+    case "case url":
+      take(1, ["--trim"]);
+      if (arg(0) === "") usage("FILE is empty");
+      return {
+        kind: "case",
+        action: "url",
+        file: arg(0),
+        ...(opts.has("--trim") && { trim: true as const }),
+      };
     case "case show":
       take(0);
       return { kind: "case", action: "show" };

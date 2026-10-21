@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import {
+  CasesDocument,
   decodeCasesLink,
   decodeViewLink,
+  encodeCasesLink,
   fromIso,
   type Workspace as SharedWorkspace,
   viewLinkUrl,
@@ -150,7 +152,8 @@ describe("server address and usage", () => {
       "case unlink",
       "case align start|end|anchor",
       "case align event",
-      "case url",
+      "case url FILE|- [--trim]",
+      "--trim",
       "case drives",
       "--server",
       "--workspace",
@@ -1938,6 +1941,28 @@ describe("catalogs (add-case-open K15)", () => {
     expect(new Set(catalog.entries.map((e) => e.dataRef))).toEqual(new Set(["testcar"]));
   });
 
+  /** 2,000 sessions with random-looking ids: far more than a link of 8,192 characters holds. */
+  const manyCatalog = (current?: number) => {
+    let seed = 7;
+    const hex = () => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed.toString(16).padStart(8, "0");
+    };
+    return {
+      ...C4,
+      ...(current === undefined ? {} : { current }),
+      cases: Array.from({ length: 2000 }, (_, i) => ({
+        id: `VIN${hex()}${hex()}|driving|${i}`,
+        object: `VIN${hex()}`,
+        kind: "driving",
+        from: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000).toISOString(),
+        to: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000 + 1_800_000).toISOString(),
+        title: `F-${hex()}`,
+        meta: { distance_km: Number.parseFloat((i * 1.37).toFixed(2)) },
+      })),
+    };
+  };
+
   it("prints a catalog link", async () => {
     // No server contact is needed: the link is made from the file.
     const server = "http://localhost:7310";
@@ -1956,26 +1981,59 @@ describe("catalogs (add-case-open K15)", () => {
     expect(jws.out.local.url).toBe(`${server}/open#cases=aaa.bbb.ccc`);
 
     // 2,000 sessions do not fit in a link of 8,192 characters.
-    let seed = 7;
-    const hex = () => {
-      seed = (seed * 1103515245 + 12345) % 2 ** 31;
-      return seed.toString(16).padStart(8, "0");
-    };
-    const many = {
-      ...C4,
-      cases: Array.from({ length: 2000 }, (_, i) => ({
-        id: `VIN${hex()}${hex()}|driving|${i}`,
-        object: `VIN${hex()}`,
-        kind: "driving",
-        from: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000).toISOString(),
-        to: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000 + 1_800_000).toISOString(),
-        title: `F-${hex()}`,
-        meta: { distance_km: Number.parseFloat((i * 1.37).toFixed(2)) },
-      })),
-    };
+    const many = manyCatalog();
     const long = await cliUrl(file("many.json", JSON.stringify(many)));
     expect(long.code).toBe(2);
     expect(long.out.error.code).toBe("link_too_long");
+  });
+
+  it("trims a catalog link", async () => {
+    const server = "http://localhost:7310";
+    const cliUrl = (path: string, ...flags: string[]) =>
+      runCli(["--server", server, "case", "url", path, ...flags]);
+    const codeOf = (url: string) => url.slice(url.indexOf("#cases=") + "#cases=".length);
+
+    // 2,000 sessions, current 3rd: the link fits, the catalog is the first k sessions.
+    const many = manyCatalog(2);
+    const trimmed = await cliUrl(file("many.json", JSON.stringify(many)), "--trim");
+    expect(trimmed.code, trimmed.stdout.join("")).toBe(0);
+    const url = trimmed.out.local.url as string;
+    expect(url.startsWith(`${server}/open#cases=`)).toBe(true);
+    expect(url.length).toBeLessThanOrEqual(8192);
+    const decoded = (await decodeCasesLink(codeOf(url))) as { cases: unknown[]; current?: number };
+    const k = decoded.cases.length;
+    expect(k).toBeGreaterThanOrEqual(3);
+    expect(k).toBeLessThan(2000);
+    expect(decoded.cases).toEqual(many.cases.slice(0, k));
+    expect(decoded.current).toBe(2);
+    expect(trimmed.out.local.dropped).toEqual({ before: 0, after: 2000 - k });
+    expect(trimmed.out.local.position).toBe(`3 / ${k}`);
+
+    // A catalog that fits is the same link as without --trim.
+    const plain = await cliUrl(file("c4.json", JSON.stringify(C4)));
+    const fits = await cliUrl(file("c4t.json", JSON.stringify(C4)), "--trim");
+    expect(fits.code, fits.stdout.join("")).toBe(0);
+    expect(fits.out.local.url).toBe(plain.out.local.url);
+    expect(fits.out.local.dropped).toEqual({ before: 0, after: 0 });
+
+    // A signed catalog is trimmed before signing, not here.
+    const jws = await cliUrl(file("signed.txt", "aaa.bbb.ccc\n"), "--trim");
+    expect(jws.code).toBe(2);
+    expect(jws.out.error.code).toBe("usage");
+
+    // An unsigned code is decoded and trimmed like a document.
+    const code = await encodeCasesLink(CasesDocument.parse(C4));
+    const fromCode = await cliUrl(file("code.txt", `${code}\n`), "--trim");
+    expect(fromCode.code, fromCode.stdout.join("")).toBe(0);
+    expect(await decodeCasesLink(codeOf(fromCode.out.local.url as string))).toEqual(
+      CasesDocument.parse(C4),
+    );
+    expect(fromCode.out.local.dropped).toEqual({ before: 0, after: 0 });
+
+    // Without --trim the 2,000 sessions are still refused.
+    const refused = await cliUrl(file("many2.json", JSON.stringify(many)));
+    expect(refused.code).toBe(2);
+    expect(refused.out.error.code).toBe("link_too_long");
   });
 
   it("opens a catalog link's code and refuses unreadable input", async () => {

@@ -8,6 +8,7 @@ import {
   parseCasesDocument,
 } from "@kipscope/shared";
 import { decodeProtectedHeader } from "jose";
+import { isLoopbackHost } from "./access.ts";
 import {
   FinderKeysUnavailable,
   PayloadTooLarge,
@@ -208,7 +209,7 @@ export async function readCases(
     const { url, ...rest } = parsed.origin;
     const origin: NonNullable<CaseCatalog["origin"]> = { ...rest };
     if (url !== undefined) {
-      if (listedOrigin(url, config.origins)) origin.url = url;
+      if (listedOrigin(url, config.origins, identity)) origin.url = url;
       else warnings.push(`origin.url ${url} dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS`);
     }
     if (Object.keys(origin).length > 0) catalog.origin = origin;
@@ -233,12 +234,17 @@ export function verifyCases(
   return readCases(text, config, user === undefined ? "none" : "other", user, now);
 }
 
-function listedOrigin(url: string, origins: readonly string[]): boolean {
+/** http(s) and a listed origin; in identity none also loopback on any port (X3). */
+function listedOrigin(
+  url: string,
+  origins: readonly string[],
+  identity: "none" | "other",
+): boolean {
   try {
     const parsed = new URL(url);
     return (
       (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-      origins.includes(parsed.origin)
+      (origins.includes(parsed.origin) || (identity === "none" && isLoopbackHost(parsed.hostname)))
     );
   } catch {
     return false;

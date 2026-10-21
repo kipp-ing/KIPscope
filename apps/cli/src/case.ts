@@ -5,12 +5,14 @@ import {
   type CreateWorkspaceAnswer,
   casesLinkUrl,
   type Density,
+  decodeCasesLink,
   encodeCasesLink,
   formatLocal,
   isSignedCases,
   MAX_CASES_TEXT,
   MAX_LINK_CHARS,
   toIso,
+  trimCases,
   type Workspace,
   workspacePath,
 } from "@kipscope/shared";
@@ -22,7 +24,7 @@ import type { Body } from "./run.ts";
 export type CaseInvocation =
   | { kind: "case"; action: "open"; file: string }
   | { kind: "case"; action: "show" }
-  | { kind: "case"; action: "url"; file: string }
+  | { kind: "case"; action: "url"; file: string; trim?: true }
   | { kind: "case"; action: "drives"; dataRef: string };
 
 /** Executes one of these forms and fills `body`; failures throw CliError. */
@@ -60,6 +62,10 @@ export async function runCase(
     }
     case "url": {
       const cases = catalogOf(await readInput(invocation.file));
+      if (invocation.trim) {
+        await trimmedUrl(cases, new URL(server).origin, body);
+        return;
+      }
       const code =
         typeof cases === "string" ? cases : await encodeCasesLink(cases as CasesDocument);
       const url = casesLinkUrl(new URL(server).origin, code);
@@ -100,6 +106,58 @@ export async function runCase(
       return;
     }
   }
+}
+
+/** `case url --trim` (design X2): the balanced trim of a document or an unsigned code. */
+async function trimmedUrl(
+  cases: string | Record<string, unknown>,
+  origin: string,
+  body: Body,
+): Promise<void> {
+  let doc: unknown = cases;
+  if (typeof cases === "string") {
+    if (isSignedCases(cases)) {
+      throw new CliError(
+        "usage",
+        "usage",
+        "a signed catalog cannot be trimmed: trim the document before signing",
+      );
+    }
+    try {
+      doc = await decodeCasesLink(cases);
+    } catch (error) {
+      throw new CliError("usage", "usage", `not a catalog link code: ${(error as Error).message}`);
+    }
+  }
+  if (!isRecord(doc) || !Array.isArray(doc.cases) || doc.cases.length === 0) {
+    throw new CliError("usage", "usage", "the catalog has no non-empty cases array");
+  }
+  const n = doc.cases.length;
+  const current = doc.current ?? 0;
+  if (typeof current !== "number" || !Number.isInteger(current) || current < 0 || current >= n) {
+    throw new CliError(
+      "usage",
+      "usage",
+      `current ${String(current)} is not an index into ${n} cases`,
+    );
+  }
+  const checked = doc as Record<string, unknown> & { cases: unknown[]; current?: number };
+  const result = await trimCases(checked, {
+    maxChars: MAX_LINK_CHARS,
+    encode: async (d) => casesLinkUrl(origin, await encodeCasesLink(d as CasesDocument)),
+  });
+  if (!result.ok) {
+    throw new CliError(
+      "usage",
+      "link_too_long",
+      `the link has ${result.chars} characters with the current entry alone, more than ${MAX_LINK_CHARS}: send the file with case open instead`,
+    );
+  }
+  body.local = {
+    url: result.text,
+    dropped: result.dropped,
+    position: `${(result.doc.current ?? 0) + 1} / ${result.doc.cases.length}`,
+  };
 }
 
 /** FILE's text, or stdin's for "-", trimmed; unreadable or too long is a usage error. */

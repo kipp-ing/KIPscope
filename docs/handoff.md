@@ -42,8 +42,8 @@ One JSON document travels by link, file, CLI and API. Unknown keys are ignored a
 | `current` | integer ≥ 0 | no | 0-based index of the session to open first; default 0; less than the number of sessions. |
 | `pad` | duration text | no | Time shown before and after each session, e.g. `60s`, `500ms`, `2min`, `1h`; 0 to 1 day (`24h`). Default `KIPSCOPE_CASE_PAD` (60 s). |
 | `align` | object | no | How a step keeps the moment (see "Alignment"); default `{"mode": "start"}`. |
-| `view` | view name or view document | no | The layout to open with: the name of the user's saved view, or a whole view document (`{"kipscope": "view", …}`). Without it KIPscope takes the layout of the user's latest workspace. |
-| `origin` | object | no | Where the catalog came from: `tool` (≤ 64 characters, shown in the tooltip and on the back link), `url` (≤ 2,048 characters, the back link to the finder; kept only when its origin is listed in `KIPSCOPE_FINDER_ORIGINS`), `set` (≤ 256 characters, your name for the result set). |
+| `view` | view name or view document | no | The layout to open with: the name of the user's saved view, or a whole view document (`{"kipscope": "view", …}`). Without it KIPscope takes the layout of the user's latest workspace. Only the layout is taken: each chart opens at the session scope `[from − pad, to + pad)` of `current`; the view's own chart times and cursors are not used. |
+| `origin` | object | no | Where the catalog came from: `tool` (≤ 64 characters, shown in the tooltip and on the back link), `url` (≤ 2,048 characters, the back link to the finder; kept only when its origin is listed in `KIPSCOPE_FINDER_ORIGINS`, or, with `KIPSCOPE_IDENTITY=none` only, when it is an `http` or `https` URL on `localhost`, `127.0.0.1` or `[::1]`, any port; otherwise dropped with a warning in the open report), `set` (≤ 256 characters, your name for the result set). |
 
 ### Session keys
 
@@ -57,6 +57,8 @@ One JSON document travels by link, file, CLI and API. Unknown keys are ignored a
 | `title` | string, ≤ 120 | no | Shown instead of the object (e.g. the fleet number). |
 | `meta` | object, ≤ 16 keys | no | Shown in the bar and the catalog list; keys 1–64 characters, values string (≤ 200), number, boolean or null. |
 | `anchor` | time | no | A moment inside the session (`from` ≤ `anchor` ≤ `to`) for `align` mode `anchor`. |
+
+**Lengths:** every character limit above (`id`, `object`, `title`, `meta` keys and values, `origin` fields) counts UTF-16 code units, which is JavaScript's string `length`: `"é".length` is 1, `"😀".length` is 2. The inflated limit of the API (4,194,304 bytes) counts UTF-8 bytes of the JSON.
 
 Times are ISO-8601 UTC with `Z` or an offset (`2026-10-01T01:00:00Z`, `2026-10-01T03:00:00+02:00`, nanoseconds allowed) or decimal nanoseconds since 1970 as a string. Within 1900-01-01 … 2262-04-11.
 
@@ -159,7 +161,7 @@ What the KIPscope operator sets (details in the README):
 | `KIPSCOPE_FINDER_ALGS` | `EdDSA,ES256` | Allowed algorithms, a subset of `EdDSA ES256 ES384 PS256 RS256`. |
 | `KIPSCOPE_FINDER_USER_CLAIM` | `sub` | The claim compared with the signed-in user. |
 | `KIPSCOPE_FINDER_MAX_AGE` | `1h` | Largest `exp − iat`, 1 min … 1 d. |
-| `KIPSCOPE_FINDER_ORIGINS` | empty | Comma list of `http(s)://host[:port]` that `origin.url` may point to. |
+| `KIPSCOPE_FINDER_ORIGINS` | empty | Comma list of `http(s)://host[:port]` that `origin.url` may point to. With `KIPSCOPE_IDENTITY=none` a back link to `localhost`, `127.0.0.1` or `[::1]` on any port is kept without it. |
 | `KIPSCOPE_CASE_DATAREF` | `{object}` | Template of a session's data ref; `{object}` is replaced by the object (`fleet-{object}`). |
 | `KIPSCOPE_CASE_PAD` | `60s` | Pad when the catalog has none, 0 … 1 d. |
 
@@ -174,8 +176,9 @@ With `KIPSCOPE_IDENTITY=none` (one local user, everything granted) KIPscope also
 ```
 
 - At most **8,192 characters** in all. Measured: 50 sessions unsigned are about 1,900 characters, 200 about 5,800.
-- **Trimming:** if the link would be longer, drop sessions from the far ends around `current`, alternately before and after it, keeping their order, and lower `current` by the number dropped before it; sign again. For more sessions (up to 2,000) use a file or the API.
+- **Trimming (balanced trim):** if the link would be longer, drop, while it is too long, the far end of the longer side around `current` (on a tie the side before), keeping the order and every other key, and lower `current` by the number dropped before it; sign again. A short side is never emptied while the long side has more, so the neighbours on both sides stay as long as they can. Example: `current` 2 of 3,540 sessions with room for 213 keeps sessions 0 … 212 with `current` 2 (3,327 dropped after, none before). A catalog that does not fit with `current` alone cannot be linked (`link_too_long`). `trimCases` in `packages/shared/src/caseTrim.ts` implements the rule (it takes your encoder and bisects, about ⌈log2 n⌉ + 2 encodes; port it or call it), and `kipscope case url FILE --trim` prints the trimmed link of an unsigned catalog. For more sessions (up to 2,000) use a file or the API.
 - **Open it in the named tab** `target="kipscope"` (`<a href="…" target="kipscope">` or `window.open(url, "kipscope")`), so every "Open in KIPscope" reuses one KIPscope tab instead of piling up tabs.
+- **Opener rule:** KIPscope sets no `Cross-Origin-Opener-Policy`. The browser reuses the named tab only while the finder keeps the opener relationship to it, so do not use `noopener` (`rel="noopener"`, `window.open(url, "kipscope", "noopener")`) and do not send `Cross-Origin-Opener-Policy: same-origin` on the finder page (nor on a proxy in front of KIPscope); otherwise every click opens a new tab.
 - Each open makes a new workspace; the catalog cannot be changed afterwards. KIPscope replaces the address with `/w/<id>`, so a reload stays in that workspace.
 
 ## File, CLI and API
@@ -183,7 +186,7 @@ With `KIPSCOPE_IDENTITY=none` (one local user, everything granted) KIPscope also
 The same string (JWS or unsigned code), or in `none` mode the plain document, also opens by:
 
 - **File:** drop it on the KIPscope window.
-- **CLI:** `kipscope case open FILE` or `… | kipscope case open -`; `kipscope case url FILE` prints the link.
+- **CLI:** `kipscope case open FILE` or `… | kipscope case open -`; `kipscope case url FILE` prints the link, `--trim` trims an unsigned catalog that is too long (see "Trimming").
 - **API:** `POST /api/workspaces` with `{"open": {"cases": "<JWS or code>"}}` (or the document as an object), at most 4,000,000 characters; the inflated JSON at most 4,194,304 bytes. The answer holds the new workspace and `case` (`count`, `current`, `dataRefs`, `missing`, `warnings`).
 
 ## Errors the user may see
@@ -200,3 +203,5 @@ A refused open shows the page "Could not open the sessions" with the code and me
 | `finder_keys_unavailable` | 503 | The JWKS URL could not be fetched and never loaded. | Check the JWKS URL. |
 | `catalog_unavailable` | 503 | The first session's signal list could not be loaded. | Retry later. |
 | `workspace_limit` | 409 | The user holds the most workspaces and none can make room. | The user closes a KIPscope tab. |
+
+`invalid_catalog` refuses the catalog as a whole: one bad session refuses them all, no session is skipped. Check every entry before you sign.

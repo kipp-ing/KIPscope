@@ -271,6 +271,36 @@ describe("POST /api/workspaces with a catalog", () => {
     expect(foreign.body.case.warnings.join(" ")).toMatch(/evil\.example|origin/);
   });
 
+  it("keeps a loopback back link in identity none", async () => {
+    const { t } = await start();
+    const withUrl = (url: string) => c4({ origin: { tool: "search tool", url } });
+    for (const url of [
+      "http://localhost:5173/#f=1",
+      "http://127.0.0.1:9999/x",
+      "http://[::1]:8080/",
+    ]) {
+      const answer = await open(t.anon, withUrl(url));
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect((await caseOf(t.anon, idOf(answer))).origin?.url, url).toBe(url);
+      expect(answer.body.case.warnings, url).toEqual([]);
+    }
+    for (const url of ["http://localhost.evil.example/", "file://localhost/x"]) {
+      const answer = await open(t.anon, withUrl(url));
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect((await caseOf(t.anon, idOf(answer))).origin?.url, url).toBeUndefined();
+      expect(answer.body.case.warnings.join(" "), url).toContain(url);
+    }
+
+    // With a sign-in module the rule is the listed origins only.
+    const server = await start({ identity: testIdentity() });
+    const alice = server.t.as("alice");
+    const url = "http://localhost:5173/";
+    const answer = await open(alice, signed(withUrl(url), { sub: "alice" }));
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    expect((await caseOf(alice, idOf(answer))).origin?.url).toBeUndefined();
+    expect(answer.body.case.warnings.join(" ")).toContain(url);
+  });
+
   it("refuses an oversized catalog", async () => {
     const { t } = await start();
     const bomb = deflateRawSync(Buffer.alloc(10 * 1024 * 1024, 0x20)).toString("base64url");

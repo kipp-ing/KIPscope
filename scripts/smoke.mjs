@@ -102,28 +102,69 @@ async function js(expression) {
 
 const inflight = new Set();
 const urls = new Map();
+// API answers the specs expect: a 4xx whose body names one of these codes, such as a case window with
+// a signal the session lacks (case-navigation "Missing signal in the window"; the neighbour preload
+// asks for the same). Chrome still logs them as "Failed to load resource"; any other code fails.
+const EXPECTED_API_CODES = new Set(["unknown_signal"]);
+const apiCodes = new Map(); // requestId → { code: Promise<string | undefined>, done }
+const apiChecks = [];
+const apiErrors = new Set(); // requestIds of /api/ answers with status >= 400
+function apiCode(requestId) {
+  let entry = apiCodes.get(requestId);
+  if (!entry) {
+    let done;
+    entry = { code: new Promise((ok) => (done = ok)), done: (c) => done(c) };
+    apiCodes.set(requestId, entry);
+  }
+  return entry;
+}
 const handlers = {
   "Runtime.exceptionThrown": ({ exceptionDetails: d }) =>
     fail(`uncaught: ${d.exception?.description ?? d.text}`),
   "Runtime.consoleAPICalled": ({ type, args }) =>
     type === "error" &&
     fail(`console.error: ${args.map((a) => a.value ?? a.description).join(" ")}`),
-  "Log.entryAdded": ({ entry: e }) =>
-    e.level === "error" && !/favicon/.test(e.url ?? "") && !MODULE.test(e.url ?? "")
-      ? fail(`console: ${e.text} ${e.url ?? ""}`)
-      : undefined,
+  "Log.entryAdded": ({ entry: e }) => {
+    if (e.level !== "error" || /favicon/.test(e.url ?? "") || MODULE.test(e.url ?? "")) return;
+    if (e.source === "network" && e.networkRequestId && /\/api\//.test(e.url ?? "")) {
+      const answer = apiCode(e.networkRequestId).code;
+      const late = new Promise((ok) => setTimeout(ok, 5000, undefined));
+      const check = Promise.race([answer, late]).then((code) => {
+        if (!EXPECTED_API_CODES.has(code))
+          fail(`console: ${e.text} ${e.url} (${code ?? "no code"})`);
+      });
+      apiChecks.push(check);
+      return;
+    }
+    fail(`console: ${e.text} ${e.url ?? ""}`);
+  },
   "Network.requestWillBeSent": ({ requestId, request }) => {
     inflight.add(requestId);
     urls.set(requestId, request.url);
   },
-  "Network.loadingFinished": ({ requestId }) => inflight.delete(requestId),
+  "Network.loadingFinished": ({ requestId }) => {
+    inflight.delete(requestId);
+    if (!apiErrors.has(requestId)) return;
+    send("Network.getResponseBody", { requestId }).then(
+      ({ body }) => {
+        try {
+          apiCode(requestId).done(JSON.parse(body)?.error?.code);
+        } catch {
+          apiCode(requestId).done(undefined);
+        }
+      },
+      () => apiCode(requestId).done(undefined),
+    );
+  },
   "Network.loadingFailed": ({ requestId, errorText, canceled }) => {
     inflight.delete(requestId);
+    apiCode(requestId).done(undefined);
     const u = urls.get(requestId) ?? "";
     if (!canceled && MODULE.test(u))
       fail(`module load failed: ${new URL(u).pathname} ${errorText}`);
   },
-  "Network.responseReceived": ({ type, response: r }) => {
+  "Network.responseReceived": ({ requestId, type, response: r }) => {
+    if (r.status >= 400 && /\/api\//.test(r.url)) apiErrors.add(requestId);
     if (r.status >= 400 && (MODULE.test(r.url) || type === "Document")) {
       fail(`HTTP ${r.status} for ${new URL(r.url).pathname}`);
     }
@@ -323,6 +364,7 @@ async function main() {
     await idle();
     const s = await check();
     if (!s.explorer) fail("the app did not mount .explorer");
+    await Promise.all(apiChecks);
     if (failures.length) break; // a broken load makes every interaction fail too
     for (const [name, run] of Object.entries(STEPS)) {
       step = `${name} ${width}x${height}`;
@@ -331,6 +373,7 @@ async function main() {
       await check();
     }
   }
+  await Promise.all(apiChecks);
   finish();
 }
 

@@ -1,6 +1,7 @@
 export * from "./apply.ts";
 export * from "./case.ts";
 export * from "./caseApply.ts";
+export * from "./caseTrim.ts";
 export * from "./cursor.ts";
 export * from "./drives.ts";
 export * from "./encoding.ts";

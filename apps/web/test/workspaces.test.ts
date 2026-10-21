@@ -15,6 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyLiveMessage, FINAL_CLOSES, type LiveState } from "../src/live.ts";
 import { apiPath, resolvesWorkspace, withWorkspace } from "../src/workspaces/apiPath.ts";
+import { stashCaseReport } from "../src/workspaces/caseReport.ts";
 import { GatePage } from "../src/workspaces/Gate.tsx";
 import { gateOf, LATEST_WORKSPACE, NEW_WORKSPACE } from "../src/workspaces/gate.ts";
 import { ReadOnlyPill, readOnlyTitle } from "../src/workspaces/ReadOnlyPill.tsx";
@@ -492,5 +493,45 @@ describe("catalog start-up (add-case-open K14)", () => {
     expect(html).toContain("Could not open the sessions");
     expect(html).toContain("wrong_user");
     expect(html).toContain("My latest workspace");
+  });
+
+  it("shows a dropped catalog's report after the page load", async () => {
+    const report = {
+      count: 4,
+      current: 0,
+      dataRefs: ["testcar"],
+      missing: ["othercar/Irr_200h.JITTER"],
+      warnings: [
+        "origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS",
+      ],
+    };
+    const entries = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", {
+      getItem: (k: string) => entries.get(k) ?? null,
+      setItem: (k: string, v: string) => void entries.set(k, v),
+      removeItem: (k: string) => void entries.delete(k),
+    });
+    vi.stubGlobal("history", { replaceState: vi.fn() });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/me") return json(200, ME);
+        if (url.startsWith("/api/workspaces/abcdefghij")) return json(200, summary("abcdefghij"));
+        throw new Error(`unexpected request ${url}`);
+      }),
+    );
+    // The drop stashed the report; the page load of /w/<id> carries it as a link's open does.
+    stashCaseReport("abcdefghij", report);
+    const started = await startWorkspace(at("/w/abcdefghij"));
+    expect(started).toMatchObject({ kind: "ready", workspace: "abcdefghij", cases: report });
+    // Taken once: a reload shows nothing.
+    const again = await startWorkspace(at("/w/abcdefghij"));
+    expect(again.kind).toBe("ready");
+    if (again.kind === "ready") expect(again.cases).toBeUndefined();
+    // A report of another workspace is not shown here.
+    stashCaseReport("zzzzzzzzzz", report);
+    const other = await startWorkspace(at("/w/abcdefghij"));
+    if (other.kind === "ready") expect(other.cases).toBeUndefined();
+    expect(entries.size).toBe(0);
   });
 });

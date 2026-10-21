@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { ApiRequestError, createWorkspace, fetchMe, fetchWorkspace, openCases } from "../api.ts";
 import { startupView } from "../views/link.ts";
 import { setWorkspace } from "./apiPath.ts";
+import { takeCaseReport } from "./caseReport.ts";
 import { type Gate, gateOf, LATEST_WORKSPACE } from "./gate.ts";
 
 type Address = Pick<Location, "pathname" | "search" | "hash">;
@@ -65,7 +66,7 @@ export type Startup =
       message?: string;
       /** The open of a `#view=`/`?view=` link in the new workspace, for the "Opened" notice. */
       opened?: CommandResult;
-      /** The open of a catalog (`#cases=`, add-case-open K10), for the message line. */
+      /** The open of a catalog (`#cases=` K10, or a dropped file's X4), for the message line. */
       cases?: CaseOpenReport;
     };
 
@@ -215,6 +216,8 @@ export async function startWorkspace(
     }
     id = reused.workspace.id;
   }
+  // A dropped catalog's report, carried across the page load (fix-handoff-findings X4).
+  cases ??= takeCaseReport(id);
   setWorkspace(id);
   history.replaceState(null, "", workspacePath(id));
   return {

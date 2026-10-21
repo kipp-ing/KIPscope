@@ -1,5 +1,11 @@
 import { readFileSync } from "node:fs";
-import type { CaseEntry, CommandResult, WorkspaceCase, WorkspaceScope } from "@kipscope/shared";
+import type {
+  CaseEntry,
+  CaseOpenReport,
+  CommandResult,
+  WorkspaceCase,
+  WorkspaceScope,
+} from "@kipscope/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -8,6 +14,7 @@ import {
   alignItems,
   arrowHint,
   CASE_MESSAGES,
+  caseOpenEvents,
   caseResultEvents,
   catalogRows,
   goFirstMatch,
@@ -292,6 +299,37 @@ describe("case messages", () => {
       () => "Jitter (ms)",
     );
     expect(named).toEqual([{ kind: "notice", text: "1 signal not in this session: Jitter (ms)" }]);
+  });
+
+  it("shows open warnings with the case notice", () => {
+    const warning =
+      "origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS";
+    const report = (over: Partial<CaseOpenReport>): CaseOpenReport => ({
+      count: 4,
+      current: 0,
+      dataRefs: ["testcar"],
+      missing: [],
+      warnings: [],
+      ...over,
+    });
+    // Case texts first, then the warnings: one notice, joined by " · ".
+    expect(
+      caseOpenEvents(
+        report({ missing: ["othercar/Irr_200h.JITTER"], warnings: [warning] }),
+        caseAt(0),
+      ),
+    ).toEqual([
+      {
+        kind: "notice",
+        text: `1 signal not in this session: JITTER \u00b7 ${warning}`,
+      },
+    ]);
+    // Only a warning: the warning alone.
+    expect(caseOpenEvents(report({ warnings: [warning] }), caseAt(0))).toEqual([
+      { kind: "notice", text: warning },
+    ]);
+    // Neither: no notice.
+    expect(caseOpenEvents(report({}), caseAt(0))).toEqual([]);
   });
 
   it("messages after a step: refusals and a plain success", () => {

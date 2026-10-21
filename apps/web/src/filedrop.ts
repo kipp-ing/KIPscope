@@ -1,5 +1,6 @@
 import { isSignedCases, workspacePath } from "@kipscope/shared";
 import { openCases } from "./api.ts";
+import { stashCaseReport } from "./workspaces/caseReport.ts";
 
 /**
  * Ignores files dragged onto the page (design H8): without this a dropped file navigates the tab
@@ -51,19 +52,22 @@ export function catalogOfText(text: string): string | Record<string, unknown> | 
 
 /**
  * Opens a dropped file holding a catalog (K14): posts it as `{open: {cases}}`, then goes to the
- * new workspace (`go`, a page load). Resolves false when the file holds no catalog; rejects with
- * the server's refusal.
+ * new workspace (`go`, a page load). The answer's open report is stashed in `store` (default
+ * sessionStorage) first, so the workspace shows it after the load (fix-handoff-findings X4).
+ * Resolves false when the file holds no catalog; rejects with the server's refusal.
  */
 export async function openDroppedCatalog(
   file: Pick<File, "text">,
   deps: {
     open?: typeof openCases;
     go?: (path: string) => void;
+    store?: Parameters<typeof stashCaseReport>[2];
   } = {},
 ): Promise<boolean> {
   const cases = catalogOfText(await file.text());
   if (cases === undefined) return false;
   const answer = await (deps.open ?? openCases)(cases);
+  if (answer.case) stashCaseReport(answer.workspace.id, answer.case, deps.store);
   (deps.go ?? ((path) => location.assign(path)))(workspacePath(answer.workspace.id));
   return true;
 }

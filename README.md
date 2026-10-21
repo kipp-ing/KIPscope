@@ -120,7 +120,7 @@ pnpm --filter @kipscope/web dev      # UI at http://localhost:5173, proxies /api
 
 The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL` (default `http://127.0.0.1:7310`).
 
-`pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It opens your free workspace (or else the latest) at `/w/<id>` and blocks every write to `/api` except the one start-up `POST /api/workspaces {reuse: true}`, which may create one empty workspace when you have none, so it never changes a workspace.
+`pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads; an API answer the specs expect (404 `unknown_signal` for a signal a session lacks) is not a console error. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It opens your free workspace (or else the latest) at `/w/<id>` and blocks every write to `/api` except the one start-up `POST /api/workspaces {reuse: true}`, which may create one empty workspace when you have none, so it never changes a workspace.
 
 The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`, or a host of `KIPSCOPE_ORIGINS`) and whose `Origin`, if any, is such a host; other requests get 403. Locally there is no login (`KIPSCOPE_IDENTITY=none`, the default): every request is the user `local`, every workspace sees all data, and a non-loopback `KIPSCOPE_HOST` logs a warning at start.
 
@@ -275,7 +275,7 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `case unlink` | `case.unlink`: the scope becomes the vehicle's whole recording |
 | `case align start\|end\|anchor` | `case.align`: what lines up between sessions |
 | `case align event KIND SOURCE NAME [TEXT]` | `case.align` to the first matching event of each session |
-| `case url FILE\|-` | prints the link `<server>/open#cases=<code>` of a catalog; longer than 8,192 characters: exit 2 `link_too_long` |
+| `case url FILE\|- [--trim]` | prints the link `<server>/open#cases=<code>` of a catalog; longer than 8,192 characters: exit 2 `link_too_long`; `--trim` drops sessions by the balanced trim of [handoff.md](docs/handoff.md) until it fits (unsigned catalogs only; `local.dropped`, `local.position`) |
 | `case drives REF` | prints a catalog with one session per drive of REF (a test aid; pipe it to `case open -`) |
 | `command JSON` | the JSON as is (no anchors, names or REFs resolved) |
 | `view save TITLE [--name N] [--note TEXT] [--overwrite]` | `POST /api/views`: saves the workspace as view N (default derived from TITLE); `data.view`, `revision` |

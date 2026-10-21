@@ -117,8 +117,20 @@ describe("documents", () => {
       "signature_required",
       "invalid_signature",
       "wrong_user",
+      "invalid_catalog",
+      "link_too_long",
+      // fix-handoff-findings: trim rule, lengths, refusal, view times, opener rule.
+      "longer side",
+      "UTF-16",
+      "as a whole",
+      "[from \u2212 pad, to + pad)",
+      "Cross-Origin-Opener-Policy",
+      "noopener",
+      "--trim",
     ])
       expect(guide, `docs/handoff.md names ${word}`).toContain(word);
+    // The old trim rule is gone.
+    expect(guide, "docs/handoff.md no longer says alternately").not.toContain("alternately");
     // The README links it.
     expect(read("README.md"), "README links the handoff guide").toContain("docs/handoff.md");
   });

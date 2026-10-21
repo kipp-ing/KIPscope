@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { catalogOfText, ignoreFileDrops, openDroppedCatalog } from "../src/filedrop.ts";
+import { CASE_REPORT_KEY, takeCaseReport } from "../src/workspaces/caseReport.ts";
 
 /** A cancelable drag event as the browser makes it, carrying `types` and a writable dropEffect. */
 function dragEvent(type: "dragover" | "drop", types: string[]) {
@@ -86,6 +87,58 @@ describe("a dropped catalog (add-case-open K14)", () => {
     // The document is posted as it is, then the tab goes to the new workspace.
     expect(bodies).toEqual([{ open: { cases: DOC } }]);
     expect(go).toHaveBeenCalledWith("/w/abcdefghij");
+  });
+
+  it("carries the open report across the page load", async () => {
+    const report = {
+      count: 1,
+      current: 0,
+      dataRefs: ["testcar"],
+      missing: [],
+      warnings: [
+        "origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS",
+      ],
+    };
+    const open = vi.fn().mockResolvedValue({ workspace: { id: "w1" }, case: report });
+    const entries = new Map<string, string>();
+    const store = {
+      getItem: (k: string) => entries.get(k) ?? null,
+      setItem: (k: string, v: string) => void entries.set(k, v),
+      removeItem: (k: string) => void entries.delete(k),
+    };
+    const go = vi.fn();
+    expect(await openDroppedCatalog(file(JSON.stringify(DOC)), { open, go, store })).toBe(true);
+    expect(go).toHaveBeenCalledWith("/w/w1");
+
+    // The page after the load takes the report once.
+    expect(takeCaseReport("w1", store)).toEqual(report);
+    expect(takeCaseReport("w1", store)).toBeUndefined();
+
+    // A report stored for w1 is not w2's, and the entry is gone either way.
+    await openDroppedCatalog(file(JSON.stringify(DOC)), { open, go: vi.fn(), store });
+    expect(entries.has(CASE_REPORT_KEY)).toBe(true);
+    expect(takeCaseReport("w2", store)).toBeUndefined();
+    expect(entries.has(CASE_REPORT_KEY)).toBe(false);
+    expect(takeCaseReport("w1", store)).toBeUndefined();
+
+    // A storage that throws loses the report but not the page load.
+    const broken = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const goBroken = vi.fn();
+    expect(
+      await openDroppedCatalog(file(JSON.stringify(DOC)), { open, go: goBroken, store: broken }),
+    ).toBe(true);
+    expect(goBroken).toHaveBeenCalledWith("/w/w1");
+    expect(takeCaseReport("w1", broken)).toBeUndefined();
   });
 
   it("leaves a file that is no catalog alone", async () => {

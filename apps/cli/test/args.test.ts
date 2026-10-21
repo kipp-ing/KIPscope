@@ -794,6 +794,30 @@ describe("case forms (add-case-open K15)", () => {
     ];
     for (const [argv, command] of forms) expect(await sent(argv), argv.join(" ")).toEqual(command);
 
+    // `case url` takes `--trim` (fix-handoff-findings X2); any other case form refuses it.
+    const invocation = (argv: string[]) => parseArgs(argv, {}).invocation;
+    expect(invocation(["case", "url", "f.json", "--trim"])).toEqual({
+      kind: "case",
+      action: "url",
+      file: "f.json",
+      trim: true,
+    });
+    expect(invocation(["case", "url", "f.json"])).toEqual({
+      kind: "case",
+      action: "url",
+      file: "f.json",
+    });
+    expect(invocation(["case", "url", "--trim", "-"])).toMatchObject({ file: "-", trim: true });
+    for (const argv of [
+      ["case", "open", "f.json", "--trim"],
+      ["case", "next", "--trim"],
+      ["case", "show", "--trim"],
+      ["case", "drives", "smart451", "--trim"],
+      ["window", "create", "--trim"],
+    ]) {
+      expect(usageError(argv).code, argv.join(" ")).toBe("usage");
+    }
+
     // `case link` without N goes to the workspace's current entry, read at run time.
     expect(await sent(["case", "link"], heldAtTwo)).toEqual({ type: "case.go", index: 2 });
     // A workspace without a catalog refuses it.
@@ -858,7 +882,7 @@ describe("case forms (add-case-open K15)", () => {
       "case unlink",
       "case align start|end|anchor",
       "case align event KIND SOURCE NAME",
-      "case url FILE",
+      "case url FILE|- [--trim]",
       "case drives REF",
     ]) {
       expect(USAGE, form).toContain(form);

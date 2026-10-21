@@ -3,6 +3,7 @@ import {
   type CaseAlign,
   type CaseCatalog,
   type CaseEntry,
+  type CaseOpenReport,
   type CommandInput,
   type CommandResult,
   type DiagEvent,
@@ -302,6 +303,17 @@ export function caseResultEvents(
   nameOf?: (signalId: string) => string | undefined,
 ): StripEvent[] {
   if (!result.ok) return [{ kind: "error", text: `${result.code}: ${result.message}` }];
+  const parts = caseTexts(result, after, nameOf);
+  if (parts.length > 0) return [caseNotice(parts.join(" · "))];
+  return endedEvents();
+}
+
+/** The clamp, fallback and missing texts of an accepted case result, in that order. */
+function caseTexts(
+  result: Pick<Extract<CommandResult, { ok: true }>, "clamped" | "alignFallback" | "missing">,
+  after: WorkspaceCase | undefined,
+  nameOf?: (signalId: string) => string | undefined,
+): string[] {
   const parts: string[] = [];
   if (result.clamped) parts.push(caseClampMessage(after ?? { linked: true }));
   if (result.alignFallback) {
@@ -311,6 +323,23 @@ export function caseResultEvents(
     );
   }
   if (result.missing && result.missing.length > 0) parts.push(missingText(result.missing, nameOf));
-  if (parts.length > 0) return [caseNotice(parts.join(" · "))];
-  return endedEvents();
+  return parts;
+}
+
+/** The open's one notice (case-handoff "Open warnings shown"): alignment fallback and missing
+ *  signals as caseResultEvents words them, then the report's warnings, joined by " · "; [] when empty. */
+export function caseOpenEvents(
+  report: CaseOpenReport,
+  after: WorkspaceCase,
+  nameOf?: (signalId: string) => string | undefined,
+): StripEvent[] {
+  const parts = [
+    ...caseTexts(
+      { missing: report.missing, ...(report.alignFallback ? { alignFallback: true } : {}) },
+      after,
+      nameOf,
+    ),
+    ...report.warnings,
+  ];
+  return parts.length > 0 ? [caseNotice(parts.join(" · "))] : [];
 }

@@ -36,7 +36,7 @@ import { OptionBar } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
 import { useCaseCatalog } from "./case/catalog.ts";
 import { SessionBar } from "./case/SessionBar.tsx";
-import { caseResultEvents } from "./case/sessionBar.ts";
+import { caseOpenEvents, caseResultEvents } from "./case/sessionBar.ts";
 import {
   type AnyDragSource,
   canAdd,
@@ -1475,27 +1475,21 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     if (start.message !== undefined) setMessage(start.message);
     if (start.opened) onOpened(start.opened);
   }, [start, onOpened, setMessage]);
-  // A catalog's open (add-case-open K10, K14): its missing signals, fallback and warnings in the
-  // message line, once the workspace and its case arrived.
+  // A catalog's open (add-case-open K10, K14), by link or by a dropped file: its missing signals,
+  // fallback and warnings in the message line, once the workspace and its case arrived.
   const casesShown = useRef(false);
   const openedCase = workspace?.case;
   useEffect(() => {
     const report = start.cases;
     if (casesShown.current || !report || !openedCase) return;
     casesShown.current = true;
-    const result: CommandResult = {
-      ok: true,
-      revision: 0,
-      ...(report.missing.length > 0 ? { missing: report.missing } : {}),
-      ...(report.alignFallback ? { alignFallback: true } : {}),
-    };
     const nameOf = (id: string) => {
       const s = infos.current.get(id);
       return s && shownName(s);
     };
-    showResult(caseResultEvents(result, openedCase, nameOf));
-    if (report.warnings.length > 0) setNotice(report.warnings.join(" · "));
-  }, [start, openedCase, showResult, setNotice]);
+    // One case notice (fix-handoff-findings X4): it ends with the tab's next command.
+    showResult(caseOpenEvents(report, openedCase, nameOf));
+  }, [start, openedCase, showResult]);
 
   // The drag ghost is placed after layout, once its size is known, so it stays inside the viewport.
   const ghostRef = useRef<HTMLDivElement>(null);
