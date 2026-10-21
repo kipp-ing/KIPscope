@@ -213,3 +213,26 @@ describe("y scale range of a constant series (D-095, uPlot RangeError)", () => {
     expect(spread([-2, 10])).toEqual([-2, 10]);
   });
 });
+
+describe("axis title row (DW21, D-095)", () => {
+  // The row is plain DOM + CSS in the window component; the source is pinned (the computed
+  // colours and rects are the UI check "Axis colours on smart451").
+  const css = readFileSync(new URL("../src/chart/window.css", import.meta.url), "utf8");
+  const rule = (selector: string) =>
+    css.match(
+      new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`),
+    )?.[1] ?? "";
+
+  it("puts the titles on their own line, slate-700, 8 px above the plot", () => {
+    const r = rule(".window .axis-titles");
+    expect(r).toMatch(/margin-bottom:\s*8px/);
+    expect(r).toMatch(/color:\s*#334155/);
+  });
+
+  it("draws the swatch 8 x 2 px with a 3 px gap", () => {
+    const r = rule(".window .axis-titles .axis-swatch");
+    expect(r).toMatch(/width:\s*8px/);
+    expect(r).toMatch(/height:\s*2px/);
+    expect(r).toMatch(/margin-right:\s*3px/);
+  });
+});
