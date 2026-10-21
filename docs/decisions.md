@@ -4,13 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
-## D-093: Ranges without seconds, two-digit year (2026-10-21)
+## D-093: Start and duration, no seconds, two-digit year (2026-10-21)
 
-Jan, on the declutter mock's range „15:06:03 – 15:18:33": „passt nicht gut. sekunden braucht niemand. Jahr reicht YY".
+Jan, on the declutter mock's range „15:06:03 – 15:18:33": „passt nicht gut. sekunden braucht niemand. Jahr reicht YY"; then on „Tue 2026-10-13 15:06:54 – 15:17:42": „datum viel weniger daten. ehr start YY-MM-DD HH:MM Dauer: HH:MM".
 
-- **Decision:** Ranges, session times and dates people read show `Tue 13.10.26  15:06 – 15:18` (English weekday, DD.MM.YY, HH:MM; `⁺¹` for an end on the next day, the full end date after that). The lead's defaults, Jan can veto: seconds appear only when both ends fall in the same minute; picker time fields take HH:MM (presets 00:00 / 24:00); cursor readouts (A, B, L, Δt) and typed input keep their precision, since they are measurements.
-- **Why:** Jan's comment on the mock.
-- **Consequences:** Supersedes the `YYYY-MM-DD HH:MM:SS` result line of D-092's picker answer. `add-range-picker` and `declutter-workspace` follow it before they are archived.
+- **Decision:** A range or session reads as its start and its duration: `26-10-13 15:06  0:10` (YY-MM-DD HH:MM, duration H:MM; no weekday, no end time, no ⁺¹; more than a day is just more hours). The lead's defaults, Jan can veto: a range shorter than 1 min shows the start with seconds and the duration in seconds (`26-10-13 15:06:03  41 s`); picker time fields take HH:MM (presets 00:00 / 24:00); cursor readouts (A, B, L, Δt) and typed input keep their precision, since they are measurements.
+- **Why:** Jan's comments on the mock: less data, no seconds.
+- **Consequences:** Supersedes the result line of D-092's picker answers (4: ⁺¹ and full end date). `add-range-picker` and `declutter-workspace` follow it before they are archived.
 
 ## D-092: Declutter and stable layout (2026-10-21)
 
