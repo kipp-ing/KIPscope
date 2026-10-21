@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workspace compact</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f8fafc}
+a{color:#0369a1}a:hover{color:#0c4a6e}
+button{font:inherit;color:inherit;cursor:pointer}
+input,select{font:inherit}
+.ib:hover{background:#f1f5f9}
+.gh:hover{background:#e2e8f0}
+.row:hover{background:#f8fafc}
+</style>
+</helmet>
+<div style="width: 1000px; height: 557px; display: flex; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; color: #0f172a; background: #f8fafc; overflow: hidden;">
+
+  <aside style="flex: 0 0 208px; display: flex; flex-direction: column; gap: 6px; padding: 6px; background: #ffffff; border-right: 1px solid #e2e8f0; box-sizing: border-box;">
+    <div role="tablist" aria-label="Sidebar" style="display: flex; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+      <button role="tab" aria-selected="true" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: #0f172a; color: #ffffff; font-weight: 600;">Signals <span style="font-weight: 400; color: #cbd5e1; font-variant-numeric: tabular-nums;">415</span></button>
+      <button role="tab" aria-selected="false" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff;">Events <span style="color: #64748b; font-variant-numeric: tabular-nums;">2</span></button>
+    </div>
+    <label style="display: block;">
+      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Search signals</span>
+      <input type="search" placeholder="Search name, description, unit" style="width: 100%; height: 28px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; color: #0f172a; box-sizing: border-box;">
+    </label>
+    <label style="display: flex; align-items: center; gap: 6px; color: #475569;">
+      <span>Add to</span>
+      <select style="flex: 1 1 auto; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0 4px;">
+        <option>Drive</option>
+        <option>Battery</option>
+        <option>New window</option>
+      </select>
+    </label>
+    <div style="flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px;">
+      <sc-for list="{{groups}}" as="g" hint-placeholder-count="14">
+        <div style="display: flex; flex-direction: column; gap: 1px;">
+          <button class="gh" aria-expanded="{{g.expanded}}" style="display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border: 0; border-radius: 4px; background: #f1f5f9; text-align: left;">
+            <span style="width: 10px; color: #64748b; font-size: 9px;">{{g.chev}}</span>
+            <span style="font-weight: 600; color: #334155;">{{g.name}}</span>
+            <span style="margin-left: auto; color: #64748b; font-variant-numeric: tabular-nums;">{{g.count}}</span>
+          </button>
+          <sc-for list="{{g.rows}}" as="r" hint-placeholder-count="0">
+            <div class="row" title="{{r.desc}}" style="display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px 0 22px; border-radius: 4px;">
+              <span style="flex: 0 0 7px; height: 7px; border-radius: 999px; background: {{r.dot}};"></span>
+              <span style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e293b;">{{r.name}}</span>
+              <span style="flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #64748b;">{{r.desc}}</span>
+              <span style="color: #64748b;">{{r.unit}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </aside>
+
+  <main style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;">
+
+    <div style="flex: 0 0 36px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: #ffffff; border-bottom: 1px solid #e2e8f0; box-sizing: border-box;">
+      <button class="ib" aria-label="Hide sidebar" title="Show or hide the signal list · s" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg>
+      </button>
+      <button class="ib" style="height: 26px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;">Views
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <span style="width: 1px; height: 18px; background: #e2e8f0; margin: 0 4px;"></span>
+
+      <button class="ib" aria-haspopup="dialog" title="Go to: pick a range or type one · t" style="width: 318px; height: 26px; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; font-variant-numeric: tabular-nums; text-align: left;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><line x1="3" y1="10" x2="21" y2="10"></line><line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line></svg>
+        <span style="color: #475569;">Tue</span>
+        <span style="font-weight: 600;">2026-10-13</span>
+        <span>15:06:03 – 15:18:33</span>
+        <span style="margin-left: auto; color: #64748b;">12.5 min</span>
+      </button>
+      <button class="ib" aria-label="Back" title="Back: the range before · Backspace" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      </button>
+      <button class="ib" aria-label="Reset" title="Reset: show all data · Home" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+      </button>
+      <button class="ib" aria-label="Link time axes" aria-pressed="true" title="Link time axes: on (all windows show one range)" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #7dd3fc; border-radius: 4px; background: #e0f2fe; padding: 0;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path></svg>
+      </button>
+      <span style="width: 1px; height: 18px; background: #e2e8f0; margin: 0 4px;"></span>
+      <sc-for list="{{toggles}}" as="t" hint-placeholder-count="3">
+        <button aria-pressed="{{t.pressed}}" style="height: 26px; min-width: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid #0f172a; background: #0f172a; color: #ffffff; font-weight: 600;">{{t.label}}</button>
+      </sc-for>
+
+      <span style="flex: 1 1 auto;"></span>
+            <button class="ib" aria-label="More" title="Share, Digits, + Values window" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#334155" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+      </button>
+      <button class="ib" aria-label="Help" title="Help · ?" style="width: 26px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; padding: 0; font-weight: 600; color: #334155;">?</button>
+    </div>
+
+    <div style="flex: 0 0 30px; display: flex; align-items: center; padding: 0 8px; background: #ffffff; border-bottom: 1px solid #e2e8f0; box-sizing: border-box; font-variant-numeric: tabular-nums;">
+            <button class="ib" aria-label="Previous session" title="Previous session · [" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"></polyline></svg>
+      </button>
+      <button class="ib" aria-haspopup="dialog" title="Sessions of the catalog, align" style="flex: 0 0 72px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">3 / 17 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.4" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+      <button class="ib" aria-label="Next session" title="Next session · ]" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+      </button>
+      <span title="Drive 3 · driving · rows 9.91e+6" style="flex: 1 1 auto; min-width: 0; margin-left: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600;">Drive 3</span>
+      <span style="flex: 0 0 262px; color: #334155;"><span style="color: #475569;">Tue</span> 2026-10-13  15:06:54 – 15:17:42</span>
+      <span style="flex: 0 0 64px; text-align: right; color: #64748b;">10.8 min</span>
+      <button class="ib" title="Unlink: the whole vehicle smart451" style="flex: 0 0 64px; margin-left: 10px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0;">Unlink</button>
+    </div>
+
+    <div title="6.2 min of 12.8 min in scope · 1 bar = 10 s" style="flex: 0 0 34px; position: relative; padding: 4px 8px 0; background: #ffffff; border-bottom: 1px solid #e2e8f0; box-sizing: border-box;">
+      <div style="position: relative; height: 26px;">
+        <sc-for list="{{pins}}" as="p" hint-placeholder-count="2">
+          <span style="position: absolute; top: 0; left: {{p.left}}%; width: 5px; height: 5px; margin-left: -2px; border-radius: 1px; background: #7c3aed;"></span>
+        </sc-for>
+        <div style="position: absolute; left: 0; right: 0; top: 6px; height: 14px; display: flex; align-items: flex-end; gap: 1px;">
+          <sc-for list="{{bars}}" as="b" hint-placeholder-count="75">
+            <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
+          </sc-for>
+        </div>
+        <div style="position: absolute; left: 0; right: 0; top: 5px; height: 16px; border: 1px solid #0284c7; border-radius: 2px; background: rgba(2,132,199,0.06);"></div>
+        <span style="position: absolute; top: 22px; left: 6.8%; width: 86.4%; height: 3px; border-radius: 2px; background: #0f172a;"></span>
+      </div>
+    </div>
+
+    <div style="flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px; overflow: hidden;">
+      <sc-for list="{{windows}}" as="w" hint-placeholder-count="2">
+        <section style="flex: 0 0 auto; min-width: 0; display: flex; flex-direction: column; background: #ffffff; border: {{w.border}}; border-radius: 4px; box-sizing: border-box; padding: 0 10px 4px;">
+          <header style="display: flex; align-items: center; gap: 8px; height: 26px;">
+            <span style="font-weight: 600;">{{w.title}}</span>
+            <sc-if value="{{w.isTarget}}" hint-placeholder-val="{{ true }}">
+              <span style="padding: 1px 7px; border-radius: 999px; background: #e0f2fe; color: #075985; font-size: 11px;">Add to</span>
+            </sc-if>
+            <span style="flex: 1 1 auto;"></span>
+            <span title="{{w.modeHint}}" style="flex: 0 0 64px; text-align: right; font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums;">{{w.mode}}</span>
+            <button class="ib" aria-label="Window menu" title="Line, step, markers · Min/max · Rename · Remove" style="width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; padding: 0;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#475569" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+            </button>
+          </header>
+          <div style="display: flex; height: 12px; font-size: 10px;">
+            <sc-for list="{{w.axesL}}" as="ax" hint-placeholder-count="2">
+              <span style="flex: 0 0 38px; text-align: right; padding-right: 4px; box-sizing: border-box; color: {{ax.color}};">{{ax.unit}}</span>
+            </sc-for>
+            <span style="flex: 1 1 auto;"></span>
+            <sc-for list="{{w.axesR}}" as="ax" hint-placeholder-count="1">
+              <span style="flex: 0 0 40px; padding-left: 4px; color: {{ax.color}};">{{ax.unit}}</span>
+            </sc-for>
+          </div>
+          <div style="display: flex; height: {{plotH}}px; font-size: 11px; font-variant-numeric: tabular-nums;">
+            <sc-for list="{{w.axesL}}" as="ax" hint-placeholder-count="2">
+              <div style="position: relative; flex: 0 0 38px;">
+                <sc-for list="{{ax.ticks}}" as="t" hint-placeholder-count="5">
+                  <span style="position: absolute; right: 4px; top: {{t.top}}%; transform: translateY(-50%); color: {{ax.color}};">{{t.label}}</span>
+                </sc-for>
+              </div>
+            </sc-for>
+            <div style="position: relative; flex: 1 1 auto; min-width: 0; border-left: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1;">
+              <sc-for list="{{grid}}" as="g" hint-placeholder-count="5">
+                <span style="position: absolute; left: 0; right: 0; top: {{g.top}}%; height: 1px; background: #f1f5f9;"></span>
+              </sc-for>
+              <sc-for list="{{xticks}}" as="x" hint-placeholder-count="6">
+                <span style="position: absolute; top: 0; bottom: 0; left: {{x.left}}%; width: 1px; background: #f1f5f9;"></span>
+              </sc-for>
+              <svg viewBox="0 0 1000 200" preserveAspectRatio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;" aria-hidden="true">
+                <sc-for list="{{w.series}}" as="s" hint-placeholder-count="3">
+                  <path d="{{s.path}}" fill="none" stroke="{{s.color}}" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+                </sc-for>
+              </svg>
+              <span style="position: absolute; top: 0; bottom: 0; left: 25.2%; width: 0; border-left: 1px solid #0f172a;"></span>
+              <span style="position: absolute; top: 0; bottom: 0; left: 44.9%; width: 0; border-left: 1px dashed #0f172a;"></span>
+              <span style="position: absolute; top: -1px; left: 25.2%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: #0f172a; color: #ffffff; font-size: 10px; font-weight: 600;">A</span>
+              <span style="position: absolute; top: -1px; left: 44.9%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: #ffffff; border: 1px solid #0f172a; color: #0f172a; font-size: 10px; font-weight: 600;">B</span>
+            </div>
+            <sc-for list="{{w.axesR}}" as="ax" hint-placeholder-count="1">
+              <div style="position: relative; flex: 0 0 40px;">
+                <sc-for list="{{ax.ticks}}" as="t" hint-placeholder-count="5">
+                  <span style="position: absolute; left: 4px; top: {{t.top}}%; transform: translateY(-50%); color: {{ax.color}};">{{t.label}}</span>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; height: 16px; font-size: 10px; color: #475569; font-variant-numeric: tabular-nums;">
+            <span style="flex: 0 0 {{w.lw}}px;"></span>
+            <div style="position: relative; flex: 1 1 auto;">
+              <sc-for list="{{xticks}}" as="x" hint-placeholder-count="6">
+                <span style="position: absolute; top: 3px; left: {{x.left}}%; transform: translateX(-50%);">{{x.label}}</span>
+              </sc-for>
+            </div>
+            <span style="flex: 0 0 {{w.rw}}px;"></span>
+          </div>
+          <table style="width: 100%; margin-top: 2px; border-collapse: collapse; font-variant-numeric: tabular-nums;">
+            <thead>
+              <tr style="height: 17px; color: #475569; font-size: 11px;">
+                <th style="width: 14px;"></th>
+                <th style="text-align: left; font-weight: 400;"></th>
+                <th style="width: 48px;"></th>
+                <th style="width: 72px; text-align: right; font-weight: 600; color: #0f172a;">A 15:09:12</th>
+                <th style="width: 72px; text-align: right; font-weight: 600; color: #0f172a;">B 15:11:40</th>
+                <th style="width: 72px; text-align: right; font-weight: 600; color: #0f172a;">Δ 0:02:28</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{w.series}}" as="s" hint-placeholder-count="3">
+                <tr style="height: 16px; border-top: 1px solid #f1f5f9;">
+                  <td><span style="display: inline-block; width: 10px; height: 2px; background: {{s.color}}; vertical-align: middle;"></span></td>
+                  <td style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap;">{{s.name}}</td>
+                  <td style="color: #64748b;">{{s.unit}}</td>
+                  <td style="text-align: right;">{{s.vA}}</td>
+                  <td style="text-align: right;">{{s.vB}}</td>
+                  <td style="text-align: right; color: #334155;">{{s.vD}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </section>
+      </sc-for>
+    </div>
+
+    <footer style="flex: 0 0 22px; display: flex; align-items: center; gap: 12px; padding: 0 10px; background: #ffffff; border-top: 1px solid #e2e8f0; font-size: 11px; color: #475569; box-sizing: border-box;">
+      <span title="revision 4 · ClickHouse sdlog · 415 signals · server 3e849e8" style="display: inline-flex; align-items: center; gap: 6px; color: #047857;"><span style="width: 7px; height: 7px; border-radius: 999px; background: #10b981;"></span>connected</span>
+      <span>smart451</span>
+      <span>Europe/Berlin</span>
+      <span style="flex: 1 1 auto;"></span>
+      <span style="color: #64748b;">KIPscope · <a href="https://kipp.ing" title="Jan Kipping, Agentic engineer">kipp.ing</a> · AAL</span>
+    </footer>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":557}}'>
+const SERIES = {
+  PW: "78:0 82:0 86:0 94:0 99:0 103:1 111:43 115:41 120:30 128:1 132:32 136:0 145:62 149:59 153:12 161:48 166:64 170:64 178:40 182:21 186:36 195:34 199:32 203:33 212:84 216:48 224:32 228:40 233:33 241:37 245:39 249:40 258:33 262:37 266:26 274:12 279:12 283:7 291:0 295:0 299:0 308:0 312:0 316:0 325:0 329:0 333:0 341:0 345:4 350:25 358:34 362:33 371:20 375:32 379:16 387:14 392:13 396:17 404:2 408:0 412:0 421:14 425:37 429:41 438:23 442:23 446:23 454:22 458:22 463:22 471:23 475:31 479:27 488:24 492:22 500:18 504:8 509:19 517:25 521:19 525:19 534:18 538:18 542:18 551:26 555:22 559:37 567:29 571:44 576:39 584:23 588:22 592:20 601:25 605:22 609:22 617:20 622:18 626:7 634:0 638:0 647:0 651:0 655:0 663:0 668:0 672:10 680:49 684:34 689:19 697:4 701:3 705:7 714:10 718:18 722:12 730:13 735:2 739:0 747:0 751:0 756:0 764:4 768:58 772:39 781:11 785:35 793:0 797:0 802:0 810:16 814:22 818:14 827:4 831:4 835:6 843:27 848:0 852:25 860:18 864:18 868:26 877:13 881:38 885:25 894:8 898:0 902:0 910:0 915:0",
+  DVL: "94:0 99:24 103:46 107:28 115:252 120:330 124:342 132:138 136:75 140:6 149:231 153:222 157:94 166:237 170:389 174:449 182:396 186:351 191:353 199:326 203:327 207:294 216:518 220:454 224:389 233:361 237:358 241:350 245:344 253:378 258:378 262:381 270:401 274:384 279:359 287:228 291:104 295:9 304:0 308:0 312:0 320:0 325:0 329:0 337:0 341:0 345:10 354:141 358:202 362:264 371:325 375:346 379:370 383:374 392:359 396:353 400:326 408:164 412:89 417:47 425:132 429:263 433:333 442:366 446:368 450:371 458:365 463:359 467:361 475:353 479:348 484:370 492:386 496:380 500:379 509:341 513:342 517:352 521:371 530:368 534:377 538:385 546:389 551:395 555:408 563:435 567:421 571:421 580:452 584:430 588:413 597:372 601:372 605:362 613:335 617:323 622:302 630:206 634:140 638:37 647:0 651:0 655:0 659:0 668:0 672:18 676:143 684:430 689:485 693:492 701:483 705:470 710:464 718:477 722:496 726:489 735:468 739:423 743:340 751:88 756:31 760:12 768:146 772:343 776:337 785:268 789:315 793:213 797:92 806:112 810:199 814:241 822:294 827:289 831:285 839:238 843:287 848:271 856:315 860:352 864:339 873:377 877:382 881:374 889:411 894:406 898:321 906:95 910:16 915:0",
+  CUR: "78:0 82:0 86:0 94:-0.8 99:-4.7 103:-4.3 111:-21.1 115:-32.8 120:-20.4 128:13.7 132:-14.3 136:-0.8 145:-25.3 149:-54.2 153:-4.3 161:-22.4 166:-62.6 170:-72.6 178:-33.7 182:-6.3 186:-26 195:-23.1 199:-20.3 203:-24.8 212:-93.2 216:-75.9 224:-18.9 228:-33.6 233:-19.5 241:-27.2 245:-30.8 249:-31.9 258:-20.9 262:-27.4 266:-13.7 274:4.3 279:3 283:6.4 291:4.5 295:-1.6 299:-1.5 308:-1.4 312:-1.4 316:-1.4 325:-1.4 329:-1.4 333:-1.4 341:-1.4 345:-2.5 350:-6.7 358:-17.6 362:-22.2 371:-5.1 375:-19.6 379:-1.3 387:1.7 392:3 396:-1.7 404:8.6 408:9.7 412:1.4 421:-4.3 425:-16.1 429:-33.2 438:-7.8 442:-8.3 446:-7.6 454:-6.2 458:-6.5 463:-6.4 471:-7.4 475:-20.3 479:-13 488:-9.7 492:-7.8 500:-2.5 504:8.4 509:-4.2 517:-10.4 521:-4.1 525:-3.2 534:-3 538:-2.7 542:-2.6 551:-11.1 555:-7.5 559:-24.7 567:-14.8 571:-35.1 576:-31.4 584:-7.9 588:-7.5 592:-4 601:-11.9 605:-6.4 609:-6.6 617:-4.8 622:-2.5 626:5.5 634:5.4 638:-0.1 647:-1 651:-1.1 655:-1.1 663:-1.1 668:-1.1 672:-3 680:-48.6 684:-21.4 689:-4.1 697:18 701:21.1 705:13 714:10 718:-1.6 722:6.7 730:4.4 735:18.9 739:20.4 747:13.2 751:3.3 756:-1.2 764:-1.3 768:-36 772:-34.6 781:5.6 785:-23.1 793:15.4 797:2.2 802:1.2 810:-2.8 814:-6 818:-0.2 827:10.5 831:9.5 835:7.3 843:-18.6 848:10.9 852:-10.1 860:-5.6 864:-1.9 868:-11.9 877:2.3 881:-22.8 885:-11.1 894:8.4 898:25.9 902:13.2 910:-0.8 915:-0.8",
+  SOC: "82:75.3 86:75.3 90:75.3 99:75.3 103:75.3 107:75.3 115:75.26 120:75.2 124:75.2 132:75.2 136:75.2 140:75.2 149:75.09 153:75 157:75 166:75 170:74.84 174:74.71 182:74.6 186:74.6 191:74.51 199:74.5 203:74.5 207:74.5 216:74.12 220:74.1 224:74.07 233:73.97 237:73.8 241:73.76 249:73.66 253:73.6 258:73.58 266:73.5 270:73.5 274:73.5 283:73.5 287:73.5 291:73.5 299:73.5 304:73.5 308:73.5 316:73.5 320:73.5 325:73.5 333:73.5 337:73.5 341:73.5 350:73.5 354:73.5 362:73.5 366:73.36 371:73.3 379:73.3 383:73.3 387:73.3 396:73.3 400:73.3 404:73.3 412:73.3 417:73.3 421:73.3 429:73.27 433:73.2 438:73.2 446:73.2 450:73.2 454:73.2 463:73.1 467:73.1 471:73.1 479:73.07 484:73 488:73 496:73 500:73 504:73 513:73 517:73 521:73 530:73 534:73 538:73 546:73 551:73 555:73 563:72.8 567:72.8 571:72.71 580:72.5 584:72.5 588:72.5 597:72.5 601:72.5 605:72.5 613:72.5 617:72.5 622:72.5 630:72.5 634:72.5 643:72.5 647:72.5 651:72.5 659:72.5 663:72.5 668:72.5 676:72.5 680:72.31 684:72.27 693:72.22 697:72.27 701:72.3 710:72.37 714:72.5 718:72.5 726:72.5 730:72.5 735:72.5 743:72.5 747:72.53 751:72.7 760:72.7 764:72.7 768:72.53 776:72.5 781:72.5 785:72.5 793:72.5 797:72.5 802:72.5 810:72.5 814:72.5 818:72.5 827:72.5 831:72.5 835:72.5 843:72.5 848:72.5 852:72.5 860:72.5 864:72.5 868:72.5 877:72.5 881:72.42 885:72.3 894:72.3 898:72.42 902:72.5 910:72.5 915:72.5",
+  DIST: "78:60 82:53 86:52 94:52 99:52 103:48 111:48 115:48 120:48 128:48 132:48 136:48 145:48 149:48 153:47 161:47 166:47 170:47 178:47 182:47 186:47 195:47 199:47 203:47 212:47 216:46 224:46 228:46 233:46 241:46 245:46 249:46 258:45 262:45 266:45 274:45 279:45 283:45 291:45 295:45 299:45 308:45 312:45 316:45 325:45 329:45 333:45 341:45 345:45 350:45 358:45 362:45 371:45 375:45 379:44 387:44 392:44 396:44 404:44 408:44 412:44 421:44 425:44 429:44 438:44 442:44 446:44 454:44 458:44 463:44 471:44 475:44 479:44 488:44 492:44 500:44 504:44 509:44 517:44 521:44 525:44 534:44 538:44 542:44 551:44 555:44 559:44 567:44 571:44 576:44 584:44 588:44 592:44 601:44 605:44 609:44 617:44 622:44 626:44 634:43 638:43 647:47 651:48 655:48 663:48 668:48 672:48 680:48 684:48 689:48 697:48 701:48 705:48 714:48 718:48 722:48 730:48 735:48 739:48 747:49 751:49 756:49 764:49 768:49 772:49 781:49 785:49 793:49 797:49 802:49 810:49 814:49 818:49 827:49 831:49 835:49 843:49 848:49 852:49 860:49 864:49 868:49 877:49 881:49 885:49 894:49 898:49 902:49 910:49 915:50"
+};
+const PAL = ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7'];
+const WINDOWS = [
+  { title: 'Drive', target: true, mode: 'agg 1 s', modeHint: 'Aggregated, 1 s buckets (min/mean/max)', sigs: [
+    { k: 'PW', name: 'PW', unit: '%', lo: 0, hi: 100, side: 'L', c: 0 },
+    { k: 'CUR', name: 'PNHV_SupBat_Curr', unit: 'A', lo: -120, hi: 40, side: 'L', c: 2 },
+    { k: 'DVL', name: 'DVL', unit: '1/min', lo: 0, hi: 600, side: 'R', c: 1 } ] },
+  { title: 'Battery', target: false, mode: 'raw', modeHint: 'Raw samples', sigs: [
+    { k: 'SOC', name: 'PNHV_SupBat_SOC', unit: '%', lo: 72, hi: 76, side: 'L', c: 3 },
+    { k: 'DIST', name: 'PNHV_Trip_Dist', unit: 'km', lo: 40, hi: 64, side: 'R', c: 4 } ] }
+];
+const XT = [[156, '15:08'], [316, '15:10'], [476, '15:12'], [636, '15:14'], [796, '15:16'], [956, '15:18']];
+const GROUPS = [['AC', 20], ['CGW', 38], ['CPC', 89], ['Engine', 63], ['EPS', 2], ['ESP', 63], ['EWM', 5], ['PNHV', 10], ['SAM', 34], ['SAS', 6], ['SRS', 12], ['TCU', 38], ['YRG', 23], ['Other', 12]];
+const ROWS = {
+  Engine: [['PW', 'Pedalwert', '%', 0], ['PWG_ERR', 'Defect pedal value transmitter', '', -1], ['TEMP_KL', 'Cooling water temperature too high', '', -1]],
+  ESP: [['DVL', 'Wheel speed front left', '1/min', 1], ['DVR', 'Wheel speed front right', '1/min', -1], ['MBRE_ESP', 'Adjusted brake torque', 'Nm', -1]]
+};
+function parse(s) { return s.split(' ').map(function (p) { const a = p.split(':'); return [Number(a[0]), Number(a[1])]; }); }
+function path(pts, lo, hi) { return pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0] + ' ' + ((1 - (p[1] - lo) / (hi - lo)) * 200).toFixed(1); }).join(' '); }
+function at(pts, x) { let b = pts[0]; for (const p of pts) if (Math.abs(p[0] - x) < Math.abs(b[0] - x)) b = p; return b[1]; }
+function fmt(v) { const a = Math.abs(v); return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2); }
+function tickLabel(v) { return String(Math.round(v * 100) / 100); }
+class Component extends DCLogic {
+  renderVals() {
+    const windows = WINDOWS.map(function (w) {
+      const axis = function (s) {
+        const ticks = [0, 1, 2, 3, 4].map(function (i) { return { top: (100 - i * 25), label: tickLabel(s.lo + (s.hi - s.lo) * i / 4) }; });
+        return { unit: s.unit, color: PAL[s.c], ticks: ticks };
+      };
+      const axesL = w.sigs.filter(function (s) { return s.side === 'L'; }).map(axis);
+      const axesR = w.sigs.filter(function (s) { return s.side === 'R'; }).map(axis);
+      const series = w.sigs.map(function (s) {
+        const pts = parse(SERIES[s.k]);
+        const a = at(pts, 252); const b = at(pts, 449);
+        return { name: s.name, unit: s.unit, color: PAL[s.c], path: path(pts, s.lo, s.hi), vA: fmt(a), vB: fmt(b), vD: fmt(b - a) };
+      });
+      return { title: w.title, isTarget: w.target, border: w.target ? '2px solid #0284c7' : '1px solid #e2e8f0', mode: w.mode, modeHint: w.modeHint,
+        axesL: axesL, axesR: axesR, lw: axesL.length * 38, rw: axesR.length * 40, series: series };
+    });
+    const groups = GROUPS.map(function (g) {
+      const rows = (ROWS[g[0]] || []).map(function (r) { return { name: r[0], desc: r[1], unit: r[2], dot: r[3] >= 0 ? PAL[r[3]] : 'transparent' }; });
+      return { name: g[0], count: g[1], rows: rows, chev: rows.length ? '▼' : '▶', expanded: rows.length ? 'true' : 'false' };
+    });
+    const bars = [];
+    for (let i = 0; i < 75; i++) {
+      const inDrive = i >= 5 && i < 70;
+      bars.push({ h: inDrive ? 13 + ((i * 7) % 5) : 3, c: inDrive ? '#94a3b8' : '#cbd5e1' });
+    }
+    return {
+      plotH: 80,
+      groups: groups,
+      toggles: [{ label: 'A', pressed: 'true' }, { label: 'B', pressed: 'true' }, { label: 'Diff', pressed: 'true' }],
+      pins: [{ left: 6.6 }, { left: 93.6 }],
+      bars: bars,
+      grid: [0, 25, 50, 75].map(function (t) { return { top: t }; }),
+      xticks: XT.map(function (x) { return { left: x[0] / 10, label: x[1] }; }),
+      windows: windows
+    };
+  }
+}
+</script>
+</body>
+</html>

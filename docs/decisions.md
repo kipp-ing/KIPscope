@@ -4,6 +4,15 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-092: Declutter and stable layout (2026-10-21)
+
+Jan: „can we have an agent to unclutter again? its so crowded. we need a specialist. […] the time frame go to should be date pickers with underlayed data density. the result shall be date and to times and a +1 if days span which is rare. the session thing: the ui placements move on text size and ziggag while reloading. stable and clean it shall be. we can overhaul to teh core." On the UI designer's mocks v1 and its eleven questions: „i follow your recommendatins. they look good."
+
+- **Context:** Mocks v1: https://claude.ai/artifact/Ejn74vGHJMxATDAdjTodvX (artboards Main 1440×900, Compact 1000×557, GoTo, SessionBar), source in [docs/design/declutter/](design/declutter/). Measured before: one `]` step moved the session text width 372 → 728 → 646 → 407 px and the `k/n` button by up to 355 px; the range label collapsed to 0 px at 1000 px; the shown range appeared three times.
+- **Decision:** Layout never moves (fixed slots, tabular numbers, a loading state in the loaded state's box, truncation with a tooltip). Answers, all as recommended: (1) one range button replaces the Go to field, the strip's range text and the window header ranges; a window with link off shows its own range; (2) the Span select goes (typing `10min` and the zoom keys cover it); (3) picker presets: that day's drives, Whole day, Whole recording; (4) a range over two or more days shows the full end date, one day a small ⁺¹; (5) Align moves into the `k/n ▾` list (supersedes the bar layout of D-089/K14); (6) the open-report note shows only in the session bar (supersedes D-091's bottom-bar notice for it); (7) Digits and "+ Values window" always in ⋯ (supersedes D-071's width rule for them); (8) revision, source, signal count and commit go into the status dot's tooltip (supersedes D-050's footer items); (9) a window's display mode and Min/max go into the window's ⋯ menu; (10) A/B/Δ readout becomes the legend's column headers; (11) calendar weeks start on Monday, English day names. A CLI open reports its warnings in the CLI's output, not in the browser.
+- **Why:** Jan's hand checks: the UI is crowded, and controls jump while a session loads.
+- **Consequences:** Two changes, `add-range-picker` and `declutter-workspace`, specced from the mocks; the UI designer role (`ks-ui-designer`) draws mocks before UI changes.
+
 ## D-091: Handoff findings of the search tool's team (2026-10-21)
 
 Jan, on the issue #1 comment of 2026-10-21: „start with group one as proposed"; on the missing events table: „this will be bigger" (backlog); on the open warning: „keep it until leaving the session"; after his hand check: „looks ok".

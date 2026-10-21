@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session bar states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f8fafc}
+a{color:#0369a1}a:hover{color:#0c4a6e}
+button{font:inherit;color:inherit;cursor:pointer}
+input{font:inherit}
+.ib:hover{background:#f1f5f9}
+.lr:hover{background:#f1f5f9}
+</style>
+</helmet>
+<div style="width: 1240px; height: 1040px; padding: 24px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; color: #0f172a; background: #f8fafc; overflow: hidden;">
+
+  <sc-for list="{{states}}" as="s" hint-placeholder-count="8">
+    <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: {{s.mb}}px;">
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">{{s.caption}}</span>
+      <div style="position: relative; width: {{s.w}}px; height: 32px; display: flex; align-items: center; padding: 0 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; box-sizing: border-box; font-variant-numeric: tabular-nums;">
+        <sc-if value="{{s.showLabel}}" hint-placeholder-val="{{ true }}">
+          <span style="flex: 0 0 64px; outline: {{slot}}; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">{{s.label}}</span>
+        </sc-if>
+        <button class="ib" aria-label="Previous session" title="Previous session · [" style="flex: 0 0 26px; height: 26px; outline: {{slot}}; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{s.arrowInk}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        </button>
+        <button class="ib" aria-haspopup="dialog" title="Sessions of the catalog, align" style="flex: 0 0 72px; height: 22px; outline: {{slot}}; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0; color: {{s.posInk}}; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">{{s.pos}} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.4" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <button class="ib" aria-label="Next session" title="Next session · ]" style="flex: 0 0 26px; height: 26px; outline: {{slot}}; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{s.arrowInk}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </button>
+        <span style="flex: 1 1 auto; min-width: 0; height: 26px; margin-left: 12px; outline: {{slot}}; display: flex; align-items: center; gap: 10px;">
+          <sc-if value="{{s.titleSkel}}" hint-placeholder-val="{{ false }}">
+            <span style="flex: 0 0 160px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
+          </sc-if>
+          <sc-if value="{{s.titleText}}" hint-placeholder-val="{{ true }}">
+            <span title="{{s.title}}" style="flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; color: {{s.titleInk}};">{{s.title}}</span>
+          </sc-if>
+          <sc-if value="{{s.note}}" hint-placeholder-val="{{ false }}">
+            <span role="status" title="{{s.noteText}}" style="flex: 0 0 auto; max-width: 470px; margin-left: auto; height: 22px; display: inline-flex; align-items: center; gap: 6px; padding: 0 2px 0 8px; border: 1px solid #fcd34d; border-radius: 999px; background: #fffbeb; color: #92400e; box-sizing: border-box;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12" y2="17"></line></svg>
+              <span style="min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{s.noteText}}</span>
+              <button class="ib" aria-label="Dismiss" title="Dismiss the note" style="flex: 0 0 18px; width: 18px; height: 18px; border: 0; border-radius: 999px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+              </button>
+            </span>
+          </sc-if>
+        </span>
+        <span style="flex: 0 0 268px; height: 26px; outline: {{slot}}; display: flex; align-items: center; gap: 4px; color: #334155; white-space: nowrap;">
+          <sc-if value="{{s.timeSkel}}" hint-placeholder-val="{{ false }}">
+            <span style="width: 220px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
+          </sc-if>
+          <sc-if value="{{s.timeText}}" hint-placeholder-val="{{ true }}">
+            <span><span style="color: #475569;">{{s.wd}}</span> {{s.time}}<sc-if value="{{s.plus}}" hint-placeholder-val="{{ false }}"><sup style="font-size: 9px; font-weight: 600; color: #0369a1; margin-left: 1px;">+1</sup></sc-if></span>
+          </sc-if>
+        </span>
+        <span style="flex: 0 0 64px; height: 26px; outline: {{slot}}; display: flex; align-items: center; justify-content: flex-end; color: #64748b;">
+          <sc-if value="{{s.timeSkel}}" hint-placeholder-val="{{ false }}">
+            <span style="width: 44px; height: 10px; border-radius: 3px; background: #e2e8f0;"></span>
+          </sc-if>
+          <sc-if value="{{s.timeText}}" hint-placeholder-val="{{ true }}">
+            <span>{{s.dur}}</span>
+          </sc-if>
+        </span>
+        <button class="ib" title="{{s.btnHint}}" style="flex: 0 0 64px; margin-left: 10px; height: 22px; outline: {{slot}}; border: 1px solid {{s.btnBorder}}; border-radius: 999px; background: {{s.btnBg}}; color: {{s.btnInk}}; padding: 0;">{{s.btn}}</button>
+        <sc-if value="{{s.loading}}" hint-placeholder-val="{{ false }}">
+          <span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden;">
+            <span style="position: absolute; left: 24%; width: 30%; height: 2px; border-radius: 2px; background: #0284c7;"></span>
+          </span>
+        </sc-if>
+        <sc-if value="{{s.tip}}" hint-placeholder-val="{{ false }}">
+          <span role="tooltip" style="position: absolute; left: 150px; top: 34px; z-index: 2; padding: 4px 8px; border-radius: 4px; background: #0f172a; color: #ffffff; font-size: 11px; white-space: nowrap;">{{s.title}} · driving · rows 6.35e+7</span>
+        </sc-if>
+      </div>
+      <sc-if value="{{s.strip}}" hint-placeholder-val="{{ false }}">
+        <div style="position: relative; width: {{s.w}}px; height: 36px; padding: 5px 10px 0; margin-top: -5px; background: #ffffff; border: 1px solid #e2e8f0; border-top: 0; border-radius: 0 0 4px 4px; box-sizing: border-box;">
+          <div style="position: relative; height: 26px;">
+            <div style="position: absolute; left: 0; right: 0; top: 4px; height: 16px; display: flex; align-items: flex-end; gap: 1px;">
+              <sc-for list="{{s.bars}}" as="b" hint-placeholder-count="75">
+                <span style="flex: 1 1 0; height: {{b.h}}px; background: {{b.c}}; border-radius: 1px 1px 0 0;"></span>
+              </sc-for>
+            </div>
+            <div style="position: absolute; left: 0; right: 0; top: 3px; height: 18px; border: 1px solid {{s.winInk}}; border-radius: 2px;"></div>
+            <span style="position: absolute; top: 22px; left: {{s.driveL}}%; width: {{s.driveW}}%; height: 3px; border-radius: 2px; background: {{s.driveInk}};"></span>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </sc-for>
+
+  <div style="display: flex; flex-direction: column; gap: 4px;">
+    <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">9 · LIST OPEN (3 / 17 ▾): FILTER, SESSIONS, ALIGN, BACK LINK</span>
+    <div style="position: relative; width: 1192px; height: 32px; display: flex; align-items: center; padding: 0 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; box-sizing: border-box; font-variant-numeric: tabular-nums;">
+      <span style="flex: 0 0 64px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">SESSION</span>
+      <button class="ib" aria-label="Previous session" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"></polyline></svg></button>
+      <button aria-expanded="true" style="flex: 0 0 72px; height: 22px; border: 1px solid #0284c7; border-radius: 999px; background: #f0f9ff; padding: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">3 / 17 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0369a1" stroke-width="2.4" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg></button>
+      <button class="ib" aria-label="Next session" style="flex: 0 0 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg></button>
+      <span style="flex: 1 1 auto; margin-left: 12px; font-weight: 600;">Drive 3</span>
+      <span style="flex: 0 0 268px; color: #334155;"><span style="color: #475569;">Tue</span> 2026-10-13  15:06:54 – 15:17:42</span>
+      <span style="flex: 0 0 64px; text-align: right; color: #64748b;">10.8 min</span>
+      <button class="ib" style="flex: 0 0 64px; margin-left: 10px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; padding: 0;">Unlink</button>
+
+      <div role="dialog" aria-label="Sessions" style="position: absolute; top: 30px; left: 92px; z-index: 3; width: 560px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 8px 24px rgba(15,23,42,0.12); box-sizing: border-box;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <label style="flex: 1 1 auto; display: block;">
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Filter sessions</span>
+            <input type="search" placeholder="Filter sessions" style="width: 100%; height: 26px; padding: 0 8px; border: 1px solid #0284c7; border-radius: 4px; box-sizing: border-box;">
+          </label>
+          <a href="#" style="white-space: nowrap;">Back to the finder</a>
+        </div>
+        <div style="display: flex; flex-direction: column; font-variant-numeric: tabular-nums;">
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+            <button class="lr" aria-current="{{r.cur}}" style="display: grid; grid-template-columns: 28px 1fr 172px 64px; align-items: center; height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: {{r.bg}}; text-align: left; font-weight: {{r.weight}};">
+              <span style="color: #64748b; text-align: right; padding-right: 8px;">{{r.n}}</span>
+              <span style="min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{r.title}}</span>
+              <span style="color: #334155;">{{r.time}}</span>
+              <span style="color: #64748b; text-align: right;">{{r.dur}}</span>
+            </button>
+          </sc-for>
+          <span style="padding: 2px 6px; color: #64748b;">11 more · type to filter</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;">
+          <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: #64748b;">ALIGN</span>
+          <div role="radiogroup" aria-label="Align" style="display: flex; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+            <button role="radio" aria-checked="true" style="padding: 0 10px; border: 0; background: #0f172a; color: #ffffff;">Start</button>
+            <button role="radio" aria-checked="false" style="padding: 0 10px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff;">End</button>
+            <button role="radio" aria-checked="false" style="padding: 0 10px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff; color: #64748b;" title="No entry has an anchor">Anchor</button>
+            <button role="radio" aria-checked="false" style="padding: 0 10px; border: 0; border-left: 1px solid #cbd5e1; background: #ffffff;">Event…</button>
+          </div>
+          <span style="color: #64748b;">windows keep their offset to the session start</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"slots":{"editor":"boolean","default":false,"section":"Show"},"$preview":{"width":1240,"height":1040}}'>
+function bars(skel) {
+  const out = [];
+  for (let i = 0; i < 75; i++) {
+    const inDrive = i >= 5 && i < 70;
+    out.push(skel ? { h: 8, c: '#f1f5f9' } : { h: inDrive ? 11 + ((i * 7) % 5) : 3, c: inDrive ? '#94a3b8' : '#cbd5e1' });
+  }
+  return out;
+}
+const BASE = {
+  w: 1192, mb: 0, showLabel: true, label: 'SESSION', arrowInk: '#334155', posInk: '#0f172a',
+  titleSkel: false, titleText: true, titleInk: '#0f172a', note: false, noteText: '', timeSkel: false, timeText: true, plus: false,
+  btn: 'Unlink', btnHint: 'Unlink: the whole vehicle smart451', btnBorder: '#cbd5e1', btnBg: '#ffffff', btnInk: '#0f172a',
+  loading: false, tip: false, strip: false, bars: [], winInk: '#0284c7', driveL: 6.8, driveW: 86.4, driveInk: '#0f172a'
+};
+const STATES = [
+  { caption: '1 · LOADED', pos: '3 / 17', title: 'Drive 3', wd: 'Tue', time: '2026-10-13  15:06:54 – 15:17:42', dur: '10.8 min', strip: true, bars: bars(false) },
+  { caption: '2 · STEPPING (] PRESSED): TEXT FROM THE CATALOG AT ONCE, DATA LOADING; SAME BOXES, NOTHING MOVES', pos: '4 / 17', title: 'Drive 4 · motorway', wd: 'Thu', time: '2026-10-15  18:59:06 – 19:22:12', dur: '23.1 min', loading: true, strip: true, bars: bars(true), winInk: '#cbd5e1', driveInk: '#e2e8f0' },
+  { caption: '3 · FIRST OPEN, CATALOG STILL LOADING: SKELETONS IN THE SAME SLOTS', pos: '1 / 17', posInk: '#64748b', titleSkel: true, titleText: false, timeSkel: true, timeText: false, wd: '', time: '', dur: '', loading: true },
+  { caption: '4 · LONG TITLE: TRUNCATED, FULL TEXT ON HOVER', mb: 18, pos: '2 / 17', title: 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', wd: 'Tue', time: '2026-10-13  11:06:54 – 12:13:12', dur: '66.3 min', tip: true },
+  { caption: '5 · OPEN REPORT NOTE: IN THE TITLE SLOT, THE TITLE GIVES WAY; GONE ON ✕, THE NEXT STEP, GO OR UNLINK', pos: '1 / 2', title: 'Drive 1 again', note: true, noteText: '4 signals not in this session: current, pack_voltage, soc, temperature_max · back link dropped: origin not allowed', wd: 'Tue', time: '2026-10-13  15:07:03 – 15:17:33', dur: '10.5 min' },
+  { caption: '6 · UNLINKED: THE WHOLE VEHICLE; SAME SLOTS, LINK WHERE UNLINK WAS', label: 'VEHICLE', arrowInk: '#cbd5e1', pos: '3 / 17', posInk: '#64748b', title: 'smart451 · whole series', titleInk: '#334155', wd: 'Sun', time: '2026-10-11 – Wed 2026-10-21', dur: '9.5 d', btn: 'Link', btnHint: 'Link to session 3 again', btnBorder: '#0284c7', btnBg: '#e0f2fe', btnInk: '#075985' },
+  { caption: '7 · SESSION CROSSING MIDNIGHT (RARE): +1 AFTER THE END TIME', pos: '17 / 18', title: 'Standby overnight, 12 V trickle', wd: 'Tue', time: '2026-10-20  23:31:05 – 01:52:43', plus: true, dur: '2.4 h' },
+  { caption: '8 · COMPACT (1000 PX WINDOW): NO LABEL, SAME SLOTS', w: 780, showLabel: false, pos: '3 / 17', title: 'Drive 3', wd: 'Tue', time: '2026-10-13  15:06:54 – 15:17:42', dur: '10.8 min' }
+];
+const ROWS = [
+  [1, 'Drive 1', 'Sun 2026-10-11  15:38', '4.2 min'],
+  [2, 'Commute, city stop-and-go with 14 traffic lights and one long hill climb near the depot', 'Tue 2026-10-13  11:06', '66.3 min'],
+  [3, 'Drive 3', 'Tue 2026-10-13  15:06', '10.8 min'],
+  [4, 'Drive 4 · motorway', 'Thu 2026-10-15  18:59', '23.1 min'],
+  [5, 'Drive 5', 'Thu 2026-10-15  21:12', '22.2 min'],
+  [6, 'Drive 6', 'Fri 2026-10-16  18:45', '23.1 min']
+];
+class Component extends DCLogic {
+  renderVals() {
+    const slot = this.props.slots ? '1px dashed #f59e0b' : 'none';
+    return {
+      slot: slot,
+      states: STATES.map((s) => Object.assign({}, BASE, s)),
+      rows: ROWS.map((r) => ({ n: r[0], title: r[1], time: r[2], dur: r[3], cur: r[0] === 3 ? 'true' : 'false', bg: r[0] === 3 ? '#e0f2fe' : 'transparent', weight: r[0] === 3 ? 600 : 400 }))
+    };
+  }
+}
+</script>
+</body>
+</html>
