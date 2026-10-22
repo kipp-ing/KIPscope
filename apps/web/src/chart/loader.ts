@@ -3,6 +3,7 @@ import { ApiRequestError, isCatalogLoading } from "../api.ts";
 import type { RecoverReason, SeriesCache } from "./cache.ts";
 import { GAP_LOADING_RETRY_MS } from "./gaps.ts";
 import {
+  deriveRun,
   emptyTile,
   levelFor,
   MAX_LEVEL,
@@ -10,6 +11,7 @@ import {
   PLACEHOLDER_SEARCH,
   placeholder,
   prefetchPlan,
+  runsOf,
   type SeriesRequest,
   stitch,
   type Tile,
@@ -28,7 +30,10 @@ export const RETRY_FLOOR_MS = 1000; // no retry sooner after a key's failure (R3
 export interface LoaderOptions {
   /** Visible loads start at most once per interval (Z1); absent or 0: every load starts at once. */
   loadIntervalMs?: number;
-  /** Extent per signal for the overview (Z2); absent: no overview, no placeholder from it. */
+  /**
+   * Extent per signal: asked before a signal's first load that needs the network (W2); absent: no
+   * overview, no cover, today's order.
+   */
   extent?: (signalId: string) => Promise<Extent>;
   /** Prefetch at rest (Z7); absent or false: none. */
   prefetch?: boolean;
@@ -126,8 +131,48 @@ interface Overview {
   range?: TileRange;
   tiles: Map<bigint, Tile>;
   owner?: string;
+  /** Its tiles were looked up, computed or requested: by case A, else after the key's first view. */
+  started?: true;
   /** The extent or its tiles failed; started again after the key's next complete view (R6). */
   failed?: true;
+  /** The wide view cover (W3): the view's tiles of case B, spanning the extent below level O. */
+  cover?: TileRange | undefined;
+  /** The key's load that waits for the extent or for these tiles (W2, W6). */
+  awaiting?: Load | undefined;
+}
+
+/** A load of a tileable view: the tiles found or computed so far and the missing indices (W2). */
+interface Load {
+  seq: number;
+  id: string;
+  view: View;
+  tiles: (Tile | undefined)[];
+  missing: bigint[];
+}
+
+/** All the overview's tiles are known. */
+function isComplete(overview: Overview): boolean {
+  const range = overview.range;
+  return range !== undefined && overview.tiles.size === Number(range.last - range.first + 1n);
+}
+
+/** The complete overview's tiles in index order: a cover (W3). */
+function overviewSource(overview: Overview): Tile[] {
+  const range = overview.range as TileRange;
+  const tiles: Tile[] = [];
+  for (let index = range.first; index <= range.last; index++) {
+    tiles.push(overview.tiles.get(index) as Tile);
+  }
+  return tiles;
+}
+
+/** The view's tiles as a wide view cover (W3): below the overview's level, spanning the extent. */
+function wideCover(view: View, overview: Overview): TileRange | undefined {
+  const { range, extent } = overview;
+  if (!range || !extent || view.level >= range.level) return undefined;
+  const span = tileSpan(view.level);
+  if (view.first * span > extent.first || (view.last + 1n) * span <= extent.last) return undefined;
+  return { level: view.level, first: view.first, last: view.last };
 }
 
 /** A key's failures in a row (R2): reset on a complete state. */
@@ -150,10 +195,16 @@ let loaders = 0;
 
 /**
  * Loads series per signal of one window from the tab's tile cache (design C7, Z1–Z7). A view whose
- * tiles are all cached completes at once; otherwise a placeholder of coarser tiles or the previous
- * result stays while its missing tiles load (throttled to one start per interval). A response is
- * applied only if it belongs to the latest request for its signal, so an out-of-order answer can
- * never replace newer data. With options it also loads an overview per signal and prefetches at rest.
+ * tiles are all cached, or computed from a cover the key holds (its overview or a wide view's tiles,
+ * single-wave-open W3, W5), completes at once; otherwise a placeholder of coarser tiles or the
+ * previous result stays while its missing tiles load (throttled to one start per interval). A
+ * response is applied only if it belongs to the latest request for its signal, so an out-of-order
+ * answer can never replace newer data. With options it also loads an overview per signal and
+ * prefetches at rest. With `extent`, a signal's first load that needs the network asks the extent
+ * first and then (W2) loads the overview and computes the view from it (case A), loads the view and
+ * computes the overview from it (case B), or loads the view and the overview after it (case C).
+ * A run of missing tiles a cover answers exactly is computed and stored, not requested, in views
+ * and in the prefetch alike.
  */
 export class SeriesLoader {
   private readonly cache: SeriesCache;
@@ -340,12 +391,74 @@ export class SeriesLoader {
     this.controllers.delete(key);
   }
 
-  /** The view's tiles when the cache holds all of them. */
-  private cached(signalId: string, view: View): Tile[] | undefined {
-    const tiles: Tile[] = [];
+  /**
+   * The view's tiles: found in the cache (W5 step 1), else computed from the key's cover (step 2);
+   * undefined at the indices still missing.
+   */
+  private viewTiles(
+    key: string,
+    signalId: string,
+    view: View,
+  ): { tiles: (Tile | undefined)[]; missing: bigint[] } {
+    const tiles: (Tile | undefined)[] = [];
+    const missing: bigint[] = [];
     for (let index = view.first; index <= view.last; index++) {
       const tile = this.cache.find(signalId, view.level, index);
-      if (!tile) return undefined;
+      tiles.push(tile);
+      if (!tile) missing.push(index);
+    }
+    const computed = this.fromCover(key, signalId, view.level, missing);
+    if (computed.size === 0) return { tiles, missing };
+    for (const tile of computed.values()) tiles[Number(tile.index - view.first)] = tile;
+    return { tiles, missing: missing.filter((index) => !computed.has(index)) };
+  }
+
+  /**
+   * The runs of `missing` (as the cache would request them) that the key's cover answers exactly,
+   * computed and stored like fetched runs (W5 step 2, W1.3); nothing is requested. A run ending
+   * within the last hour is left to the request, so recent data is asked again (series-cache C6).
+   */
+  private fromCover(
+    key: string,
+    signalId: string,
+    level: number,
+    missing: readonly bigint[],
+  ): Map<bigint, Tile> {
+    const computed = new Map<bigint, Tile>();
+    if (missing.length === 0) return computed;
+    const cover = this.coverFor(key, signalId, level);
+    if (!cover) return computed;
+    for (const { first, last } of runsOf(missing)) {
+      // Storable for the last tile means storable for the whole run: tile ends grow with the index.
+      if (!this.cache.storable(level, last)) continue;
+      const result = deriveRun(signalId, cover, level, first, last);
+      if (!result) continue;
+      for (const tile of this.cache.put(signalId, level, first, last, result)) {
+        computed.set(tile.index, tile);
+      }
+    }
+    return computed;
+  }
+
+  /**
+   * The key's cover for runs at `level` (W3): its overview when complete and not finer, else its wide
+   * view cover when not finer and all its tiles are found (one gone: unusable until the next case B).
+   */
+  private coverFor(key: string, signalId: string, level: number): Tile[] | undefined {
+    const overview = this.overviews.get(key);
+    if (overview?.signalId !== signalId) return undefined;
+    if (overview.range && overview.range.level <= level && isComplete(overview)) {
+      return overviewSource(overview);
+    }
+    const cover = overview.cover;
+    if (!cover || cover.level > level) return undefined;
+    const tiles: Tile[] = [];
+    for (let index = cover.first; index <= cover.last; index++) {
+      const tile = this.cache.find(signalId, cover.level, index);
+      if (!tile) {
+        overview.cover = undefined;
+        return undefined;
+      }
       tiles.push(tile);
     }
     return tiles;
@@ -363,11 +476,11 @@ export class SeriesLoader {
     const id = requestId(request);
     const view = viewOf(request);
     if (view.tileable) {
-      const tiles = this.cached(signalId, view);
-      if (tiles) {
+      const { tiles, missing } = this.viewTiles(key, signalId, view);
+      if (missing.length === 0) {
         this.pending.delete(key);
         this.forget(key);
-        this.complete(key, id, stitch(tiles, view.from, view.to));
+        this.complete(key, id, stitch(tiles as Tile[], view.from, view.to));
         this.firstViewDone(key, signalId);
         return false;
       }
@@ -424,8 +537,9 @@ export class SeriesLoader {
   }
 
   /**
-   * Starts loading the key's current request: its missing tiles, or the exact request. False when
-   * the cache meanwhile holds all its tiles (the state is then complete).
+   * Starts loading the key's current request: its missing tiles, or the exact request; with
+   * `extent`, a signal's first load that needs the network waits for the extent (W2), which counts
+   * as started. False when the cache or a cover meanwhile holds all its tiles (then complete).
    */
   private load(request: LoadRequest): boolean {
     const { key, signalId } = request;
@@ -440,27 +554,87 @@ export class SeriesLoader {
     this.controllers.get(key)?.abort();
     this.controllers.delete(key);
 
-    const tiles: (Tile | undefined)[] = [];
-    const missing: bigint[] = [];
-    for (let index = view.first; index <= view.last; index++) {
-      const tile = this.cache.find(signalId, view.level, index);
-      tiles.push(tile);
-      if (!tile) missing.push(index);
-    }
-    const previousOwner = this.owners.get(key);
+    const { tiles, missing } = this.viewTiles(key, signalId, view);
     if (missing.length === 0) {
+      const previousOwner = this.owners.get(key);
       this.owners.delete(key);
       if (previousOwner !== undefined) this.cache.release(previousOwner);
       this.complete(key, id, stitch(tiles as Tile[], view.from, view.to));
       this.firstViewDone(key, signalId);
       return false;
     }
+    const load: Load = { seq, id, view, tiles, missing };
+    const overview = this.options.extent ? this.overviewFor(key, signalId) : undefined;
+    if (!overview || overview.failed) this.request(key, signalId, load);
+    // Waits for the extent (W2). The previous view's runs stay until the load requests or completes,
+    // so a run it shares (a reload after `rescope`) is joined, not aborted.
+    else if (overview.extent === undefined) overview.awaiting = load;
+    else this.decide(key, signalId, overview, load);
+    return true;
+  }
 
+  /** The key's overview of `signalId`; a new one asks the extent (one of another signal is dropped). */
+  private overviewFor(key: string, signalId: string): Overview {
+    const existing = this.overviews.get(key);
+    if (existing?.signalId === signalId) return existing;
+    if (existing) this.dropOverview(key);
+    const overview: Overview = { signalId, tiles: new Map() };
+    this.overviews.set(key, overview);
+    this.askExtent(key, overview);
+    return overview;
+  }
+
+  /** The overview's waiting load, if it is still the key's current one. */
+  private awaitingLoad(key: string, overview: Overview): Load | undefined {
+    const load = overview.awaiting;
+    return load && this.latest.get(key) === load.seq ? load : undefined;
+  }
+
+  /**
+   * With the extent known (W2): at or above the overview's level the load waits for the overview,
+   * loaded as visible (case A, W6); else its tiles are requested, recording the view's tiles as the
+   * wide view cover when they span the extent before the overview has started (case B, else C).
+   */
+  private decide(key: string, signalId: string, overview: Overview, load: Load): void {
+    const range = overview.range;
+    if (range && !overview.failed && load.view.level >= range.level && !isComplete(overview)) {
+      overview.awaiting = load;
+      if (!overview.started) this.startOverview(key, overview, "visible");
+      else this.promote(overview);
+      return;
+    }
+    if (!overview.started) {
+      const cover = wideCover(load.view, overview);
+      if (cover) overview.cover = cover;
+    }
+    this.request(key, signalId, load);
+  }
+
+  /** A load waits for an overview already loading, perhaps as prefetch: its runs turn visible (W6). */
+  private promote(overview: Overview): void {
+    const { range, owner, signalId } = overview;
+    if (!range || owner === undefined) return;
+    const missing: bigint[] = [];
+    for (let index = range.first; index <= range.last; index++) {
+      if (overview.tiles.has(index) || this.cache.find(signalId, range.level, index)) continue;
+      missing.push(index);
+    }
+    if (missing.length === 0) return;
+    // The overview's own load applies the answer; these promises join its runs.
+    for (const load of this.cache.load(owner, signalId, range.level, missing, "visible")) {
+      load.catch(() => {});
+    }
+  }
+
+  /** Requests the load's missing tiles as a visible load under the key's owner (W5 step 3). */
+  private request(key: string, signalId: string, load: Load): void {
+    const { seq, id, view, tiles, missing } = load;
+    const previousOwner = this.owners.get(key);
     const owner = `${this.id}|${key}|${seq}`;
     const loads = this.cache.load(owner, signalId, view.level, missing);
     this.owners.set(key, owner);
     // Only now, so tiles the old and the new view share keep their run alive.
-    if (previousOwner !== undefined) this.cache.release(previousOwner);
+    if (previousOwner !== undefined && previousOwner !== owner) this.cache.release(previousOwner);
 
     const isCurrent = () => this.latest.get(key) === seq;
     Promise.all(loads).then(
@@ -477,7 +651,6 @@ export class SeriesLoader {
         this.finished(key, signalId);
       },
     );
-    return true;
   }
 
   /** A view outside the tile grid: fetched exactly as requested and not cached. */
@@ -634,53 +807,116 @@ export class SeriesLoader {
     this.maybePrefetch();
   }
 
-  /** Loads the key's overview once its first view has finished (Z2), again after a failed one (R6). */
+  /**
+   * Starts the key's overview once its first view has finished (Z2), again after a failed one (R6):
+   * the extent, or the tiles when the extent came before the view (case B, C), with the view's
+   * tiles as the wide view cover when they span the extent (W7).
+   */
   private firstViewDone(key: string, signalId: string): void {
-    const extentOf = this.options.extent;
-    if (!extentOf) return;
+    if (!this.options.extent) return;
     const existing = this.overviews.get(key);
     const restart = existing?.failed && this.states.get(key)?.status === "complete";
-    if (existing?.signalId === signalId && !restart) return;
+    if (existing?.signalId === signalId && !restart) {
+      if (existing.extent && !existing.started && !existing.failed) {
+        this.recordCover(key, existing);
+        this.startOverview(key, existing, "prefetch");
+      }
+      return;
+    }
     if (existing) this.dropOverview(key);
-    const overview: Overview = { signalId, tiles: new Map() };
-    this.overviews.set(key, overview);
+    this.overviewFor(key, signalId);
+  }
+
+  /**
+   * Asks the overview's extent (W2). A load waiting for it is decided then; a key whose view has
+   * finished starts the overview's tiles, with its view's tiles as the wide view cover when they
+   * span the extent (W7); a key still loading starts them after its view. A failed extent loads the
+   * waiting view at once (case C).
+   */
+  private askExtent(key: string, overview: Overview): void {
+    const extentOf = this.options.extent;
+    if (!extentOf) return;
     const isCurrent = () => this.overviews.get(key) === overview;
-    extentOf(signalId)
-      .then((extent) => {
+    extentOf(overview.signalId).then(
+      (extent) => {
         if (!isCurrent()) return;
         const first = BigInt(extent.first);
         const last = BigInt(extent.last);
         overview.extent = { first, last };
         const range = overviewTiles(first, last);
-        if (!tileable(range.level, range.first, range.last)) return;
-        overview.range = range;
-        const missing: bigint[] = [];
-        for (let index = range.first; index <= range.last; index++) {
-          const tile = this.cache.find(signalId, range.level, index);
-          if (tile) overview.tiles.set(index, tile);
-          else missing.push(index);
-        }
-        if (missing.length === 0) {
-          this.overviewLoaded();
+        if (tileable(range.level, range.first, range.last)) overview.range = range;
+        const load = this.awaitingLoad(key, overview);
+        overview.awaiting = undefined;
+        if (load) {
+          this.decide(key, overview.signalId, overview, load);
           return;
         }
-        overview.owner = `${this.id}|overview|${key}`;
-        const loads = this.cache.load(overview.owner, signalId, range.level, missing, "prefetch");
-        // A failed overview is tried again after the key's next complete view (R6).
-        Promise.all(loads).then(
-          (loaded) => {
-            if (!isCurrent()) return;
-            for (const tile of loaded) overview.tiles.set(tile.index, tile);
-            this.overviewLoaded();
-          },
-          () => {
-            overview.failed = true;
-          },
-        );
-      })
-      .catch(() => {
+        const state = this.states.get(key);
+        if (!state || state.status === "loading") return;
+        this.recordCover(key, overview);
+        this.startOverview(key, overview, "prefetch");
+      },
+      () => {
+        if (!isCurrent()) return;
         overview.failed = true;
-      });
+        const load = this.awaitingLoad(key, overview);
+        overview.awaiting = undefined;
+        if (load) this.request(key, overview.signalId, load);
+      },
+    );
+  }
+
+  /** The key's complete current view as the wide view cover when it spans the extent (W3, W7). */
+  private recordCover(key: string, overview: Overview): void {
+    const state = this.states.get(key);
+    const request = this.order.find((r) => r.key === key);
+    if (state?.status !== "complete" || !request || state.request !== requestId(request)) return;
+    const view = viewOf(request);
+    const cover = view.tileable ? wideCover(view, overview) : undefined;
+    if (cover) overview.cover = cover;
+  }
+
+  /**
+   * The overview's tiles (Z2): found in the cache, else computed from the wide view cover (W3),
+   * else requested under the overview owner, as visible in case A (W6). A failed request fails the
+   * load waiting for it; the overview is tried again after the key's next complete view (R6).
+   */
+  private startOverview(key: string, overview: Overview, priority: "visible" | "prefetch"): void {
+    overview.started = true;
+    const { range, signalId } = overview;
+    if (!range) return;
+    const missing: bigint[] = [];
+    for (let index = range.first; index <= range.last; index++) {
+      const tile = this.cache.find(signalId, range.level, index);
+      if (tile) overview.tiles.set(index, tile);
+      else missing.push(index);
+    }
+    const computed = this.fromCover(key, signalId, range.level, missing);
+    for (const tile of computed.values()) overview.tiles.set(tile.index, tile);
+    const rest = missing.filter((index) => !computed.has(index));
+    if (rest.length === 0) {
+      this.overviewLoaded();
+      return;
+    }
+    overview.owner = `${this.id}|overview|${key}`;
+    const loads = this.cache.load(overview.owner, signalId, range.level, rest, priority);
+    const isCurrent = () => this.overviews.get(key) === overview;
+    Promise.all(loads).then(
+      (loaded) => {
+        if (!isCurrent()) return;
+        for (const tile of loaded) overview.tiles.set(tile.index, tile);
+        this.overviewLoaded();
+      },
+      (error: unknown) => {
+        if (!isCurrent()) return;
+        overview.failed = true;
+        const load = this.awaitingLoad(key, overview);
+        overview.awaiting = undefined;
+        if (!load) return;
+        this.fail(key, load.id, error);
+        this.finished(key, signalId);
+      },
+    );
   }
 
   private dropOverview(key: string): void {
@@ -689,9 +925,22 @@ export class SeriesLoader {
     this.overviews.delete(key);
   }
 
-  /** Recomputes the placeholder of every key still loading, or failed without sharp data (Z2, R5). */
+  /**
+   * An overview is complete: first every load waiting for it is completed from it (W1.4), then the
+   * placeholder of every key still loading, or failed without sharp data, is recomputed (Z2, R5).
+   */
   private overviewLoaded(): void {
     let changed = false;
+    let completed = false;
+    for (const request of this.order) {
+      const overview = this.overviews.get(request.key);
+      if (!overview || !isComplete(overview)) continue;
+      const load = this.awaitingLoad(request.key, overview);
+      overview.awaiting = undefined;
+      if (!load) continue;
+      if (this.fromOverview(request.key, request.signalId, overview, load)) completed = true;
+      changed = true;
+    }
     for (const request of this.order) {
       const state = this.states.get(request.key);
       if (!state || state.status === "complete" || state.request !== requestId(request)) continue;
@@ -705,6 +954,37 @@ export class SeriesLoader {
       changed = true;
     }
     if (changed) this.onChange();
+    if (completed) this.maybePrefetch();
+  }
+
+  /**
+   * Case A's completion (W1.4): the load's missing runs computed from the complete overview directly,
+   * not through `find`, and stored; a run `deriveRun` refuses is requested. True when complete.
+   */
+  private fromOverview(key: string, signalId: string, overview: Overview, load: Load): boolean {
+    const { view } = load;
+    const source = overviewSource(overview);
+    const tiles = [...load.tiles];
+    const refused: bigint[] = [];
+    for (const { first, last } of runsOf(load.missing)) {
+      const result = deriveRun(signalId, source, view.level, first, last);
+      if (!result) {
+        for (let index = first; index <= last; index++) refused.push(index);
+        continue;
+      }
+      for (const tile of this.cache.put(signalId, view.level, first, last, result)) {
+        tiles[Number(tile.index - view.first)] = tile;
+      }
+    }
+    if (refused.length > 0) {
+      this.request(key, signalId, { ...load, tiles, missing: refused });
+      return false;
+    }
+    const previousOwner = this.owners.get(key);
+    this.owners.delete(key);
+    if (previousOwner !== undefined) this.cache.release(previousOwner);
+    this.complete(key, load.id, stitch(tiles as Tile[], view.from, view.to));
+    return true;
   }
 
   /** A changing update: the prefetch of the last rest stops and a new rest begins (Z7). */
@@ -750,8 +1030,11 @@ export class SeriesLoader {
           indices.push(index);
           budget--;
         }
-        if (indices.length === 0) continue;
-        const loads = this.cache.load(owner, request.signalId, range.level, indices, "prefetch");
+        // Runs the key's cover answers are computed, not requested; they count all the same (W8).
+        const computed = this.fromCover(request.key, request.signalId, range.level, indices);
+        const rest = indices.filter((index) => !computed.has(index));
+        if (rest.length === 0) continue;
+        const loads = this.cache.load(owner, request.signalId, range.level, rest, "prefetch");
         // Prefetch draws nothing; a failed or aborted tile is loaded again when a view wants it.
         for (const load of loads) load.catch(() => {});
       }

@@ -18,15 +18,21 @@ import {
   loadStatusText,
   SeriesLoader,
 } from "../src/chart/loader.ts";
-import { levelFor, tileable, touchedTiles } from "../src/chart/tiles.ts";
+import { levelFor, splitRun, tileable, touchedTiles } from "../src/chart/tiles.ts";
 import { apiError } from "./apiError.ts";
 import {
+  DENSE_FIXTURE,
   densePoints,
+  expectSameSeries,
   type FakeCall,
   type FakePoint,
+  type Fixture,
   fakeAnswer,
   fakeFetch,
   flush,
+  SHIFTED_FIXTURE,
+  SPARSE_FIXTURE,
+  STEP_FIXTURE,
 } from "./fakeSeries.ts";
 
 const SIG = "c/s";
@@ -387,6 +393,10 @@ describe("SeriesLoader with the window options", () => {
     const t = wsetup({ prefetch: true });
     const loader = t.make();
     loader.update([view(0n)]);
+    expect(t.extentCalls).toEqual([SIG]); // the extent first ...
+    expect(t.calls).toHaveLength(0); // ... no series request in the update
+    await tick(); // the extent's microtask
+    expect(t.calls.length).toBeGreaterThan(0);
     await t.drain();
     await tick(150);
     loader.update([view(1n)]);
@@ -439,12 +449,22 @@ describe("SeriesLoader with the window options", () => {
     const w2 = t.make();
     w1.update([view(0n)]);
     w2.update([view(0n, "b1")]);
+    // The extent comes first: asked once for both loaders, before any series request.
+    expect(t.extentCalls).toEqual([SIG]);
+    expect(t.calls).toHaveLength(0);
+    await tick(); // the extent resolves: the view (level 10, below the overview's 22) goes first
+    expect(t.extentCalls).toEqual([SIG]);
     expect(t.calls).toHaveLength(1); // the first view, shared
-    expect(t.extentCalls).toEqual([]); // not before the first view has loaded
+    expect(t.calls[0]?.request).toEqual({
+      signalId: SIG,
+      from: "0",
+      to: "262144",
+      target: 257,
+    });
     t.calls[0]?.answer();
     t.answered.add(t.calls[0] as FakeCall);
     await tick();
-    expect(t.extentCalls).toEqual([SIG]);
+    expect(t.extentCalls).toEqual([SIG]); // still one extent request
     expect(t.calls).toHaveLength(2);
     expect(t.calls[1]?.request).toEqual({
       signalId: SIG,
@@ -932,7 +952,11 @@ describe("SeriesLoader retries", () => {
     const t = rsetup({}, extent);
     const loader = t.make();
     loader.update([view(0n)]);
-    await fail(t.calls[0]); // the first view fails; its overview starts and the extent fails
+    expect(extentCalls).toBe(1); // the extent is asked first ...
+    expect(t.calls).toHaveLength(0);
+    await tick(); // ... fails, and the view loads at once
+    expect(t.calls).toHaveLength(1);
+    await fail(t.calls[0]); // the first view fails too
     expect(extentCalls).toBe(1);
     await tick(1000);
     await fail(t.calls[1]); // the retry fails too: no extent request
@@ -997,6 +1021,7 @@ describe("SeriesLoader retries", () => {
     const t = rsetup({ retry: false }, async () => EXTENT);
     const loader = t.make();
     loader.update([view(0n)]);
+    await tick(); // the extent first, then the view
     await answer(t.calls[0]); // first view
     await tick();
     for (const c of t.calls.slice(1)) c.answer(); // overview
@@ -1179,5 +1204,481 @@ describe("SeriesLoader pulls a failing signal forward once per run", () => {
     expect(t.aStarts).toEqual([0, 1000, 3000, 5000]);
     w1.dispose();
     w2.dispose();
+  });
+});
+
+describe("SeriesLoader opens on the extent (single-wave-open)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
+  const FULL = "4294967296"; // 2^32
+  const open = (target: number, to = FULL, from = "0", key = "a1"): LoadRequest => ({
+    key,
+    signalId: SIG,
+    from,
+    to,
+    target,
+  });
+  const req = (from: string, to: string, target: number) => ({ signalId: SIG, from, to, target });
+
+  /**
+   * A window-options loader over a fake server and a fake extent store (one ask per signal until
+   * the scope changes; a failed ask is asked again). `events` lists the extent and series requests
+   * in the order they were sent. Mode "manual": the extent waits for `resolveExtent`/`failExtent`.
+   */
+  function wave(
+    fixture: Fixture,
+    mode: "auto" | "manual" = "auto",
+    options: LoaderOptions = {},
+    cacheOptions: { limit?: number; now?: () => number } = {},
+  ) {
+    const server = fakeFetch(fixture.points);
+    const events: string[] = [];
+    const fetch: typeof server.fetch = (request, abort) => {
+      events.push(`series ${request.from} ${request.to} ${request.target}`);
+      return server.fetch(request, abort);
+    };
+    const cache = new SeriesCache(fetch, { now: NOW, ...cacheOptions });
+    let span = { first: fixture.first, last: fixture.last };
+    const asked: string[] = [];
+    const known = new Map<string, Promise<Extent>>();
+    const waiting: { resolve: () => void; reject: (error: Error) => void }[] = [];
+    const extentOf = (signalId: string): Promise<Extent> => {
+      const have = known.get(signalId);
+      if (have) return have;
+      asked.push(signalId);
+      events.push(`extent ${signalId}`);
+      const extent: Extent = { signalId, ...span };
+      const promise =
+        mode === "auto"
+          ? Promise.resolve(extent)
+          : new Promise<Extent>((resolve, reject) =>
+              waiting.push({ resolve: () => resolve(extent), reject }),
+            );
+      known.set(signalId, promise);
+      promise.catch(() => known.delete(signalId));
+      return promise;
+    };
+    const answered = new Set<FakeCall>();
+    /** Answers every call not yet answered or aborted, until no new call appears. */
+    async function drain() {
+      for (let round = 0; round < 20; round++) {
+        await tick();
+        const open = server.calls.filter((c) => !answered.has(c) && !c.abort.aborted);
+        if (open.length === 0) return;
+        for (const c of open) {
+          answered.add(c);
+          c.answer();
+        }
+      }
+    }
+    return {
+      cache,
+      calls: server.calls,
+      events,
+      asked,
+      make: (extra: LoaderOptions = {}) =>
+        new SeriesLoader(cache, () => {}, {
+          loadIntervalMs: 100,
+          extent: extentOf,
+          ...options,
+          ...extra,
+        }),
+      /** The extent the next ask returns (after a `rescope()`: a new scope's store). */
+      setExtent: (next: { first: string; last: string }) => {
+        span = next;
+        known.clear();
+      },
+      resolveExtent: () => waiting.at(-1)?.resolve(),
+      failExtent: (error = new Error("extent down")) => waiting.at(-1)?.reject(error),
+      drain,
+      /** Rests `ms` with every request answered. */
+      rest: async (ms = 2000) => {
+        for (let i = 0; i < 4; i++) {
+          await drain();
+          await tick(ms / 4);
+        }
+        await drain();
+      },
+    };
+  }
+
+  /** What a loader without options draws for `request` on its own cache: today's cold path. */
+  async function withoutOptions(points: readonly FakePoint[], request: LoadRequest) {
+    const server = fakeFetch(points);
+    const cache = new SeriesCache(server.fetch, { now: NOW });
+    const loader = new SeriesLoader(cache, () => {});
+    loader.update([request]);
+    const answered = new Set<FakeCall>();
+    for (let round = 0; round < 10; round++) {
+      await tick();
+      const open = server.calls.filter((c) => !answered.has(c));
+      if (open.length === 0) break;
+      for (const c of open) {
+        answered.add(c);
+        c.answer();
+      }
+    }
+    await tick();
+    expect(loader.get(request.key)?.status).toBe("complete");
+    const result = loader.get(request.key)?.result;
+    loader.dispose();
+    return result;
+  }
+
+  const OPENS = [
+    ["DENSE", DENSE_FIXTURE],
+    ["SPARSE", SPARSE_FIXTURE],
+  ] as const;
+  const TARGETS = [257, 1025, 4001];
+  /** The one series request of an open: the overview up to target 1025, the view at 4001. */
+  const openRequest = (name: string, target: number) =>
+    target === 4001 ? req("0", FULL, 4097) : req("0", FULL, name === "DENSE" ? 1025 : 2049);
+
+  it("asks the extent before the first series request", async () => {
+    const t = wave(DENSE_FIXTURE, "manual");
+    const loader = t.make();
+    loader.update([open(257)]);
+    // Within the update: the extent asked once, no series request.
+    expect(t.events).toEqual([`extent ${SIG}`]);
+    expect(loader.get("a1")?.status).toBe("loading");
+    await tick(500);
+    expect(t.calls).toHaveLength(0); // the extent has not answered: nothing is sent
+    t.resolveExtent();
+    await tick();
+    expect(t.calls.map((c) => c.request)).toEqual([req("0", FULL, 1025)]);
+    expect(t.events).toEqual([`extent ${SIG}`, `series 0 ${FULL} 1025`]);
+    loader.dispose();
+  });
+
+  it("draws a cached step at once, before the extent", async () => {
+    const t = wave(DENSE_FIXTURE, "manual");
+    // The tile is in the cache (a loader without options loaded it); no extent was asked yet.
+    const plain = new SeriesLoader(t.cache, () => {});
+    plain.update([open(257)]);
+    expect(t.calls).toHaveLength(1);
+    t.calls[0]?.answer();
+    await tick();
+    expect(plain.get("a1")?.status).toBe("complete");
+    plain.dispose();
+    expect(t.asked).toEqual([]);
+
+    const loader = t.make();
+    loader.update([open(257, FULL, "0", "b1")]);
+    expect(loader.get("b1")?.status).toBe("complete"); // the extent has not answered
+    expect(t.calls).toHaveLength(1); // no series request for the view
+    loader.dispose();
+  });
+
+  it("loads the view first when the extent fails", async () => {
+    const t = wave(DENSE_FIXTURE, "manual");
+    const loader = t.make();
+    loader.update([open(257)]);
+    expect(t.asked).toEqual([SIG]);
+    expect(t.calls).toHaveLength(0);
+    t.failExtent();
+    await tick();
+    // The view's own request, not the overview's.
+    expect(t.calls.map((c) => c.request)).toEqual([req("0", FULL, 257)]);
+    expect(loader.get("a1")?.status).toBe("loading");
+    t.calls[0]?.answer();
+    await tick();
+    expect(loader.get("a1")?.status).toBe("complete");
+    // After that complete view the extent is asked again.
+    expect(t.asked).toEqual([SIG, SIG]);
+    loader.dispose();
+  });
+
+  it("requests the run the overview cannot answer", async () => {
+    const t = wave(DENSE_FIXTURE);
+    const loader = t.make();
+    loader.update([open(257)]);
+    await t.drain();
+    await tick(150);
+    expect(loader.get("a1")?.status).toBe("complete");
+    const before = t.calls.length;
+
+    // The next 2^32 ns hold no points: the overview (extent 0 … 2^32 − 1) cannot answer them.
+    loader.update([open(257, "8589934592", FULL)]);
+    await tick();
+    expect(t.calls.slice(before).map((c) => c.request)).toEqual([req(FULL, "8589934592", 257)]);
+    await t.drain();
+    expect(t.calls).toHaveLength(before + 1);
+    expect(loader.get("a1")).toMatchObject({ status: "complete", result: { from: FULL } });
+    loader.dispose();
+  });
+
+  it("zooms out above the overview without a request", async () => {
+    const t = wave(DENSE_FIXTURE);
+    const loader = t.make();
+    loader.update([open(257)]);
+    await t.drain();
+    await tick(150);
+    expect(loader.get("a1")?.status).toBe("complete");
+    const before = t.calls.length;
+
+    // [−2^32, 2^33) at target 257 is level 25: three levels above the overview's 22.
+    const zoomed = open(257, "8589934592", "-4294967296");
+    loader.update([zoomed]);
+    expect(t.calls).toHaveLength(before); // no series request
+    expect(loader.get("a1")?.status).toBe("complete"); // within the update call
+    expect(loader.get("a1")?.placeholder).toBeUndefined();
+    expectSameSeries(loader.get("a1")?.result, await withoutOptions(DENSE_FIXTURE.points, zoomed));
+    loader.dispose();
+  });
+
+  it("opens on the extent with one series request per signal", async () => {
+    for (const [name, fixture] of OPENS) {
+      for (const target of TARGETS) {
+        const label = `${name} at target ${target}`;
+        const t = wave(fixture, "auto", { prefetch: true });
+        const loader = t.make();
+        loader.update([open(target)]);
+        expect(t.events, `${label}: within the update`).toEqual([`extent ${SIG}`]);
+        await t.rest(2000);
+        expect(t.asked, `${label}: extent requests`).toEqual([SIG]);
+        expect(
+          t.calls.map((c) => c.request),
+          `${label}: series requests`,
+        ).toEqual([openRequest(name, target)]);
+        expect(t.events[0], `${label}: the extent first`).toBe(`extent ${SIG}`);
+        expect(loader.get("a1")?.status, label).toBe("complete");
+        expect(loader.get("a1")?.error, label).toBeUndefined();
+        if (name === "DENSE" && target === 257) {
+          // Buckets of 2^24 computed from the level-22 overview.
+          expect(loader.get("a1")?.result).toMatchObject({ kind: "buckets", width: "16777216" });
+        }
+        loader.dispose();
+      }
+    }
+  });
+
+  it("draws on open what a loader without overview draws", async () => {
+    for (const [name, fixture] of OPENS) {
+      for (const target of TARGETS) {
+        const label = `${name} at target ${target}`;
+        const request = open(target);
+        const t = wave(fixture, "auto", { prefetch: true });
+        const loader = t.make();
+        loader.update([request]);
+        await t.rest(2000);
+        expect(loader.get("a1")?.status, label).toBe("complete");
+        expectSameSeries(
+          loader.get("a1")?.result,
+          await withoutOptions(fixture.points, request),
+          label,
+        );
+        loader.dispose();
+      }
+    }
+  });
+
+  it("steps to a session the view spans with one series request", async () => {
+    const t = wave(STEP_FIXTURE, "auto", { prefetch: true });
+    const loader = t.make();
+    loader.update([open(257)]);
+    await t.rest(1000);
+    expect(loader.get("a1")?.status).toBe("complete");
+    const before = t.calls.length;
+    expect(t.asked).toEqual([SIG]);
+
+    // The step: a new scope with its extent, the same points shifted by 2^33 ns.
+    t.setExtent(STEP_FIXTURE.second);
+    loader.rescope();
+    const next = open(257, "12884901888", "8589934592");
+    loader.update([next]);
+    expect(t.asked).toEqual([SIG, SIG]); // the extent once more, within the update
+    expect(t.calls).toHaveLength(before); // no series request yet
+    await t.rest(2000);
+    expect(t.asked).toEqual([SIG, SIG]);
+    expect(t.calls.slice(before).map((c) => c.request)).toEqual([
+      req("8589934592", "12884901888", 1025),
+    ]);
+    expect(loader.get("a1")?.status).toBe("complete");
+    expectSameSeries(loader.get("a1")?.result, await withoutOptions(STEP_FIXTURE.points, next));
+    loader.dispose();
+  });
+
+  it("steps to a narrower view: view first, overview after it", async () => {
+    const t = wave(STEP_FIXTURE);
+    const loader = t.make();
+    loader.update([open(257)]);
+    await t.drain();
+    await tick(150);
+    expect(loader.get("a1")?.status).toBe("complete");
+    const before = t.calls.length;
+
+    t.setExtent(STEP_FIXTURE.second);
+    loader.rescope();
+    // 2^28 ns inside the new session: level 20, tile 32; the overview's level is 22.
+    loader.update([open(257, "8858370048", "8589934592")]);
+    expect(t.asked).toEqual([SIG, SIG]);
+    await tick();
+    expect(t.calls.slice(before).map((c) => c.request)).toEqual([
+      req("8589934592", "8858370048", 257),
+    ]);
+    await tick(300);
+    expect(t.calls).toHaveLength(before + 1); // the overview waits for the view
+    t.calls[before]?.answer();
+    await tick();
+    expect(t.calls.slice(before).map((c) => c.request)).toEqual([
+      req("8589934592", "8858370048", 257),
+      req("8589934592", "12884901888", 1025),
+    ]);
+    await t.drain();
+    expect(loader.get("a1")?.status).toBe("complete");
+    loader.dispose();
+  });
+
+  it("fetches the serving overview as a visible load", async () => {
+    const t = wave(DENSE_FIXTURE);
+    const quiet = (promises: Promise<unknown>[]) => {
+      for (const p of promises) p.catch(() => {});
+    };
+    // Two prefetch runs hold both slots, a third waits in the queue.
+    quiet(t.cache.load("pf1", SIG, 10, [1000n], "prefetch"));
+    quiet(t.cache.load("pf2", SIG, 10, [2000n], "prefetch"));
+    quiet(t.cache.load("pf3", SIG, 10, [3000n], "prefetch"));
+    expect(t.calls).toHaveLength(2);
+    expect(t.cache.queuedPrefetch).toBe(1);
+
+    const loader = t.make();
+    loader.update([open(257)]);
+    await tick();
+    expect(t.calls).toHaveLength(3); // the overview did not wait for a slot
+    expect(t.calls[2]?.request).toEqual(req("0", FULL, 1025));
+    expect(t.cache.visibleInFlight).toBe(1);
+    expect(t.cache.queuedPrefetch).toBe(1); // the queued prefetch run still waits
+
+    t.calls[2]?.answer();
+    await tick();
+    expect(loader.get("a1")).toMatchObject({
+      status: "complete",
+      result: { kind: "buckets", width: "16777216" },
+    });
+    loader.dispose();
+    for (const owner of ["pf1", "pf2", "pf3"]) t.cache.release(owner);
+  });
+
+  it("computes the overview from a wide view's tiles", async () => {
+    const t = wave(SHIFTED_FIXTURE);
+    const loader = t.make();
+    // Level 20 at target 4001 over the whole extent: tiles 2…17, the overview (level 22) tiles 0…4.
+    const wideView = open(4001, "4831838208", "536870912");
+    loader.update([wideView]);
+    await t.drain();
+    await tick(150);
+    expect(loader.get("a1")?.status).toBe("complete");
+    expect(t.calls.map((c) => c.request)).toEqual([req("536870912", "4831838208", 4097)]);
+
+    // Tiles 1…3 are found as before (merged from the view's tiles) ...
+    for (const index of [1n, 2n, 3n]) {
+      expect(t.cache.find(SIG, 22, index), `overview tile ${index}`).toBeDefined();
+    }
+    // ... tiles 0 and 4 are computed, equal to the fake server's answers to the requests they cost.
+    const asked = [
+      [0n, req("0", "1073741824", 257)],
+      [4n, req("4294967296", "5368709120", 257)],
+    ] as const;
+    for (const [index, request] of asked) {
+      const expected = splitRun(fakeAnswer(SHIFTED_FIXTURE.points, request), 22, index, index)[0];
+      const held = t.cache.peek(SIG, 22, index) ?? t.cache.find(SIG, 22, index);
+      expect(held, `overview tile ${index}`).toBeDefined();
+      expectSameSeries(held?.data, expected?.data, `overview tile ${index}`);
+    }
+    await tick(1000);
+    expect(t.calls).toHaveLength(1);
+    expectSameSeries(
+      loader.get("a1")?.result,
+      await withoutOptions(SHIFTED_FIXTURE.points, wideView),
+    );
+    loader.dispose();
+  });
+
+  it("prefetches nothing the overview answers", async () => {
+    const t = wave(DENSE_FIXTURE, "auto", { prefetch: true });
+    const loader = t.make();
+    loader.update([open(257)]);
+    await t.rest(1000); // rest 300 ms and more, every request answered
+    expect(t.calls.map((c) => c.request)).toEqual([req("0", FULL, 1025)]); // the overview only
+    // Level 25 tile 0 (the plan's coarser level) is answered from the cache.
+    expect(t.cache.find(SIG, 25, 0n)).toBeDefined();
+    expect(t.calls).toHaveLength(1);
+    loader.dispose();
+  });
+
+  it("does not keep recent data computed from the overview", async () => {
+    // The fixtures lie in the first seconds of 1970. The clock reads 1 h + 2.148 s, so a tile is
+    // storable (C6) only when it ends by 2.148e9 ns: level 22 tiles 0 and 1, level 23 tile 0; the
+    // view's level 24 tile 0 (to 2^32 ns) ends inside the last hour and is not.
+    const now = () => 3_600_000 + 2148;
+    const t = wave(DENSE_FIXTURE, "auto", {}, { now });
+    const loader = t.make();
+    const recent = open(257);
+    loader.update([recent]);
+    await t.drain();
+    await tick(150);
+    expect(loader.get("a1")?.status).toBe("complete");
+    expectSameSeries(loader.get("a1")?.result, await withoutOptions(DENSE_FIXTURE.points, recent));
+    expect(t.cache.storable(24, 0n)).toBe(false);
+    expect(t.cache.find(SIG, 24, 0n)).toBeUndefined(); // used for the view, not kept
+
+    // An unrelated run the overview answers, on storable tiles: computed, stored, no request.
+    const before = t.calls.length;
+    const storable = open(257, "2147483648");
+    expect(t.cache.storable(23, 0n)).toBe(true);
+    loader.update([storable]);
+    expect(t.calls).toHaveLength(before);
+    expect(loader.get("a1")?.status).toBe("complete"); // within the update call
+    expect(t.cache.find(SIG, 23, 0n)).toBeDefined();
+    expectSameSeries(
+      loader.get("a1")?.result,
+      await withoutOptions(DENSE_FIXTURE.points, storable),
+    );
+
+    // The recent view again: its tile was not kept, so a request goes out (not the stale overview).
+    loader.update([recent]);
+    await tick(150);
+    expect(t.calls.slice(before).map((c) => c.request)).toEqual([req("0", FULL, 257)]);
+    await t.drain();
+    expect(loader.get("a1")?.status).toBe("complete");
+    expectSameSeries(loader.get("a1")?.result, await withoutOptions(DENSE_FIXTURE.points, recent));
+    expect(t.cache.find(SIG, 24, 0n)).toBeUndefined();
+    loader.dispose();
+  });
+
+  it("computes the overview from a cached next view", async () => {
+    const t = wave(DENSE_FIXTURE);
+    // The next view's tiles (level 20 over the whole extent, as a neighbour preload stores them).
+    const seed = t.cache.load("seed", SIG, 20, [...Array(16).keys()].map(BigInt));
+    await t.drain();
+    await Promise.all(seed);
+    t.cache.release("seed");
+    const loader = t.make();
+
+    // A narrow first view the cache does not hold: level 19, tile 0. It loads (case C).
+    loader.update([open(257, "134217728")]);
+    await tick();
+    expect(loader.get("a1")?.status).toBe("loading");
+    const before = t.calls.length;
+    expect(t.calls[before - 1]?.request).toEqual(req("0", "134217728", 257));
+
+    // The extent is known; a gesture steps to the cached view spanning it, below the overview's level.
+    const wide = open(4001);
+    loader.update([wide]);
+    expect(loader.get("a1")?.status).toBe("complete"); // from the cache, within the update call
+    await t.rest(1000);
+    // No request for the overview, not even as prefetch: the view's tiles answer it.
+    expect(t.calls).toHaveLength(before);
+    for (const index of [0n, 1n, 2n, 3n]) {
+      expect(t.cache.find(SIG, 22, index), `overview tile ${index}`).toBeDefined();
+    }
+    expectSameSeries(loader.get("a1")?.result, await withoutOptions(DENSE_FIXTURE.points, wide));
+    loader.dispose();
   });
 });

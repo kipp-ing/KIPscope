@@ -7,9 +7,11 @@ import {
   TIME_MAX,
 } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
+import { SeriesCache } from "../src/chart/cache.ts";
 import {
   aggregateRaw,
   deriveRaw,
+  deriveRun,
   emptyTile,
   levelFor,
   MAX_LEVEL,
@@ -22,6 +24,7 @@ import {
   placeholder,
   prefetchPlan,
   runRequest,
+  runsOf,
   splitRun,
   stitch,
   type Tile,
@@ -30,7 +33,15 @@ import {
   tileWeight,
   touchedTiles,
 } from "../src/chart/tiles.ts";
-import { densePoints, type FakePoint, fakeAnswer, fakeBuckets, fakeRaw } from "./fakeSeries.ts";
+import {
+  densePoints,
+  expectSameTiles,
+  type FakePoint,
+  fakeAnswer,
+  fakeBuckets,
+  fakeFetch,
+  fakeRaw,
+} from "./fakeSeries.ts";
 
 const SIG = "c/s";
 const S10 = 262144n; // tile span at level 10: 256 × 1024 ns
@@ -469,5 +480,162 @@ describe("text signals keep row text and edge labels through tiles", () => {
   it("a numeric series gains no text", () => {
     const tiles = splitRun(fakeAnswer([{ t: 5n, v: 1 }], runRequest(SIG, 10, 0n, 1n)), 10, 0n, 1n);
     expect(R(tiles[0]).text).toBeUndefined();
+  });
+});
+
+describe("runs of tiles (single-wave-open)", () => {
+  const range = (first: bigint, last: bigint) =>
+    Array.from({ length: Number(last - first + 1n) }, (_, i) => first + BigInt(i));
+
+  it("groups indices into runs as the cache does", () => {
+    expect(runsOf([])).toEqual([]);
+    // Unsorted, with duplicates and a gap: sorted, deduplicated, split at the gap.
+    expect(runsOf([5n, 3n, 4n, 4n, 10n, 3n])).toEqual([
+      { first: 3n, last: 5n },
+      { first: 10n, last: 10n },
+    ]);
+    expect(runsOf([-2n, -1n, 0n, 1n])).toEqual([{ first: -2n, last: 1n }]);
+    // MAX_RUN_TILES (64): the 65th adjacent tile starts a new run at the lowest index.
+    expect(runsOf(range(0n, 69n))).toEqual([
+      { first: 0n, last: 63n },
+      { first: 64n, last: 69n },
+    ]);
+    expect(runsOf(range(10n, 73n))).toEqual([{ first: 10n, last: 73n }]);
+    expect(runsOf(range(10n, 74n))).toEqual([
+      { first: 10n, last: 73n },
+      { first: 74n, last: 74n },
+    ]);
+
+    // The cache requests exactly these runs for the same missing indices.
+    const missing = [...range(0n, 69n), 100n, 101n, 200n];
+    const { fetch, calls } = fakeFetch([]);
+    const cache = new SeriesCache(fetch, { now: () => 1_000_000_000_000_000 });
+    for (const promise of cache.load("o", SIG, 7, missing)) promise.catch(() => {});
+    expect(calls.map((c) => c.request)).toEqual(
+      runsOf(missing).map((r) => runRequest(SIG, 7, r.first, r.last)),
+    );
+    expect(calls).toHaveLength(4);
+    cache.release("o");
+  });
+});
+
+describe("derives a run like the server (single-wave-open)", () => {
+  /** The tiles of a run as the fake server answers it, split like the cache stores them. */
+  const served = (points: readonly FakePoint[], level: number, first: bigint, last: bigint) =>
+    splitRun(fakeAnswer(points, runRequest(SIG, level, first, last)), level, first, last);
+
+  /** `deriveRun` from `source`, split like the cache stores it. */
+  const derived = (source: Tile[], level: number, first: bigint, last: bigint) => {
+    const result = deriveRun(SIG, source, level, first, last);
+    expect(result, `run ${first}…${last} at level ${level}`).toBeDefined();
+    return splitRun(result as SeriesResult, level, first, last);
+  };
+
+  /** One point per 5,000 ns from 123 ns, every 5th SNA: about 52 points per level-10 tile. */
+  const sparse = (count: number): FakePoint[] =>
+    densePoints(count, 5000n, 123n, (i) => (i % 5 === 3 ? null : i));
+
+  it("derives a run like the server from raw tiles", () => {
+    // (a) The run holds at most its target. Six level-10 tiles hold 315 points; the run is tiles 2…3
+    // (target 513, about 105 points). Sources of level 8 (24 tiles) and of level 10 (tiles 0…5)
+    // hold the same points.
+    const points = sparse(315);
+    const source8 = served(points, 8, 0n, 23n);
+    const source10 = served(points, 10, 0n, 5n);
+    expect(source8.every((t) => t.data.kind === "raw")).toBe(true);
+    expect(served(points, 10, 2n, 3n)[0]?.data.kind).toBe("raw");
+    expectSameTiles(derived(source8, 10, 2n, 3n), served(points, 10, 2n, 3n), "level 8 source");
+    expectSameTiles(derived(source10, 10, 2n, 3n), served(points, 10, 2n, 3n), "level 10 source");
+    // A single tile of the same sources (target 257, about 52 points).
+    expectSameTiles(derived(source8, 10, 4n, 4n), served(points, 10, 4n, 4n), "one tile");
+
+    // The target is the boundary: 257 points in level-10 tile 1 are raw, 258 are buckets; the
+    // neighbours outside the tile (t = 100 and t = 700000) stay in the source.
+    for (const count of [257, 258]) {
+      const edgeCase: FakePoint[] = [
+        { t: 100n, v: 1 },
+        ...densePoints(count, 1000n, S10 + 10n, (i) => (i % 9 === 4 ? null : i)),
+        { t: 700_000n, v: 2 },
+      ];
+      const source = served(edgeCase, 8, 0n, 11n);
+      expect(source.every((t) => t.data.kind === "raw")).toBe(true);
+      const expected = served(edgeCase, 10, 1n, 1n);
+      expect(expected[0]?.data.kind, `${count} points`).toBe(count === 257 ? "raw" : "buckets");
+      expectSameTiles(derived(source, 10, 1n, 1n), expected, `${count} points`);
+    }
+
+    // (b) The run holds more than its target: level-10 tile 0 with 524 points (one per 500 ns)
+    // gives buckets of 1,024 ns, with SNA points, from raw level-8 tiles.
+    const dense = densePoints(900, 500n, 7n, (i) => (i % 6 === 2 ? null : (i * 37) % 101));
+    const raw8 = served(dense, 8, 0n, 7n);
+    expect(raw8.every((t) => t.data.kind === "raw")).toBe(true);
+    const bucketRun = served(dense, 10, 0n, 0n);
+    expect(bucketRun[0]?.data.kind).toBe("buckets");
+    expectSameTiles(derived(raw8, 10, 0n, 0n), bucketRun, "more points than the target");
+    expectSameTiles(derived(raw8, 10, 0n, 1n), served(dense, 10, 0n, 1n), "two tiles");
+  });
+
+  it("derives a run like the server from finer bucket tiles", () => {
+    // 20,972 points every 400 ns, every 6th SNA, none valid in [1,000,000, 1,100,000) (buckets of
+    // 16,384 ns that are all SNA), integer-free values so float summation order shows.
+    const points = densePoints(21_000, 400n, 7n, (i) => {
+      const t = 400 * i + 7;
+      if (i % 6 === 2 || (t >= 1_000_000 && t < 1_100_000)) return null;
+      return ((i * 37) % 101) / 7;
+    });
+    // Level 14: tile span 4,194,304 ns, width 16,384 ns; the run is tiles 0…1.
+    const twoFiner = served(points, 12, 0n, 7n); // width 4,096 ns, one run of eight tiles
+    const fiveFiner = served(points, 9, 0n, 63n); // width 512 ns, one run of 64 tiles
+    for (const [name, source, level] of [
+      ["two levels finer", twoFiner, 12],
+      ["five levels finer", fiveFiner, 9],
+    ] as const) {
+      expect(source.every((t) => t.data.kind === "buckets" && t.level === level)).toBe(true);
+      expectSameTiles(derived(source, 14, 0n, 1n), served(points, 14, 0n, 1n), `${name}, 2 tiles`);
+      expectSameTiles(derived(source, 14, 1n, 1n), served(points, 14, 1n, 1n), `${name}, tile 1`);
+      expectSameTiles(derived(source, 14, 0n, 0n), served(points, 14, 0n, 0n), `${name}, tile 0`);
+    }
+    // The all-SNA buckets are in the answer: no value, only the SNA count.
+    const hole = served(points, 14, 0n, 0n)[0]?.data;
+    expect(hole?.kind === "buckets" && hole.count.includes(0)).toBe(true);
+  });
+
+  it("derives a run like the server from text tiles", () => {
+    // Raw level-10 tiles of a text signal give the raw level-11 run with text and labelled edges.
+    const TS = "c/Bms.CONTACTOR";
+    const server: SeriesResult = {
+      kind: "raw",
+      signalId: TS,
+      from: "0",
+      to: (2n * S10).toString(),
+      t: encodeTimes([100_000n, 200_000n, 300_000n, 400_000n]),
+      v: [0, 0, null, 0],
+      text: ["open", "precharge", "", "closed"],
+      before: { t: "-1000", v: 0, label: "open" },
+      after: { t: (4n * S10).toString(), v: 0, label: "closed" },
+    };
+    const source = splitRun(server, 10, 0n, 1n);
+    const result = deriveRun(TS, source, 11, 0n, 0n);
+    expect(result?.kind).toBe("raw");
+    expectSameTiles(
+      splitRun(result as SeriesResult, 11, 0n, 0n),
+      splitRun(server, 11, 0n, 0n),
+      "text",
+    );
+  });
+
+  it("derives nothing where the server would answer raw from buckets", () => {
+    // 20,000 points every 100 ns in [0, 2,000,000) make the level-8 tiles 0…63 (target 16,385)
+    // buckets; level-12 tile 3 ([3,145,728, 4,194,304)) holds 100 points, at most its target 257.
+    const points: FakePoint[] = [
+      ...densePoints(20_000, 100n, 7n),
+      ...densePoints(100, 10_000n, 3_145_800n),
+    ];
+    const source = served(points, 8, 0n, 63n);
+    expect(source.every((t) => t.data.kind === "buckets")).toBe(true);
+    expect(served(points, 12, 3n, 3n)[0]?.data.kind).toBe("raw"); // the server answers raw
+    expect(deriveRun(SIG, source, 12, 3n, 3n)).toBeUndefined();
+    // The same source does give a run that holds more points than its target.
+    expect(deriveRun(SIG, source, 12, 0n, 0n)).toBeDefined();
   });
 });

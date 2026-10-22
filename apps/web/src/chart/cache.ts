@@ -12,10 +12,10 @@ import { SCOPE_STORES } from "./gaps.ts";
 import {
   deriveRaw,
   FRESH_MARGIN_NS,
-  MAX_RUN_TILES,
   MERGE_DEPTH,
   mergeUp,
   runRequest,
+  runsOf,
   type SeriesRequest,
   splitRun,
   type Tile,
@@ -342,18 +342,8 @@ export class SeriesCache {
         missing.push(index);
       }
     }
-    missing.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     // Adjacent missing indices form one run of at most MAX_RUN_TILES tiles (C1).
-    const groups: { first: bigint; last: bigint }[] = [];
-    for (const index of missing) {
-      const group = groups.at(-1);
-      if (group && index === group.last + 1n && index - group.first < MAX_RUN_TILES) {
-        group.last = index;
-      } else {
-        groups.push({ first: index, last: index });
-      }
-    }
-    for (const { first, last } of groups) {
+    for (const { first, last } of runsOf(missing)) {
       const run: Run = {
         controller: new AbortController(),
         owners: new Set([owner]),
@@ -373,6 +363,20 @@ export class SeriesCache {
     }
     this.pump();
     return indices.map((index) => promises.get(index) as Promise<Tile>);
+  }
+
+  /**
+   * Stores the tiles of a run computed in the tab (deriveRun) as if `fetch` had answered
+   * runRequest(signalId, level, first, last) under the workspace's scope: splitRun, then the store
+   * rules (C5 weight and LRU, C6 recent tiles not stored, K12 edge tiles under the scope's key and
+   * cut raw tiles); a stored tile of the same ID is replaced. Sends nothing and notifies no recovery
+   * listener. Returns the run's tiles in index order, stored or not.
+   */
+  put(signalId: string, level: number, first: bigint, last: bigint, result: SeriesResult): Tile[] {
+    if (result.signalId !== signalId) {
+      throw new RangeError(`run of ${result.signalId} put as ${signalId}`);
+    }
+    return this.storeRun(result, level, first, last, this.scope);
   }
 
   release(owner: string): void {
@@ -424,12 +428,11 @@ export class SeriesCache {
     const answer = Promise.race([fetched, aborted]).then((result) => {
       // A fetch that ignores its abort signal must not fill the cache either.
       if (signal.aborted) throw signal.reason;
-      const tiles = new Map<bigint, Tile>();
-      for (const tile of splitRun(result, level, first, last)) {
-        if (generation === this.generation) this.store(tile, scope);
-        tiles.set(tile.index, tile);
-      }
-      return tiles;
+      const tiles =
+        generation === this.generation
+          ? this.storeRun(result, level, first, last, scope)
+          : splitRun(result, level, first, last);
+      return new Map(tiles.map((tile) => [tile.index, tile]));
     });
     const done = () => {
       for (let index = first; index <= last; index++) {
@@ -460,6 +463,19 @@ export class SeriesCache {
       this.inFlight.set(flightKey(signalId, level, index, scope), { run, promise });
     }
     return promises;
+  }
+
+  /** Splits a run's answer into its tiles and stores each under `scope`; returns them in index order. */
+  private storeRun(
+    result: SeriesResult,
+    level: number,
+    first: bigint,
+    last: bigint,
+    scope: CacheScope | undefined,
+  ): Tile[] {
+    const tiles = splitRun(result, level, first, last);
+    for (const tile of tiles) this.store(tile, scope);
+    return tiles;
   }
 
   /** Takes a waiting run out of its queue. */

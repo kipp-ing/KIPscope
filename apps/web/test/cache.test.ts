@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { SeriesCache } from "../src/chart/cache.ts";
-import { densePoints, type FakePoint, fakeFetch, flush } from "./fakeSeries.ts";
+import { runRequest } from "../src/chart/tiles.ts";
+import {
+  densePoints,
+  expectSameSeries,
+  type FakePoint,
+  fakeAnswer,
+  fakeFetch,
+  flush,
+} from "./fakeSeries.ts";
 
 const SIG = "c/s";
 const OLD_NOW = () => 1_000_000_000_000_000; // ms: every tile of these tests lies long before it
@@ -426,5 +434,104 @@ describe("SeriesCache across scopes (add-case-open)", () => {
     // The same scope again joins the run in flight.
     cache.load("v", sig, 10, [12n]);
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe("SeriesCache.put (single-wave-open)", () => {
+  const S = 262144n; // tile span of level 10 (width 1024 ns)
+  const sig = "c/s";
+  const scope = (from: bigint, to: bigint) => ({
+    dataRef: "c",
+    from: String(from),
+    to: String(to),
+  });
+  // Ten points spread over each level-10 tile 0 … 5: t = j × S + k × S / 10 + 1000.
+  const all: FakePoint[] = Array.from({ length: 6 }, (_, j) =>
+    Array.from({ length: 10 }, (_, k) => ({
+      t: BigInt(j) * S + (BigInt(k) * S) / 10n + 1000n,
+      v: j * 10 + k,
+    })),
+  ).flat();
+  // Scope A [1.5 S, 3.5 S) cuts tile 1 (first half) and tile 3 (second half); tile 2 lies inside.
+  const A = scope(S + S / 2n, 3n * S + S / 2n);
+  // What the server answers under scope A: only the points inside it exist, edge neighbours too.
+  const inA = all.filter((p) => p.t >= S + S / 2n && p.t < 3n * S + S / 2n);
+
+  it("stores a computed run like a fetched one", async () => {
+    // Fetched: the run of tiles 1…3 through load, answered under scope A.
+    const fetched = fakeFetch(inA);
+    const second = new SeriesCache(fetched.fetch, { now: OLD_NOW });
+    second.setScope(A);
+    const loading = second.load("w", sig, 10, [1n, 2n, 3n]);
+    expect(fetched.calls).toHaveLength(1);
+    fetched.calls[0]?.answer();
+    await Promise.all(loading);
+
+    // Computed: the same run put into a cache that has no fetch to answer.
+    const computed = fakeFetch(inA);
+    const first = new SeriesCache(computed.fetch, { now: OLD_NOW });
+    let notified = 0;
+    first.onRecover(() => notified++);
+    first.setScope(A);
+    const result = fakeAnswer(inA, runRequest(sig, 10, 1n, 3n));
+    const put = first.put(sig, 10, 1n, 3n, result);
+    await flush();
+    expect(computed.calls).toHaveLength(0); // sends nothing
+    expect(notified).toBe(0); // is no recovery
+    expect(put.map((t) => [t.level, t.index])).toEqual([
+      [10, 1n],
+      [10, 2n],
+      [10, 3n],
+    ]);
+
+    // Both caches answer the three tiles under A with the same data ...
+    for (const index of [1n, 2n, 3n]) {
+      const a = first.find(sig, 10, index);
+      const b = second.find(sig, 10, index);
+      expect(a, `tile ${index} put`).toBeDefined();
+      expect(b, `tile ${index} fetched`).toBeDefined();
+      expectSameSeries(a?.data, b?.data, `tile ${index}`);
+    }
+    expect(first.size).toBe(second.size);
+    // ... the middle tile for every scope, the outer two as edge tiles under A's key only.
+    for (const cache of [first, second]) {
+      cache.setScope(scope(0n, 6n * S));
+      expect(cache.find(sig, 10, 2n)).toBeDefined();
+      expect(cache.find(sig, 10, 1n)).toBeUndefined();
+      expect(cache.find(sig, 10, 3n)).toBeUndefined();
+      cache.setScope(A);
+      expect(cache.find(sig, 10, 1n)).toBeDefined();
+      expect(cache.find(sig, 10, 3n)).toBeDefined();
+    }
+
+    // A tile put again replaces the stored one (same weight, not twice).
+    const size = first.size;
+    first.put(sig, 10, 1n, 3n, result);
+    expect(first.size).toBe(size);
+
+    // A tile ending within the last hour is returned by put, not stored (C6).
+    const nowMs = 1_700_000_000_000;
+    const nowNs = BigInt(nowMs) * 1_000_000n;
+    const span = 256n * 2n ** 20n; // level 20
+    const tileEndingBefore = (ns: bigint) => (nowNs - ns) / span - 1n;
+    const recent = tileEndingBefore(30n * 60n * 1_000_000_000n);
+    const old = tileEndingBefore(3n * 3600n * 1_000_000_000n);
+    const points: FakePoint[] = [recent, old].map((j) => ({ t: j * span + 5n, v: 1 }));
+    const { fetch, calls } = fakeFetch(points);
+    const cache = new SeriesCache(fetch, { now: () => nowMs });
+
+    const [kept] = cache.put(
+      sig,
+      20,
+      recent,
+      recent,
+      fakeAnswer(points, runRequest(sig, 20, recent, recent)),
+    );
+    expect(kept).toMatchObject({ level: 20, index: recent });
+    expect(cache.peek(sig, 20, recent)).toBeUndefined();
+    const [older] = cache.put(sig, 20, old, old, fakeAnswer(points, runRequest(sig, 20, old, old)));
+    expect(older).toMatchObject({ level: 20, index: old });
+    expect(cache.peek(sig, 20, old)).toBeDefined();
+    expect(calls).toHaveLength(0);
   });
 });

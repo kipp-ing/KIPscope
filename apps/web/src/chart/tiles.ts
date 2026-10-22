@@ -104,6 +104,21 @@ export function runRequest(
   };
 }
 
+/**
+ * Sorted, deduplicated `indices` grouped into runs of adjacent indices, each at most MAX_RUN_TILES
+ * long, starting a new run at the lowest index: exactly the runs SeriesCache.load requests.
+ */
+export function runsOf(indices: readonly bigint[]): { first: bigint; last: bigint }[] {
+  const sorted = [...new Set(indices)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const runs: { first: bigint; last: bigint }[] = [];
+  for (const index of sorted) {
+    const run = runs.at(-1);
+    if (run && index === run.last + 1n && index - run.first < MAX_RUN_TILES) run.last = index;
+    else runs.push({ first: index, last: index });
+  }
+  return runs;
+}
+
 interface Point {
   t: Timestamp;
   v: number | null;
@@ -344,8 +359,25 @@ export function mergeUp(left: Tile, right: Tile): Tile {
     return { signalId: left.signalId, level, index, data };
   }
   const width = bucketWidthOf(level);
+  const merged = mergeBuckets(
+    [left, right].flatMap((t) => buckets(aggregateRaw(t).data as BucketSeries)),
+    width,
+  );
+  return {
+    signalId: left.signalId,
+    level,
+    index,
+    data: bucketSeries(left.signalId, from, to, width, merged),
+  };
+}
+
+/**
+ * Finer buckets in start order merged into aligned buckets of `width` like the server's (count and
+ * sna summed, mean weighted by count, all-SNA buckets without values).
+ */
+function mergeBuckets(finer: readonly Bucket[], width: bigint): Bucket[] {
   const list: (Bucket & { sum: number })[] = [];
-  for (const b of [left, right].flatMap((t) => buckets(aggregateRaw(t).data as BucketSeries))) {
+  for (const b of finer) {
     const start = floorDiv(b.start, width) * width;
     let current = list.at(-1);
     if (!current || current.start !== start) {
@@ -360,15 +392,49 @@ export function mergeUp(left: Tile, right: Tile): Tile {
     if (b.min !== null) current.min = current.min === null ? b.min : Math.min(current.min, b.min);
     if (b.max !== null) current.max = current.max === null ? b.max : Math.max(current.max, b.max);
   }
-  const merged = list.map(({ sum, ...b }) =>
+  return list.map(({ sum, ...b }) =>
     b.count > 0 ? { ...b, mean: sum / b.count } : { ...b, mean: null, min: null, max: null },
   );
-  return {
-    signalId: left.signalId,
-    level,
-    index,
-    data: bucketSeries(left.signalId, from, to, width, merged),
-  };
+}
+
+/**
+ * The server's answer to runRequest(signalId, level, first, last), computed from `source`, or
+ * undefined when it cannot be computed exactly (W1.3). `source`: non-empty, contiguous tiles of
+ * one level ≤ `level` in index order that hold every point of the signal under the scope inside
+ * the run's span (the caller passes a cover, W3). Raw iff the run's points ≤ the run's target;
+ * a raw answer needs every source tile raw, else undefined.
+ */
+export function deriveRun(
+  signalId: string,
+  source: readonly Tile[],
+  level: number,
+  first: bigint,
+  last: bigint,
+): SeriesResult | undefined {
+  const head = source[0];
+  if (!head) throw new RangeError("deriveRun needs at least one source tile");
+  const span = tileSpan(level);
+  const from = first * span;
+  const to = (last + 1n) * span;
+  const target = Number(last - first + 1n) * TILE_BUCKETS + 1;
+  const inside = (t: Timestamp) => from <= t && t < to;
+  let n = 0;
+  for (const tile of source) {
+    if (tile.data.kind === "raw") n += decodeTimes(tile.data.t).filter(inside).length;
+    else for (const b of buckets(tile.data)) if (inside(b.start)) n += b.count + b.sna;
+  }
+  if (n <= target) {
+    const raws: RawSeries[] = [];
+    for (const tile of source) if (tile.data.kind === "raw") raws.push(tile.data);
+    if (raws.length !== source.length) return undefined;
+    const points = raws.flatMap(rawPoints);
+    return cutRaw(signalId, points, from, to, raws[0]?.before, raws.at(-1)?.after);
+  }
+  const width = bucketWidthOf(level);
+  const finer = source
+    .flatMap((tile) => buckets(aggregateRaw(tile).data as BucketSeries))
+    .filter((b) => inside(b.start));
+  return bucketSeries(signalId, from, to, width, mergeBuckets(finer, width));
 }
 
 /** Bucket tile without buckets, for indices outside a signal's extent (Z4). */

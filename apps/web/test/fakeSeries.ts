@@ -6,7 +6,8 @@ import {
   type RawSeries,
   type SeriesResult,
 } from "@kipscope/shared";
-import type { SeriesRequest } from "../src/chart/tiles.ts";
+import { expect } from "vitest";
+import type { SeriesRequest, Tile } from "../src/chart/tiles.ts";
 
 /** One stored point of a fake signal; `v` null is an SNA point. */
 export interface FakePoint {
@@ -131,4 +132,98 @@ export function densePoints(
   value: (i: number) => number | null = (i) => i,
 ): FakePoint[] {
   return Array.from({ length: count }, (_, i) => ({ t: start + step * BigInt(i), v: value(i) }));
+}
+
+/** A fake signal and the extent a test gives it (decimal ns, as `Extent.first`/`Extent.last`). */
+export interface Fixture {
+  points: FakePoint[];
+  first: string;
+  last: string;
+}
+
+/** 4,295 points every 10^6 ns from 500: extent 0 … 4294967295 → overview level 22, tiles 0…3 (design W9). */
+export const DENSE_FIXTURE: Fixture = {
+  points: densePoints(4295, 1_000_000n, 500n),
+  first: "0",
+  last: "4294967295",
+};
+
+/**
+ * 1,000 points at t = 4,294,967 × i, value i, every 7th (i % 7 = 6) SNA: extent 0 … 4290672033 →
+ * overview level 21, tiles 0…7, raw overview (1,000 ≤ 2,049) (design W9).
+ */
+export const SPARSE_FIXTURE: Fixture = {
+  points: densePoints(1000, 4_294_967n, 0n, (i) => (i % 7 === 6 ? null : i)),
+  first: "0",
+  last: "4290672033",
+};
+
+/** DENSE + 2^29 ns: extent 536870912 … 4831838207 → overview level 22, tiles 0…4 (design W9). */
+export const SHIFTED_FIXTURE: Fixture = {
+  points: densePoints(4295, 1_000_000n, 500n + 2n ** 29n),
+  first: "536870912",
+  last: "4831838207",
+};
+
+/**
+ * DENSE ∪ (DENSE + 2^33 ns): extent 0 … 4294967295, after a step `second` (design W9). The extent
+ * a test sets after `rescope()` is `{ first, last }` of `second`.
+ */
+export const STEP_FIXTURE: Fixture & { second: { first: string; last: string } } = {
+  points: [
+    ...densePoints(4295, 1_000_000n, 500n),
+    ...densePoints(4295, 1_000_000n, 500n + 2n ** 33n),
+  ],
+  first: "0",
+  last: "4294967295",
+  second: { first: "8589934592", last: "12884901887" },
+};
+
+const RELATIVE_MEAN = 1e-12;
+
+/**
+ * Two results are the same drawn data: raw exactly (points, text, edge neighbours), buckets with
+ * `count`, `sna`, `min`, `max` exactly and `mean` within 1e-12 relative (float summation order).
+ */
+export function expectSameSeries(
+  actual: SeriesResult | undefined,
+  expected: SeriesResult | undefined,
+  label = "series",
+): void {
+  expect(actual, `${label}: result present`).toBeDefined();
+  expect(expected, `${label}: expected present`).toBeDefined();
+  if (!actual || !expected) return;
+  expect(actual.kind, `${label}: kind`).toBe(expected.kind);
+  if (actual.kind !== "buckets" || expected.kind !== "buckets") {
+    expect(actual, label).toEqual(expected);
+    return;
+  }
+  const { mean: actualMean, ...actualRest } = actual;
+  const { mean: expectedMean, ...expectedRest } = expected;
+  expect(actualRest, label).toEqual(expectedRest);
+  expect(actualMean.length, `${label}: bucket count`).toBe(expectedMean.length);
+  actualMean.forEach((m, i) => {
+    const e = expectedMean[i] ?? null;
+    if (m === null || e === null) {
+      expect(m, `${label}: mean ${i}`).toBe(e);
+      return;
+    }
+    const close = Math.abs(m - e) <= RELATIVE_MEAN * Math.max(Math.abs(m), Math.abs(e));
+    expect(close, `${label}: mean ${i} is ${m}, expected ${e}`).toBe(true);
+  });
+}
+
+/** Two tile lists hold the same tiles (same IDs, `expectSameSeries` per tile). */
+export function expectSameTiles(
+  actual: readonly Tile[],
+  expected: readonly Tile[],
+  label = "tiles",
+) {
+  expect(
+    actual.map((t) => `${t.signalId}|${t.level}|${t.index}`),
+    `${label}: tile IDs`,
+  ).toEqual(expected.map((t) => `${t.signalId}|${t.level}|${t.index}`));
+  expected.forEach((tile, i) => {
+    expectSameSeries(actual[i]?.data, tile.data, `${label}: tile ${tile.index}`);
+  });
 }
