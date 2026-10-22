@@ -25,7 +25,7 @@ Each signal SHALL have a stable ID built from its data reference and its name in
 - **THEN** every signal keeps the ID it had before
 
 ### Requirement: Signal metadata
-The catalog SHALL return for each signal its name and, where available, its description, alias and unit. Metadata the source lacks SHALL come from configured metadata files: DBC files and diagnostic catalogs (manifest plus names file, see "Diagnostic catalog names"). Missing fields SHALL be reported as absent, not as empty strings or invented values. Origin: concept §4 („Vorhandene Metadaten werden angezeigt"); diagnostic catalogs: D-061 („KIPscope reads the diagnostic catalog (manifest + names) like the DBC files").
+The catalog SHALL return for each signal its name and, where available, its description, alias and unit. Metadata the source lacks SHALL come from configured metadata files: DBC files and diagnostic catalogs (manifest plus names file, see "Diagnostic catalog names"). Where neither gives a unit and the source lists one for the signal's rows (ADX `KIPSCOPE_COLUMN_UNIT`), the catalog SHALL take that unit, per data reference. Missing fields SHALL be reported as absent, not as empty strings or invented values. Origin: concept §4 („Vorhandene Metadaten werden angezeigt"); diagnostic catalogs: D-061 („KIPscope reads the diagnostic catalog (manifest + names) like the DBC files"); table unit: D-100 („used when no DBC or diag unit exists, per data ref").
 
 #### Scenario: Unit from DBC
 - **WHEN** a signal `ENG_2E8h.MOT_SPD_D` has data and the DBC defines unit and comment for signal `MOT_SPD_D` in message `ENG_2E8h`
@@ -35,6 +35,11 @@ The catalog SHALL return for each signal its name and, where available, its desc
 - **WHEN** a signal has data but neither a DBC entry nor a diagnostic catalog field (`testcar/Nodbc_500h.RAW`)
 - **THEN** the catalog lists it with its name only and no unit, description, alias, `dbc` or `diag`
 - **Evidence:** `apps/server/test/catalog.test.ts` › "lists a signal without DBC entry with its name only" (unchanged `toEqual`, catalog built with the fixture diag catalog)
+
+#### Scenario: Unit from the table
+- **WHEN** a `Catalog` whose DBC loader defines `TBMS.current` (unit `mA`) and `Nounit_600h.P` (no unit), with the fixture diag catalog, is refreshed over a stub source listing `car/TBMS.current` (unit `A`), `car/Nounit_600h.P` (unit `bar`), `car/Nodbc_500h.RAW` (unit `V`), `a/X.Y` (unit `km/h`), `b/X.Y` (unit `mph`), a fixture diag signal that has a diag unit (listed unit `zz`), and `car/Plain.SIG` (no unit)
+- **THEN** the entries have units `mA`, `bar` (with its `dbc`), `V` (no `dbc`, no `diag`), `km/h`, `mph`, the diag unit, and no `unit` key for `car/Plain.SIG`
+- **Evidence:** `apps/server/test/catalog.test.ts` › "takes the table unit when no DBC or diag unit exists"
 
 ### Requirement: Signal search
 The catalog SHALL support a case-insensitive text search that splits the query at whitespace into terms and matches a signal when every term occurs as a substring of its name, shown name (display-names), description, alias or unit. Results SHALL be ordered as in "Search ranking". The search API SHALL return results within a bounded page size. Origin: concept §4, D-017 („bei eingabe in suchliste filtern auch auf teile"); shown name: D-035 („search matches full name, short name and message alike").
@@ -271,7 +276,7 @@ The explorer SHALL update its list on every keystroke without a request to the s
 - **Evidence:** `packages/shared/test/search.test.ts` › "ranks 10,000 signals in under 50 ms"
 
 ### Requirement: Signal hover card
-Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal.
+Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL open a card with name, description, message and CAN ID, unit, scaling, raw step, DBC range, SNA codes, value table, source (data reference, DBC file) and the windows showing the signal. Absent fields SHALL be omitted, never shown empty or invented. A signal without DBC entry and diagnostic catalog field whose unit came from the source's table SHALL show its source as `<dataRef> · unit from the table`, not as `<dataRef> · no DBC entry`. Origin: D-017 („mit hover infos"); fields: power-user report point 4; keyboard: D-020; 350 ms is a goal; table unit: necessary consequence of D-100 (a unit next to "no DBC entry" reads as if the unit were invented), wording is open question Q-3.
 
 #### Scenario: Card for SPEED_DISP
 - **WHEN** the user hovers `ICL_3A2h.SPEED_DISP` on real data and the signal is shown in one window
@@ -284,9 +289,14 @@ Resting the pointer on a row, or making it active by keyboard, for 350 ms SHALL 
 - **Evidence:** UI check (screenshot of the card); `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range"
 
 #### Scenario: Card formatting rules
-- **WHEN** a signal has DBC range `[0|0]`, an extended CAN ID, or no DBC entry
-- **THEN** the range reads `not set`, the ID reads in hex with bit 31 cleared and `(ext)`, and a signal without DBC entry shows its source as `<dataRef> · no DBC entry` with no message, scaling, range, SNA or value lines
-- **Evidence:** `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range", "formats message IDs as hex", "formats the source line", "lists the windows showing a signal"
+- **WHEN** a signal has DBC range `[0|0]`, an extended CAN ID, no DBC entry, or no DBC entry and no diag field but a unit
+- **THEN** the range reads `not set`, the ID reads in hex with bit 31 cleared and `(ext)`, a signal without DBC entry shows its source as `<dataRef> · no DBC entry` with no message, scaling, range, SNA or value lines, and one with only a unit shows `<dataRef> · unit from the table`; a unit next to a DBC entry or a diag field leaves those lines as they are (`<dataRef> · <file>`, `<dataRef> · DBC`, the diag line)
+- **Evidence:** `apps/web/test/explorer.test.ts` › "formats scaling, raw step and DBC range", "formats message IDs as hex", "formats the source line" (extended), "lists the windows showing a signal"
+
+#### Scenario: Card for a table unit
+- **WHEN** the UI user opens the server of adx-source "Server on the emulator" (the lead's second server on port 7311, started after `pnpm build` with `KIPSCOPE_WEB_DIR=apps/web/dist` so it serves the UI) and hovers `Spd.V` of `meta-a` in the explorer
+- **THEN** the card shows unit `km/h`, source `meta-a · unit from the table`, and no message, scaling, range, SNA or value lines
+- **Evidence:** UI check (screenshot of the card)
 
 #### Scenario: Card on keyboard focus
 - **WHEN** the user types `WSPD_FL`, presses ArrowDown once and waits
@@ -480,7 +490,7 @@ On smart451 every `BMS.*` signal with a unit in the manifest SHALL carry it, so 
 - **Evidence:** UI check on smart451 at 1440×900 (one screenshot of the window and the explorer)
 
 ### Requirement: Metadata source precedence
-DBC files SHALL be read first, then the diagnostic catalogs in list order; for a signal name defined by more than one source the first one SHALL win whole (no merging of fields), and each catalog load SHALL warn once, naming at most 10 such signals with data. Origin: necessary consequence (two sources can name one signal; D-011 D6 "first file wins" for DBC); DBC first because SNA rules (D-010, D-014, D-015) exist only for DBC entries.
+DBC files SHALL be read first, then the diagnostic catalogs in list order; for a signal name defined by more than one source the first one SHALL win whole (no merging of fields), and each catalog load SHALL warn once, naming at most 10 such signals with data. The unit listed by the source for a data reference's rows SHALL come last: it fills only the unit, only of an entry whose winning metadata has none, and never produces a warning. Origin: necessary consequence (two sources can name one signal; D-011 D6 "first file wins" for DBC); DBC first because SNA rules (D-010, D-014, D-015) exist only for DBC entries; table unit last: D-100 („used when no DBC or diag unit exists").
 
 #### Scenario: DBC wins
 - **WHEN** a `Catalog` whose DBC loader defines `TBMS.current` (unit `mA`) and whose diag loader is the fixture is refreshed twice over a stub source listing `car/TBMS.current`
@@ -491,6 +501,11 @@ DBC files SHALL be read first, then the diagnostic catalogs in list order; for a
 - **WHEN** `loadDiagCatalogs` reads the fixture manifest twice (two list entries, same path)
 - **THEN** the result has the 18 fixture names once, from the first entry, and one warning `…test-diag.manifest.json: 18 signals already named by an earlier catalog, the earlier wins: …`
 - **Evidence:** `apps/server/test/diag.test.ts` › "keeps the earlier catalog's signals"
+
+#### Scenario: Table unit never overrides
+- **WHEN** the catalog of "Unit from the table" is refreshed twice
+- **THEN** `car/TBMS.current` keeps `mA` and the diag signal its diag unit on both loads, and the only warning logged per load is the existing `diag catalog: … the DBC wins: TBMS.current` line (none about units)
+- **Evidence:** `apps/server/test/catalog.test.ts` › "takes the table unit when no DBC or diag unit exists"
 
 ### Requirement: Diagnostic catalog problems per load
 A diagnostic catalog problem SHALL never stop the server or a catalog load: an unusable manifest SHALL be skipped, a missing or unparsable names file SHALL leave that manifest's fields with their catalog names, and a names entry that cannot apply SHALL be ignored (cases: design M3). Each problem SHALL be logged once per catalog load with the path and, for entries, the key. Origin: necessary consequence: missing metadata never blocks data display (as "DBC warnings per load", design H5).

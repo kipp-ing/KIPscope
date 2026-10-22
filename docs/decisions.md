@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-101: Row metadata only on ADX (2026-10-22)
+
+Open questions of `add-adx-row-metadata` (design Q-1 … Q-3), Jan: „alles ok".
+
+- **Decision:** `KIPSCOPE_COLUMN_UNIT` and `KIPSCOPE_SNA_TEXTS` work only with the ADX source; with ClickHouse either one is a config error. The unscoped signal list reads the unit in the same summarize as the scoped one. A signal whose only metadata is a table unit reads `<dataRef> · unit from the table` on the card.
+- **Why:** D-100 is about ADX tables; ClickHouse support would double the server work and change the conformance suite. One query text for both list modes; `no DBC entry` next to a unit reads as "no metadata".
+
 ## D-100: Units and SNA from the ADX table instead of a metadata file (2026-10-22)
 
 Jan doubted that D-099 is efficient: a metadata file needs an entry for every ADX name (~2.6k signals per vehicle, all platforms), and the caller does not know them all. The search tool team extended issue #1 (comment of 2026-10-22, M3): some ADX tables carry the metadata per row, a unit column and a text column holding either a state name or a sentinel (`SNA`, `INVLD`). Jan: „ja gut".
