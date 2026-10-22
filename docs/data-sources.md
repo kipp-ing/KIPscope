@@ -12,8 +12,9 @@ A source is the database the server reads signals and events from. The server ta
 - **ID:** a signal's ID is `<dataRef>/<name>`. A data ref must be non-empty and contain no `/`; the name must be non-empty. The catalog skips other listed entries with one warning per load.
 - **Times:** int64 nanoseconds since 1970-01-01T00:00:00Z (UTC), `bigint` inside the server, decimal strings on the wire; exact to the source's own resolution (ClickHouse `DateTime64(9)`: 1 ns; ADX `datetime`: 100 ns). Times before 1970 work; the server accepts `TIME_MIN` (1900-01-01) … `TIME_MAX` (2262-04-11).
 - **Values:** 64-bit floats.
-- **SNA** (signal not available): the server passes each signal's SNA ranges (closed intervals of stored values, from the DBC); the adapter reports such a point with value `null` and counts it apart in buckets. The adapter never decides what SNA is.
-- **Text:** a string per row, empty when the row has none (state names). `listSignals` flags each signal that has some non-empty text (`text: true`); for those signals `raw`, `before` and `after` also return each point's text.
+- **SNA** (signal not available): the server passes each signal's SNA ranges (closed intervals of stored values, from the DBC); the adapter reports such a point with value `null` and counts it apart in buckets. The adapter never decides what SNA is, beyond the configured SNA texts: on ADX only, `KIPSCOPE_SNA_TEXTS` names row texts that mean SNA (matched exactly and case-sensitively, `SNA` is not `sna` or ` SNA`); such a row is SNA in every value query like a value in an SNA range (value `null`, counted apart in buckets, left out of state changes). Row-based methods (`raw` with `limit`, `count`) still count those rows as rows.
+- **Text:** a string per row, empty when the row has none (state names). `listSignals` flags each signal that has some non-empty text (`text: true`); SNA texts do not count as text, so a signal whose only texts are SNA texts has no `text` flag. For text signals `raw`, `before` and `after` also return each point's text.
+- **Unit:** `listSignals` may give a signal a `unit` (ADX with `KIPSCOPE_COLUMN_UNIT`: a non-empty unit of its rows, per data ref). The catalog uses it only where neither a DBC entry nor a diagnostic catalog gives a unit.
 - **Events** (optional table): rows (data ref, time, source, kind, name, value, text, detail). Kinds KIPscope knows: `dtc` (a fault code; `value` is its ISO 14229 status byte), `state` (a state of a source, `detail` `from <state>` on a change), `nrc` (a refused diagnostic request), `isotp` (transport). From them the server derives a category per event (DTC `active`, `pending`, `stored`, …; state `change` or `snapshot`; `refused`, `transport`, `other`), see the [events spec](../openspec/specs/events/spec.md). A source without an events table has no events; nothing else changes.
 - **Rows without a time** are never returned by any method.
 
@@ -72,7 +73,7 @@ Twelve methods take an optional `scope` before `abort`; section "Scope" below sa
 |---|---|---|---|---|---|
 | `info` | required | kind, database, table, events table label; shown by `/api/meta` and the footer | — | — | both |
 | `ping` | required | resolves when the source answers; never queued | — | — | both |
-| `listSignals` | required | every (data ref, name) with a `text` flag | — | — | both |
+| `listSignals` | required | every (data ref, name) with a `text` flag (SNA texts do not count as text) and optionally a `unit` | — | — | both |
 | `raw` | required | points in `[from, to)`, ascending; with `limit` the earliest `limit` | — | — | both |
 | `before` / `after` | required | last point strictly before `t` / first point at or after `t` | — | — | both |
 | `buckets` | required | non-empty buckets on the grid `k · width` (floor, also before 1970), ordered by start: valid count, SNA count, mean/min/max of valid points (`null` iff count is 0) | — | — | both |
@@ -121,7 +122,7 @@ A scope is one data ref and one half-open time window `[from, to)`, `from < to` 
 
 | Method | Signature | With a scope |
 |---|---|---|
-| `listSignals` (required) | `listSignals(scope?, abort?)` | signals of `scope.dataRef` with at least one row in the scope; `text` from those rows |
+| `listSignals` (required) | `listSignals(scope?, abort?)` | signals of `scope.dataRef` with at least one row in the scope; `text` and `unit` from those rows |
 | `before` (required) | `before(ref, t, scope?, abort?)` | last point in `[scope.from, min(t, scope.to))` |
 | `after` (required) | `after(ref, t, scope?, abort?)` | first point in `[max(t, scope.from), scope.to)` |
 | `refBuckets` (required) | `refBuckets(dataRef, width, times, scope?, abort?)` | non-empty buckets of the rows in the scope (an edge may cut a bucket) |
@@ -188,6 +189,8 @@ The footer shows a new kind as given (`memory fixture`); `adx` and `clickhouse` 
    ```
 
    ADX inlines the function, so KIPscope's filters still reach the table (emulator: a count through a renaming function 26 ms, the table itself 23 ms). Other column names work through the `KIPSCOPE_COLUMN_*` variables; names that are KQL keywords (`kind`, `time`) are fine, every name is quoted as `['name']`. A missing events table means no events; a missing text column means no text signals.
+
+   Row metadata (ADX only): with `KIPSCOPE_COLUMN_UNIT=unit` the signal list reads each signal's unit in the `summarize` it already runs, `take_anyif(['unit'], isnotempty(['unit']))` per data ref and signal, scoped and unscoped, in one query; the card's source line then reads `<data ref> · unit from the table` when no DBC entry or diagnostic catalog names the signal. A DBC or diag unit always wins. With `KIPSCOPE_SNA_TEXTS=SNA,INVLD` a row whose text is one of these is SNA (see Data model), passed to every value query as the parameter `snat`. A missing unit column fails the catalog load (`SEM0100` naming it); SNA texts without the text column fail it too.
 5. In `.env`:
 
    ```sh
@@ -195,6 +198,8 @@ The footer shows a new kind as given (`memory fixture`); `adx` and `clickhouse` 
    KIPSCOPE_ADX_CLUSTER=https://<cluster>.<region>.kusto.windows.net
    KIPSCOPE_ADX_DATABASE=<database>
    # KIPSCOPE_TABLE=KIPscopeSignals   # and other mapping variables, if needed
+   # KIPSCOPE_COLUMN_UNIT=unit          # ADX only: unit per row
+   # KIPSCOPE_SNA_TEXTS=SNA,INVLD       # ADX only: row texts that mean SNA
    ```
 
 6. Start the server: `pnpm --filter @kipscope/server dev`.
@@ -254,6 +259,8 @@ Every variable `apps/server/src/config.ts` reads. The server reads them from the
 | `KIPSCOPE_COLUMN_TIME` | both | ClickHouse `utc`, ADX `timestamp` | |
 | `KIPSCOPE_COLUMN_VALUE` | both | `value` | |
 | `KIPSCOPE_COLUMN_TEXT` | both | `text` | missing column: no text signals |
+| `KIPSCOPE_COLUMN_UNIT` | adx | none | ADX only (refused with ClickHouse); identifier, empty = none; the unit column, read with `take_anyif` per data ref and signal; missing column: the catalog load fails |
+| `KIPSCOPE_SNA_TEXTS` | adx | none | ADX only (refused with ClickHouse); comma list, each entry trimmed, empty entries and repeats dropped, empty list = none; row texts that mean SNA, matched exactly and case-sensitively; needs the text column (missing: the catalog load fails) |
 | `KIPSCOPE_EVENTS_TABLE` | both | `events` | same database, data-ref and time columns as the signals table; missing: no events |
 | `KIPSCOPE_EVENT_COLUMN_SOURCE` | both | `source` | |
 | `KIPSCOPE_EVENT_COLUMN_KIND` | both | `kind` | |

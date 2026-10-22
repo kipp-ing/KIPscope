@@ -70,10 +70,13 @@ export function describeConformance(target: ConformanceTarget): void {
       });
 
       it("lists signals with their text flag", async () => {
-        const listed = (await source.listSignals())
+        const raw = await source.listSignals();
+        const listed = raw
           .map((s) => ({ dataRef: s.dataRef, name: s.name, text: s.text === true }))
           .sort(byId);
         expect(listed).toEqual(FIXTURE_SIGNALS);
+        // No unit without a unit column (add-adx-row-metadata, data-source "No unit without a unit column").
+        expect(raw.every((s) => !("unit" in s))).toBe(true);
       });
 
       it("never returns rows without a time", async () => {

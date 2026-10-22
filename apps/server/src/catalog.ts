@@ -119,7 +119,7 @@ export class Catalog {
     const textIds = new Set(refs.filter((r) => r.text).map((r) => signalId(r.dataRef, r.name)));
     // Names with data that a DBC and a diagnostic catalog both define; the DBC wins (design M5).
     const both = new Set<string>();
-    const entries = refs.map(({ dataRef, name }) => {
+    const entries = refs.map(({ dataRef, name, unit }) => {
       const info: SignalInfo = { id: signalId(dataRef, name), dataRef, name };
       const meta = metadata.get(name);
       if (!meta) {
@@ -127,12 +127,15 @@ export class Catalog {
         // No description, no SNA: invalid rows are never stored (design M1).
         if (d?.unit) info.unit = d.unit;
         if (d) info.diag = d.diag;
+        // The table's unit (per data ref) only where DBC and diag give none (add-adx-row-metadata R5).
+        if (info.unit === undefined && unit) info.unit = unit;
         return withStates(info, textIds);
       }
       if (diag.has(name)) both.add(name);
       if (meta.description) info.description = meta.description;
       if (meta.unit) info.unit = meta.unit;
       info.dbc = dbcInfo(meta);
+      if (info.unit === undefined && unit) info.unit = unit;
       if (meta.sna) {
         const { values, tolerance } = meta.sna;
         info.sna = values;
@@ -155,7 +158,8 @@ export class Catalog {
     for (const info of entries) {
       const name = shown.get(info.name);
       if (name !== undefined && name !== info.name) info.displayName = name;
-      // Group (design G5): per entry; metadata is keyed by name, so every data reference agrees.
+      // Group (design G5): per entry; DBC metadata is keyed by name, so every data reference agrees
+      // (unlike the table unit, which is per data ref).
       const sender = metadata.get(info.name)?.sender;
       const group = assignGroup(
         info.name,

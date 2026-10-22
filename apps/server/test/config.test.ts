@@ -318,6 +318,51 @@ describe("loadConfig", () => {
     KIPSCOPE_OIDC_AUDIENCE: "kipscope",
   };
 
+  it("reads the ADX row metadata settings", () => {
+    // add-adx-row-metadata R1: unit column and SNA texts, ADX only.
+    const adxEnv = {
+      KIPSCOPE_SOURCE: "adx",
+      KIPSCOPE_ADX_CLUSTER: "https://help.kusto.windows.net",
+      KIPSCOPE_ADX_DATABASE: "Samples",
+    };
+    // (a) the column, and the list trimmed, without empty entries and repeats, first occurrence kept.
+    const a = loadConfig(
+      { ...adxEnv, KIPSCOPE_COLUMN_UNIT: "unit", KIPSCOPE_SNA_TEXTS: " SNA, INVLD,,SNA " },
+      "/repo/kipscope",
+    );
+    expect(a.mapping.unit).toBe("unit");
+    expect(a.mapping.snaTexts).toEqual(["SNA", "INVLD"]);
+    // (b) neither: the keys are absent, not undefined.
+    const b = loadConfig(adxEnv, "/repo/kipscope");
+    expect(b.mapping).not.toHaveProperty("unit");
+    expect(b.mapping).not.toHaveProperty("snaTexts");
+    // (c) an empty column and a list of only separators and blanks count as unset.
+    const c = loadConfig(
+      { ...adxEnv, KIPSCOPE_COLUMN_UNIT: "", KIPSCOPE_SNA_TEXTS: " , " },
+      "/repo/kipscope",
+    );
+    expect(c.mapping).not.toHaveProperty("unit");
+    expect(c.mapping).not.toHaveProperty("snaTexts");
+    // (d) the column is an identifier.
+    expect(() =>
+      loadConfig({ ...adxEnv, KIPSCOPE_COLUMN_UNIT: "bad name" }, "/repo/kipscope"),
+    ).toThrow(/KIPSCOPE_COLUMN_UNIT/);
+    // (e), (f) ClickHouse refuses either one, naming it.
+    expect(() => loadConfig({ ...base, KIPSCOPE_COLUMN_UNIT: "unit" }, "/repo/kipscope")).toThrow(
+      "KIPSCOPE_COLUMN_UNIT: only with KIPSCOPE_SOURCE=adx",
+    );
+    expect(() => loadConfig({ ...base, KIPSCOPE_SNA_TEXTS: "SNA" }, "/repo/kipscope")).toThrow(
+      "KIPSCOPE_SNA_TEXTS: only with KIPSCOPE_SOURCE=adx",
+    );
+    // Unset or empty with ClickHouse is no error, and its mapping has neither key.
+    const clickhouse = loadConfig(
+      { ...base, KIPSCOPE_COLUMN_UNIT: "", KIPSCOPE_SNA_TEXTS: "" },
+      "/repo/kipscope",
+    );
+    expect(clickhouse.mapping).not.toHaveProperty("unit");
+    expect(clickhouse.mapping).not.toHaveProperty("snaTexts");
+  });
+
   it("reads the identity settings", () => {
     // Without the variable: no login.
     expect(loadConfig(base, "/repo/kipscope").identity).toEqual({ kind: "none" });

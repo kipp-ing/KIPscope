@@ -6,9 +6,10 @@
 import { type BucketSeries, decodeTimes, type RawSeries } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { AdxSource } from "../src/adx.ts";
-import type { Scope, SeriesRef, SourceAdapter } from "../src/datasource.ts";
+import type { TableMapping } from "../src/config.ts";
+import type { Scope, SeriesRef, SourceAdapter, StateChangeRule } from "../src/datasource.ts";
 import { completeSource, nativeMethods } from "../src/fallbacks.ts";
-import type { KustoParam } from "../src/kusto.ts";
+import { KustoError, type KustoParam } from "../src/kusto.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
 import { querySeries } from "../src/series.ts";
 import { adxEventMapping, adxMapping } from "./adxdb.ts";
@@ -249,5 +250,189 @@ describe("ADX queries on a fake client (speed-up-adx A1, A3)", () => {
       "stateChanges",
       "events",
     ]);
+  });
+});
+
+/** A Kusto client that records every query and answers by `answer(csl, index)` (it may throw). */
+function scriptedAdapter(
+  mapping: Partial<TableMapping>,
+  answer: (csl: string, index: number) => unknown[][] = (csl) =>
+    // `series` needs its count row (design A3); every other query answers no rows.
+    /toscalar\(/.test(csl) ? [["n", null, null, null, 0, null, null, null]] : [],
+) {
+  const sent: Sent[] = [];
+  const fake = {
+    query: async (csl: string, params: Record<string, KustoParam>) => {
+      sent.push({ csl, params });
+      return answer(csl, sent.length - 1);
+    },
+    ping: async () => {},
+  };
+  return {
+    adapter: new AdxSource(fake as never, { ...adxMapping, ...mapping }, adxEventMapping),
+    sent,
+  };
+}
+
+const flat = (csl: string) => csl.replace(/\s+/g, " ");
+
+describe("ADX row metadata on a fake client (add-adx-row-metadata)", () => {
+  it("reads the unit in the signal list query", async () => {
+    const unitCall =
+      /summarize[^|]*countif\([^|]*take_anyif\(\['unit'\], isnotempty\(\['unit'\]\)\)[^|]* by /;
+    for (const withScope of [undefined, scope]) {
+      const label = withScope ? "scoped" : "unscoped";
+      const withUnit = scriptedAdapter({ unit: "unit" });
+      await withUnit.adapter.listSignals(...(withScope ? [withScope] : []));
+      expect(withUnit.sent.length, `${label} with unit: one query`).toBe(1);
+      const text = flat((withUnit.sent[0] as Sent).csl);
+      // One summarize computes the text flag and the unit.
+      expect(text, label).toMatch(unitCall);
+      if (withScope) {
+        // The scope filters come first, as parameters.
+        expect(
+          text.startsWith(
+            "['signals'] | where ['dataref'] == sref and ['timestamp'] >= sfrom and ['timestamp'] < sto",
+          ),
+        ).toBe(true);
+        expect((withUnit.sent[0] as Sent).params.sref).toEqual({ type: "string", value: "conf-a" });
+      }
+
+      const without = scriptedAdapter({});
+      await without.adapter.listSignals(...(withScope ? [withScope] : []));
+      expect(without.sent.length, `${label} without unit: one query`).toBe(1);
+      expect((without.sent[0] as Sent).csl, label).not.toContain("take_anyif");
+    }
+
+    // The unit column of the answer (after the text flag): trimmed, empty or null gives no unit.
+    const { adapter } = scriptedAdapter({ unit: "unit" }, () => [
+      ["conf-a", "A.B", false, "km/h"],
+      ["conf-a", "C.D", true, "  mph  "],
+      ["conf-a", "E.F", true, ""],
+      ["conf-a", "G.H", false, "   "],
+      ["conf-a", "I.J", false, null],
+    ]);
+    const listed = await adapter.listSignals();
+    expect(listed.map((x) => `${x.name}|${x.unit ?? "-"}|${x.text === true}`)).toEqual([
+      "A.B|km/h|false",
+      "C.D|mph|true",
+      "E.F|-|true",
+      "G.H|-|false",
+      "I.J|-|false",
+    ]);
+    for (const x of listed.filter((y) => y.unit === undefined))
+      expect(x).not.toHaveProperty("unit");
+  });
+
+  it("passes the SNA texts to every value query", async () => {
+    const texts = ["SNA", "INVLD"];
+    const mode: SeriesRef = {
+      dataRef: "conf-a",
+      name: "State.MODE",
+      sna: [{ lo: 14.5, hi: 15.5 }],
+    };
+    const labels: StateChangeRule = { kind: "labels", values: [0, 3], tolerance: 0.5 };
+    const calls: [string, (a: AdxSource, s?: Scope) => Promise<unknown>][] = [
+      ["raw", (a) => a.raw(ramp, B, B + S)],
+      ["raw text with limit", (a) => a.raw(door, B, B + S, 10)],
+      ["before", (a, s) => a.before(ramp, B + S, s)],
+      ["after", (a, s) => a.after(door, B, s)],
+      ["series raw", (a, s) => a.series(ramp, B, B + S, 10, 125n * MS, s)],
+      ["series with a range", (a, s) => a.series(mode, B, B + S, 10, 125n * MS, s)],
+      ["buckets", (a) => a.buckets(ramp, B, B + 10n * S, S)],
+      ["stateChanges labels", (a, s) => a.stateChanges(mode, labels, 100, s)],
+      ["stateChanges text", (a, s) => a.stateChanges(door, { kind: "text" }, 100, s)],
+      ["listSignals", (a, s) => a.listSignals(s)],
+    ];
+    for (const extra of [{}, { unit: "unit" }]) {
+      for (const withScope of [undefined, scope]) {
+        const run = scriptedAdapter({ snaTexts: texts, ...extra });
+        const plain = scriptedAdapter({ ...extra });
+        for (const [label, call] of calls) {
+          const before = run.sent.length;
+          await call(run.adapter, withScope);
+          expect(run.sent.length, `${label} sent a query`).toBeGreaterThan(before);
+          for (const { csl, params } of run.sent.slice(before)) {
+            expect(flat(csl), label).toContain("tostring(['text']) in (snat)");
+            expect(params.snat, label).toEqual({ type: "dynamic", value: texts });
+          }
+          const beforePlain = plain.sent.length;
+          await call(plain.adapter, withScope);
+          for (const { csl, params } of plain.sent.slice(beforePlain)) {
+            expect(csl, `${label} without the list`).not.toContain("snat");
+            expect(Object.keys(params), `${label} without the list`).not.toContain("snat");
+          }
+        }
+      }
+    }
+
+    // Together with a DBC range: both parts, joined by `or`.
+    const both = scriptedAdapter({ snaTexts: texts });
+    await both.adapter.raw(mode, B, B + S);
+    const text = flat((both.sent[0] as Sent).csl);
+    expect(text).toContain("v_ >= real(14.5) and v_ <= real(15.5)");
+    expect(text).toContain("tostring(['text']) in (snat)");
+    expect(text).toMatch(
+      /real\(15\.5\)\) or tostring\(\['text'\]\) in \(snat\)|tostring\(\['text'\]\) in \(snat\) or \(v_ >= real\(14\.5\)/,
+    );
+  });
+
+  it("falls back without the text column", async () => {
+    // The first query fails as Kusto does for an unknown column; later ones answer rows.
+    const missing = (name: string) =>
+      new KustoError(
+        `Semantic error: SEM0100: 'summarize' operator: Failed to resolve scalar expression named '${name}'`,
+        400,
+      );
+    const rowsAfter =
+      (rows: unknown[][], column = "nope") =>
+      (_csl: string, index: number) => {
+        if (index === 0) throw missing(column);
+        return rows;
+      };
+
+    // SNA texts need the text column: a clear error, no fallback query.
+    for (const extra of [{}, { unit: "unit" }]) {
+      const { adapter, sent } = scriptedAdapter(
+        { text: "nope", snaTexts: ["SNA"], ...extra },
+        rowsAfter([]),
+      );
+      await expect(adapter.listSignals()).rejects.toThrow(
+        "KIPSCOPE_SNA_TEXTS needs the text column 'nope' (KIPSCOPE_COLUMN_TEXT), which does not exist",
+      );
+      expect(sent.length).toBe(1);
+    }
+
+    // Only a unit column: the units are still read, no text signals.
+    const unitOnly = scriptedAdapter(
+      { text: "nope", unit: "unit" },
+      rowsAfter([
+        ["a", "X.Y", "km/h"],
+        ["b", "X.Y", " "],
+      ]),
+    );
+    const listed = await unitOnly.adapter.listSignals();
+    expect(unitOnly.sent.length).toBe(2);
+    const second = flat((unitOnly.sent[1] as Sent).csl);
+    expect(second).toContain("take_anyif(['unit'], isnotempty(['unit']))");
+    expect(second).not.toContain("countif");
+    expect(second).not.toContain("distinct");
+    expect(listed.length).toBe(2);
+    expect(listed.every((x) => x.text !== true)).toBe(true);
+    expect(listed.map((x) => `${x.dataRef}/${x.name}|${x.unit ?? "-"}`)).toEqual([
+      "a/X.Y|km/h",
+      "b/X.Y|-",
+    ]);
+
+    // Neither: today's distinct query.
+    const neither = scriptedAdapter({ text: "nope" }, rowsAfter([["a", "X.Y"]]));
+    expect(await neither.adapter.listSignals()).toEqual([{ dataRef: "a", name: "X.Y" }]);
+    expect(neither.sent.length).toBe(2);
+    expect(flat((neither.sent[1] as Sent).csl)).toContain("distinct");
+
+    // A missing unit column is no fallback: the error stands.
+    const noUnit = scriptedAdapter({ unit: "nope" }, rowsAfter([], "nope"));
+    await expect(noUnit.adapter.listSignals()).rejects.toThrow(/nope/);
+    expect(noUnit.sent.length).toBe(1);
   });
 });

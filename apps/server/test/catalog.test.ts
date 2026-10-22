@@ -399,6 +399,65 @@ describe("Catalog diag catalogs (stubbed source)", () => {
   });
 });
 
+describe("Catalog table units (stubbed source, add-adx-row-metadata)", () => {
+  const DIAG_TEMP = "TBMS.DT_Pack.PRES_Temp_2Byte"; // fixture diag field with unit "°C"
+  const listed = [
+    { dataRef: "car", name: "TBMS.current", unit: "A" },
+    { dataRef: "car", name: "Nounit_600h.P", unit: "bar" },
+    { dataRef: "car", name: "Nodbc_500h.RAW", unit: "V" },
+    { dataRef: "a", name: "X.Y", unit: "km/h" },
+    { dataRef: "b", name: "X.Y", unit: "mph" },
+    { dataRef: "car", name: DIAG_TEMP, unit: "zz" },
+    { dataRef: "car", name: "Plain.SIG" },
+  ];
+
+  it("takes the table unit when no DBC or diag unit exists", async () => {
+    const warnings: string[] = [];
+    const dbc = new Map<string, DbcSignal>([
+      ["TBMS.current", { file: "x.dbc", message: "TBMS", messageId: 1, unit: "mA" }],
+      ["Nounit_600h.P", { file: "x.dbc", message: "Nounit_600h", messageId: 0x600 }],
+    ]);
+    const catalog = new Catalog(
+      { listSignals: async () => listed } as unknown as DataSource,
+      async () => dbc,
+      undefined,
+      { warn: (m) => warnings.push(m) },
+      (warn) => loadDiagCatalogs(testDiagCatalogs, warn),
+    );
+    // Refreshed twice: the same result and the same warnings on every load.
+    for (const load of [1, 2]) {
+      await catalog.refresh();
+      const note = `load ${load}`;
+      // A DBC unit wins over the listed one (and the DBC entry wins over the diag field).
+      expect(catalog.get("car/TBMS.current")?.unit, note).toBe("mA");
+      expect(catalog.get("car/TBMS.current")?.dbc, note).toBeDefined();
+      expect(catalog.get("car/TBMS.current"), note).not.toHaveProperty("diag");
+      // A DBC entry without unit takes the table's and keeps its dbc.
+      expect(catalog.get("car/Nounit_600h.P")?.unit, note).toBe("bar");
+      expect(catalog.get("car/Nounit_600h.P")?.dbc, note).toBeDefined();
+      // Neither DBC nor diag: the table's unit, and no dbc or diag.
+      const nodbc = catalog.get("car/Nodbc_500h.RAW");
+      expect(nodbc?.unit, note).toBe("V");
+      expect(nodbc, note).not.toHaveProperty("dbc");
+      expect(nodbc, note).not.toHaveProperty("diag");
+      // One name in two data refs: each its own unit.
+      expect(catalog.get("a/X.Y")?.unit, note).toBe("km/h");
+      expect(catalog.get("b/X.Y")?.unit, note).toBe("mph");
+      // A diag unit wins over the listed one.
+      const diag = catalog.get(`car/${DIAG_TEMP}`);
+      expect(diag?.unit, note).toBe("°C");
+      expect(diag?.diag, note).toBeDefined();
+      // No listed unit, no unit key.
+      expect(catalog.get("car/Plain.SIG"), note).not.toHaveProperty("unit");
+    }
+    // Only the existing DBC-wins line per load; nothing about units.
+    expect(warnings).toEqual([
+      "diag catalog: 1 signals also in a DBC, the DBC wins: TBMS.current",
+      "diag catalog: 1 signals also in a DBC, the DBC wins: TBMS.current",
+    ]);
+  });
+});
+
 describe("Catalog states (stubbed source)", () => {
   const stub = (texts: string[], ...names: string[]) =>
     ({

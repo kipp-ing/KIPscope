@@ -46,6 +46,23 @@ describe("documents", () => {
     expect(missingInExample, "missing in .env.example").toEqual([]);
   });
 
+  it("documents the row metadata", () => {
+    // add-adx-row-metadata: units and SNA texts from the ADX table.
+    const guide = read("docs/data-sources.md");
+    const example = read(".env.example");
+    // The interface table's listSignals row names the unit.
+    const row = guide.split("\n").find((line) => line.startsWith("| `listSignals` | required"));
+    expect(row, "interface table has a listSignals row").toBeDefined();
+    expect(row, "the listSignals row names unit").toMatch(/\bunit\b/);
+    expect(guide).toContain("take_anyif");
+    for (const key of ["KIPSCOPE_COLUMN_UNIT", "KIPSCOPE_SNA_TEXTS"]) {
+      expect(guide, `docs/data-sources.md names ${key}`).toContain(key);
+      expect(example, `.env.example names ${key}`).toContain(key);
+    }
+    expect(guide, 'docs/data-sources.md says "ADX only"').toContain("ADX only");
+    expect(example, '.env.example says "ADX only"').toContain("ADX only");
+  });
+
   it("documents the deployment: Ping, the own adapter, the rights and the trust boundary", () => {
     const deploy = read("docs/deploy.md");
     for (const word of [

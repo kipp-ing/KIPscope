@@ -85,6 +85,21 @@ describe("explorer formatting", () => {
     );
     expect(formatSource({ ...base, dbc })).toBe("smart451 · DBC");
     expect(formatSource(base)).toBe("smart451 · no DBC entry");
+    // add-adx-row-metadata R6: a unit with neither DBC entry nor diag field can only come from the table.
+    expect(formatSource({ ...base, unit: "km/h" })).toBe("smart451 · unit from the table");
+    expect(formatSource({ ...base, unit: "km/h", dbc })).toBe("smart451 · DBC");
+    expect(formatSource({ ...base, unit: "km/h", dbc: { ...dbc, file: "h-can.dbc" } })).toBe(
+      "smart451 · h-can.dbc",
+    );
+    const diag = {
+      file: "test-diag.manifest.json",
+      ecu: "TBMS",
+      group: "DT_Pack",
+      did: 516,
+      field: "DT_Pack_Current",
+      kind: "number" as const,
+    };
+    expect(formatSource({ ...base, unit: "A", diag })).toBe("smart451 · test-diag (TBMS diag)");
   });
 
   it("lists the windows showing a signal", () => {

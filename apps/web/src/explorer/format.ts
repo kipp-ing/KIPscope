@@ -66,12 +66,14 @@ export function formatMessageId(id: number): string {
 
 /**
  * `<dataRef> · <file>`, `<dataRef> · DBC` without file, a diag signal's catalog as
- * `<dataRef> · <manifest> (<ecu> diag)` (D-061), `<dataRef> · no DBC entry` without either.
+ * `<dataRef> · <manifest> (<ecu> diag)` (D-061); without either a unit can only come from the
+ * table (D-100), so `<dataRef> · unit from the table`, and `<dataRef> · no DBC entry` without a unit.
  */
 export function formatSource(signal: SignalInfo): string {
   const diag = signal.diag;
   if (!signal.dbc && diag)
     return `${signal.dataRef} · ${diag.file.replace(/\.manifest\.json$/, "")} (${diag.ecu} diag)`;
+  if (!signal.dbc && signal.unit) return `${signal.dataRef} · unit from the table`;
   if (!signal.dbc) return `${signal.dataRef} · no DBC entry`;
   return `${signal.dataRef} · ${signal.dbc.file ?? "DBC"}`;
 }

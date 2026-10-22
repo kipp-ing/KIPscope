@@ -33,14 +33,6 @@ function realLiteral(n: number): string {
   return `real(${n.toString()})`;
 }
 
-/** `true` when the value `v_` lies in one of the ref's closed SNA ranges; `false` without ranges. */
-function isSna(ref: SeriesRef): string {
-  if (ref.sna.length === 0) return "false";
-  return ref.sna
-    .map((r) => `(v_ >= ${realLiteral(r.lo)} and v_ <= ${realLiteral(r.hi)})`)
-    .join(" or ");
-}
-
 /**
  * Semantic error SEM0100 (unknown table, column or function) naming `name`; Kusto quotes a
  * bracket-quoted name as `'["name"]'`, a bare one as `'name'`.
@@ -104,6 +96,22 @@ export class AdxSource implements SourceAdapter {
     };
   }
 
+  /** `snat` (the SNA texts, add-adx-row-metadata R3) when configured; else none. */
+  private get snaParams(): Params {
+    const texts = this.c.snaTexts;
+    return texts ? { snat: { type: "dynamic", value: texts } } : {};
+  }
+
+  /**
+   * `true` when the row is SNA: the value `v_` lies in one of the ref's closed SNA ranges, or the
+   * row text is one of the SNA texts (binds `snat`, R3); `false` when neither exists.
+   */
+  private isSna(ref: SeriesRef): string {
+    const parts = ref.sna.map((r) => `(v_ >= ${realLiteral(r.lo)} and v_ <= ${realLiteral(r.hi)})`);
+    if (this.c.snaTexts) parts.push(`tostring(${q(this.c.text)}) in (snat)`);
+    return parts.join(" or ") || "false";
+  }
+
   /** Rows of one signal with a time; binds `ref` and `sig`. */
   private get signalFilter(): string {
     return `${q(this.c.dataRef)} == ref and ${q(this.c.signal)} == sig and isnotnull(${q(this.c.time)})`;
@@ -113,7 +121,7 @@ export class AdxSource implements SourceAdapter {
   private pointProjection(ref: SeriesRef): string {
     const t = q(this.c.time);
     const text = ref.text ? `, x_ = tostring(${q(this.c.text)})` : "";
-    return `project t_ = tostring(${ns(t)}), v_ = iff(${isSna(ref)}, real(null), v_)${text}`;
+    return `project t_ = tostring(${ns(t)}), v_ = iff(${this.isSna(ref)}, real(null), v_)${text}`;
   }
 
   private point = (row: unknown[]): RawPoint => {
@@ -127,22 +135,46 @@ export class AdxSource implements SourceAdapter {
     const ref = q(this.c.dataRef);
     const sig = q(this.c.signal);
     const order = `order by ${ref} asc, ${sig} asc`;
+    const x = q(this.c.text);
+    const u = this.c.unit === undefined ? undefined : q(this.c.unit);
+    // Unit (any non-empty one of the rows) and SNA texts only when configured (add-adx-row-metadata R2).
+    const take = u ? `u_ = take_anyif(${u}, isnotempty(${u}))` : "";
+    const unit = u ? `, ${take}` : "";
+    const unitColumn = u ? ", u_ = tostring(u_)" : "";
+    const notSna = this.c.snaTexts ? ` and not(tostring(${x}) in (snat))` : "";
     let rows: unknown[][];
+    let hasText = true;
     try {
       rows = await this.client.query(
-        `${src} | summarize n_ = countif(isnotempty(${q(this.c.text)})) by ${ref}, ${sig}
-         | project ${ref}, ${sig}, x_ = n_ > 0 | ${order}`,
-        params,
+        `${src} | summarize n_ = countif(isnotempty(${x})${notSna})${unit} by ${ref}, ${sig}
+         | project ${ref}, ${sig}, x_ = n_ > 0${unitColumn} | ${order}`,
+        { ...params, ...this.snaParams },
         abort,
       );
     } catch (error) {
-      // A missing text column means no text signals (design C6).
+      // A missing text column means no text signals (design C6); SNA texts need it (R2).
       if (!isMissing(error, this.c.text)) throw error;
-      rows = await this.client.query(`${src} | distinct ${ref}, ${sig} | ${order}`, params, abort);
+      if (this.c.snaTexts) {
+        throw new Error(
+          `KIPSCOPE_SNA_TEXTS needs the text column '${this.c.text}' (KIPSCOPE_COLUMN_TEXT), which does not exist`,
+        );
+      }
+      hasText = false;
+      rows = await this.client.query(
+        u
+          ? `${src} | summarize ${take} by ${ref}, ${sig}
+             | project ${ref}, ${sig}${unitColumn} | ${order}`
+          : `${src} | distinct ${ref}, ${sig} | ${order}`,
+        params,
+        abort,
+      );
     }
-    return rows.map(([dataRef, name, text]): SourceSignal => {
+    return rows.map((row): SourceSignal => {
+      const [dataRef, name] = row;
       const s: SourceSignal = { dataRef: dataRef as string, name: name as string };
-      if (text === true) s.text = true;
+      if (hasText && row[2] === true) s.text = true;
+      const value = u ? String(row[hasText ? 3 : 2] ?? "").trim() : "";
+      if (value) s.unit = value;
       return s;
     });
   }
@@ -165,6 +197,7 @@ export class AdxSource implements SourceAdapter {
         t0: time(from),
         t1: time(to),
         ...(limit === undefined ? {} : { lim: long(limit) }),
+        ...this.snaParams,
       },
       abort,
     );
@@ -184,7 +217,7 @@ export class AdxSource implements SourceAdapter {
     const [row] = await this.client.query(
       `${src} | where ${this.signalFilter} and ${t} ${cond} at_
        | extend v_ = todouble(${q(this.c.value)}) | top 1 by ${t} ${dir} | ${this.pointProjection(ref)}`,
-      { ref: str(ref.dataRef), sig: str(ref.name), at_: time(at), ...params },
+      { ref: str(ref.dataRef), sig: str(ref.name), at_: time(at), ...params, ...this.snaParams },
       abort,
     );
     return row && this.point(row);
@@ -228,7 +261,7 @@ export class AdxSource implements SourceAdapter {
     const value = `extend v_ = todouble(${q(this.c.value)})`;
     const text = ref.text ? `tostring(${q(this.c.text)})` : `""`;
     const point = (k: string, c: string) =>
-      `project k_ = "${k}", t_ = tostring(${ns(t)}), v_ = iff(${isSna(ref)}, real(null), v_),
+      `project k_ = "${k}", t_ = tostring(${ns(t)}), v_ = iff(${this.isSna(ref)}, real(null), v_),
            x_ = ${text}, c_ = ${c}, m_ = long(null), lo_ = real(null), hi_ = real(null)`;
     const rows = await this.client.query(
       `let src_ = ${src};
@@ -244,7 +277,7 @@ export class AdxSource implements SourceAdapter {
          (src_ | where cnt_ <= lim and ${this.signalFilter} and ${t} >= t1 | ${value}
              | top 1 by ${t} asc | ${point("a", "long(null)")}),
          (rows_ | where cnt_ > lim | extend x_ = ${ns(t)}, v_ = todouble(${q(this.c.value)})
-             | extend z_ = ${isSna(ref)}
+             | extend z_ = ${this.isSna(ref)}
              | summarize c_ = countif(not(z_)), m_ = countif(z_), a_ = avgif(v_, not(z_)),
                  lo_ = minif(v_, not(z_)), hi_ = maxif(v_, not(z_)) by b_ = ${grid("x_", "w")}
              | project k_ = "k", t_ = tostring(b_), v_ = iff(c_ == 0, real(null), a_), x_ = "", c_, m_,
@@ -258,6 +291,7 @@ export class AdxSource implements SourceAdapter {
         lim: long(target),
         w: long(width),
         ...params,
+        ...this.snaParams,
       },
       abort,
     );
@@ -306,13 +340,20 @@ export class AdxSource implements SourceAdapter {
     const rows = await this.client.query(
       `${this.table} | where ${this.signalFilter} and ${t} >= t0 and ${t} < t1
        | extend x_ = ${ns(t)}, v_ = todouble(${q(this.c.value)})
-       | extend s_ = ${isSna(ref)}
+       | extend s_ = ${this.isSna(ref)}
        | summarize c_ = countif(not(s_)), n_ = countif(s_), a_ = avgif(v_, not(s_)),
            lo_ = minif(v_, not(s_)), hi_ = maxif(v_, not(s_)) by b_ = ${grid("x_", "w")}
        | order by b_ asc
        | project tostring(b_), c_, n_, iff(c_ == 0, real(null), a_), iff(c_ == 0, real(null), lo_),
            iff(c_ == 0, real(null), hi_)`,
-      { ref: str(ref.dataRef), sig: str(ref.name), t0: time(from), t1: time(to), w: long(width) },
+      {
+        ref: str(ref.dataRef),
+        sig: str(ref.name),
+        t0: time(from),
+        t1: time(to),
+        w: long(width),
+        ...this.snaParams,
+      },
       abort,
     );
     return rows.map(([b, count, sna, mean, min, max]) => ({
@@ -414,12 +455,12 @@ export class AdxSource implements SourceAdapter {
     }
     const rows = await this.client.query(
       `${src} | where ${this.signalFilter} | extend v_ = todouble(${q(this.c.value)})
-       | where not(${isSna(ref)}) | order by ${t} asc
+       | where not(${this.isSna(ref)}) | order by ${t} asc
        | extend t_ = ${t}, x_ = ${text}
        | extend pt_ = prev(t_), pv_ = prev(v_), px_ = prev(x_), rn_ = row_number()
        | where rn_ == 1 or ${changed} | take lim
        | project tostring(${ns("t_")}), v_, x_, iff(rn_ == 1, "", tostring(${ns("pt_")})), pv_, px_`,
-      { ref: str(ref.dataRef), sig: str(ref.name), lim: long(limit), ...params },
+      { ref: str(ref.dataRef), sig: str(ref.name), lim: long(limit), ...params, ...this.snaParams },
       abort,
     );
     return rows.map(([rt, v, x, pt, pv, px]): StateRow => {

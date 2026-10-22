@@ -9,11 +9,15 @@
  * - `KRenamed`  the signal rows under other column names (Device, Name, EventTime, Val, Txt) and the
  *               function `KSignals()` that renames them back to the default layout, for the test
  *               "reads through a stored function".
+ * - `KMeta`     dataref, signal, timestamp (datetime), value (real), text, unit      22 rows
+ *               row metadata (units per data ref, SNA texts) of add-adx-row-metadata R7, outside the
+ *               conformance fixture.
  *
  * Seeds only a loopback emulator: a non-loopback TEST_ADX_URL stops the script before anything is sent.
  * Run: docker compose --profile adx up -d && pnpm --filter @kipscope/server seed:adx
  */
 import {
+  B,
   FIXTURE_COUNTS,
   fixtureEvents,
   fixtureRows,
@@ -69,6 +73,40 @@ async function ingest(table: string, lines: string[]) {
   }
 }
 
+/**
+ * The 22 rows of `KMeta` (design R7 of add-adx-row-metadata), S = 1 s:
+ * - meta-a/Spd.V    n = 0 … 9 at B + n·S, value 10·n; n = 3, 4: value 255, text SNA; n = 7: value 254,
+ *                   text INVLD; unit km/h for n <= 4, empty after
+ * - meta-a/Gear.POS k = 0 … 3 at B + 10·k·S, value k, text P, D, SNA, R, no unit
+ * - meta-a/Flag.ERR k = 0 … 4 at B + k·S, value k mod 2, text SNA at k = 2, no unit
+ * - meta-b/Spd.V    k = 0 … 2 at B + k·S, value 1, no text, unit mph
+ * CSV fields: dataref, signal, timestamp, value, text, unit.
+ */
+function metaRows(): string[][] {
+  const S = 1_000_000_000n;
+  const row = (
+    ref: string,
+    signal: string,
+    t: bigint,
+    value: number,
+    text: string,
+    unit: string,
+  ) => [ref, signal, adxTime(t), String(value), text, unit];
+  const rows: string[][] = [];
+  for (let n = 0; n < 10; n++) {
+    const sentinel = n === 3 || n === 4 ? "SNA" : n === 7 ? "INVLD" : "";
+    const value = n === 3 || n === 4 ? 255 : n === 7 ? 254 : 10 * n;
+    rows.push(row("meta-a", "Spd.V", B + BigInt(n) * S, value, sentinel, n <= 4 ? "km/h" : ""));
+  }
+  const gear = ["P", "D", "SNA", "R"];
+  for (const [k, text] of gear.entries())
+    rows.push(row("meta-a", "Gear.POS", B + BigInt(10 * k) * S, k, text, ""));
+  for (let k = 0; k < 5; k++)
+    rows.push(row("meta-a", "Flag.ERR", B + BigInt(k) * S, k % 2, k === 2 ? "SNA" : "", ""));
+  for (let k = 0; k < 3; k++) rows.push(row("meta-b", "Spd.V", B + BigInt(k) * S, 1, "", "mph"));
+  return rows;
+}
+
 const started = Date.now();
 const databases = (await mgmt("NetDefaultDB", ".show databases | project DatabaseName")).map(
   (row) => row[0],
@@ -80,7 +118,7 @@ if (!databases.includes(DATABASE)) {
   );
 }
 
-for (const table of ["signals", "events", "KRenamed"]) {
+for (const table of ["signals", "events", "KRenamed", "KMeta"]) {
   await mgmt(DATABASE, `.drop table ${table} ifexists`);
 }
 await mgmt(
@@ -96,6 +134,11 @@ await mgmt(
   ".create table KRenamed (Device: string, Name: string, EventTime: datetime, Val: real, Txt: string)",
 );
 
+await mgmt(
+  DATABASE,
+  ".create table KMeta (dataref: string, signal: string, timestamp: datetime, value: real, text: string, unit: string)",
+);
+
 const rows = fixtureRows();
 const signalLines = rows.map((r) =>
   [r.dataRef, r.signal, adxTime(r.t), String(r.value), r.text].map(csvField).join(","),
@@ -109,6 +152,10 @@ await ingest(
       .map(csvField)
       .join(","),
   ),
+);
+await ingest(
+  "KMeta",
+  metaRows().map((r) => r.map(csvField).join(",")),
 );
 await mgmt(
   DATABASE,
@@ -131,6 +178,9 @@ const checks: [string, string][] = [
   ],
   ["events | count", "6"],
   ["events | where isnotnull(timestamp) | count", "5"],
+  ["KMeta | count", "22"],
+  // Spd.V 3 (n = 3, 4 SNA, n = 7 INVLD) + Gear.POS 1 + Flag.ERR 1 = 5 (design R7 says 4: it misses Flag.ERR).
+  ["KMeta | where text in ('SNA','INVLD') | count", "5"],
 ];
 let failed = 0;
 for (const [csl, expected] of checks) {

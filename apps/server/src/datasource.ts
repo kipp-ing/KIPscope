@@ -13,9 +13,11 @@ export interface SignalRef {
   name: string;
 }
 
-/** A listed signal; `text`: some of its rows carry non-empty text (state names, add-events N1). */
+/** A listed signal; `text`: some rows carry non-empty text that is not an SNA text (add-events N1, R4);
+ *  `unit`: the non-empty unit of its rows, from the source (R2); absent: none. */
 export interface SourceSignal extends SignalRef {
   text?: boolean;
+  unit?: string;
 }
 
 /** Closed interval of stored values that mean SNA. */
@@ -102,7 +104,10 @@ export interface SourceAdapter {
   readonly info: SourceInfo;
   /** Resolves when the source answers; never through the query queue. */
   ping(abort: AbortSignal): Promise<void>;
-  /** With a scope: the signals of `scope.dataRef` with ≥ 1 row in it, `text` from those rows. */
+  /**
+   * With a scope: the signals of `scope.dataRef` with ≥ 1 row in it, `text` and `unit` from those
+   * rows. Rows whose text is an SNA text do not make a signal a text signal (add-adx-row-metadata).
+   */
   listSignals(scope?: Scope, abort?: AbortSignal): Promise<SourceSignal[]>;
   /** Points in [from, to), ascending; with `limit` the earliest `limit` of them. */
   raw(

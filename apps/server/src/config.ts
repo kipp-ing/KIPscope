@@ -12,6 +12,10 @@ export interface TableMapping {
   value: string;
   /** Text column (state names, design E1); a missing column is no config error (no signal has text). */
   text: string;
+  /** Unit column (ADX, add-adx-row-metadata R1); absent: none. */
+  unit?: string;
+  /** Row texts that mean SNA (ADX, R1): non-empty, trimmed, distinct; absent: none. */
+  snaTexts?: readonly string[];
 }
 
 /**
@@ -141,7 +145,10 @@ export const DEFAULT_DIAG_CATALOGS = [
 ];
 
 /** Default columns per source of `KIPSCOPE_TABLE` and `KIPSCOPE_COLUMN_*`; ADX's are neutral (design C5). */
-const DEFAULT_COLUMNS: Record<SourceConfig["kind"], Omit<TableMapping, "database">> = {
+const DEFAULT_COLUMNS: Record<
+  SourceConfig["kind"],
+  Omit<TableMapping, "database" | "unit" | "snaTexts">
+> = {
   clickhouse: {
     table: "signals",
     dataRef: "vehicle",
@@ -189,6 +196,37 @@ function identifier(env: Env, key: string, fallback: string): string {
   const value = env[key] || fallback;
   if (!IDENTIFIER.test(value)) throw new Error(`${key}: not a valid identifier: ${value}`);
   return value;
+}
+
+/**
+ * `KIPSCOPE_COLUMN_UNIT` and `KIPSCOPE_SNA_TEXTS` (add-adx-row-metadata R1): ADX only; the SNA
+ * texts split at `,`, trimmed, blanks and repeats dropped. Unset or empty: no key.
+ */
+function rowMetadata(
+  env: Env,
+  kind: SourceConfig["kind"],
+): Pick<TableMapping, "unit" | "snaTexts"> {
+  const unitKey = "KIPSCOPE_COLUMN_UNIT";
+  const snaKey = "KIPSCOPE_SNA_TEXTS";
+  const unit = env[unitKey] ? identifier(env, unitKey, "") : undefined;
+  const snaTexts = [
+    ...new Set(
+      (env[snaKey] ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (kind !== "adx")
+    for (const [key, set] of [
+      [unitKey, unit !== undefined],
+      [snaKey, snaTexts.length > 0],
+    ] as const)
+      if (set) throw new Error(`${key}: only with KIPSCOPE_SOURCE=adx`);
+  return {
+    ...(unit !== undefined ? { unit } : {}),
+    ...(snaTexts.length > 0 ? { snaTexts } : {}),
+  };
 }
 
 function positiveInt(env: Env, key: string, fallback: number): number {
@@ -468,6 +506,7 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       time: identifier(env, "KIPSCOPE_COLUMN_TIME", columns.time),
       value: identifier(env, "KIPSCOPE_COLUMN_VALUE", columns.value),
       text: identifier(env, "KIPSCOPE_COLUMN_TEXT", columns.text),
+      ...rowMetadata(env, source.kind),
     },
     events: {
       table: identifier(env, "KIPSCOPE_EVENTS_TABLE", DEFAULT_EVENT_MAPPING.table),

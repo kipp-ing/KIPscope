@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
+import type { BucketSeries, RawSeries } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { AdxSource } from "../src/adx.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { SourceAdapter } from "../src/datasource.ts";
+import type { TableMapping } from "../src/config.ts";
+import type { Scope, SeriesRef, SourceAdapter } from "../src/datasource.ts";
 import { completeSource, coreOnly, nativeMethods } from "../src/fallbacks.ts";
 import { KustoClient } from "../src/kusto.ts";
-import { querySeries } from "../src/series.ts";
+import { querySeries, textLabel } from "../src/series.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { adxEventMapping, adxMapping, adxMgmt, TEST_ADX_DATABASE, testAdxUrl } from "./adxdb.ts";
 import { B, FIXTURE_SIGNALS } from "./conformance/fixture.ts";
@@ -222,6 +224,134 @@ describe("ADX adapter on the emulator", () => {
       table: "signals",
       eventsTable: "kipscope_test.events",
     });
+  });
+});
+
+/** Row metadata table `KMeta` of add-adx-row-metadata R7 (seed-adx.ts): units and SNA texts. */
+describe("ADX row metadata on the emulator (add-adx-row-metadata)", () => {
+  const meta = (extra: Partial<TableMapping> = {}) =>
+    adapter({ ...adxMapping, table: "KMeta", ...extra }, adxEventMapping);
+  const withBoth = { unit: "unit", snaTexts: ["SNA", "INVLD"] };
+  const ref = (dataRef: string, name: string, text?: boolean): SeriesRef =>
+    text === undefined ? { dataRef, name, sna: [] } : { dataRef, name, sna: [], text };
+  const spd = ref("meta-a", "Spd.V");
+  const gear = ref("meta-a", "Gear.POS", true);
+  const line = (s: { dataRef: string; name: string; unit?: string; text?: boolean }) =>
+    `${s.dataRef}/${s.name}|${s.unit ?? "-"}|${s.text === true ? "text" : "-"}`;
+
+  it("reads units from the table per data ref", async () => {
+    const source = meta(withBoth);
+    expect((await source.listSignals()).map(line)).toEqual([
+      "meta-a/Flag.ERR|-|-",
+      "meta-a/Gear.POS|-|text",
+      "meta-a/Spd.V|km/h|-",
+      "meta-b/Spd.V|mph|-",
+    ]);
+    // In [B + 5 s, B + 10 s) only Spd.V n = 5 … 9 lies, whose unit rows (n <= 4) are outside.
+    const scope: Scope = { dataRef: "meta-a", from: B + 5n * S, to: B + 10n * S };
+    const scoped = await source.listSignals(scope);
+    expect(scoped.map(line)).toEqual(["meta-a/Spd.V|-|-"]);
+    expect(scoped[0]).not.toHaveProperty("unit");
+    // A unit column that does not exist fails the list, naming it.
+    await expect(meta({ unit: "nope" }).listSignals()).rejects.toThrow(/nope/);
+  });
+
+  it("treats SNA texts as SNA in every value query", async () => {
+    const source = meta(withBoth);
+    const at = (n: number) => B + BigInt(n) * S;
+    const ten = [0, 10, 20, null, null, 50, 60, null, 80, 90];
+
+    const plain = await source.raw(spd, B, at(10));
+    expect(plain.map((p) => p.v)).toEqual(ten);
+    expect(plain.map((p) => p.t)).toEqual(Array.from({ length: 10 }, (_, n) => at(n)));
+    // Together with a DBC range: n = 8 (value 80) is SNA too.
+    const ranged = await source.raw({ ...spd, sna: [{ lo: 79.5, hi: 80.5 }] }, B, at(10));
+    expect(ranged.map((p) => p.v)).toEqual([0, 10, 20, null, null, 50, 60, null, null, 90]);
+
+    expect(await source.buckets(spd, B, at(10), 5n * S)).toEqual([
+      { start: B, count: 3, sna: 2, mean: 10, min: 0, max: 20 },
+      { start: at(5), count: 4, sna: 1, mean: 70, min: 50, max: 90 },
+    ]);
+    // The edge neighbours are SNA rows too, returned as null values.
+    expect(await source.before(spd, B + 4_500_000_000n)).toEqual({ t: at(4), v: null });
+    expect(await source.after(spd, B + 6_500_000_000n)).toEqual({ t: at(7), v: null });
+
+    // State changes leave the SNA row (B + 20 s) out: P, D, R.
+    const t = (ns: bigint) => ns.toString();
+    expect(await source.stateChanges(gear, { kind: "text" }, 100)).toEqual([
+      { t: t(B), value: 0, text: "P" },
+      { t: t(at(10)), value: 1, text: "D", prev: { t: t(B), value: 0, text: "P" } },
+      { t: t(at(30)), value: 3, text: "R", prev: { t: t(at(10)), value: 1, text: "D" } },
+    ]);
+
+    // No state name on a sentinel row (state-names): the SNA point has a null value and no label.
+    const points = await source.raw(gear, B, at(40));
+    expect(points.map((p) => p.t)).toEqual([B, at(10), at(20), at(30)]);
+    expect(points.map((p) => p.v)).toEqual([0, 1, null, 3]);
+    expect(points.map(textLabel)).toEqual(["P", "D", undefined, "R"]);
+
+    // Without the list the sentinels are plain values.
+    const without = await meta({ unit: "unit" }).raw(spd, B, at(10));
+    expect(without.map((p) => p.v)).toEqual([0, 10, 20, 255, 255, 50, 60, 254, 80, 90]);
+  });
+
+  it("answers KMeta series requests as the fallback does", async () => {
+    const native = completeSource(meta(withBoth));
+    const core = completeSource(coreOnly(meta(withBoth)));
+    const run = (source: typeof native, ref: SeriesRef, target: number) =>
+      querySeries(source, ref, `${ref.dataRef}/${ref.name}`, B, B + 10n * S, target);
+    for (const [label, signal, target] of [
+      ["raw", spd, 100],
+      ["buckets", spd, 4],
+      ["raw text", gear, 100],
+    ] as const) {
+      const [fast, slow] = await Promise.all([
+        run(native, signal, target),
+        run(core, signal, target),
+      ]);
+      expect(JSON.stringify(fast), label).toBe(JSON.stringify(slow));
+    }
+    const raw = (await run(native, spd, 100)) as RawSeries;
+    expect(raw.kind).toBe("raw");
+    expect(raw.v).toEqual([0, 10, 20, null, null, 50, 60, null, 80, 90]);
+    const buckets = (await run(native, spd, 4)) as BucketSeries;
+    expect(buckets.kind).toBe("buckets");
+    expect(buckets.sna.reduce((a, b) => a + b, 0)).toBe(3);
+  });
+
+  it("treats a missing text column with row metadata", async () => {
+    await expect(meta({ text: "nope", snaTexts: ["SNA"] }).listSignals()).rejects.toThrow(
+      "KIPSCOPE_SNA_TEXTS needs the text column 'nope' (KIPSCOPE_COLUMN_TEXT), which does not exist",
+    );
+    const listed = await meta({ text: "nope", unit: "unit" }).listSignals();
+    expect(listed.map(line)).toEqual([
+      "meta-a/Flag.ERR|-|-",
+      "meta-a/Gear.POS|-|-",
+      "meta-a/Spd.V|km/h|-",
+      "meta-b/Spd.V|mph|-",
+    ]);
+    expect(listed.every((x) => !("text" in x))).toBe(true);
+  });
+
+  it("builds the catalog from the table's units and sentinels", async () => {
+    const load = async (extra: Partial<TableMapping>) => {
+      const catalog = new Catalog(completeSource(meta(extra)), async () => new Map());
+      await catalog.refresh();
+      return catalog;
+    };
+    const withList = await load(withBoth);
+    expect(withList.get("meta-a/Gear.POS")?.states).toBe("text");
+    expect(withList.get("meta-a/Flag.ERR")).not.toHaveProperty("states");
+    expect(withList.get("meta-a/Spd.V")).not.toHaveProperty("states");
+    expect(withList.get("meta-a/Spd.V")?.unit).toBe("km/h");
+    expect(withList.get("meta-b/Spd.V")?.unit).toBe("mph");
+    expect(withList.get("meta-a/Flag.ERR")).not.toHaveProperty("unit");
+    expect(withList.get("meta-a/Gear.POS")).not.toHaveProperty("unit");
+
+    const withoutList = await load({ unit: "unit" });
+    for (const id of ["meta-a/Flag.ERR", "meta-a/Gear.POS", "meta-a/Spd.V"])
+      expect(withoutList.get(id)?.states, id).toBe("text");
+    expect(withoutList.get("meta-b/Spd.V")).not.toHaveProperty("states");
   });
 });
 
