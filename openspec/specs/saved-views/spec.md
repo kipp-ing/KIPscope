@@ -227,32 +227,30 @@ The top row SHALL show a **Views** button and, when the workspace has an open vi
 
 #### Scenario: Top row stays one line
 - **WHEN** a view titled with 120 characters is open with the six-window setup and the sidebar open, at 1440×900 and at 1000×557
-- **THEN** every control of the top row has the same `getBoundingClientRect().top` (±1 px) in each viewport; the title text is at least `10ch` wide (rect width ≥ its computed `min-width`, which is `10ch`) and ends in an ellipsis with the full title in its tooltip and in the tab title; at 1440×900 Digits and "+ Values window" are in the row and "⋯" is not displayed; at 1000×557 Digits and "+ Values window" are not displayed in the row, "⋯" is the row's last item, and its menu holds both
-- **Evidence:** UI check on smart451: the UI user measures `getBoundingClientRect().top` of every displayed top-row item in a 1000×557 iframe and at 1440×900, as in round 2 (tops, title width and computed `min-width` per viewport, one screenshot each); `bar/bar.css` comment names the measured threshold and the row width after the move (≤ 728 px); `apps/web/test/views.test.ts` › "keeps the title at least ten characters" (`titleMinChars` gives 10 for 120 characters, 7 for `Drive 3`)
+- **THEN** every control of the top row has the same `getBoundingClientRect().top` (±1 px) in each viewport; the title text is at least `10ch` wide (rect width ≥ its computed `min-width`, which is `10ch`) and ends in an ellipsis with the full title in its tooltip and in the tab title; at both sizes Digits and "+ Values window" are not displayed in the row and the "⋯" menu holds both; "Share…" is in the row at both sizes and never in the "⋯" menu
+- **Evidence:** UI check on smart451: the UI user measures `getBoundingClientRect().top` of every displayed top-row item in a 1000×557 iframe and at 1440×900 (tops, title width and computed `min-width` per viewport, one screenshot each); `apps/web/test/views.test.ts` › "keeps the title at least ten characters" (`titleMinChars` gives 10 for 120 characters, 7 for `Drive 3`)
 
 ### Requirement: Top-row overflow menu
-Below a measured width, after the other give-way steps, the top row SHALL move its overflow items into a "⋯" menu at its end: Digits, "+ Values window", "Share…", and later end-of-row controls such as `add-guidance`'s "?". So the row never wraps at 1000×557 with the sidebar open nor at 1440×900. Each item SHALL stay usable by keyboard.
-
-Origin: round-2 UI finding (851 px needed, 728 px available); lead's decision 2026-10-17 (Jan: his hints are ideas); design V7 "Top-row overflow rule"; "Share…" as an overflow item: exploration „'Share…' in the overflow menu", accepted by D-086 (add-multiuser design M12).
+The top row SHALL end with "Share…", a "⋯" button (`aria-label` `More`) and "?" at every width. The "⋯" menu SHALL hold Digits and "+ Values window" and nothing else; "Share…" SHALL never move into it. The row never wraps at 1000×557 with the sidebar open nor at 1440×900 (the view title shrinks first, `10ch` at least). Each item SHALL stay usable by keyboard. Origin: round-2 UI finding of `add-saved-views` (851 px needed, 728 px available); design V7 "Top-row overflow rule"; Digits and "+ Values window" always in "⋯" and "?" in the row: D-092 (7) (supersedes D-071's width rule for them), mock `Compact.dc.html`; Share in the row at every width: D-095 (critic 15, supersedes the compact-width move of D-092's mock and the Share overflow item of D-086's M12).
 
 #### Scenario: Overflow menu by keyboard
 - **WHEN** at 1000×557 with the sidebar open the user does, in order:
   1. tabs to "⋯" and presses Enter
   2. changes Digits to 4 with the arrow keys
   3. tabs to "+ Values window" and presses Enter
-  4. opens "⋯" again, tabs to "Share…" and presses Enter, then presses Escape twice
+  4. presses Shift+Tab until "Share…" in the row has focus and presses Enter, then presses Escape
 - **THEN**
   - Enter opens the menu with focus on the Digits select
   - the workspace's digits become 4, and a new values window appears
-  - "Share…" opens its popover
-  - the Escapes close the popover and the menu, with focus on "⋯"
+  - "Share…" opens its popover from the row
+  - the Escape closes the popover with focus on "Share…"
   - "⋯" has `aria-haspopup="menu"`, with `aria-expanded` true while open and false after
 - **Evidence:** UI check on smart451 (focused element and `aria-expanded` read from the page after each step, `kipscope state` for digits and windows; one screenshot with the menu open)
 
 #### Scenario: Share in the row when there is room
-- **WHEN** the six-window setup is open with the sidebar open at 1440×900
-- **THEN** "Share…" is in the top row before "⋯", "⋯" is not displayed, and every top-row item has the same `getBoundingClientRect().top` (±1 px)
-- **Evidence:** UI check on smart451 (tops read from the page; one screenshot)
+- **WHEN** the six-window setup is open with the sidebar open at 1440×900 and at 1000×557, and the user opens "⋯"
+- **THEN** "Share…" is in the top row before "⋯", "⋯" and "?" are displayed after it, every top-row item has the same `getBoundingClientRect().top` (±1 px), and the menu holds Digits and "+ Values window" but not "Share…", at both sizes
+- **Evidence:** UI check on smart451 at both sizes (tops read from the page; one screenshot with the menu open per size); `apps/web/test/bar.test.ts` › "renders the top row in order" (no Share item in the menu markup)
 
 ### Requirement: Views menu
 The Views menu SHALL offer:

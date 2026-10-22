@@ -232,3 +232,11 @@ L lookups SHALL neither delay a values window's render acknowledgement nor repor
 - **WHEN** a cursor command is accepted while the L lookup for one row fails (the server answers 502)
 - **THEN** that row's L cell reads `—` with the message, its A cell its value, and the revision is reported `complete` without an error for that row
 - **Evidence:** `apps/web/test/values.test.ts` › "keeps L requests out of the render acknowledgement"
+
+### Requirement: Missing signal in a values row
+A values row whose value request answers 404 `unknown_signal` SHALL read `missing` in the muted style, tooltip `Missing: <dataRef> has no signal <shown name>`, its value cells `—` with that tooltip; the row stays. Other failures keep `failed: <message>`. Origin: necessary consequence of `timeseries-window` "Missing signals read calm" (same signal, same step); D-092.
+
+#### Scenario: Missing row
+- **WHEN** a values row's request fails with the API error built from a 404 answer `{error: {code: "unknown_signal", message: "unknown signal: othercar/X"}}`, and another with a 500 `source_error`
+- **THEN** the first row's status reads `missing` with the tooltip `Missing: othercar has no signal X` and its cells `—`; the second keeps `failed: <message>`
+- **Evidence:** `apps/web/test/values.test.ts` › "reads an unknown signal as missing"
