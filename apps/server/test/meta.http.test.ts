@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AdxSource } from "../src/adx.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
@@ -11,7 +11,7 @@ import { type BuildInfo, type MetaDeps, PING_TIMEOUT_MS, readBuildInfo } from ".
 import { WorkspaceStore } from "../src/workspace.ts";
 import { adxEventMapping, adxMapping } from "./adxdb.ts";
 import { scopeApp } from "./scopeApp.ts";
-import { testClient, testDbcFiles, testSource } from "./testdb.ts";
+import { testClient, testDataSource, testDbcFiles, testSource } from "./testdb.ts";
 
 const LICENSE = readFileSync(resolve(import.meta.dirname, "../../../LICENSE"), "utf8");
 const STARTED = new Date("2026-10-16T13:07:10.000Z");
@@ -80,7 +80,7 @@ describe("GET /api/license", () => {
 });
 
 describe("GET /api/meta with the test database", () => {
-  const source = testSource();
+  const source = testDataSource();
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles));
   const app = buildApp({
     catalog,
@@ -307,6 +307,85 @@ describe("source ping", () => {
       const stamps = results.map((r) => r.json().source.checkedAt);
       expect(new Set(stamps).size).toBe(1);
       for (const r of results) expect(r.json().source.reachable).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("source ping reuse (speed-up-adx A5)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** An app over a counting ping; the clock is fake from 2026-10-22T10:00:00Z, only Date and timeouts. */
+  function open(ping: (calls: number) => Promise<void>) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(new Date("2026-10-22T10:00:00.000Z"));
+    const state = { calls: 0 };
+    const app = buildApp({
+      catalog: idleCatalog(),
+      source: never,
+      workspace: workspace(),
+      meta: metaDeps(async () => {
+        state.calls++;
+        await ping(state.calls);
+      }),
+    });
+    const meta = async () => (await app.inject({ url: "/api/meta" })).json().source;
+    return { app, state, meta };
+  }
+
+  it("reuses a reachable ping for 15 s", async () => {
+    const { app, state, meta } = open(async () => {});
+    try {
+      const first = await meta();
+      await vi.advanceTimersByTimeAsync(14_900);
+      const second = await meta();
+      await vi.advanceTimersByTimeAsync(200);
+      const third = await meta();
+      expect(state.calls).toBe(2);
+      expect(first.reachable).toBe(true);
+      expect(second.checkedAt).toBe(first.checkedAt);
+      expect(third.reachable).toBe(true);
+      expect(Date.parse(third.checkedAt)).toBeGreaterThan(Date.parse(first.checkedAt));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("pings again after a failed ping", async () => {
+    let failing = true;
+    const { app, state, meta } = open(async () => {
+      if (failing) throw new Error("connect ECONNREFUSED 127.0.0.1:18123");
+    });
+    try {
+      const first = await meta();
+      await vi.advanceTimersByTimeAsync(1000);
+      const second = await meta();
+      failing = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      const third = await meta();
+      expect(state.calls).toBe(3);
+      expect(first.reachable).toBe(false);
+      expect(second.reachable).toBe(false);
+      expect(first.error).toContain("ECONNREFUSED");
+      expect(third.reachable).toBe(true);
+      expect(third).not.toHaveProperty("error");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("reuses the reachable result of a ping that was slow", async () => {
+    // The 15 s count from the end of the ping, not from its start.
+    const { app, state, meta } = open(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+    try {
+      const pending = meta();
+      await vi.advanceTimersByTimeAsync(1000);
+      const first = await pending;
+      await vi.advanceTimersByTimeAsync(14_500); // 15.5 s after the start, 14.5 s after the end
+      const second = await meta();
+      expect(state.calls).toBe(1);
+      expect(second.checkedAt).toBe(first.checkedAt);
     } finally {
       await app.close();
     }

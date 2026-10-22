@@ -38,6 +38,8 @@ export function readBuildInfo(root: string, run?: GitRunner, now: Date = new Dat
 }
 
 export const PING_TIMEOUT_MS = 2000;
+/** How long `/api/meta` reuses a reachable ping result after its ping ended (design A5). */
+export const PING_CACHE_MS = 15_000;
 
 export interface MetaDeps {
   build: BuildInfo;
@@ -129,12 +131,20 @@ export function metaRoutes(deps: {
   licenseText?: string;
 }): FastifyPluginAsync {
   const { meta, catalog, catalogs, licenseText } = deps;
-  /** The ping in progress; concurrent requests share it (single flight), no cache beyond it. */
+  /** The ping in progress; concurrent requests share it (single flight). */
   let running: Promise<PingResult> | undefined;
-  const check = (ping: MetaDeps["ping"]) => {
-    running ??= pingOnce(ping).finally(() => {
-      running = undefined;
-    });
+  /** The last reachable result and when its ping ended (design A5); a failed one is never kept. */
+  let kept: { result: PingResult; endedAt: number } | undefined;
+  const check = (ping: MetaDeps["ping"]): Promise<PingResult> => {
+    if (kept && Date.now() - kept.endedAt < PING_CACHE_MS) return Promise.resolve(kept.result);
+    running ??= pingOnce(ping)
+      .then((result) => {
+        kept = result.reachable ? { result, endedAt: Date.now() } : undefined;
+        return result;
+      })
+      .finally(() => {
+        running = undefined;
+      });
     return running;
   };
 

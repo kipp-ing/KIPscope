@@ -10,6 +10,7 @@ import {
 } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Scope, SourceAdapter } from "../src/datasource.ts";
+import { completeSource } from "../src/fallbacks.ts";
 import { loadState, StatePersister } from "../src/persist.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { WorkspaceRegistry } from "../src/workspaces.ts";
@@ -74,13 +75,35 @@ const SCOPE_AT: Record<string, number> = {
   loggerGaps: 3,
   firstTimes: 3,
   stateChanges: 3,
+  series: 5,
 };
 
-/** Every recorded call but `ping` is bounded: it carries `scope`, or its range lies inside it. */
+/**
+ * The adapter with a native `series` (the series fallback behind it), so that the call itself is
+ * recorded: ClickHouse has none of its own (speed-up-adx A2).
+ */
+function withNativeSeries(adapter: SourceAdapter): SourceAdapter {
+  const completed = completeSource(adapter);
+  const native = Object.create(adapter) as SourceAdapter;
+  native.series = (...args) => completed.series(...args);
+  return native;
+}
+
+/**
+ * Every recorded call but `ping` is bounded: it carries `scope`, or its range lies inside it. A
+ * `series` call (speed-up-adx) does both: it carries the scope and its range lies inside it.
+ */
 function expectBounded(calls: Call[], scope: Scope) {
   expect(calls.length).toBeGreaterThan(0);
   for (const { method, args } of calls) {
     if (method === "ping") continue;
+    if (method === "series") {
+      expect(args[5], "series carries the scope").toEqual(scope);
+      const [, from, to] = args as [unknown, bigint, bigint];
+      expect(from >= scope.from, `series from ${from} inside the scope`).toBe(true);
+      expect(to <= scope.to, `series to ${to} inside the scope`).toBe(true);
+      continue;
+    }
     const at = SCOPE_AT[method];
     if (at !== undefined) {
       expect(args[at], `${method} carries the scope`).toEqual(scope);
@@ -266,9 +289,18 @@ describe("scope over HTTP, full mode, on the test DB", () => {
   }
 
   // Behind a query queue of 3 slots, like main.ts: the wrappers must pass the scope on (queue.ts).
-  for (const queue of [undefined, 3]) {
-    it(`keeps every call inside the scope in full mode${queue === undefined ? "" : ", behind the query queue"}`, async () => {
-      const t = await open({ adapter: testSource(), ...(queue === undefined ? {} : { queue }) });
+  for (const [queue, native] of [
+    [undefined, false],
+    [3, false],
+    [undefined, true],
+    [3, true],
+  ] as const) {
+    const variant = `${queue === undefined ? "" : ", behind the query queue"}${native ? ", with a native series" : ""}`;
+    it(`keeps every call inside the scope in full mode${variant}`, async () => {
+      const t = await open({
+        adapter: native ? withNativeSeries(testSource()) : testSource(),
+        ...(queue === undefined ? {} : { queue }),
+      });
       // The full catalog loaded before the app started; only what the scope causes is checked.
       const start = t.calls.length;
       expect((await t.command(SCOPE_CMD)).status).toBe(200);
@@ -286,7 +318,10 @@ describe("scope over HTTP, full mode, on the test DB", () => {
       expect((await t.get("/api/gaps?dataRef=testcar")).status).toBe(200);
       expect((await t.get("/api/events?dataRef=testcar")).status).toBe(200);
       await settle(t.calls);
-      expectBounded(t.calls.slice(start), { dataRef: "testcar", from: T1, to: T2 });
+      const made = t.calls.slice(start);
+      expectBounded(made, { dataRef: "testcar", from: T1, to: T2 });
+      // The series request reaches a native series as one call and, without one, as count + data calls.
+      expect(made.some((c) => c.method === "series")).toBe(native);
     });
   }
 });

@@ -4,8 +4,9 @@ import { AdxSource } from "../src/adx.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { SourceAdapter } from "../src/datasource.ts";
-import { completeSource, nativeMethods } from "../src/fallbacks.ts";
+import { completeSource, coreOnly, nativeMethods } from "../src/fallbacks.ts";
 import { KustoClient } from "../src/kusto.ts";
+import { querySeries } from "../src/series.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { adxEventMapping, adxMapping, adxMgmt, TEST_ADX_DATABASE, testAdxUrl } from "./adxdb.ts";
 import { B, FIXTURE_SIGNALS } from "./conformance/fixture.ts";
@@ -132,10 +133,68 @@ describe("ADX adapter on the emulator", () => {
     }
   });
 
+  it("answers series requests as the fallback does", async () => {
+    // The seven requests (a)-(g) of data-source "Series natively and from the core", through
+    // querySeries over the native adapter and over the adapter reduced to its required methods.
+    const native = completeSource(adapter());
+    const core = completeSource(coreOnly(adapter()));
+    const SC2 = { dataRef: "conf-a", from: B + 5n * S, to: B + 35n * S };
+    const ref = (name: string, sna: { lo: number; hi: number }[] = [], text?: boolean) =>
+      text === undefined
+        ? { dataRef: "conf-a", name, sna }
+        : { dataRef: "conf-a", name, sna, text };
+    const requests = [
+      { id: "a", kind: "raw", ref: ref("Lin.RAMP"), from: B + S, to: B + 2n * S, target: 100 },
+      { id: "b", kind: "buckets", ref: ref("Lin.RAMP"), from: B + S, to: B + 2n * S, target: 99 },
+      { id: "c", kind: "buckets", ref: ref("Lin.RAMP"), from: B, to: B + 100n * S, target: 11 },
+      {
+        id: "d",
+        kind: "raw",
+        ref: ref("Sna.CODE", [{ lo: 6.5, hi: 7.5 }]),
+        from: B + 40n * S,
+        to: B + 50n * S,
+        target: 20,
+      },
+      {
+        id: "e",
+        kind: "raw",
+        ref: ref("Diag.door", [], true),
+        from: B + 100n * S,
+        to: B + 200n * S,
+        target: 10,
+      },
+      {
+        id: "f",
+        kind: "raw",
+        ref: ref("Lin.RAMP"),
+        from: B + 5n * S,
+        to: B + 6n * S,
+        target: 100,
+        scope: SC2,
+      },
+      { id: "g", kind: "raw", ref: ref("Nope.X"), from: B, to: B + 100n * S, target: 100 },
+    ] as const;
+    for (const r of requests) {
+      const run = (source: typeof native) =>
+        querySeries(
+          source,
+          r.ref,
+          `${r.ref.dataRef}/${r.ref.name}`,
+          r.from,
+          r.to,
+          r.target,
+          "scope" in r ? r.scope : undefined,
+        );
+      const [fast, slow] = await Promise.all([run(native), run(core)]);
+      expect(fast.kind, r.id).toBe(r.kind);
+      expect(JSON.stringify(fast), r.id).toBe(JSON.stringify(slow));
+    }
+  });
+
   it("implements the measured fast paths only", () => {
     const source: SourceAdapter = adapter();
     expect(nativeMethods(source).sort()).toEqual(
-      ["events", "loggerGaps", "refCount", "stateChanges"].sort(),
+      ["events", "extent", "loggerGaps", "refCount", "series", "stateChanges"].sort(),
     );
     for (const name of [
       "ping",
@@ -145,6 +204,8 @@ describe("ADX adapter on the emulator", () => {
       "after",
       "buckets",
       "refBuckets",
+      "extent",
+      "series",
       "refCount",
       "loggerGaps",
       "stateChanges",
@@ -152,7 +213,7 @@ describe("ADX adapter on the emulator", () => {
     ] as const) {
       expect(typeof source[name], name).toBe("function");
     }
-    for (const name of ["count", "extent", "refExtent", "firstTimes"] as const) {
+    for (const name of ["count", "refExtent", "firstTimes"] as const) {
       expect(source[name], name).toBeUndefined();
     }
     expect(source.info).toEqual({
@@ -171,7 +232,8 @@ describe("ADX queries with a scope (add-scope Z3)", () => {
     const fake = {
       query: async (csl: string, params: Record<string, { type: string; value: unknown }>) => {
         sent.push({ csl, params });
-        return [];
+        // `series` needs its count row (design A3): 0 points, so the raw path with no rows.
+        return /toscalar\(/.test(csl) ? [["n", null, null, null, 0, null, null, null]] : [];
       },
       ping: async () => {},
     };
@@ -180,9 +242,10 @@ describe("ADX queries with a scope (add-scope Z3)", () => {
 
   it("scopes every query by data ref and time", async () => {
     const { source, sent } = recordingAdapter();
-    // The adapter's own methods: extent, refExtent and firstTimes are the server's fallbacks (scoped
-    // by "passes the scope to every core call"), so the adapter sends nothing for them.
-    const fallbacks = ["extent", "refExtent", "firstTimes"];
+    // The adapter's own methods, `extent` and `series` among them: refExtent and firstTimes are the
+    // server's fallbacks (scoped by "passes the scope to every core call"), so the adapter sends
+    // nothing for them.
+    const fallbacks = ["refExtent", "firstTimes"];
     let covered = 0;
     for (const [method, call] of Object.entries(SCOPED_CALLS)) {
       const before = sent.length;
@@ -195,10 +258,15 @@ describe("ADX queries with a scope (add-scope Z3)", () => {
       expect(sent.length, `${method} sent a query`).toBeGreaterThan(before);
       for (const { csl, params } of sent.slice(before)) {
         const text = csl.replace(/\s+/g, " ");
-        // Both filters are the first operator on the table (signals or events), as parameters.
-        expect(text, `${method}: ${text}`).toMatch(
-          /(signals|events)'\] \| where \['dataref'\] == sref and \['timestamp'\] >= sfrom and \['timestamp'\] < sto\b/,
-        );
+        // Both filters are the first operator on the table (signals or events), as parameters, at
+        // every reference to the table (`series` reads it in several branches).
+        const references = text.match(/(signals|events)'\]/g) ?? [];
+        expect(references.length, `${method} reads the table: ${text}`).toBeGreaterThan(0);
+        const filtered =
+          text.match(
+            /(signals|events)'\] \| where \['dataref'\] == sref and \['timestamp'\] >= sfrom and \['timestamp'\] < sto\b/g,
+          ) ?? [];
+        expect(filtered.length, `${method}: ${text}`).toBe(references.length);
         expect(params.sref, method).toEqual({ type: "string", value: "conf-a" });
         expect(params.sfrom, method).toEqual({ type: "datetime", value: B + 5n * S });
         expect(params.sto, method).toEqual({ type: "datetime", value: B + 35n * S });

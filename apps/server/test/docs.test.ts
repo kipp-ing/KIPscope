@@ -146,13 +146,14 @@ describe("documents", () => {
     const headingEnd = rest.indexOf("\n") + 1;
     const next = rest.slice(headingEnd).search(new RegExp(`^#{1,${level}}\\s`, "m"));
     const section = next === -1 ? rest : rest.slice(0, headingEnd + next);
-    // The 11 methods that take a scope (design Z1) and the rule's wording.
+    // The 12 methods that take a scope (design Z1, `series` from speed-up-adx A2) and the rule's wording.
     for (const method of [
       "listSignals",
       "before",
       "after",
       "refBuckets",
       "extent",
+      "series",
       "refExtent",
       "refCount",
       "loggerGaps",

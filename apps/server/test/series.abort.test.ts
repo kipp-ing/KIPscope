@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { DataSource } from "../src/datasource.ts";
+import type { DataSource, SourceAdapter } from "../src/datasource.ts";
+import { completeSource } from "../src/fallbacks.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
 /** Source whose count takes `delayMs` and records whether it was aborted. */
@@ -9,7 +10,7 @@ function slowSource(delayMs: number) {
   const seen: { aborted: boolean }[] = [];
   /** The `limit` each raw call got: the series route reads without one. */
   const limits: (number | undefined)[] = [];
-  const source = {
+  const adapter = {
     count: (_ref: unknown, _from: bigint, _to: bigint, abort?: AbortSignal) =>
       new Promise<number>((resolve, reject) => {
         const entry = { aborted: false };
@@ -28,7 +29,14 @@ function slowSource(delayMs: number) {
     },
     before: async () => undefined,
     after: async () => undefined,
-  } as unknown as DataSource;
+    // The required methods the series fallback does not call.
+    info: { kind: "memory", database: "mem", table: "signals" },
+    ping: async () => {},
+    buckets: async () => [],
+    refBuckets: async () => [],
+  } as unknown as SourceAdapter;
+  // Through the server's fallbacks, as main.ts builds the source: `series` counts first (design A2).
+  const source = completeSource(adapter);
   return { source, seen, limits };
 }
 

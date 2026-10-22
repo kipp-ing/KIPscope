@@ -6,7 +6,7 @@ import { WorkspaceStore } from "../src/workspace.ts";
 import { closeApps, gated, quiet, stateOf, unlink, unlinked } from "./caseApp.ts";
 import { at, c4, sameScope, scopeNs, scopeOfCall } from "./caseKit.ts";
 import { memoryAdapter, scopeApp } from "./scopeApp.ts";
-import { testSource } from "./testdb.ts";
+import { testDataSource, testSource } from "./testdb.ts";
 
 const MS = 1_000_000n;
 const S = 1_000_000_000n;
@@ -100,7 +100,7 @@ describe("gap info cache over HTTP", () => {
   });
 
   it("answers 502 for a value without gap info", async () => {
-    const real = testSource();
+    const real = testDataSource();
     // The real test DB, but the logger-gap query fails.
     const source = new Proxy(real, {
       get(target, key) {

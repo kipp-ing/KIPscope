@@ -4,7 +4,7 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { testCatalog, testDbcFiles, testSource } from "./testdb.ts";
+import { testCatalog, testDataSource, testDbcFiles } from "./testdb.ts";
 
 const SIGNAL = "testcar/Sna_800h.SPEED";
 // SPEED: point n at 2026-10-01T02:00:00Z + n * 100 ms, value n mod 100;
@@ -13,7 +13,7 @@ const S = fromIso("2026-10-01T02:00:00Z");
 const point = (n: number) => (S + BigInt(n) * 100_000_000n).toString();
 
 function appFor() {
-  const source = testSource();
+  const source = testDataSource();
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles));
   const app = buildApp({
     catalog,
@@ -126,7 +126,7 @@ describe("GET /api/value", () => {
     });
 
     // Before the catalog was ever loaded: 503, checked first (as for series).
-    const source = testSource();
+    const source = testDataSource();
     const cold = buildApp({
       catalog: new Catalog(source, async () => new Map()),
       source,
@@ -205,7 +205,7 @@ describe("GET /api/value with state names (add-events)", () => {
 });
 
 describe("GET /api/value across gaps (add-gap-display)", () => {
-  const source = testSource();
+  const source = testDataSource();
   const catalog = testCatalog(source);
   const app = buildApp({
     catalog,

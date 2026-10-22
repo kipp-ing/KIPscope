@@ -241,9 +241,9 @@ type Method = (...args: unknown[]) => Promise<unknown>;
 
 /**
  * Scoped mode's guard around the completed source (design Z10): a data call without a scope, or
- * a `raw`, `buckets` or `count` whose range is not inside a scope `held` returns for that data
- * ref, rejects with ScopeGuardError before it reaches `source`; the first refusal of each method
- * is logged as a bug. `ping` and `info` pass.
+ * a `raw`, `buckets`, `count` or `series` whose range is not inside a scope `held` returns for
+ * that data ref, rejects with ScopeGuardError before it reaches `source`; the first refusal of each
+ * method is logged as a bug. `ping` and `info` pass.
  */
 export function guardScoped(
   source: DataSource,
@@ -274,17 +274,27 @@ export function guardScoped(
       return inner(...args);
     };
   }
+  const checkRange = (method: string, args: unknown[]) => {
+    const [ref, from, to] = args as [SignalRef, bigint, bigint];
+    const inside = [...held()].some(
+      (s) => s.dataRef === ref.dataRef && BigInt(s.from) <= from && to <= BigInt(s.to),
+    );
+    if (!inside)
+      refuse(method, `range [${from}, ${to}) of ${ref.dataRef} is not inside a held scope`);
+  };
   for (const method of RANGED) {
     const inner = call(method);
     guarded[method] = async (...args: unknown[]) => {
-      const [ref, from, to] = args as [SignalRef, bigint, bigint];
-      const inside = [...held()].some(
-        (s) => s.dataRef === ref.dataRef && BigInt(s.from) <= from && to <= BigInt(s.to),
-      );
-      if (!inside)
-        refuse(method, `range [${from}, ${to}) of ${ref.dataRef} is not inside a held scope`);
+      checkRange(method, args);
       return inner(...args);
     };
   }
+  // Both checks: scope at index 5, range at 1–2 (design A2).
+  const series = call("series");
+  guarded.series = async (...args: unknown[]) => {
+    if (args[5] === undefined) refuse("series", "called without a scope");
+    checkRange("series", args);
+    return series(...args);
+  };
   return guarded as unknown as DataSource;
 }

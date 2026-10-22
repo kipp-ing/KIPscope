@@ -135,6 +135,7 @@ export function stubSource(): DataSource {
     before: async (ref, t) => [...(POINTS.get(id(ref)) ?? [])].reverse().find((p) => p.t < t),
     after: async (ref, t) => (POINTS.get(id(ref)) ?? []).find((p) => p.t >= t),
     count: unused,
+    series: unused,
     raw: unused,
     buckets: unused,
     refExtent: unused,

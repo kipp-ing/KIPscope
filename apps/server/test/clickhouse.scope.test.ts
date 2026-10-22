@@ -54,8 +54,14 @@ async function record(scope?: typeof SCOPE_S2): Promise<Recorded> {
 describe("ClickHouse queries with a scope (add-scope Z3)", () => {
   it("puts the data ref and both time bounds into every scoped query", async () => {
     const recorded = await record(SCOPE_S2);
-    // Every method has its queries recorded; the optional ones are native here.
-    expect(Object.keys(recorded).sort()).toEqual(Object.keys(SCOPED_CALLS).sort());
+    // Every method has its queries recorded; the optional ones are native here, except `series`,
+    // which ClickHouse takes from the server's fallback (it sends nothing for it).
+    expect(Object.keys(recorded).sort()).toEqual(
+      Object.keys(SCOPED_CALLS)
+        .filter((method) => method !== "series")
+        .sort(),
+    );
+    expect(recorded.series).toBeUndefined();
     const from = String(SCOPE_S2.from);
     const to = String(SCOPE_S2.to);
     for (const [method, queries] of Object.entries(recorded)) {

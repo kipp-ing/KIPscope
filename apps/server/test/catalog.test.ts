@@ -4,11 +4,11 @@ import type { DataSource } from "../src/datasource.ts";
 import { type DbcSignal, loadDbcFiles } from "../src/dbc.ts";
 import { loadDiagCatalogs } from "../src/diag.ts";
 import { loadProjectFile } from "../src/project.ts";
-import { fixture, testDbcFiles, testDiagCatalogs, testSource } from "./testdb.ts";
+import { fixture, testDataSource, testDbcFiles, testDiagCatalogs } from "./testdb.ts";
 
 describe("Catalog (test DB)", () => {
   const catalog = new Catalog(
-    testSource(),
+    testDataSource(),
     () => loadDbcFiles(testDbcFiles),
     undefined,
     undefined,
@@ -142,7 +142,7 @@ describe("Catalog (test DB)", () => {
 
 describe("Catalog display names (test DB, test project file)", () => {
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
-  const catalog = new Catalog(testSource(), () => loadDbcFiles(testDbcFiles), rules);
+  const catalog = new Catalog(testDataSource(), () => loadDbcFiles(testDbcFiles), rules);
   beforeAll(() => catalog.refresh());
 
   it("sets groups from the test project file", () => {

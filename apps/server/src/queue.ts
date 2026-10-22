@@ -162,6 +162,10 @@ export function queuedAdapter(adapter: SourceAdapter, queue: QueryQueue): Source
     queued.count = (ref, from, to, abort) => queue.run((a) => count(ref, from, to, a), abort);
   const extent = adapter.extent?.bind(adapter);
   if (extent) queued.extent = (ref, scope, abort) => queue.run((a) => extent(ref, scope, a), abort);
+  const series = adapter.series?.bind(adapter);
+  if (series)
+    queued.series = (ref, from, to, target, width, scope, abort) =>
+      queue.run((a) => series(ref, from, to, target, width, scope, a), abort);
   const refExtent = adapter.refExtent?.bind(adapter);
   if (refExtent)
     queued.refExtent = (dataRef, scope, abort) =>

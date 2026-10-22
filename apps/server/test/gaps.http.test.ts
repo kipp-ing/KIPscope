@@ -3,12 +3,12 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { scopeApp } from "./scopeApp.ts";
-import { testCatalog, testSource } from "./testdb.ts";
+import { testCatalog, testDataSource, testSource } from "./testdb.ts";
 
 const workspace = () => new WorkspaceStore({ signalExists: () => true, hasStates: () => false });
 
 describe("GET /api/gaps (test DB)", () => {
-  const source = testSource();
+  const source = testDataSource();
   const catalog = testCatalog(source);
   const app = buildApp({ catalog, source, workspace: workspace() });
   beforeAll(() => catalog.refresh());
@@ -101,7 +101,7 @@ describe("GET /api/gaps (test DB)", () => {
     expect((await gaps("gapcar", signalIds(100))).statusCode).toBe(200);
 
     // A catalog that never loaded: 503, checked before the data ref.
-    const coldSource = testSource();
+    const coldSource = testDataSource();
     const cold = buildApp({
       catalog: new Catalog(coldSource, async () => new Map()),
       source: coldSource,

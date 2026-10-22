@@ -6,7 +6,7 @@ import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { testDbcFiles, testSource } from "./testdb.ts";
+import { testDataSource, testDbcFiles } from "./testdb.ts";
 
 const source = {} as DataSource;
 
@@ -562,7 +562,7 @@ describe("listeners and pushes (harden-robustness)", () => {
 });
 
 describe("events commands over HTTP (add-events)", () => {
-  const real = testSource();
+  const real = testDataSource();
   const catalog = new Catalog(real, () => loadDbcFiles(testDbcFiles));
   const workspace = new WorkspaceStore(
     {

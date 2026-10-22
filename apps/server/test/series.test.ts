@@ -14,9 +14,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { Catalog } from "../src/catalog.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { bucketWidth, querySeries } from "../src/series.ts";
-import { testDbcFiles, testSource } from "./testdb.ts";
+import { testDataSource, testDbcFiles } from "./testdb.ts";
 
-const source = testSource();
+const source = testDataSource();
 // SNA ranges come from the catalog over the test DBCs, as in the server.
 const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles));
 beforeAll(() => catalog.refresh());

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DataSource, Scope } from "../src/datasource.ts";
 import { guardScoped, ScopeGuardError } from "../src/scope.ts";
+import { B } from "./conformance/fixture.ts";
 
 /** 2026-10-01T01:00:00Z and 02:00:00Z in ns, by hand. */
 const T1 = 1790816400000000000n;
@@ -24,6 +25,7 @@ function recordingSource() {
     raw: method("raw", []),
     buckets: method("buckets", []),
     count: method("count", 0),
+    series: method("series", { kind: "raw", points: [] }),
     before: method("before", undefined),
     after: method("after", undefined),
     extent: method("extent", undefined),
@@ -93,5 +95,35 @@ describe("guardScoped (add-scope Z10)", () => {
     for (const [name, call] of calls) {
       await expect(call(), name).rejects.toBeInstanceOf(ScopeGuardError);
     }
+  });
+});
+
+describe("guardScoped series (speed-up-adx A2)", () => {
+  it("guards series by scope and range", async () => {
+    const { source, reached } = recordingSource();
+    const S2: Scope = { dataRef: "conf-a", from: B + 5n * S, to: B + 35n * S };
+    const guarded = guardScoped(source, () => [S2], { error: () => {} });
+    const ref = { dataRef: "conf-a", name: "Lin.RAMP", sna: [] };
+    const width = 10_101_011n;
+
+    // (1) with the scope over a range inside it: reaches the source.
+    await guarded.series(ref, B + 5n * S, B + 6n * S, 100, width, S2);
+    expect(reached).toEqual(["series"]);
+
+    // (2) without a scope over the same range: refused before the source.
+    await expect(guarded.series(ref, B + 5n * S, B + 6n * S, 100, width)).rejects.toBeInstanceOf(
+      ScopeGuardError,
+    );
+    // (3) with the scope over a range that leaves it: refused before the source.
+    await expect(
+      guarded.series(ref, B + 30n * S, B + 40n * S, 100, width, S2),
+    ).rejects.toBeInstanceOf(ScopeGuardError);
+    expect(reached).toEqual(["series"]);
+
+    // Another data ref no scope holds is refused too, although range and scope argument are fine.
+    await expect(
+      guarded.series({ ...ref, dataRef: "conf-b" }, B + 5n * S, B + 6n * S, 100, width, S2),
+    ).rejects.toBeInstanceOf(ScopeGuardError);
+    expect(reached).toEqual(["series"]);
   });
 });

@@ -2,9 +2,16 @@ import type { SignalInfo } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
+import { ClickHouseSource } from "../src/clickhouse.ts";
+import type { EventMapping, TableMapping } from "../src/config.ts";
 import type { RawPoint, Scope, SourceAdapter, SourceInfo } from "../src/datasource.ts";
 import { EventsCache } from "../src/events.ts";
-import { completeSource, STATE_SCAN_MAX, STATE_SCAN_PAGE } from "../src/fallbacks.ts";
+import {
+  completeSource,
+  nativeMethods,
+  STATE_SCAN_MAX,
+  STATE_SCAN_PAGE,
+} from "../src/fallbacks.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
@@ -275,5 +282,135 @@ describe("fallbacks of a source with the required methods only", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("the series fallback (speed-up-adx A2)", () => {
+  const B = 1791158400000000000n;
+  const SEC = 1_000_000_000n;
+  const scope: Scope = { dataRef: "conf-a", from: B, to: B + 100n * SEC };
+  const ref = { dataRef: "conf-a", name: "Lin.RAMP", sna: [] };
+  const from = B + 10n * SEC;
+  const to = B + 20n * SEC;
+  const width = 2n * SEC;
+
+  /** A stub with `count` answering `n` after a delay; every call is recorded in order with its arguments. */
+  function recording(n: number) {
+    const log: { call: string; phase: "start" | "end"; args: unknown[] }[] = [];
+    const step =
+      <T>(call: string, answer: T, delayMs = 0) =>
+      async (...args: unknown[]): Promise<T> => {
+        log.push({ call, phase: "start", args });
+        await sleep(delayMs);
+        log.push({ call, phase: "end", args });
+        return answer;
+      };
+    const points: RawPoint[] = [
+      { t: from, v: 1 },
+      { t: from + SEC, v: 2 },
+    ];
+    const edge = (t: bigint): RawPoint => ({ t, v: 9 });
+    const buckets = [{ start: from, count: 3, sna: 0, mean: 2, min: 1, max: 3 }];
+    const adapter: SourceAdapter = {
+      ...requiredOnly().adapter,
+      count: step("count", n, 20),
+      raw: step("raw", points),
+      before: step("before", edge(from - SEC)),
+      after: step("after", undefined),
+      buckets: step("buckets", buckets),
+    };
+    return { adapter, log, points, buckets, edge };
+  }
+
+  it("computes a series from count, then raw and edges or buckets", async () => {
+    // 5 points against target 10: count, then raw (no limit), before and after; no buckets.
+    const small = recording(5);
+    const answer = await completeSource(small.adapter).series(ref, from, to, 10, width, scope);
+    expect(answer).toEqual({
+      kind: "raw",
+      points: small.points,
+      before: small.edge(from - SEC),
+    });
+    expect("after" in answer && answer.after !== undefined).toBe(false);
+    const started = small.log.filter((e) => e.phase === "start");
+    expect(started.map((e) => e.call)).toEqual(["count", "raw", "before", "after"]);
+    const calls = Object.fromEntries(started.map((e) => [e.call, e.args]));
+    expect(calls.count?.slice(0, 3)).toEqual([ref, from, to]);
+    expect(calls.raw?.slice(0, 4)).toEqual([ref, from, to, undefined]);
+    expect(calls.before?.slice(0, 3)).toEqual([ref, from, scope]);
+    expect(calls.after?.slice(0, 3)).toEqual([ref, to, scope]);
+    // count ended before any other call started.
+    const countEnd = small.log.findIndex((e) => e.call === "count" && e.phase === "end");
+    const firstOther = small.log.findIndex((e) => e.call !== "count");
+    expect(countEnd).toBeGreaterThanOrEqual(0);
+    expect(countEnd).toBeLessThan(firstOther);
+
+    // Exactly the target counts as raw (count <= target).
+    const edgeCase = recording(10);
+    expect(
+      (await completeSource(edgeCase.adapter).series(ref, from, to, 10, width, scope)).kind,
+    ).toBe("raw");
+
+    // 50 points against target 10: count, then buckets of the width, and nothing else.
+    const large = recording(50);
+    const wide = await completeSource(large.adapter).series(ref, from, to, 10, width, scope);
+    expect(wide).toEqual({ kind: "buckets", buckets: large.buckets });
+    const wideStarted = large.log.filter((e) => e.phase === "start");
+    expect(wideStarted.map((e) => e.call)).toEqual(["count", "buckets"]);
+    expect(wideStarted[1]?.args.slice(0, 4)).toEqual([ref, from, to, width]);
+    expect(large.log.findIndex((e) => e.call === "buckets")).toBeGreaterThan(
+      large.log.findIndex((e) => e.call === "count" && e.phase === "end"),
+    );
+  });
+
+  it("passes the abort signal to every call of the series fallback", async () => {
+    const small = recording(5);
+    const controller = new AbortController();
+    await completeSource(small.adapter).series(ref, from, to, 10, width, scope, controller.signal);
+    const abortAt = {
+      count: 3,
+      raw: 4,
+      before: 3,
+      after: 3,
+    } as const;
+    for (const [call, at] of Object.entries(abortAt)) {
+      const entry = small.log.find((e) => e.call === call && e.phase === "start");
+      expect(entry?.args[at], call).toBe(controller.signal);
+    }
+  });
+
+  it("takes series from the fallback on ClickHouse", () => {
+    const mapping: TableMapping = {
+      database: "sdlog",
+      table: "conf_signals",
+      dataRef: "vehicle",
+      signal: "signal",
+      time: "utc",
+      value: "value",
+      text: "text",
+    };
+    const events: EventMapping = {
+      table: "conf_events",
+      source: "source",
+      kind: "kind",
+      name: "name",
+      value: "value",
+      text: "text",
+      detail: "detail",
+    };
+    const adapter = new ClickHouseSource({} as never, mapping, 30, events);
+    expect(nativeMethods(adapter)).toEqual([
+      "count",
+      "extent",
+      "refExtent",
+      "refCount",
+      "loggerGaps",
+      "firstTimes",
+      "stateChanges",
+      "events",
+    ]);
+    expect((adapter as SourceAdapter).series).toBeUndefined();
+    // The completed source still has it.
+    expect(typeof completeSource(adapter).series).toBe("function");
   });
 });

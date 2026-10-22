@@ -64,14 +64,11 @@ export async function querySeries(
 ): Promise<SeriesResult> {
   if (to <= from) throw new RangeError("empty time range: to must be after from");
   const head = { signalId, from: from.toString(), to: to.toString() };
-  const count = await source.count(ref, from, to, abort);
+  const width = bucketWidth(0n, span, target);
+  const answer = await source.series(ref, from, to, target, width, scope, abort);
 
-  if (count <= target) {
-    const [points, before, after] = await Promise.all([
-      source.raw(ref, from, to, undefined, abort),
-      source.before(ref, from, scope, abort),
-      source.after(ref, to, scope, abort),
-    ]);
+  if (answer.kind === "raw") {
+    const { points, before, after } = answer;
     const result: RawSeries = {
       kind: "raw",
       ...head,
@@ -85,8 +82,7 @@ export async function querySeries(
     return result;
   }
 
-  const width = bucketWidth(0n, span, target);
-  const buckets = await source.buckets(ref, from, to, width, abort);
+  const { buckets } = answer;
   const result: BucketSeries = {
     kind: "buckets",
     ...head,

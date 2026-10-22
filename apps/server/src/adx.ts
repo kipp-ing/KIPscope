@@ -6,7 +6,9 @@ import type {
   RawPoint,
   RefBucket,
   Scope,
+  SeriesAnswer,
   SeriesRef,
+  SignalRef,
   SourceAdapter,
   SourceInfo,
   SourceSignal,
@@ -194,6 +196,102 @@ export class AdxSource implements SourceAdapter {
 
   after(ref: SeriesRef, t: Timestamp, scope?: Scope, abort?: AbortSignal) {
     return this.edge(ref, t, "after", scope, abort);
+  }
+
+  // Native: the fallback's two `top 1` scans cost 4–17 s per signal on a cluster (speed-up-adx A1).
+  async extent(ref: SignalRef, scope?: Scope, abort?: AbortSignal) {
+    const { src, params } = this.scoped(this.table, scope);
+    const [row] = await this.client.query(
+      `${src} | where ${this.signalFilter} | extend x_ = ${ns(q(this.c.time))}
+       | summarize f_ = min(x_), l_ = max(x_) | project tostring(f_), tostring(l_)`,
+      { ref: str(ref.dataRef), sig: str(ref.name), ...params },
+      abort,
+    );
+    const [first, last] = (row ?? []) as (string | null | undefined)[];
+    return first && last ? { first: BigInt(first), last: BigInt(last) } : undefined;
+  }
+
+  // Native: one round trip instead of `count`, then `raw` + edges or `buckets` (speed-up-adx A3).
+  // Every leg answers the pinned columns k_, t_, v_, x_, c_, m_, lo_, hi_; the kind comes from the
+  // `n` row alone.
+  async series(
+    ref: SeriesRef,
+    from: Timestamp,
+    to: Timestamp,
+    target: number,
+    width: bigint,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ): Promise<SeriesAnswer> {
+    const t = q(this.c.time);
+    const { src, params } = this.scoped(this.table, scope);
+    const value = `extend v_ = todouble(${q(this.c.value)})`;
+    const text = ref.text ? `tostring(${q(this.c.text)})` : `""`;
+    const point = (k: string, c: string) =>
+      `project k_ = "${k}", t_ = tostring(${ns(t)}), v_ = iff(${isSna(ref)}, real(null), v_),
+           x_ = ${text}, c_ = ${c}, m_ = long(null), lo_ = real(null), hi_ = real(null)`;
+    const rows = await this.client.query(
+      `let src_ = ${src};
+       let rows_ = src_ | where ${this.signalFilter} and ${t} >= t0 and ${t} < t1;
+       let cnt_ = toscalar(rows_ | count);
+       union
+         (print k_ = "n", t_ = "", v_ = real(null), x_ = "", c_ = cnt_, m_ = long(null),
+             lo_ = real(null), hi_ = real(null)),
+         (rows_ | where cnt_ <= lim | ${value} | order by ${t} asc | extend r_ = row_number()
+             | ${point("p", "r_")}),
+         (src_ | where cnt_ <= lim and ${this.signalFilter} and ${t} < t0 | ${value}
+             | top 1 by ${t} desc | ${point("b", "long(null)")}),
+         (src_ | where cnt_ <= lim and ${this.signalFilter} and ${t} >= t1 | ${value}
+             | top 1 by ${t} asc | ${point("a", "long(null)")}),
+         (rows_ | where cnt_ > lim | extend x_ = ${ns(t)}, v_ = todouble(${q(this.c.value)})
+             | extend z_ = ${isSna(ref)}
+             | summarize c_ = countif(not(z_)), m_ = countif(z_), a_ = avgif(v_, not(z_)),
+                 lo_ = minif(v_, not(z_)), hi_ = maxif(v_, not(z_)) by b_ = ${grid("x_", "w")}
+             | project k_ = "k", t_ = tostring(b_), v_ = iff(c_ == 0, real(null), a_), x_ = "", c_, m_,
+                 lo_ = iff(c_ == 0, real(null), lo_), hi_ = iff(c_ == 0, real(null), hi_))
+       | project k_, t_, v_, x_, c_, m_, lo_, hi_`,
+      {
+        ref: str(ref.dataRef),
+        sig: str(ref.name),
+        t0: time(from),
+        t1: time(to),
+        lim: long(target),
+        w: long(width),
+        ...params,
+      },
+      abort,
+    );
+    const [count, extra] = rows.filter(([k]) => k === "n");
+    if (!count || extra) throw new Error("the series query returned no count");
+    if (Number(count[4]) > target) {
+      const buckets = rows
+        .filter(([k]) => k === "k")
+        .map(([, b, mean, , count, sna, min, max]) => ({
+          start: BigInt(b as string),
+          count: Number(count),
+          sna: Number(sna),
+          mean: real(mean),
+          min: real(min),
+          max: real(max),
+        }))
+        .sort((x, y) => (x.start < y.start ? -1 : x.start > y.start ? 1 : 0));
+      return { kind: "buckets", buckets };
+    }
+    const toPoint = ([, rt, v, x]: unknown[]): RawPoint => {
+      const p: RawPoint = { t: BigInt(rt as string), v: real(v) };
+      if (ref.text) p.text = x as string;
+      return p;
+    };
+    const points = rows
+      .filter(([k]) => k === "p")
+      .sort((x, y) => Number(x[4]) - Number(y[4]))
+      .map(toPoint);
+    const answer: SeriesAnswer = { kind: "raw", points };
+    const before = rows.find(([k]) => k === "b");
+    const after = rows.find(([k]) => k === "a");
+    if (before) answer.before = toPoint(before);
+    if (after) answer.after = toPoint(after);
+    return answer;
   }
 
   async buckets(

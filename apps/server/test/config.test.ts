@@ -72,6 +72,24 @@ describe("loadConfig", () => {
     expect(config.queryConcurrency).toBe(2);
   });
 
+  it("defaults the query limit per source kind", () => {
+    const adxEnv = {
+      KIPSCOPE_SOURCE: "adx",
+      KIPSCOPE_ADX_CLUSTER: "https://help.kusto.windows.net",
+      KIPSCOPE_ADX_DATABASE: "Samples",
+    };
+    // Without KIPSCOPE_QUERY_CONCURRENCY: 8 for ADX, 4 for ClickHouse (speed-up-adx A4, D-097).
+    expect(loadConfig(adxEnv, "/repo/kipscope").queryConcurrency).toBe(8);
+    expect(loadConfig(base, "/repo/kipscope").queryConcurrency).toBe(4);
+    // A set variable wins for either kind.
+    expect(
+      loadConfig({ ...adxEnv, KIPSCOPE_QUERY_CONCURRENCY: "3" }, "/repo/kipscope").queryConcurrency,
+    ).toBe(3);
+    expect(
+      loadConfig({ ...base, KIPSCOPE_QUERY_CONCURRENCY: "6" }, "/repo/kipscope").queryConcurrency,
+    ).toBe(6);
+  });
+
   it("rejects unsafe identifiers and bad numbers", () => {
     expect(() => loadConfig({ ...base, KIPSCOPE_TABLE: "x; DROP TABLE y" })).toThrow(/identifier/);
     expect(() => loadConfig({ ...base, KIPSCOPE_QUERY_CONCURRENCY: "0" })).toThrow(/positive/);

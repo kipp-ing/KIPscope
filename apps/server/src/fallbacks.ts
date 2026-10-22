@@ -4,6 +4,7 @@ import type {
   LoggerGaps,
   RawPoint,
   Scope,
+  SeriesAnswer,
   SeriesRef,
   SignalRef,
   SourceAdapter,
@@ -35,6 +36,7 @@ export class ScanLimitError extends Error {
 const OPTIONAL = [
   "count",
   "extent",
+  "series",
   "refExtent",
   "refCount",
   "loggerGaps",
@@ -107,6 +109,25 @@ export function completeSource(adapter: SourceAdapter): DataSource {
           adapter.before(signal, TIME_MAX, scope, abort),
         ]);
         return first && last ? { first: first.t, last: last.t } : undefined;
+      }),
+
+    // The completed count first (native if the adapter has one), then today's calls (design A2).
+    series:
+      adapter.series?.bind(adapter) ??
+      (async (ref, from, to, target, width, scope, abort) => {
+        const n = await source.count(ref, from, to, abort);
+        if (n <= target) {
+          const [points, before, after] = await Promise.all([
+            adapter.raw(ref, from, to, undefined, abort),
+            adapter.before(ref, from, scope, abort),
+            adapter.after(ref, to, scope, abort),
+          ]);
+          const answer: SeriesAnswer = { kind: "raw", points };
+          if (before) answer.before = before;
+          if (after) answer.after = after;
+          return answer;
+        }
+        return { kind: "buckets", buckets: await adapter.buckets(ref, from, to, width, abort) };
       }),
 
     refExtent:

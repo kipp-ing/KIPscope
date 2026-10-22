@@ -201,13 +201,14 @@ export interface MemorySignal {
 }
 
 /**
- * An in-memory adapter with every method (so `DataSource`), answering as if it held only the scope's rows (design Z1).
+ * An in-memory adapter with every method but `series` (like ClickHouse: the server's fallback
+ * makes it, speed-up-adx A2), answering as if it held only the scope's rows (design Z1).
  * Enough for the routes and background tasks to run against it without a database.
  */
 export function memoryAdapter(
   signals: MemorySignal[],
   options: { failListSignals?: (scope: Scope | undefined) => boolean } = {},
-): DataSource {
+): Omit<DataSource, "series"> {
   const inScope = (t: bigint, scope?: Scope) => !scope || (t >= scope.from && t < scope.to);
   const rowsOf = (ref: { dataRef: string; name: string }, scope?: Scope) =>
     (signals.find((s) => s.dataRef === ref.dataRef && s.name === ref.name)?.rows ?? [])

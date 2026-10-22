@@ -66,7 +66,7 @@ const num = (v: number | null) => v ?? Number.NaN;
  * ClickHouse adapter for a long-format table (design D5). Identifiers come from validated config;
  * all values go through query parameters. Every query excludes rows without a timestamp.
  */
-export class ClickHouseSource implements DataSource {
+export class ClickHouseSource implements Omit<DataSource, "series"> {
   private readonly client: ClickHouseClient;
   private readonly table: string;
   private readonly c: TableMapping;

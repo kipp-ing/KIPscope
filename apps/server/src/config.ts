@@ -160,6 +160,9 @@ const DEFAULT_COLUMNS: Record<SourceConfig["kind"], Omit<TableMapping, "database
   },
 };
 
+/** Default of `KIPSCOPE_QUERY_CONCURRENCY` per source (design A4, D-097). */
+export const DEFAULT_QUERY_CONCURRENCY = { clickhouse: 4, adx: 8 } as const;
+
 /** Defaults of `KIPSCOPE_EVENTS_TABLE` and `KIPSCOPE_EVENT_COLUMN_*` (design E1), the same for both sources. */
 export const DEFAULT_EVENT_MAPPING: EventMapping = {
   table: "events",
@@ -477,7 +480,11 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     },
     dbcFiles: pathList(env, "KIPSCOPE_DBC_FILES", DEFAULT_DBC_FILES, root),
     diagCatalogs: pathList(env, "KIPSCOPE_DIAG_CATALOGS", DEFAULT_DIAG_CATALOGS, root),
-    queryConcurrency: positiveInt(env, "KIPSCOPE_QUERY_CONCURRENCY", 4),
+    queryConcurrency: positiveInt(
+      env,
+      "KIPSCOPE_QUERY_CONCURRENCY",
+      DEFAULT_QUERY_CONCURRENCY[source.kind],
+    ),
     queryTimeoutSeconds: positiveInt(env, "KIPSCOPE_QUERY_TIMEOUT_S", 30),
     projectFile: project
       ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }

@@ -15,6 +15,8 @@ export const SCOPE_S2: Scope = { dataRef: "conf-a", from: B + 5n * S, to: B + 35
 const ramp: SeriesRef = { dataRef: "conf-a", name: "Lin.RAMP", sna: [] };
 const mode: SeriesRef = { dataRef: "conf-a", name: "State.MODE", sna: [{ lo: 14.5, hi: 15.5 }] };
 const door: SeriesRef = { dataRef: "conf-a", name: "Diag.door", sna: [], text: true };
+/** The bucket width querySeries computes for 1 s at target 100: ceil(1 s / 99). */
+const SERIES_WIDTH = 10_101_011n;
 const labels: StateChangeRule = { kind: "labels", values: [0, 3], tolerance: 0.5 };
 
 /** The calls, by label; each one passes `scope` (and nothing after it) only when it has one. */
@@ -39,6 +41,11 @@ export const SCOPED_CALLS: Record<string, (s: SourceAdapter, scope?: Scope) => P
     scope ? s.events?.("conf-a", 100, scope) : s.events?.("conf-a", 100),
   // Optional methods: an adapter without them answers nothing here; completeSource(adapter) has them all.
   extent: async (s, scope) => (scope ? s.extent?.(ramp, scope) : s.extent?.(ramp)),
+  // The raw path within S2 (100 points at target 100); ClickHouse has no native series and sends nothing.
+  series: async (s, scope) =>
+    scope
+      ? s.series?.(ramp, B + 5n * S, B + 6n * S, 100, SERIES_WIDTH, scope)
+      : s.series?.(ramp, B + 5n * S, B + 6n * S, 100, SERIES_WIDTH),
   refExtent: async (s, scope) => (scope ? s.refExtent?.("conf-a", scope) : s.refExtent?.("conf-a")),
   firstTimes: async (s, scope) =>
     scope

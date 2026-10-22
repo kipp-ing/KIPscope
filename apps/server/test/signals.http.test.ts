@@ -7,10 +7,10 @@ import { loadDbcFiles } from "../src/dbc.ts";
 import { loadDiagCatalogs } from "../src/diag.ts";
 import { loadProjectFile } from "../src/project.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { fixture, testDbcFiles, testDiagCatalogs, testSource } from "./testdb.ts";
+import { fixture, testDataSource, testDbcFiles, testDiagCatalogs } from "./testdb.ts";
 
 describe("GET /api/signals", () => {
-  const source = testSource();
+  const source = testDataSource();
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles));
   const app = buildApp({
     catalog,
@@ -141,7 +141,7 @@ describe("GET /api/signals without a reachable source", () => {
 });
 
 describe("503 reason while the catalog is still loading", () => {
-  const source = testSource();
+  const source = testDataSource();
   const catalog = new Catalog(source, async () => new Map());
   const app = buildApp({
     catalog,
@@ -161,7 +161,7 @@ describe("503 reason while the catalog is still loading", () => {
 });
 
 describe("display names over HTTP (test project file)", () => {
-  const source = testSource();
+  const source = testDataSource();
   const rules = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
   const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
   const app = buildApp({
@@ -198,7 +198,7 @@ describe("display names over HTTP (test project file)", () => {
 });
 
 describe("collision warning on refresh (N5)", () => {
-  const real = testSource();
+  const real = testDataSource();
   let failing = false;
   const source = {
     ...real,

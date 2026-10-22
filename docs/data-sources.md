@@ -36,6 +36,11 @@ export interface Scope {
   to: Timestamp;
 }
 
+/** What one series request needs: raw points with edges, or buckets. */
+export type SeriesAnswer =
+  | { kind: "raw"; points: RawPoint[]; before?: RawPoint; after?: RawPoint }
+  | { kind: "buckets"; buckets: Bucket[] };
+
 export interface SourceAdapter {
   readonly info: SourceInfo;
   ping(abort: AbortSignal): Promise<void>;
@@ -49,6 +54,7 @@ export interface SourceAdapter {
   // Optional fast paths; the server computes a missing one from the methods above.
   count?(ref: SignalRef, from: Timestamp, to: Timestamp, abort?: AbortSignal): Promise<number>;
   extent?(ref: SignalRef, scope?: Scope, abort?: AbortSignal): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
+  series?(ref: SeriesRef, from: Timestamp, to: Timestamp, target: number, width: bigint, scope?: Scope, abort?: AbortSignal): Promise<SeriesAnswer>;
   refExtent?(dataRef: string, scope?: Scope, abort?: AbortSignal): Promise<{ count: number; first: Timestamp; last: Timestamp } | undefined>;
   refCount?(dataRef: string, scope?: Scope, abort?: AbortSignal): Promise<number>;
   loggerGaps?(dataRef: string, grid: bigint, minGap: bigint, scope?: Scope, abort?: AbortSignal): Promise<LoggerGaps>;
@@ -60,7 +66,7 @@ export interface SourceAdapter {
 }
 ```
 
-Eleven methods take an optional `scope` before `abort`; section "Scope" below says what it means. The server uses `DataSource = Required<SourceAdapter>`: `completeSource` (`fallbacks.ts`) fills in every optional method the adapter lacks, and the start log names the native ones (`source adx kipscope_test: native refCount, loggerGaps, stateChanges, events`).
+Twelve methods take an optional `scope` before `abort`; section "Scope" below says what it means. The server uses `DataSource = Required<SourceAdapter>`: `completeSource` (`fallbacks.ts`) fills in every optional method the adapter lacks, and the start log names the native ones (`source adx kipscope_test: native extent, series, refCount, loggerGaps, stateChanges, events`).
 
 | Method | Kind | Semantics | Fallback | Measured cost, native → fallback | Native in |
 |---|---|---|---|---|---|
@@ -71,8 +77,9 @@ Eleven methods take an optional `scope` before `abort`; section "Scope" below sa
 | `before` / `after` | required | last point strictly before `t` / first point at or after `t` | — | — | both |
 | `buckets` | required | non-empty buckets on the grid `k · width` (floor, also before 1970), ordered by start: valid count, SNA count, mean/min/max of valid points (`null` iff count is 0) | — | — | both |
 | `refBuckets` | required | non-empty buckets of all timestamped rows of a data ref on `k · width`, any order; `times`: with the first and last row time per bucket | — | — | both |
-| `count` | optional | points in `[from, to)` | `buckets` of one bucket of width 2^62, sum of valid + SNA | ClickHouse 10 h: 5.2 → 64 ms, 1 min: 2.1 → 2.9 ms; emulator 10 h: 20 → 32 ms | ClickHouse |
-| `extent` | optional | first and last time of a signal | `after(TIME_MIN)` and `before(TIME_MAX)` in parallel | ClickHouse 22 → ≈ 32 ms; emulator 20 → ≈ 30 ms | ClickHouse |
+| `count` | optional | points in `[from, to)` | `buckets` of one bucket of width 2^62, sum of valid + SNA | ClickHouse 10 h: 5.2 → 64 ms, 1 min: 2.1 → 2.9 ms; emulator 10 h: 20 → 32 ms | ClickHouse (ADX: fallback, D-097) |
+| `extent` | optional | first and last time of a signal | `after(TIME_MIN)` and `before(TIME_MAX)` in parallel | ClickHouse 22 → ≈ 32 ms; emulator 20 → ≈ 30 ms; ADX cluster: fallback 4–17 s per signal (two `top 1` scans), native extent + count of 3 names in one `summarize` 1.8 s | both |
+| `series` | optional | what one series request needs: if `[from, to)` holds at most `target` points (as `count` counts them), those points (as `raw` without a limit), `before(ref, from, scope)` and `after(ref, to, scope)`; else `buckets(ref, from, to, width)` | `count` first, then `raw` + `before` + `after` in parallel, or `buckets` (today's calls with today's arguments) | emulator 10 h (buckets): 57 → 82 ms, 5 s (1,000 points, raw): 36 → 33 ms; ADX cluster: two serial round trips of 0.6–8 s each and up to 4 queue slots → one round trip and one slot (design figures) | ADX |
 | `refExtent` | optional | row count, first and last time of a data ref | `refBuckets(2^62, times)`: sum, min, max | ClickHouse 38 → 75 ms; emulator 23 → 31 ms | ClickHouse |
 | `refCount` | optional | a row count that changes whenever rows are added (rows without time may count, consistently) | `refExtent(…).count` | ClickHouse 1.3 → 38 ms; emulator 12 → 31 ms; smart451 3.4 ms → a full time-column scan every 5 min | both |
 | `loggerGaps` | optional | gaps of at least `minGap` between rows of a data ref on `grid`, plus the last row time | `refBuckets(grid, times)`: a gap where the next bucket's first time minus the previous one's last ≥ `minGap` | ClickHouse 98 ms / 58 B → 99 ms / 2.8 MB; emulator 41 → 91 ms / 2.6 MB; smart451 ≈ 7 MB transfer | both |
@@ -80,13 +87,14 @@ Eleven methods take an optional `scope` before `abort`; section "Scope" below sa
 | `stateChanges` | optional | first valid point, then each change by the rule (text, or value labels with tolerance), at most `limit` rows; SNA points skipped | `raw` in pages of 100,000 points; stops after 5,000,000 points (the signal is then skipped as `too_many_changes`, with a warning) | ClickHouse 8 ms / 225 B → 6 ms / 1.7 MB (63 k rows); emulator 44 ms / 3 rows → reads all rows; smart451 ≈ 5 MB | both |
 | `events` | capability | event rows of a data ref in time order, at most `limit`; `undefined` = no events table | none: absent means no events | — | both |
 
-ClickHouse implements all 15 natively and sends the same queries as before the contract existed. ADX implements 11: the fallbacks for `count`, `extent`, `refExtent` and `firstTimes` cost at most 1.6× (or less than the native query), the others more than 2× or a transfer of megabytes. Measurements: warm medians of 3 runs on the ClickHouse test DB (21.7 M rows) and the Kusto emulator (21.6 M rows, `Fast_100h.SIG_A/B/C` at 5 ms over 10 h), 2026-10-17. The full table, with the estimates for the smart451 database on carserver:
+ClickHouse implements 15 of the 16 natively; it takes `series` from the fallback, so it sends the same queries as before the contract existed. ADX implements 13: the fallbacks for `count`, `refExtent` and `firstTimes` cost at most 1.6× on the emulator (or less than the native query), the others more than 2× or a transfer of megabytes. `extent` and `series` are native on ADX because of the search tool team's measurements on a real cluster (2026-10-22, D-097): there one round trip costs 0.6–8 s, the `extent` fallback's two scans 4–17 s per signal, and the `series` fallback two serial round trips. `count` stays a fallback on ADX (D-097): with a native `series` ADX never calls it from `/api/series`. Measurements: warm medians of 3 runs on the ClickHouse test DB (21.7 M rows) and the Kusto emulator (21.6 M rows, `Fast_100h.SIG_A/B/C` at 5 ms over 10 h), 2026-10-17; cluster figures from the search tool team's report (2026-10-22). The full table, with the estimates for the smart451 database on carserver:
 
 | Method | ClickHouse native → fallback | Emulator native → fallback | smart451 estimate | Fallback ≤ 2×? |
 |---|---|---|---|---|
-| `count`, 10 h of SIG_A | 5.2 ms → 64 ms (primary index vs. aggregate) | 20 → 32 ms | overview counts like the 10 h case | ClickHouse no (keeps native); ADX yes |
+| `count`, 10 h of SIG_A | 5.2 ms → 64 ms (primary index vs. aggregate) | 20 → 32 ms | overview counts like the 10 h case | ClickHouse no (keeps native); ADX yes (stays on the fallback, D-097) |
 | `count`, 1 min | 2.1 → 2.9 ms | 15 → 15 ms | — | yes |
-| `extent`, SIG_A | 22 → 4 + 32 ms (parallel ≈ 32) | 20 → ≈ 30 ms (28, 29 in parallel) | — | yes (1.5×) |
+| `extent`, SIG_A | 22 → 4 + 32 ms (parallel ≈ 32) | 20 → ≈ 30 ms (28, 29 in parallel) | — | emulator yes (1.5×); ADX cluster no: fallback 4–17 s per signal, native extent + count of 3 names in one `summarize` 1.8 s → native on ADX |
+| `series`, one request | fallback only (no native) | 10 h of SIG_A (buckets, target 1,000): 57 → 82 ms; 5 s (1,000 points, raw): 36 → 33 ms (2026-10-22, on a separate emulator data set of SIG_A only, about 7.2 M rows, so not comparable with the other rows' times; method in the `speed-up-adx` design A7) | — | emulator yes (1.4×; raw: the fallback's second round trip costs nothing on loopback); ADX cluster no: two serial round trips (`count`, then the data) of 0.6–8 s each → one (design figures) → native on ADX |
 | `refExtent`, testcar | 38 → 75 ms | 23 → 31 ms | one scan either way | yes (≤ 2.0×) |
 | `refCount`, testcar | 1.3 → 38 ms | 12 → 31 ms | 3.4 ms → a full time-column scan (≈ seconds) every 5 min | no: native on both |
 | `loggerGaps`, testcar | 98 ms / 58 B → 99 ms / 2.8 MB | 41 ms → 91 ms / 2.6 MB | 7.2 s → ≈ 7.2 s + ≈ 7 MB (93 k seconds × 75 B) | ClickHouse ≈ 1.1×; ADX 2.2× + transfer → native on ADX |
@@ -102,7 +110,7 @@ ClickHouse implements all 15 natively and sends the same queries as before the c
 - **Errors:** a failing query rejects with the source's message; never return a partial answer (ADX: HTTP 200 with `HasErrors`, e.g. `LimitsExceeded`, is an error). Credentials and tokens never appear in an error.
 - **Read-only:** an adapter never writes to the source.
 - **Identifiers only from configuration:** database, table and column names come from the `KIPSCOPE_*` variables (checked at start); every value (data ref, name, times, limits, lists) goes in as a query parameter, never spliced into the query text. Numbers the adapter writes itself (SNA bounds, grid widths) are the only literals.
-- **The queue:** every method except `ping` and `info` runs through the server's query queue, at most `KIPSCOPE_QUERY_CONCURRENCY` (default 4) at once, each with `KIPSCOPE_QUERY_TIMEOUT_S` (default 30). Every query runs in one of four classes, highest first: `interactive` (HTTP requests, the catalog load), `metadata` (the metadata batch at case open), `background` (the prefetches after a catalog load, the gap polls), `preload` (neighbour preloading). A free slot goes to the oldest waiting query of the highest class; running queries are never preempted. Shared work that a higher-class request joins is raised to that class and ranks by when it was raised. One slot is kept for `interactive` queries (none with a limit of 1), so background work never takes the last free slot. Fallbacks sit outside the queue, so each of their inner queries takes its own slot, runs in its caller's class and carries the caller's abort.
+- **The queue:** every method except `ping` and `info` runs through the server's query queue, at most `KIPSCOPE_QUERY_CONCURRENCY` (default 4 for ClickHouse, 8 for ADX; D-097) at once, each with `KIPSCOPE_QUERY_TIMEOUT_S` (default 30). Every query runs in one of four classes, highest first: `interactive` (HTTP requests, the catalog load), `metadata` (the metadata batch at case open), `background` (the prefetches after a catalog load, the gap polls), `preload` (neighbour preloading). A free slot goes to the oldest waiting query of the highest class; running queries are never preempted. Shared work that a higher-class request joins is raised to that class and ranks by when it was raised. One slot is kept for `interactive` queries (none with a limit of 1), so background work never takes the last free slot. Fallbacks sit outside the queue, so each of their inner queries takes its own slot, runs in its caller's class and carries the caller's abort.
 - **Time bounds:** callers send bounds within `TIME_MIN` … `TIME_MAX`; `extent` and `firstTimes` fallbacks use them as "all". A source with coarser resolution rounds bounds up to its next tick, so `[from, to)`, `before` and `after` hold for any nanosecond bound.
 
 ## Scope
@@ -118,6 +126,7 @@ A scope is one data ref and one half-open time window `[from, to)`, `from < to` 
 | `after` (required) | `after(ref, t, scope?, abort?)` | first point in `[max(t, scope.from), scope.to)` |
 | `refBuckets` (required) | `refBuckets(dataRef, width, times, scope?, abort?)` | non-empty buckets of the rows in the scope (an edge may cut a bucket) |
 | `extent` | `extent(ref, scope?, abort?)` | first and last point in the scope |
+| `series` | `series(ref, from, to, target, width, scope?, abort?)` | points or buckets of `[from, to)` as without a scope (the server keeps the range inside the scope); the edges are `before(ref, from, scope)` and `after(ref, to, scope)` |
 | `refExtent` | `refExtent(dataRef, scope?, abort?)` | count, first and last of the rows in the scope |
 | `refCount` | `refCount(dataRef, scope?, abort?)` | rows in the scope (exact; no rows without time) |
 | `loggerGaps` | `loggerGaps(dataRef, grid, minGap, scope?, abort?)` | gaps between consecutive rows in the scope; `last` is the last row in the scope |
@@ -125,14 +134,14 @@ A scope is one data ref and one half-open time window `[from, to)`, `from < to` 
 | `stateChanges` | `stateChanges(ref, by, limit, scope?, abort?)` | the first row in the scope, then each change within it |
 | `events` (capability) | `events(dataRef, limit, scope?, abort?)` | event rows in the scope |
 
-`raw`, `buckets` and `count` keep their signatures: they already take a range, and the server only sends ranges inside the active scope. `ping` reads no rows; it is the only query without a data ref and a time filter. In scoped mode (below) the server wraps the source in a guard: a data call without a scope, or a `raw`, `buckets` or `count` outside a loaded scope, fails before it reaches the adapter and is logged as a bug.
+`raw`, `buckets` and `count` keep their signatures: they already take a range, and the server only sends ranges inside the active scope; so does `series`, whose scope bounds its edges. `ping` reads no rows; it is the only query without a data ref and a time filter. In scoped mode (below) the server wraps the source in a guard: a data call without a scope, or a `raw`, `buckets`, `count` or `series` outside a loaded scope, fails before it reaches the adapter and is logged as a bug.
 
-**Fallbacks** (`fallbacks.ts`) pass the scope on and use `scope.from … scope.to` where they used `TIME_MIN … TIME_MAX`: `extent` is `after(ref, TIME_MIN, scope)` and `before(ref, TIME_MAX, scope)`; `refExtent` is `refBuckets(dataRef, 2^62, true, scope)`; `refCount` is `refExtent(dataRef, scope)`; `loggerGaps` is `refBuckets(dataRef, grid, true, scope)`; `firstTimes` is `raw(name, scope.from, scope.to, rows)` per name; the `stateChanges` page scan runs from `scope.from` to `scope.to`; `count` is unchanged. Queue classes, aborts and the scan limits stay as they are.
+**Fallbacks** (`fallbacks.ts`) pass the scope on and use `scope.from … scope.to` where they used `TIME_MIN … TIME_MAX`: `extent` is `after(ref, TIME_MIN, scope)` and `before(ref, TIME_MAX, scope)`; `refExtent` is `refBuckets(dataRef, 2^62, true, scope)`; `refCount` is `refExtent(dataRef, scope)`; `loggerGaps` is `refBuckets(dataRef, grid, true, scope)`; `firstTimes` is `raw(name, scope.from, scope.to, rows)` per name; the `stateChanges` page scan runs from `scope.from` to `scope.to`; `series` passes the scope to `before` and `after`; `count` is unchanged. Queue classes, aborts and the scan limits stay as they are.
 
 **Filter shapes.** An adapter applies the scope as one filter on the data-ref column and both bounds of the time column, all as query parameters:
 
 - ClickHouse: every query of a scoped call adds `AND <data-ref column> = {ref} AND <time column> >= {from} AND <time column> < {to}`. `listSignals(scope)` is one `GROUP BY` signal query over the scoped rows with the text flag. Unscoped calls send the same query texts as before.
-- ADX: one helper builds the scoped table expression `<table> | where <data-ref column> == sref and <time column> >= sfrom and <time column> < sto` with the parameters `sref`, `sfrom`, `sto` (bounds rounded up to the tick as before); every scoped query starts from it instead of the bare table, and the events table uses the same helper. A native `firstTimes` must take the scope too.
+- ADX: one helper builds the scoped table expression `<table> | where <data-ref column> == sref and <time column> >= sfrom and <time column> < sto` with the parameters `sref`, `sfrom`, `sto` (bounds rounded up to the tick as before); every scoped query starts from it instead of the bare table, and the events table uses the same helper. A native `firstTimes` must take the scope too; the native `extent` and `series` start every table reference from it.
 
 **Conformance.** The suite (`apps/server/test/conformance/suite.ts`) runs five scoped cases, natively and core only, over its fixture with three scopes: one that holds part of a heartbeat signal on both sides of a logger gap plus two door events, one early window over several signals of one data ref while a second data ref has rows in the same times, and one that starts inside the logger gap.
 
@@ -144,7 +153,7 @@ A scope is one data ref and one half-open time window `[from, to)`, `from < to` 
 | "samples the first times in a scope" | `firstTimes` counts per name start at `scope.from`; an unknown name is absent |
 | "finds state changes in a scope" | `stateChanges` starts with the first row in the scope and lists only the changes within it, by value labels and by text |
 
-Every unscoped case keeps passing unchanged.
+The case "answers a series" also runs `series` with a scope: its edge before stops at `scope.from`. Every unscoped case keeps passing unchanged.
 
 **Catalog modes.** `KIPSCOPE_CATALOG=full` (default) loads the whole signal catalog at start, as before; a scope then narrows everything to it. `KIPSCOPE_CATALOG=scoped` loads no catalog at start and runs no prefetch or poll over all data refs: the catalog, signal search and data routes answer 409 `scope_required` until the workspace has a scope, and the signal list is loaded per scope (`listSignals(scope)`, at most four kept). Use it for a source too large to list or scan whole, such as a big ADX table. A view opened without its own scope gets one derived from its first signal's data ref and the union of its window ranges and cursors, widened by `KIPSCOPE_SCOPE_PAD` (default `1h`) on each side.
 
@@ -252,7 +261,7 @@ Every variable `apps/server/src/config.ts` reads. The server reads them from the
 | `KIPSCOPE_EVENT_COLUMN_VALUE` | both | `value` | |
 | `KIPSCOPE_EVENT_COLUMN_TEXT` | both | `text` | |
 | `KIPSCOPE_EVENT_COLUMN_DETAIL` | both | `detail` | |
-| `KIPSCOPE_QUERY_CONCURRENCY` | both | `4` | positive integer; queries at once |
+| `KIPSCOPE_QUERY_CONCURRENCY` | both | ClickHouse `4`, ADX `8` | positive integer; queries at once |
 | `KIPSCOPE_QUERY_TIMEOUT_S` | both | `30` | positive integer; seconds per query |
 
 Server settings, independent of the source:

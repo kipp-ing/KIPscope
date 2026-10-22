@@ -134,7 +134,7 @@ No task follows from P9.
 - **Query counts and KQL shape** on a fake Kusto client (records each `query(csl, params)`, answers canned rows of A1 (`extent`) and A3 (`series`)) in a new `apps/server/test/adxQueries.test.ts`, which `pnpm test` runs (the name does not match the `adx` excludes).
 - **Answers** in the conformance suite (ClickHouse test DB in `pnpm test`, emulator in `test:adx`) and native-vs-fallback JSON identity on the emulator (`adx.test.ts`).
 - **ClickHouse unchanged** by the existing suite plus "No native series on ClickHouse" and the fallback-steps test.
-- **Docs:** the guide's measured-cost column gets the emulator numbers for `extent` and `series` native → fallback (informative, not a gate).
+- **Docs:** the guide's measured-cost column gets the emulator numbers for `extent` and `series` native → fallback (informative, not a gate). Method of the `series` figures (2026-10-22): warm medians of 3 runs of native `AdxSource.series` against `completeSource(coreOnly(adapter)).series` on the same requests, on a temporary emulator database `kipscope_perf` holding only `SIG_A` (about 7.2 M rows, dropped afterwards). The absolute times are not comparable with the 2026-10-17 rows, which used the 21.6 M-row data set.
 
 ## Risks / Trade-offs
 

@@ -143,6 +143,7 @@ describe("queuedAdapter shape", () => {
     for (const name of [
       "count",
       "extent",
+      "series",
       "refExtent",
       "refCount",
       "loggerGaps",
@@ -237,6 +238,7 @@ describe("queuedAdapter scope", () => {
       buckets: record("buckets", []),
       refBuckets: record("refBuckets", []),
       count: record("count", 0),
+      series: record("series", { kind: "raw", points: [] }),
       extent: record("extent", undefined),
       refExtent: record("refExtent", undefined),
       refCount: record("refCount", 0),
@@ -249,7 +251,7 @@ describe("queuedAdapter scope", () => {
   }
 
   /**
-   * The 11 methods that take a scope (design Z1 of add-scope): the call with scope and abort, and
+   * The 12 methods that take a scope (design Z1 of add-scope, `series` added by speed-up-adx A2): the call with scope and abort, and
    * the arguments the wrapped method must receive, `abort` always last. Written from the Z1 table.
    */
   const calls: [string, (q: DataSource, abort?: AbortSignal) => Promise<unknown>, unknown[]][] = [
@@ -264,9 +266,14 @@ describe("queuedAdapter scope", () => {
     ["loggerGaps", (q, a) => q.loggerGaps("car", 2n, 5n, scope, a), ["car", 2n, 5n, scope]],
     ["firstTimes", (q, a) => q.firstTimes("car", ["S"], 3, scope, a), ["car", ["S"], 3, scope]],
     ["stateChanges", (q, a) => q.stateChanges(sig, rule, 100, scope, a), [sig, rule, 100, scope]],
+    [
+      "series",
+      (q, a) => q.series(sig, 1000n, 5000n, 100, 40n, scope, a),
+      [sig, 1000n, 5000n, 100, 40n, scope],
+    ],
   ];
 
-  it("covers the 11 methods of the contract that take a scope", () => {
+  it("covers the 12 methods of the contract that take a scope", () => {
     expect(calls.map(([name]) => name).sort()).toEqual(
       [
         "listSignals",
@@ -280,8 +287,10 @@ describe("queuedAdapter scope", () => {
         "loggerGaps",
         "firstTimes",
         "stateChanges",
+        "series",
       ].sort(),
     );
+    expect(calls).toHaveLength(12);
   });
 
   for (const [name, call, args] of calls) {
@@ -445,6 +454,35 @@ describe("QueryQueue classes", () => {
     await drain(rest);
     expect(order).not.toContain("I3");
     expect(order).toHaveLength(24);
+  });
+
+  it("runs eight at once with the ADX default", async () => {
+    const queue = new QueryQueue(8);
+    expect(queue.kept).toBe(1);
+    const order: string[] = [];
+    const interactive: Held[] = [];
+    const background: Held[] = [];
+    for (let i = 1; i <= 20; i++) interactive.push(hold(queue, order, `I${i}`, "interactive"));
+    for (let i = 1; i <= 20; i++) background.push(hold(queue, order, `B${i}`, "background"));
+    await settle();
+    // Eight interactive queries run at once, the other twelve and all background queries wait.
+    expect(order).toEqual(Array.from({ length: 8 }, (_, i) => `I${i + 1}`));
+    expect(queue.stats.byClass.interactive).toEqual({ running: 8, waiting: 12 });
+    expect(queue.stats.byClass.background).toEqual({ running: 0, waiting: 20 });
+
+    // Release the interactive queries until all 20 ended: no background query starts before.
+    await drain(interactive);
+    expect(order.slice(0, 20)).toEqual(Array.from({ length: 20 }, (_, i) => `I${i + 1}`));
+    // Then seven background queries run at once: the eighth slot stays kept for interactive ones.
+    expect(order.slice(20)).toEqual(Array.from({ length: 7 }, (_, i) => `B${i + 1}`));
+    expect(queue.stats.byClass.interactive).toEqual({ running: 0, waiting: 0 });
+    expect(queue.stats.byClass.background).toEqual({ running: 7, waiting: 13 });
+    expect(queue.stats.running).toBe(7);
+    expect(queue.peak).toBe(8);
+
+    await drain(background);
+    expect(order).toHaveLength(40);
+    expect(queue.stats.running).toBe(0);
   });
 
   it("keeps one slot for interactive queries", async () => {

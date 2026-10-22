@@ -225,6 +225,97 @@ export function describeConformance(target: ConformanceTarget): void {
         expect(await source.extent(ref("conf-a", "Nope.X"))).toBeUndefined();
       });
 
+      it("answers a series", async () => {
+        // Expected values from the fixture definition: Lin.RAMP n at B + n·10 ms with value n,
+        // Sna.CODE n at B + n s, Diag.door closed/closed/open/open/closed at B + 0, 90, 180, 270, 360 s.
+        const rampAt = (n: number) => ({ t: B + BigInt(n) * 10n * MS, v: n });
+
+        // (a) 100 points at target 100: raw with both edges, outside the range.
+        const width = 10_204_082n; // ceil(1 s / 98), as querySeries computes it for target 100
+        expect(await source.series(ramp, B + S, B + 2n * S, 100, width)).toEqual({
+          kind: "raw",
+          points: Array.from({ length: 100 }, (_, i) => rampAt(100 + i)),
+          before: rampAt(99),
+          after: rampAt(200),
+        });
+
+        // (b) one point more than the target: buckets on the floor grid k * width, 100 points in all.
+        const over = await source.series(ramp, B + S, B + 2n * S, 99, width);
+        expect(over.kind).toBe("buckets");
+        if (over.kind !== "buckets") return;
+        const expectedStarts = new Map<bigint, number[]>();
+        for (let n = 100; n < 200; n++) {
+          const t = B + BigInt(n) * 10n * MS;
+          const start = t - (t % width);
+          expectedStarts.set(start, [...(expectedStarts.get(start) ?? []), n]);
+        }
+        expect(over.buckets.map((b) => b.start)).toEqual([...expectedStarts.keys()]);
+        expect(over.buckets.map((b) => b.count)).toEqual(
+          [...expectedStarts.values()].map((values) => values.length),
+        );
+        expect(over.buckets.reduce((sum, b) => sum + b.count, 0)).toBe(100);
+        expect(over.buckets.map((b) => b.sna)).toEqual(over.buckets.map(() => 0));
+        expect(over.buckets.map((b) => b.min)).toEqual(
+          [...expectedStarts.values()].map((values) => Math.min(...values)),
+        );
+        expect(over.buckets.map((b) => b.max)).toEqual(
+          [...expectedStarts.values()].map((values) => Math.max(...values)),
+        );
+
+        // (c) 10,000 points at target 11: 10 buckets of 10 s, 1,000 points each.
+        const tenS = 10n * S;
+        const wide = await source.series(ramp, B, B + 100n * S, 11, tenS);
+        expect(wide.kind).toBe("buckets");
+        if (wide.kind === "buckets") {
+          expect(wide.buckets).toEqual(
+            Array.from({ length: 10 }, (_, i) => ({
+              start: B + BigInt(i) * tenS,
+              count: 1000,
+              sna: 0,
+              mean: 1000 * i + 499.5,
+              min: 1000 * i,
+              max: 1000 * i + 999,
+            })),
+          );
+        }
+
+        // (d) SNA points count towards the target and come back as null values; edges are SNA-aware.
+        const sna = ref("conf-a", "Sna.CODE", [{ lo: 6.5, hi: 7.5 }]);
+        expect(await source.series(sna, B + 40n * S, B + 50n * S, 20, tenS)).toEqual({
+          kind: "raw",
+          points: Array.from({ length: 10 }, (_, i) => ({ t: B + BigInt(40 + i) * S, v: null })),
+          before: { t: B + 39n * S, v: 4 },
+          after: { t: B + 50n * S, v: 0 },
+        });
+
+        // (e) a text signal: points and edges carry the row text.
+        const door = ref("conf-a", "Diag.door", [], true);
+        expect(await source.series(door, B + 100n * S, B + 200n * S, 10, 12n * S)).toEqual({
+          kind: "raw",
+          points: [{ t: B + 180n * S, v: 0, text: "open" }],
+          before: { t: B + 90n * S, v: 0, text: "closed" },
+          after: { t: B + 270n * S, v: 0, text: "open" },
+        });
+
+        // (f) in the scope SC2 the edge before B + 5 s is absent although B + 4.99 s has a point.
+        const scoped = await source.series(ramp, B + 5n * S, B + 6n * S, 100, width, SC2);
+        expect(scoped).toEqual({
+          kind: "raw",
+          points: Array.from({ length: 100 }, (_, i) => rampAt(500 + i)),
+          after: rampAt(600),
+        });
+        expect("before" in scoped && scoped.before !== undefined).toBe(false);
+
+        // (g) an unknown signal: raw, no points, no edges.
+        const none = await source.series(ref("conf-a", "Nope.X"), B, B + 100n * S, 100, tenS);
+        expect(none.kind).toBe("raw");
+        if (none.kind === "raw") {
+          expect(none.points).toEqual([]);
+          expect(none.before).toBeUndefined();
+          expect(none.after).toBeUndefined();
+        }
+      });
+
       it("finds the extent and row count of a data ref", async () => {
         expect(await source.refExtent("conf-a")).toEqual({
           count: 17_069,

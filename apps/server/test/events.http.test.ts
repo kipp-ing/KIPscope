@@ -2,12 +2,11 @@ import type { DiagEvent, EventList } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { ClickHouseSource } from "../src/clickhouse.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { scopeApp } from "./scopeApp.ts";
-import { testDbcFiles, testEventMapping, testSource } from "./testdb.ts";
+import { testDataSource, testDbcFiles, testEventMapping, testSource } from "./testdb.ts";
 
 /** Decimal ns of 2026-10-01T00:00:00Z + h:m:s.ms (design T base B). */
 const B = BigInt(Date.UTC(2026, 9, 1)) * 1_000_000n;
@@ -39,7 +38,7 @@ async function getEvents(
 }
 
 describe("GET /api/events on the test DB", () => {
-  const { app, catalog } = appFor(testSource());
+  const { app, catalog } = appFor(testDataSource());
   beforeAll(async () => {
     await app.ready();
     await catalog.refresh();
@@ -330,7 +329,7 @@ describe("GET /api/events on the test DB", () => {
 
 describe("GET /api/events without an events table", () => {
   const { app, catalog, warn } = appFor(
-    testSource("signals", { ...testEventMapping, table: "nope" }),
+    testDataSource("signals", { ...testEventMapping, table: "nope" }),
   );
   beforeAll(async () => {
     await app.ready();
@@ -354,8 +353,8 @@ describe("GET /api/events without an events table", () => {
 });
 
 describe("GET /api/events when the source fails", () => {
-  const real = testSource();
-  const source = Object.create(real) as ClickHouseSource;
+  const real = testDataSource();
+  const source = Object.create(real) as DataSource;
   source.events = () => Promise.reject(new Error("connect ECONNREFUSED"));
   const { app, catalog } = appFor(source);
   beforeAll(async () => {
@@ -377,10 +376,10 @@ describe("GET /api/events when the source fails", () => {
 });
 
 describe("GET /api/events with a signal that is recorded later", () => {
-  const real = testSource();
+  const real = testDataSource();
   let loads = 0;
   const later = { dataRef: "testcar", name: "Later.X" };
-  const source = Object.create(real) as ClickHouseSource;
+  const source = Object.create(real) as DataSource;
   source.listSignals = async (scope, abort) => {
     const list = await real.listSignals(scope, abort);
     loads++;

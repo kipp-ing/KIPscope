@@ -70,6 +70,11 @@ export interface LoggerGaps {
   last?: Timestamp;
 }
 
+/** What one series request needs (design A2): raw points with edges, or buckets. */
+export type SeriesAnswer =
+  | { kind: "raw"; points: RawPoint[]; before?: RawPoint; after?: RawPoint }
+  | { kind: "buckets"; buckets: Bucket[] };
+
 /** Labels of a source for meta, footer and log messages; never a URL or a credential. */
 export interface SourceInfo {
   /** `clickhouse`, `adx`, or a new adapter's own word; the footer labels the known ones. */
@@ -146,6 +151,20 @@ export interface SourceAdapter {
     scope?: Scope,
     abort?: AbortSignal,
   ): Promise<{ first: Timestamp; last: Timestamp } | undefined>;
+  /**
+   * If [from, to) holds at most `target` points (as `count` counts them): those points (as `raw`
+   * without a limit), `before(ref, from, scope)` and `after(ref, to, scope)`; else
+   * `buckets(ref, from, to, width)`.
+   */
+  series?(
+    ref: SeriesRef,
+    from: Timestamp,
+    to: Timestamp,
+    target: number,
+    width: bigint,
+    scope?: Scope,
+    abort?: AbortSignal,
+  ): Promise<SeriesAnswer>;
   /** Rows of the data ref with a timestamp: count, first and last; undefined if none. */
   refExtent?(
     dataRef: string,

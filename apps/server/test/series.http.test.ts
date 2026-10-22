@@ -4,11 +4,12 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
 import type { DataSource } from "../src/datasource.ts";
+import { completeSource } from "../src/fallbacks.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
-import { testMapping, testSource } from "./testdb.ts";
+import { testDataSource, testMapping } from "./testdb.ts";
 
 function appFor(table = "signals") {
-  const source = testSource(table);
+  const source = testDataSource(table);
   const catalog = new Catalog(source, async () => new Map());
   return {
     app: buildApp({
@@ -139,7 +140,7 @@ describe("GET /api/extent", () => {
 });
 
 describe("GET /api/series before the catalog was ever loaded", () => {
-  const source = testSource();
+  const source = testDataSource();
   const app = buildApp({
     catalog: new Catalog(source, async () => new Map()),
     source,
@@ -167,11 +168,13 @@ describe("GET /api/series before the catalog was ever loaded", () => {
 
 describe("GET /api/series with the database unavailable", () => {
   // The catalog is loaded from the test DB; only the series source is unreachable.
-  const catalog = new Catalog(testSource(), async () => new Map());
-  const source = new ClickHouseSource(
-    createClickHouseClient({ url: "http://127.0.0.1:1", username: "x", password: "" }),
-    testMapping,
-    5,
+  const catalog = new Catalog(testDataSource(), async () => new Map());
+  const source = completeSource(
+    new ClickHouseSource(
+      createClickHouseClient({ url: "http://127.0.0.1:1", username: "x", password: "" }),
+      testMapping,
+      5,
+    ),
   );
   const app = buildApp({
     catalog,
@@ -292,7 +295,8 @@ describe("GET /api/series beyond 104 days and at the bounds (harden-robustness)"
 describe("GET /api/series when the server cannot compute (harden-robustness)", () => {
   const source = {
     listSignals: async () => [{ dataRef: "car", name: "S" }],
-    count: async () => {
+    // `querySeries` asks the source for the whole answer in one call (speed-up-adx A2).
+    series: async () => {
       throw new RangeError("cannot compute");
     },
   } as unknown as DataSource;
