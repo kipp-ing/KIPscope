@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-21, session 10. New direction after issue #1 and Jan's answers (D-078 … D-091); see Next. Thirty-four changes are archived and the main specs describe the running app.
+As of 2026-10-21, session 10. New direction after issue #1 and Jan's answers (D-078 … D-091); see Next. Thirty-six changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -12,6 +12,7 @@ As of 2026-10-21, session 10. New direction after issue #1 and Jan's answers (D-
 | Events | [events](../openspec/specs/events/spec.md), [event-filter](../openspec/specs/event-filter/spec.md) | Diagnostic events (`sdlog.events`) and state changes as pins on the strip, lines in the charts and a sidebar Events tab; one human filter string in UI, CLI and workspace, default `active changes`; IgnMode and BMS.contactor on the events line via `kipscope.yaml`; list scoped to the view, `n`/`p` stepping, fault memory reads hollow |
 | State names | [state-names](../openspec/specs/state-names/spec.md) | Cursors show `KEYON`, `open` from `VAL_` tables, diag enums and row text; state signals drawn as steps |
 | Diagnostic catalogs | [signal-catalog](../openspec/specs/signal-catalog/spec.md) | Units and states of `BMS.*` from the decoder's manifest + names files (`KIPSCOPE_DIAG_CATALOGS`); group `BMS (diag)` |
+| Favourites | [favourites](../openspec/specs/favourites/spec.md) | Stars per user by signal name (`users/<user>/favourites.yaml`), a ★ Favourites group on top of the explorer, `Cmd/Ctrl+D`, `/api/favourites` with live push, CLI `fav` (D-102, D-103) |
 | Signal groups | [signal-groups](../openspec/specs/signal-groups/spec.md) | `display.groups` rules in `kipscope.yaml` group the explorer by sending ECU (DBC `BO_` sender, DCU/HVM fallback); collapsible headers, groups with hits open while searching, `Other` last |
 | Display names | [display-names](../openspec/specs/display-names/spec.md) | `kipscope.yaml` rules and renames give short names (`SPEED_DISP`) in the UI; full name in card and tooltips; search on both |
 | Series cache | [series-cache](../openspec/specs/series-cache/spec.md) | Power-of-two tiles kept in tab memory (LRU, 4 M values); zoom/pan back without a request |
@@ -108,7 +109,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
    - Next from the same comment: M1 several ADX databases in one source, M2 signals by logical name bound per case (replaces the `aliases` item below).
    - Catalog features: `aliases` for signals named differently per vehicle, per-kind `views`, `columns` for list and bar (units, order, table).
    - `POST /api/handoffs` with a one-time handle for lists beyond a link (security decision).
-6. `declutter-workspace` (D-092 … D-095) archived 2026-10-22 on Jan's word („declutter bitte archivieren"); `add-favourites` (D-102, D-103) is in its build rounds, `add-computed-signals` follows (D-102).
+6. `declutter-workspace` (D-092 … D-095) archived 2026-10-22 on Jan's word („declutter bitte archivieren"); `add-favourites` (D-102, D-103) archived 2026-10-22 after three rounds (Jan: „tiptop“); open could items: a push from another tab between a star click and its own push, spec sample `WSPD_RR` missing under ESP on smart451, no design line for the no-press hold, 1440×900 not checked. `add-computed-signals` (D-102) later (Jan: „berechnung später“).
 7. Backlog from the design critic (D-095): windows filling the height, event counts per session in the list, putting A or B on an event, copy-link of view and cursors, a filter by event kind on the strip.
    - Range picker: a live preview of typed text in the result line (Jan 2026-10-21: „so lassen wir das erstmal"; today the line shows the draft until Go).
    - Kept range without data after an open or step (Jan 2026-10-22: backlog, "gut möglich dass wir es gar nicht brauchen"): a step keeps each window's offset from the alignment point and its width, so a session whose data ends earlier shows an empty window. Options: (A) an optional start range per catalog entry, set by the search tool; (B, lead's pick) when no shown signal has data in the kept range, show the whole session with a message, like the clamp at the session edge.
