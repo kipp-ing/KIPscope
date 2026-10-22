@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-099: Signal metadata from a plain metadata file, no ARXML or aliases (2026-10-22)
+
+On ADX every signal shows `· no DBC entry`: KIPscope reads metadata only from DBC files and diagnostic catalogs, keyed by the source name, while the search tool builds its metadata for all vehicle variants from different base ARXMLs through an alias catalog. ADX has no aliases. Jan: the users work with the ADX names and cope; what has to be right is the metadata („die signal metadaten müssen halt passen"). Moving everything to aliases does not fly, and computing the metadata correctly is the hard work. Jan: one ADX name never has different metadata in different variants.
+
+- **Decision:** KIPscope reads a third metadata source: plain metadata files keyed by the source (ADX) signal name, one entry per name (unit, description, value table, SNA values as physical values, optional range and cycle). KIPscope defines and documents the format; it does not parse ARXML and knows no aliases. The search tool writes the file from the metadata it already computes. A signal without any metadata reads `no metadata` instead of `no DBC entry`.
+- **Why:** The variant merge already exists in the search tool; a second ARXML implementation in KIPscope would drift from it. Metadata is not cosmetic: SNA values turn values into gaps in the queries, value tables give state names, units decide the shared y axes.
+- **Consequences:** Change `add-signal-metadata-file`. Per-name metadata stays global (no per-session or per-vehicle metadata).
+
 ## D-098: One series wave on open (2026-10-22)
 
 After `speed-up-adx` the search tool team re-measured (issue #1, 2026-10-22): peak in flight equals the number of signals, because each signal runs series → extent → series → series one after another, so the queue width is not the limit. Jan agreed to take P4 alone as the change `single-wave-open`; P3 (batch endpoints per window) comes after it.
