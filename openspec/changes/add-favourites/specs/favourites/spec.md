@@ -87,7 +87,7 @@ Every explorer row SHALL have an 18 × 22 px star button in its empty left inden
 - **Evidence:** `apps/web/test/explorer.test.ts` › "renders a star button in every row"
 
 ### Requirement: Favourites group
-When a row is a favourite, a header `★ Favourites` with their count SHALL come first, open after each query change, followed by a copy of each favourite row (design F5): searching in rank order, else in starred order. Each row SHALL also stay in its group. Favourites not in the catalog in use SHALL stay stored, not shown, counted in the header's tooltip. Origin: D-102 with D-080 (P1 „top of the explorer in book order"); design Q-1 to Q-3 (pending Jan).
+When a row is a favourite, a header `★ Favourites` with their count SHALL come first, open after each query change, followed by a copy of each favourite row (design F5): searching in rank order, else in starred order. Each row SHALL also stay in its group. Favourites not in the catalog in use SHALL stay stored, not shown, counted in the header's tooltip. Origin: D-102 with D-080 (P1 „top of the explorer in book order"); D-103 (Jan's answers to design Q-1 to Q-3).
 
 #### Scenario: Group order and copies
 - **WHEN** `explorerItems` gets the ranked matches of signal-groups "Group order and state" (groups `ESP` ranks 3, 5; `Other` rank 1; `CGW` rank 2; `AC` rank 4) with favourites the names of ranks 5 and 2 (in that order), first searching, then with an empty query in catalog order, then searching with `FAVOURITES_GROUP` toggled, then with `grouped` false
@@ -115,7 +115,7 @@ When a row is a favourite, a header `★ Favourites` with their count SHALL come
 - **Evidence:** `apps/web/test/explorer.test.ts` › "groups 10,000 matches with 1,000 favourites in under 10 ms"
 
 ### Requirement: Star a selection or by key
-A star click on a selected row, or `Ctrl+D` (`Cmd+D` on macOS) in the search on the active selected row, with two or more signals selected, SHALL act on the selection: add the unstarred ones if any, else remove all. Otherwise they SHALL act on that row alone; the key on a header does nothing and never reaches the browser. A signal in two rows SHALL count once (design F8). Origin: D-102 (lead: multi-select toggles all); D-066 L3 (as `+`); key: design Q-4 (pending Jan).
+A star click on a selected row, or `Ctrl+D` (`Cmd+D` on macOS) in the search on the active selected row, with two or more signals selected, SHALL act on the selection: add the unstarred ones if any, else remove all. Otherwise they SHALL act on that row alone; the key on a header does nothing and never reaches the browser. A signal in two rows SHALL count once (design F8). Origin: D-102 (lead: multi-select toggles all); D-066 L3 (as `+`); key: D-103 (design Q-4).
 
 #### Scenario: Toggle rule
 - **WHEN** `toggleFavourites` gets starred `{A.B}` with names `["A.B", "C.D"]`, starred `{A.B, C.D}` with the same names, and any starred set with `[]`

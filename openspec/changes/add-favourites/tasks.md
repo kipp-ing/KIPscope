@@ -1,6 +1,6 @@
 # Tasks
 
-Built on the recommendations of design.md Q-1 (not shown), Q-2 (also in its group), Q-3 (open on the empty search), Q-4 (`Ctrl/Cmd+D`) and Q-5 (`fav add` refuses unknown names); if Jan picks an alternative, the spec owner revises before round 1.
+Jan answered design.md Q-1 … Q-5 (D-103): Q-1 (not shown), Q-2 (also in its group), Q-3 (open on the empty search), Q-4 (`Ctrl/Cmd+D`) as recommended; Q-5 (b): `fav add` stores a name without match as given, with a warning.
 
 Every interface two groups share is pinned in design.md "Pinned interfaces" (`packages/shared/src/favourites.ts`, the live message, the HTTP routes, the web helpers the tester calls), so groups 1–5 run in parallel; groups 2–4 compile against the pinned shapes while group 1 lands.
 
@@ -29,13 +29,13 @@ Write areas (disjoint per group):
 
 ## 4. apps/cli/src
 
-- [ ] 4.1 `args.ts`, `run.ts` (or a new `favourites.ts`), usage text: `fav list`, `fav add NAME…`, `fav rm NAME…` per F11 (full ID → name part; bare name through the search like `resolveSignal`, distinct names decide `ambiguous_signal`/`unknown_signal`; `rm` against the list with `unknown_favourite`/`ambiguous_favourite`; nothing sent on a refusal; outputs as pinned, `workspace` only on `add`). `README.md` CLI reference: the three forms. Verify: scenarios "Forms", "Add, list, remove over HTTP", "Refusals"; cli "Usage" stays green.
+- [ ] 4.1 `args.ts`, `run.ts` (or a new `favourites.ts`), usage text: `fav list`, `fav add NAME…`, `fav rm NAME…` per F11 (full ID → name part; bare name through the search like `resolveSignal`, several distinct names `ambiguous_signal`, no match stored as given with `data.warnings` `["not in this list: …"]` and exit 0; `rm` against the list with `unknown_favourite`/`ambiguous_favourite`; nothing sent on a refusal; outputs as pinned, `workspace` only on `add`). `README.md` CLI reference: the three forms. Verify: scenarios "Forms", "Add, list, remove over HTTP", "Refusals", "Name of another vehicle"; cli "Usage" stays green.
 
 ## 5. Tests (tester, test-first from the scenarios)
 
 - [ ] 5.1 `packages/shared/test/favourites.test.ts` › "parses the favourites file tolerantly", "applies a change: removes, then appends new names once", "toggles a selection: adds unless all are starred".
 - [ ] 5.2 `apps/server/test/favourites.http.test.ts` › "stores favourites per user in the state dir", "keeps favourites per user", "leaves a broken file untouched", "refuses bad changes", "lets a reader of a shared workspace star their own", "pushes favourites on the live channel" (test identity adapter of `identityApp.ts`, temp state dir, an app with `favouritesOf`); `apps/server/test/docs.test.ts` › "documents every HTTP route" builds its app with a favourites store.
-- [ ] 5.3 `apps/cli/test/args.test.ts` › "maps the fav forms"; `apps/cli/test/cli.test.ts` › "adds, lists and removes favourites", "refuses unknown and ambiguous favourite names" (test server with a temp state dir and a favourites store).
+- [ ] 5.3 `apps/cli/test/args.test.ts` › "maps the fav forms"; `apps/cli/test/cli.test.ts` › "adds, lists and removes favourites", "refuses unknown and ambiguous favourite names", "stores a name not in the list with a warning" (test server with a temp state dir and a favourites store).
 - [ ] 5.4 `apps/web/test/explorer.test.ts` › "puts favourites in a group at the top", "matches favourites by name on every data ref", "keeps the best hit active when favourites come first", "renders a star button in every row", "groups 10,000 matches with 1,000 favourites in under 10 ms" (goal: logs, fails only above 50 ms); `selection.test.ts` › "lists a starred row once in the selection"; `keys.test.ts` › "maps Ctrl/Cmd+D to the star"; `livestate.test.ts` › "keeps favourites apart from the workspace state"; `hints.test.ts` samples for `HINTS.star(true|false)` and `HINTS.favourites(5, 7)`. Verify all: `pnpm build && pnpm test && pnpm lint`.
 
 ## 6. UI check (UI user, smart451, design "Manual checks")
@@ -45,4 +45,4 @@ Write areas (disjoint per group):
 ## Workflow follow-up
 
 - Archive after `declutter-workspace` (design "Overlap with open changes").
-- On archive: D-102's answers to Q-1 … Q-5 go to `docs/decisions.md` if Jan decides any of them.
+- Jan's answers to Q-1 … Q-5 are D-103 in `docs/decisions.md` (the lead's).

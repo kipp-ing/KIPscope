@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Favourite commands
-The CLI SHALL offer `fav list`, `fav add NAME…` and `fav rm NAME…`, one JSON line each, over `/api/favourites` (design F11). `fav add` SHALL store catalog names, a bare NAME looked up as "Signal references" (`unknown_signal`, `ambiguous_signal`); `fav rm` SHALL resolve against the user's list (`unknown_favourite`, `ambiguous_favourite`). A refusal sends nothing; no NAME is a usage error. Origin: concept §7; D-102 (by name, per user); refusing unknown names: design Q-5 (pending Jan).
+The CLI SHALL offer `fav list`, `fav add NAME…`, `fav rm NAME…` over `/api/favourites` (design F11). `fav add` SHALL store a full ID's name part, a bare NAME as its one listed match (several: `ambiguous_signal`), and a NAME without match as given, warning `not in this list: NAME…` (exit 0). `fav rm` SHALL resolve against the user's list (`unknown_favourite`, `ambiguous_favourite`). A refusal sends nothing. Origin: concept §7; D-102; D-103.
 
 #### Scenario: Forms
 - **WHEN** the argument lists `fav list`, `fav add SPEED_DISP smart451/ICL_3A2h.SPEED_DISP`, `fav rm rpm`, `fav add` and `fav rm` are parsed
@@ -14,6 +14,11 @@ The CLI SHALL offer `fav list`, `fav add NAME…` and `fav rm NAME…`, one JSON
 - **Evidence:** `apps/cli/test/cli.test.ts` › "adds, lists and removes favourites"
 
 #### Scenario: Refusals
-- **WHEN** against the test server (test DB with `Sna_800h.TEMP` and `Tmp_A21h.TEMP`) `fav add NOPE`, `fav rm NOPE` and `fav add temp` run
-- **THEN** each exits 1 with `outcome` `rejected` and `error.code` `unknown_signal`, `unknown_favourite` and `ambiguous_signal` (`error.candidates` `["Sna_800h.TEMP", "Tmp_A21h.TEMP"]`); `GET /api/favourites` is the same before and after
+- **WHEN** against the test server (test DB with `Sna_800h.TEMP` and `Tmp_A21h.TEMP`) `fav rm NOPE` and `fav add temp` run
+- **THEN** each exits 1 with `outcome` `rejected` and `error.code` `unknown_favourite` and `ambiguous_signal` (`error.candidates` `["Sna_800h.TEMP", "Tmp_A21h.TEMP"]`); `GET /api/favourites` is the same before and after
 - **Evidence:** `apps/cli/test/cli.test.ts` › "refuses unknown and ambiguous favourite names"
+
+#### Scenario: Name of another vehicle
+- **WHEN** against the test server with no favourites `fav add rpm Other_900h.FOREIGN` runs, then `fav list`
+- **THEN** the add exits 0 with `data.added` `["Sna_800h.RPM", "Other_900h.FOREIGN"]` and `data.warnings` `["not in this list: Other_900h.FOREIGN"]`; the list is `["Sna_800h.RPM", "Other_900h.FOREIGN"]`
+- **Evidence:** `apps/cli/test/cli.test.ts` › "stores a name not in the list with a warning"

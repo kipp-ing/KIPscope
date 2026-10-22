@@ -89,7 +89,7 @@ After a star change re-renders the list:
 ### F11 CLI
 
 - `fav list`: `GET /api/favourites`; `data {names, error?}`; no workspace.
-- `fav add NAME…`: a NAME with `/` is a full ID: its part after the first `/` is taken (as "Signal references", sent unchanged). A bare NAME is looked up like "Signal references" (search of the workspace's list, name or name part after the first `.` equal ignoring case): matches with one `name` give that name, matches with several names `ambiguous_signal` (`candidates`: the names, sorted), none `unknown_signal`; nothing is sent on a refusal. Then `POST {add}`; `data {names, added}` (`added`: names that were not favourites before, in argument order); the output names `workspace` (its list resolved the names). See Q-5.
+- `fav add NAME…`: a NAME with `/` is a full ID: its part after the first `/` is taken (as "Signal references", sent unchanged). A bare NAME is looked up like "Signal references" (search of the workspace's list, name or name part after the first `.` equal ignoring case): matches with one `name` give that name, matches with several names `ambiguous_signal` (`candidates`: the names, sorted; a refusal, nothing sent); no match stores the NAME as given (D-103: stars hold across vehicles, so a signal of another vehicle must be starrable) and adds the warning `not in this list: <NAME>, …` (all such NAMEs, argument order) to the output, exit 0. Then `POST {add}`; `data {names, added, warnings?}` (`added`: names that were not favourites before, in argument order); the output names `workspace` (its list resolved the names).
 - `fav rm NAME…`: resolved against the user's list (`GET`): an exact member; else members equal ignoring case or by the part after the first `.` (one: it; several: `ambiguous_favourite` with `candidates`); else a full ID whose name is a member; none: `unknown_favourite`, nothing sent. Then `POST {remove}`; `data {names, removed}`; no workspace.
 - No NAME is a usage error (exit 2); refusals exit 1 (`outcome` `rejected`).
 
@@ -181,7 +181,7 @@ HINTS.favourites(inList: number, total: number): string; // "Favourites: 5 of yo
 
 ### CLI output
 
-`fav list` → `{outcome: "ok", data: {names, error?}}`; `fav add` → `{…, workspace, data: {names, added}}`; `fav rm` → `{…, data: {names, removed}}`; refusals as every CLI refusal (`error.code`, `error.candidates` where named).
+`fav list` → `{outcome: "ok", data: {names, error?}}`; `fav add` → `{…, workspace, data: {names, added, warnings?}}` (`warnings`: `["not in this list: NOPE, X.Y"]` when a NAME had no match); `fav rm` → `{…, data: {names, removed}}`; refusals as every CLI refusal (`error.code`, `error.candidates` where named).
 
 ## Numbers
 
@@ -215,12 +215,12 @@ HINTS.favourites(inList: number, total: number): string; // "Favourites: 5 of yo
 - M5 "Search": scenario "Search with favourites on smart451".
 - M6 "Layout": scenario "Star slot on smart451".
 
-## Open questions for Jan
+## Open questions for Jan (answered)
 
-The tasks are built on the recommendations; if Jan picks the alternative, the spec owner revises before round 1.
+Jan, 2026-10-22 („ja, alles ja, super sach"), recorded as D-103: Q-1 (a), Q-2 (a), Q-3 (a), Q-4 (a), Q-5 (b) with a warning (F11).
 
-- **Q-1 Favourite not in this list** (session without that signal): (a) not shown; the header tooltip says `5 of your 7 starred signals are in this list` (recommended: the list only holds signals with data in the scope, D-078; a dimmed row could not be added); (b) shown dimmed, not addable.
-- **Q-2 Starred row in two places**: (a) in Favourites and still in its sender group (recommended: the groups stay complete, the D-053 counts do not change with stars); (b) moved out of its group.
-- **Q-3 Favourites open on the empty search** although D-053 says „Empty search: all groups, collapsed": (a) open (recommended: the point of a star is to reach the signal without typing; D-080 P1 sits „top of the explorer"); (b) collapsed like the others.
-- **Q-4 Key**: (a) `Ctrl+D` / `Cmd+D` in the search (recommended: the browsers' own "bookmark with a star" key, free in KIPscope; plain letters cannot be used because the search field has the focus); (b) no key, star by click only.
-- **Q-5 `kipscope fav add` with a name not in the workspace's list**: (a) refused with `unknown_signal` (recommended: catches typos; the UI can star only listed rows too); (b) stored as given, so a script can star signals of other vehicles ahead of time.
+- **Q-1 Favourite not in this list** (session without that signal): (a) not shown; the header tooltip says `5 of your 7 starred signals are in this list` (recommended: the list only holds signals with data in the scope, D-078; a dimmed row could not be added); (b) shown dimmed, not addable. **Answer: (a)** (D-103).
+- **Q-2 Starred row in two places**: (a) in Favourites and still in its sender group (recommended: the groups stay complete, the D-053 counts do not change with stars); (b) moved out of its group. **Answer: (a)** (D-103).
+- **Q-3 Favourites open on the empty search** although D-053 says „Empty search: all groups, collapsed": (a) open (recommended: the point of a star is to reach the signal without typing; D-080 P1 sits „top of the explorer"); (b) collapsed like the others. **Answer: (a)** (D-103).
+- **Q-4 Key**: (a) `Ctrl+D` / `Cmd+D` in the search (recommended: the browsers' own "bookmark with a star" key, free in KIPscope; plain letters cannot be used because the search field has the focus); (b) no key, star by click only. **Answer: (a)** (D-103).
+- **Q-5 `kipscope fav add` with a name not in the workspace's list**: (a) refused with `unknown_signal`; (b) stored as given, so a script can star signals of other vehicles ahead of time. **Answer: (b)**, with the warning `not in this list: NAME…`, exit 0; `ambiguous_signal` stays a refusal (D-103).
