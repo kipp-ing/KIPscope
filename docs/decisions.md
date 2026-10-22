@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-103: Favourites answers (2026-10-22)
+
+Open questions of `add-favourites` (design Q-1 … Q-5), Jan: „ja, alles ja, super sach".
+
+- **Decision:** Q-1 (a) a favourite not in the current signal list is not shown; the Favourites header tooltip counts the shown ones (`5 of your 7 starred signals are in this list`). Q-2 (a) a starred row is in Favourites and stays in its sender group. Q-3 (a) Favourites is open on the empty search (an exception to D-053). Q-4 (a) `Ctrl+D` / `Cmd+D` stars the active row or the selection. Q-5 (b, the lead's pick against the spec owner's (a)): `kipscope fav add NAME` with no match in the workspace's list stores the name as given and warns `not in this list`; an ambiguous name is still refused.
+- **Why:** Stars hold across vehicles (D-102), so the CLI must be able to star a signal the current session lacks; the warning still catches typos.
+
 ## D-102: Favourites per user, computed signals from a formula (2026-10-22)
 
 Jan: „favourites und berechnete signale … Favourits sind persönlich mit Sternchen markierte. die sollten user bezogen bleiben. und signale berechnen diff, abs min max +- usw. das ganze als direkte kusto query?"; on the lead's questions: „1. ja diff. 2 ja 3: kein kql. aber unions sind glaub mist. man braucht materialized views? und wie ginge das in clickhouse?"
