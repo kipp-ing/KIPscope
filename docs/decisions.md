@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-100: Units and SNA from the ADX table instead of a metadata file (2026-10-22)
+
+Jan doubted that D-099 is efficient: a metadata file needs an entry for every ADX name (~2.6k signals per vehicle, all platforms), and the caller does not know them all. The search tool team extended issue #1 (comment of 2026-10-22, M3): some ADX tables carry the metadata per row, a unit column and a text column holding either a state name or a sentinel (`SNA`, `INVLD`). Jan: „ja gut".
+
+- **Decision:** Supersedes D-099. No metadata file. The ADX source reads units and SNA from the table (M3): optional `KIPSCOPE_COLUMN_UNIT`, read by the scoped signal list in its existing summarize and used when no DBC or diag unit exists, per data ref; optional `KIPSCOPE_SNA_TEXTS` (e.g. `SNA,INVLD`): a row whose text is in the list is SNA (a gap, no label), and such texts alone do not make a signal a state signal. State names keep coming from `KIPSCOPE_COLUMN_TEXT`.
+- **Why:** Nobody has to produce or pass metadata for all signals; KIPscope reads it only for the scope, in a query that runs anyway, and per data ref, so platforms cannot collide. Description, range and cycle are not needed for this.
+- **Consequences:** Change `add-signal-metadata-file` dropped unbuilt; new change `add-adx-row-metadata`. M1 (several databases) and M2 (signals by logical name) of the same comment follow as separate changes.
+
 ## D-099: Signal metadata from a plain metadata file, no ARXML or aliases (2026-10-22)
 
 On ADX every signal shows `· no DBC entry`: KIPscope reads metadata only from DBC files and diagnostic catalogs, keyed by the source name, while the search tool builds its metadata for all vehicle variants from different base ARXMLs through an alias catalog. ADX has no aliases. Jan: the users work with the ADX names and cope; what has to be right is the metadata („die signal metadaten müssen halt passen"). Moving everything to aliases does not fly, and computing the metadata correctly is the hard work. Jan: one ADX name never has different metadata in different variants.
