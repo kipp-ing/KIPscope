@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-097: ADX speed-ups from the search tool team's report (2026-10-22)
+
+The search tool team measured KIPscope on a real ADX cluster (issue #1, comment of 2026-10-22, P1–P9): an open takes about 11 s, spent in 35–55 serial ADX queries. Jan agreed to the lead's cut for the change `speed-up-adx`; the rest (P3 batch endpoints, P4 one tile wave on open, P7 `/open` before the full signal list, P8 loading state) comes later.
+
+- **Decision:** ADX gets native `extent` and a new optional `series` method: one query that returns raw points with edges or buckets, so each series request costs one round trip. The fallback keeps today's calls, so ClickHouse is unchanged. The native ADX `count` is dropped (Jan, Q-1: "drop it"): after `series`, nothing on ADX calls it, and D-074 allows a fast path only where measurement shows the fallback costs more than twice as much. The default query queue width is 8 slots for ADX and stays 4 for ClickHouse; `KIPSCOPE_QUERY_CONCURRENCY` still overrides it. This supersedes D-011 D7 ("at most 4 concurrent DB queries") for ADX. A reachable `/api/meta` ping is reused for 15 s; a failed ping is not reused. P9 needs no change: `/api/value` already passes the scope (design A6).
+- **Why:** On ADX, latency dominates rather than throughput, and the cost is the number of serial round trips. The report's timing targets are measured by the search tool team after release, not used as a gate.
+
 ## D-096: Legend without metadata after a cold load stays (2026-10-21)
 
 The lead found the cause of the declutter round's last open point ("Probe during a step", D-092): the catalog is scoped to the session, so after a page load in a session where a shown signal has no data, KIPscope has no metadata for it. The legend shows the raw name without a unit (`BS_200h.DVL`) and switches to the display name with unit (`DVL [1/min]`) on the first step into a session with data; the columns to its right move about 40 px once. Options put to Jan: accept as rare, or fix now with a server change. Jan: „a, so lassen."
