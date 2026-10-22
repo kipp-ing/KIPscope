@@ -76,12 +76,12 @@ A signal whose series request answers 404 `unknown_signal` (the shown vehicle la
 - **Evidence:** `apps/web/test/loader.test.ts` › "reads an unknown signal as missing"; `apps/web/test/axes.test.ts` › "leaves missing signals out of the axes"; `apps/web/test/readout.test.ts` › "reads an unknown signal as missing"
 
 #### Scenario: Step to a vehicle without the signal on smart451
-- **WHEN** a catalog with one smart451 drive and one session of a second vehicle that lacks `COMBI_412h.V_ANZ` (the UI user picks one from the server's vehicles, else `not_run`) is open, a window shows V_ANZ beside a signal both have, and the user presses `]`
+- **WHEN** a catalog with one smart451 drive and one session of a second vehicle that lacks `COMBI_412h.V_ANZ` is open (needs a second data ref on the server; the catalog holds only smart451 as of 2026-10-22, so this UI check is deferred, `not_run`, until one exists; a synthetic data ref is not evidence), a window shows V_ANZ beside a signal both have, and the user presses `]`
 - **THEN** the V_ANZ legend row reads `missing` in a grey pill with the tooltip `Missing: <vehicle> has no signal V_ANZ`, no axis title shows `failed` or `unknown_signal`, the other signal is drawn; `[` draws V_ANZ again
-- **Evidence:** UI check (screenshot after `]` with the tooltip, after `[`)
+- **Evidence:** until a second data ref exists: "Status and axes" (`apps/web/test/loader.test.ts` › "reads an unknown signal as missing", `apps/web/test/axes.test.ts` › "leaves missing signals out of the axes") and the UI user's run with a synthetic `othercar` entry (grey `missing` pill, tooltip `Missing: othercar has no signal COMBI_412h.V_ANZ`, no `failed`, `[` redraws); then UI check (screenshot after `]` with the tooltip, after `[`)
 
 ### Requirement: Flat y range
-A y range whose span is at most 1e-9 of its largest magnitude SHALL widen to its middle ± max(10 % of |middle|, 1), a non-finite one to 0 … 1, so a constant signal draws mid-plot on an axis with ticks and never makes the chart throw. Origin: data fact (smart451 `SAS_0C2h.LWS_SPEED`, Drive 2: constant −1433.6, bucket means −1433.5999999999979; uPlot threw `RangeError: Invalid array length`, round 2); padding as `yRange`'s flat line; numbers ×2: design DW2.
+A y range whose span is at most 1e-9 of its largest magnitude SHALL widen to its middle ± max(10 % of |middle|, 1), a non-finite one to 0 … 1, so a constant signal draws mid-plot on an axis with ticks and never makes the chart throw. Origin: data fact (smart451 `SAS_0C2h.LWS_SPEED`, Drive 2 from about 11:23 to 11:56 local: constant −1433.6, bucket means −1433.5999999999979; uPlot threw `RangeError: Invalid array length`, round 2); padding as `yRange`'s flat line; numbers ×2: design DW2.
 
 #### Scenario: Constant series, no RangeError
 - **WHEN** the window's range function gets [−1433.6, −1433.6], [0, 0], [1e9, 1e9], [−1433.6, −1433.6 + 1e-12], [0, 1e-12] and [0.3, 0.1 + 0.2]
@@ -89,6 +89,6 @@ A y range whose span is at most 1e-9 of its largest magnitude SHALL widen to its
 - **Evidence:** `apps/web/test/axes.test.ts` › "y scale range of a constant series (D-095, uPlot RangeError)" › "gives a finite, splittable range for constant negative (LWS_SPEED -1433.6)" and its siblings
 
 #### Scenario: Constant series on smart451
-- **WHEN** a window on smart451 shows only `SAS_0C2h.LWS_SPEED` over Drive 2, aggregated
-- **THEN** the line is drawn in the middle of the plot (the axis spans −1433.6 ± 143.36, so its tick labels lie within −1.58 k and −1.29 k, `°/s`; round 3 showed −1.30 to −1.55 k), the tick labels are readable, and the console shows no uncaught exception
+- **WHEN** a window on smart451 shows only `SAS_0C2h.LWS_SPEED` over a constant stretch of Drive 2, 11:30–11:50 local, aggregated (over the whole drive the signal jumps to about 0 at 11:23 and 11:56 local, so the axis spans 0 … −1.5 k and the line lies at the bottom)
+- **THEN** the line is drawn in the middle of the plot (the axis spans −1433.6 ± 143.36, so its tick labels lie within −1.58 k and −1.29 k, `°/s`; about −1.30 k … −1.55 k were seen), the tick labels are readable, and the console shows no uncaught exception
 - **Evidence:** UI check on smart451 (screenshot, console); `pnpm smoke` passes

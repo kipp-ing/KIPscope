@@ -71,9 +71,9 @@ The bar SHALL never cut the status or the attribution, nor an item beyond its ow
 When status and attribution alone do not fit one line, the attribution SHALL move to a second line, still right-aligned, the first line keeping status, message and items by the same rules, and the bar SHALL be at most 48 px tall. Hidden items SHALL be listed in the tooltip of the attribution's leading `KIPscope`. Origin: necessary consequence of "Attribution small and subtle" (never cut) on narrow screens; 48 px per design F5 of `add-footer`.
 
 #### Scenario: Narrow viewport
-- **WHEN** the six-window setup is shown at 520×557 with the sidebar open (the bar's content box is about 228 px, less than status and attribution need)
-- **THEN** the bar has two lines, at most 48 px tall, the first starting with the dot and `connected`, the second holding the whole attribution with both links, right-aligned; no text of the bar is cut
-- **Evidence:** UI check on smart451 at 520×557 (screenshot, bar height); `not_run` if the browser tool cannot set the viewport
+- **WHEN** the six-window setup is shown at 520×557 with the sidebar open (208 px sidebar; status and attribution fit one line there, round 1 of the final rounds)
+- **THEN** the bar is one line, or two lines at most 48 px tall with the whole attribution right-aligned on the second; it starts with the dot and `connected` and holds the whole attribution with both links; nothing of the bar is cut
+- **Evidence:** UI check on smart451 at 520×557 (screenshot, bar height); `not_run` if the browser tool cannot set the viewport; the second line itself: `apps/web/test/footer.test.ts` › "hides whole meta items in a fixed order" (`wrap` true at 240)
 
 #### Scenario: Hidden items in the tooltip
 - **WHEN** the status bar is rendered with zone and user hidden by the fit
