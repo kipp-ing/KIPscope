@@ -94,10 +94,12 @@ export function deriveRun(
 Order for a view's tiles at level `L`, everywhere (`show`, `load`, the case-A completion, the prefetch):
 
 1. `cache.find` (unchanged, W1.2).
-2. For the missing indices: `runsOf(missing)`; per run, `coverFor(signalId, L)` → `deriveRun` → `cache.put` (stores; returns the tiles even when C6 or the weight limit keeps them out).
+2. For the missing indices: `runsOf(missing)`; per run, `coverFor(signalId, L)` → `deriveRun` → `cache.put` (stores; returns the tiles even when the weight limit keeps them out). **Recent-run exception:** a run whose last tile is not storable (ends after now − 1 h, series-cache C6) is not computed but requested in step 3, so recent data is asked from the server again (`loader.ts` `fromCover`). Case A's completion is exempt: the recorded view runs are computed from the overview even when recent.
 3. What is still missing: requested as today.
 
-Exception W1.4: the case-A completion computes the recorded missing runs without step 1.
+Exception W1.4: the case-A completion computes the recorded missing runs without step 1 (and without the recent-run exception of step 2).
+
+Consequence of the recent-run exception: for a signal recording up to now, the overview's last tile is never storable, so in case B and after a view complete from the cache (W7 first row) the overview's last run is requested as a prefetch instead of computed: one extra `/api/series` per such signal. The prefetch's runs ending within the last hour are requested likewise (W8).
 
 `show` runs steps 1–2 synchronously: a view a held cover answers is `complete` in the `update` call that first shows it, without a request ("Zoom out above the overview without a request"). `overviewLoaded()` (overview complete) first completes every waiting key with an unchanged sequence number (case A completion), then, as today, recomputes placeholders for keys still loading.
 
@@ -138,8 +140,8 @@ Views at `[0, 4294967296)`: target 257 → `L` = 24 (one tile), 1025 → `L` = 2
 | | Today | This change |
 |---|---|---|
 | Open, `T ≤ 1025` (case A) | 1 extent + 3 series (view, overview, prefetch edge tile), serial | 1 extent + 1 series, serial |
-| Open, wide plot (case B) | 1 extent + 1–3 series (view; overview tiles `find` cannot merge; prefetch) | 1 extent + 1 series |
-| Step after a finished preload | 0 visible; extent + overview + prefetch | 0 visible; extent + overview unless case B's cover answers it; prefetch computed where a cover answers |
+| Open, wide plot (case B) | 1 extent + 1–3 series (view; overview tiles `find` cannot merge; prefetch) | 1 extent + 1 series (+1 overview run for a signal recording up to now, W5 recent-run exception) |
+| Step after a finished preload | 0 visible; extent + overview + prefetch | 0 visible; extent + overview unless case B's cover answers it (never its last run for a signal recording up to now, W5); prefetch computed where a cover answers |
 | Zoom out to `L ≥` a held cover | `find` or 1 per missing run | `find`, else computed: 0 (unless W1.3 refuses) |
 | Zoom in below every cover | 1 per missing run, placeholder first | unchanged |
 

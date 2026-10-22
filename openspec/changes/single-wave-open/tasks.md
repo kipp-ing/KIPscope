@@ -41,7 +41,7 @@ Write areas (disjoint per group):
 
 ## 5. Crash guard
 
-- [ ] 5.1 `pnpm build`, `pnpm smoke` against the running Vite and `pnpm smoke --preview`: pass.
+- [x] 5.1 `pnpm build`, `pnpm smoke` against the running Vite and `pnpm smoke --preview`: pass.
 
 ## Out of scope
 

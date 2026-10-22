@@ -19,7 +19,7 @@ A window SHALL get a signal's extent before it requests any series tile for that
 - **Evidence:** `apps/web/test/loader.test.ts` › "loads the view first when the extent fails"
 
 ### Requirement: Runs computed from a cover
-A run of missing tiles at or above the level of a cover the window holds (design W3) SHALL be computed from the cover, not requested, exactly when the result equals the server's answer to that run's request (design W1: the view's level, raw where the server answers raw, bucket mean within 1e-12); else it is requested as before. A computed run SHALL be stored like a fetched one. Origin: concept §2 („für Zeichnung und Cursor nutzbar"); D-038; series-cache "Same drawn data as without cache".
+A run of missing tiles at or above the level of a cover the window holds (design W3) SHALL be computed from the cover, not requested, exactly when it equals the server's answer to that run's request (design W1); else it is requested. A run ending within the last hour (C6) SHALL be requested, except the view runs an open computes from its overview (design W5). Computed runs are stored like fetched ones. Origin: concept §2; D-038; series-cache "Same drawn data as without cache".
 
 #### Scenario: Computed run equals the server's
 - **WHEN** `deriveRun` computes runs from (a) raw source tiles whose run holds at most its target points, (b) raw source tiles whose run holds more, (c) bucket source tiles two and five levels finer than the run, each with SNA points, and the fake server answers the same run requests
@@ -65,13 +65,13 @@ Opening a workspace, or stepping to a session the preload has not stored, SHALL 
 - **Evidence:** `apps/web/test/loader.test.ts` › "steps to a narrower view: view first, overview after it"
 
 #### Scenario: Open on carserver
-- **WHEN** on smart451 (ClickHouse, real data) with the tab in front, a workspace with two timeseries windows of two signals each (one of them `ICL_3A2h.SPEED_DISP`), each window double-clicked to its signals' extents and resting, is reloaded
+- **WHEN** on smart451 (ClickHouse, real data) with the tab in front, a workspace with two timeseries windows of two signals each (`COMBI_412h.V_ANZ`, `BS_200h.DVL`, `BS_208h.DHL`, `BS_208h.DHR`), each window double-clicked to its signals' extents and resting, is reloaded
 - **THEN** the network log shows for each of the four signals one `/api/extent?signal=<id>` and exactly one `/api/series?signal=<id>` without `case=`, started after that extent request ended, whose `from` is at most the extent's `first` and whose `to` is above its `last`; within 2 s after the last curve is drawn no further `/api/series` without `case=` for these signals appears; all four curves are drawn without a loading or failed mark
 - **Evidence:** UI check on carserver (network log filtered to `/api/`, one screenshot of the drawn windows)
 
 #### Scenario: Step without preload on carserver
 - **WHEN** on smart451 with a catalog from `kipscope case drives smart451` open at drive 2, both windows of the previous scenario double-clicked to their signals' extents and resting, the user presses `]` twice within 300 ms (drive 4 is not preloaded)
-- **THEN** for drive 4's scope the network log shows per signal one `/api/extent` and at most two `/api/series` without `case=` (exactly one for every signal whose window's new header range spans that extent answer); all curves of drive 4 are drawn
+- **THEN** for drive 4's scope the network log shows per signal one `/api/extent` and, until its curve is drawn, at most two `/api/series` without `case=` (view and overview; exactly one for every signal whose window's new header range spans that extent answer); after that only the window's ordinary prefetch at rest (Z7) may add `/api/series` for tiles no cover answers exactly, such as the neighbour tile one view width before the view (seen in round 2: a 550 s tile at target 257 after `COMBI_412h.V_ANZ`'s overview); all curves of drive 4 are drawn
 - **Evidence:** UI check on carserver (network log filtered to `/api/`, one screenshot after drive 4 is drawn)
 
 ## MODIFIED Requirements
@@ -113,7 +113,7 @@ When a window's shown range has rested 300 ms with its loads done, it SHALL pref
 - **Evidence:** `apps/web/test/loader.test.ts` › "prefetches after the view rests, never during a gesture"; `apps/web/test/cache.test.ts` › "drops a queued prefetch run nobody wants"
 
 #### Scenario: Zoom out after rest is cached
-- **WHEN** a window on SPEED_DISP has rested for 2 s and is then zoomed out ×2 with one Ctrl+wheel event at the plot centre
+- **WHEN** a window on `COMBI_412h.V_ANZ` has rested for 2 s and is then zoomed out ×2 with one Ctrl+wheel event at the plot centre
 - **THEN** no `/api/series` request starts before t0 + 290 ms and there is exactly one stroke burst before t0 + 1,000 ms, within 50 ms (the first frame of the new range draws sharp data)
 - **Evidence:** UI timing check (design T1, step 4)
 
