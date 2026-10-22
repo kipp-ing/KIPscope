@@ -2,6 +2,7 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { type AccessOptions, hostAllowed, originAllowed } from "./access.ts";
 import type { FinderConfig } from "./case.ts";
+import type { FavouritesOf } from "./favourites.ts";
 import { type RequestUser, registerGuard } from "./guard.ts";
 import { apiError, rewriteUrl, type ScopeDeps, workspacePrefixOf } from "./http.ts";
 import type { IdentityAdapter } from "./identity.ts";
@@ -9,6 +10,7 @@ import { type MetaDeps, metaRoutes } from "./meta.ts";
 import type { ObjectExtents } from "./objectScope.ts";
 import { caseRoutes } from "./routes/case.ts";
 import { eventsRoutes } from "./routes/events.ts";
+import { favouritesRoutes } from "./routes/favourites.ts";
 import { identityRoutes } from "./routes/identity.ts";
 import { seriesRoutes } from "./routes/series.ts";
 import { signalRoutes } from "./routes/signals.ts";
@@ -37,6 +39,11 @@ export interface AppDeps extends ScopeDeps {
   viewsOf?: ViewsOf;
   /** One view store for every user (tests); without it and `viewsOf` the view routes answer 404. */
   views?: ViewStore;
+  /**
+   * Each user's favourites (add-favourites F1); absent: no favourites routes and no `favourites`
+   * message on the live channel (F4).
+   */
+  favouritesOf?: FavouritesOf;
   /**
    * The identity adapter (add-multiuser M1); absent in `none` mode: every request is `local` and
    * every workspace reads everything (M3).
@@ -130,6 +137,7 @@ export function buildApp(
   app.register(workspacesRoutes(deps));
   app.register(caseRoutes(deps));
   app.register(viewRoutes(deps));
+  app.register(favouritesRoutes(deps));
   app.register(metaRoutes(deps));
   app.register(webRoutes(deps.webDir));
   return app;

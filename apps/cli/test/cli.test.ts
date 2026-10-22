@@ -12,7 +12,7 @@ import {
   viewLinkUrl,
 } from "@kipscope/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { SourceAdapter } from "../../server/src/datasource.ts";
+import type { SourceAdapter, SourceSignal } from "../../server/src/datasource.ts";
 import { oidcAdapter, tokenClaims } from "../../server/test/identity/oidcKit.ts";
 import { type JwksServer, jwksServer, makeKey, signToken } from "../../server/test/jwks.ts";
 import { testSource } from "../../server/test/testdb.ts";
@@ -2089,5 +2089,132 @@ describe("catalogs (add-case-open K15)", () => {
     );
     expect(bad.code).toBe(1);
     expect(bad.out.error.code).toBe("invalid_catalog");
+  });
+});
+
+describe("favourites (add-favourites F11)", () => {
+  let m: MultiServer | undefined;
+  afterEach(async () => {
+    await m?.close();
+    m = undefined;
+  });
+  /** A server in `none` mode (the user `local`) with a temp state dir, a favourites store and one workspace. */
+  const start = async (extra: SourceSignal[] = []) => {
+    m = await startMulti({
+      identity: "none",
+      favourites: true,
+      adapter: stubSource(extra) as unknown as SourceAdapter,
+    });
+    workspaceId = m.app.workspaces.create("local").record.id;
+    return m;
+  };
+  let workspaceId = "";
+  const fav = (server: MultiServer, ...argv: string[]) =>
+    runCli(["--server", server.url, "fav", ...argv]);
+  const listed = async (server: MultiServer): Promise<string[]> =>
+    ((await (await fetch(`${server.url}/api/favourites`)).json()) as { names: string[] }).names;
+
+  it("adds, lists and removes favourites", async () => {
+    const s = await start();
+
+    // A bare name goes through the search, a full ID is cut at the first "/".
+    const added = await fav(s, "add", "rpm", "testcar/Fast_100h.SIG_A");
+    expect(added.code, added.stderr.join("")).toBe(0);
+    expect(added.out.data.names).toEqual(["Sna_800h.RPM", "Fast_100h.SIG_A"]);
+    expect(added.out.data.added).toEqual(["Sna_800h.RPM", "Fast_100h.SIG_A"]);
+    expect(added.out.data.warnings).toBeUndefined();
+    expect(added.out.workspace).toBe(workspaceId);
+
+    // Adding what is there adds nothing.
+    const again = await fav(s, "add", "RPM");
+    expect(again.code, again.stderr.join("")).toBe(0);
+    expect(again.out.data.added).toEqual([]);
+    expect(again.out.data.names).toEqual(["Sna_800h.RPM", "Fast_100h.SIG_A"]);
+
+    // `fav list` reads the user's list and names no workspace.
+    const list = await fav(s, "list");
+    expect(list.code, list.stderr.join("")).toBe(0);
+    expect(list.out.data.names).toEqual(["Sna_800h.RPM", "Fast_100h.SIG_A"]);
+    expect(list.out.workspace).toBeUndefined();
+
+    // `fav rm` resolves against the list: the part after the first ".", ignoring case.
+    const removed = await fav(s, "rm", "sig_a");
+    expect(removed.code, removed.stderr.join("")).toBe(0);
+    expect(removed.out.data.removed).toEqual(["Fast_100h.SIG_A"]);
+    expect(removed.out.data.names).toEqual(["Sna_800h.RPM"]);
+    expect(removed.out.workspace).toBeUndefined();
+
+    const last = await fav(s, "list");
+    expect(last.out.data.names).toEqual(["Sna_800h.RPM"]);
+    // The same list is on the server, in the user's file.
+    expect(await listed(s)).toEqual(["Sna_800h.RPM"]);
+  });
+
+  it("refuses unknown and ambiguous favourite names", async () => {
+    const s = await start([
+      { dataRef: "testcar", name: "Sna_800h.TEMP" },
+      { dataRef: "testcar", name: "Tmp_A21h.TEMP" },
+    ]);
+    expect((await fav(s, "add", "rpm")).code).toBe(0);
+    const before = await listed(s);
+    expect(before).toEqual(["Sna_800h.RPM"]);
+
+    const unknown = await fav(s, "rm", "NOPE");
+    expect(unknown.code).toBe(1);
+    expect(unknown.out).toMatchObject({
+      ok: false,
+      outcome: "rejected",
+      error: { code: "unknown_favourite" },
+    });
+
+    const ambiguous = await fav(s, "add", "temp");
+    expect(ambiguous.code).toBe(1);
+    expect(ambiguous.out).toMatchObject({
+      ok: false,
+      outcome: "rejected",
+      error: { code: "ambiguous_signal", candidates: ["Sna_800h.TEMP", "Tmp_A21h.TEMP"] },
+    });
+
+    // A refusal sends nothing: the list is as it was, also when one NAME of several is bad.
+    expect(await listed(s)).toEqual(before);
+    const mixed = await fav(s, "add", "speed", "temp");
+    expect(mixed.code).toBe(1);
+    expect(await listed(s)).toEqual(before);
+
+    // No NAME is a usage error (exit 2), nothing sent.
+    const none = await fav(s, "add");
+    expect(none.code).toBe(2);
+    expect(none.out.outcome).toBe("usage");
+    expect(await listed(s)).toEqual(before);
+  });
+
+  it("refuses a favourite name that fits several favourites", async () => {
+    const s = await start([{ dataRef: "testcar", name: "Tmp_A21h.TEMP" }]);
+    // Two favourites share the part after the ".", given by full ID so the add has no search.
+    expect((await fav(s, "add", "testcar/Sna_800h.TEMP", "testcar/Tmp_A21h.TEMP")).code).toBe(0);
+    const before = await listed(s);
+    expect(before).toEqual(["Sna_800h.TEMP", "Tmp_A21h.TEMP"]);
+    const ambiguous = await fav(s, "rm", "temp");
+    expect(ambiguous.code).toBe(1);
+    expect(ambiguous.out.error).toMatchObject({
+      code: "ambiguous_favourite",
+      candidates: ["Sna_800h.TEMP", "Tmp_A21h.TEMP"],
+    });
+    expect(await listed(s)).toEqual(before);
+    // The exact name, or a full ID whose name is a member, removes it.
+    expect((await fav(s, "rm", "testcar/Sna_800h.TEMP")).out.data.removed).toEqual([
+      "Sna_800h.TEMP",
+    ]);
+    expect((await fav(s, "rm", "Tmp_A21h.TEMP")).out.data.names).toEqual([]);
+  });
+
+  it("stores a name not in the list with a warning", async () => {
+    const s = await start();
+    const added = await fav(s, "add", "rpm", "Other_900h.FOREIGN");
+    expect(added.code, added.stderr.join("")).toBe(0);
+    expect(added.out.data.added).toEqual(["Sna_800h.RPM", "Other_900h.FOREIGN"]);
+    expect(added.out.data.warnings).toEqual(["not in this list: Other_900h.FOREIGN"]);
+    const list = await fav(s, "list");
+    expect(list.out.data.names).toEqual(["Sna_800h.RPM", "Other_900h.FOREIGN"]);
   });
 });

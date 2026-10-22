@@ -16,10 +16,10 @@ export interface Lookups {
 }
 
 /** Page size of a bare-name lookup; exact matches are search tier 0 and come first (D-022). */
-const NAME_LIMIT = 200;
+export const NAME_LIMIT = 200;
 
 /** Name equality of L6: the name, or the name after its first ".", ignoring case. */
-function nameMatches(name: string, wanted: string): boolean {
+export function nameMatches(name: string, wanted: string): boolean {
   const lower = wanted.toLowerCase();
   const dot = name.indexOf(".");
   return name.toLowerCase() === lower || (dot >= 0 && name.slice(dot + 1).toLowerCase() === lower);

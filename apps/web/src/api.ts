@@ -14,6 +14,7 @@ import {
   type Density,
   type EventList,
   type Extent,
+  type FavouritesChange,
   type GapInfo,
   type ImportViewRequest,
   type Me,
@@ -341,6 +342,24 @@ export function importView(req: ImportViewRequest): Promise<ImportViewResult> {
 /** Address of a view's YAML file; `download` makes the browser save it as `<name>.kipscope.yaml`. */
 export function viewFileUrl(name: string, download: boolean): string {
   return `/api/views/${encodeURIComponent(name)}${download ? "?download=1" : ""}`;
+}
+
+// Favourites (add-favourites F9): per user, never prefixed.
+
+/**
+ * Stars or unstars names and answers the stored list; the list the UI shows arrives as a live
+ * `favourites` message, sent only when the change changed it. A refused or failed request throws
+ * ApiRequestError with its `code` (`favourites_unreadable`, …).
+ */
+export async function changeFavourites(change: FavouritesChange): Promise<{ names: string[] }> {
+  const res = await fetch("/api/favourites", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(change),
+  });
+  const data: unknown = await res.json().catch(() => undefined);
+  if (!res.ok) throw requestError(res, data);
+  return data as { names: string[] };
 }
 
 // Identity and workspaces (add-multiuser M7); workspace-independent, never prefixed.

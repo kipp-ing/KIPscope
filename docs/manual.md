@@ -17,19 +17,23 @@ The Start here card above the windows sums up the first moves; × hides it, and 
 
 ## Find a signal
 
-Press `/` and type. Every word must occur in the signal's name, short name, description or unit, and parts of words match: `pack` finds PackVoltage and PackCurrent, `cellv` the 93 cell voltages. With an empty search the list shows all signals (135 in the demo recording), grouped by the ECU that sends them; click a group to open it. While you search, only groups with a match show, already open.
+Press `/` and type. Every word must occur in the signal's name, short name, description or unit, and parts of words match: `pack` finds PackVoltage and PackCurrent, `cellv` the 93 cell voltages. An empty search lists all signals (135 in the demo recording) in closed groups per sending ECU (Favourites open); click a group to open it. While you search, only groups with a match show, open.
 
-A row shows the short name, the unit and an SNA marker. Short names come from the full DBC name, for example VehSpeed for VEH_200h.VehSpeed; the full name is the row's tooltip.
+A row shows the short name, the unit and an SNA marker; its tooltip is the full DBC name, such as VEH_200h.VehSpeed for VehSpeed.
 
-Rest the pointer on a row, or move to it with `↑` and `↓`, and a card shows what the DBC and diagnostic catalog know: full name, description, message and CAN ID, unit, scaling, raw step, range, SNA codes, state names, source file, and the windows that show the signal. `Esc` clears the search.
+Hover a row, or move to it with `↑` and `↓`, and a card shows what the DBC and diagnostic catalog know: full name, description, message and CAN ID, unit, scaling, raw step, range, SNA codes, state names, source file, and the windows that show the signal. `Esc` clears the search.
+
+**Favourites:** the ☆ at a row's left edge (on hover) or `Ctrl/Cmd+D` stars the row, or all selected rows; again unstars.
+
+Your stars show in **★ Favourites** atop the list, by name on every vehicle and session; `kipscope fav` changes them from a shell.
 
 ## Chart a signal
 
 **Where an added signal goes:** `+` on a row, or `Enter`, adds the signal to the **Add to target**: the window you last clicked. Any click inside a window marks it with a blue frame and an "Add to" pill after its title. While no window is marked, the target is a new window. The "Add to" select above the list shows the target; choose New window there to stop adding to the marked one.
 
-A window created by an add does not become the target, so the next add makes another new window; click it first to add more into it. After each add, the window that received the signal scrolls into view and flashes briefly.
+A window made by an add does not become the target: the next add makes another new window unless you click it first. After each add, the receiving window scrolls into view and flashes briefly.
 
-You can also drag a row onto a window. During a drag the status strip and the free space below the last window turn into "+ New window"; drop there for a new window. `Esc` cancels a drag. Dropping a row on the time strip does not chart it; it marks the state changes of a signal with states (see Events).
+Or drag a row onto a window. During a drag the status strip and the free space below the last window turn into "+ New window"; drop there for a new window. `Esc` cancels a drag. Dropping a row on the time strip does not chart it; it marks the state changes of a signal with states (see Events).
 
 For several signals, select rows with `Ctrl/Cmd+click` or `Shift+click`, then press `+` or drag the selection. A timeseries window holds at most four units; the rest flows into the next window with room, then into new windows.
 

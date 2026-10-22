@@ -4,16 +4,17 @@ import {
   type SignalInfo,
   searchSignals,
   shownName,
+  toggleFavourites,
   type WorkspaceScope,
   type WorkspaceWindow,
   windowTitle,
 } from "@kipscope/shared";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { fetchCatalog } from "../api.ts";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ApiRequestError, changeFavourites, fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";
 import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
 import { HINTS } from "../help/hints.ts";
-import { isSearchKey } from "../keys.ts";
+import { isSearchKey, isStarKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
 import { CatalogLoader, NO_SCOPE_TEXT, partialText } from "./catalogLoader.ts";
 import {
@@ -25,7 +26,7 @@ import {
   nextShown,
   visibleCount,
 } from "./format.ts";
-import { explorerItems, firstSignal } from "./groups.ts";
+import { type ExplorerItem, explorerItems, firstSignal } from "./groups.ts";
 import { Highlight } from "./Highlight.tsx";
 import { SignalCard } from "./SignalCard.tsx";
 import {
@@ -39,6 +40,7 @@ import {
   selectClick,
   selectedInOrder,
 } from "./selection.ts";
+import { shouldClearOnAnswer } from "./starRequest.ts";
 import { sidebarTabs, type TabEvents } from "./tabs.ts";
 
 export { NEW_WINDOW };
@@ -76,6 +78,33 @@ interface Props {
   children?: React.ReactNode;
   /** The strip's events, counted on the Events tab (design DW14); absent while they load. */
   eventsTab?: TabEvents | undefined;
+  /** The user's favourite names from the live channel (add-favourites F9); undefined until the first. */
+  favourites?: readonly string[] | undefined;
+}
+
+/** A row by what it shows (add-favourites F10): a signal and whether it is the Favourites copy, or a header. */
+type RowKey = { id: string; copy: boolean } | { group: string };
+
+function rowKey(item: ExplorerItem | undefined): RowKey | undefined {
+  if (!item) return undefined;
+  return item.kind === "group"
+    ? { group: item.name }
+    : { id: item.match.signal.id, copy: item.inFavourites === true };
+}
+
+/** Index of the row `key` in `items`, else `old` clamped to the items (F10); -1 for no items. */
+function findRow(items: readonly ExplorerItem[], key: RowKey | undefined, old: number): number {
+  if (key) {
+    const i = items.findIndex((it) =>
+      "group" in key
+        ? it.kind === "group" && it.name === key.group
+        : it.kind === "signal" &&
+          it.match.signal.id === key.id &&
+          (it.inFavourites === true) === key.copy,
+    );
+    if (i >= 0) return i;
+  }
+  return Math.min(old, items.length - 1);
 }
 
 /** The open hover card: index of a signal item, the row's rect, and how it was opened. */
@@ -109,6 +138,7 @@ export function SignalExplorer({
   onPart,
   children,
   eventsTab,
+  favourites,
 }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -175,11 +205,22 @@ export function SignalExplorer({
   const index = useMemo(() => buildSearchIndex(catalog ?? []), [catalog]);
   const matches = useMemo(() => searchSignals(index, query), [index, query]);
   const grouped = useMemo(() => (catalog ?? []).some((s) => s.group !== undefined), [catalog]);
+  const searching = query.trim() !== "";
   const items = useMemo(
-    () => explorerItems(matches, query.trim() !== "", grouped, toggled),
-    [matches, query, grouped, toggled],
+    () => explorerItems(matches, searching, grouped, toggled, favourites),
+    [matches, searching, grouped, toggled, favourites],
   );
-  const activeItem = active ?? firstSignal(items);
+  const starred = useMemo(() => new Set(favourites), [favourites]);
+  // Header tooltip (F7): distinct favourite names in this catalog, of all the user's favourites.
+  const favouritesHint = useMemo(() => {
+    const names = new Set((catalog ?? []).map((s) => s.name));
+    return HINTS.favourites(
+      (favourites ?? []).filter((n) => names.has(n)).length,
+      favourites?.length ?? 0,
+    );
+  }, [catalog, favourites]);
+  // While searching the best hit is active, its Favourites copy when it has one (F6).
+  const activeItem = active ?? firstSignal(items, searching ? matches[0]?.signal.id : undefined);
   const visible = visibleCount(items.length, shown);
 
   // The target is a window ID held by App (the mark, design L5); App resolves it with resolveTarget.
@@ -242,7 +283,7 @@ export function SignalExplorer({
     setToggled(next);
     // A closed group's rows leave the selection (design M5).
     setSelection(
-      pruneSelection(selection, explorerItems(matches, query.trim() !== "", grouped, next)),
+      pruneSelection(selection, explorerItems(matches, searching, grouped, next, favourites)),
     );
     setActive(i);
     closeCard();
@@ -253,6 +294,80 @@ export function SignalExplorer({
     const selected = selectedInOrder(selection, items);
     if (selection.ids.has(s.id) && selected.length >= 2) onAddMany(selected, target);
     else onAdd(s, target);
+  };
+
+  /** The pending star request (F10): the row its click came from and that row's offsetTop then, or
+   * no press for the key. The next favourites list keeps that row in place, after the key the active
+   * row in view. */
+  const starRequest = useRef<{ press: { key: RowKey | undefined; top: number } | undefined }>(
+    undefined,
+  );
+  /** The row the list holds in place when the favourites change without a star click (F10, D-092):
+   * the active row if fully visible, else the first fully visible row, and its offsetTop. Taken
+   * after every render and scroll, so it holds the layout before the next favourites list. */
+  const anchor = useRef<{ key: RowKey | undefined; top: number }>(undefined);
+
+  /** Star or unstar signal s, or the selection it is in (F8), from a click at press or the key; the
+   * list changes when the live channel sends the new favourites (F9: no optimistic change). */
+  const star = (s: SignalInfo, press?: { key: RowKey | undefined; top: number }) => {
+    const selected = selectedInOrder(selection, items);
+    let names = [s.name];
+    if (selection.ids.has(s.id) && selected.length >= 2) {
+      const nameOf = new Map<string, string>();
+      for (const it of items)
+        if (it.kind === "signal") nameOf.set(it.match.signal.id, it.match.signal.name);
+      names = [...new Set(selected.map((id) => nameOf.get(id) ?? id))];
+    }
+    const change = toggleFavourites(starred, names);
+    if (!change) return;
+    const request = { press };
+    starRequest.current = request;
+    changeFavourites(change).then(
+      // The push follows only when the list changed. An answer that equals the shown list changed
+      // nothing (F4: the local stars were stale) or its push has rendered: nothing is left to arm.
+      // Otherwise the push is still to come and takes the request.
+      (answer) => {
+        if (
+          starRequest.current === request &&
+          shouldClearOnAnswer(answer.names, last.current.favourites ?? [])
+        )
+          starRequest.current = undefined;
+      },
+      (err: unknown) => {
+        if (starRequest.current === request) starRequest.current = undefined;
+        console.error("favourites:", err instanceof ApiRequestError ? err.code : err);
+      },
+    );
+  };
+
+  /** F10's anchor row in the layout now (see `anchor`); undefined without rows in view. */
+  const visibleAnchor = () => {
+    const list = listRef.current;
+    const results = list?.parentElement;
+    if (!list || !results) return undefined;
+    const box = results.getBoundingClientRect();
+    const viewTop = box.top + results.clientTop;
+    const viewBottom = viewTop + results.clientHeight;
+    const fully = (el: Element | undefined) => {
+      const r = el?.getBoundingClientRect();
+      return r !== undefined && r.top >= viewTop && r.bottom <= viewBottom;
+    };
+    let i = activeItem;
+    if (!fully(rowElement(i))) {
+      // Rows are in order: the first whose top is in the view, by bisection.
+      const rows = list.children;
+      let lo = 0;
+      let hi = rows.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if ((rows[mid] as Element).getBoundingClientRect().top < viewTop) lo = mid + 1;
+        else hi = mid;
+      }
+      if (!fully(rows[lo])) return undefined;
+      i = lo;
+    }
+    const el = rowElement(i);
+    return el && { key: rowKey(items[i]), top: el.offsetTop };
   };
 
   /** A click on signal row i selects (L1) and makes it active; a click that ends a drag does nothing. */
@@ -278,6 +393,44 @@ export function SignalExplorer({
     input.focus({ preventScroll: true });
     quietFocus.current = false;
   };
+
+  // F10: when the favourites change the list, the active row (and the card's) stay on the same row;
+  // after a star click the clicked row stays under the pointer, after the key the active row in view.
+  const last = useRef({ items, active: activeItem, favourites });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the favourites changed
+  useLayoutEffect(() => {
+    const before = last.current;
+    // The first favourites message is no star change: the default active row applies.
+    if (before.favourites === undefined || before.items.length === 0 || items.length === 0) return;
+    const next = findRow(items, rowKey(before.items[before.active]), before.active);
+    if (active !== undefined || next !== activeItem) setActive(next);
+    if (card) {
+      const at = findRow(items, rowKey(before.items[card.index]), card.index);
+      if (items[at]?.kind === "signal") setCard({ ...card, index: at });
+      else closeCard();
+    }
+    const request = starRequest.current;
+    starRequest.current = undefined;
+    // After a click the clicked row stays under the pointer; else (the key, another tab, the CLI)
+    // the anchor row stays where it was (D-092). One scrollTop correction either way; -1 when the
+    // row is gone (e.g. its Favourites copy was unstarred): no correction.
+    const hold = request?.press ?? anchor.current;
+    const at = hold ? findRow(items, hold.key, -1) : -1;
+    const el = at >= 0 ? rowElement(at) : undefined;
+    const results = listRef.current?.parentElement;
+    if (hold && el && results) {
+      keyScrollAt.current = performance.now();
+      results.scrollTop += el.offsetTop - hold.top;
+    }
+    if (request && !request.press) {
+      const activeEl = rowElement(next);
+      if (activeEl) scrollToRow(activeEl);
+    }
+  }, [favourites]);
+  useLayoutEffect(() => {
+    last.current = { items, active: activeItem, favourites };
+    anchor.current = visibleAnchor();
+  });
 
   // After an arrow key: keep the active item in view and let the card follow it (rows only).
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs only after a key moved the item
@@ -334,6 +487,14 @@ export function SignalExplorer({
   }, [open, part, focusSearch]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Ctrl/Cmd+D stars the active row or its selection (F8); never the browser's bookmark dialog.
+    if (isStarKey(e, isMacPlatform(navigator.platform))) {
+      e.preventDefault();
+      const item = items[activeItem];
+      if (item?.kind !== "signal") return;
+      star(item.match.signal);
+      return;
+    }
     switch (e.key) {
       case "Escape":
         e.preventDefault();
@@ -366,6 +527,7 @@ export function SignalExplorer({
   };
 
   const onListScroll = () => {
+    anchor.current = visibleAnchor();
     if (performance.now() - keyScrollAt.current < 200) return;
     closeCard();
   };
@@ -471,6 +633,7 @@ export function SignalExplorer({
                   aria-selected={false}
                   aria-expanded={item.open}
                   className={i === activeItem ? "group-head active" : "group-head"}
+                  title={item.favourites ? favouritesHint : undefined}
                   onClick={() => {
                     toggleGroup(item.name, i);
                     keepKeys();
@@ -479,7 +642,7 @@ export function SignalExplorer({
                   <span className="chevron" aria-hidden="true">
                     {item.open ? "▾" : "▸"}
                   </span>
-                  <span className="group-name" title={item.name}>
+                  <span className="group-name" title={item.favourites ? favouritesHint : item.name}>
                     {item.name}
                   </span>
                   <span className="group-count">{item.count}</span>
@@ -489,6 +652,8 @@ export function SignalExplorer({
             const m = item.match;
             const s = m.signal;
             const selected = selection.ids.has(s.id);
+            const isStarred = starred.has(s.name);
+            const starHint = HINTS.star(isStarred);
             // Physical SNA values are readings of the signal: number-format with unit (design N9).
             const sna =
               s.sna &&
@@ -498,7 +663,7 @@ export function SignalExplorer({
               // biome-ignore lint/a11y/useFocusableInteractive: see above
               // biome-ignore lint/a11y/useKeyWithClickEvents: Shift+Arrow in the search selects by keyboard
               <div
-                key={`s:${s.id}`}
+                key={`${item.inFavourites ? "f" : "s"}:${s.id}`}
                 id={optionId(i)}
                 role="option"
                 aria-selected={selected}
@@ -513,6 +678,24 @@ export function SignalExplorer({
                 }}
                 onClick={(e) => clickRow(e, i)}
               >
+                {/* In the row's 18 px indent (F7): no drag, card, selection or active change. */}
+                <button
+                  type="button"
+                  className={isStarred ? "star on" : "star"}
+                  aria-pressed={isStarred}
+                  title={starHint}
+                  aria-label={starHint}
+                  // Not a tab stop: Ctrl/Cmd+D in the search stars the active row.
+                  tabIndex={-1}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const row = e.currentTarget.parentElement;
+                    star(s, { key: rowKey(item), top: row?.offsetTop ?? 0 });
+                  }}
+                >
+                  {isStarred ? "★" : "☆"}
+                </button>
                 {sna ? (
                   <span
                     className="sna-dot"

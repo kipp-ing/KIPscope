@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isHelpKey, isSearchKey, isTextField, NavRepeat, navKey } from "../src/keys.ts";
+import { isHelpKey, isSearchKey, isStarKey, isTextField, NavRepeat, navKey } from "../src/keys.ts";
 
 /** No DOM in the tests: plain objects shaped like the element properties isTextField reads. */
 const el = (tagName: string, props: { type?: string; isContentEditable?: boolean } = {}) =>
@@ -233,5 +233,37 @@ describe("isHelpKey", () => {
     // A button or checkbox takes no typed text, so ? still opens help there.
     expect(isHelpKey(key("?"), el("BUTTON"))).toBe(true);
     expect(isHelpKey(key("?"), el("INPUT", { type: "checkbox" }))).toBe(true);
+  });
+});
+
+describe("isStarKey", () => {
+  const key = (
+    k: string,
+    mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {},
+  ) => ({
+    key: k,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it("maps Ctrl/Cmd+D to the star", () => {
+    // The platform modifier: Ctrl elsewhere, Cmd on macOS; `d` or `D` (caps lock).
+    expect(isStarKey(key("d", { ctrlKey: true }), false)).toBe(true);
+    expect(isStarKey(key("D", { metaKey: true }), true)).toBe(true);
+    expect(isStarKey(key("D", { ctrlKey: true }), false)).toBe(true);
+    expect(isStarKey(key("d", { metaKey: true }), true)).toBe(true);
+    // The other platform's modifier does not star.
+    expect(isStarKey(key("d", { metaKey: true }), false)).toBe(false);
+    expect(isStarKey(key("d", { ctrlKey: true }), true)).toBe(false);
+    // Alt or Shift in the chord, no modifier, or another key.
+    expect(isStarKey(key("d", { ctrlKey: true, altKey: true }), false)).toBe(false);
+    expect(isStarKey(key("d", { ctrlKey: true, shiftKey: true }), false)).toBe(false);
+    expect(isStarKey(key("d"), false)).toBe(false);
+    expect(isStarKey(key("d"), true)).toBe(false);
+    expect(isStarKey(key("s", { ctrlKey: true }), false)).toBe(false);
+    expect(isStarKey(key("Enter", { ctrlKey: true }), false)).toBe(false);
   });
 });

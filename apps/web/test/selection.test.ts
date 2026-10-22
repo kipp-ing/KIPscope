@@ -109,6 +109,32 @@ describe("explorer selection", () => {
     expect(pruneSelection(sel(["a", "d"], "a"), closed).anchor).toBe("a");
   });
 
+  it("lists a starred row once in the selection", () => {
+    const copy = (id: string): ExplorerItem => ({ ...row(id), inFavourites: true }) as ExplorerItem;
+    const RPM = "testcar/Sna_800h.RPM";
+    const SIG_A = "testcar/Fast_100h.SIG_A";
+    // The Favourites copy of RPM and its row in the group `SNA codes`, both selected with SIG_A.
+    const starred: ExplorerItem[] = [
+      { kind: "group", name: "★ Favourites", count: 1, open: true, favourites: true },
+      copy(RPM),
+      header("SNA codes"),
+      row(RPM),
+      header("Fast"),
+      row(SIG_A),
+    ];
+    const picked = sel([SIG_A, RPM], RPM);
+    expect(selectedInOrder(picked, starred)).toEqual([RPM, SIG_A]);
+    // Clicking either item of the signal selects the signal, so both items show it selected.
+    expect(idsOf(selectClick(NO_SELECTION, starred, 1, "plain"))).toEqual([RPM]);
+    expect(idsOf(selectClick(NO_SELECTION, starred, 3, "plain"))).toEqual([RPM]);
+    // A range across both items lists the signal once.
+    const range = selectClick(selectClick(NO_SELECTION, starred, 1, "plain"), starred, 5, "range");
+    expect(selectedInOrder(range, starred)).toEqual([RPM, SIG_A]);
+    // First occurrence wins: with SIG_A's copy first, it comes first.
+    const sigFirst: ExplorerItem[] = [copy(SIG_A), copy(RPM), row(RPM), row(SIG_A)];
+    expect(selectedInOrder(picked, sigFirst)).toEqual([SIG_A, RPM]);
+  });
+
   it("keeps presses in the list from selecting text", () => {
     for (const button of [0, 1, 2]) {
       let prevented = 0;

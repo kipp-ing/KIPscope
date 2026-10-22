@@ -12,6 +12,7 @@ import {
   WorkspaceShare,
 } from "@kipscope/shared";
 import type { CaseInvocation } from "./case.ts";
+import type { FavInvocation } from "./favourites.ts";
 import { CliError } from "./output.ts";
 import type { ViewInvocation } from "./views.ts";
 
@@ -60,6 +61,7 @@ export type Invocation =
   | { kind: "workspace"; action: "share"; share: WorkspaceShare }
   | { kind: "workspace"; action: "delete"; id: string }
   | ViewInvocation
+  | FavInvocation
   | CaseInvocation;
 
 export const DEFAULT_SERVER = "http://localhost:7310";
@@ -141,6 +143,12 @@ Views (saved workspaces, stored by the server):
                                    (FILE: YAML or JSON, at most 256 KiB)
   view link [--page URL]           (link to the open workspace, like "Copy link" in the UI;
                                    URL: the UI page, default the server address)
+
+Favourites (your starred signals, by name on every vehicle and workspace):
+  fav list
+  fav add NAME...                  (NAME: a SIGNAL, stored by its name; a name not in this
+                                   list is stored as given, with a warning)
+  fav rm NAME...                   (a favourite, its part after the first ".", or a full ID)
 
 Options (anywhere on the line; "--" ends options):
   --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER});
@@ -397,6 +405,7 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
     "scope",
     "workspace",
     "case",
+    "fav",
   ].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
@@ -677,6 +686,15 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       take(1);
       if (!WORKSPACE_ID.test(arg(0))) usage(`not a workspace ID: "${arg(0)}"`);
       return { kind: "workspace", action: "delete", id: arg(0) };
+    case "fav list":
+      take(0);
+      return { kind: "fav", action: "list" };
+    case "fav add":
+    case "fav rm":
+      if (args.length === 0) usage(`${form} needs at least one NAME (see --help)`);
+      take([1, Number.POSITIVE_INFINITY]);
+      if (args.includes("")) usage("NAME is empty");
+      return { kind: "fav", action: form === "fav add" ? "add" : "rm", names: args };
     case "case open":
       take(1);
       if (arg(0) === "") usage("FILE is empty");

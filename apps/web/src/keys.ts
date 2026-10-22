@@ -42,6 +42,16 @@ export function isHelpKey(e: KeyLike, focused: Element | null): boolean {
 }
 
 /**
+ * `Ctrl+D`, on macOS `Cmd+D`, stars the active row or the selection (add-favourites F8): `d` or
+ * `D` with the platform modifier, without Alt or Shift. The explorer search handles it in place.
+ */
+export function isStarKey(e: KeyLike & { shiftKey: boolean }, mac: boolean): boolean {
+  if (e.key !== "d" && e.key !== "D") return false;
+  if (e.altKey || e.shiftKey) return false;
+  return mac ? e.metaKey : e.ctrlKey;
+}
+
+/**
  * Navigation keys (design N6): zoom, pan, page, reset, the range picker (`goTo` opens it,
  * add-range-picker R11), the strip's drives (S9), its events (improve-events P7) and a cursor
  * brought into view (declutter-workspace DW23).

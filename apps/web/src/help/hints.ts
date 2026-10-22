@@ -129,6 +129,15 @@ export const HINTS = {
   sharingOff: "Sharing is turned off on this server",
   openElsewhere: "Open in another tab",
 
+  // Signal list stars, add-favourites (F7).
+  star: (starred: boolean) =>
+    starred
+      ? "Starred: click to remove it from Favourites · Ctrl/Cmd+D"
+      : "Star: keep this signal at the top of the list on every vehicle · Ctrl/Cmd+D",
+  /** `inList`: distinct favourite names in the catalog in use; `total`: the user's favourites. */
+  favourites: (inList: number, total: number) =>
+    `Favourites: ${inList.toLocaleString("en-US")} of your ${total.toLocaleString("en-US")} starred signals are in this list`,
+
   // Case catalog list (D-095).
   backToSearch: "Back to search: the tool that opened these sessions",
   filterSessions:

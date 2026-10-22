@@ -97,4 +97,21 @@ describe("markdown subset", () => {
     expect(after).toMatch(/Help/i);
     expect(after).toContain("⋯");
   });
+
+  it("explains the stars under Find a signal (add-favourites)", () => {
+    const src = readFileSync(new URL("../../../docs/manual.md", import.meta.url), "utf8");
+    // The section "Find a signal": from its heading to the next one.
+    const start = src.indexOf("## Find a signal");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const rest = src.slice(start + 1);
+    const end = rest.search(/^## /m);
+    const section = end < 0 ? rest : rest.slice(0, end);
+    const lines = section.split("\n").filter((l) => /Favourites|Ctrl\/Cmd\+D/.test(l));
+    expect(
+      lines.length,
+      "lines naming Favourites or Ctrl/Cmd+D under Find a signal",
+    ).toBeGreaterThanOrEqual(2);
+    expect(section).toContain("Ctrl/Cmd+D");
+    expect(section).toContain("kipscope fav");
+  });
 });

@@ -286,6 +286,9 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `workspace new` | `POST /api/workspaces`: a new empty workspace; `local.url` is its link `<server>/w/<id>` |
 | `workspace share private\|read\|write` | `POST /api/workspaces/<id>/share` for the call's workspace (owner only; `read` and `write` need `KIPSCOPE_SHARE=on`) |
 | `workspace delete ID` | `DELETE /api/workspaces/ID` |
+| `fav list` | `GET /api/favourites`: your starred signal names, `data {names, error?}` (`error`: the file does not parse) |
+| `fav add NAME…` | `POST /api/favourites {add}`: a full ID stars its name part; a bare NAME its one match in the workspace's list (several names: exit 1 `ambiguous_signal`, nothing sent); a NAME without match is stored as given with `data.warnings ["not in this list: NAME…"]`, exit 0; `data {names, added, warnings?}` and `workspace` |
+| `fav rm NAME…` | `POST /api/favourites {remove}`: NAME is a favourite, one equal ignoring case or by its part after the first `.`, or a full ID whose name is one (`unknown_favourite`, `ambiguous_favourite`: exit 1, nothing sent); `data {names, removed}` |
 
 Reads: `state`, `scope show` (`data {scope, catalog {mode, state, size}}`, `local {from, to}`), `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]`, `wait [REVISION]`, `view list`, `view export NAME [--out FILE]` (prints the view's YAML text; with `--out` writes FILE and prints `data {name, path, bytes}`), `view link [--page URL]` (the `#view=` link of the open workspace that the UI's "Copy link (own copy)" gives, as `data {url, chars}`; `--page` is the UI page address, default the server address).
 

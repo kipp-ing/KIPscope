@@ -26,12 +26,16 @@ export interface LiveState {
   summary?: WorkspaceSummary;
   /** Close code 4403 or 4404: the channel stays shut and the page shows its gate (M12). */
   closed?: number;
+  /** The user's favourite signal names from the last `favourites` message (add-favourites F9). */
+  favourites?: string[];
 }
 
 /** The live state after one server message (design H7). */
 export function applyLiveMessage(state: LiveState, message: LiveServerMessage): LiveState {
   if (message.type === "hello") return { ...state, clientId: message.clientId };
   if (message.type === "summary") return { ...state, summary: message.summary };
+  // Per user, not workspace state (add-favourites F4): revision and workspace stay as they are.
+  if (message.type === "favourites") return { ...state, favourites: message.names };
   return {
     ...state,
     revision: message.revision,

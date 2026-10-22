@@ -40,6 +40,12 @@ const SAMPLES: Record<string, unknown[][]> = {
   ],
   stripFlagAB: [["15:09:12.000", "15:09:12.950"]],
   eventsCount: [[13, 669, "faults and state changes"]],
+  // add-favourites F7: the row's star (starred or not) and the Favourites header's counts.
+  star: [[true], [false]],
+  favourites: [
+    [5, 7],
+    [1, 1],
+  ],
 };
 
 function texts(): { id: string; text: string }[] {
@@ -89,6 +95,28 @@ describe("hints table", () => {
         expect(keyTokens.has(tail), `${id} names "${tail}", missing in SHORTCUTS`).toBe(true);
       }
     }
+  });
+
+  it("words the star and Favourites hints", () => {
+    // add-favourites "Header tooltip": the same facts as `5 of your 7 starred signals are in this list`.
+    for (const [inList, total] of [
+      [5, 7],
+      [1, 1],
+    ] as const) {
+      const text = HINTS.favourites(inList, total);
+      expect(text.startsWith("Favourites")).toBe(true);
+      expect(text).toContain(String(inList));
+      expect(text).toContain(String(total));
+      expect(text).toContain("in this list");
+    }
+    expect(HINTS.favourites(5, 7)).not.toBe(HINTS.favourites(1, 1));
+    // The star names its state and the key; Ctrl/Cmd+D is in the key list.
+    expect(HINTS.star(false).startsWith("Star")).toBe(true);
+    expect(HINTS.star(true).startsWith("Starred")).toBe(true);
+    for (const starred of [true, false]) expect(HINTS.star(starred)).toContain("Ctrl/Cmd+D");
+    const key = SHORTCUTS.find((s) => s.keys === "Ctrl/Cmd+D");
+    expect(key?.group).toBe("Signal list");
+    expect(key?.action).toBe("Star or unstar the row or the selection");
   });
 
   it("takes every tooltip from the hints table", () => {

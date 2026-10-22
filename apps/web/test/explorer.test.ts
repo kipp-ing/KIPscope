@@ -5,7 +5,9 @@ import type {
   TimeseriesWindow,
   WorkspaceScope,
 } from "@kipscope/shared";
-import { describe, expect, it, vi } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../src/api.ts";
 import {
   CatalogLoader,
@@ -29,7 +31,8 @@ import {
   visibleCount,
   windowsShowing,
 } from "../src/explorer/format.ts";
-import { explorerItems, firstSignal } from "../src/explorer/groups.ts";
+import { explorerItems, FAVOURITES_GROUP, firstSignal } from "../src/explorer/groups.ts";
+import { HINTS } from "../src/help/hints.ts";
 
 function win(id: string, signalIds: string[], title?: string): TimeseriesWindow {
   return {
@@ -248,6 +251,326 @@ describe("explorer groups", () => {
     console.log(`explorerItems: 10,000 matches in 101 groups, median ${median.toFixed(2)} ms`);
     // Goal 10 ms; the hard limit is the 50 ms of the filtering goal.
     expect(median).toBeLessThan(50);
+  });
+});
+
+/** A ranked match of `dataRef/name` (favourites match by `name` alone, design F3). */
+function matchOf(dataRef: string, name: string, group?: string): SignalMatch {
+  return {
+    signal: { id: `${dataRef}/${name}`, dataRef, name, ...(group ? { group } : {}) },
+    tier: 0,
+    name: [],
+    shown: [],
+    unit: [],
+    description: [],
+  } as unknown as SignalMatch;
+}
+
+describe("explorer favourites (add-favourites)", () => {
+  // Rank order of signal-groups "Group order and state": 1 Other, 2 CGW, 3 ESP, 4 AC, 5 ESP.
+  const ranked = [
+    match("r1", undefined),
+    match("r2", "CGW"),
+    match("r3", "ESP"),
+    match("r4", "AC"),
+    match("r5", "ESP"),
+  ];
+  const none = new Set<string>();
+  const stars = ["r5", "r2"];
+  /** One line per item: header `name count open|closed` (+ `*` for the Favourites header), row `name` (+ `*` for a copy). */
+  const shape = (items: ReturnType<typeof explorerItems>) =>
+    items.map((i) =>
+      i.kind === "group"
+        ? `${i.name} ${i.count} ${i.open ? "open" : "closed"}${i.favourites ? " *" : ""}`
+        : `${i.match.signal.name}${i.inFavourites ? " *" : ""}`,
+    );
+  const base = (searching: boolean, grouped = true, toggled = none) =>
+    explorerItems(ranked, searching, grouped, toggled);
+
+  it("puts favourites in a group at the top", () => {
+    expect(FAVOURITES_GROUP).toBe("★ Favourites");
+
+    // Searching: the header, the copies in rank order (2 before 5), then today's items unchanged.
+    const searching = explorerItems(ranked, true, true, none, stars);
+    expect(shape(searching).slice(0, 3)).toEqual(["★ Favourites 2 open *", "r2 *", "r5 *"]);
+    expect(searching[0]).toMatchObject({
+      kind: "group",
+      name: FAVOURITES_GROUP,
+      count: 2,
+      open: true,
+      favourites: true,
+    });
+    expect(searching.slice(3)).toEqual(base(true));
+    expect(shape(searching.slice(3))).toEqual([
+      "CGW 1 open",
+      "r2",
+      "ESP 2 open",
+      "r3",
+      "r5",
+      "AC 1 open",
+      "r4",
+      "Other 1 open",
+      "r1",
+    ]);
+
+    // Empty query (catalog order): open although the other groups are closed; the copies in the
+    // order of the favourites (5 before 2), then the closed headers by name.
+    const empty = explorerItems(ranked, false, true, none, stars);
+    expect(shape(empty)).toEqual([
+      "★ Favourites 2 open *",
+      "r5 *",
+      "r2 *",
+      "AC 1 closed",
+      "CGW 1 closed",
+      "ESP 2 closed",
+      "Other 1 closed",
+    ]);
+    expect(empty.slice(3)).toEqual(base(false));
+
+    // Toggled: the header closed, no copies, the groups below as before.
+    const closed = new Set([FAVOURITES_GROUP]);
+    const searchingClosed = explorerItems(ranked, true, true, closed, stars);
+    expect(searchingClosed[0]).toMatchObject({ count: 2, open: false, favourites: true });
+    expect(searchingClosed.slice(1)).toEqual(base(true));
+    const emptyClosed = explorerItems(ranked, false, true, closed, stars);
+    expect(emptyClosed[0]).toMatchObject({ count: 2, open: false, favourites: true });
+    expect(emptyClosed.slice(1)).toEqual(base(false));
+    // Toggling a group below leaves the Favourites group alone.
+    expect(shape(explorerItems(ranked, false, true, new Set(["ESP"]), stars)).slice(0, 3)).toEqual([
+      "★ Favourites 2 open *",
+      "r5 *",
+      "r2 *",
+    ]);
+
+    // Flat list ("Flat list with favourites"): the header, the copies, then the five matches.
+    const flat = explorerItems(ranked, true, false, none, stars);
+    expect(shape(flat)).toEqual([
+      "★ Favourites 2 open *",
+      "r2 *",
+      "r5 *",
+      "r1",
+      "r2",
+      "r3",
+      "r4",
+      "r5",
+    ]);
+    expect(flat.filter((i) => i.kind === "group")).toHaveLength(1);
+
+    // One favourite match in an otherwise flat catalog: the only header is the Favourites one.
+    expect(shape(explorerItems(ranked, true, false, none, ["r3"]))).toEqual([
+      "★ Favourites 1 open *",
+      "r3 *",
+      "r1",
+      "r2",
+      "r3",
+      "r4",
+      "r5",
+    ]);
+  });
+
+  it("changes nothing without a favourite in the matches", () => {
+    // No favourites, or none of them among the matches: exactly today's items.
+    expect(explorerItems(ranked, true, true, none, [])).toEqual(base(true));
+    expect(explorerItems(ranked, true, true, none)).toEqual(base(true));
+    expect(explorerItems(ranked, true, true, none, ["nothing"])).toEqual(base(true));
+    expect(explorerItems(ranked, false, false, none, ["nothing"])).toEqual(base(false, false));
+    expect(explorerItems([], true, true, none, stars)).toEqual([]);
+  });
+
+  it("matches favourites by name on every data ref", () => {
+    const catalog = [
+      matchOf("testcar", "Fast_100h.SIG_A"),
+      matchOf("testcar", "Other_1h.X"),
+      matchOf("othercar", "Fast_100h.SIG_A"),
+    ];
+    for (const searching of [true, false]) {
+      const items = explorerItems(catalog, searching, false, none, [
+        "Fast_100h.SIG_A",
+        "Gone_900h.X",
+      ]);
+      expect(items[0], `searching ${searching}`).toMatchObject({
+        kind: "group",
+        name: FAVOURITES_GROUP,
+        count: 2,
+        open: true,
+      });
+      // Both entries, in catalog order, and nothing for the name that is not in the catalog.
+      const copies = items.filter((i) => i.kind === "signal" && i.inFavourites);
+      expect(
+        copies.map((i) => (i.kind === "signal" ? i.match.signal.id : "")),
+        `searching ${searching}`,
+      ).toEqual(["testcar/Fast_100h.SIG_A", "othercar/Fast_100h.SIG_A"]);
+      expect(items.slice(1 + copies.length)).toEqual(
+        explorerItems(catalog, searching, false, none),
+      );
+
+      // Only a name that is not here: exactly the items without favourites, no header.
+      expect(explorerItems(catalog, searching, false, none, ["Gone_900h.X"])).toEqual(
+        explorerItems(catalog, searching, false, none),
+      );
+    }
+    // Case counts: a favourite is the exact name (design F3).
+    expect(explorerItems(catalog, true, false, none, ["fast_100h.sig_a"])).toEqual(
+      explorerItems(catalog, true, false, none),
+    );
+  });
+
+  it("keeps the best hit active when favourites come first", () => {
+    const searching = explorerItems(ranked, true, true, none, stars);
+    // 0 header, 1 copy r2, 2 copy r5, 3 CGW, 4 r2, 5 ESP, 6 r3, 7 r5, 8 AC, 9 r4, 10 Other, 11 r1.
+    expect(firstSignal(searching, "c/r1")).toBe(11);
+    // A favourite best hit is active in its Favourites copy.
+    expect(firstSignal(searching, "c/r2")).toBe(1);
+    expect(firstSignal(searching, "c/r5")).toBe(2);
+    // Without a best hit the first signal item: the first copy.
+    const empty = explorerItems(ranked, false, true, none, stars);
+    expect(firstSignal(empty)).toBe(1);
+    expect(empty[1]).toMatchObject({ kind: "signal", inFavourites: true });
+    expect(empty[1]?.kind === "signal" && empty[1].match.signal.name).toBe("r5");
+    // A best hit that is not among the items falls back to the first signal item.
+    expect(firstSignal(searching, "c/nowhere")).toBe(1);
+    // Without favourites it is today's behaviour; a closed Favourites group has no copies.
+    expect(firstSignal(base(true), "c/r1")).toBe(8);
+    expect(
+      firstSignal(explorerItems(ranked, true, true, new Set([FAVOURITES_GROUP]), stars), "c/r2"),
+    ).toBe(2);
+    // Only headers: the first item.
+    expect(firstSignal(explorerItems(ranked, false, true, none))).toBe(0);
+  });
+
+  it("groups 10,000 matches with 1,000 favourites in under 10 ms", () => {
+    const matches = Array.from({ length: 10_000 }, (_, i) =>
+      match(`s${i}`, i % 101 === 100 ? undefined : `G${String(i % 100).padStart(3, "0")}`),
+    );
+    // 1,000 favourites: 500 of the matches (every 20th) and 500 names no match has.
+    const favourites = [
+      ...Array.from({ length: 500 }, (_, i) => `s${i * 20}`),
+      ...Array.from({ length: 500 }, (_, i) => `gone${i}`),
+    ];
+    const toggled = new Set<string>();
+    explorerItems(matches, true, true, toggled, favourites); // warm-up
+    const runs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      const items = explorerItems(matches, true, true, toggled, favourites);
+      runs.push(performance.now() - t0);
+      // 101 group headers and 10,000 rows, plus the Favourites header and 500 copies.
+      expect(items).toHaveLength(10_000 + 101 + 1 + 500);
+    }
+    runs.sort((a, b) => a - b);
+    const median = runs[2] ?? Number.POSITIVE_INFINITY;
+    console.log(
+      `explorerItems with favourites: 10,000 matches, 1,000 favourites, median ${median.toFixed(2)} ms`,
+    );
+    // Goal 10 ms; the hard limit is the 50 ms of the filtering goal.
+    expect(median).toBeLessThan(50);
+  });
+});
+
+describe("explorer star markup (add-favourites)", () => {
+  afterEach(() => {
+    vi.doUnmock("../src/explorer/catalogLoader.ts");
+    vi.resetModules();
+  });
+
+  /** The explorer on a catalog that is there from the first render (SSR runs no effects, so no fetch). */
+  async function render(favourites: string[]) {
+    const items: SignalInfo[] = [
+      { id: "testcar/Sna_800h.RPM", dataRef: "testcar", name: "Sna_800h.RPM" },
+      { id: "testcar/Fast_100h.SIG_A", dataRef: "testcar", name: "Fast_100h.SIG_A" },
+    ] as SignalInfo[];
+    vi.resetModules();
+    vi.doMock("../src/explorer/catalogLoader.ts", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../src/explorer/catalogLoader.ts")>()),
+      CatalogLoader: class {
+        constructor(_fetch: unknown, report: (r: CatalogReport) => void) {
+          report({ kind: "loaded", snapshot: { items } as unknown as CatalogSnapshot });
+        }
+        setScope() {}
+        dispose() {}
+      },
+    }));
+    const { SignalExplorer } = await import("../src/explorer/SignalExplorer.tsx");
+    const html = renderToStaticMarkup(
+      createElement(SignalExplorer, {
+        windows: [],
+        onAdd: () => {},
+        onAddMany: () => {},
+        onSeen: () => {},
+        digits: 3,
+        target: "new",
+        onTarget: () => {},
+        open: true,
+        onOpen: () => {},
+        part: "signals",
+        onPart: () => {},
+        favourites,
+      } as never),
+    );
+    return html;
+  }
+
+  /** The rows (`div.row`) of the markup: opening tag and inner HTML. */
+  const rowsOf = (html: string) =>
+    [...html.matchAll(/<div\b([^>]*\bclass="row[ "][^>]*)>(.*?)<\/div>/gs)].map((m) => ({
+      tag: m[1] ?? "",
+      inner: m[2] ?? "",
+    }));
+  const starOf = (inner: string) => {
+    const m = /^<button\b([^>]*)>(.*?)<\/button>/s.exec(inner);
+    return m ? { attrs: m[1] ?? "", text: m[2] ?? "" } : undefined;
+  };
+
+  it("renders a star button in every row", async () => {
+    const html = await render(["Sna_800h.RPM"]);
+    const rows = rowsOf(html);
+    // The Favourites copy of RPM, then the list: RPM and SIG_A.
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      const star = starOf(row.inner);
+      expect(star, `first child of ${row.tag}`).toBeDefined();
+      expect(star?.attrs).toMatch(/\bclass="[^"]*\bstar\b/);
+      expect(star?.attrs).toContain('tabindex="-1"');
+      expect(star?.attrs).toMatch(/\btype="button"/);
+    }
+    const [copy, rpm, sigA] = rows.map((r) => starOf(r.inner));
+    for (const star of [copy, rpm]) {
+      expect(star?.attrs).toContain('aria-pressed="true"');
+      expect(star?.text).toBe("★");
+      expect(star?.attrs).toContain(`title="${HINTS.star(true)}"`);
+      expect(star?.attrs).toContain(`aria-label="${HINTS.star(true)}"`);
+    }
+    expect(sigA?.attrs).toContain('aria-pressed="false"');
+    expect(sigA?.text).toBe("☆");
+    expect(sigA?.attrs).toContain(`title="${HINTS.star(false)}"`);
+    expect(sigA?.attrs).toContain(`aria-label="${HINTS.star(false)}"`);
+    // The star comes before the SNA dot and the name, in the same row.
+    for (const row of rows) {
+      expect(row.inner.indexOf('class="sna-dot')).toBeGreaterThan(row.inner.indexOf("</button>"));
+      expect(row.inner.indexOf('class="name')).toBeGreaterThan(row.inner.indexOf("</button>"));
+    }
+  });
+
+  it("shows the Favourites header without a star, with the tooltip of both counts", async () => {
+    const html = await render(["Sna_800h.RPM", "Gone_900h.X"]);
+    const head = /<div\b[^>]*\bclass="group-head[^"]*"[^>]*>(.*?)<\/div>/s.exec(html);
+    expect(head, "the Favourites header").not.toBeNull();
+    expect(head?.[0]).toContain(FAVOURITES_GROUP);
+    // One of the two starred signals is in this list.
+    expect(head?.[0]).toContain(`title="${HINTS.favourites(1, 2)}"`);
+    expect(head?.[0]).not.toContain("<button");
+    expect(head?.[0]).toMatch(/group-count">1</);
+  });
+
+  it("shows no Favourites header and unpressed stars without favourites", async () => {
+    const html = await render([]);
+    expect(html).not.toContain(FAVOURITES_GROUP);
+    const rows = rowsOf(html);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(starOf(row.inner)?.attrs).toContain('aria-pressed="false"');
+      expect(starOf(row.inner)?.text).toBe("☆");
+    }
   });
 });
 

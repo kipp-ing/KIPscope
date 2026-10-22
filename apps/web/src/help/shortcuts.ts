@@ -104,6 +104,11 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Signal list", keys: "Esc", action: "Clear the search" },
   { group: "Signal list", keys: "Ctrl/Cmd+click", action: "Select or unselect a row" },
   { group: "Signal list", keys: "Shift+click", action: "Select a range of rows" },
+  {
+    group: "Signal list",
+    keys: "Ctrl/Cmd+D",
+    action: "Star or unstar the row or the selection",
+  },
 
   { group: "In a plot", keys: "click", action: "Set cursor A" },
   { group: "In a plot", keys: "Shift+click", action: "Set cursor B" },

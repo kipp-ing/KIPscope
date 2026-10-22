@@ -120,8 +120,12 @@ const EXTENTS = new Map<string, { first: bigint; last: bigint }>([
   ["testcar/Sna_800h.SPEED", { first: T0, last: T0 + 99_900_000_000n }],
 ]);
 
-/** In-memory data source; only info, ping, listSignals, extent, before and after are meaningful. */
-export function stubSource(): DataSource {
+/**
+ * In-memory data source; only info, ping, listSignals, extent, before and after are meaningful.
+ * `extra`: more signals in the list (a test that needs a second signal of one name part).
+ */
+export function stubSource(extra: readonly SourceSignal[] = []): DataSource {
+  const signals = [...SIGNALS, ...extra];
   const unused = async () => {
     throw new Error("not used by the CLI tests");
   };
@@ -130,7 +134,7 @@ export function stubSource(): DataSource {
     ping: async () => {},
     // A scope's list is the signals of its data ref (the stub keeps no per-row times for the rest).
     listSignals: async (scope?: Scope) =>
-      scope ? SIGNALS.filter((s) => s.dataRef === scope.dataRef) : SIGNALS,
+      scope ? signals.filter((s) => s.dataRef === scope.dataRef) : signals,
     extent: async (ref) => EXTENTS.get(id(ref)),
     before: async (ref, t) => [...(POINTS.get(id(ref)) ?? [])].reverse().find((p) => p.t < t),
     after: async (ref, t) => (POINTS.get(id(ref)) ?? []).find((p) => p.t >= t),

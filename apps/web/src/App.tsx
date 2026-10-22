@@ -1625,6 +1625,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         part={part}
         onPart={setPart}
         eventsTab={eventsTab}
+        favourites={live.favourites}
       >
         <EventsPanel
           list={stripList}

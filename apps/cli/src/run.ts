@@ -24,6 +24,7 @@ import {
 import { type GlobalOptions, type Invocation, parseArgs, USAGE } from "./args.ts";
 import { runCase } from "./case.ts";
 import { type Client, createClient, type Deadline } from "./client.ts";
+import { runFavourites } from "./favourites.ts";
 import {
   CliError,
   type CliOutput,
@@ -161,8 +162,9 @@ async function execute(
   });
   const out = await executeWith(invocation, options, client, deadline);
   const workspace = client.workspace();
-  // The workspace right after exitCode (S2 key order).
-  if (workspace === undefined) return out;
+  // The workspace right after exitCode (S2 key order); of the fav forms only `add` uses one (F11).
+  const userOnly = invocation.kind === "fav" && invocation.action !== "add";
+  if (workspace === undefined || userOnly) return out;
   const { ok, outcome, exitCode, ...rest } = out;
   return { ok, outcome, exitCode, workspace, ...rest };
 }
@@ -299,6 +301,9 @@ async function executeWith(
         return result("ok", body);
       case "workspace":
         await runWorkspace(invocation, options, client, body);
+        return result("ok", body);
+      case "fav":
+        await runFavourites(invocation, client, lookups, body);
         return result("ok", body);
       case "case":
         await runCase(invocation, client, options.server, body);

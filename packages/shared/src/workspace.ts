@@ -492,7 +492,9 @@ export type LiveServerMessage =
       workspace: Workspace;
       /** Type of the command that made this revision; absent on the state sent on connect. */
       command?: CommandType;
-    };
+    }
+  /** The connection's user's favourites, after the connect `state` and per change (add-favourites F4). */
+  | { type: "favourites"; names: string[]; error?: string };
 
 export const RenderError = z.object({
   windowId: z.string().max(200).optional(),

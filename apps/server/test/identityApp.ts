@@ -23,6 +23,7 @@ import type { CatalogMode } from "../src/config.ts";
 import type { DataSource, Scope, SourceAdapter } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { completeSource } from "../src/fallbacks.ts";
+import { type FavouritesOf, userFavourites } from "../src/favourites.ts";
 import type { IdentityAdapter } from "../src/identity.ts";
 import { CatalogStore, guardScoped, openScopes } from "../src/scope.ts";
 import { userViews } from "../src/views.ts";
@@ -200,6 +201,12 @@ export interface MultiAppOptions {
   share?: boolean;
   /** Read the test DBC files into the catalogs. */
   dbc?: boolean;
+  /**
+   * Per-user favourites in `<stateDir>/users/<user>/favourites.yaml` (add-favourites), wired like
+   * `main.ts`. Off by default: without a store the live channel sends `hello`, `summary`, `state`
+   * only, which the older tests expect.
+   */
+  favourites?: boolean;
   /** Load the full catalog before the app starts (full mode; default true). */
   loadFullCatalog?: boolean;
   /** An existing state dir (a restart); else a fresh temp dir removed on close. */
@@ -231,6 +238,8 @@ export interface MultiApp {
   app: ReturnType<typeof buildApp>;
   workspaces: WorkspaceRegistry;
   catalogs: CatalogStore;
+  /** The favourites store of the app (undefined unless `favourites` was set). */
+  favouritesOf: FavouritesOf | undefined;
   /** The full catalog (never loaded in scoped mode). */
   catalog: Catalog;
   /** Everything the source adapter received, in order. */
@@ -288,6 +297,7 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
   });
   if (mode === "full" && options.loadFullCatalog !== false) await catalog.refresh();
 
+  const favouritesOf = options.favourites ? userFavourites(stateDir) : undefined;
   const app = buildApp(
     {
       catalog,
@@ -295,6 +305,7 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
       source,
       workspaces,
       viewsOf: userViews(stateDir),
+      ...(favouritesOf ? { favouritesOf } : {}),
       finder: { ...finderConfig(), ...options.finder },
       ...(identity ? { identity, share: options.share ?? true } : {}),
       ...(options.webDir === undefined ? {} : { webDir: options.webDir }),
@@ -360,6 +371,7 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
     app,
     workspaces,
     catalogs,
+    favouritesOf,
     catalog,
     calls,
     stateDir,

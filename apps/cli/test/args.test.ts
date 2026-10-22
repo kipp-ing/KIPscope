@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseArgs, USAGE } from "../src/args.ts";
-import { CliError } from "../src/output.ts";
+import { CliError, EXIT } from "../src/output.ts";
 import { type Lookups, resolveCommand } from "../src/refs.ts";
 
 // Tests run with TZ=Europe/Berlin (see package.json); 2026-10-13 15:08:00 local = 1791896880 s.
@@ -576,6 +576,41 @@ describe("view forms (add-saved-views)", () => {
     ]) {
       expect(USAGE).toContain(form);
     }
+  });
+});
+
+describe("favourite forms (add-favourites)", () => {
+  const parse = (...argv: string[]) => parseArgs(argv, {}).invocation;
+
+  it("maps the fav forms", () => {
+    expect(parse("fav", "list")).toMatchObject({ kind: "fav", action: "list" });
+    // A bare name and a full ID are kept as typed; the call resolves them (design F11).
+    expect(parse("fav", "add", "SPEED_DISP", "smart451/ICL_3A2h.SPEED_DISP")).toMatchObject({
+      kind: "fav",
+      action: "add",
+      names: ["SPEED_DISP", "smart451/ICL_3A2h.SPEED_DISP"],
+    });
+    expect(parse("fav", "rm", "rpm")).toMatchObject({
+      kind: "fav",
+      action: "rm",
+      names: ["rpm"],
+    });
+    // No NAME, a list with a NAME, an unknown action, and a bare `fav` are usage errors (exit 2).
+    for (const argv of [
+      ["fav", "add"],
+      ["fav", "rm"],
+      ["fav", "list", "x"],
+      ["fav", "frob"],
+      ["fav"],
+    ]) {
+      const error = usageError(argv);
+      expect(error.outcome, argv.join(" ")).toBe("usage");
+      expect(EXIT[error.outcome], argv.join(" ")).toBe(2);
+    }
+  });
+
+  it("names the fav forms in the usage text", () => {
+    for (const form of ["fav list", "fav add", "fav rm"]) expect(USAGE).toContain(form);
   });
 });
 

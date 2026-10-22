@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
+import { userFavourites } from "../src/favourites.ts";
 import { ViewStore } from "../src/views.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
@@ -183,6 +184,14 @@ describe("documents", () => {
     expect(section).toContain("as if the source held only");
   });
 
+  it("documents the favourites live message", () => {
+    // add-favourites "Live message documented": the message is named next to the live channel.
+    const guide = read("docs/http-api.md");
+    const lines = guide.split("\n").filter((line) => line.includes('type: "favourites"'));
+    expect(lines.length, 'a line naming {type: "favourites"}').toBeGreaterThanOrEqual(1);
+    expect(guide).toContain("POST /api/favourites");
+  });
+
   it("documents every HTTP route", async () => {
     const source = {} as DataSource;
     const app = buildApp({
@@ -190,6 +199,8 @@ describe("documents", () => {
       source,
       workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
       views: new ViewStore(resolve(ROOT, "node_modules/.kipscope-docs-test-views")),
+      // The favourites routes exist only with a store (add-favourites); nothing is written here.
+      favouritesOf: userFavourites(resolve(ROOT, "node_modules/.kipscope-docs-test-state")),
     });
     const registered = new Set<string>();
     /** The declared level of each route (add-multiuser M6); `body` for the import route. */
@@ -210,6 +221,8 @@ describe("documents", () => {
     }
     expect(registered.size).toBeGreaterThan(15);
     expect(registered).toContain("GET /api/live");
+    expect(registered).toContain("GET /api/favourites");
+    expect(registered).toContain("POST /api/favourites");
 
     const guide = read("docs/http-api.md");
     const documented = new Set(

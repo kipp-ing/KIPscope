@@ -407,6 +407,14 @@ export const workspaceRoutes =
       send({ type: "hello", clientId });
       send({ type: "summary", summary: summary(current) });
       send({ type: "state", revision: store.revision, workspace: store.workspace });
+      // The user's own favourites, then each change of them from any client (add-favourites F4).
+      const { favouritesOf } = deps;
+      if (favouritesOf) send({ type: "favourites", ...favouritesOf(user).get() });
+      const offFavourites = favouritesOf
+        ? favouritesOf.onChange((changedUser, favourites) => {
+            if (changedUser === user) send({ type: "favourites", ...favourites });
+          })
+        : () => {};
       noteObjectScope(catalogs, store.workspace);
       let stopLoading = keepScopeLoaded(store.workspace.scope);
       // The registry's own listener runs first (it subscribed when the workspace was added), so a
@@ -464,6 +472,7 @@ export const workspaceRoutes =
         closed = true;
         unsubscribe();
         offChange();
+        offFavourites();
         stopLoading();
         store.disconnect(clientId);
       });

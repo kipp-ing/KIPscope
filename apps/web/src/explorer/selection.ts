@@ -94,13 +94,16 @@ export function extendTo(
   return { ids: rangeIds(items, anchor, to), anchor: anchorId };
 }
 
-/** Selected IDs that are signal items of `items`, in item order. */
+/**
+ * Selected IDs that are signal items of `items`, in item order, each once (a favourite's copy and
+ * its group row are one signal, add-favourites F8).
+ */
 export function selectedInOrder(sel: Selection, items: readonly ExplorerItem[]): string[] {
-  const out: string[] = [];
+  const out = new Set<string>();
   for (const it of items) {
-    if (it.kind === "signal" && sel.ids.has(it.match.signal.id)) out.push(it.match.signal.id);
+    if (it.kind === "signal" && sel.ids.has(it.match.signal.id)) out.add(it.match.signal.id);
   }
-  return out;
+  return [...out];
 }
 
 /** Drops IDs that are no signal item of `items` (after a group closes); keeps the anchor only if kept. */

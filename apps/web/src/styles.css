@@ -158,8 +158,11 @@ body {
 }
 
 /* The list scrolls on its own so search, target and count stay in view; its divider spans the
-   sidebar, its rows keep the explorer's 8 px inset. No press in it selects page text (D-065). */
+   sidebar, its rows keep the explorer's 8 px inset. No press in it selects page text (D-065).
+   No browser scroll anchoring: on a favourites change the explorer alone corrects scrollTop, once
+   (F10): the clicked row, else the active or first fully visible row, stays where it was. */
 .explorer .results {
+  overflow-anchor: none;
   user-select: none;
   -webkit-user-select: none;
   flex: 1;
@@ -173,6 +176,7 @@ body {
 /* One line per signal (design E5): [dot] name … unit [+], at most 24 px high, indented under its
    group header. */
 .explorer .row {
+  position: relative;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -193,6 +197,36 @@ body {
 /* Selected rows (design M6): a 3 px accent bar; the active row keeps its fill, so both read apart. */
 .explorer .row.selected {
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The star (add-favourites F7) sits in the row's 18 px indent: absolutely placed, so dot, name,
+   unit and + keep their x positions. Shown on hover, on the active row and while starred. */
+.explorer .row .star {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--disabled);
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.explorer .row:hover .star,
+.explorer .row.active .star,
+.explorer .row .star.on {
+  visibility: visible;
+}
+
+.explorer .row .star.on,
+.explorer .row .star:hover {
+  color: var(--accent);
 }
 
 .explorer .sna-dot {

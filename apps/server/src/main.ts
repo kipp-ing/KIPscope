@@ -16,6 +16,7 @@ import type { Scope } from "./datasource.ts";
 import { loadDbcFiles } from "./dbc.ts";
 import { loadDiagCatalogs } from "./diag.ts";
 import { completeSource, nativeMethods } from "./fallbacks.ts";
+import { userFavourites } from "./favourites.ts";
 import { type IdentityAdapter, type IdentityLog, loadIdentity } from "./identity.ts";
 import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
@@ -148,6 +149,8 @@ const deps = {
   workspaces,
   // Each user's saved views in `<stateDir>/users/<user>/views/` (add-multiuser M9).
   viewsOf: userViews(config.stateDir),
+  // Each user's favourites in `<stateDir>/users/<user>/favourites.yaml` (add-favourites F2).
+  favouritesOf: userFavourites(config.stateDir),
   ...(identity ? { identity } : {}),
   share: config.share,
   finder: config.finder,
