@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-21, session 10. New direction after issue #1 and Jan's answers (D-078 … D-091); see Next. Thirty-two changes are archived and the main specs describe the running app.
+As of 2026-10-21, session 10. New direction after issue #1 and Jan's answers (D-078 … D-091); see Next. Thirty-three changes are archived and the main specs describe the running app.
 
 ## What runs
 
@@ -103,7 +103,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 5. Backlog from the search tool team's findings on issue #1 (comment of 2026-10-21; the small fixes were `fix-handoff-findings`, archived, D-091):
    - Sources without an events table (Jan: „this will be bigger"): today ADX answers SEM0100, events come back empty with a warning per catalog load, and the failing query is sent again for every scope. Open: remember the missing table (per run or recheck per catalog load), a capability in `/api/meta`, events from a stored function with scope pushdown, what the UI shows and hides.
    - ADX speed: native batched `firstTimes` (offered as a contribution in the issue), periods kept per (data ref, signal) across sessions, gaps requests in chunks or below series (revisits D-081), preview's signal list loaded before the settle.
-   - Performance report on a real ADX cluster (comment of 2026-10-22, P1–P9): an open takes ~11 s in 35–55 serial ADX queries. `speed-up-adx` built (`8ffcf96`, D-097): native ADX `extent` and `series` (one round trip per series request), no native ADX `count`, ADX queue default 8, ping reused 15 s; P9 needs no change (`/api/value` is scoped). Open: Jan's OK, then archive; task 7.2 (ask the search tool team to measure). Later: P3 batch endpoints, P4 one tile wave on open, P7 `/open` before the full signal list, P8 loading state.
+   - Performance report on a real ADX cluster (comment of 2026-10-22, P1–P9): an open takes ~11 s in 35–55 serial ADX queries. `speed-up-adx` built (`8ffcf96`, D-097): native ADX `extent` and `series` (one round trip per series request), no native ADX `count`, ADX queue default 8, ping reused 15 s; P9 needs no change (`/api/value` is scoped). Archived 2026-10-22; the search tool team is asked to measure on their cluster (issue #1). Later: P3 batch endpoints, P4 one tile wave on open, P7 `/open` before the full signal list, P8 loading state.
    - Catalog features: `aliases` for signals named differently per vehicle, per-kind `views`, `columns` for list and bar (units, order, table).
    - `POST /api/handoffs` with a one-time handle for lists beyond a link (security decision).
 6. Backlog from the design critic (D-095): windows filling the height, event counts per session in the list, putting A or B on an event, copy-link of view and cursors, a filter by event kind on the strip.
