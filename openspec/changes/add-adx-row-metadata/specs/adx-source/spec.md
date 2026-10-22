@@ -79,5 +79,5 @@ A missing events table SHALL mean no events (`events` answers "no table"), and a
 
 #### Scenario: Row metadata table seeded
 - **WHEN** `pnpm --filter @kipscope/server seed:adx` runs against the emulator
-- **THEN** its spot checks print `ok` for `KMeta | count` → `22` and `KMeta | where text in ('SNA','INVLD') | count` → `4`, next to the existing checks, which are unchanged
+- **THEN** its spot checks print `ok` for `KMeta | count` → `22` and `KMeta | where text in ('SNA','INVLD') | count` → `5`, next to the existing checks, which are unchanged
 - **Evidence:** the command's output

@@ -78,7 +78,7 @@ In `Catalog.load`, after DBC and diag are applied as today: `if (info.unit === u
 | `meta-a/Flag.ERR` | k = 0 … 4 at B + k·S; value k mod 2; text `SNA` at k = 2, else empty; unit empty |
 | `meta-b/Spd.V` | k = 0 … 2 at B + k·S; value 1; text empty; unit `mph` |
 
-Spot checks added to the seed's list: `KMeta | count` → `22`; `KMeta | where text in ('SNA','INVLD') | count` → `4`.
+Spot checks added to the seed's list: `KMeta | count` → `22`; `KMeta | where text in ('SNA','INVLD') | count` → `5`.
 
 The tests build `new AdxSource(client(), { ...adxMapping, table: "KMeta", unit: "unit", snaTexts: ["SNA", "INVLD"] }, adxEventMapping)` (and variants without `unit` or `snaTexts`).
 
@@ -125,7 +125,7 @@ Web: `formatSource(signal: SignalInfo): string` keeps its signature (R6). `Signa
 | 1 query per `listSignals` | R2 | Exact, tested. A second query would add one ADX round trip (0.16–0.34 s measured, D-098) to every open in scoped mode, where the list is on the open's path. |
 | Extra cost of `take_anyif` and the `in` test | R2, R3 | Not measured; a goal, not a gate. Same scan, one more column read and aggregate. If it doubled the scoped list's duration, an open would wait one list duration longer; the variables are off by default, and the search tool team measures after release (as for D-097). |
 | `SNA,INVLD` (2 entries) | R1 | A list of 4 or 1 changes nothing: one `in` over a short dynamic array. |
-| 22 rows, 4 sentinel rows in `KMeta` | R7 | Exact fixture counts; the tests compare exact values. |
+| 22 rows, 5 sentinel rows in `KMeta` | R7 | Exact fixture counts; the tests compare exact values. |
 
 ## Risks
 
