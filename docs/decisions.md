@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-104: Computed signals now, under Favourites, basics only (2026-10-22)
+
+Jan, before an 8 h break: „signalberechnung. ich dachte unter favourites gibt es ein drop down mit magie. schnapp dir ein paar agenten was schlaues zu bauen … so wie halt sinn macht, schön aussieht. leicht zu bedienen. wir brauche keine ultra fancy funktionen die basics reichen."
+
+- **Decision:** Build `add-computed-signals` now, within D-102 (own formula language, no KQL or SQL, stages 1 and 2). In the explorer the computed signals sit in their own section right under Favourites, with one obvious way to create one; a computed signal then behaves like any other signal (add, drag, legend, cursors). Basics only: no derivative, no integral, no filters, no formula library.
+- **Why:** Jan expected the feature where his starred signals already are. Open questions the spec raises while Jan is away get the lead's pick, recorded in the design for Jan to veto on his return.
+
 ## D-103: Favourites answers (2026-10-22)
 
 Open questions of `add-favourites` (design Q-1 … Q-5), Jan: „ja, alles ja, super sach".
