@@ -4,6 +4,17 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-102: Favourites per user, computed signals from a formula (2026-10-22)
+
+Jan: „favourites und berechnete signale … Favourits sind persönlich mit Sternchen markierte. die sollten user bezogen bleiben. und signale berechnen diff, abs min max +- usw. das ganze als direkte kusto query?"; on the lead's questions: „1. ja diff. 2 ja 3: kein kql. aber unions sind glaub mist. man braucht materialized views? und wie ginge das in clickhouse?"
+
+- **Decision:** Two changes, favourites first.
+  - `add-favourites`: a star per signal, per user (`<stateDir>/users/<user>/favourites.yaml`), by signal name without data ref, so a star holds on every vehicle and session. The hand-kept part of a user's book (D-080); the learned book stays in `add-signal-books`.
+  - `add-computed-signals`: a small formula language of KIPscope's own (`+ - * /`, constants, `abs`, `min(a,b)`, `max(a,b)`; `diff` means `a - b`), never user-written KQL or SQL. The server compiles a formula into the source's query, so scope and grant still bound it, with a fallback from raw points for other adapters. Stage 1: formulas over one signal (per-row value expression, then today's buckets). Stage 2: two signals, aligned by holding the last value on the union of both signals' times; SNA in either gives SNA; gaps of both. The definition lives in the workspace and the view.
+  - No materialized views: KIPscope reads only, formulas are ad hoc per user, and ingest-time views (ADX update policies and materialized views, ClickHouse insert-triggered views) see one insert batch, while two signals may arrive in different batches. A derived signal the data team wants for everyone belongs in their ingest as an ordinary signal.
+- **Why:** Raw KQL would work on ADX only (not on carserver's ClickHouse) and would bypass scope and grant on a shared server. Measured on carserver ClickHouse (2026-10-22, `MS_312h.DNMOT` at 100 Hz minus `CPC_508h.PNHV_SupBat_Curr`, one scan of `signal IN (a, b)` with `last_value(…) IGNORE NULLS OVER (ORDER BY utc)`, no join, no union): busiest hour 396 k rows into 2,000 buckets in 0.12 s (A alone 0.06 s); whole recording (11 days, 4.1 M rows) in 0.95 s (A alone 0.30 s); `ASOF JOIN` costs the same (0.82 s). A grid of last values per cell (0.44 s) lost the extremes (−157 instead of −946), so buckets come from the exact per-row result.
+- **Consequences:** On ADX the same single scan needs `serialize` and `scan` (fill forward); not measured yet, only the emulator is at hand. A derivative (`d/dt`) is not part of it.
+
 ## D-101: Row metadata only on ADX (2026-10-22)
 
 Open questions of `add-adx-row-metadata` (design Q-1 … Q-3), Jan: „alles ok".
