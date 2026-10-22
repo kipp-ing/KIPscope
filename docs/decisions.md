@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-098: One series wave on open (2026-10-22)
+
+After `speed-up-adx` the search tool team re-measured (issue #1, 2026-10-22): peak in flight equals the number of signals, because each signal runs series → extent → series → series one after another, so the queue width is not the limit. Jan agreed to take P4 alone as the change `single-wave-open`; P3 (batch endpoints per window) comes after it.
+
+- **Decision:** The web loader asks a signal's extent before its first series request, then fetches one series and derives the other tiles from it where the result equals the server's answer (design W1, W2): the overview serves the view when the view's level is at or above the overview's, and a view spanning the extent serves the overview. Rendered output stays the same. Jan, Q-1 ("accept"): a view the overview cannot serve waits for the extent round trip (0.16–0.34 s on ADX) instead of guessing from its width.
+- **Why:** It halves the requests of an open (4 signals: 16 → 8) and the serial round trips per signal (4 → 2). A guess would cost a second request whenever it is wrong.
+
 ## D-097: ADX speed-ups from the search tool team's report (2026-10-22)
 
 The search tool team measured KIPscope on a real ADX cluster (issue #1, comment of 2026-10-22, P1–P9): an open takes about 11 s, spent in 35–55 serial ADX queries. Jan agreed to the lead's cut for the change `speed-up-adx`; the rest (P3 batch endpoints, P4 one tile wave on open, P7 `/open` before the full signal list, P8 loading state) comes later.

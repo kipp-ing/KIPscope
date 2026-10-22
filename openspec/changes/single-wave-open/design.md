@@ -180,5 +180,5 @@ put(signalId: string, level: number, first: bigint, last: bigint, result: Series
 
 ## Open Questions
 
-- **Q-1 (Jan):** accept that a view no cover can serve waits for its extent (above)? Recommended: yes. Alternative: start such a view's request at once when the view is narrower than half the scope, a heuristic that sends a second series request when it guesses wrong.
+- **Q-1 (Jan), resolved 2026-10-22 (D-098): accepted.** A view no cover can serve waits for its extent (above). Alternative: start such a view's request at once when the view is narrower than half the scope, a heuristic that sends a second series request when it guesses wrong.
 - **Lead:** record Jan's 2026-10-22 agreement ("P4 alone, P3 later") as a decision; the delta specs cite it.
