@@ -33,7 +33,7 @@ None (design R8).
 
 ## 5. Tests (tester, test-first from the specs)
 
-- [ ] 5.1 `apps/server/scripts/seed-adx.ts`: table `KMeta` (design R7: schema, 22 rows, drop-and-refill with the others) and the two spot checks; header comment lists `KMeta`. Verify: scenario "Row metadata table seeded" (command output).
+- [x] 5.1 `apps/server/scripts/seed-adx.ts`: table `KMeta` (design R7: schema, 22 rows, drop-and-refill with the others) and the two spot checks; header comment lists `KMeta`. Verify: scenario "Row metadata table seeded" (command output).
 - [x] 5.2 `config.test.ts` › "reads the ADX row metadata settings" (cases a–f).
 - [x] 5.3 `catalog.test.ts` › "takes the table unit when no DBC or diag unit exists" (stub source and DBC loader of "Unit from the table", fixture diag catalog, refreshed twice, warnings checked).
 - [x] 5.4 `adxQueries.test.ts` (recording fake): "reads the unit in the signal list query", "passes the SNA texts to every value query", "falls back without the text column" (fake answers SEM0100 naming the text column to the first query).
@@ -45,12 +45,12 @@ None (design R8).
 
 ## 6. Lead's check and UI check
 
-- [ ] 6.1 Lead: scenario adx-source "Server on the emulator" (second server on 7311 with `KIPSCOPE_TABLE=KMeta`, `KIPSCOPE_COLUMN_UNIT=unit`, `KIPSCOPE_SNA_TEXTS=SNA,INVLD`, `KIPSCOPE_WEB_DIR=apps/web/dist` after `pnpm build`); the two `curl` outputs.
-- [ ] 6.2 UI user: scenario "Card for a table unit" on that server; one screenshot. Regression by eye on carserver (port 7310): "Card for SPEED_DISP" source line still `smart451 · h-can.dbc`.
+- [x] 6.1 Lead: scenario adx-source "Server on the emulator" (second server on 7311 with `KIPSCOPE_TABLE=KMeta`, `KIPSCOPE_COLUMN_UNIT=unit`, `KIPSCOPE_SNA_TEXTS=SNA,INVLD`, `KIPSCOPE_WEB_DIR=apps/web/dist` after `pnpm build`); the two `curl` outputs.
+- [x] 6.2 UI user: scenario "Card for a table unit" on that server; one screenshot. Regression by eye on carserver (port 7310): "Card for SPEED_DISP" source line still `smart451 · h-can.dbc`.
 
 ## 7. Crash guard
 
-- [ ] 7.1 `pnpm build`, `pnpm smoke` against the running Vite and `pnpm smoke --preview`: pass.
+- [x] 7.1 `pnpm build`, `pnpm smoke` against the running Vite and `pnpm smoke --preview`: pass.
 
 ## Out of scope
 
