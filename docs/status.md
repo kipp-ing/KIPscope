@@ -107,6 +107,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
    - `POST /api/handoffs` with a one-time handle for lists beyond a link (security decision).
 6. Backlog from the design critic (D-095): windows filling the height, event counts per session in the list, putting A or B on an event, copy-link of view and cursors, a filter by event kind on the strip.
    - Range picker: a live preview of typed text in the result line (Jan 2026-10-21: „so lassen wir das erstmal"; today the line shows the draft until Go).
+   - Kept range without data after an open or step (Jan 2026-10-22: backlog, "gut möglich dass wir es gar nicht brauchen"): a step keeps each window's offset from the alignment point and its width, so a session whose data ends earlier shows an empty window. Options: (A) an optional start range per catalog entry, set by the search tool; (B, lead's pick) when no shown signal has data in the kept range, show the whole session with a message, like the clamp at the session edge.
    - Signal metadata per data ref instead of per scope (D-096): after a cold load in a session where a shown signal has no data, the legend lacks its display name and unit until the first step to a session with data.
 7. Backlog from the persona test (2026-10-17, [feedback](feedback/2026-10-17-personas.md)): expert measuring helpers (find peak, max slope, cursors snap to samples); wheel speeds in km/h; DTC onset times (the decoder stores the readout time only).
 
