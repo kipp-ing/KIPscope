@@ -24,12 +24,12 @@ Source: the search tool team's performance report on GitHub issue #1 (comment of
 
 ## Decisions
 
-### A1: Native `count` and `extent` on ADX; `refExtent` stays on the fallback
+### A1: Native `extent` on ADX; `count` and `refExtent` stay on the fallback
 
-- `count(ref, from, to)`: `<table> | where <signal filter> and <t> >= t0 and <t> < t1 | count`. Answers one row `[n]`. Points with a time in `[from, to)`, SNA points included (the "Ranges" rule; same set as the fallback's valid + SNA).
 - `extent(ref, scope)`: `<scoped table> | where <signal filter> | extend x_ = <ns(t)> | summarize f_ = min(x_), l_ = max(x_) | project tostring(f_), tostring(l_)`. Answers one row of two ns strings; empty strings (or no row) mean no data, giving `undefined`. With a scope the three scope filters come first (`scoped()`, design Z3).
 - `refExtent`: not native. Its fallback is one `refBuckets` query too, the report shows no measured gain, and D-074 asks for a measured factor of two. `refCount` is already native.
-- D-074's rule is met for `extent` by the report's measurement on the cluster (the fallback's two `top 1` scans 4–17 s per signal; extent + count for 3 names in one summarize 1.8 s). For `count` the report has no separate measurement and, after A2, ADX never calls `count` from `/api/series` (its only caller). It is kept because Jan agreed to P1 as stated, it is ten lines and the conformance suite checks it; open question Q-1.
+- `count`: not native (D-097, Jan 2026-10-22, following D-074). The report has no count-only measurement, its fallback is one query too, and after A2 ADX never calls `count` from `/api/series` (its only caller); the `series` fallback, used only by adapters without a native `series`, keeps calling the completed `count`.
+- D-074's rule is met for `extent` by the report's measurement on the cluster (the fallback's two `top 1` scans 4–17 s per signal; extent + count for 3 names in one summarize 1.8 s).
 
 ### A2: P2 as an optional `series` method (one combined query), not a reused count
 
@@ -131,22 +131,21 @@ No task follows from P9.
 
 ### A7: Evidence without a cluster
 
-- **Query counts and KQL shape** on a fake Kusto client (records each `query(csl, params)`, answers canned rows of A1/A3) in a new `apps/server/test/adxQueries.test.ts`, which `pnpm test` runs (the name does not match the `adx` excludes).
+- **Query counts and KQL shape** on a fake Kusto client (records each `query(csl, params)`, answers canned rows of A1 (`extent`) and A3 (`series`)) in a new `apps/server/test/adxQueries.test.ts`, which `pnpm test` runs (the name does not match the `adx` excludes).
 - **Answers** in the conformance suite (ClickHouse test DB in `pnpm test`, emulator in `test:adx`) and native-vs-fallback JSON identity on the emulator (`adx.test.ts`).
 - **ClickHouse unchanged** by the existing suite plus "No native series on ClickHouse" and the fallback-steps test.
-- **Docs:** the guide's measured-cost column gets the emulator numbers for `count`, `extent` and `series` native → fallback (informative, not a gate).
+- **Docs:** the guide's measured-cost column gets the emulator numbers for `extent` and `series` native → fallback (informative, not a gate).
 
 ## Risks / Trade-offs
 
 - **The combined query evaluates the range twice** (count, then the branch). On the cluster the round trip dominates; on a very long raw range near the target the second scan is small. If the emulator shows the dead branch scanning anyway, the answer is still correct; record the timing in the guide.
 - **Contract grows an optional method** (8 optional instead of 7, D-074 lists 7). It is optional, has a fallback, and the conformance suite checks it on both adapters; adapter authors read it in the guide.
-- **ADX native `count` has no caller on ADX after A2** (Q-1).
 - **Queue width 8 is a guess for the cluster**; the override stays.
 
 ## Open questions (Jan)
 
-- **Q-1:** ADX native `count`: keep (the agreed cut says "native count and extent") or drop (D-074: a fast path only with a measured factor of two; the report has no count-only measurement, and after A2 ADX never calls `count`)? Default in this change: keep.
+None. Q-1 (native ADX `count`) is resolved by D-097: dropped; ADX gets native `extent` and `series` only. D-097 also records the ADX queue default 8.
 
 ## Out of scope
 
-Everything in the proposal's non-goals, plus: a native `series` for ClickHouse, a native `refExtent` on ADX, bounding edges by the work window in an object scope (A6), changing when `/api/value` waits for gap info, the web's meta polling rate, and any new log field for queue wait.
+Everything in the proposal's non-goals, plus: a native `series` for ClickHouse, a native `count` or `refExtent` on ADX, bounding edges by the work window in an object scope (A6), changing when `/api/value` waits for gap info, the web's meta polling rate, and any new log field for queue wait.

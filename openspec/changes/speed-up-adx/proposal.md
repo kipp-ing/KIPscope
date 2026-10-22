@@ -6,7 +6,7 @@ The search tool team measured KIPscope on a real ADX cluster (GitHub issue #1, c
 
 ## What Changes
 
-- **P1, native `count` and `extent` on ADX:** the ADX adapter answers both with one KQL query each (`| count`; `summarize min, max` of the time column). The server's fallbacks stay for adapters without them. `refExtent` stays on the fallback (design A1 says why).
+- **P1, native `extent` on ADX:** the ADX adapter answers it with one KQL query (`summarize min, max` of the time column). The server's fallback stays for adapters without it. `count` and `refExtent` stay on the fallback (D-097: Jan dropped the native `count`, following D-074; design A1).
 - **P2, one source query per `/api/series` on ADX:** a new optional adapter method `series` answers "raw points with both edge neighbours, or buckets" in one call; the ADX adapter implements it as one KQL query (`toscalar(count)` plus a `union` of the raw, edge and bucket branches). Without it the server's fallback runs today's steps (`count`, then `raw` + `before` + `after` or `buckets`), so ClickHouse sends the same queries as before. The `/api/series` answer stays byte-identical on both paths. **BREAKING for adapter authors** only in that the contract gains an optional method (the guide and the conformance suite say so); no HTTP payload changes.
 - **P5, queue width per source kind:** `KIPSCOPE_QUERY_CONCURRENCY` defaults to 8 for ADX and stays 4 for ClickHouse; a set value still wins for both. The kept `interactive` slot stays one (D-081).
 - **P6, cached ping:** `/api/meta` reuses a reachable ping result for 15 s; a failed ping is not reused. The ping stays outside the query queue (it already is).
@@ -33,14 +33,14 @@ None.
 ### Modified Capabilities
 
 - `data-source`: the optional method `series` with its fallback; it takes a scope and its range stays inside the active scope; ClickHouse uses its fallback; the guide documents it.
-- `adx-source`: native `count`, `extent` and `series`, one ADX query each.
+- `adx-source`: native `extent` and `series`, one ADX query each; `count` stays on the fallback.
 - `series-query`: the default query limit per source kind.
 - `app-footer`: the source ping is reused for 15 s while reachable.
 
 ## Impact
 
-- `apps/server/src`: `datasource.ts`, `fallbacks.ts`, `queue.ts`, `scope.ts`, `series.ts` (contract and fallback of `series`), `adx.ts` (native `count`, `extent`, `series`), `config.ts` (default per kind), `meta.ts` (ping cache).
+- `apps/server/src`: `datasource.ts`, `fallbacks.ts`, `queue.ts`, `scope.ts`, `series.ts` (contract and fallback of `series`), `adx.ts` (native `extent`, `series`), `config.ts` (default per kind), `meta.ts` (ping cache).
 - `apps/server/test`: conformance suite, a new fake-client test `adxQueries.test.ts` (runs in `pnpm test`), `adx.test.ts`, `fallbacks.test.ts`, `queue.test.ts`, `config.test.ts`, `meta.http.test.ts`, `scope.test.ts` or `scope.http.test.ts`, `docs.test.ts`, `scopeCalls.ts`.
 - Docs: `docs/data-sources.md` (method table, ADX natives, queue default, scope list), `.env.example`.
 - No change to `packages/shared`, `apps/web`, the CLI or any HTTP payload.
-- Decisions: the ADX default of 8 supersedes D-011 (D7, "at most 4 concurrent DB queries") for ADX only; the lead records Jan's agreement of 2026-10-22 as a D-nnn.
+- Decisions: D-097 (Jan, 2026-10-22): no native ADX `count` (D-074), and the ADX default of 8, which supersedes D-011 (D7, "at most 4 concurrent DB queries") for ADX only.
