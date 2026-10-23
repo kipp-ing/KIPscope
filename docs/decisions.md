@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-110: Chunked computed scan on ClickHouse (2026-10-23)
+
+After round 1 of `speed-up-computed` the whole recording took 3.05–3.20 s (was 3.95 s, goal 2 s); the window and the bucket grouping run single-threaded. Jan: „probier mal die stückelung. in adx ist das schon so?" (ADX has no native computed query; it uses the bounded fallback.)
+
+- **Decision:** Round 2 of `speed-up-computed`: a computed bucket query over more than 1,000,000 input rows is split into at most 3 time chunks on bucket boundaries, run in parallel; each later chunk reads back by the inputs' largest hold limit instead of extra seed queries. No chunking without a finite hold limit. Results identical.
+- **Why:** ClickHouse has 4 cores; parallel chunks use them while one queue slot stays free for interactive queries.
+
 ## D-109: Speed up computed series (2026-10-23)
 
 The lead measured a computed series over smart451's whole recording at 3.9–4.0 s (DNMOT alone 0.49 s) and found the cost in the window columns and the per-time dedupe. Jan: „ja, gerne optimieren".
