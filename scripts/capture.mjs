@@ -80,7 +80,7 @@ async function open({ width, height, scale, pointer = false, startCard = false }
 async function settle(b, extra = 1200) {
   for (let i = 0; i < 100; i++) {
     const busy = await b.js(
-      `!!document.querySelector(".window-grid .loading") || !document.querySelector(".time-strip-bars span")`,
+      `!!document.querySelector(".window-grid .loading") || !document.querySelector(".time-strip-track .strip-run")`,
     );
     if (!busy) break;
     await sleep(150);
@@ -206,6 +206,13 @@ const SCENES = {
   /** Drag two signals into a window, jump to a drive on the TIME strip, zoom, set A and B. */
   async gif() {
     reset();
+    // An empty window from the start, so the GIF opens without the "No windows yet" card.
+    const target = window(
+      "Speed and current",
+      [],
+      ["--from", "2026-10-14 07:41", "--to", "2026-10-15 08:09"],
+    );
+    cli("window", "height", target, "470");
     const W = 1280;
     const H = 720;
     const b = await open({ width: W, height: H, scale: 1, pointer: true });
@@ -219,7 +226,7 @@ const SCENES = {
     await b.send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
     await sleep(900);
 
-    // 1. Search and drag VehSpeed into the empty list: a new window.
+    // 1. Search and drag VehSpeed into the empty window.
     let at = { x: W * 0.55, y: H * 0.55 };
     const go = async (x, y, opts) => {
       await b.glide(at.x, at.y, x, y, opts);
@@ -243,13 +250,8 @@ const SCENES = {
       await sleep(900);
     };
     let row = await b.center(".explorer .row .name", "VehSpeed");
-    const grid = await b.center(".window-grid");
-    await drag(row, { x: grid.left + grid.width * 0.45, y: grid.top + 120 });
-    const created = cli("state").data.workspace.windows.at(-1)?.id;
-    if (created) {
-      cli("window", "rename", created, "Speed and current");
-      cli("window", "height", created, "470");
-    }
+    const empty = await b.center(".window");
+    await drag(row, { x: empty.x, y: empty.y });
     await settle(b, 600);
 
     // 2. A second signal onto that window.
