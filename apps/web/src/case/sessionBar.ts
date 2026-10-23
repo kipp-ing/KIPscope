@@ -147,6 +147,28 @@ export function pendingTarget(
   return index !== undefined && index >= 0 && index < c.count ? index : undefined;
 }
 
+/** The action button's text while Unlink or Link is on its way (D-112). */
+export type PendingAction = "Unlinking…" | "Linking…";
+
+/** linked + case.unlink → "Unlinking…"; unlinked + case.go → "Linking…"; else undefined. */
+export function pendingAction(
+  c: Pick<WorkspaceCase, "linked">,
+  input: CommandInput,
+): PendingAction | undefined {
+  if (c.linked && input.type === "case.unlink") return "Unlinking…";
+  if (!c.linked && input.type === "case.go") return "Linking…";
+  return undefined;
+}
+
+/** True exactly when pendingTarget(c, pending, input) or pendingAction(c, input) gives a value. */
+export function startsPending(
+  c: Pick<WorkspaceCase, "current" | "count" | "linked">,
+  pending: number | undefined,
+  input: CommandInput,
+): boolean {
+  return pendingTarget(c, pending, input) !== undefined || pendingAction(c, input) !== undefined;
+}
+
 /** The title's tooltip: `head`, then every meta entry, the id and the origin tool, one per line. */
 const titleTooltip = (entry: CaseEntry, head: string, tool: string | undefined): string =>
   [

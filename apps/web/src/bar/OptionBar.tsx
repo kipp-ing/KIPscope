@@ -287,6 +287,71 @@ function RangeControl({
   );
 }
 
+const DIGIT_CHOICES: readonly Digits[] = [3, 4];
+
+/** The digits an arrow key on the Digits group chooses, or undefined for any other key.
+ *  ArrowRight/ArrowDown → 4, ArrowLeft/ArrowUp → 3; no wrap. */
+export function digitsByKey(_current: Digits, key: string): Digits | undefined {
+  if (key === "ArrowRight" || key === "ArrowDown") return 4;
+  if (key === "ArrowLeft" || key === "ArrowUp") return 3;
+  return undefined;
+}
+
+/**
+ * Digits as a segmented control in the "⋯" menu (number-format "Digits option", D-112 (1)): real
+ * buttons, so a pointer down lands inside the menu and no popup exists (Edge on Windows reported the
+ * select's popup as outside and closed the menu). Roving tabindex; the arrows move focus and send
+ * the option when it differs; a click on the checked button sends nothing.
+ */
+export function DigitsControl({
+  digits,
+  onCommand,
+}: {
+  digits: Digits;
+  onCommand: (command: CommandInput) => Promise<CommandResult>;
+}) {
+  const group = useRef<HTMLDivElement>(null);
+  const choose = (next: Digits) => {
+    group.current?.querySelectorAll("button")[DIGIT_CHOICES.indexOf(next)]?.focus();
+    if (next !== digits) void onCommand({ type: "workspace.setOptions", digits: next });
+  };
+  return (
+    <div
+      ref={group}
+      className="digits-toggle"
+      role="radiogroup"
+      aria-label="Digits"
+      title={HINTS.digits}
+      onKeyDown={(e) => {
+        const next = digitsByKey(digits, e.key);
+        if (next === undefined) return;
+        e.preventDefault();
+        // The group owns its arrows: no document handler (navigation keys) sees them.
+        e.stopPropagation();
+        choose(next);
+      }}
+    >
+      <span className="digits-label" aria-hidden="true">
+        DIGITS
+      </span>
+      {DIGIT_CHOICES.map((d) => (
+        // biome-ignore lint/a11y/useSemanticElements: a segmented control of buttons (DW6), as Align
+        <button
+          key={d}
+          type="button"
+          role="radio"
+          className="toggle"
+          aria-checked={d === digits}
+          tabIndex={d === digits ? 0 : -1}
+          onClick={() => choose(d)}
+        >
+          {d}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Sticky bar above the windows (D-023, design DW8): Views with the open view's title and the
  * Read-only pill (add-multiuser M12) | the range control (add-range-picker) | Back, Reset and the
@@ -353,23 +418,6 @@ export function OptionBar({
 
   // Digits and "+ Values window" live in the "⋯" menu only (D-092 (7)); Share… stays in the row at
   // every width (D-095).
-  const digitsSelect = (
-    <select
-      aria-label="Digits"
-      title={HINTS.digits}
-      value={digits}
-      onChange={(e) =>
-        // Focus stays for Tab to the next control of the menu.
-        void onCommand({
-          type: "workspace.setOptions",
-          digits: Number(e.target.value) as Digits,
-        })
-      }
-    >
-      <option value={3}>3 digits</option>
-      <option value={4}>4 digits</option>
-    </select>
-  );
   const newValuesButton = (after: () => void) => (
     <button
       type="button"
@@ -464,7 +512,7 @@ export function OptionBar({
       <OverflowMenu>
         {(close) => (
           <>
-            {digitsSelect}
+            <DigitsControl digits={digits} onCommand={onCommand} />
             {newValuesButton(() => close(true))}
           </>
         )}

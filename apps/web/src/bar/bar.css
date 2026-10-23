@@ -205,3 +205,19 @@
   border-radius: 6px;
   box-shadow: 0 2px 8px rgb(15 23 42 / 0.15);
 }
+
+/* Digits in the "⋯" menu (number-format "Digits option", D-112 (1)): a muted label and the 3 and 4
+   toggles in the pressed style above, as case-navigation's Align group (case.css). */
+.overflow-popover .digits-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.overflow-popover .digits-label {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}

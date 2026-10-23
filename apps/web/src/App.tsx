@@ -37,7 +37,15 @@ import { OptionBar, RangeButton } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
 import { useCaseCatalog } from "./case/catalog.ts";
 import { SessionBar } from "./case/SessionBar.tsx";
-import { caseResultEvents, endsOpenNote, openNoteText, pendingTarget } from "./case/sessionBar.ts";
+import {
+  caseResultEvents,
+  endsOpenNote,
+  openNoteText,
+  type PendingAction,
+  pendingAction,
+  pendingTarget,
+  startsPending,
+} from "./case/sessionBar.ts";
 import {
   type AnyDragSource,
   canAdd,
@@ -573,35 +581,46 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   const editorCommand = useCallback((input: CommandInput) => dispatch(input, true), [dispatch]);
   // A case step or go on its way (design DW4): the session bar shows its target's slots at once,
   // the progress line and the strip's skeleton bars run until the result's revision is rendered
-  // (Acknowledger.onRendered) or the command is refused.
+  // (Acknowledger.onRendered) or the command is refused. Unlink and Link on their way show
+  // `Unlinking…`/`Linking…` with the same progress line and end the same way (D-112).
   const [pending, setPending] = useState<number | undefined>();
   const [progress, setProgress] = useState(false);
+  const [actionPending, setActionPending] = useState<PendingAction | undefined>();
   const pendingRef = useRef<number | undefined>(undefined);
-  /** The latest case command; an older one's result no longer ends the step. */
-  const caseSeq = useRef(0);
-  /** The revision the pending step waits for, once its result is in. */
+  const actionPendingRef = useRef<PendingAction | undefined>(undefined);
+  /** The latest case command that started a pending state; an older one's result no longer ends
+   *  it, and a command that starts none (a `]` while unlinked) leaves it alone. */
+  const pendingSeq = useRef(0);
+  /** The revision the pending step or action waits for, once its result is in. */
   const awaitedRevision = useRef<number | undefined>(undefined);
   const renderedRevision = useRef(-1);
   const endStep = useCallback(() => {
     pendingRef.current = undefined;
+    actionPendingRef.current = undefined;
     awaitedRevision.current = undefined;
     setPending(undefined);
+    setActionPending(undefined);
     setProgress(false);
   }, []);
   // The session bar sends without waiting; its result goes to the message line like any command.
   const caseCommand = useCallback(
     (input: CommandInput) => {
       const open = liveRef.current.workspace?.case;
-      const target = open ? pendingTarget(open, pendingRef.current, input) : undefined;
-      const seq = ++caseSeq.current;
-      if (target !== undefined) {
+      const starts = open !== undefined && startsPending(open, pendingRef.current, input);
+      const seq = starts ? ++pendingSeq.current : undefined;
+      if (open && starts) {
+        const target = pendingTarget(open, pendingRef.current, input);
+        const action = pendingAction(open, input);
         pendingRef.current = target;
+        actionPendingRef.current = action;
         awaitedRevision.current = undefined;
         setPending(target);
+        setActionPending(action);
         setProgress(true);
       }
       const settle = (result: CommandResult | undefined) => {
-        if (seq !== caseSeq.current || pendingRef.current === undefined) return;
+        if (seq !== pendingSeq.current) return;
+        if (pendingRef.current === undefined && actionPendingRef.current === undefined) return;
         if (!result?.ok || renderedRevision.current >= result.revision) endStep();
         else awaitedRevision.current = result.revision;
       };
@@ -1753,6 +1772,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                 scope={workspace?.scope}
                 pending={pending}
                 progress={progress}
+                actionPending={actionPending}
                 onCommand={caseCommand}
                 openNote={openNote}
                 onDismissNote={() => setOpenNote(undefined)}
@@ -1775,7 +1795,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
               onScopeCommand={command}
               caseCatalog={caseCatalog}
               workWindow={workWindow}
-              stepping={progress}
+              stepping={progress && actionPending === undefined}
             />
           </div>
           {/* Hidden during a drag but kept in place, so nothing below it moves (B1, B2). */}

@@ -80,12 +80,22 @@ export type NavKey =
   | "cursorA"
   | "cursorB";
 
+const ARROW_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+
+/**
+ * An arrow key with the focus inside a radiogroup (Digits, Align): the group moves its own
+ * selection, so the arrows must not also pan the plot (D-112).
+ */
+function isGroupArrow(key: string, focused: Element | null): boolean {
+  return ARROW_KEYS.includes(key) && focused?.closest?.('[role="radiogroup"]') != null;
+}
+
 /**
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
  * Ctrl, Meta or Alt, nothing while the range picker is open (its day cells are buttons, so focus
- * alone does not tell). `+` needs Shift on some layouts, so Shift only matters for the arrows and
- * A/B (lower-case `a` and `b` stay unbound). `s`, `e` and `/` stay free (sidebar toggle, events
- * panel, explorer search).
+ * alone does not tell), no arrows inside a radiogroup. `+` needs Shift on some layouts, so Shift
+ * only matters for the arrows and A/B (lower-case `a` and `b` stay unbound). `s`, `e` and `/` stay
+ * free (sidebar toggle, events panel, explorer search).
  */
 export function navKey(
   e: KeyLike & { shiftKey: boolean },
@@ -93,6 +103,7 @@ export function navKey(
   pickerOpen = false,
 ): NavKey | undefined {
   if (pickerOpen || e.ctrlKey || e.metaKey || e.altKey || isTextField(focused)) return undefined;
+  if (isGroupArrow(e.key, focused)) return undefined;
   switch (e.key) {
     case "+":
     case "=":

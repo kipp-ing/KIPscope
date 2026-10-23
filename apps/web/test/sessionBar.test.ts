@@ -23,8 +23,10 @@ import {
   goFirstMatch,
   moreText,
   openNoteText,
+  pendingAction,
   pendingTarget,
   sessionSlots,
+  startsPending,
   stepCommand,
   timesSlot,
 } from "../src/case/sessionBar.ts";
@@ -495,6 +497,59 @@ describe("session bar markup", () => {
   it("shows the progress line only while a step is on its way", () => {
     expect(bar()).not.toContain("session-progress");
     expect(bar({ progress: true })).toContain("session-progress");
+  });
+
+  it("names the pending Unlink and Link", () => {
+    const linked = { linked: true };
+    const unlinked = { linked: false };
+    expect(pendingAction(linked, { type: "case.unlink" })).toBe("Unlinking…");
+    expect(pendingAction(unlinked, { type: "case.go", index: 1 })).toBe("Linking…");
+    expect(pendingAction(linked, { type: "case.go", index: 2 })).toBeUndefined();
+    expect(pendingAction(linked, { type: "case.step", by: 1 })).toBeUndefined();
+    expect(pendingAction(unlinked, { type: "case.unlink" })).toBeUndefined();
+    expect(pendingAction(linked, { type: "case.align", align: { mode: "end" } })).toBeUndefined();
+  });
+
+  it("shows Unlinking… and Linking… while pending", () => {
+    const action = (html: string) => slotHtml(html, "slot-action") ?? "";
+    const row = (html: string) => /<div[^>]*class="context-row"[^>]*>/.exec(html)?.[0] ?? "";
+    const unlinking = bar({ progress: true, actionPending: "Unlinking…" });
+    const linking = bar({ caseState: caseAt(0, false), progress: true, actionPending: "Linking…" });
+    const idle = bar();
+
+    expect(textIn(action(unlinking))).toBe("Unlinking…");
+    expect(action(unlinking)).toMatch(/<button[^>]*\bdisabled=""/);
+    expect(textIn(action(linking))).toBe("Linking…");
+    expect(action(linking)).toMatch(/<button[^>]*\bdisabled=""/);
+    for (const html of [unlinking, linking]) {
+      expect(row(html)).toContain('aria-busy="true"');
+      expect(html.match(/session-progress/g)).toHaveLength(1);
+    }
+    expect(textIn(action(idle))).toBe("Unlink");
+    expect(action(idle)).not.toMatch(/\bdisabled/);
+    expect(row(idle)).not.toContain("aria-busy");
+    expect(idle).not.toContain("session-progress");
+
+    // The same slot elements in the same order; the action slot's box is unchanged (D-095).
+    expect(slotOrder(unlinking)).toEqual(SLOT_ORDER);
+    expect(slotOrder(linking)).toEqual(SLOT_ORDER);
+    expect(slotOrder(idle)).toEqual(SLOT_ORDER);
+    const cls = (html: string) => /class="([^"]*\bslot-action\b[^"]*)"/.exec(html)?.[1];
+    expect(cls(unlinking)).toBe(cls(idle));
+    expect(cls(linking)).toBe(cls(bar({ caseState: caseAt(0, false) })));
+  });
+
+  it("starts a pending state only for a target or an action", () => {
+    const c = { current: 0, count: 4, linked: true };
+    const unlinked = { ...c, linked: false };
+    expect(startsPending(unlinked, undefined, { type: "case.step", by: 1 })).toBe(false);
+    expect(startsPending(unlinked, undefined, { type: "case.go", index: 1 })).toBe(true);
+    expect(startsPending(c, undefined, { type: "case.unlink" })).toBe(true);
+    expect(startsPending(c, undefined, { type: "case.step", by: 1 })).toBe(true);
+    expect(startsPending({ ...c, current: 3 }, undefined, { type: "case.step", by: 1 })).toBe(
+      false,
+    );
+    expect(startsPending(c, undefined, { type: "case.align", align: { mode: "end" } })).toBe(false);
   });
 
   it("puts the align modes into the catalog list", () => {

@@ -10,6 +10,7 @@ import {
   catalogRows,
   goFirstMatch,
   moreText,
+  type PendingAction,
   type SessionSlots,
   sessionSlots,
   stepCommand,
@@ -25,6 +26,8 @@ interface SessionBarProps {
   pending?: number | undefined;
   /** Progress line shown (DW4). */
   progress?: boolean;
+  /** Unlink or Link on its way: the action button's text, disabled while set (D-112). */
+  actionPending?: PendingAction | undefined;
   /** Sends one case command; App shows its result in the message line (caseResultEvents). */
   onCommand: (command: CommandInput) => void;
   /** No commands (read-only workspace, a command on its way): every control is disabled. */
@@ -105,7 +108,8 @@ const alignGlyph = (align: SessionSlots["align"]) => (
  * `SESSION ‹ <glyph> <k> / <n> ▾ › <title> <duration> Unlink`, unlinked `VEHICLE … Link` with the
  * arrows greyed; the start lives in the title's tooltip and the list (D-095). Every slot's box depends on the row's width only: the title takes the rest and
  * truncates, the label leaves below the compact width (case.css). A step on its way shows its
- * target at once (DW4) with the progress line; texts not known yet are skeletons in their slots.
+ * target at once (DW4) with the progress line, Unlink or Link on its way `Unlinking…`/`Linking…`
+ * (D-112); texts not known yet are skeletons in their slots.
  * The open note (X4a, DW7) sits in the title slot after the title.
  */
 export function SessionBar({
@@ -113,6 +117,7 @@ export function SessionBar({
   scope,
   pending,
   progress = false,
+  actionPending,
   onCommand,
   disabled = false,
   openNote,
@@ -185,7 +190,7 @@ export function SessionBar({
           type="button"
           className="slot-action"
           title={s.action === "Unlink" ? CASE_HINTS.unlink : CASE_HINTS.link}
-          disabled={disabled}
+          disabled={disabled || actionPending !== undefined}
           onClick={() =>
             onCommand(
               s.action === "Unlink"
@@ -194,7 +199,7 @@ export function SessionBar({
             )
           }
         >
-          {s.action}
+          {actionPending ?? s.action}
         </button>
       ) : (
         <span className="slot-action">

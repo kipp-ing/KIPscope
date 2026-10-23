@@ -36,7 +36,8 @@ export const OverflowTailContext = createContext<OverflowTail | undefined>(undef
 /**
  * "⋯" (`More`) near the end of the top row, always shown (design DW8): its menu holds Digits and
  * "+ Values window", nothing else (Share… stays in the row, D-095).
- * Enter, Space or ArrowDown opens it and focuses the first control; Esc closes it and returns
+ * Enter, Space or ArrowDown opens it and focuses the first control not `tabindex="-1"` (the
+ * checked Digits button); Esc closes it and returns
  * focus to "⋯"; Tab past the last control or a pointer down outside closes it. App's "?"
  * (OverflowTailContext) follows "⋯" in the row.
  */
@@ -58,7 +59,9 @@ export function OverflowMenu({
 
   useEffect(() => {
     if (!open) return;
-    panel.current?.querySelector<HTMLElement>("select, button, input")?.focus();
+    panel.current
+      ?.querySelector<HTMLElement>("select, button:not([tabindex='-1']), input")
+      ?.focus();
     const onOutside = (e: Event) => {
       if (!root.current?.contains(e.target as Node)) close();
     };

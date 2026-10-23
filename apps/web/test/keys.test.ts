@@ -10,8 +10,19 @@ import {
 } from "../src/keys.ts";
 
 /** No DOM in the tests: plain objects shaped like the element properties isTextField reads. */
-const el = (tagName: string, props: { type?: string; isContentEditable?: boolean } = {}) =>
-  ({ tagName, isContentEditable: false, ...props }) as unknown as Element;
+const el = (
+  tagName: string,
+  props: { type?: string; isContentEditable?: boolean; inRadiogroup?: boolean } = {},
+) => {
+  const { inRadiogroup = false, ...rest } = props;
+  return {
+    tagName,
+    isContentEditable: false,
+    // Like Element.closest: the radiogroup ancestor when there is one, else null.
+    closest: (selector: string) => (inRadiogroup && selector.includes("radiogroup") ? {} : null),
+    ...rest,
+  } as unknown as Element;
+};
 
 describe("isTextField", () => {
   it("treats input, textarea, select and contenteditable as text fields", () => {
@@ -137,6 +148,35 @@ describe("navKey", () => {
     }
     expect(navKey(key("A", { shiftKey: true }), null, true)).toBeUndefined();
     expect(navKey(key("B", { shiftKey: true }), null, true)).toBeUndefined();
+  });
+});
+
+describe("navKey in a radiogroup", () => {
+  const key = (k: string, mods: { shiftKey?: boolean } = {}) => ({
+    key: k,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it("leaves ArrowLeft and ArrowRight to a focused radiogroup (D-112, Digits control)", () => {
+    // The Digits buttons move the checked value with the arrows; the plot must not pan as well.
+    const radio = el("BUTTON", { inRadiogroup: true });
+    expect(navKey(key("ArrowLeft"), radio)).toBeUndefined();
+    expect(navKey(key("ArrowRight"), radio)).toBeUndefined();
+    // Same for a nested element inside the group.
+    const inner = el("SPAN", { inRadiogroup: true });
+    expect(navKey(key("ArrowLeft"), inner)).toBeUndefined();
+    expect(navKey(key("ArrowRight"), inner)).toBeUndefined();
+  });
+
+  it("still pans from a plain button, a div or no focus", () => {
+    for (const focused of [el("BUTTON"), el("DIV"), null]) {
+      expect(navKey(key("ArrowLeft"), focused)).toBe("left");
+      expect(navKey(key("ArrowRight"), focused)).toBe("right");
+    }
   });
 });
 

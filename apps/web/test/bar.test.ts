@@ -11,7 +11,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { barTarget, defaultCursorTime, resetSignals } from "../src/bar/bar.ts";
-import { OptionBar } from "../src/bar/OptionBar.tsx";
+import { DigitsControl, digitsByKey, OptionBar } from "../src/bar/OptionBar.tsx";
 import { ShareMenu } from "../src/workspaces/ShareMenu.tsx";
 
 // useSyncExternalStore has no server snapshot, so the linked preview is stubbed for static markup.
@@ -224,6 +224,7 @@ describe("option bar order", () => {
 
     // Digits and + Values window are items of the "⋯" menu only (closed here).
     expect(html).not.toContain('aria-label="Digits"');
+    expect(html).not.toContain("<select");
     expect(html).not.toContain("+ Values");
     expect(html).not.toContain("New values window");
 
@@ -232,12 +233,53 @@ describe("option bar order", () => {
     expect(html).not.toContain("overflow-item");
     const source = readFileSync(new URL("../src/bar/OptionBar.tsx", import.meta.url), "utf8");
     const menu = source.slice(source.indexOf("<OverflowMenu>"), source.indexOf("</OverflowMenu>"));
-    expect(menu, "the OverflowMenu block").toContain("digitsSelect");
+    expect(menu, "the OverflowMenu block").toContain("<DigitsControl");
+    expect(menu).not.toContain("digitsSelect");
     expect(menu).not.toMatch(/shareMenu|Share|ShareMenu/);
     const css = readFileSync(new URL("../src/bar/bar.css", import.meta.url), "utf8");
     expect(css).not.toContain("overflow-item");
     const overflow = readFileSync(new URL("../src/bar/OverflowMenu.tsx", import.meta.url), "utf8");
     expect(overflow).not.toContain("overflow-item");
+  });
+});
+
+describe("digits control", () => {
+  /** The radiogroup's markup for a digits value, rendered on its own (static markup). */
+  const control = (digits: 3 | 4) =>
+    renderToStaticMarkup(
+      createElement(DigitsControl, { digits, onCommand: () => undefined } as never),
+    );
+  /** Text, aria-checked and tabindex of every role="radio" button, in document order. */
+  const radios = (html: string) =>
+    [...html.matchAll(/<button([^>]*role="radio"[^>]*)>(.*?)<\/button>/gs)].map((m) => ({
+      text: (m[2] as string).replace(/<[^>]*>/g, "").trim(),
+      checked: /aria-checked="(true|false)"/.exec(m[1] as string)?.[1],
+      tabindex: /tabindex="(-?\d+)"/i.exec(m[1] as string)?.[1],
+    }));
+
+  it("renders Digits as a segmented control", () => {
+    for (const digits of [3, 4] as const) {
+      const html = control(digits);
+      expect(html.match(/role="radiogroup"/g), `radiogroup at ${digits}`).toHaveLength(1);
+      expect(html).toMatch(
+        /role="radiogroup"[^>]*aria-label="Digits"|aria-label="Digits"[^>]*role="radiogroup"/,
+      );
+      expect(html).not.toContain("<select");
+      expect(radios(html)).toEqual([
+        { text: "3", checked: String(digits === 3), tabindex: digits === 3 ? "0" : "-1" },
+        { text: "4", checked: String(digits === 4), tabindex: digits === 4 ? "0" : "-1" },
+      ]);
+    }
+  });
+
+  it("moves Digits with the arrow keys", () => {
+    expect(digitsByKey(3, "ArrowRight")).toBe(4);
+    expect(digitsByKey(3, "ArrowDown")).toBe(4);
+    expect(digitsByKey(4, "ArrowRight")).toBe(4);
+    expect(digitsByKey(4, "ArrowLeft")).toBe(3);
+    expect(digitsByKey(4, "ArrowUp")).toBe(3);
+    expect(digitsByKey(3, "ArrowLeft")).toBe(3);
+    expect(digitsByKey(3, "Enter")).toBeUndefined();
   });
 });
 
