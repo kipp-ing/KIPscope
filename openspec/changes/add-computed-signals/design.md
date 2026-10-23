@@ -157,7 +157,7 @@ Requests: `api.ts` adds `formula`, `a`, `b` for a computed ID from the registry 
 Section (after the Favourites group and its copies, before the groups or the flat list; `explorerItems(…, computed)`):
 
 - Header `ƒ Computed`, count = its rows, open unless toggled, on an empty query too (Q-2, like Favourites D-103 Q-3); a `+` button at its right end (18 × 22 px, slate-400, accent under the pointer; `aria-label` "New computed signal", `title` `HINTS.computedNew`; stops propagation, does not toggle).
-- Empty query: header always; no definition → one hint item (22 px, 11 px muted, `HINTS.computedEmpty` "No computed signals yet: click + to build one"); a click on it opens the editor. While searching: only definitions whose info matches the query (shared search over the computed infos), header only when one matches; no hint.
+- Empty query: header always; no definition → one hint item (22 px, 11 px muted, `HINTS.computedEmpty` "None yet · + creates one", uncut at 208 px; neither hint nor header ever gets the accent fill of an active or selected row, L4); a click on it opens the editor. While searching: only definitions whose info matches the query (shared search over the computed infos), header only when one matches; no hint.
 - Rows: `ƒ` (muted, `aria-hidden`) in the 18 px left indent where other rows have the star (computed rows have no star); name and unit as any row; a pencil `button.edit` (18 × 22 px, `✎`, slate-400, accent under the pointer, shown on hover and on the active row with `visibility`, keeping its box; `title` `HINTS.computedEdit`) before the `+`; `F2` on an active computed row opens the editor too. A click selects as on any row, double-click and Enter add, drag drags (Q-3). Unavailable rows: name in `--disabled`, `title` the reason, no `+`, not addable or draggable; the pencil works.
 - Hover card of a computed row: name, the formula with full input names, unit, nothing else.
 
@@ -169,7 +169,7 @@ Editor (`computed/ComputedEditor.tsx`), a non-modal `role="dialog"` panel, 360 p
   a  [ DNMOT                       ▾ ]      signal pickers (26 px)
   b  [ PNHV_SupBat_Curr          × ▾ ]      disabled, value kept, when the formula has no b
  FORMULA
-  [ Difference   a − b         ▾ ] [ a - b              ]   preset select + formula field (mono)
+  [ Difference   a − b         ▾ ] [ a - b              ]   preset select + formula field (mono, 12 px like every mono field, L4)
   <one-line error, 11 px --error, height reserved>
  NAME                          UNIT
   [ DNMOT − PNHV_SupBat_Curr ]  [ A    ]
@@ -180,9 +180,9 @@ Editor (`computed/ComputedEditor.tsx`), a non-modal `role="dialog"` panel, 360 p
 - Presets (`PRESETS`): Difference `a - b`, Sum `a + b`, Absolute `abs(a)`, Minimum `min(a, b)`, Maximum `max(a, b)`, Scale `a * 1`, Custom. Picking one writes its formula; typing in the formula field shows the preset whose formula equals the text (spaces ignored), else Custom.
 - Live validation on every change: `parseFormula` + `bindFormula`; name and unit rules of C6 (`Name already used`, `At most 60 characters`); the first error is shown, Save disabled while one exists.
 - Auto name: `formulaName(ast, short(a), short(b))`, short = the input's shown name after its first `.` (`MS_312h.DNMOT` → `DNMOT`); operators ` + `, ` − `, ` × `, ` / `, functions `abs(x)`, `min(x, y)`; parentheses only where needed; cut to 60 with `…`; a taken name gets ` 2`, ` 3`, …. Auto unit: `inferUnit` (lead pick 1: same unit for `+ − min max`, `abs` and unary minus keep it, a constant adopts the other side, `* /` give none). Name and unit follow the inputs and formula until the user types in that field; when editing, a field follows only if its stored value equals the auto value of the stored definition.
-- Prefill from the `+` (lead pick 2): the explorer selection in list order holding exactly one or two catalog signals without states → `a` (and `b`), preset Absolute for one, Difference for two; otherwise empty with Difference. Focus: the formula field when `a` is filled, else picker `a`. So "select two rows, `+`, Enter" creates `a − b`.
-- Keys: Enter in any field saves when valid; Esc closes an open picker list, else cancels; Tab order as drawn. Clicks outside do not close it.
-- Save: `computed.add` / `computed.update`. After a new one: the editor closes, the new row becomes the active row and, when an "Add to" target window exists, it is added there like the row's `+` (Q-8); a refusal of that add flashes as today and keeps the definition. A refused command keeps the editor open with the server's message in the error line.
+- Prefill from the `+` (lead pick 2): the explorer selection in click order (`selectedInClickOrder`, first clicked = `a`, L2) holding exactly one or two catalog signals without states → `a` (and `b`), preset Absolute for one, Difference for two; otherwise empty with Difference. Focus: the formula field when `a` is filled, else picker `a`. So "select two rows, `+`, Enter" creates `a − b`.
+- Keys: Enter in any field saves when valid; Esc closes only the innermost open list (a picker list or the open preset select, L4), else cancels; Tab order as drawn. Clicks outside do not close it.
+- Save: `computed.add` / `computed.update`. After a new one: the editor closes, the new row becomes the active row and is added exactly like Enter on a signal row: to the "Add to" target, and with "New window" a new window is created with it (Q-8, L3); a refusal of that add flashes as today and keeps the definition. A refused command keeps the editor open with the server's message in the error line.
 - Delete (edit only, a text button in `--error`): the first click turns it into "Click again to delete" for 3 s; the second sends `computed.remove`.
 
 ### C13 CLI
@@ -337,7 +337,9 @@ export function explorerItems(
 ): ExplorerItem[];
 // computed/editor.ts (pure editor state)
 export interface EditorState { a?: string; b?: string; formula: string; name: string; unit: string; nameAuto: boolean; unitAuto: boolean }
-export function prefill(selected: readonly SignalInfo[]): EditorState;          // C12 prefill
+export function prefill(selected: readonly SignalInfo[]): EditorState;          // C12 prefill, `selected` in click order
+// explorer/selection.ts: selected signal items in the order of `sel.ids` (insertion = click order; a range adds in list order), each once
+export function selectedInClickOrder(sel: Selection, items: readonly ExplorerItem[]): string[];
 export function fromDef(def: ComputedDef, infoOf: (name: string) => SignalInfo | undefined): EditorState;
 export function editorError(s: EditorState, others: readonly ComputedDef[], infoOf: (name: string) => SignalInfo | undefined): string | undefined;
 export function withAuto(s: EditorState, others: readonly ComputedDef[], infoOf: (name: string) => SignalInfo | undefined): EditorState; // auto name/unit
@@ -376,13 +378,23 @@ export function isEditKey(e: { key: string; ctrlKey: boolean; metaKey: boolean; 
 
 ## Manual checks (UI user, smart451 on carserver, 1440×900, a session where `MS_312h.DNMOT` and `CPC_508h.PNHV_SupBat_Curr` have data)
 
-- **M1 Create from a selection:** empty search → `ƒ Computed` header with the hint row; search `DNMOT`, click `DNMOT`, Ctrl/Cmd-click `PNHV_SupBat_Curr` (search `PNHV` between), click `+` in the Computed header; the editor shows a `DNMOT`, b `PNHV_SupBat_Curr`, preset Difference, formula `a - b`, name `DNMOT − PNHV_SupBat_Curr`, unit = both units if equal else empty; press Enter. The row appears under `ƒ Computed`, is active, and the target window shows a legend row `DNMOT − PNHV_SupBat_Curr` with a curve.
+- **M1 Create (picker route, main path):** empty search, no signal selected → `ƒ Computed` header with the hint row; click `+` in the header; the editor opens with empty pickers and focus in picker `a`; type `DNMOT`, Enter; Tab to picker `b`, type `PNHV_SupBat`, Enter; the editor shows preset Difference, formula `a - b`, name `DNMOT − PNHV_SupBat_Curr`, unit = both units if equal else empty; press Enter. The row appears under `ƒ Computed`, is active, and the "Add to" target window shows a legend row `DNMOT − PNHV_SupBat_Curr` with a curve.
+- **M1b Create from a selection (no search between, L1):** empty search, "Add to" = New window; expand group `MS_312h`, click `DNMOT`; expand `CPC_508h` (listed above it), Ctrl/Cmd-click `PNHV_SupBat_Curr`; click `+`; the editor shows a `DNMOT`, b `PNHV_SupBat_Curr` (click order, L2), formula `a - b`; Enter → a new window appears showing the computed signal (L3).
 - **M2 Values agree:** add both inputs to a values window in step mode with the computed signal; put cursor A on three times; each time computed = DNMOT − PNHV_SupBat_Curr to the shown digits.
 - **M3 Edit:** pencil on the row → preset Absolute → formula `abs(a)`, b disabled, name `abs(DNMOT)`, unit DNMOT's; Save → the legend row reads `abs(DNMOT)` and the curve is ≥ 0 everywhere.
 - **M4 Live error, stable layout:** in the editor type `a - ` then `a - c`; the error line reads `Unexpected end at 5`, then `Unknown name "c": …`; Save disabled; the formula field's and the error line's `getBoundingClientRect()` unchanged (±0.5 px) between valid and invalid.
 - **M5 Step:** press `]`; the computed signal is drawn on the next session (inputs rebound by name), its legend name unchanged.
 - **M6 Delete:** pencil → Delete → "Click again to delete" → click; the row and the legend row are gone; the hint row is back.
 - **M7 Speed (goal):** the lead's `curl -s -o /dev/null -w '%{time_total}'` of `/api/series` for M1's formula over the busiest hour with `target=2000`, and over the whole recording; reported, not pass/fail.
+
+## Lead decisions after round 1
+
+Jan is away (D-104); the lead decided, vetoable on his return. D-066 is unchanged.
+
+- **L1** Selection lifetime (D-066) stays: a query change clears the selection. M1 therefore picks both inputs without a search between: the editor's pickers (main path, M1) or a selection made on one query (M1b).
+- **L2** Prefill takes the selection's click order (first clicked = `a`), not list order (`selectedInClickOrder`).
+- **L3** Q-8 stays (a), clarified: after Save of a new one, the row becomes active and is added exactly like Enter on a signal row, to the "Add to" target; with "New window" a new window is created with it.
+- **L4** Esc in the open preset select closes only the select; the editor's mono fields are 12 px; the hint reads `None yet · + creates one`, fits the sidebar uncut, and neither hint nor header shows the accent fill.
 
 ## Open questions for Jan
 
@@ -395,4 +407,4 @@ Jan is away (D-104); each is decided by the pick marked ✔ and can be vetoed.
 - **Q-5 How long an input's last value is held.** (a) ✔ up to 3 periods of that input (the gap rule's factor); beyond, the computed signal has no value, so a gap of either input shows (D-102 „gaps of both"). (b) without limit, D-102's plain „holding the last value": a dead input would keep feeding a stale value into the result.
 - **Q-6 Unit of `a * k` (Scale) and other products.** (a) ✔ empty, editable (lead pick 1: inherited only when unambiguous). (b) keep a's unit for a constant factor (wrong after a unit conversion like `a * 0.001`).
 - **Q-7 An input not in the current list.** (a) ✔ `computed.add` (UI and CLI) refuses it (`unknown_signal`): the editor only offers listed signals, and a typo in the CLI is caught. (b) stored with a warning, like `fav add` (D-103 Q-5), so a formula for another vehicle can be prepared.
-- **Q-8 After Save of a new computed signal.** (a) ✔ it is also added to the "Add to" target window, so "select two, `+`, Enter" shows the result at once (D-104 „leicht zu bedienen"). (b) only listed and made the active row; Enter adds it.
+- **Q-8 After Save of a new computed signal.** (a) ✔ it is also added exactly like Enter on a signal row (to the "Add to" target; "New window" creates one, L3), so "select two, `+`, Enter" shows the result at once (D-104 „leicht zu bedienen"). (b) only listed and made the active row; Enter adds it.

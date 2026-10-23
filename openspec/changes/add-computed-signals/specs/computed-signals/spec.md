@@ -137,9 +137,9 @@ A computed signal SHALL be added, moved, copied and removed in windows like any 
 - **Evidence:** `packages/shared/test/computedApply.test.ts` › "treats a computed signal like any signal"
 
 #### Scenario: Create and see on real data
-- **WHEN** the UI user follows manual check M1 on smart451
-- **THEN** the editor shows a `DNMOT`, b `PNHV_SupBat_Curr`, Difference, `a - b`, name `DNMOT − PNHV_SupBat_Curr`; after Enter the row is under `ƒ Computed` and active, and the target window shows the legend row `DNMOT − PNHV_SupBat_Curr` with a curve
-- **Evidence:** UI check M1 on smart451 (one screenshot with editor, one after Save)
+- **WHEN** the UI user follows manual checks M1 (pickers) and M1b (selection on the empty query, "Add to" New window) on smart451
+- **THEN** both editors show a `DNMOT`, b `PNHV_SupBat_Curr`, Difference, `a - b`, name `DNMOT − PNHV_SupBat_Curr`; after Enter the row is under `ƒ Computed` and active; in M1 the target window shows the legend row `DNMOT − PNHV_SupBat_Curr` with a curve, in M1b a new window appears showing it
+- **Evidence:** UI check M1 and M1b on smart451 (per route one screenshot with editor, one after Save)
 
 #### Scenario: Cursor values agree
 - **WHEN** the UI user follows manual check M2
@@ -165,7 +165,8 @@ Inputs SHALL resolve on the computed signal's data ref, so a session step moves 
 - **Evidence:** UI check M5 on smart451 (screenshot after the step)
 
 ### Requirement: Computed section in the explorer
-The explorer SHALL show a `ƒ Computed` section right under Favourites with a `+` in its header, open unless toggled (also on the empty search, design Q-2), a one-line hint when there is no computed signal, and only matching rows while searching (design C12). Origin: D-104 („in their own section right under Favourites, with one obvious way to create one"); lead pick 2.
+The explorer SHALL show a `ƒ Computed` section right under Favourites with a `+` in its header, open unless toggled (also on the empty search, design Q-2), a one-line hint when there is no computed signal, and only matching rows while searching (design C12). Origin: D-104 („in their own section right under Favourites, with one obvious way to create one"); lead pick 2; hint text and no accent fill: lead decision L4.
+
 
 #### Scenario: Items of the section
 - **WHEN** `explorerItems` gets the matches of signal-groups "Group order and state", favourites the names of ranks 5 and 2, and computed matches (one, then none), searching and on the empty query
@@ -179,16 +180,21 @@ The explorer SHALL show a `ƒ Computed` section right under Favourites with a `+
 
 #### Scenario: Section on real data
 - **WHEN** on smart451 with no computed signal the search is empty, then `speed` is typed
-- **THEN** first `ƒ Computed 0` sits right under Favourites (or first when there are none) with the hint row `No computed signals yet: click + to build one`, header and hint each ≤ 24 px; while searching `speed` there is no Computed header
-- **Evidence:** UI check on smart451 (one screenshot per state, heights via `getBoundingClientRect`)
+- **THEN** first `ƒ Computed 0` sits right under Favourites (or first when there are none) with the hint row `None yet · + creates one`, header and hint each ≤ 24 px, the hint uncut (`scrollWidth` ≤ `clientWidth`) at 1440×900 and 1000×557, and neither has the accent background (`--accent-soft`) or an accent left bar; while searching `speed` there is no Computed header
+- **Evidence:** UI check on smart451 (one screenshot per state, heights and widths via `getBoundingClientRect`/`scrollWidth`, computed backgrounds)
 
 ### Requirement: Editor
-A `+` in the Computed header, the hint row, a row's pencil or `F2` SHALL open the editor of design C12: pickers for `a` and `b` over the current list (numeric only), a preset dropdown, the formula field with a one-line live error, name and unit, Save, Cancel and, when editing, Delete. Origin: D-104 („drop down mit magie", „leicht zu bedienen", „schön aussieht"); lead picks 1 and 2; Q-3.
+A `+` in the Computed header, the hint row, a row's pencil or `F2` SHALL open the editor of design C12: pickers for `a` and `b` (numeric only), a preset dropdown, the formula field with a live error, name, unit, Save, Cancel, Delete when editing; prefill in click order; Esc closes the innermost list. Origin: D-104 („drop down mit magie", „leicht zu bedienen", „schön aussieht"); lead picks 1, 2; Q-3; lead decisions L2, L4.
 
 #### Scenario: Prefill from the selection
 - **WHEN** `prefill` gets two selected numeric signals, one, one with states, and three
 - **THEN** it gives a and b with formula `a - b`; a with `abs(a)`; then empty with `a - b` twice
 - **Evidence:** `apps/web/test/computedEditor.test.ts` › "prefills from the selection"
+
+#### Scenario: Selection in click order
+- **WHEN** with `testcar/Fast_100h.SIG_A` listed before `testcar/Sna_800h.SPEED`, a plain click on SPEED and a toggle click on SIG_A run, then `selectedInClickOrder` and `selectedInOrder`; then a plain click on SPEED and a range click on SIG_A
+- **THEN** the first gives `[SPEED, SIG_A]`, the second `[SIG_A, SPEED]`; after the range, `selectedInClickOrder` gives list order `[SIG_A, SPEED]`
+- **Evidence:** `apps/web/test/selection.test.ts` › "lists the selection in click order"; UI check M1b (a `DNMOT` although `CPC_508h` is listed above)
 
 #### Scenario: Presets and formula both ways
 - **WHEN** preset Minimum is picked, then the formula text is changed to `min( a,b )`, then to `min(a, b) + 1`
@@ -212,8 +218,13 @@ A `+` in the Computed header, the hint row, a row's pencil or `F2` SHALL open th
 
 #### Scenario: One primary in the editor
 - **WHEN** the editor is open on smart451
-- **THEN** it has exactly one button with background `rgb(15, 23, 42)` (Save), measures 360 px wide, and its pickers, preset select and formula field are 26 px tall
+- **THEN** it has exactly one button with background `rgb(15, 23, 42)` (Save), measures 360 px wide, its pickers, preset select and formula field are 26 px tall, and every mono field (picker values, formula) has `font-size` 12px
 - **Evidence:** UI check on smart451 (snippet output, one screenshot)
+
+#### Scenario: Esc closes the innermost
+- **WHEN** in the open editor the preset select is opened and Esc is pressed, then Esc is pressed again
+- **THEN** after the first Esc the select is closed and the editor still open with its state; after the second the editor is closed
+- **Evidence:** UI check on smart451 (screenshot after the first Esc)
 
 ### Requirement: Name and unit filled in
 The editor SHALL fill the name from the formula with short signal names and the unit when it is unambiguous (design C12), and keep both following until the user types in that field. Origin: lead pick 1.
