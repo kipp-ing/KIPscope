@@ -1,4 +1,5 @@
 import type { EventRow, FormulaNode, StateRow, Timestamp } from "@kipscope/shared";
+import type { QueryRunner } from "./queue.ts";
 
 /** One data ref and a half-open window [from, to), from < to (D-078, issue #1 item 1). */
 export interface Scope {
@@ -252,7 +253,9 @@ export interface SourceAdapter {
     scope?: Scope,
     abort?: AbortSignal,
   ): Promise<EventRow[] | undefined>;
+  /** An adapter that sends several queries per computedSeries call queues each one itself. */
+  useQueue?(run: QueryRunner): void;
 }
 
-/** What the server uses: every method present (`completeSource`, design C2). */
-export type DataSource = Required<SourceAdapter>;
+/** What the server uses: every method present (`completeSource`, design C2); no queue hook. */
+export type DataSource = Required<Omit<SourceAdapter, "useQueue">>;

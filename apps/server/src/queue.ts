@@ -8,6 +8,12 @@ import {
   rank,
 } from "./priority.ts";
 
+/** Runs one source query, e.g. through a `QueryQueue` (speed-up-computed C-4). */
+export type QueryRunner = <T>(
+  task: (abort?: AbortSignal) => Promise<T>,
+  abort?: AbortSignal,
+) => Promise<T>;
+
 interface Waiting {
   /** Arrival order, renewed on each raise; the oldest of the best class starts first. */
   seq: number;
@@ -141,7 +147,12 @@ export class QueryQueue {
   }
 }
 
-/** Wraps every method the adapter has in the queue; `ping` and `info` pass through unqueued (design C3). */
+/**
+ * Wraps every method the adapter has in the queue; `ping` and `info` pass through unqueued (design
+ * C3). An adapter with `useQueue` gets the queue as its runner and its `computedSeries` passes
+ * through unqueued: each of its queries takes its own slot, so the call never holds one slot while
+ * it waits for others (speed-up-computed C-4).
+ */
 export function queuedAdapter(adapter: SourceAdapter, queue: QueryQueue): SourceAdapter {
   const queued: SourceAdapter = {
     info: adapter.info,
@@ -187,7 +198,10 @@ export function queuedAdapter(adapter: SourceAdapter, queue: QueryQueue): Source
     queued.stateChanges = (ref, by, limit, scope, abort) =>
       queue.run((a) => stateChanges(ref, by, limit, scope, a), abort);
   const computedSeries = adapter.computedSeries?.bind(adapter);
-  if (computedSeries)
+  if (computedSeries && adapter.useQueue) {
+    adapter.useQueue((task, abort) => queue.run(task, abort));
+    queued.computedSeries = computedSeries;
+  } else if (computedSeries)
     queued.computedSeries = (ref, from, to, target, width, abort) =>
       queue.run((a) => computedSeries(ref, from, to, target, width, a), abort);
   const events = adapter.events?.bind(adapter);

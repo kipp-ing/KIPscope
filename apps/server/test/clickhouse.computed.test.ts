@@ -30,8 +30,11 @@ interface Recorded {
   params: Record<string, unknown>;
 }
 
-/** `count` answers the row count of the count query; the scan answers no rows. */
-function counting(count: number) {
+/**
+ * `count` answers the row count of the count query; the scan answers no rows. `options` are the
+ * constructor options of the source (`computedChunkRows`).
+ */
+function counting(count: number, options?: { computedChunkRows?: number }) {
   const queries: Recorded[] = [];
   const client = {
     query: async (o: { query: string; query_params?: Record<string, unknown> }) => {
@@ -40,7 +43,7 @@ function counting(count: number) {
       return { json: async () => (isCount ? [[String(count)]] : []) };
     },
   };
-  const source = new ClickHouseSource(client as never, mapping, 30, events);
+  const source = new ClickHouseSource(client as never, mapping, 30, events, options);
   return { source, queries };
 }
 
@@ -85,6 +88,9 @@ function expectRowsFrameScan(query: string) {
 }
 const occurrences = (text: string, word: string) =>
   text.match(new RegExp(`\\b${word}\\b`, "g"))?.length ?? 0;
+
+const S = 1_000_000_000n;
+const MS = 1_000_000n;
 
 const everything = (queries: Recorded[]) => queries.map((q) => q.query).join("\n;\n");
 const paramValues = (queries: Recorded[]) =>
@@ -248,5 +254,90 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
     const scan = queries.find((q) => "k0" in q.params);
     expect(new Set([Number(scan?.params.k0), Number(scan?.params.k1)])).toEqual(new Set([4, 2]));
     expect(sql).not.toMatch(/\b4\b/);
+  });
+  // spec computed-signals "Chunk queries"
+  describe("chunked bucket scan (D-110)", () => {
+    const hold = 15n * MS;
+    const three = (holdC: bigint | null = hold) =>
+      refOf(
+        `${SIG_A} - ${SIG_B} + ${SIG_C}`,
+        input(SIG_A, { holdNs: hold, seed: { t: FROM - 5n * MS, v: 1 } }),
+        input(SIG_B, { holdNs: hold, seed: { t: FROM - 6n * MS, v: 2 } }),
+        input(SIG_C, {
+          ...(holdC === null ? {} : { holdNs: holdC }),
+          seed: { t: FROM - 7n * MS, v: 3 },
+        }),
+      );
+
+    it("splits a large bucket scan into chunks", async () => {
+      const { source, queries } = counting(5000, { computedChunkRows: 1000 });
+      const answer = await run(source, three(), 100);
+      expect(answer.kind).toBe("buckets");
+      // The count and three scans.
+      expect(queries).toHaveLength(4);
+      const [count, ...scans] = queries as [Recorded, ...Recorded[]];
+      expect(count.query).toMatch(/count\s*\(/i);
+      expect(count.query).not.toMatch(/\bOVER\b/i);
+      expect(scans).toHaveLength(3);
+      for (const scan of scans) {
+        expect(scan.query).toContain("{cs:Int64}");
+        expectRowsFrameScan(scan.query);
+        expect(scan.query).not.toMatch(/\bJOIN\b/i);
+        expect(scan.query).not.toMatch(/\bUNION\b/i);
+      }
+      // Chunks start at bucket starts: 100 buckets of 1 s over 3 chunks split at 33 and 66.
+      const byStart = [...scans].sort((x, y) =>
+        BigInt(String(x.params.cs)) < BigInt(String(y.params.cs)) ? -1 : 1,
+      );
+      expect(byStart.map((q) => BigInt(String(q.params.cs)))).toEqual([
+        FROM,
+        FROM + 33n * S,
+        FROM + 66n * S,
+      ]);
+      // The first chunk keeps its seeds and its range start; the others read the lookback.
+      const [first, second, third] = byStart as [Recorded, Recorded, Recorded];
+      expect(BigInt(String(first.params.from))).toBe(FROM);
+      expect(first.params.sv0).toBe(1);
+      expect(first.params.sv1).toBe(2);
+      expect(first.params.sv2).toBe(3);
+      for (const [chunk, cs] of [
+        [second, FROM + 33n * S],
+        [third, FROM + 66n * S],
+      ] as const) {
+        expect(BigInt(String(chunk.params.from))).toBe(cs - hold);
+        for (const i of [0, 1, 2]) {
+          expect(chunk.params[`sv${i}`]).toBeNull();
+          expect(chunk.params[`ss${i}`]).toBeNull();
+          expect(chunk.params[`st${i}`]).toBeNull();
+        }
+      }
+      // The chunks cover the range: the last one ends at the range end, the others at the next start.
+      expect(BigInt(String(first.params.to))).toBe(FROM + 33n * S);
+      expect(BigInt(String(second.params.to))).toBe(FROM + 66n * S);
+      expect(BigInt(String(third.params.to))).toBe(TO);
+    });
+
+    it("does not chunk without hold limits, raw or small", async () => {
+      // No hold limit on SIG_C.
+      const noHold = counting(5000, { computedChunkRows: 1000 });
+      const a = await run(noHold.source, three(null), 100);
+      expect(a.kind).toBe("buckets");
+      expect(noHold.queries).toHaveLength(2);
+      // A raw answer (count 50 is below the target).
+      const raw = counting(50, { computedChunkRows: 1000 });
+      const b = await run(raw.source, three(), 100);
+      expect(b.kind).toBe("raw");
+      expect(raw.queries).toHaveLength(2);
+      // The default threshold of 1,000,000 rows is far above 5,000.
+      const small = counting(5000);
+      const c = await run(small.source, three(), 100);
+      expect(c.kind).toBe("buckets");
+      expect(small.queries).toHaveLength(2);
+      // The unchunked scan still reads from `from` with its seeds.
+      const scan = small.queries[1] as Recorded;
+      expect(BigInt(String(scan.params.from))).toBe(FROM);
+      expect(scan.params.sv0).toBe(1);
+      expectRowsFrameScan(scan.query);
+    });
   });
 });

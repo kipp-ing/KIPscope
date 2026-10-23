@@ -27,6 +27,7 @@ import type {
   SourceSignal,
   StateChangeRule,
 } from "./datasource.ts";
+import type { QueryRunner } from "./queue.ts";
 
 /**
  * Progress headers (design D7) pile up until the first body byte; Node's 16 KiB header limit
@@ -67,6 +68,12 @@ const num = (v: number | null) => v ?? Number.NaN;
 
 /** Hold limit of an input without one (design C9): large enough never to bite. */
 const NO_HOLD = 2n ** 63n - 1n;
+
+/**
+ * At most this many chunk scans per computed bucket answer (speed-up-computed C-1): a query below
+ * `interactive` takes at most `limit - kept` = 3 of the 4 queue slots.
+ */
+const COMPUTED_CHUNKS = 3;
 
 /**
  * SQL of a parsed formula (design C9, F9): `column(name)` gives each signal name's column alias,
@@ -122,6 +129,10 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
   private readonly timeoutSeconds: number;
   private readonly e: EventMapping;
   private readonly eventsTable: string;
+  /** Input rows above which a computed bucket answer is split into chunks (C-1). */
+  private readonly computedChunkRows: number;
+  /** Runs each query of `computedSeries`; the query queue once `useQueue` was called (C-4). */
+  private run: QueryRunner = (task, abort) => task(abort);
   readonly info: SourceInfo;
 
   constructor(
@@ -129,8 +140,10 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
     mapping: TableMapping,
     timeoutSeconds: number,
     events: EventMapping = DEFAULT_EVENT_MAPPING,
+    options: { computedChunkRows?: number } = {},
   ) {
     this.client = client;
+    this.computedChunkRows = options.computedChunkRows ?? 1_000_000;
     this.c = mapping;
     this.timeoutSeconds = timeoutSeconds;
     this.table = `${mapping.database}.${mapping.table}`;
@@ -142,6 +155,11 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
       table: mapping.table,
       eventsTable: this.eventsTable,
     };
+  }
+
+  /** Queues each query of `computedSeries` itself (speed-up-computed C-4). */
+  useQueue(run: QueryRunner): void {
+    this.run = run;
   }
 
   // Outside the query queue (C3), so a busy queue does not read as an unreachable source.
@@ -396,7 +414,14 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
    * row at that time (`leadInFrame` over a second window of the same order), so its frame holds
    * every row at that time. One input: the formula per row, one row per time. Signal names are
    * parameters `{s<i>:String}` in `formulaInputs` order. The raw answer orders the rows; buckets
-   * group them.
+   * group them. Every query goes through `this.run`, so each takes its own queue slot.
+   *
+   * A bucket answer over several inputs with more than `computedChunkRows` rows and a finite hold
+   * limit on every input is split into up to COMPUTED_CHUNKS chunks at bucket starts (D-110, C-1,
+   * C-2), scanned in parallel with one linked abort (C-4); their buckets, in order, are the answer.
+   * Chunk 0 keeps the seeds; every later chunk reads a lookback of the largest hold limit before
+   * its start instead, with null seeds and no extra query (C-3). All chunks keep only rows at
+   * `{cs:Int64}` (the chunk start, `from` unchunked) or later, so they share one SQL text.
    */
   async computedSeries(
     ref: ComputedRef,
@@ -415,12 +440,12 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
     const names = inputs.map((_, i) => `{s${i}:String}`).join(", ");
     const range = `${refColumn} = {ref:String} AND ${signal} IN (${names})
        AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")} AND ${time} IS NOT NULL`;
-    const [counted] = await this.rows<[string]>(
-      `SELECT count() FROM ${this.table} WHERE ${range}`,
-      params,
+    const [counted] = await this.run(
+      (a) => this.rows<[string]>(`SELECT count() FROM ${this.table} WHERE ${range}`, params, a),
       abort,
     );
-    const raw = Number(counted?.[0] ?? 0) <= target;
+    const count = Number(counted?.[0] ?? 0);
+    const raw = count <= target;
 
     let rows: string;
     const only = inputs.length === 1 ? inputs[0] : undefined;
@@ -452,6 +477,7 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
       const held = inputs
         .map((_, i) => `i${i}_t IS NOT NULL AND x - i${i}_t <= {h${i}:Int64}`)
         .join("\n           AND ");
+      params.cs = from;
       rows = `SELECT x, if(NOT isFinite(v0), NULL, v0) AS v FROM (
          SELECT x, ${formula} AS v0 FROM (
            SELECT toUnixTimestamp64Nano(${time}) AS x,
@@ -460,26 +486,63 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
            FROM ${this.table} WHERE ${range}
            WINDOW w AS (ORDER BY ${time} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
                   w2 AS (ORDER BY ${time} ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING))
-         WHERE nx != x AND ${held})`;
+         WHERE nx != x AND ${held} AND x >= {cs:Int64})`;
     }
 
     if (raw) {
-      const points = await this.rows<[string, number | null]>(
-        `SELECT toString(x), v FROM (${rows}) ORDER BY x`,
-        params,
+      const points = await this.run(
+        (a) =>
+          this.rows<[string, number | null]>(
+            `SELECT toString(x), v FROM (${rows}) ORDER BY x`,
+            params,
+            a,
+          ),
         abort,
       );
       return { kind: "raw", points: points.map(([t, v]) => ({ t: BigInt(t), v })) };
     }
-    const buckets = await this.rows<
-      [string, string, string, number | null, number | null, number | null]
-    >(
-      `SELECT toString(x - positiveModulo(x, {w:Int64})) AS b,
+    const bucketSql = `SELECT toString(x - positiveModulo(x, {w:Int64})) AS b,
               countIf(v IS NOT NULL), countIf(v IS NULL), avg(v), min(v), max(v)
-       FROM (${rows}) GROUP BY b ORDER BY toInt64(b)`,
-      { ...params, w: width },
-      abort,
-    );
+       FROM (${rows}) GROUP BY b ORDER BY toInt64(b)`;
+    type BucketRow = [string, string, string, number | null, number | null, number | null];
+    const scan = (chunkParams: Params, signal?: AbortSignal) =>
+      this.run((a) => this.rows<BucketRow>(bucketSql, chunkParams, a), signal);
+
+    let buckets: BucketRow[];
+    const holds = inputs.map((input) => input.holdNs);
+    const finite = holds.every((h) => h !== undefined && h !== NO_HOLD);
+    // C-2: chunk starts on the bucket grid; k lowered to the number of buckets.
+    const g0 = from - (((from % width) + width) % width);
+    const nb = (to - g0 + width - 1n) / width;
+    let k = Math.min(COMPUTED_CHUNKS, Math.ceil(count / this.computedChunkRows));
+    if (nb < BigInt(k)) k = Number(nb);
+    if (inputs.length > 1 && finite && count > this.computedChunkRows && k > 1) {
+      const lookback = (holds as bigint[]).reduce((a, b) => (b > a ? b : a));
+      const starts = [from];
+      for (let j = 1; j < k; j++) starts.push(g0 + ((BigInt(j) * nb) / BigInt(k)) * width);
+      // C-4: one abort for all chunks, on the caller's abort or the first failing chunk.
+      const local = new AbortController();
+      const signal = abort ? AbortSignal.any([abort, local.signal]) : local.signal;
+      const parts = await Promise.all(
+        starts.map((cs, j) => {
+          const chunkParams: Params = { ...params, w: width, cs, to: starts[j + 1] ?? to };
+          if (j > 0) {
+            // C-3: a lookback of the largest hold limit instead of seeds.
+            chunkParams.from = cs - lookback;
+            inputs.forEach((_, i) => {
+              chunkParams[`sv${i}`] = null;
+              chunkParams[`ss${i}`] = null;
+              chunkParams[`st${i}`] = null;
+            });
+          }
+          return scan(chunkParams, signal).catch((error: unknown) => {
+            local.abort();
+            throw error;
+          });
+        }),
+      );
+      buckets = parts.flat();
+    } else buckets = await scan({ ...params, w: width }, abort);
     return {
       kind: "buckets",
       buckets: buckets.map(([start, count, sna, mean, min, max]) => ({

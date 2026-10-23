@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { parseFormula } from "@kipscope/shared";
+import { describe, expect, it, vi } from "vitest";
+import { ClickHouseSource } from "../src/clickhouse.ts";
 import type { ComputedRef, DataSource, SourceAdapter, SourceInfo } from "../src/datasource.ts";
 import { Priority, type QueryClass, withPriority } from "../src/priority.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
@@ -623,5 +625,100 @@ describe("QueryQueue classes", () => {
     expect(order).toEqual(["R1", "R2", "R3", "R4", "S1", "B"]);
     await drain([...running, b, s1]);
     expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 4, byClass: idle() });
+  });
+});
+
+describe("queuedAdapter computed queries (speed-up-computed C-4)", () => {
+  const FROM = 1_791_158_400_000_000_000n;
+  const TO = FROM + 100_000_000_000n;
+  const mapping = {
+    database: "sdlog",
+    table: "conf_signals",
+    dataRef: "vehicle",
+    signal: "signal",
+    time: "utc",
+    value: "value",
+    text: "text",
+  };
+  const eventMapping = {
+    table: "conf_events",
+    source: "source",
+    kind: "kind",
+    name: "name",
+    value: "value",
+    text: "text",
+    detail: "detail",
+  };
+  /** A client that answers a row count of 5,000 and no rows for a scan. */
+  const client = {
+    query: async (o: { query: string }) => ({
+      json: async () =>
+        /\bcount\s*\(/i.test(o.query) && !/\bOVER\b/i.test(o.query) ? [["5000"]] : [],
+    }),
+  };
+  const parsed = parseFormula("A.X - B.X + C.X");
+  if (!parsed.ok) throw new Error(parsed.message);
+  const computed: ComputedRef = {
+    dataRef: "car",
+    ast: parsed.ast,
+    inputs: ["A.X", "B.X", "C.X"].map((name) => ({
+      dataRef: "car",
+      name,
+      sna: [],
+      holdNs: 15_000_000n,
+    })),
+  };
+
+  // spec computed-signals "Each chunk takes a queue slot"
+  it("queues each computed query, not the whole call", async () => {
+    const source = new ClickHouseSource(client as never, mapping, 30, eventMapping, {
+      computedChunkRows: 1000,
+    });
+    const queue = new QueryQueue(4);
+    const run = vi.spyOn(queue, "run");
+    const queued = queuedAdapter(source, queue) as DataSource;
+    const answer = await queued.computedSeries(computed, FROM, TO, 100, 1_000_000_000n);
+    expect(answer.kind).toBe("buckets");
+    // The count and three chunk scans, one slot each; never one slot for the whole call.
+    expect(run).toHaveBeenCalledTimes(4);
+    expect(queue.stats).toMatchObject({ running: 0, waiting: 0 });
+  });
+
+  it("queues the count and the scan of an unchunked call, one slot each", async () => {
+    const source = new ClickHouseSource(client as never, mapping, 30, eventMapping);
+    const queue = new QueryQueue(4);
+    const run = vi.spyOn(queue, "run");
+    const queued = queuedAdapter(source, queue) as DataSource;
+    await queued.computedSeries(computed, FROM, TO, 100, 1_000_000_000n);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("hands an adapter with useQueue the queue and passes its computed call through", async () => {
+    let runner: unknown;
+    const seen: unknown[][] = [];
+    const adapter = {
+      info: { kind: "memory", database: "fixture", table: "rows" },
+      ping: async () => {},
+      useQueue: (r: unknown) => {
+        runner = r;
+      },
+      computedSeries: async (...a: unknown[]) => {
+        seen.push(a);
+        return { kind: "raw", points: [] };
+      },
+    } as unknown as SourceAdapter;
+    const queue = new QueryQueue(2);
+    const run = vi.spyOn(queue, "run");
+    const queued = queuedAdapter(adapter, queue) as DataSource;
+    expect(typeof runner).toBe("function");
+    const controller = new AbortController();
+    await queued.computedSeries(computed, 1n, 2n, 100, 1n, controller.signal);
+    // Not queued as one call; the adapter got the call as it was.
+    expect(run).not.toHaveBeenCalled();
+    expect(seen).toEqual([[computed, 1n, 2n, 100, 1n, controller.signal]]);
+    // The runner it was given takes a slot of the queue.
+    const result = await (runner as (t: () => Promise<number>) => Promise<number>)(async () => 7);
+    expect(result).toBe(7);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

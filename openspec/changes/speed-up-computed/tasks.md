@@ -47,10 +47,10 @@ Write areas (disjoint per task):
 
 ## 5. Tests (tester, round 2)
 
-- [ ] 5.1 `clickhouse.computed.test.ts`: "splits a large bucket scan into chunks" and "does not chunk without hold limits, raw or small" (spec "Chunk queries"). The `counting` helper takes the constructor option.
-- [ ] 5.2 `clickhouse.chunks.test.ts` (new, against `sdlog.conf_signals` like the conformance ClickHouse source): "chunked buckets equal unchunked ones", cases (a) and (b) of the spec.
-- [ ] 5.3 `queue.test.ts`: "queues each computed query, not the whole call" (spy on `queue.run`). Existing queue tests that expect `computedSeries` queued as one call follow the pinned wiring.
-- [ ] 5.4 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`.
+- [x] 5.1 `clickhouse.computed.test.ts`: "splits a large bucket scan into chunks" and "does not chunk without hold limits, raw or small" (spec "Chunk queries"). The `counting` helper takes the constructor option.
+- [x] 5.2 `clickhouse.chunks.test.ts` (new, against `sdlog.conf_signals` like the conformance ClickHouse source): "chunked buckets equal unchunked ones", cases (a) and (b) of the spec.
+- [x] 5.3 `queue.test.ts`: "queues each computed query, not the whole call" (spy on `queue.run`). Existing queue tests that expect `computedSeries` queued as one call follow the pinned wiring.
+- [x] 5.4 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`.
 
 ## 3. Lead (carserver)
 
