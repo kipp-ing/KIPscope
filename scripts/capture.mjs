@@ -296,7 +296,7 @@ const SCENES = {
     await go(bx, y, { steps: 24 });
     await b.click(bx, y, { modifiers: 8 });
     await sleep(800);
-    const diff = await b.center(".option-bar label", "Diff");
+    const diff = await b.center("button.toggle", "Diff");
     await go(diff.x, diff.y, { steps: 26 });
     await b.click(diff.x, diff.y);
     await sleep(1400);
