@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-111: Native computed series on ADX (2026-10-23)
+
+On ADX computed signals use the bounded fallback (raw rows into the server, at most 200,000 rows, else "zoom in"), so a computed signal over a long range shows nothing there. The lead offered a native ADX query with the chunking of D-110. Jan: „ja, wär cool".
+
+- **Decision:** Change `add-adx-computed` after `speed-up-computed`: the ADX adapter compiles the parsed formula into one KQL query per chunk (last value per input carried forward, hold limits, SNA, one row per time, buckets from exact rows), never user text in a query; chunked like D-110 on long ranges. Checked on the emulator by the conformance suite; timing on a real cluster belongs to the search tool team.
+- **Why:** The users of the search tool work on ADX; the fallback cannot serve wide ranges.
+
 ## D-110: Chunked computed scan on ClickHouse (2026-10-23)
 
 After round 1 of `speed-up-computed` the whole recording took 3.05–3.20 s (was 3.95 s, goal 2 s); the window and the bucket grouping run single-threaded. Jan: „probier mal die stückelung. in adx ist das schon so?" (ADX has no native computed query; it uses the bounded fallback.)
