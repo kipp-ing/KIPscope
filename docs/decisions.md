@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-109: Speed up computed series (2026-10-23)
+
+The lead measured a computed series over smart451's whole recording at 3.9–4.0 s (DNMOT alone 0.49 s) and found the cost in the window columns and the per-time dedupe. Jan: „ja, gerne optimieren".
+
+- **Decision:** Change `speed-up-computed`: ClickHouse compiles computed series with a ROWS frame, last input times as running `max`, one row per time by keeping the last row at each time, SNA folded into the value as NaN; `min`/`max` give SNA when any argument is SNA. Results stay identical; goal ≤ 2 s for the whole recording.
+- **Why:** Same rows, fewer single-threaded window columns; measured 2.06 s against 3.49 s for the SQL alone.
+
 ## D-108: No migration of computed definitions (2026-10-23)
 
 Jan, on the plan to rewrite definitions with `a`/`b`: „es gibt kein bestand".
