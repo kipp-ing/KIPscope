@@ -810,7 +810,7 @@ describe("explorer Computed section (add-computed-signals)", () => {
     expect(empty[3]).toMatchObject(header(0, true));
     expect(empty[4]).toEqual({ kind: "hint", text: HINTS.computedEmpty });
     expect(empty.slice(5)).toEqual(base(false));
-    expect(HINTS.computedEmpty).toBe("No computed signals yet: click + to build one");
+    expect(HINTS.computedEmpty).toBe("None yet \u00b7 + creates one");
 
     // Searching without a computed match: no Computed header and no hint.
     const searching = explorerItems(ranked, true, true, none, stars, { matches: [] });

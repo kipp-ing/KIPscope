@@ -123,7 +123,7 @@ describe("hints table", () => {
 
   it("words the computed signal hints", () => {
     // add-computed-signals: the four hints of the Computed section and the editor.
-    expect(HINTS.computedEmpty).toBe("No computed signals yet: click + to build one");
+    expect(HINTS.computedEmpty).toBe("None yet \u00b7 + creates one");
     expect(HINTS.computedNew.startsWith("New computed signal")).toBe(true);
     expect(HINTS.computedEdit.startsWith("Edit computed signal")).toBe(true);
     // The pencil names its key, which is in the key list.

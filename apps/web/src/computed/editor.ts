@@ -3,6 +3,7 @@ import {
   type ComputedDef,
   type FormulaNode,
   formulaName,
+  freeName,
   inferUnit,
   MAX_COMPUTED_NAME,
   MAX_COMPUTED_UNIT,
@@ -43,9 +44,10 @@ const shortOf = (name: string | undefined, infoOf: InfoOf) =>
   name === undefined ? undefined : shortSignalName(shownName(infoOf(name) ?? { name }));
 
 /**
- * C12 prefill (lead pick 2): one or two selected catalog signals without states (list order) give
- * `a` (and `b`) with Absolute or Difference; anything else an empty editor with Difference. Name
- * and unit follow (`withAuto` against the other definitions refines the name).
+ * C12 prefill (lead pick 2): one or two selected catalog signals without states, in click order
+ * (`selectedInClickOrder`, first clicked = `a`, L2), give `a` (and `b`) with Absolute or
+ * Difference; anything else an empty editor with Difference. Name and unit follow (`withAuto`
+ * against the other definitions refines the name).
  */
 export function prefill(selected: readonly SignalInfo[]): EditorState {
   const empty: EditorState = {
@@ -90,18 +92,6 @@ function autoOf(
 }
 
 const sameName = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
-
-/** `base`, else `base 2`, `base 3`, … not taken by `others`; cut with "…" to fit MAX_COMPUTED_NAME. */
-function freeName(base: string, others: readonly ComputedDef[]): string {
-  const taken = (n: string) => others.some((d) => sameName(d.name, n));
-  if (!taken(base)) return base;
-  for (let i = 2; ; i++) {
-    const suffix = ` ${i}`;
-    const room = MAX_COMPUTED_NAME - suffix.length;
-    const head = base.length <= room ? base : `${base.slice(0, room - 1)}…`;
-    if (!taken(head + suffix)) return head + suffix;
-  }
-}
 
 /** The editor state of a stored definition; a field follows only if it equals its auto value. */
 export function fromDef(def: ComputedDef, infoOf: InfoOf): EditorState {

@@ -49,6 +49,10 @@ describe("computed editor state", () => {
     const one = prefill([DNMOT]);
     expect(one).toMatchObject({ a: DNMOT.name, formula: "abs(a)" });
     expect(one.b).toBeUndefined();
+    // Click order (L2): the first clicked signal is a, whatever its place in the list.
+    const swapped = prefill([CURR, DNMOT]);
+    expect(swapped).toMatchObject({ a: CURR.name, b: DNMOT.name, formula: "a - b" });
+    expect(swapped.name).toBe("PNHV_SupBat_Curr \u2212 DNMOT");
     // A signal with states, or three or none: empty with Difference.
     for (const selected of [[MODE], [DNMOT, MODE], [DNMOT, SPEED, CURR], []]) {
       const empty = prefill(selected);

@@ -5,6 +5,7 @@ import {
   computedParams,
   computedRef,
   formulaName,
+  freeName,
   inferUnit,
   parseFormula,
   parseSignalId,
@@ -165,12 +166,4 @@ async function input(text: string, l: Lookups): Promise<{ name: string; info?: S
 /** The input's shown name after its first "." (C12 auto name). */
 function short(input: { name: string; info?: SignalInfo }): string {
   return shortSignalName(input.info?.displayName ?? input.name);
-}
-
-/** The auto name, with " 2", " 3", … when the workspace already uses it (C12). */
-function freeName(name: string, defs: readonly ComputedDef[]): string {
-  const taken = new Set(defs.map((d) => d.name.toLowerCase()));
-  let free = name;
-  for (let n = 2; taken.has(free.toLowerCase()); n++) free = `${name} ${n}`;
-  return free;
 }

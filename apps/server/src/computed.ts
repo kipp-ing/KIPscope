@@ -2,8 +2,8 @@ import {
   type BucketSeries,
   bindFormula,
   type ComputedParams,
+  computedRowValue,
   encodeTimes,
-  evalFormula,
   type FormulaNode,
   parseFormula,
   type RawSeries,
@@ -53,16 +53,12 @@ export function computedPointAt(
   t: Timestamp,
   inputs: readonly { point: RawPoint | undefined; holdNs?: bigint | undefined }[],
 ): RawPoint | undefined {
-  const values: number[] = [];
-  let sna = false;
+  const points: RawPoint[] = [];
   for (const { point, holdNs } of inputs) {
     if (!point || (holdNs !== undefined && t - point.t > holdNs)) return undefined;
-    if (point.v === null) sna = true;
-    else values.push(point.v);
+    points.push(point);
   }
-  if (sna) return { t, v: null };
-  const v = evalFormula(ast, values[0] as number, values[1]);
-  return { t, v: Number.isFinite(v) ? v : null };
+  return { t, v: computedRowValue(ast, points[0] as RawPoint, points[1]) };
 }
 
 /**

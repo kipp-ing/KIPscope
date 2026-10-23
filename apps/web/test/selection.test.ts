@@ -11,6 +11,7 @@ import {
   pruneSelection,
   type Selection,
   selectClick,
+  selectedInClickOrder,
   selectedInOrder,
 } from "../src/explorer/selection.ts";
 
@@ -145,5 +146,71 @@ describe("explorer selection", () => {
     const rule = /\.explorer \.results\s*\{([^}]*)\}/.exec(css);
     expect(rule?.[1]).toMatch(/user-select:\s*none/);
     expect(rule?.[1]).toMatch(/-webkit-user-select:\s*none/);
+  });
+});
+
+describe("explorer selection click order", () => {
+  // spec computed-signals "Selection in click order" (L2)
+  it("lists the selection in click order", () => {
+    // Click b, then Ctrl/Cmd-click a (a is above b in the list): b first, as clicked.
+    const b = selectClick(NO_SELECTION, items, 2, "plain");
+    const ba = selectClick(b, items, 1, "toggle");
+    expect(selectedInClickOrder(ba, items)).toEqual(["b", "a"]);
+    // selectedInOrder keeps the list order, so the two differ here.
+    expect(selectedInOrder(ba, items)).toEqual(["a", "b"]);
+
+    // Three toggles: d, a, c.
+    const dac = selectClick(
+      selectClick(selectClick(NO_SELECTION, items, 5, "plain"), items, 1, "toggle"),
+      items,
+      4,
+      "toggle",
+    );
+    expect(selectedInClickOrder(dac, items)).toEqual(["d", "a", "c"]);
+
+    // A range adds its rows in list order, whatever the direction of the Shift-click.
+    const down = selectClick(selectClick(NO_SELECTION, items, 1, "plain"), items, 5, "range");
+    expect(selectedInClickOrder(down, items)).toEqual(["a", "b", "c", "d"]);
+    const up = selectClick(selectClick(NO_SELECTION, items, 5, "plain"), items, 1, "range");
+    expect(selectedInClickOrder(up, items)).toEqual(["a", "b", "c", "d"]);
+
+    // Each id once: a favourite's copy and its group row are one signal.
+    const withCopy = [...items, row("b")];
+    expect(selectedInClickOrder(sel(["b", "a"]), withCopy)).toEqual(["b", "a"]);
+
+    // Ids that are no signal item of the list (a closed group, a header name) are ignored.
+    expect(selectedInClickOrder(sel(["zzz", "c", "G1", "a"]), items)).toEqual(["c", "a"]);
+    expect(selectedInClickOrder(NO_SELECTION, items)).toEqual([]);
+    expect(selectedInClickOrder(sel(["c", "a"]), [])).toEqual([]);
+  });
+
+  // spec computed-signals "Selection in click order" (L2, task 5.5)
+  it("keeps click order through pruneSelection", () => {
+    // Click b, then Ctrl/Cmd-click a (a is listed above b).
+    const ba = selectClick(selectClick(NO_SELECTION, items, 2, "plain"), items, 1, "toggle");
+    expect(ba.anchor).toBe("a");
+
+    // Items still contain both: the click order survives the prune, the anchor is kept.
+    const both = pruneSelection(ba, items);
+    expect(selectedInClickOrder(both, items)).toEqual(["b", "a"]);
+    expect(both.anchor).toBe("a");
+
+    // Items that contain both, in another list order, still give the click order.
+    const reordered: ExplorerItem[] = [header("G1"), row("b"), row("a")];
+    expect(selectedInClickOrder(pruneSelection(ba, reordered), reordered)).toEqual(["b", "a"]);
+
+    // Click order d, a, c, b (anchor b). Items without a drop only a; the rest keep their order.
+    const dacb = sel(["d", "a", "c", "b"], "b");
+    const noA: ExplorerItem[] = [header("G1"), row("b"), header("G2"), row("c"), row("d")];
+    const prunedNoA = pruneSelection(dacb, noA);
+    expect(selectedInClickOrder(prunedNoA, noA)).toEqual(["d", "c", "b"]);
+    expect([...prunedNoA.ids]).toEqual(["d", "c", "b"]);
+    expect(prunedNoA.anchor).toBe("b"); // anchor b is kept
+
+    // Items without the anchor: the anchor goes, the order of the others stays.
+    const noB: ExplorerItem[] = [header("G1"), row("a"), header("G2"), row("c"), row("d")];
+    const prunedNoB = pruneSelection(dacb, noB);
+    expect([...prunedNoB.ids]).toEqual(["d", "a", "c"]);
+    expect(prunedNoB.anchor).toBeUndefined();
   });
 });

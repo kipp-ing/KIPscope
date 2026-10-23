@@ -2312,6 +2312,27 @@ describe("computed signals (add-computed-signals C13)", () => {
     });
   });
 
+  it("keeps a very long auto name within 60 characters and numbers a repeat", async () => {
+    await withServer(async (s) => {
+      await scoped(s);
+      // 30 terms of the long signal name: the auto name is far over 60 characters.
+      const formula = Array.from({ length: 30 }, () => "a").join(" + ");
+      const first = await cli(s, "calc", "add", formula, "--a", "SIG_A");
+      expect(first.code, first.stderr.join("")).toBe(0);
+      const second = await cli(s, "calc", "add", formula, "--a", "SIG_A");
+      expect(second.code, second.stderr.join("")).toBe(0);
+      const third = await cli(s, "calc", "add", formula, "--a", "SIG_A");
+      expect(third.code, third.stderr.join("")).toBe(0);
+      const names: string[] = (await computed(s)).map((d: { name: string }) => d.name);
+      expect(names).toHaveLength(3);
+      for (const n of names) expect(n.length).toBeLessThanOrEqual(60);
+      expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(3);
+      expect(names[0]?.endsWith("\u2026")).toBe(true);
+      expect(names[1]?.endsWith(" 2")).toBe(true);
+      expect(names[2]?.endsWith(" 3")).toBe(true);
+    });
+  });
+
   // spec cli "Refusals and a computed value"
   it("refuses bad calc arguments and reads a computed value", async () => {
     const extra = [

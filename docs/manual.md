@@ -25,7 +25,7 @@ A row shows the short name, unit and an SNA marker; its tooltip is the full DBC 
 
 Stars show in **★ Favourites** atop the list on every vehicle and session; `kipscope fav` changes them from a shell.
 
-**Computed:** select one or two rows, click `+` in **ƒ Computed**, press `Enter`: `abs(a)` or `a - b` goes into the Add to window. Inputs are numeric signals; a formula takes `a`, `b`, numbers, `+ - * /`, `abs`, `min`, `max`. `F2` or ✎ edits; `kipscope calc` works from a shell.
+**Computed:** `+` in **ƒ Computed** opens an editor: pick inputs `a`, `b` and a preset (Difference, Sum, Absolute, Minimum, Maximum, Scale) or your own formula. `Enter` saves it into the Add to target. Selected rows fill `a`, `b` in click order. `F2` or ✎ edits; `kipscope calc` from a shell.
 
 ## Chart a signal
 

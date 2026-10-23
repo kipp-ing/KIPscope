@@ -166,12 +166,16 @@ export function ComputedEditor({
   const onKeyDown = (e: React.KeyboardEvent) => {
     // Keys typed here never reach the app's shortcuts.
     e.stopPropagation();
+    const tag = (e.target as HTMLElement).tagName;
+    // The preset select needs no own case: its open native list consumes Esc (closes only the list,
+    // L4) and Enter (picks) before the page sees them, so Esc or Enter arriving here on the select
+    // means the list is closed and they act as on any other field. Tracking "list open" in a flag
+    // went stale (on macOS) and swallowed the next Esc or Enter.
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
       return;
     }
-    const tag = (e.target as HTMLElement).tagName;
     if (e.key === "Enter" && (tag === "INPUT" || tag === "SELECT")) {
       e.preventDefault();
       save();
@@ -323,6 +327,8 @@ export function SignalPicker({
   const [query, setQuery] = useState<string | undefined>();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const ownRef = useRef<HTMLInputElement>(null);
+  const fieldRef = inputRef ?? ownRef;
   const ids = useId();
   const index = useMemo(() => buildSearchIndex(signals), [signals]);
   const rows = useMemo(
@@ -341,6 +347,15 @@ export function SignalPicker({
     if (s.states !== undefined) return;
     onPick(s.name);
     close();
+  };
+  /**
+   * The arrow opens the list with the focus in this field, so its keys reach this picker: Esc closes
+   * only the list (L4, not the editor), arrows and Enter pick, typing searches. The focus moves
+   * first: blurring another picker closes that one's list.
+   */
+  const openFromArrow = () => {
+    fieldRef.current?.focus();
+    setOpen(true);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -378,7 +393,7 @@ export function SignalPicker({
       <span className="computed-var mono">{label}</span>
       <div className="computed-field">
         <input
-          ref={inputRef}
+          ref={fieldRef}
           type="text"
           className="mono"
           aria-label={`Signal for ${label}`}
@@ -420,7 +435,7 @@ export function SignalPicker({
           tabIndex={-1}
           disabled={disabled}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => (open ? close() : setOpen(true))}
+          onClick={() => (open ? close() : openFromArrow())}
         >
           ▾
         </button>

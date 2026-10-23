@@ -49,6 +49,23 @@ export const ComputedUnit: z.ZodType<string> = z
   .trim()
   .max(MAX_COMPUTED_UNIT)
   .refine(noControl, { message: "no line breaks or control characters" });
+const sameName = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+
+/**
+ * C12: `base`, else `base 2`, `base 3`, … not taken by `others` (trimmed, case-insensitive); the
+ * head cut with "…" so a suffixed name fits MAX_COMPUTED_NAME.
+ */
+export function freeName(base: string, others: readonly { name: string }[]): string {
+  const taken = (n: string) => others.some((d) => sameName(d.name, n));
+  if (!taken(base)) return base;
+  for (let i = 2; ; i++) {
+    const suffix = ` ${i}`;
+    const room = MAX_COMPUTED_NAME - suffix.length;
+    const head = base.length <= room ? base : `${base.slice(0, room - 1)}…`;
+    if (!taken(head + suffix)) return head + suffix;
+  }
+}
+
 /** C6: a signal name as FavouriteName. */
 export const ComputedInput: z.ZodType<string> = FavouriteName;
 
@@ -168,7 +185,7 @@ export interface ComputedSeriesInput {
 }
 
 /** The formula of the current points: null when one is SNA or the result is not finite (C2, Q-4). */
-function rowValue(ast: FormulaNode, a: Point, b: Point | undefined): number | null {
+export function computedRowValue(ast: FormulaNode, a: Point, b: Point | undefined): number | null {
   if (a.v === null || (b !== undefined && b.v === null)) return null;
   const v = evalFormula(ast, a.v, b?.v ?? undefined);
   return Number.isFinite(v) ? v : null;
@@ -185,7 +202,7 @@ export function computeRows(
     // One input: one row per point (the last one where a time repeats).
     a.points.forEach((p, i) => {
       if (a.points[i + 1]?.t === p.t) return;
-      rows.push({ t: p.t, v: rowValue(ast, p, undefined) });
+      rows.push({ t: p.t, v: computedRowValue(ast, p, undefined) });
     });
     return rows;
   }
@@ -202,7 +219,7 @@ export function computeRows(
     while (ia < a.points.length && (a.points[ia] as Point).t === t) curA = a.points[ia++];
     while (ib < b.points.length && (b.points[ib] as Point).t === t) curB = b.points[ib++];
     if (held(curA, a.holdNs, t) && held(curB, b.holdNs, t))
-      rows.push({ t, v: rowValue(ast, curA as Point, curB) });
+      rows.push({ t, v: computedRowValue(ast, curA as Point, curB) });
   }
   return rows;
 }
@@ -257,7 +274,7 @@ export function computedValueAt(
   const bAt = b?.at;
   const at: Point = {
     t: bAt !== undefined && bAt.t > aAt.t ? bAt.t : aAt.t,
-    v: rowValue(ast, aAt, bAt),
+    v: computedRowValue(ast, aAt, bAt),
   };
   let m: bigint | undefined;
   for (const x of inputs) {
@@ -266,7 +283,7 @@ export function computedValueAt(
   let next: Point | undefined;
   if (m !== undefined) {
     const current = (x: ComputedNeighbours) => (x.next?.t === m ? x.next : x.at) as Point;
-    next = { t: m, v: rowValue(ast, current(a), b && current(b)) };
+    next = { t: m, v: computedRowValue(ast, current(a), b && current(b)) };
   }
   const value = evaluateAt(t, mode, at, next, undefined, gaps);
   return { value, at, ...(next && { next }) };

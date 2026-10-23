@@ -395,8 +395,14 @@ body {
 }
 
 .explorer .computed-hint.active {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--bg);
+}
+
+/* Neither the Computed header nor its hint takes the accent fill of an active row (L4): the active
+   header keeps its band, as under the pointer. */
+.explorer .group-head.active[data-computed-head] {
+  background: var(--border);
+  color: var(--label);
 }
 
 .explorer .row .computed-glyph {
@@ -477,6 +483,12 @@ body {
 .signal-card-description {
   margin-top: 2px;
   color: var(--muted);
+}
+
+/* A computed signal's formula with full input names (C12), mono like signal names. */
+.signal-card-formula {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .signal-card-fields {

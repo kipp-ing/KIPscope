@@ -106,9 +106,22 @@ export function selectedInOrder(sel: Selection, items: readonly ExplorerItem[]):
   return [...out];
 }
 
-/** Drops IDs that are no signal item of `items` (after a group closes); keeps the anchor only if kept. */
+/**
+ * Selected IDs that are signal items of `items`, in click order (the insertion order of `sel.ids`;
+ * a Shift range adds its rows in list order), each once (add-computed-signals C12, L2).
+ */
+export function selectedInClickOrder(sel: Selection, items: readonly ExplorerItem[]): string[] {
+  const signals = new Set<string>();
+  for (const it of items) if (it.kind === "signal") signals.add(it.match.signal.id);
+  return [...sel.ids].filter((id) => signals.has(id));
+}
+
+/**
+ * Drops IDs that are no signal item of `items` (after a group closes), keeping click order (L2);
+ * keeps the anchor only if kept.
+ */
 export function pruneSelection(sel: Selection, items: readonly ExplorerItem[]): Selection {
-  const ids = new Set(selectedInOrder(sel, items));
+  const ids = new Set(selectedInClickOrder(sel, items));
   const anchor = sel.anchor !== undefined && ids.has(sel.anchor) ? sel.anchor : undefined;
   return anchor !== undefined ? { ids, anchor } : { ids };
 }

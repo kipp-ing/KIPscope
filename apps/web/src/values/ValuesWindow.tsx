@@ -225,9 +225,21 @@ export function ValuesWindow({
   const diff = cursors.diff;
   // B's column while B is on; Diff adds Δ (D-031).
   const showB = cursors.b !== undefined || diff;
+  // An unavailable computed signal (its inputs are not in the list) sends no request; its row
+  // reads `missing` with the reason, as in the chart legend (add-computed-signals C11).
+  const offOf = (signalId: string) => info(signalId)?.computed?.unavailable;
+  const offKey = w.signals
+    .filter((s) => offOf(s.signalId) !== undefined)
+    .map((s) => s.id)
+    .join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: offKey stands for the unavailable signals
+  const requestable = useMemo(
+    () => w.signals.filter((s) => offOf(s.signalId) === undefined),
+    [w.signals, offKey],
+  );
   const requests = useMemo(
-    () => valueRequests(w.signals, cursors, w.mode),
-    [w.signals, cursors, w.mode],
+    () => valueRequests(requestable, cursors, w.mode),
+    [requestable, cursors, w.mode],
   );
   useEffect(() => loader.update(requests), [loader, requests]);
   const requestOf = new Map(requests.map((r) => [r.key, r]));
@@ -253,8 +265,8 @@ export function ValuesWindow({
   const liveLoader = useMemo(() => new ValueLoader(fetchValue, rerender), []);
   useEffect(() => () => liveLoader.dispose(), [liveLoader]);
   const lRequests = useMemo(
-    () => liveRequests(w.signals, rested, w.mode),
-    [w.signals, rested, w.mode],
+    () => liveRequests(requestable, rested, w.mode),
+    [requestable, rested, w.mode],
   );
   useEffect(() => liveLoader.update(lRequests), [liveLoader, lRequests]);
   // A new scope: every value again, a value next to the old scope's edge may differ (add-scope Z12).
@@ -365,9 +377,14 @@ export function ValuesWindow({
               const slash = s.signalId.indexOf("/");
               const dataRef = s.signalId.slice(0, slash);
               const statusName = meta ? name : s.signalId.slice(slash + 1);
-              const statusA = valueRowStatus(stateA, dataRef, statusName);
-              const statusB = valueRowStatus(stateB, dataRef, statusName);
-              const statusL = valueRowStatus(stateL, dataRef, statusName);
+              const off = offOf(s.signalId);
+              const statusOf = (state: ValueState | undefined): RowStatus =>
+                off !== undefined
+                  ? { text: "missing", title: off, tone: "muted" }
+                  : valueRowStatus(state, dataRef, statusName);
+              const statusA = statusOf(stateA);
+              const statusB = statusOf(stateB);
+              const statusL = statusOf(stateL);
               const missing = [statusA, statusB, statusL].find((x) => x.tone === "muted");
               const unit = meta?.unit;
               const delta = deltaCell(

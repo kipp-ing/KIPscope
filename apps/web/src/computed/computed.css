@@ -19,9 +19,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Every mono field of the editor is 12 px (L4). */
 .computed-editor .mono {
   font-family: var(--font-mono);
-  font-size: var(--name-size);
+  font-size: 12px;
 }
 
 .computed-editor .computed-title {

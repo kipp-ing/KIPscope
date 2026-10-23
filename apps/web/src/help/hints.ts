@@ -141,7 +141,7 @@ export const HINTS = {
   // Computed signals, add-computed-signals (C12).
   computedNew:
     "New computed signal: a formula over one or two signals, filled in from the selection",
-  computedEmpty: "No computed signals yet: click + to build one",
+  computedEmpty: "None yet · + creates one",
   computedEdit: "Edit computed signal: inputs, formula, name and unit · F2",
   /** `name`: the signal's short name (after its first "."). */
   computedNumericOnly: (name: string) => `${name} has states: pick a numeric signal`,

@@ -45,6 +45,7 @@ import {
   pruneSelection,
   type Selection,
   selectClick,
+  selectedInClickOrder,
   selectedInOrder,
 } from "./selection.ts";
 import { shouldClearOnAnswer } from "./starRequest.ts";
@@ -345,8 +346,12 @@ export function SignalExplorer({
 
   // The computed signal editor (C12): opened by the header's +, the hint row, a row's pencil or F2.
   const [editor, setEditor] = useState<EditorOpen | undefined>();
-  /** The ID (`c<n>`) of a definition just created: its row becomes active and is added (Q-8). */
-  const created = useRef<string | undefined>(undefined);
+  /**
+   * The ID (`c<n>`) of a definition just created, until its info is in: then its row becomes active
+   * and it is added (Q-8). State, not a ref, so the order of the HTTP answer and the live push does
+   * not matter: the effect below runs on whichever comes last.
+   */
+  const [created, setCreated] = useState<string | undefined>();
   const asideRef = useRef<HTMLElement>(null);
   const catalogByName = useMemo(() => {
     const byName = new Map<string, SignalInfo>();
@@ -362,12 +367,12 @@ export function SignalExplorer({
     return { left: (aside?.right ?? 0) + 8, top: head?.top ?? aside?.top ?? 0 };
   };
 
-  /** New computed signal, prefilled from the selection in list order (lead pick 2). */
+  /** New computed signal, prefilled from the selection in click order (lead pick 2, L2). */
   const openNew = () => {
     if (!onCommand) return;
     const byId = new Map<string, SignalInfo>();
     for (const it of items) if (it.kind === "signal") byId.set(it.match.signal.id, it.match.signal);
-    const selected = selectedInOrder(selection, items).flatMap((id) => byId.get(id) ?? []);
+    const selected = selectedInClickOrder(selection, items).flatMap((id) => byId.get(id) ?? []);
     const initial = withAuto(prefill(selected), computedDefs ?? [], infoOfName);
     closeCard();
     setEditor({ initial, position: editorPosition() });
@@ -384,26 +389,29 @@ export function SignalExplorer({
 
   const closeEditor = (id?: string) => {
     setEditor(undefined);
-    created.current = id;
+    if (id !== undefined) setCreated(id);
     keepKeys();
   };
 
-  // After a new Save: once its info is in, its row becomes active and it is added to the "Add to"
-  // target window like the row's + (Q-8); a refused add flashes as today and keeps the definition.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the computed infos change
+  // After a new Save, once both the answer (its ID) and the live state (its info) are in, in either
+  // order: its row becomes active and it is added exactly like Enter on a signal row, to the "Add to"
+  // target, with "New window" into a new window (Q-8, L3). A refused add flashes as today and keeps
+  // the definition.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the ID or the computed infos change
   useEffect(() => {
-    const id = created.current;
-    if (id === undefined) return;
-    const info = computed?.find((c) => computedRef(c.id)?.id === id);
+    if (created === undefined) return;
+    const info = computed?.find((c) => computedRef(c.id)?.id === created);
     if (!info) return;
-    created.current = undefined;
+    setCreated(undefined);
     const at = findRow(items, { id: info.id, copy: false }, -1);
     if (at >= 0) {
       setActive(at);
       setSelection(NO_SELECTION);
+      const el = rowElement(at);
+      if (el) scrollToRow(el);
     }
-    if (target !== NEW_WINDOW && !unavailable(info)) onAdd(info, target);
-  }, [computed]);
+    if (!unavailable(info)) onAdd(info, target);
+  }, [created, computed]);
 
   /** The pending star request (F10): the row its click came from and that row's offsetTop then, or
    * no press for the key. The next favourites list keeps that row in place, after the key the active

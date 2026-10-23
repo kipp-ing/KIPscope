@@ -6,10 +6,12 @@ import {
   computedInputIds,
   computedParams,
   computedRef,
+  computedRowValue,
   computedSignalGaps,
   computedSignalId,
   computedValueAt,
   computeRows,
+  freeName,
   holdLimit,
   isComputedId,
   MAX_COMPUTED,
@@ -325,5 +327,61 @@ describe("computed infos", () => {
       [item("car1", "A.X", { unit: "rpm" }), item("car1", "B.Y", { unit: "A" })],
     );
     expect(infos[0]?.unit).toBeUndefined();
+  });
+});
+
+describe("free computed names", () => {
+  const def = (name: string): ComputedDef => ({ id: "c1", name, formula: "a", a: "S.A" });
+
+  it("keeps a free name and numbers a taken one", () => {
+    expect(freeName("abs(SPEED)", [])).toBe("abs(SPEED)");
+    expect(freeName("abs(SPEED)", [def("other")])).toBe("abs(SPEED)");
+    expect(freeName("abs(SPEED)", [def("abs(SPEED)")])).toBe("abs(SPEED) 2");
+    expect(freeName("abs(SPEED)", [def("abs(SPEED)"), def("abs(SPEED) 2")])).toBe("abs(SPEED) 3");
+    // A gap in the numbering is filled from 2 upwards.
+    expect(freeName("x", [def("x"), def("x 3")])).toBe("x 2");
+  });
+
+  it("compares trimmed and ignoring case", () => {
+    expect(freeName("Abs", [def("  abs ")])).toBe("Abs 2");
+    expect(freeName("  ABS  ", [def("abs")])).not.toBe("  ABS  ");
+    expect(freeName("Abs", [def("ABS"), def("abs 2")])).toBe("Abs 3");
+  });
+
+  it("cuts a long name with an ellipsis and stays unique", () => {
+    const base = "x".repeat(MAX_COMPUTED_NAME);
+    expect(base).toHaveLength(60);
+    const second = freeName(base, [def(base)]);
+    expect(second.length).toBeLessThanOrEqual(MAX_COMPUTED_NAME);
+    expect(second).not.toBe(base);
+    expect(second.endsWith("\u2026 2")).toBe(true);
+    const third = freeName(base, [def(base), def(second)]);
+    expect(third.length).toBeLessThanOrEqual(MAX_COMPUTED_NAME);
+    expect(new Set([base, second, third]).size).toBe(3);
+    expect(third.endsWith("\u2026 3")).toBe(true);
+    // Ten and more: the longer suffix still fits.
+    const taken = [base];
+    for (let i = 2; i <= 12; i++) taken.push(freeName(base, taken.map(def)));
+    expect(new Set(taken).size).toBe(12);
+    for (const n of taken) expect(n.length).toBeLessThanOrEqual(MAX_COMPUTED_NAME);
+  });
+});
+
+describe("computed row value", () => {
+  it("is null for SNA and non-finite, else the value", () => {
+    const sub = ast("a - b");
+    expect(computedRowValue(sub, p(1, 10), p(1, 4))).toBe(6);
+    expect(computedRowValue(sub, p(1, null), p(1, 4))).toBeNull();
+    expect(computedRowValue(sub, p(1, 10), p(1, null))).toBeNull();
+    const one = ast("abs(a)");
+    expect(computedRowValue(one, p(1, -2.5), undefined)).toBe(2.5);
+    expect(computedRowValue(one, p(1, null), undefined)).toBeNull();
+    const div = ast("a / b");
+    expect(computedRowValue(div, p(1, 1), p(1, 0))).toBeNull();
+    expect(computedRowValue(div, p(1, 0), p(1, 0))).toBeNull();
+    expect(computedRowValue(div, p(1, -1), p(1, 0))).toBeNull();
+    expect(computedRowValue(div, p(1, 9), p(1, 3))).toBe(3);
+    // Zero is a value, not SNA.
+    expect(computedRowValue(sub, p(1, 5), p(1, 5))).toBe(0);
   });
 });
