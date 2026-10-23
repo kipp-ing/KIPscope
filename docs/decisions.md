@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-107: Formula editor answers (2026-10-23)
+
+Open questions of `improve-formula-editor` (design Q-1, Q-2, Q-4), Jan's answers; Q-3 and Q-5 by the spec owner's picks.
+
+- **Decision:** Q-1 a picked suggestion writes the full signal name. Q-2 `min` and `max` take two or more values (`max(a, b, c, d)`), against the spec owner's pick of two only. Q-4 editing an inner computed signal leaves an outer one's saved name and unit unchanged; its values and formula text follow. Q-3 prefill for three or more selected signals is `X + Y + …`. Q-5 an inner edit that would push an outer signal past 8 source signals is refused, naming it. Lead: the fallback's row cap counts the rows of all inputs of one request together, not per input, so 8 inputs cannot hold 8 × the cap.
+- **Why:** Full names are unambiguous on every vehicle; n-ary min/max map directly to `least`/`greatest`.
+
 ## D-106: Typed formulas with completion, computed signals in computed signals (2026-10-23)
 
 Jan, after testing `add-computed-signals`: „its buatiful. now to make it harder: can we use computed signals in new computed signals? and for ease of use: yes this way is cool, but dated. I dream I just type a signal (like in finder) have dropdown to select, or just enter an abs( or a + and it just works?" On the lead's questions: at most 8 signals, nested ones live, presets and a/b fields gone.
