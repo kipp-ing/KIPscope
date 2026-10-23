@@ -196,7 +196,15 @@ describe("ADX adapter on the emulator", () => {
   it("implements the measured fast paths only", () => {
     const source: SourceAdapter = adapter();
     expect(nativeMethods(source).sort()).toEqual(
-      ["events", "extent", "loggerGaps", "refCount", "series", "stateChanges"].sort(),
+      [
+        "computedSeries",
+        "events",
+        "extent",
+        "loggerGaps",
+        "refCount",
+        "series",
+        "stateChanges",
+      ].sort(),
     );
     for (const name of [
       "ping",
@@ -211,6 +219,7 @@ describe("ADX adapter on the emulator", () => {
       "refCount",
       "loggerGaps",
       "stateChanges",
+      "computedSeries",
       "events",
     ] as const) {
       expect(typeof source[name], name).toBe("function");

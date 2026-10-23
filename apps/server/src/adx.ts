@@ -1,7 +1,9 @@
-import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
+import type { EventRow, FormulaNode, StateRow, Timestamp } from "@kipscope/shared";
 import { DEFAULT_EVENT_MAPPING, type EventMapping, type TableMapping } from "./config.ts";
 import type {
   Bucket,
+  ComputedAnswer,
+  ComputedRef,
   LoggerGaps,
   RawPoint,
   RefBucket,
@@ -14,7 +16,8 @@ import type {
   SourceSignal,
   StateChangeRule,
 } from "./datasource.ts";
-import { type KustoClient, KustoError, type KustoParam, real } from "./kusto.ts";
+import { type KustoClient, KustoError, type KustoParam, real, realLiteral } from "./kusto.ts";
+import type { QueryRunner } from "./queue.ts";
 
 /** A configured name as a KQL identifier, so keywords such as `kind` or `time` work. */
 const q = (name: string) => `['${name.replace(/[\\']/g, "\\$&")}']`;
@@ -24,14 +27,6 @@ const ns = (x: string) => `tolong(${x} - datetime(1970-01-01)) * 100`;
 
 /** Floor grid k * w, also before 1970 (`%` keeps the dividend's sign). */
 const grid = (x: string, w: string) => `${x} - ((${x} % ${w}) + ${w}) % ${w}`;
-
-/** A number the adapter writes into the query itself (SNA ranges, labels, tolerance). */
-function realLiteral(n: number): string {
-  if (Number.isNaN(n)) return "real(nan)";
-  if (n === Number.POSITIVE_INFINITY) return "real(+inf)";
-  if (n === Number.NEGATIVE_INFINITY) return "real(-inf)";
-  return `real(${n.toString()})`;
-}
 
 /**
  * Semantic error SEM0100 (unknown table, column or function) naming `name`; Kusto quotes a
@@ -48,6 +43,59 @@ const long = (value: bigint | number): KustoParam => ({ type: "long", value });
 
 type Params = Record<string, KustoParam>;
 
+/** The largest long: `cr` of a request or chunk that does not chunk (design K-8). */
+const MAX_LONG = 2n ** 63n - 1n;
+
+/** Hold limit of an input without one (design K-8): large enough never to bite. */
+const NO_HOLD = MAX_LONG;
+
+/**
+ * At most this many chunk scans per computed bucket answer (add-adx-computed Q-1, D-110): an open
+ * sends one query per shown signal at once, so 3 chunks leave queue slots for the others.
+ */
+const COMPUTED_CHUNKS = 3;
+
+/** NaN-carrying `min`/`max` (design K-4): Kusto's `min_of` loses NaN depending on argument order. */
+const EXTREMES = `let kmin_ = (a: real, b: real) { iff(isnan(a) or isnan(b), real(nan), min_of(a, b)) };
+       let kmax_ = (a: real, b: real) { iff(isnan(a) or isnan(b), real(nan), max_of(a, b)) };`;
+
+/**
+ * KQL of a parsed formula (design K-7): `column(name)` gives each signal name's column, each
+ * constant becomes a real query parameter `k<n>` in `params`; no text of the formula reaches the
+ * query. n-ary `min`/`max` fold into the `kmin_`/`kmax_` lambdas of EXTREMES, so each argument
+ * appears once and any NaN argument gives NaN (K-4).
+ */
+export function formulaKql(
+  ast: FormulaNode,
+  column: (name: string) => string,
+  params: Record<string, KustoParam>,
+): string {
+  let k = 0;
+  const walk = (node: FormulaNode): string => {
+    switch (node.op) {
+      case "num": {
+        const name = `k${k++}`;
+        params[name] = { type: "real", value: node.value };
+        return name;
+      }
+      case "sig":
+        return column(node.name);
+      case "neg":
+        return `(-${walk(node.arg)})`;
+      case "abs":
+        return `abs(${walk(node.arg)})`;
+      case "min":
+      case "max": {
+        const fn = node.op === "min" ? "kmin_" : "kmax_";
+        return node.args.map(walk).reduce((a, b) => `${fn}(${a}, ${b})`);
+      }
+      default:
+        return `(${walk(node.left)} ${node.op} ${walk(node.right)})`;
+    }
+  };
+  return walk(ast);
+}
+
 /**
  * Azure Data Explorer adapter (design C6) over the Kusto REST client. The configured signals and
  * events names may be tables or stored functions without parameters; all values go in as query
@@ -60,13 +108,19 @@ export class AdxSource implements SourceAdapter {
   private readonly c: TableMapping;
   private readonly e: EventMapping;
   private readonly table: string;
+  /** Input rows above which a computed bucket answer is split into chunks (design K-11). */
+  private readonly computedChunkRows: number;
+  /** Runs each query of `computedSeries`; the query queue once `useQueue` was called (K-12). */
+  private run: QueryRunner = (task, abort) => task(abort);
 
   constructor(
     client: KustoClient,
     mapping: TableMapping,
     events: EventMapping = DEFAULT_EVENT_MAPPING,
+    options: { computedChunkRows?: number } = {},
   ) {
     this.client = client;
+    this.computedChunkRows = options.computedChunkRows ?? 1_000_000;
     this.c = mapping;
     this.e = events;
     this.table = q(mapping.table);
@@ -76,6 +130,11 @@ export class AdxSource implements SourceAdapter {
       table: mapping.table,
       eventsTable: `${mapping.database}.${events.table}`,
     };
+  }
+
+  /** Queues each query of `computedSeries` itself (design K-12). */
+  useQueue(run: QueryRunner): void {
+    this.run = run;
   }
 
   ping(abort: AbortSignal): Promise<void> {
@@ -326,6 +385,168 @@ export class AdxSource implements SourceAdapter {
     if (before) answer.before = toPoint(before);
     if (after) answer.after = toPoint(after);
     return answer;
+  }
+
+  /**
+   * A computed series (design K-1 … K-12): one KQL query counts the inputs' rows in the scan range
+   * and answers rows (count <= `lim`), buckets on the floor grid (count <= `cr`) or the count alone;
+   * a `live` guard at the leaves keeps the dead legs from reading. A `scan` carries each input's
+   * last value (SNA folded in as NaN, K-3) and last time forward over the sorted input rows plus one
+   * seed row per seeded input before `from` (K-1, K-2); the last row per time (`next`), rows where
+   * every input is within its hold limit, and rows at `cs` or later are kept (K-5). `min`/`max`
+   * carry NaN (K-4), a non-finite result is SNA. Signal names, constants, seeds and hold limits are
+   * parameters (K-8); one input takes the same path (K-10). Every query goes through `this.run`, so
+   * each takes its own queue slot (K-12).
+   *
+   * A bucket answer over several inputs with more than `computedChunkRows` rows and a finite hold
+   * limit on every input comes back as the count alone and is split into up to COMPUTED_CHUNKS
+   * chunks at bucket starts (D-110, K-11), sent in parallel with one linked abort; their buckets, in
+   * order, are the answer. Every chunk sends the same text with the request's seeds; a later chunk
+   * reads a lookback of the largest hold limit before its start, clamped to `from`, so no scan
+   * leaves the request (speed-up-computed C-3).
+   */
+  async computedSeries(
+    ref: ComputedRef,
+    from: Timestamp,
+    to: Timestamp,
+    target: number,
+    width: bigint,
+    abort?: AbortSignal,
+  ): Promise<ComputedAnswer> {
+    const { inputs } = ref;
+    const t = q(this.c.time);
+    const sig = q(this.c.signal);
+    const params: Params = {
+      ref: str(ref.dataRef),
+      t0: time(from),
+      t1: time(to),
+      lim: long(target),
+      cs: long(from),
+      w: long(width),
+      ...this.snaParams,
+    };
+    const seeds: string[] = [];
+    const which: string[] = [];
+    const fold: string[] = [];
+    const declare: string[] = [];
+    const step: string[] = [];
+    const held: string[] = [];
+    inputs.forEach((input, i) => {
+      params[`s${i}`] = str(input.name);
+      params[`h${i}`] = long(input.holdNs ?? NO_HOLD);
+      which.push(`${sig} == s${i}, ${i}`);
+      fold.push(`k_ == ${i}, iff(${this.isSna(input)}, real(nan), v_)`);
+      declare.push(`i${i}_v: real, i${i}_t: long`);
+      step.push(
+        `i${i}_v = iff(k_ == ${i}, f_, s_.i${i}_v), i${i}_t = iff(k_ == ${i}, x_, s_.i${i}_t)`,
+      );
+      held.push(`isnotnull(i${i}_t) and x_ - i${i}_t <= h${i}`);
+      const { seed } = input;
+      if (!seed) return;
+      params[`sv${i}`] = { type: "real", value: seed.v ?? 0 };
+      params[`ss${i}`] = long(seed.v === null ? 1 : 0);
+      params[`st${i}`] = long(seed.t);
+      seeds.push(
+        `(print x_ = st${i}, k_ = ${i}, f_ = iff(ss${i} == 1, real(nan), sv${i}) | where live)`,
+      );
+    });
+    const index = new Map(inputs.map((input, i) => [input.name, i]));
+    const formula = formulaKql(ref.ast, (name) => `i${index.get(name)}_v`, params);
+    const names = inputs.map((_, i) => `s${i}`).join(", ");
+    const csl = `${EXTREMES}
+       let in_ = ${this.table} | where ${q(this.c.dataRef)} == ref and ${sig} in (${names})
+           and ${t} >= t0 and ${t} < t1;
+       let cnt_ = toscalar(in_ | count);
+       let rows_ = (live: bool) {
+         union
+           (in_ | where live | extend v_ = todouble(${q(this.c.value)}), k_ = case(${which.join(", ")}, -1)
+               | project x_ = ${ns(t)}, k_, f_ = case(${fold.join(", ")}, real(nan)))${seeds.map((s) => `,\n           ${s}`).join("")}
+         | order by x_ asc
+         | scan declare (${declare.join(", ")}) with (
+             step s_: true => ${step.join(", ")};)
+         | extend nx_ = next(x_)
+         | where (isnull(nx_) or nx_ != x_) and x_ >= cs and ${held.join(" and ")}
+         | extend v0_ = ${formula}
+         | project x_, v_ = iff(isfinite(v0_), v0_, real(null))
+       };
+       union
+         (print k_ = "n", t_ = "", v_ = real(null), c_ = cnt_, m_ = long(null), lo_ = real(null),
+             hi_ = real(null)),
+         (rows_(cnt_ <= lim) | project k_ = "p", t_ = tostring(x_), v_, c_ = long(null),
+             m_ = long(null), lo_ = real(null), hi_ = real(null)),
+         (rows_(cnt_ > lim and cnt_ <= cr)
+             | summarize c_ = countif(isnotnull(v_)), m_ = countif(isnull(v_)), a_ = avgif(v_, isnotnull(v_)),
+                 lo_ = minif(v_, isnotnull(v_)), hi_ = maxif(v_, isnotnull(v_)) by b_ = ${grid("x_", "w")}
+             | project k_ = "k", t_ = tostring(b_), v_ = iff(c_ == 0, real(null), a_), c_, m_,
+                 lo_ = iff(c_ == 0, real(null), lo_), hi_ = iff(c_ == 0, real(null), hi_))
+       | project k_, t_, v_, c_, m_, lo_, hi_`;
+    const query = async (p: Params, signal?: AbortSignal) => {
+      const rows = await this.run((a) => this.client.query(csl, p, a), signal);
+      const [counted, extra] = rows.filter(([k]) => k === "n");
+      if (!counted || extra) throw new Error("the computed query returned no count");
+      return { count: Number(counted[3]), rows };
+    };
+    const buckets = (rows: unknown[][]): Bucket[] =>
+      rows
+        .filter(([k]) => k === "k")
+        .map(([, b, mean, count, sna, min, max]) => ({
+          start: BigInt(b as string),
+          count: Number(count),
+          sna: Number(sna),
+          mean: real(mean),
+          min: real(min),
+          max: real(max),
+        }))
+        .sort((x, y) => (x.start < y.start ? -1 : x.start > y.start ? 1 : 0));
+
+    // K-11: chunks only for several inputs, finite hold limits and at least two buckets.
+    const holds = inputs.map((input) => input.holdNs);
+    const g0 = from - (((from % width) + width) % width);
+    const nb = (to - g0 + width - 1n) / width;
+    const chunkable =
+      inputs.length > 1 && holds.every((h) => h !== undefined && h !== NO_HOLD) && nb >= 2n;
+    params.cr = long(chunkable ? this.computedChunkRows : MAX_LONG);
+    const { count, rows } = await query(params, abort);
+    if (count <= target) {
+      const points = rows
+        .filter(([k]) => k === "p")
+        .map(([, rt, v]): RawPoint => ({ t: BigInt(rt as string), v: real(v) }))
+        .sort((x, y) => (x.t < y.t ? -1 : x.t > y.t ? 1 : 0));
+      return { kind: "raw", points };
+    }
+    if (!chunkable || count <= this.computedChunkRows)
+      return { kind: "buckets", buckets: buckets(rows) };
+
+    // Count only: k chunks on the bucket grid, k lowered to the number of buckets (K-11).
+    let k = Math.min(COMPUTED_CHUNKS, Math.ceil(count / this.computedChunkRows));
+    if (nb < BigInt(k)) k = Number(nb);
+    const lookback = (holds as bigint[]).reduce((a, b) => (b > a ? b : a));
+    const starts = [from];
+    for (let j = 1; j < k; j++) starts.push(g0 + ((BigInt(j) * nb) / BigInt(k)) * width);
+    // K-12: one abort for all chunks, on the caller's abort or the first failing chunk.
+    const local = new AbortController();
+    const signal = abort ? AbortSignal.any([abort, local.signal]) : local.signal;
+    const parts = await Promise.all(
+      starts.map((cs, j) => {
+        const t0 = j > 0 && cs - lookback > from ? cs - lookback : from;
+        const chunk: Params = {
+          ...params,
+          t0: time(t0),
+          t1: time(starts[j + 1] ?? to),
+          lim: long(-1),
+          cr: long(MAX_LONG),
+          cs: long(cs),
+        };
+        return query(chunk, signal).then(
+          (answer) => buckets(answer.rows),
+          (error: unknown) => {
+            local.abort();
+            throw error;
+          },
+        );
+      }),
+    );
+    return { kind: "buckets", buckets: parts.flat() };
   }
 
   async buckets(

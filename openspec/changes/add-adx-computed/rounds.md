@@ -1,0 +1,1 @@
+Round 1 (2026-10-23): done - All 14 scenarios fulfilled (server tests 751, test:adx 91, lint/build green); no UI scenarios in this change (UI user not_run, apps/web unchanged); tasks 1.1-4.3 ticked, 5.1/5.2 stay with the lead; reviewer notes (shared chunk helper, duplicate NO_HOLD sentinel) are could-level only.

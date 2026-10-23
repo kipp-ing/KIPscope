@@ -13,7 +13,7 @@ Write areas (disjoint per task):
 
 ## 1. apps/server/src (round 1)
 
-- [ ] 1.1 Native `computedSeries` on ADX:
+- [x] 1.1 Native `computedSeries` on ADX:
   - `kusto.ts`: `KustoParam` gains `real` (K-8); `paramText` sends `realLiteral` text (move or share the helper from `adx.ts`).
   - `adx.ts`:
     - `formulaKql` (K-7) with the `kmin_`/`kmax_` lambdas (K-4).
@@ -28,17 +28,17 @@ Write areas (disjoint per task):
 
 ## 2. Tests (tester, round 1)
 
-- [ ] 2.1 `adxQueries.test.ts`:
+- [x] 2.1 `adxQueries.test.ts`:
   - "answers a computed series with one query" and "compiles constants, names and seeds as parameters" (adx-source "Computed series in one ADX query", "ADX computed query from the parsed formula"), on the existing `fakeAdapter` / `scriptedAdapter` with the columns of K-9.
   - "lists the native methods" adds `computedSeries` before `events`.
-- [ ] 2.2 `kusto.test.ts`: "sends real parameters" (adx-source "Real parameters").
-- [ ] 2.3 `adx.test.ts`: "implements the measured fast paths only" adds `computedSeries` to the native list and the function loop.
-- [ ] 2.4 `computed.adx.test.ts` (new, in `test:adx` by its name): "computes SNA from row texts natively" (`KMeta` adapter as in `adx.test.ts` "ADX row metadata on the emulator"; native and `coreOnly` through `completeSource`).
-- [ ] 2.5 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`. Report the computed conformance cases per run (`adx native`, `adx core only`, `clickhouse native`, `clickhouse core only`). Every one is green.
+- [x] 2.2 `kusto.test.ts`: "sends real parameters" (adx-source "Real parameters").
+- [x] 2.3 `adx.test.ts`: "implements the measured fast paths only" adds `computedSeries` to the native list and the function loop.
+- [x] 2.4 `computed.adx.test.ts` (new, in `test:adx` by its name): "computes SNA from row texts natively" (`KMeta` adapter as in `adx.test.ts` "ADX row metadata on the emulator"; native and `coreOnly` through `completeSource`).
+- [x] 2.5 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`. Report the computed conformance cases per run (`adx native`, `adx core only`, `clickhouse native`, `clickhouse core only`). Every one is green.
 
 ## 3. apps/server/src (round 2)
 
-- [ ] 3.1 Chunks on ADX as pinned in K-11 and K-12:
+- [x] 3.1 Chunks on ADX as pinned in K-11 and K-12:
   - `computedChunkRows` option (default 1,000,000), `COMPUTED_CHUNKS = 3`, `useQueue`, every `computedSeries` query through `this.run`.
   - `cr` from `chunkable`. On a count-only answer: k chunk queries with the parameters of K-11, in parallel under one linked abort. Their sorted buckets are concatenated in chunk order.
   - The raw answer, the one-input path and requests that are not chunkable send one query as in round 1.
@@ -47,9 +47,9 @@ Write areas (disjoint per task):
 
 ## 4. Tests (tester, round 2)
 
-- [ ] 4.1 `adxQueries.test.ts`: "splits a large computed bucket scan into chunks", "queues each computed ADX query, not the whole call" (spy on `queue.run`, `QueryQueue(8)`), "aborts the other chunks when one fails" (adx-source "Chunked computed scan on ADX").
-- [ ] 4.2 `computed.adx.test.ts`: "chunked buckets equal unchunked ones" (cases a–c) and "keeps the lookback inside the request" (adx-source "ADX chunks read a bounded lookback"; a `KustoClient` subclass or wrapper that records parameters).
-- [ ] 4.3 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`.
+- [x] 4.1 `adxQueries.test.ts`: "splits a large computed bucket scan into chunks", "queues each computed ADX query, not the whole call" (spy on `queue.run`, `QueryQueue(8)`), "aborts the other chunks when one fails" (adx-source "Chunked computed scan on ADX").
+- [x] 4.2 `computed.adx.test.ts`: "chunked buckets equal unchunked ones" (cases a–c) and "keeps the lookback inside the request" (adx-source "ADX chunks read a bounded lookback"; a `KustoClient` subclass or wrapper that records parameters).
+- [x] 4.3 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`.
 
 ## 5. Lead
 

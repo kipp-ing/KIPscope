@@ -8,7 +8,9 @@ export type KustoParam =
   | { type: "datetime"; value: Timestamp }
   | { type: "long"; value: bigint | number }
   /** Sent as `dynamic(<JSON>)`. */
-  | { type: "dynamic"; value: readonly (string | number)[] };
+  | { type: "dynamic"; value: readonly (string | number)[] }
+  /** Sent as `realLiteral(value)`, so NaN and the infinities pass. */
+  | { type: "real"; value: number };
 
 /** A failed Kusto request: the message comes from Kusto (or the transport), never the token. */
 export class KustoError extends Error {
@@ -59,6 +61,14 @@ export function real(cell: unknown): number | null {
   throw new KustoError(`unexpected real cell: ${JSON.stringify(cell)}`);
 }
 
+/** A real in CSL literal form: `real(2.5)`, `real(nan)`, `real(+inf)`, `real(-inf)`. */
+export function realLiteral(n: number): string {
+  if (Number.isNaN(n)) return "real(nan)";
+  if (n === Number.POSITIVE_INFINITY) return "real(+inf)";
+  if (n === Number.NEGATIVE_INFINITY) return "real(-inf)";
+  return `real(${n.toString()})`;
+}
+
 /** Text of a parameter value in `properties.Parameters` (CSL literal form). */
 function paramText(param: KustoParam): string {
   switch (param.type) {
@@ -70,6 +80,8 @@ function paramText(param: KustoParam): string {
       return BigInt(param.value).toString();
     case "dynamic":
       return `dynamic(${JSON.stringify(param.value)})`;
+    case "real":
+      return realLiteral(param.value);
   }
 }
 

@@ -107,6 +107,38 @@ describe("KustoClient request", () => {
     expect(request.headers.Authorization).toBe("Bearer tok");
   });
 
+  it("sends real parameters", async () => {
+    const { fetchImpl, sent } = fakeFetch(() => framesOf([[1]]));
+    const params: Record<string, KustoParam> = {
+      k0: { type: "real", value: 2.5 },
+      k1: { type: "real", value: 1e21 },
+      k2: { type: "real", value: Number.NaN },
+      k3: { type: "real", value: Number.NEGATIVE_INFINITY },
+      k4: { type: "real", value: -3 },
+    };
+    await client(fetchImpl).query("print 1", params);
+    const request = sent[0] as Sent;
+    expect(request.body.csl.split("\n")[0]).toBe(
+      "declare query_parameters(k0:real, k1:real, k2:real, k3:real, k4:real);",
+    );
+    expect(request.body.properties.Parameters).toEqual({
+      k0: "real(2.5)",
+      k1: "real(1e+21)",
+      k2: "real(nan)",
+      k3: "real(-inf)",
+      k4: "real(-3)",
+    });
+    // Positive infinity and zero pass too (a seed value is any number the table holds).
+    await client(fetchImpl).query("print 1", {
+      k5: { type: "real", value: Number.POSITIVE_INFINITY },
+      k6: { type: "real", value: 0 },
+    });
+    expect((sent[1] as Sent).body.properties.Parameters).toEqual({
+      k5: "real(+inf)",
+      k6: "real(0)",
+    });
+  });
+
   it("rounds bounds up to the next tick", async () => {
     // Stored times are multiples of 100 ns, so rounding a bound up keeps every half-open range.
     expect(adxDatetime(B)).toBe("2026-10-05T00:00:00.0000000Z");
