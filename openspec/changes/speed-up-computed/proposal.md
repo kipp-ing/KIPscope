@@ -24,7 +24,7 @@ The lead's direct SQL measurements show where the time goes. The scan takes 3.49
 - **Chunked bucket scan** (round 2, D-110: Jan, „probier mal die stückelung“). This applies to a bucket answer with several inputs and more than 1,000,000 input rows, where every input has a hold limit:
   - The range is split at bucket starts into k = min(3, ceil(count / 1,000,000)) chunks.
   - The chunks are scanned in parallel, each through the query queue.
-  - Later chunks read back by the largest hold limit instead of using seeds.
+  - Later chunks read back by the largest hold limit, never before `from`, and carry the request's seeds.
   - The answer stays identical.
   - The ClickHouse source queues each of its computed queries itself, through a small `useQueue` hook on the adapter.
 - **Speed goal**: the whole recording in ≤ 2 s (lead's curl, reported, not a gate). The 25 min window must be no slower than today's 0.21–0.30 s.
@@ -37,7 +37,7 @@ None.
 
 ### Modified Capabilities
 
-- `computed-signals`: "Chunked bucket scan" and "Chunks read a lookback, not seeds" are added (round 2). "SNA in either input" gains a scenario for SNA and NaN inside `min`/`max`. "ClickHouse in one scan" gets the new query shape in its "Query count" check and the new speed goals.
+- `computed-signals`: "Chunked bucket scan" and "Chunks read a bounded lookback" are added (round 2). "SNA in either input" gains a scenario for SNA and NaN inside `min`/`max`. "ClickHouse in one scan" gets the new query shape in its "Query count" check and the new speed goals.
 
 ## Impact
 

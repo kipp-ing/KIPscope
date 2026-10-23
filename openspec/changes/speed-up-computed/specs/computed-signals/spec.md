@@ -45,7 +45,7 @@ On ClickHouse, a computed bucket answer over several inputs SHALL be split into 
 - **WHEN** the query-counting ClickHouse source with a chunk threshold of 1,000 rows answers a buckets request (count 5,000, `FROM` … `FROM` + 100 s, width 1 s) of `Fast_100h.SIG_A - Fast_100h.SIG_B + Fast_100h.SIG_C` with hold limits of 15 ms each; then the same with no hold limit on `Fast_100h.SIG_C`; then with a count of 50 (raw); then with the default threshold
 - **THEN** the first sends 4 queries: the count and 3 scans.
   - Each scan's SQL contains `{cs:Int64}`, and the `cs` values are `FROM`, `FROM` + 33 s and `FROM` + 66 s.
-  - The scans for the 2nd and 3rd chunks have `from` = `cs` − 15 ms and null `sv0`/`ss0`/`st0`.
+  - The scans for the 2nd and 3rd chunks have `from` = `cs` − 15 ms and the same `sv0`/`ss0`/`st0` as the first.
   - The other three requests send 2 queries each.
 - **Evidence:** `apps/server/test/clickhouse.computed.test.ts` › "splits a large bucket scan into chunks", "does not chunk without hold limits, raw or small"
 
@@ -54,12 +54,21 @@ On ClickHouse, a computed bucket answer over several inputs SHALL be split into 
 - **THEN** the queue's `run` is called 4 times (the count and 3 scans), never once for the whole call
 - **Evidence:** `apps/server/test/queue.test.ts` › "queues each computed query, not the whole call"
 
-### Requirement: Chunks read a lookback, not seeds
-Every chunk after the first SHALL read its inputs from `chunkStart − L`, where L is the largest hold limit of the inputs, and keep only rows at `chunkStart` or later. It uses no seeds and sends no extra query. The first chunk keeps the seeds. The answer SHALL be the chunks' buckets in time order, equal to the unchunked answer. Origin: D-110; equality: a value older than its hold limit gives no row anyway ("Gaps of both inputs"), and D-109 (results stay identical).
+### Requirement: Chunks read a bounded lookback
+Every chunk after the first SHALL read its inputs from max(`chunkStart − L`, `from`), with L the largest hold limit, keep only rows at `chunkStart` or later, and carry the request's seeds. No chunk reads before `from`. The answer SHALL equal the unchunked one, scoped or not. Origin: D-110; never before `from`: D-078 (a scope's start, Z10); equality: D-109 and design C-3.
 
 #### Scenario: Chunked buckets equal unchunked ones
 - **WHEN** against `sdlog.conf_signals`, a ClickHouse source with a chunk threshold of 100 rows and one with the default each answer `Lin.RAMP - Sna.CODE` on `conf-a` over [B, B + 100 s), target 100:
   - (a) with hold limits 30 ms for `Lin.RAMP` and 3 s for `Sna.CODE`, width 10 s (3 chunks split at B + 30 s and B + 60 s)
   - (b) with a hold limit of 500 ms for `Sna.CODE` and 30 ms for `Lin.RAMP`, width 1 s (split at B + 33 s and B + 66 s)
-- **THEN** in each case both answers are deep-equal bucket arrays. (a) has the values of "Ten buckets of 10 s". In (b), bucket B + 33 s has count 51 and sna 0, and bucket B + 45 s has count 0 and sna 51.
+  - (c) with the hold limits of (b) and width 2.5 s. The first split is at B + 32.5 s, between the `Sna.CODE` rows at B + 32 s and B + 33 s, and that chunk's lookback starts exactly at the row at B + 32 s.
+- **THEN** in each case both answers are deep-equal bucket arrays.
+  - (a) has the values of "Ten buckets of 10 s".
+  - In (b), bucket B + 33 s has count 51 and sna 0, and bucket B + 45 s has count 0 and sna 51.
+  - In (c), bucket B + 32.5 s has count 103 and sna 0: the row at B + 32.5 s is held exactly 500 ms, then 51 rows from each of B + 33 s and B + 34 s.
 - **Evidence:** `apps/server/test/clickhouse.chunks.test.ts` › "chunked buckets equal unchunked ones"
+
+#### Scenario: Lookback stays inside the request
+- **WHEN** against `sdlog.conf_signals`, through a client that records each query's parameters, the sources of "Chunked buckets equal unchunked ones" answer `Lin.RAMP - Sna.CODE` on `conf-a` over [B + 20 s, B + 50 s), as a scope starting at B + 20 s would clamp it. Target 100, width 1 s, hold limits 15 s for `Sna.CODE` and 30 ms for `Lin.RAMP`, 3 chunks split at B + 30 s and B + 40 s, so c_1 − L = B + 15 s lies before `from`. Then the query-counting source of "Chunk queries" answers its first request with a hold limit of 40 s on `Fast_100h.SIG_C`.
+- **THEN** the chunked and unchunked answers are deep-equal, and bucket B + 45 s has count 0 and sna 100. No scan has a `from` parameter before B + 20 s: the 2nd chunk's is B + 20 s, the 3rd chunk's B + 25 s, and every chunk has the `sv0`/`ss0`/`st0` of the first. In the counting case the 2nd chunk's scan has `from` = `FROM`.
+- **Evidence:** `apps/server/test/clickhouse.chunks.test.ts` › "keeps the lookback inside the request"; `apps/server/test/clickhouse.computed.test.ts` › "splits a large bucket scan into chunks"

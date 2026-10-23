@@ -36,11 +36,13 @@ Write areas (disjoint per task):
 
 ## 4. apps/server/src (round 2)
 
-- [ ] 4.1 Chunked bucket scan as pinned in design C-1 … C-4 and "Pinned interfaces" (round 2):
+- [ ] 4.1 Chunked bucket scan as pinned in design C-1 … C-4 and "Pinned interfaces" (round 2).
+  - **Reopened, round 3 fix only (reviewer, `clickhouse.ts:531`):** chunk j > 0 scans from max(`c_j − L`, `from`) and carries the request's seeds, like chunk 0 (design C-3). `DataSource = Required<Omit<SourceAdapter, "useQueue">>` as pinned. Verify: "Lookback stays inside the request", "Chunked buckets equal unchunked ones" (c), "Chunk queries".
+  - Round 2 parts, built:
   - `queue.ts`: `QueryRunner`; `queuedAdapter` calls `adapter.useQueue` when present and passes `computedSeries` through unqueued.
   - `datasource.ts`: optional `SourceAdapter.useQueue`.
   - `clickhouse.ts`: constructor option `computedChunkRows` (default 1,000,000), `COMPUTED_CHUNKS = 3`, `useQueue`, every `computedSeries` query through `this.run`.
-  - Bucket path with several inputs, all finite `holdNs` and `count > computedChunkRows`: k chunks at bucket starts (C-2). Chunk j > 0 scans `[c_j − L, c_{j+1})` with null seeds; all chunks use `x >= {cs:Int64}` (C-3). The chunks run in parallel with a linked abort (C-4), and their bucket arrays are concatenated.
+  - Bucket path with several inputs, all finite `holdNs` and `count > computedChunkRows`: k chunks at bucket starts (C-2). Chunk j > 0 scans `[max(c_j − L, from), c_{j+1})` with the request's seeds; all chunks use `x >= {cs:Int64}` (C-3). The chunks run in parallel with a linked abort (C-4), and their bucket arrays are concatenated.
   - The raw answer and the one-input path stay unchanged.
   - Update the `computedSeries` doc comment.
   - Verify: "Chunk queries", "Each chunk takes a queue slot", "Chunked buckets equal unchunked ones", and all round-1 tests green.
@@ -50,6 +52,7 @@ Write areas (disjoint per task):
 - [x] 5.1 `clickhouse.computed.test.ts`: "splits a large bucket scan into chunks" and "does not chunk without hold limits, raw or small" (spec "Chunk queries"). The `counting` helper takes the constructor option.
 - [x] 5.2 `clickhouse.chunks.test.ts` (new, against `sdlog.conf_signals` like the conformance ClickHouse source): "chunked buckets equal unchunked ones", cases (a) and (b) of the spec.
 - [x] 5.3 `queue.test.ts`: "queues each computed query, not the whole call" (spy on `queue.run`). Existing queue tests that expect `computedSeries` queued as one call follow the pinned wiring.
+- [ ] 5.5 Round 3: "Chunked buckets equal unchunked ones" case (c), "keeps the lookback inside the request" (`clickhouse.chunks.test.ts`), and in "splits a large bucket scan into chunks" the seeds equal the first chunk's, plus the 40 s hold case with `from` = `FROM`. Then rerun 5.4.
 - [x] 5.4 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`.
 
 ## 3. Lead (carserver)

@@ -127,16 +127,19 @@ k ≤ 3 comes from the queue: a query below `interactive` takes at most `limit �
 
 With nb ≥ k the boundaries strictly increase and c_1 > from. No bucket spans two chunks, so the buckets of the chunks, concatenated in order, are the buckets of the whole range.
 
-### C-3 Lookback instead of seeds
+### C-3 Bounded lookback, the request's seeds
+
+Round 3 fix, taking the reviewer's finding. Round 2 scanned from `c_j − L`, which can fall before `from`. In a scope, `from` is the scope start, so that scan left the scope (D-078, Z10).
 
 - **Chunk 0:** today's query, with today's seeds and range `[from, c_1)`.
-- **Chunk j > 0:** the same rows query with range `[c_j − L, c_{j+1})`, where L = max(holdNs) over the inputs. Seeds are null (`sv`, `ss`, `st` = NULL). The hold filter adds `x >= {cs:Int64}`, with `cs` = c_j. The same filter with `cs` = from is harmless in chunk 0, so all chunks share one SQL text.
+- **Chunk j > 0:** the same rows query with range `[max(c_j − L, from), c_{j+1})`, where L = max(holdNs) over the inputs. It carries the request's seeds, the same `sv`, `ss` and `st` as chunk 0. The hold filter adds `x >= {cs:Int64}`, with `cs` = c_j. The same filter with `cs` = from is harmless in chunk 0, so all chunks share one SQL text.
 
 The answer is identical:
 
 - At a row x ≥ c_j, an input's last point before c_j − L is older than x − L ≥ x − h_i, so the hold filter drops that row in the unchunked query too.
 - Every point that can be held at x lies in the lookback, so the window holds the same values.
-- If c_j − L < from, the lookback reads rows before `from` directly. Those rows are what the seeds stand for, and older ones are dropped by the same argument.
+- If c_j − L < from, the chunk scans from `from` with the request's seeds, so up to c_j it sees exactly what the unchunked query sees.
+- If c_j − L ≥ from, a seed is older than `from`, and so older than x − L. The hold filter drops it unless a newer row in the lookback replaces it, which is what the unchunked query does too.
 - The last row of a chunk: its next row lies outside the scan, so `nx` = x + 1 and the row is kept, exactly as in the unchunked query.
 
 ### C-4 Parallel through the queue, one abort
@@ -165,6 +168,9 @@ useQueue?(run: QueryRunner): void;
 constructor(client, mapping, timeoutSeconds, events = DEFAULT_EVENT_MAPPING,
             options: { computedChunkRows?: number } = {})   // default 1_000_000
 useQueue(run: QueryRunner): void                            // default runner: (task, abort) => task(abort)
+
+// apps/server/src/datasource.ts: the hook is not a source method
+export type DataSource = Required<Omit<SourceAdapter, "useQueue">>;
 ```
 
 When `adapter.useQueue` exists, `queuedAdapter` calls it with `(task, abort) => queue.run(task, abort)` and passes `computedSeries` through unqueued. Other adapters are queued as today. `main.ts` and `sources.ts` need no change. The query parameter for the chunk start is `{cs:Int64}`.
