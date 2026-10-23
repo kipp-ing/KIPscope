@@ -555,7 +555,7 @@ describe("gap info of a work window (add-case-open)", () => {
   });
 });
 
-describe("gap signals of a workspace with computed signals (add-computed-signals)", () => {
+describe("gap signals of a workspace with computed signals (improve-formula-editor)", () => {
   const timeseries = (id: string, ids: string[]): Workspace["windows"][number] => ({
     id,
     kind: "timeseries",
@@ -566,8 +566,11 @@ describe("gap signals of a workspace with computed signals (add-computed-signals
   const base: Workspace = {
     ...EMPTY_WORKSPACE,
     computed: [
-      { id: "c1", name: "Diff", formula: "a - b", a: "Cyc", b: "Odd" },
-      { id: "c2", name: "Abs", formula: "abs(a)", a: "Odd" },
+      { id: "c1", name: "Diff", formula: "Cyc - Odd" },
+      { id: "c2", name: "Abs", formula: "abs(Odd)" },
+      { id: "c3", name: "Outer", formula: "abs(Diff) + Evt" },
+      { id: "c4", name: "Loop", formula: "Loop2 + 1" },
+      { id: "c5", name: "Loop2", formula: "Loop + 1" },
     ],
   };
 
@@ -583,6 +586,30 @@ describe("gap signals of a workspace with computed signals (add-computed-signals
     expect(ids.some((id) => id.includes("=c"))).toBe(false);
     // Each ID once.
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // spec computed-signals "Parameters and gap signals": nested sources
+  it("lists the sources of a nested computed ID", () => {
+    const ws: Workspace = { ...base, windows: [timeseries("w1", ["car/=c3"])] };
+    const ids = workspaceSignals(ws);
+    expect([...ids].sort()).toEqual(["car/Cyc", "car/Evt", "car/Odd"]);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Nested ones on another data ref resolve there, and a shared source is listed once.
+    const both: Workspace = {
+      ...base,
+      windows: [timeseries("w1", ["other/=c3", "other/=c1", "car/Cyc"])],
+    };
+    expect([...workspaceSignals(both)].sort()).toEqual([
+      "car/Cyc",
+      "other/Cyc",
+      "other/Evt",
+      "other/Odd",
+    ]);
+  });
+
+  it("lists nothing for computed IDs in a cycle", () => {
+    const ws: Workspace = { ...base, windows: [timeseries("w1", ["car/=c4", "car/Cyc"])] };
+    expect(workspaceSignals(ws)).toEqual(["car/Cyc"]);
   });
 
   it("resolves the inputs on the computed ID's own data ref", () => {

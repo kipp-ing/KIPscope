@@ -542,8 +542,9 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     },
     [toStrip],
   );
-  const command = useCallback(
-    async (input: CommandInput): Promise<CommandResult> => {
+  /** Sends a command and shows its result in the strip; `quiet` keeps a refusal out of it. */
+  const dispatch = useCallback(
+    async (input: CommandInput, quiet: boolean): Promise<CommandResult> => {
       preload.cancel();
       const shown = resultNotice.current;
       if (shown !== undefined) {
@@ -560,12 +561,16 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
             return s && shownName(s);
           })
         : resultStripEvents(result, open);
-      showResult(events);
+      showResult(quiet && !result.ok ? [] : events);
       if (endsOpenNote(input, result)) setOpenNote(undefined);
       return result;
     },
     [toStrip, showResult, preload],
   );
+  const command = useCallback((input: CommandInput) => dispatch(input, false), [dispatch]);
+  // The computed editor shows its refusals in its own error line (improve-formula-editor F11), so
+  // none reaches the strip: no chip outlives the editor or shows beside the next one.
+  const editorCommand = useCallback((input: CommandInput) => dispatch(input, true), [dispatch]);
   // A case step or go on its way (design DW4): the session bar shows its target's slots at once,
   // the progress line and the strip's skeleton bars run until the result's revision is rendered
   // (Acknowledger.onRendered) or the command is refused.
@@ -1658,7 +1663,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         favourites={live.favourites}
         computed={computed}
         computedDefs={computedDefs ?? []}
-        onCommand={command}
+        onCommand={editorCommand}
       >
         <EventsPanel
           list={stripList}

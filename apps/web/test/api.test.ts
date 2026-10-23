@@ -91,9 +91,9 @@ describe("sendCommand", () => {
   });
 });
 
-describe("computed requests (add-computed-signals)", () => {
-  const C7 = { id: "c7", name: "Diff", formula: "a - b", a: "A.X", b: "B.Y" };
-  const ONE = { id: "c8", name: "Abs", formula: "abs(a)", a: "A.X" };
+describe("computed requests (improve-formula-editor)", () => {
+  const C7 = { id: "c7", name: "Diff", formula: "A.X - B.Y" };
+  const C8 = { id: "c8", name: "AbsDiff", formula: "abs(Diff)" };
 
   /** Stubs fetch with an empty answer and records the request URLs. */
   function recording() {
@@ -112,44 +112,48 @@ describe("computed requests (add-computed-signals)", () => {
 
   // spec computed-signals "Parameters and gap signals"
   it("adds the formula to computed requests", async () => {
-    setComputedDefs([C7, ONE]);
+    setComputedDefs([C7, C8]);
     const urls = recording();
     const abort = new AbortController().signal;
 
-    await fetchSeries({ signalId: "car/=c7", from: "0", to: "1000", target: 257 }, abort);
+    await fetchSeries({ signalId: "car/=c8", from: "0", to: "1000", target: 257 }, abort);
     await fetchCursorValue("other/=c7", "500", "step", abort);
-    await fetchExtent("car/=c7", { abort });
+    await fetchExtent("car/=c8", { abort });
     const [series, value, extent] = urls as [URL, URL, URL];
-    // The definition's formula and inputs, URL-encoded; the signal ID stays as asked.
+    // The flattened formula over source signals, URL-encoded; the signal ID stays as asked.
     expect(series.pathname).toBe("/api/series");
-    expect(series.search).toContain("formula=a+-+b");
-    expect(series.searchParams.get("signal")).toBe("car/=c7");
-    expect(series.searchParams.get("formula")).toBe("a - b");
-    expect(series.searchParams.get("a")).toBe("A.X");
-    expect(series.searchParams.get("b")).toBe("B.Y");
+    expect(series.searchParams.get("signal")).toBe("car/=c8");
+    expect(series.searchParams.get("formula")).toBe("abs(A.X - B.Y)");
+    expect(series.search).toContain("formula=abs%28A.X+-+B.Y%29");
+    // a and b are gone.
+    for (const name of ["a", "b"]) expect(series.searchParams.has(name)).toBe(false);
     // By the `=<id>` part: another session's data ref gets the same parameters.
     expect(value.pathname).toBe("/api/value");
-    expect(value.search).toContain("formula=a+-+b");
     expect(value.searchParams.get("signal")).toBe("other/=c7");
-    expect(value.searchParams.get("a")).toBe("A.X");
-    expect(value.searchParams.get("b")).toBe("B.Y");
+    expect(value.searchParams.get("formula")).toBe("A.X - B.Y");
     expect(value.searchParams.get("mode")).toBe("step");
+    for (const name of ["a", "b"]) expect(value.searchParams.has(name)).toBe(false);
     expect(extent.pathname).toBe("/api/extent");
-    expect(extent.searchParams.get("formula")).toBe("a - b");
-    expect(extent.searchParams.get("b")).toBe("B.Y");
-
-    // A one-input definition sends no b.
-    await fetchSeries({ signalId: "car/=c8", from: "0", to: "1000", target: 257 }, abort);
-    const one = urls[3] as URL;
-    expect(one.searchParams.get("formula")).toBe("abs(a)");
-    expect(one.searchParams.get("a")).toBe("A.X");
-    expect(one.searchParams.has("b")).toBe(false);
+    expect(extent.searchParams.get("formula")).toBe("abs(A.X - B.Y)");
+    for (const name of ["a", "b"]) expect(extent.searchParams.has(name)).toBe(false);
 
     // A plain signal carries none of them.
     await fetchSeries({ signalId: "car/A.X", from: "0", to: "1000", target: 257 }, abort);
-    const plain = urls[4] as URL;
+    const plain = urls[3] as URL;
     for (const name of ["formula", "a", "b"]) expect(plain.searchParams.has(name)).toBe(false);
-    expect(urls).toHaveLength(5);
+    expect(urls).toHaveLength(4);
+  });
+
+  it("flattens nested definitions with quoted names and constants", async () => {
+    setComputedDefs([C7, C8, { id: "c9", name: "Plus", formula: 'abs(Diff) + "AbsDiff" * 2' }]);
+    const urls = recording();
+    await fetchSeries(
+      { signalId: "car/=c9", from: "0", to: "1000", target: 257 },
+      new AbortController().signal,
+    );
+    expect((urls[0] as URL).searchParams.get("formula")).toBe(
+      "abs(A.X - B.Y) + abs(A.X - B.Y) * 2",
+    );
   });
 
   it("rejects a computed ID without a definition and sends nothing", async () => {
@@ -180,6 +184,25 @@ describe("computed requests (add-computed-signals)", () => {
       (e: unknown) => e,
     );
     expect(gone).toMatchObject({ code: "unknown_computed" });
+    expect(urls).toEqual([]);
+  });
+
+  it("rejects a definition that does not flatten and sends nothing", async () => {
+    // A cycle (c1 uses c2 uses c1) cannot be sent.
+    setComputedDefs([
+      { id: "c1", name: "P", formula: "Q + 1" },
+      { id: "c2", name: "Q", formula: "P + 1" },
+    ]);
+    const urls = recording();
+    const error = await fetchSeries(
+      { signalId: "car/=c1", from: "0", to: "1000", target: 257 },
+      new AbortController().signal,
+    ).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({ code: "unknown_computed" });
     expect(urls).toEqual([]);
   });
 });

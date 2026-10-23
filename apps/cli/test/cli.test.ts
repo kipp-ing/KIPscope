@@ -13,9 +13,11 @@ import {
 } from "@kipscope/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SourceAdapter, SourceSignal } from "../../server/src/datasource.ts";
+import { NO_RULES } from "../../server/src/names.ts";
 import { oidcAdapter, tokenClaims } from "../../server/test/identity/oidcKit.ts";
 import { type JwksServer, jwksServer, makeKey, signToken } from "../../server/test/jwks.ts";
 import { testSource } from "../../server/test/testdb.ts";
+import { type EditorContext, formulaNames, withAuto } from "../../web/src/computed/editor.ts";
 import { parseArgs } from "../src/args.ts";
 import type { EventListData } from "../src/output.ts";
 import { eventTable } from "../src/output.ts";
@@ -56,7 +58,7 @@ afterAll(() => h.close());
 /** A fresh server per test body, closed afterwards. */
 async function withServer<T>(
   fn: (s: Harness) => Promise<T>,
-  options?: { loadCatalog?: boolean; extra?: readonly SourceSignal[] },
+  options?: Parameters<typeof startServer>[0],
 ): Promise<T> {
   const s = await startServer(options);
   try {
@@ -2220,7 +2222,7 @@ describe("favourites (add-favourites F11)", () => {
   });
 });
 
-describe("computed signals (add-computed-signals C13)", () => {
+describe("computed signals (improve-formula-editor F13)", () => {
   /** The workspace scoped to testcar, as the spec's scenarios want it. */
   async function scoped(s: Harness) {
     const set = await cli(
@@ -2235,6 +2237,8 @@ describe("computed signals (add-computed-signals C13)", () => {
   }
   const computed = async (s: Harness) => (await cli(s, "calc", "list")).out.data.computed;
   const posts = (s: Harness) => s.requests.filter((r) => r.startsWith("POST")).length;
+  const SIG_A = "Fast_100h.SIG_A";
+  const SPEED = "Sna_800h.SPEED";
 
   // spec cli "Add, list, edit, remove over HTTP"
   it("adds, lists, edits and removes computed signals", async () => {
@@ -2244,65 +2248,151 @@ describe("computed signals (add-computed-signals C13)", () => {
       expect(empty.code).toBe(0);
       expect(empty.out.data.computed).toEqual([]);
 
-      const added = await cli(s, "calc", "add", "a - b", "--a", "SIG_A", "--b", "speed");
+      // Short names, typed as the user would; the stored formula has full names.
+      const added = await cli(s, "calc", "add", "SIG_A - speed");
       expect(added.code, added.stderr.join("")).toBe(0);
       expect(added.out.ok).toBe(true);
       expect(added.out.command).toMatchObject({
         type: "computed.add",
         name: "SIG_A \u2212 SPEED",
-        formula: "a - b",
-        a: "Fast_100h.SIG_A",
-        b: "Sna_800h.SPEED",
+        formula: `${SIG_A} - ${SPEED}`,
       });
       const id: string = added.out.created;
       expect(id).toMatch(/^c\d+$/);
+
+      // A nested one through a quoted name (U+2212 inside the quotes).
+      const outer = await cli(s, "calc", "add", 'abs("SIG_A \u2212 SPEED")');
+      expect(outer.code, outer.stderr.join("")).toBe(0);
+      const outerId: string = outer.out.created;
+      expect(outer.out.command).toMatchObject({
+        name: "abs(SIG_A \u2212 SPEED)",
+        formula: 'abs("SIG_A \u2212 SPEED")',
+      });
+
+      // Units are inferred from the units of the inputs (rpm and km/h: none).
       expect(await computed(s)).toEqual([
-        {
-          id,
-          name: "SIG_A \u2212 SPEED",
-          formula: "a - b",
-          a: "Fast_100h.SIG_A",
-          b: "Sna_800h.SPEED",
-        },
+        { id, name: "SIG_A \u2212 SPEED", formula: `${SIG_A} - ${SPEED}` },
+        { id: outerId, name: "abs(SIG_A \u2212 SPEED)", formula: 'abs("SIG_A \u2212 SPEED")' },
       ]);
 
-      // Edit by name (ignoring case): a new ID, the stored parts kept, b dropped.
+      // The inner one is used: refused, naming the user; nothing changes.
+      const revision = await revisionOf(s);
+      const refused = await cli(s, "calc", "rm", "SIG_A \u2212 SPEED");
+      expect(refused.code).toBe(1);
+      expect(refused.out.error.code).toBe("computed_in_use");
+      expect(refused.out.error.message).toContain('used by: "abs(SIG_A \u2212 SPEED)"');
+      expect(await revisionOf(s)).toBe(revision);
+
+      // Edit the outer one by name (ignoring case): a new ID, name and formula replaced.
       const edited = await cli(
         s,
         "calc",
         "edit",
-        "sig_a \u2212 speed",
+        "ABS(sig_a \u2212 speed)",
         "--formula",
-        "abs(a)",
-        "--no-b",
+        "SIG_A * 2",
         "--name",
-        "Abs",
+        "Twice",
       );
       expect(edited.code, edited.stderr.join("")).toBe(0);
       const next: string = edited.out.created;
       expect(next).toMatch(/^c\d+$/);
-      expect(next).not.toBe(id);
+      expect(next).not.toBe(outerId);
       const after = await computed(s);
-      expect(after).toEqual([{ id: next, name: "Abs", formula: "abs(a)", a: "Fast_100h.SIG_A" }]);
-      expect("b" in after[0]).toBe(false);
+      expect(after).toHaveLength(2);
+      expect(after.find((d: { name: string }) => d.name === "Twice")).toMatchObject({
+        id: next,
+        formula: `${SIG_A} * 2`,
+      });
+      expect(JSON.stringify(after)).not.toContain('"a"');
 
       // Edit by ID: only the unit changes; name and formula stay as stored.
       const unit = await cli(s, "calc", "edit", next, "--unit", "V");
       expect(unit.code, unit.stderr.join("")).toBe(0);
-      expect((await computed(s))[0]).toMatchObject({ name: "Abs", formula: "abs(a)", unit: "V" });
+      const twice = (await computed(s)).find((d: { name: string }) => d.name === "Twice");
+      expect(twice).toMatchObject({ name: "Twice", formula: `${SIG_A} * 2`, unit: "V" });
 
-      // Remove by name; the list is empty again.
-      const removed = await cli(s, "calc", "rm", "Abs");
-      expect(removed.code, removed.stderr.join("")).toBe(0);
+      // Remove both; the list is empty again.
+      expect((await cli(s, "calc", "rm", "Twice")).code).toBe(0);
+      expect((await cli(s, "calc", "rm", "SIG_A \u2212 SPEED")).code).toBe(0);
       expect(await computed(s)).toEqual([]);
     });
+  });
+
+  // The CLI and the editor derive one default name and unit (F7, F13), also for a source with a displayName.
+  it("names a calc add like the editor does, for a source with a displayName", async () => {
+    const rules = {
+      ...NO_RULES,
+      rename: new Map([["Sna_800h.SPEED", "Vehicle.Ground speed"]]),
+    };
+    await withServer(
+      async (s) => {
+        await scoped(s);
+        const speed = s.catalog.get("testcar/Sna_800h.SPEED");
+        // The rename took: this source has a displayName, so the case is not vacuous.
+        expect(speed?.displayName).toBe("Vehicle.Ground speed");
+        const items = ["Sna_800h.SPEED", "Fast_100h.SIG_A", "Sna_800h.RPM"].map(
+          (n) => s.catalog.get(`testcar/${n}`) as NonNullable<typeof speed>,
+        );
+        for (const typed of [
+          "abs(Sna_800h.SPEED)",
+          "Sna_800h.SPEED * 2",
+          "Fast_100h.SIG_A - Sna_800h.SPEED",
+          "min(Sna_800h.SPEED, Sna_800h.RPM)",
+        ]) {
+          const ctx: EditorContext = { names: formulaNames(items, []), defs: [] };
+          const editor = withAuto(
+            { formula: typed, name: "", unit: "", nameAuto: true, unitAuto: true },
+            ctx,
+          );
+          expect(editor.name, typed).not.toBe("");
+          const added = await cli(s, "calc", "add", typed);
+          expect(added.code, `${typed}: ${added.stderr.join("")}`).toBe(0);
+          const command = added.out.command as { name: string; unit?: string };
+          expect(command.name, typed).toBe(editor.name);
+          expect(command.unit ?? "", typed).toBe(editor.unit);
+          // The editor numbers a taken name like the CLI: a second add of the same text.
+          const defs = (await computed(s)) as { id: string; name: string; formula: string }[];
+          const again = withAuto(
+            { formula: typed, name: "", unit: "", nameAuto: true, unitAuto: true },
+            { names: formulaNames(items, defs), defs },
+          );
+          const twice = await cli(s, "calc", "add", typed);
+          expect(twice.code, twice.stderr.join("")).toBe(0);
+          expect((twice.out.command as { name: string }).name, `${typed} again`).toBe(again.name);
+        }
+      },
+      { rules },
+    );
+  });
+
+  // spec F7: the default name is made from the technical name's short form, never from the displayName.
+  it("derives the default calc name from the technical name, not the displayName", async () => {
+    const rules = {
+      ...NO_RULES,
+      rename: new Map([["Sna_800h.SPEED", "Vehicle.Ground speed"]]),
+    };
+    await withServer(
+      async (s) => {
+        await scoped(s);
+        // The rename took: the shown name differs from the technical one.
+        expect(s.catalog.get("testcar/Sna_800h.SPEED")?.displayName).toBe("Vehicle.Ground speed");
+        const added = await cli(s, "calc", "add", "abs(Sna_800h.SPEED)");
+        expect(added.code, added.stderr.join("")).toBe(0);
+        const name = (added.out.command as { name: string }).name;
+        expect(name).toBe("abs(SPEED)");
+        expect(name).not.toContain("Ground speed");
+        expect((await computed(s)).map((d: { name: string }) => d.name)).toEqual(["abs(SPEED)"]);
+      },
+      { rules },
+    );
   });
 
   it("numbers a taken auto name", async () => {
     await withServer(async (s) => {
       await scoped(s);
-      const first = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
-      const second = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+      const first = await cli(s, "calc", "add", "abs(speed)");
+      const second = await cli(s, "calc", "add", "abs(speed)");
       expect(first.code, first.stderr.join("")).toBe(0);
       expect(second.code, second.stderr.join("")).toBe(0);
       expect((await computed(s)).map((d: { name: string }) => d.name)).toEqual([
@@ -2315,14 +2405,12 @@ describe("computed signals (add-computed-signals C13)", () => {
   it("keeps a very long auto name within 60 characters and numbers a repeat", async () => {
     await withServer(async (s) => {
       await scoped(s);
-      // 30 terms of the long signal name: the auto name is far over 60 characters.
-      const formula = Array.from({ length: 30 }, () => "a").join(" + ");
-      const first = await cli(s, "calc", "add", formula, "--a", "SIG_A");
-      expect(first.code, first.stderr.join("")).toBe(0);
-      const second = await cli(s, "calc", "add", formula, "--a", "SIG_A");
-      expect(second.code, second.stderr.join("")).toBe(0);
-      const third = await cli(s, "calc", "add", formula, "--a", "SIG_A");
-      expect(third.code, third.stderr.join("")).toBe(0);
+      // 25 terms of the signal: the auto name is far over 60 characters, the formula within 500.
+      const formula = Array.from({ length: 25 }, () => "SIG_A").join(" + ");
+      for (let i = 0; i < 3; i++) {
+        const r = await cli(s, "calc", "add", formula);
+        expect(r.code, r.stderr.join("")).toBe(0);
+      }
       const names: string[] = (await computed(s)).map((d: { name: string }) => d.name);
       expect(names).toHaveLength(3);
       for (const n of names) expect(n.length).toBeLessThanOrEqual(60);
@@ -2345,21 +2433,21 @@ describe("computed signals (add-computed-signals C13)", () => {
         const revision = await revisionOf(s);
         const sent = posts(s);
 
-        const badFormula = await cli(s, "calc", "add", "a - c", "--a", "SIG_A");
-        expect(badFormula.code).toBe(1);
-        expect(badFormula.out).toMatchObject({ ok: false, error: { code: "invalid_formula" } });
-        expect(badFormula.out.error.message).toContain('Unknown name "c"');
+        const unknownSignal = await cli(s, "calc", "add", "SIG_A - nope");
+        expect(unknownSignal.code).toBe(1);
+        expect(unknownSignal.out.error.code).toBe("unknown_signal");
 
-        const ambiguous = await cli(s, "calc", "add", "a", "--a", "temp");
+        const ambiguous = await cli(s, "calc", "add", "temp + 1");
         expect(ambiguous.code).toBe(1);
         expect(ambiguous.out.error).toMatchObject({
           code: "ambiguous_signal",
           candidates: ["Sna_800h.TEMP", "Tmp_A21h.TEMP"],
         });
 
-        const unknownSignal = await cli(s, "calc", "add", "a", "--a", "NOPE");
-        expect(unknownSignal.code).toBe(1);
-        expect(unknownSignal.out.error.code).toBe("unknown_signal");
+        const badFormula = await cli(s, "calc", "add", "SIG_A %");
+        expect(badFormula.code).toBe(1);
+        expect(badFormula.out).toMatchObject({ ok: false, error: { code: "invalid_formula" } });
+        expect(badFormula.out.error.message).toContain('Unexpected "%" at 7');
 
         const unknown = await cli(s, "calc", "rm", "Nope");
         expect(unknown.code).toBe(1);
@@ -2368,12 +2456,22 @@ describe("computed signals (add-computed-signals C13)", () => {
           "unknown_computed",
         );
 
+        // The old forms are plain unknown-option usage errors (D-108); nothing is sent.
+        for (const [args, option] of [
+          [["calc", "add", "a - b", "--a", "SIG_A", "--b", "speed"], "--a"],
+          [["calc", "edit", "Nope", "--no-b"], "--no-b"],
+        ] as [string[], string][]) {
+          const old = await cli(s, ...args);
+          expect(old.code, args.join(" ")).toBe(2);
+          expect(old.stderr.join(""), args.join(" ")).toContain(`unknown option ${option}`);
+        }
+
         // Nothing was sent, the state's revision is as it was.
         expect(await revisionOf(s)).toBe(revision);
         expect(posts(s)).toBe(sent);
 
         // A computed value: abs(SPEED) at T0 + 1.05 s, between the points 10 and 11.
-        const added = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+        const added = await cli(s, "calc", "add", "abs(speed)");
         expect(added.code, added.stderr.join("")).toBe(0);
         const id = added.out.created as string;
         const t = String(T0 + 1_050_000_000n);
@@ -2383,9 +2481,24 @@ describe("computed signals (add-computed-signals C13)", () => {
           signalId: `testcar/=${id}`,
           value: { kind: "interpolated", value: 10.5 },
         });
-        // The definition's parameters went along with the request.
-        const request = s.requests.filter((r) => r.startsWith("GET /api/value")).at(-1);
-        expect(request).toBeDefined();
+        // The flattened formula went along with the request, a and b did not.
+        const request = s.urls.filter((r) => r.startsWith("GET /api/value")).at(-1) ?? "";
+        const decoded = decodeURIComponent(request.replaceAll("+", " "));
+        expect(decoded).toContain(`formula=abs(${SPEED})`);
+        expect(decoded).not.toMatch(/[?&][ab]=/);
+
+        // A nested one: the outer formula is flattened before it is sent.
+        const double = await cli(s, "calc", "add", "speed * 2");
+        expect(double.code, double.stderr.join("")).toBe(0);
+        const outer = await cli(s, "calc", "add", 'abs("SPEED \u00d7 2")');
+        expect(outer.code, outer.stderr.join("")).toBe(0);
+        const nested = await cli(s, "value", `testcar/=${outer.out.created}`, t);
+        expect(nested.code, nested.stderr.join("")).toBe(0);
+        expect(nested.out.data).toMatchObject({ value: { kind: "interpolated", value: 21 } });
+        const nestedRequest = s.urls.filter((r) => r.startsWith("GET /api/value")).at(-1) ?? "";
+        expect(decodeURIComponent(nestedRequest.replaceAll("+", " "))).toContain(
+          `formula=abs(${SPEED} * 2)`,
+        );
 
         // The extent of a one-input computed signal is its input's.
         const extent = await cli(s, "extent", `testcar/=${id}`);
@@ -2409,7 +2522,7 @@ describe("computed signals (add-computed-signals C13)", () => {
   it("adds a computed ID to a window like any signal", async () => {
     await withServer(async (s) => {
       await scoped(s);
-      const added = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+      const added = await cli(s, "calc", "add", "abs(speed)");
       const id = added.out.created as string;
       const w = await cli(
         s,

@@ -152,15 +152,19 @@ Favourites (your starred signals, by name on every vehicle and workspace):
                                    list is stored as given, with a warning)
   fav rm NAME...                   (a favourite, its part after the first ".", or a full ID)
 
-Computed signals (formulas of one or two signals, stored in the workspace):
+Computed signals (formulas of up to 8 signals, stored in the workspace):
   calc list
-  calc add FORMULA --a SIGNAL [--b SIGNAL] [--name NAME] [--unit UNIT]
-                                   (FORMULA: a, b, numbers, + - * / ( ), abs, min, max, e.g.
-                                   "a - b"; NAME and UNIT default to the auto name and unit)
-  calc edit ID|NAME [--formula F] [--a SIGNAL] [--b SIGNAL | --no-b] [--name NAME]
-            [--unit UNIT]
+  calc add FORMULA [--name NAME] [--unit UNIT]
+                                   (FORMULA: signal and computed names, numbers, + - * / ( ),
+                                   abs(x), min(x, y, ...), max(x, y, ...), e.g.
+                                   "abs(DNMOT - PNHV_SupBat_Curr)"; a name is a full name, its
+                                   part after the first "." when unique, or a computed signal's
+                                   name; other names in double quotes; NAME and UNIT default to
+                                   the auto name and unit)
+  calc edit ID|NAME [--formula F] [--name NAME] [--unit UNIT]
                                    (replaces the given parts; prints the new ID as created)
-  calc rm ID|NAME                  (ID: c7 as in calc list; NAME ignoring case)
+  calc rm ID|NAME                  (ID: c7 as in calc list; NAME ignoring case; refused while
+                                   another computed signal uses it)
 
 Options (anywhere on the line; "--" ends options):
   --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER});
@@ -210,8 +214,6 @@ const VALUE_OPTIONS = new Set([
   "--workspace",
   "--token",
   "--formula",
-  "--a",
-  "--b",
   "--unit",
 ]);
 const FLAG_OPTIONS = new Set([
@@ -224,7 +226,6 @@ const FLAG_OPTIONS = new Set([
   "--overwrite",
   "--open",
   "--trim",
-  "--no-b",
 ]);
 const GLOBAL_OPTIONS = new Set([
   "--server",
@@ -719,38 +720,29 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       return { kind: "calc", action: "list" };
     case "calc add": {
       if (args.length === 0) usage("calc add needs a FORMULA (see --help)");
-      const opt = take(1, ["--a", "--b", "--name", "--unit"]);
-      const [a, b, name, unit] = ["--a", "--b", "--name", "--unit"].map(opt);
-      if (a === undefined) usage("calc add needs --a SIGNAL (see --help)");
-      if (a === "" || b === "") usage("SIGNAL is empty");
+      const opt = take(1, ["--name", "--unit"]);
+      const [name, unit] = ["--name", "--unit"].map(opt);
       return {
         kind: "calc",
         action: "add",
         formula: arg(0),
-        a,
-        ...(b !== undefined && { b }),
         ...(name !== undefined && { name }),
         ...(unit !== undefined && { unit }),
       };
     }
     case "calc edit": {
-      const parts = ["--formula", "--a", "--b", "--name", "--unit"];
+      const parts = ["--formula", "--name", "--unit"];
       if (args.length === 0) usage("calc edit needs an ID or NAME (see --help)");
-      const opt = take(1, [...parts, "--no-b"]);
-      const [formula, a, b, name, unit] = parts.map(opt);
-      if (b !== undefined && opts.has("--no-b")) usage("--b and --no-b exclude each other");
-      if (a === "" || b === "") usage("SIGNAL is empty");
-      if (!opts.has("--no-b") && [formula, a, b, name, unit].every((p) => p === undefined)) {
-        usage("calc edit needs --formula, --a, --b, --no-b, --name or --unit");
+      const opt = take(1, parts);
+      const [formula, name, unit] = parts.map(opt);
+      if ([formula, name, unit].every((p) => p === undefined)) {
+        usage("calc edit needs --formula, --name or --unit");
       }
       return {
         kind: "calc",
         action: "edit",
         target: arg(0),
         ...(formula !== undefined && { formula }),
-        ...(a !== undefined && { a }),
-        ...(b !== undefined && { b }),
-        ...(opts.has("--no-b") && { noB: true as const }),
         ...(name !== undefined && { name }),
         ...(unit !== undefined && { unit }),
       };

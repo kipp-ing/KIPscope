@@ -306,7 +306,7 @@ describe("gap info refetch", () => {
   });
 });
 
-describe("gap info of computed signals (add-computed-signals)", () => {
+describe("gap info of computed signals (improve-formula-editor)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();
@@ -315,19 +315,23 @@ describe("gap info of computed signals (add-computed-signals)", () => {
 
   // spec computed-signals "Parameters and gap signals"
   it("asks gap info for a computed signal's inputs", async () => {
-    setComputedDefs([{ id: "c7", name: "Diff", formula: "a - b", a: "A.X", b: "B.Y" }]);
+    setComputedDefs([
+      { id: "c7", name: "D", formula: "A.X - B.Y" },
+      { id: "c8", name: "Outer", formula: "abs(D)" },
+    ]);
     const fetchInfo = vi
       .fn<(dataRef: string, signals: readonly string[]) => Promise<GapInfo>>()
       .mockResolvedValue({ dataRef: "car", logger: [], periods: {} });
     const store = new GapInfoStore(fetchInfo);
-    const release = store.ask(["car/=c7", "car/C.Z"], vi.fn());
+    const release = store.ask(["car/=c8", "car/C.Z"], vi.fn());
     await vi.advanceTimersByTimeAsync(0);
     // The inputs stand in for the computed ID; the computed ID itself is never asked.
     expect(fetchInfo).toHaveBeenCalledTimes(1);
     expect(fetchInfo).toHaveBeenCalledWith("car", ["car/A.X", "car/B.Y", "car/C.Z"]);
     expect(fetchInfo.mock.calls.flatMap((c) => c[1]).some((id) => id.includes("=c7"))).toBe(false);
+    expect(fetchInfo.mock.calls.flatMap((c) => c[1]).some((id) => id.includes("=c8"))).toBe(false);
     // The state is read by the same IDs the window asks with.
-    expect(store.state(["car/=c7", "car/C.Z"]).settled).toBe(true);
+    expect(store.state(["car/=c8", "car/C.Z"]).settled).toBe(true);
     // The same data ref of another session names the inputs there.
     release();
     const other = store.ask(["other/=c7"], vi.fn());

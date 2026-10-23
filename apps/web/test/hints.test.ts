@@ -144,6 +144,16 @@ describe("hints table", () => {
     }
   });
 
+  // improve-formula-editor F11: the placeholder of the formula field and the key row for Tab
+  it("words the formula field hints", () => {
+    expect(HINTS.formulaPlaceholder).toBe("Type a signal, abs( min( max( or + - * /");
+    expect(HINTS.formulaPlaceholder.length).toBeLessThanOrEqual(140);
+    expect(HINTS.formulaPlaceholder.endsWith(".")).toBe(false);
+    const key = SHORTCUTS.find((s) => s.keys === "Tab");
+    expect(key?.group).toBe("Signal list");
+    expect(key?.action).toBe("Accept a suggestion in the formula field");
+  });
+
   it("takes every tooltip from the hints table", () => {
     const root = new URL("../src", import.meta.url).pathname;
     const files: string[] = [];

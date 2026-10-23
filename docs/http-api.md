@@ -38,9 +38,9 @@ Each workspace ([workspaces](../openspec/specs/workspaces/spec.md)) has an ID of
 | `GET /api/signals` | workspace | search the catalog, one page | `q`, `offset`, `limit` | [signal-catalog](../openspec/specs/signal-catalog/spec.md) |
 | `GET /api/catalog` | workspace | the whole catalog, unpaged | — | [signal-catalog](../openspec/specs/signal-catalog/spec.md) |
 | `POST /api/catalog/refresh` | workspace | reload signals from the source and the DBC files | no body | [signal-catalog](../openspec/specs/signal-catalog/spec.md) |
-| `GET /api/extent` | workspace, `signal` | first and last time of a signal | `signal`, `case` (catalog index: bounded by that session's scope); `formula`, `a`, `b` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
-| `GET /api/series` | workspace, `signal` | points or buckets of a signal for a range, sized to the target | `signal`, `from`, `to`, `target` (default 2000), `case` (catalog index: bounded by that session's scope instead of the workspace's; another data ref answers 409 `out_of_scope`); `formula`, `a`, `b` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
-| `GET /api/value` | workspace, `signal` | a signal's value at a time (cursor reading) | `signal`, `t`, `mode` (`line` or `step`); `formula`, `a`, `b` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
+| `GET /api/extent` | workspace, `signal` | first and last time of a signal | `signal`, `case` (catalog index: bounded by that session's scope); `formula` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
+| `GET /api/series` | workspace, `signal` | points or buckets of a signal for a range, sized to the target | `signal`, `from`, `to`, `target` (default 2000), `case` (catalog index: bounded by that session's scope instead of the workspace's; another data ref answers 409 `out_of_scope`); `formula` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
+| `GET /api/value` | workspace, `signal` | a signal's value at a time (cursor reading) | `signal`, `t`, `mode` (`line` or `step`); `formula` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
 | `GET /api/density` | workspace, `dataRef` | row counts of a data ref over its whole extent, drive grid and drives (time strip); with `from` and `to` over that part of the scope; in an object scope without them coarse (`coarse: true`, bars only, no drives) | `dataRef`, `from` and `to` (together) | [time-strip](../openspec/specs/time-strip/spec.md) |
 | `GET /api/calendar` | workspace, `dataRef` | rows per hour and drives (60 s grid) of one window of at most 32 d, cut to the scope, for the range picker; an empty window answers zeros | `dataRef`, `from`, `to` (both whole minutes, `to` after `from`) | [range-picker](../openspec/specs/range-picker/spec.md) |
 | `GET /api/gaps` | workspace, `dataRef`, `signal` | logger gaps and periods of a data ref; in an object scope of the work window | `dataRef`, `signal` (repeated, at most 100), `from` and `to` (the work window: required in an object scope, at most 32 d; refused outside one) | [data-gaps](../openspec/specs/data-gaps/spec.md) |
@@ -70,23 +70,21 @@ Access: the level of "Access levels" above, then the request fields whose data r
 
 ## Computed signals
 
-A computed signal (`<dataRef>/=<id>`, defined in the workspace's `computed` list by the commands `computed.add`, `computed.update`, `computed.remove`) is read through `GET /api/series`, `GET /api/value` and `GET /api/extent` with three more query parameters ([computed-signals](../openspec/specs/computed-signals/spec.md)):
+A computed signal (`<dataRef>/=<id>`, defined in the workspace's `computed` list by the commands `computed.add`, `computed.update`, `computed.remove`) is read through `GET /api/series`, `GET /api/value` and `GET /api/extent` with one more query parameter ([computed-signals](../openspec/specs/computed-signals/spec.md)):
 
 | Parameter | Meaning |
 |---|---|
-| `formula` | the formula, at most 200 characters: `a`, `b`, numbers, `+ - * /`, parentheses, `abs(x)`, `min(x, y)`, `max(x, y)`; it must use `a` |
-| `a` | the signal name (no data ref) of input `a`; resolved as `<dataRef>/<a>` on the signal's data ref |
-| `b` | the signal name of input `b`; needed when the formula uses `b`, dropped when it does not |
+| `formula` | the flattened formula over source signals, at most 2,000 characters and 256 parts: signal names, numbers, `+ - * /`, parentheses, `abs(x)`, `min(x, y, …)`, `max(x, y, …)`; at least one and at most 8 distinct signal names. A name is a signal's full name without data ref (`MS_312h.DNMOT`), resolved exactly as `<dataRef>/<name>` on the computed signal's data ref; a name that is not an identifier is written in double quotes with `\` and `"` escaped by `\` (`"1st.X"`). The server knows no short names and no definitions: clients send the formula with nested computed signals replaced by their formulas. |
 
-The server parses the formula itself and never puts request text into a query. Answers keep their shapes (`RawSeries`, `BucketSeries`, `CursorValueResult`, `Extent`) with `signalId` the computed ID. Rows lie at the inputs' point times, each input holding its last point for at most 3 of its periods; a row is SNA (`null`) when an input's held point is SNA or the result is not finite. A series is raw when the range holds at most `target` input rows, else buckets of the exact rows. An extent spans from the later of the inputs' firsts to the later of their lasts.
+The server parses the formula itself and never puts request text into a query. Answers keep their shapes (`RawSeries`, `BucketSeries`, `CursorValueResult`, `Extent`) with `signalId` the computed ID. Rows lie at the inputs' point times, each input holding its last point for at most 3 of its periods; a row is SNA (`null`) when an input's held point is SNA or the result is not finite. A series is raw when the range holds at most `target` input rows, else buckets of the exact rows. An extent spans from the latest of the inputs' firsts to the latest of their lasts.
 
 | Route | Errors |
 |---|---|
-| `/api/series` | 400 `invalid_request` (a computed signal without `formula` or `a`, or a plain signal with `formula`, `a` or `b`); 400 `invalid_formula` (the parser's message, e.g. `Unknown name "c": use a, b, numbers, + - * / ( ), abs, min, max`); 404 `unknown_signal` (an input not in the list in use, `signalId` the input's ID, message `not in this list: <id>`); 422 `not_numeric_signal` (an input with states); 422 `computed_too_large` (a source without a native computed series and more than 200,000 rows of one input in the range, message `more than 200,000 rows of <name> in this range: zoom in`) |
+| `/api/series` | 400 `invalid_request`: `a computed signal needs formula`, `formula goes with a computed signal only` (a plain signal with `formula`); 400 `invalid_formula` (the parser's message with its position, e.g. `Unexpected ")" at 20`, or `At most 8 signals (with nested ones): 9`); 404 `unknown_signal` (a name not in the list in use, `signalId` the input's ID, message `not in this list: <id>`); 422 `not_numeric_signal` (an input with states); 422 `computed_too_large` (a source without a native computed series: one cap of 200,000 rows for all n inputs together, split evenly, so more than `floor(200,000 / n)` rows of one input in the range fail with e.g. `more than 100,000 rows of MS_312h.DNMOT in this range: zoom in`) |
 | `/api/value` | the same, without `computed_too_large` |
 | `/api/extent` | the same, without `computed_too_large`; 404 `no_data` when an input has no data |
 
-Example: `/api/series?signal=smart451%2F%3Dc7&formula=a%20-%20b&a=MS_312h.DNMOT&b=CPC_508h.PNHV_SupBat_Curr&from=…&to=…&target=2000`.
+Example: `/api/series?signal=smart451%2F%3Dc8&formula=abs(MS_312h.DNMOT%20-%20CPC_508h.PNHV_SupBat_Curr)&from=…&to=…&target=2000`.
 
 ## Sessions from a finder
 

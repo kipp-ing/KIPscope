@@ -296,16 +296,16 @@ export function memoryAdapter(
         : undefined;
     },
     refCount: async (dataRef, scope) => dataRows(dataRef, scope).length,
-    // add-computed-signals: raw rows of the inputs by the shared per-row rule, never buckets.
+    // Raw rows of the inputs by the shared per-row rule, never buckets.
     computedSeries: async (ref, from, to) => {
-      const input = (r: typeof ref.a) => ({
+      const input = (r: (typeof ref.inputs)[number]) => ({
         points: rowsOf(r)
           .filter(([t]) => t >= from && t < to)
           .map(point),
         ...(r.seed && { seed: r.seed }),
         ...(r.holdNs !== undefined && { holdNs: r.holdNs }),
       });
-      return { kind: "raw", points: computeRows(ref.ast, input(ref.a), ref.b && input(ref.b)) };
+      return { kind: "raw", points: computeRows(ref.ast, ref.inputs.map(input)) };
     },
     count: async (ref, from, to) => rowsOf(ref).filter(([t]) => t >= from && t < to).length,
     loggerGaps: async (dataRef, _grid, minGap, scope) => {

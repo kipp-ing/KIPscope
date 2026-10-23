@@ -747,12 +747,10 @@ function computedMatch(id: string, name: string, unavailable?: string): SignalMa
     dataRef: "c",
     name: `=${id}`,
     displayName: name,
-    description: "A.X − B.Y",
+    description: "A.X - B.Y",
     unit: "A",
     computed: {
-      formula: "a - b",
-      a: "A.X",
-      b: "B.Y",
+      formula: "A.X - B.Y",
       ...(unavailable !== undefined && { unavailable }),
     },
   };

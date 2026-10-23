@@ -19,7 +19,14 @@ import { ApiRequestError, changeFavourites, fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";
 import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
 import { ComputedEditor } from "../computed/ComputedEditor.tsx";
-import { type EditorState, fromDef, prefill, withAuto } from "../computed/editor.ts";
+import {
+  type EditorContext,
+  type EditorState,
+  formulaNames,
+  fromDef,
+  prefill,
+  withAuto,
+} from "../computed/editor.ts";
 import { HINTS } from "../help/hints.ts";
 import { isEditKey, isSearchKey, isStarKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
@@ -113,10 +120,13 @@ function rowKey(item: ExplorerItem | undefined): RowKey | undefined {
 /** A computed row that cannot be shown here (C12): its inputs are not in the list. */
 const unavailable = (s: SignalInfo) => s.computed?.unavailable !== undefined;
 
-/** The open editor: the edited definition (none for a new one), its first state and its place. */
+/**
+ * The open editor: the edited definition (none for a new one), its first state (with the caret of
+ * a prefill, F12) and its place.
+ */
 interface EditorOpen {
   def?: ComputedDef;
-  initial: EditorState;
+  initial: EditorState & { caret?: number };
   position: { left: number; top: number };
 }
 
@@ -353,12 +363,30 @@ export function SignalExplorer({
    */
   const [created, setCreated] = useState<string | undefined>();
   const asideRef = useRef<HTMLElement>(null);
-  const catalogByName = useMemo(() => {
-    const byName = new Map<string, SignalInfo>();
-    for (const s of catalog ?? []) if (!byName.has(s.name)) byName.set(s.name, s);
-    return byName;
-  }, [catalog]);
-  const infoOfName = (name: string) => catalogByName.get(name);
+  // The formula field's suggestions (F11): the list in use once per name plus each definition once,
+  // ranked by the explorer search.
+  const completionIndex = useMemo(() => {
+    const names = new Set<string>();
+    const defs = new Set<string>();
+    const rows: SignalInfo[] = [];
+    for (const s of catalog ?? []) {
+      if (names.has(s.name)) continue;
+      names.add(s.name);
+      rows.push(s);
+    }
+    for (const c of computed ?? []) {
+      const id = computedRef(c.id)?.id;
+      if (id === undefined || defs.has(id)) continue;
+      defs.add(id);
+      rows.push(c);
+    }
+    return buildSearchIndex(rows);
+  }, [catalog, computed]);
+  /** Names, definitions and the edited one for resolving and checking a formula (F2, F11). */
+  const editorContext = (selfId?: string): EditorContext => {
+    const defs = computedDefs ?? [];
+    return { names: formulaNames(catalog ?? [], defs), defs, ...(selfId ? { selfId } : {}) };
+  };
 
   /** Left edge 8 px right of the sidebar, top at the Computed header (the editor clamps it). */
   const editorPosition = () => {
@@ -367,13 +395,19 @@ export function SignalExplorer({
     return { left: (aside?.right ?? 0) + 8, top: head?.top ?? aside?.top ?? 0 };
   };
 
-  /** New computed signal, prefilled from the selection in click order (lead pick 2, L2). */
+  /**
+   * New computed signal, the field prefilled from the selection in click order (F12, L2): catalog
+   * and available computed rows; `prefill` leaves out signals with states and keeps eight.
+   */
   const openNew = () => {
     if (!onCommand) return;
     const byId = new Map<string, SignalInfo>();
     for (const it of items) if (it.kind === "signal") byId.set(it.match.signal.id, it.match.signal);
-    const selected = selectedInClickOrder(selection, items).flatMap((id) => byId.get(id) ?? []);
-    const initial = withAuto(prefill(selected), computedDefs ?? [], infoOfName);
+    const selected = selectedInClickOrder(selection, items)
+      .flatMap((id) => byId.get(id) ?? [])
+      .filter((s) => !unavailable(s));
+    const filled = prefill(selected);
+    const initial = { ...withAuto(filled, editorContext()), caret: filled.caret };
     closeCard();
     setEditor({ initial, position: editorPosition() });
   };
@@ -384,7 +418,7 @@ export function SignalExplorer({
     const def = ref && computedDefs?.find((d) => d.id === ref.id);
     if (!def || !onCommand) return;
     closeCard();
-    setEditor({ def, initial: fromDef(def, infoOfName), position: editorPosition() });
+    setEditor({ def, initial: fromDef(def, editorContext(def.id)), position: editorPosition() });
   };
 
   const closeEditor = (id?: string) => {
@@ -1021,6 +1055,7 @@ export function SignalExplorer({
             initial={editor.initial}
             defs={computedDefs ?? []}
             catalog={catalog ?? []}
+            index={completionIndex}
             position={editor.position}
             sendCommand={onCommand}
             onClose={closeEditor}

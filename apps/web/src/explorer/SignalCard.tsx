@@ -52,8 +52,8 @@ export function SignalCard({
     setPos((p) => (p.left === left && p.top === top ? p : { left, top }));
   }, [anchor.right, anchor.top]);
 
-  // A computed signal's card (add-computed-signals C12): name, the formula with full input names
-  // (its description, C11), unit, nothing else.
+  // A computed signal's card (add-computed-signals C12): name, the stored formula with full signal
+  // names and nested signals by name (its description, design F10), unit, nothing else.
   if (signal.computed) {
     return (
       <div

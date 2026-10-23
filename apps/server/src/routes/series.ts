@@ -58,14 +58,10 @@ const Time = TimeInput.transform(BigInt);
 const CaseIndex = z.coerce.number().int().min(0).optional();
 
 /**
- * A computed signal's parameters (design C8); the formula's length and grammar are the parser's
+ * A computed signal's parameter (design F8); the formula's length and grammar are the parser's
  * checks (`invalid_formula`).
  */
-const ComputedQuery = {
-  formula: z.string().optional(),
-  a: z.string().min(1).optional(),
-  b: z.string().min(1).optional(),
-};
+const ComputedQuery = { formula: z.string().optional() };
 
 const SeriesQuery = z
   .object({
@@ -133,36 +129,27 @@ const ValueQuery = z.object({
 });
 
 /**
- * The computed parameters of a request (design C8): present for a computed signal (`=<id>`),
- * which needs `formula` and `a`; a plain signal takes none of them.
+ * The computed parameters of a request (design F8): a computed signal (`=<id>`) needs `formula`;
+ * a plain signal takes none.
  */
 function computedQuery(q: {
   signal: string;
   formula?: string | undefined;
-  a?: string | undefined;
-  b?: string | undefined;
 }): { ok: true; params?: ComputedParams } | { ok: false; message: string } {
   if (!isComputedId(q.signal)) {
-    return q.formula === undefined && q.a === undefined && q.b === undefined
+    return q.formula === undefined
       ? { ok: true }
-      : { ok: false, message: "formula, a and b go with a computed signal only" };
+      : { ok: false, message: "formula goes with a computed signal only" };
   }
-  if (q.formula === undefined || q.a === undefined)
-    return { ok: false, message: "a computed signal needs formula and a" };
-  const params: ComputedParams = { formula: q.formula, a: q.a };
-  if (q.b !== undefined) params.b = q.b;
-  return { ok: true, params };
+  if (q.formula === undefined) return { ok: false, message: "a computed signal needs formula" };
+  return { ok: true, params: { formula: q.formula } };
 }
 
-/** The refusal of a computed request's checks (design C8). */
+/** The refusal of a computed request's checks (design F8). */
 const refuseComputed = (
   reply: Parameters<typeof apiError>[0],
   r: Extract<ResolvedComputed, { ok: false }>,
 ) => apiError(reply, r.status, r.code, r.message, r.signalId ? { signalId: r.signalId } : {});
-
-/** The used inputs of a resolved computed signal: a, then b. */
-const inputsOf = (r: Extract<ResolvedComputed, { ok: true }>): SeriesRef[] =>
-  r.b ? [r.a, r.b] : [r.a];
 
 /** Hold limit of an input (design C2) from the gap info of the inputs. */
 const holdOf = (info: GapInfo, input: SignalRef) =>
@@ -549,7 +536,7 @@ export const seriesRoutes =
         }
         const resolved = resolveComputed(computed.params, ref.dataRef, catalog);
         if (!resolved.ok) return refuseComputed(reply, resolved);
-        refs = inputsOf(resolved);
+        refs = resolved.inputs;
       }
       const controller = new AbortController();
       request.raw.on("close", () => {
@@ -650,7 +637,7 @@ export const seriesRoutes =
         if (resolved) {
           // Hold limits from the gap info of the inputs (design C2, C8), cached like a value's.
           return await withRequestClass(request, async () => {
-            const inputs = inputsOf(resolved);
+            const { inputs } = resolved;
             const info = await gaps.get(
               ref.dataRef,
               inputs.map((i) => `${i.dataRef}/${i.name}`),
@@ -660,10 +647,8 @@ export const seriesRoutes =
             const computedRef: ComputedRef = {
               dataRef: ref.dataRef,
               ast: resolved.ast,
-              a: withSeed(resolved.a, undefined, holdOf(info, resolved.a)),
+              inputs: inputs.map((i) => withSeed(i, undefined, holdOf(info, i))),
             };
-            if (resolved.b)
-              computedRef.b = withSeed(resolved.b, undefined, holdOf(info, resolved.b));
             return queryComputed(
               source,
               computedRef,
@@ -743,7 +728,7 @@ export const seriesRoutes =
         });
         try {
           // Each input's raw neighbours and the gap info of the inputs (design C4).
-          const inputs = inputsOf(resolved);
+          const { inputs } = resolved;
           const [neighbours, gapInfo] = await Promise.all([
             Promise.all(
               inputs.map((i) =>
@@ -773,12 +758,11 @@ export const seriesRoutes =
             query.t,
             query.mode,
             resolved.ast,
-            near(0),
-            resolved.b ? near(1) : undefined,
+            inputs.map((_, i) => near(i)),
             computedSignalGaps(
               gapInfo,
               signalRef.dataRef,
-              resolved.b ? { a: resolved.a.name, b: resolved.b.name } : { a: resolved.a.name },
+              inputs.map((i) => i.name),
             ),
           );
           const body: CursorValueResult = {

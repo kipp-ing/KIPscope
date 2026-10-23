@@ -926,76 +926,54 @@ describe("case forms (add-case-open K15)", () => {
   });
 });
 
-describe("calc forms (add-computed-signals C13)", () => {
+describe("calc forms (improve-formula-editor F13)", () => {
   const parse = (...argv: string[]) => parseArgs(argv, {}).invocation;
 
   // spec cli "Forms"
   it("maps the calc forms", () => {
     expect(parse("calc", "list")).toEqual({ kind: "calc", action: "list" });
-    // FORMULA and SIGNALs are kept as typed; the call resolves them against the list.
-    expect(parse("calc", "add", "a - b", "--a", "rpm", "--b", "speed")).toEqual({
+    // FORMULA is kept as typed; the call resolves its names against the workspace's list.
+    expect(parse("calc", "add", "SIG_A - speed")).toEqual({
       kind: "calc",
       action: "add",
-      formula: "a - b",
-      a: "rpm",
-      b: "speed",
+      formula: "SIG_A - speed",
     });
-    expect(
-      parse(
-        "calc",
-        "add",
-        "abs(a)",
-        "--a",
-        "testcar/Sna_800h.RPM",
-        "--name",
-        "Abs",
-        "--unit",
-        "rpm",
-      ),
-    ).toEqual({
+    expect(parse("calc", "add", "abs(SIG_A)", "--name", "Abs", "--unit", "A")).toEqual({
       kind: "calc",
       action: "add",
-      formula: "abs(a)",
-      a: "testcar/Sna_800h.RPM",
+      formula: "abs(SIG_A)",
       name: "Abs",
-      unit: "rpm",
+      unit: "A",
     });
-    expect(parse("calc", "edit", "Diff", "--formula", "abs(a)", "--no-b")).toEqual({
+    expect(parse("calc", "edit", "Diff", "--formula", "abs(Diff2)")).toEqual({
       kind: "calc",
       action: "edit",
       target: "Diff",
-      formula: "abs(a)",
-      noB: true,
+      formula: "abs(Diff2)",
     });
-    expect(
-      parse("calc", "edit", "c3", "--a", "rpm", "--b", "speed", "--name", "N", "--unit", "U"),
-    ).toEqual({
+    expect(parse("calc", "edit", "c3", "--name", "N", "--unit", "U")).toEqual({
       kind: "calc",
       action: "edit",
       target: "c3",
-      a: "rpm",
-      b: "speed",
       name: "N",
       unit: "U",
     });
     expect(parse("calc", "rm", "c3")).toEqual({ kind: "calc", action: "rm", target: "c3" });
-    // Options may stand anywhere on the line.
-    expect(parse("--a", "rpm", "calc", "add", "a * 2")).toMatchObject({
+    // A formula with quoted names and a minus sign (U+2212) stays as typed; options stand anywhere.
+    expect(parse("--name", "X", "calc", "add", 'abs("SIG_A \u2212 SPEED")')).toMatchObject({
       action: "add",
-      formula: "a * 2",
-      a: "rpm",
+      formula: 'abs("SIG_A \u2212 SPEED")',
+      name: "X",
     });
 
-    // No FORMULA, no --a, no ID|NAME, nothing to change, --b with --no-b, extra words, an unknown
-    // action and a bare `calc` are usage errors (exit 2).
+    // No FORMULA, no ID|NAME, nothing to change, extra words, an unknown action and a bare `calc`
+    // are usage errors (exit 2).
     for (const argv of [
       ["calc", "add"],
-      ["calc", "add", "a"],
-      ["calc", "add", "a", "--a", "rpm", "extra"],
+      ["calc", "add", "SIG_A", "extra"],
       ["calc", "rm"],
       ["calc", "edit"],
       ["calc", "edit", "Diff"],
-      ["calc", "edit", "Diff", "--b", "speed", "--no-b"],
       ["calc", "list", "x"],
       ["calc", "frob"],
       ["calc"],
@@ -1004,10 +982,23 @@ describe("calc forms (add-computed-signals C13)", () => {
       expect(error.outcome, argv.join(" ")).toBe("usage");
       expect(EXIT[error.outcome], argv.join(" ")).toBe(2);
     }
+    // --a, --b and --no-b are gone (D-108): plain unknown-option usage errors, no hint.
+    for (const [argv, option] of [
+      [["calc", "add", "a - b", "--a", "rpm"], "--a"],
+      [["calc", "add", "a - b", "--a", "rpm", "--b", "speed"], "--a"],
+      [["calc", "edit", "Diff", "--no-b"], "--no-b"],
+      [["calc", "edit", "Diff", "--formula", "SIG_A", "--b", "speed"], "--b"],
+    ] as [string[], string][]) {
+      const error = usageError(argv);
+      expect(error.outcome, argv.join(" ")).toBe("usage");
+      expect(EXIT[error.outcome], argv.join(" ")).toBe(2);
+      expect(error.message, argv.join(" ")).toBe(`unknown option ${option}`);
+    }
   });
 
-  it("names the calc forms and the computed ID in the usage text", () => {
-    for (const form of ["calc list", "calc add", "calc edit", "calc rm", "--no-b"])
+  it("names the calc forms and the formula help in the usage text", () => {
+    for (const form of ["calc list", "calc add", "calc edit", "calc rm"])
       expect(USAGE).toContain(form);
+    for (const gone of ["--no-b", "--a SIGNAL", "--b SIGNAL"]) expect(USAGE).not.toContain(gone);
   });
 });

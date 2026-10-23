@@ -51,6 +51,8 @@ const ast = (text: string) => {
 };
 
 const SIG_A = "Fast_100h.SIG_A";
+const SIG_B = "Fast_100h.SIG_B";
+const SIG_C = "Fast_100h.SIG_C";
 const SPEED = "Sna_800h.SPEED";
 const input = (name: string, extra: Partial<ComputedInputRef> = {}): ComputedInputRef => ({
   dataRef: "testcar",
@@ -58,11 +60,11 @@ const input = (name: string, extra: Partial<ComputedInputRef> = {}): ComputedInp
   sna: [],
   ...extra,
 });
-const refOf = (formula: string, a: ComputedInputRef, b?: ComputedInputRef): ComputedRef => ({
+/** Inputs in formulaInputs order. */
+const refOf = (formula: string, ...inputs: ComputedInputRef[]): ComputedRef => ({
   dataRef: "testcar",
   ast: ast(formula),
-  a,
-  ...(b && { b }),
+  inputs,
 });
 
 const FROM = 1_791_158_400_000_000_000n;
@@ -78,12 +80,12 @@ const everything = (queries: Recorded[]) => queries.map((q) => q.query).join("\n
 const paramValues = (queries: Recorded[]) =>
   queries.flatMap((q) => Object.values(q.params).map((v) => String(v)));
 
-describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
+describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
   // spec computed-signals "Constants and names as parameters"
   it("compiles constants and names as parameters", async () => {
     const { source, queries } = counting(5000);
     const ref = refOf(
-      "a * 2.5 + b",
+      `${SIG_A} * 2.5 + ${SPEED}`,
       input(SIG_A, { seed: { t: FROM - 5_000_000n, v: 0.25 }, holdNs: 15_000_000n }),
       input(SPEED, {
         sna: [{ lo: 510.5, hi: 511.5 }],
@@ -109,6 +111,11 @@ describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
     const scan = queries.find((q) => "k0" in q.params);
     expect(scan, "a query with parameter k0").toBeDefined();
     expect(Number(scan?.params.k0)).toBe(2.5);
+    // Names come as s0, s1 in the order of the formula, in the text as parameters only.
+    expect(sql).toContain("{s0:String}");
+    expect(sql).toContain("{s1:String}");
+    expect(scan?.params.s0).toBe(SIG_A);
+    expect(scan?.params.s1).toBe(SPEED);
     const values = paramValues(queries);
     expect(values).toContain(SIG_A);
     expect(values).toContain(SPEED);
@@ -120,7 +127,7 @@ describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
 
   it("binds every constant of a formula on its own", async () => {
     const { source, queries } = counting(5000);
-    await run(source, refOf("a * 2.5 + b * 7", input(SIG_A), input(SPEED)), 100);
+    await run(source, refOf(`${SIG_A} * 2.5 + ${SPEED} * 7`, input(SIG_A), input(SPEED)), 100);
     const sql = everything(queries);
     expect(sql).toContain("{k0:Float64}");
     expect(sql).toContain("{k1:Float64}");
@@ -132,7 +139,7 @@ describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
   // spec computed-signals "Query count"
   it("computes in one scan", async () => {
     const { source, queries } = counting(5000);
-    await run(source, refOf("a - b", input(SIG_A), input(SPEED)), 100);
+    await run(source, refOf(`${SIG_A} - ${SPEED}`, input(SIG_A), input(SPEED)), 100);
     // The count and the scan, nothing else.
     expect(queries).toHaveLength(2);
     const [count, scan] = queries as [Recorded, Recorded];
@@ -147,7 +154,7 @@ describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
 
   it("sends the same two queries for a raw answer", async () => {
     const { source, queries } = counting(50);
-    const answer = await run(source, refOf("a - b", input(SIG_A), input(SPEED)), 100);
+    const answer = await run(source, refOf(`${SIG_A} - ${SPEED}`, input(SIG_A), input(SPEED)), 100);
     expect(queries).toHaveLength(2);
     expect(queries[1]?.query).toContain("IGNORE NULLS OVER");
     expect(answer.kind).toBe("raw");
@@ -155,9 +162,70 @@ describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
 
   it("reads one input without a window", async () => {
     const { source, queries } = counting(5000);
-    await run(source, refOf("abs(a)", input(SIG_A)), 100);
+    await run(source, refOf(`abs(${SIG_A})`, input(SIG_A)), 100);
     expect(queries).toHaveLength(2);
     expect(queries[1]?.query).not.toMatch(/\bOVER\b/i);
     expect(queries[1]?.query).toMatch(/\babs\(/);
+  });
+
+  // spec computed-signals "Query count" with three inputs
+  it("computes three inputs in one scan", async () => {
+    const { source, queries } = counting(5000);
+    await run(
+      source,
+      refOf(
+        `${SIG_A} - ${SIG_B} + ${SIG_C}`,
+        input(SIG_A, { holdNs: 15_000_000n }),
+        input(SIG_B, { holdNs: 15_000_000n }),
+        input(SIG_C, { holdNs: 15_000_000n }),
+      ),
+      100,
+    );
+    expect(queries).toHaveLength(2);
+    const [count, scan] = queries as [Recorded, Recorded];
+    expect(count.query).not.toMatch(/\bOVER\b/i);
+    expect(scan.query).toContain("{s0:String}");
+    expect(scan.query).toContain("{s1:String}");
+    expect(scan.query).toContain("{s2:String}");
+    expect(scan.query).not.toContain("{s3:String}");
+    expect(scan.query).toContain("IGNORE NULLS OVER");
+    for (const { query } of queries) {
+      expect(query).not.toMatch(/\bJOIN\b/i);
+      expect(query).not.toMatch(/\bUNION\b/i);
+    }
+    // One scan of all three signals, the names only as parameters in formula order.
+    expect(scan.query).toMatch(/\bIN\b/);
+    expect([scan.params.s0, scan.params.s1, scan.params.s2]).toEqual([SIG_A, SIG_B, SIG_C]);
+    expect(scan.query).not.toContain("Fast_100h");
+  });
+
+  it("orders the name parameters by the formula, not by the input list", async () => {
+    const { source, queries } = counting(5000);
+    await run(source, refOf(`${SPEED} - ${SIG_A}`, input(SPEED), input(SIG_A)), 100);
+    const scan = queries[1] as Recorded;
+    expect([scan.params.s0, scan.params.s1]).toEqual([SPEED, SIG_A]);
+  });
+
+  it("compiles n-ary min and max", async () => {
+    const { source, queries } = counting(5000);
+    await run(
+      source,
+      refOf(
+        `max(${SIG_A}, ${SIG_B}, ${SIG_C}, 4) + min(${SIG_A}, 2, ${SPEED})`,
+        input(SIG_A),
+        input(SIG_B),
+        input(SIG_C),
+        input(SPEED),
+      ),
+      100,
+    );
+    const sql = everything(queries);
+    expect(sql).toMatch(/\bgreatest\s*\(/i);
+    expect(sql).toMatch(/\bleast\s*\(/i);
+    expect(sql).toContain("{k0:Float64}");
+    expect(sql).toContain("{k1:Float64}");
+    const scan = queries.find((q) => "k0" in q.params);
+    expect(new Set([Number(scan?.params.k0), Number(scan?.params.k1)])).toEqual(new Set([4, 2]));
+    expect(sql).not.toMatch(/\b4\b/);
   });
 });

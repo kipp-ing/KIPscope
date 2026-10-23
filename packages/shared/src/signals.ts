@@ -103,10 +103,10 @@ export interface SignalInfo {
    */
   states?: "labels" | "text";
   /**
-   * A computed signal's definition (add-computed-signals C11); `unavailable`: why it cannot be
-   * shown on this data ref (`not in this list: …`). Absent for catalog signals.
+   * A computed signal's stored formula (improve-formula-editor F10); `unavailable`: why it cannot
+   * be shown on this data ref (`not in this list: …`). Absent for catalog signals.
    */
-  computed?: { formula: string; a: string; b?: string; unavailable?: string };
+  computed?: { formula: string; unavailable?: string };
 }
 
 /** `displayName ?? name`. */

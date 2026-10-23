@@ -39,8 +39,12 @@ describe("computedPointAt", () => {
       const got = computedPointAt(tree, T, inputs);
       const want = computedRowValue(
         tree,
-        { t: 900n, v: c.a },
-        hasB ? { t: 950n, v: c.b ?? null } : undefined,
+        hasB
+          ? [
+              { t: 900n, v: c.a },
+              { t: 950n, v: c.b ?? null },
+            ]
+          : [{ t: 900n, v: c.a }],
       );
       const label = `${c.formula} with ${c.a}, ${c.b}`;
       expect(got, label).toEqual({ t: T, v: want });

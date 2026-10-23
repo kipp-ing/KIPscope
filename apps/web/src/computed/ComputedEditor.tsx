@@ -1,33 +1,47 @@
 import {
-  buildSearchIndex,
   type CommandInput,
   type CommandResult,
   type ComputedDef,
+  computedRef,
+  computedUsers,
   MAX_COMPUTED_NAME,
   MAX_COMPUTED_UNIT,
   MAX_FORMULA_LENGTH,
-  PRESETS,
-  type PresetId,
-  presetOf,
+  type MatchRange,
+  resolveFormula,
+  type SearchIndex,
   type SignalInfo,
-  searchSignals,
-  shortSignalName,
   shownName,
 } from "@kipscope/shared";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Highlight } from "../explorer/Highlight.tsx";
 import { HINTS } from "../help/hints.ts";
 import {
-  commandBody,
+  accept,
+  type CompletionToken,
+  highlightSpans,
+  type Suggestion,
+  suggestions,
+  tokenAt,
+} from "./completion.ts";
+import {
+  canonicalFormula,
+  type EditorContext,
   type EditorState,
   editorError,
-  usesB,
+  formulaNames,
   withAuto,
-  withPreset,
 } from "./editor.ts";
 import "./computed.css";
 
-/** Rows a picker lists at most (design C12). */
-export const PICKER_ROWS = 8;
 /** The second click on Delete must follow the first within this long (C12). */
 export const DELETE_CONFIRM_MS = 3000;
 /** Room kept between the panel and the viewport's edges. */
@@ -36,12 +50,14 @@ const EDGE_PX = 8;
 export interface ComputedEditorProps {
   /** The definition being edited; absent for a new one. */
   def?: ComputedDef | undefined;
-  /** Prefilled (`prefill`) or the definition's state (`fromDef`), auto name and unit applied. */
-  initial: EditorState;
+  /** `prefill` (with its caret) or `fromDef`; name and unit follow the formula while auto. */
+  initial: EditorState & { caret?: number };
   /** Every definition of the workspace (the edited one included). */
   defs: readonly ComputedDef[];
-  /** The signal list in use; the pickers offer its signals, computed ones left out. */
+  /** The signal list in use: typed names resolve against its catalog signals (F2). */
   catalog: readonly SignalInfo[];
+  /** The completion index: the list's catalog signals plus its computed infos (F11). */
+  index: SearchIndex;
   /** Where the panel wants its top-left corner (beside the sidebar, at the Computed header). */
   position: { left: number; top: number };
   sendCommand: (input: CommandInput) => Promise<CommandResult>;
@@ -49,63 +65,133 @@ export interface ComputedEditorProps {
   onClose: (created?: string) => void;
 }
 
-/** The signal names the pickers offer: the list's catalog signals, once per name, list order. */
-function pickerSignals(catalog: readonly SignalInfo[]): SignalInfo[] {
-  const seen = new Set<string>();
-  const out: SignalInfo[] = [];
-  for (const s of catalog) {
-    if (s.computed !== undefined || seen.has(s.name)) continue;
-    seen.add(s.name);
-    out.push(s);
+/** IDs of the index's computed infos of the edited definition and its users (F11: a cycle). */
+function excludedIds(
+  def: ComputedDef | undefined,
+  defs: readonly ComputedDef[],
+  index: SearchIndex,
+) {
+  const out = new Set<string>();
+  if (!def) return out;
+  const ids = new Set([def.id]);
+  const queue = [def.name];
+  for (let name = queue.pop(); name !== undefined; name = queue.pop()) {
+    for (const user of computedUsers(name, defs)) {
+      if (ids.has(user.id)) continue;
+      ids.add(user.id);
+      queue.push(user.name);
+    }
+  }
+  for (const s of index.signals) {
+    const ref = computedRef(s.id);
+    if (ref && ids.has(ref.id)) out.add(s.id);
   }
   return out;
 }
 
-const shortOf = (s: Pick<SignalInfo, "name" | "displayName">) => shortSignalName(shownName(s));
+/** The query's terms in `text` (case ignored), as the explorer marks its hits. */
+function hits(text: string, query: string): MatchRange[] {
+  const lower = text.toLowerCase();
+  const found: [number, number][] = [];
+  for (const t of query.toLowerCase().split(/\s+/).filter(Boolean)) {
+    const i = lower.indexOf(t);
+    if (i >= 0) found.push([i, i + t.length]);
+  }
+  found.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const r of found) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push(r);
+  }
+  return merged;
+}
 
-/** The option text of a preset: its label and formula with the shown minus sign. */
-const presetText = (p: (typeof PRESETS)[number]) =>
-  p.formula === undefined ? p.label : `${p.label}   ${p.formula.replace(/ - /g, " − ")}`;
+const FUNCTION_TEXT = { abs: "abs(x)", min: "min(x, y, …)", max: "max(x, y, …)" } as const;
 
 /**
- * The computed signal editor (add-computed-signals C12): a non-modal dialog panel with pickers for
- * a and b, a preset select, the formula field with a one-line live error, name and unit, and
- * Delete / Cancel / Save (the one primary). It sends computed.add|update|remove through
- * `sendCommand` and shows a refusal in its error line.
+ * The computed signal editor (C12, improve-formula-editor F11): a non-modal dialog panel with the
+ * formula field (typed names, suggestions as in the explorer search, tinted names), a one-line live
+ * error, name and unit, and Delete / Cancel / Save (the one primary). It sends
+ * computed.add|update|remove through `sendCommand` and shows a refusal in its error line.
  */
 export function ComputedEditor({
   def,
   initial,
   defs,
   catalog,
+  index,
   position,
   sendCommand,
   onClose,
 }: ComputedEditorProps) {
-  const [state, setState] = useState(initial);
-  /** The server's message of a refused command; cleared by the next change. */
-  const [refusal, setRefusal] = useState<string | undefined>();
+  /** The suggestion list is open (an input event left a token at the caret). */
+  const [listOpen, setListOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const names = useMemo(() => formulaNames(catalog, defs), [catalog, defs]);
+  const ctx = useMemo<EditorContext>(
+    () => ({ names, defs, ...(def ? { selfId: def.id } : {}) }),
+    [names, defs, def],
+  );
+  const [state, setState] = useState<EditorState>(() => {
+    const { caret: _, ...s } = initial;
+    return withAuto(s, ctx);
+  });
+  const [caret, setCaret] = useState(initial.caret ?? initial.formula.length);
+  /**
+   * The server's message of a refused command, in the error line until the next change. A refused
+   * Save blocks Save until then; a refused Delete (`computed_in_use`) is transient: it leaves Save
+   * alone and goes with the next keystroke.
+   */
+  const [refusal, setRefusal] = useState<{ message: string; blocks: boolean } | undefined>();
+  /** A key went down in the panel: from then on an empty formula's error reads as an error. */
+  const [typed, setTyped] = useState(false);
   const [busy, setBusy] = useState(false);
   const [armed, setArmed] = useState(false);
   const [place, setPlace] = useState(position);
   const panelRef = useRef<HTMLDivElement>(null);
-  const formulaRef = useRef<HTMLInputElement>(null);
-  const pickerARef = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  /** A caret to put into the field after the next render (prefill, accept). */
+  const caretToSet = useRef<number | undefined>(initial.caret ?? initial.formula.length);
   const ids = useId();
 
-  const signals = useMemo(() => pickerSignals(catalog), [catalog]);
-  const byName = useMemo(() => new Map(signals.map((s) => [s.name, s])), [signals]);
-  const infoOf = (name: string) => byName.get(name);
-  const others = useMemo(() => defs.filter((d) => d.id !== def?.id), [defs, def]);
+  const live = editorError(state, ctx);
+  const error = refusal?.message ?? live;
+  const blocked = busy || live !== undefined || refusal?.blocks === true;
+  /** A new empty editor opens with its error muted, not red, until the first keystroke. */
+  const quiet = refusal === undefined && !typed && state.formula === "";
+  const resolved = useMemo(() => resolveFormula(state.formula, names), [state.formula, names]);
+  const spans = useMemo(
+    () => highlightSpans(state.formula, names, resolved.ok ? undefined : resolved.at),
+    [state.formula, names, resolved],
+  );
+  const exclude = useMemo(() => excludedIds(def, defs, index), [def, defs, index]);
+  const { token, rows } = useMemo(() => {
+    const t = listOpen ? tokenAt(state.formula, caret) : undefined;
+    return { token: t, rows: t ? suggestions(t, index, exclude) : [] };
+  }, [listOpen, state.formula, caret, index, exclude]);
+  /** The list shows only with rows: an empty one would cover the error line for nothing. */
+  const list = token !== undefined && rows.length > 0 ? token : undefined;
 
-  const error = refusal ?? editorError(state, others, infoOf);
-  const bUsed = usesB(state.formula);
-  const preset = presetOf(state.formula);
+  const closeList = () => {
+    setListOpen(false);
+    setActive(0);
+  };
 
-  /** Inputs or formula changed: name and unit follow while their auto flag holds. */
-  const change = (next: EditorState) => {
+  /** The formula changed: name and unit follow while their auto flag holds. */
+  const changeFormula = (formula: string, at: number) => {
     setRefusal(undefined);
-    setState(withAuto(next, others, infoOf));
+    setState(withAuto({ ...state, formula }, ctx));
+    setCaret(at);
+  };
+
+  const acceptRow = (t: CompletionToken, s: Suggestion | undefined) => {
+    if (!s || (s.kind === "signal" && s.disabled !== undefined)) return;
+    const next = accept(state.formula, t, s);
+    changeFormula(next.text, next.caret);
+    caretToSet.current = next.caret;
+    closeList();
   };
 
   // Clamped into the viewport once, at open: the panel never moves while typing (layout never moves).
@@ -120,11 +206,22 @@ export function ComputedEditor({
     });
   }, [position.left, position.top]);
 
-  // Focus rule (C12): the formula field when a is filled, else picker a.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only at open
-  useEffect(() => {
-    (state.a !== undefined ? formulaRef.current : pickerARef.current)?.focus();
+  // Focus in the field at open (F12); the caret follows in the next effect.
+  useLayoutEffect(() => {
+    fieldRef.current?.focus();
   }, []);
+
+  // The caret after prefill or accept; the tint layer follows the field's scroll.
+  useLayoutEffect(() => {
+    const el = fieldRef.current;
+    if (!el) return;
+    const at = caretToSet.current;
+    if (at !== undefined) {
+      caretToSet.current = undefined;
+      el.setSelectionRange(at, at);
+    }
+    if (layerRef.current) layerRef.current.scrollTop = el.scrollTop;
+  });
 
   // The armed Delete falls back after DELETE_CONFIRM_MS.
   useEffect(() => {
@@ -138,15 +235,18 @@ export function ComputedEditor({
     const result = await sendCommand(input);
     setBusy(false);
     if (!result.ok) {
-      setRefusal(result.message);
+      setRefusal({ message: result.message, blocks: input.type !== "computed.remove" });
       return;
     }
     onClose(created ? result.created : undefined);
   };
 
   const save = () => {
-    if (busy || error !== undefined) return;
-    const body = commandBody(state);
+    if (blocked) return;
+    const formula = canonicalFormula(state, ctx);
+    if (formula === undefined) return;
+    const unit = state.unit.trim();
+    const body = { name: state.name.trim(), formula, ...(unit !== "" ? { unit } : {}) };
     void run(
       def ? { type: "computed.update", id: def.id, ...body } : { type: "computed.add", ...body },
       def === undefined,
@@ -163,23 +263,64 @@ export function ComputedEditor({
     void run({ type: "computed.remove", id: def.id }, false);
   };
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
+  const onPanelKeyDown = (e: React.KeyboardEvent) => {
     // Keys typed here never reach the app's shortcuts.
     e.stopPropagation();
-    const tag = (e.target as HTMLElement).tagName;
-    // The preset select needs no own case: its open native list consumes Esc (closes only the list,
-    // L4) and Enter (picks) before the page sees them, so Esc or Enter arriving here on the select
-    // means the list is closed and they act as on any other field. Tracking "list open" in a flag
-    // went stale (on macOS) and swallowed the next Esc or Enter.
+    setTyped(true);
+    if (refusal && !refusal.blocks) setRefusal(undefined);
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
       return;
     }
-    if (e.key === "Enter" && (tag === "INPUT" || tag === "SELECT")) {
+    if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
       e.preventDefault();
       save();
     }
+  };
+
+  /** F11 keys: with the list open ↑/↓, Enter or Tab accept, Esc closes only the list. */
+  const onFieldKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (list) {
+      const n = rows.length;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setActive((active + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        acceptRow(list, rows[Math.min(active, n - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeList();
+        return;
+      }
+    }
+    if (e.key === "Enter") {
+      // Never a newline: Enter saves when valid (L3).
+      e.preventDefault();
+      e.stopPropagation();
+      save();
+    }
+  };
+
+  /** The caret moved: the list closes when it leaves the token it was opened for. */
+  const onFieldSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const at = el.selectionStart;
+    if (at === caret && el.selectionEnd === at) return;
+    if (listOpen) {
+      const now = el.selectionEnd === at ? tokenAt(el.value, at) : undefined;
+      const before = el.value === state.formula ? tokenAt(state.formula, caret) : now;
+      if (!now || now.start !== before?.start) closeList();
+    }
+    setCaret(at);
   };
 
   const title = def ? "Edit computed signal" : "New computed signal";
@@ -190,59 +331,67 @@ export function ComputedEditor({
       role="dialog"
       aria-labelledby={`${ids}-title`}
       style={{ left: place.left, top: place.top }}
-      onKeyDown={onKeyDown}
+      onKeyDown={onPanelKeyDown}
     >
       <div className="computed-title" id={`${ids}-title`}>
         {title}
       </div>
-      <div className="section-label">Inputs</div>
-      <SignalPicker
-        label="a"
-        inputRef={pickerARef}
-        value={state.a}
-        signals={signals}
-        infoOf={infoOf}
-        onPick={(name) => change({ ...state, a: name })}
-      />
-      <SignalPicker
-        label="b"
-        value={state.b}
-        signals={signals}
-        infoOf={infoOf}
-        disabled={!bUsed}
-        onPick={(name) => change({ ...state, b: name })}
-        onClear={() => {
-          const { b: _, ...rest } = state;
-          change(rest);
-        }}
-      />
       <div className="section-label">Formula</div>
       <div className="computed-formula">
-        <select
-          aria-label="Preset"
-          value={preset}
-          onChange={(e) => change(withPreset(state, e.target.value as PresetId))}
-        >
-          {PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {presetText(p)}
-            </option>
-          ))}
-        </select>
-        <input
-          ref={formulaRef}
-          type="text"
+        <div className="computed-tints mono" ref={layerRef} aria-hidden="true">
+          {tinted(state.formula, spans)}
+        </div>
+        <textarea
+          ref={fieldRef}
           className="mono"
           aria-label="Formula"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={list !== undefined}
+          aria-controls={`${ids}-list`}
+          aria-activedescendant={list ? `${ids}-${active}` : undefined}
           spellCheck={false}
           autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          placeholder={HINTS.formulaPlaceholder}
           maxLength={MAX_FORMULA_LENGTH}
           value={state.formula}
-          onChange={(e) => change({ ...state, formula: e.target.value })}
+          onChange={(e) => {
+            const el = e.currentTarget;
+            changeFormula(el.value, el.selectionStart);
+            setActive(0);
+            setListOpen(tokenAt(el.value, el.selectionStart) !== undefined);
+          }}
+          onSelect={onFieldSelect}
+          onScroll={(e) => {
+            if (layerRef.current) layerRef.current.scrollTop = e.currentTarget.scrollTop;
+          }}
+          onBlur={closeList}
+          onKeyDown={onFieldKeyDown}
         />
+        {list && (
+          <div className="computed-list" id={`${ids}-list`} role="listbox">
+            {rows.map((s, i) => (
+              <SuggestionRow
+                key={s.kind === "function" ? s.name : s.info.id}
+                id={`${ids}-${i}`}
+                s={s}
+                query={list.query}
+                active={i === active}
+                onHover={() => setActive(i)}
+                onAccept={() => acceptRow(list, s)}
+              />
+            ))}
+          </div>
+        )}
       </div>
-      {/* One line, its height reserved, so nothing moves between valid and invalid (M4). */}
-      <p className="computed-error" aria-live="polite" title={error}>
+      {/* One line, its height reserved, so nothing moves between valid and invalid (M8). */}
+      <p
+        className={quiet ? "computed-error quiet" : "computed-error"}
+        aria-live="polite"
+        title={error}
+      >
         {error ?? ""}
       </p>
       <div className="computed-names">
@@ -283,12 +432,7 @@ export function ComputedEditor({
         <button type="button" onClick={() => onClose()}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || error !== undefined}
-          onClick={save}
-        >
+        <button type="button" className="primary" disabled={blocked} onClick={save}>
           Save
         </button>
       </div>
@@ -296,178 +440,69 @@ export function ComputedEditor({
   );
 }
 
-interface PickerProps {
-  label: "a" | "b";
-  value: string | undefined;
-  signals: readonly SignalInfo[];
-  infoOf: (name: string) => SignalInfo | undefined;
-  onPick: (name: string) => void;
-  /** Shows `×`, which empties the field. */
-  onClear?: () => void;
-  /** b while the formula does not use it: shown, value kept, not editable. */
-  disabled?: boolean;
-  inputRef?: React.RefObject<HTMLInputElement | null>;
+/** The formula's text with a `mark` per tinted span; the text itself is transparent (F11). */
+function tinted(
+  text: string,
+  spans: readonly { start: number; end: number; kind: "signal" | "computed" | "bad" }[],
+): ReactNode[] {
+  const out: ReactNode[] = [];
+  let at = 0;
+  for (const s of spans) {
+    if (s.start > at) out.push(text.slice(at, s.start));
+    const cls = s.kind === "signal" ? "sig" : s.kind === "computed" ? "sig computed" : "bad";
+    out.push(
+      <mark key={s.start} className={cls}>
+        {text.slice(s.start, s.end)}
+      </mark>,
+    );
+    at = s.end;
+  }
+  // The trailing space keeps a last empty line as tall as in the field.
+  out.push(`${text.slice(at)} `);
+  return out;
+}
+
+interface RowProps {
+  id: string;
+  s: Suggestion;
+  query: string;
+  active: boolean;
+  onHover: () => void;
+  onAccept: () => void;
 }
 
 /**
- * A signal picker (C12): a 26 px field showing the picked signal's short name; typing searches the
- * list with the shared search, at most PICKER_ROWS rows; arrows and Enter pick; a signal with states
- * is listed disabled with HINTS.computedNumericOnly and cannot be picked.
+ * One suggestion (F11): a function as `abs(x)`, a computed signal with `ƒ` and its name, a catalog
+ * signal with its shown name (mono) and unit; a signal with states drawn disabled with its title.
+ * A mouse-down accepts without leaving the field.
  */
-export function SignalPicker({
-  label,
-  value,
-  signals,
-  infoOf,
-  onPick,
-  onClear,
-  disabled = false,
-  inputRef,
-}: PickerProps) {
-  const [query, setQuery] = useState<string | undefined>();
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const ownRef = useRef<HTMLInputElement>(null);
-  const fieldRef = inputRef ?? ownRef;
-  const ids = useId();
-  const index = useMemo(() => buildSearchIndex(signals), [signals]);
-  const rows = useMemo(
-    () => (open ? searchSignals(index, query ?? "").slice(0, PICKER_ROWS) : []),
-    [open, index, query],
-  );
-  const picked = value === undefined ? undefined : infoOf(value);
-  const shown = query ?? (value === undefined ? "" : shortOf(picked ?? { name: value }));
-
-  const close = () => {
-    setOpen(false);
-    setQuery(undefined);
-    setActive(0);
-  };
-  const pick = (s: SignalInfo) => {
-    if (s.states !== undefined) return;
-    onPick(s.name);
-    close();
-  };
-  /**
-   * The arrow opens the list with the focus in this field, so its keys reach this picker: Esc closes
-   * only the list (L4, not the editor), arrows and Enter pick, typing searches. The focus moves
-   * first: blurring another picker closes that one's list.
-   */
-  const openFromArrow = () => {
-    fieldRef.current?.focus();
-    setOpen(true);
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    switch (e.key) {
-      case "ArrowDown":
-      case "ArrowUp": {
-        e.preventDefault();
-        if (!open) {
-          setOpen(true);
-          return;
-        }
-        const n = rows.length;
-        if (n > 0) setActive((active + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
-        return;
-      }
-      case "Enter": {
-        if (!open) return; // saves (the dialog's handler)
-        e.preventDefault();
-        e.stopPropagation();
-        const s = rows[active]?.signal;
-        if (s) pick(s);
-        return;
-      }
-      case "Escape":
-        if (!open) return; // cancels (the dialog's handler)
-        e.preventDefault();
-        e.stopPropagation();
-        close();
-        return;
-    }
-  };
-
+export function SuggestionRow({ id, s, query, active, onHover, onAccept }: RowProps) {
+  const disabled = s.kind === "signal" ? s.disabled : undefined;
+  const computed = s.kind === "signal" && s.info.computed !== undefined;
+  const text = s.kind === "function" ? FUNCTION_TEXT[s.name] : shownName(s.info);
+  const cls = `computed-option${active ? " active" : ""}${disabled ? " disabled" : ""}`;
   return (
-    <div className={disabled ? "computed-picker disabled" : "computed-picker"}>
-      <span className="computed-var mono">{label}</span>
-      <div className="computed-field">
-        <input
-          ref={fieldRef}
-          type="text"
-          className="mono"
-          aria-label={`Signal for ${label}`}
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={`${ids}-list`}
-          aria-activedescendant={open && rows.length > 0 ? `${ids}-${active}` : undefined}
-          spellCheck={false}
-          autoComplete="off"
-          disabled={disabled}
-          placeholder="Search a signal"
-          title={picked ? shownName(picked) : value}
-          value={shown}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setActive(0);
-            setOpen(true);
-          }}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={close}
-          onKeyDown={onKeyDown}
-        />
-        {onClear && value !== undefined && !disabled && (
-          <button
-            type="button"
-            className="computed-icon"
-            aria-label={`Clear ${label}`}
-            tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onClear}
-          >
-            ×
-          </button>
-        )}
-        <button
-          type="button"
-          className="computed-icon"
-          aria-label={`List signals for ${label}`}
-          tabIndex={-1}
-          disabled={disabled}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => (open ? close() : openFromArrow())}
-        >
-          ▾
-        </button>
-        {open && (
-          <div className="computed-list" id={`${ids}-list`} role="listbox">
-            {rows.length === 0 && <div className="computed-none">No signal matches</div>}
-            {rows.map((m, i) => {
-              const s = m.signal;
-              const states = s.states !== undefined;
-              return (
-                // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the combobox
-                // biome-ignore lint/a11y/useKeyWithClickEvents: arrows and Enter in the field pick
-                <div
-                  key={s.name}
-                  id={`${ids}-${i}`}
-                  role="option"
-                  aria-selected={i === active}
-                  aria-disabled={states || undefined}
-                  className={`computed-option${i === active ? " active" : ""}${states ? " disabled" : ""}`}
-                  title={states ? HINTS.computedNumericOnly(shortOf(s)) : shownName(s)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => pick(s)}
-                >
-                  <span className="computed-option-name mono">{shownName(s)}</span>
-                  {s.unit && <span className="computed-option-unit">{s.unit}</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+    // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the formula field
+    <div
+      id={id}
+      role="option"
+      aria-selected={active}
+      aria-disabled={disabled !== undefined || undefined}
+      className={cls}
+      title={disabled ?? (s.kind === "signal" ? shownName(s.info) : undefined)}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onAccept();
+      }}
+      onMouseEnter={onHover}
+    >
+      <span className="computed-option-glyph">{computed ? "ƒ" : ""}</span>
+      <span className={computed ? "computed-option-name" : "computed-option-name mono"}>
+        <Highlight text={text} ranges={hits(text, query)} />
+      </span>
+      {s.kind === "signal" && s.info.unit && (
+        <span className="computed-option-unit">{s.info.unit}</span>
+      )}
     </div>
   );
 }

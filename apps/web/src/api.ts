@@ -118,14 +118,20 @@ export interface CaseRequestOptions {
   preload?: boolean;
 }
 
-// Computed signals (add-computed-signals C11): the workspace's definitions by ID, so a request for
-// `<dataRef>/=<id>` carries its formula and inputs; the server keeps no definitions per request.
+// Computed signals (add-computed-signals C11, improve-formula-editor F10): the workspace's
+// definitions by ID, so a request for `<dataRef>/=<id>` carries its flattened formula; the server
+// keeps no definitions per request.
 const computedDefs = new Map<string, ComputedDef>();
 
 /** Replaces the definitions requests for computed IDs read (on every live state). */
 export function setComputedDefs(defs: readonly ComputedDef[]): void {
   computedDefs.clear();
   for (const def of defs) computedDefs.set(def.id, def);
+}
+
+/** Every definition `setComputedDefs` gave, in its order (nested ones resolve against these). */
+export function computedDefList(): ComputedDef[] {
+  return [...computedDefs.values()];
 }
 
 /** The definition of a computed signal ID by its `=<id>` part (any data ref); undefined otherwise. */
@@ -135,19 +141,16 @@ export function computedDefOf(signalId: string): ComputedDef | undefined {
 }
 
 /**
- * Adds `formula`, `a`, `b` of a computed `signalId` to `params` (C8); a computed ID without a
- * definition gives the error to reject with, before any request.
+ * Adds the flattened `formula` of a computed `signalId` to `params` (F8, F10); a computed ID without
+ * a definition, or whose definition does not flatten, gives the error to reject with, before any
+ * request.
  */
 function addComputed(params: URLSearchParams, signalId: string): ApiRequestError | undefined {
   if (computedRef(signalId) === undefined) return undefined;
   const def = computedDefOf(signalId);
-  if (!def) {
-    return new ApiRequestError(0, "unknown_computed", `no computed signal ${signalId}`);
-  }
-  const p = computedParams(def);
+  const p = def && computedParams(def, computedDefList());
+  if (!p) return new ApiRequestError(0, "unknown_computed", `no computed signal ${signalId}`);
   params.set("formula", p.formula);
-  params.set("a", p.a);
-  if (p.b !== undefined) params.set("b", p.b);
   return undefined;
 }
 

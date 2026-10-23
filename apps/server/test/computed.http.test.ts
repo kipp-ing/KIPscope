@@ -1,7 +1,9 @@
 import {
+  computedValueAt,
   computeRows,
   decodeTimes,
   fromIso,
+  NO_GAPS,
   parseFormula,
   type RawSeries,
   type SeriesResult,
@@ -18,6 +20,10 @@ import { testCatalog, testDataSource } from "./testdb.ts";
 const SIG_A = "Fast_100h.SIG_A";
 const SPEED = "Sna_800h.SPEED";
 const RPM = "Sna_800h.RPM";
+const SIG_B = "Fast_100h.SIG_B";
+const SIG_C = "Fast_100h.SIG_C";
+const manyNames = (count: number) =>
+  Array.from({ length: count }, (_, i) => `Many_700h.S${String(i).padStart(4, "0")}`);
 // SIG_A: 5 ms from 2026-10-01T00:00:00Z over 10 h, sin(n / 1000). SPEED: n * 100 ms from 02:00:00,
 // value n mod 100 (511 = SNA for n in [300, 499]). RPM: n * 1 s from 02:00:00, value 10 n (n = 0 … 3).
 const T0 = fromIso("2026-10-01T00:00:00Z");
@@ -43,8 +49,6 @@ function spied(source: DataSource) {
   return { source: proxy, calls };
 }
 
-const withoutB = ({ b: _b, ...rest }: Record<string, string>) => rest;
-
 const rows = (body: SeriesResult) => {
   if (body.kind !== "raw") throw new Error("expected a raw series");
   return decodeTimes(body.t).map((t, i) => ({ t, v: body.v[i] as number | null }));
@@ -64,9 +68,7 @@ describe("computed signals over HTTP (test DB)", () => {
   };
   const computed = (extra: Record<string, string> = {}) => ({
     signal: "testcar/=c1",
-    formula: "a - b",
-    a: SPEED,
-    b: RPM,
+    formula: `${SPEED} - ${RPM}`,
     ...extra,
   });
   const range = {
@@ -75,9 +77,8 @@ describe("computed signals over HTTP (test DB)", () => {
     target: "5000",
   };
 
-  // spec computed-signals "Series equals the per-row rule"
-  it("serves a computed series", async () => {
-    // By hand: SPEED n = 0 … 29 at S + n·100 ms (value n); RPM 0, 10, 20 at S, S + 1 s, S + 2 s.
+  // By hand: SPEED n = 0 … 29 at S + n·100 ms (value n); RPM 0, 10, 20 at S, S + 1 s, S + 2 s.
+  it("serves a computed series of two inputs", async () => {
     // Rows at the SPEED times (RPM shares every tenth): n − 10 · ⌊n / 10⌋ = n mod 10.
     const res = await get("/api/series", { ...computed(), ...range });
     expect(res.status).toBe(200);
@@ -93,30 +94,42 @@ describe("computed signals over HTTP (test DB)", () => {
     expect(res.body.after).toEqual({ t: (S + 3n * SEC).toString(), v: 0 });
   });
 
-  it("serves the rule applied to the inputs' raw points", async () => {
+  // spec computed-signals "Series equals the per-row rule" (three inputs)
+  it("serves a computed series", async () => {
+    const formula = `${SIG_A} - ${SIG_B} + ${SIG_C}`;
     const window = { from: "2026-10-01T02:00:00Z", to: "2026-10-01T02:00:02Z", target: "5000" };
     const ask = (query: Record<string, string>) => get("/api/series", { ...query, ...window });
-    const [diff, a, b] = await Promise.all([
-      ask({ signal: "testcar/=c1", formula: "a - b", a: SIG_A, b: SPEED }),
+    const [sum, a, b, c] = await Promise.all([
+      ask({ signal: "testcar/=c1", formula }),
       ask({ signal: `testcar/${SIG_A}` }),
-      ask({ signal: `testcar/${SPEED}` }),
+      ask({ signal: `testcar/${SIG_B}` }),
+      ask({ signal: `testcar/${SIG_C}` }),
     ]);
-    expect(diff.status).toBe(200);
-    expect(diff.body.kind).toBe("raw");
+    expect(sum.status).toBe(200);
+    expect(sum.body.kind).toBe("raw");
+    expect(sum.body.signalId).toBe("testcar/=c1");
     const input = (r: RawSeries) => ({
       points: decodeTimes(r.t).map((t, i) => ({ t, v: r.v[i] as number | null })),
       ...(r.before && { seed: { t: BigInt(r.before.t), v: r.before.v } }),
     });
-    const parsed = parseFormula("a - b");
+    const parsed = parseFormula(formula);
     if (!parsed.ok) throw new Error(parsed.message);
-    const expected = computeRows(parsed.ast, input(a.body), input(b.body));
+    const expected = computeRows(parsed.ast, [input(a.body), input(b.body), input(c.body)]);
     expect(expected.length).toBe(400);
-    expect(rows(diff.body)).toEqual(expected);
-    expect(diff.body.signalId).toBe("testcar/=c1");
+    expect(rows(sum.body)).toEqual(expected);
+    // By hand from the seed's formulas: value n = sin(n/1000) − 2 sin(n/2000) + 3 sin(n/3000)
+    // at n = 1,440,000 + k (5 ms from the start, S is 7,200 s after it).
+    const got = rows(sum.body);
+    for (const k of [0, 1, 200, 399]) {
+      const n = 1_440_000 + k;
+      const want = Math.sin(n / 1000) - 2 * Math.sin(n / 2000) + 3 * Math.sin(n / 3000);
+      expect(got[k]?.t, `row ${k}`).toBe(S + BigInt(k) * 5n * MS);
+      expect(got[k]?.v as number, `row ${k}`).toBeCloseTo(want, 6);
+    }
   });
 
   it("aggregates the exact rows into buckets", async () => {
-    const inputs = { signal: "testcar/=c1", formula: "a - b", a: SIG_A, b: SPEED };
+    const inputs = { signal: "testcar/=c1", formula: `${SIG_A} - ${SPEED}` };
     const window = { from: "2026-10-01T02:00:00Z", to: "2026-10-01T02:00:02Z" };
     const [wide, raw] = await Promise.all([
       get("/api/series", { ...inputs, ...window, target: "50" }),
@@ -135,53 +148,94 @@ describe("computed signals over HTTP (test DB)", () => {
     for (const start of decodeTimes(b.t)) expect(start % width).toBe(0n);
   });
 
-  // spec computed-signals "Refused requests", "Injected text refused"
+  // spec computed-signals "Refused requests"
   it("refuses bad computed requests", async () => {
-    const reqs: [string, Record<string, string>, number, string, Record<string, string>?][] = [
-      ["no formula", { signal: "testcar/=c1", a: SPEED, ...range }, 400, "invalid_request"],
-      ["no a", { signal: "testcar/=c1", formula: "a", ...range }, 400, "invalid_request"],
-      ["unknown name", computed({ formula: "a - c", ...range }), 400, "invalid_formula"],
-      ["no b", withoutB({ ...computed(), ...range }), 400, "invalid_formula"],
+    const reqs: [string, Record<string, string>, number, string, string][] = [
+      [
+        "no formula",
+        { signal: "testcar/=c1", ...range },
+        400,
+        "invalid_request",
+        "a computed signal needs formula",
+      ],
       [
         "unknown input",
-        computed({ a: "Nope_1h.X", ...range }),
+        computed({ formula: `${SIG_A} - Nope_1h.X`, ...range }),
         404,
         "unknown_signal",
-        { signalId: "testcar/Nope_1h.X" },
+        "not in this list",
       ],
       [
         "state input",
-        computed({ a: "Ign_A20h.MODE", ...range }),
+        computed({ formula: "Ign_A20h.MODE + 1", ...range }),
         422,
         "not_numeric_signal",
-        { signalId: "testcar/Ign_A20h.MODE" },
+        "",
+      ],
+      [
+        "nine names",
+        computed({ formula: manyNames(9).join(" + "), ...range }),
+        400,
+        "invalid_formula",
+        "At most 8 signals (with nested ones): 9",
       ],
       [
         "plain signal with a formula",
-        { signal: `testcar/${SPEED}`, formula: "a", ...range },
+        { signal: `testcar/${SIG_A}`, formula: SIG_A, ...range },
         400,
         "invalid_request",
+        "formula goes with a computed signal only",
+      ],
+      [
+        "syntax",
+        computed({ formula: `${SIG_A} %`, ...range }),
+        400,
+        "invalid_formula",
+        'Unexpected "%" at 17',
+      ],
+      [
+        "no signal named",
+        computed({ formula: "2 * 3", ...range }),
+        400,
+        "invalid_formula",
+        "Use at least one signal",
+      ],
+      [
+        "short names are not known to the server",
+        computed({ formula: "SIG_A - SPEED", ...range }),
+        404,
+        "unknown_signal",
+        "not in this list",
+      ],
+      [
+        "flat limit: 2,001 characters",
+        computed({ formula: `${SIG_A}${" ".repeat(2001 - SIG_A.length)}`, ...range }),
+        400,
+        "invalid_formula",
+        "characters",
       ],
     ];
-    for (const [label, query, status, code, extra] of reqs) {
+    for (const [label, query, status, code, message] of reqs) {
       const res = await get("/api/series", query);
       expect(res.status, label).toBe(status);
       expect(res.body.error.code, label).toBe(code);
-      if (extra?.signalId) expect(res.body.error.signalId, label).toBe(extra.signalId);
+      if (message) expect(res.body.error.message, label).toContain(message);
     }
-    // The messages.
+    // a and b are no parameters any more and get no special handling (D-108): ignored like any
+    // unknown query parameter.
+    for (const extra of [{ a: SIG_A }, { b: SPEED }]) {
+      const res = await get("/api/series", { ...computed({ formula: SIG_A, ...range }), ...extra });
+      expect(res.status, JSON.stringify(extra)).toBe(200);
+    }
+    // The unknown input is named by its ID; so is the state input.
     expect(
-      (await get("/api/series", computed({ formula: "a - c", ...range }))).body.error.message,
-    ).toBe('Unknown name "c": use a, b, numbers, + - * / ( ), abs, min, max');
-    expect((await get("/api/series", computed({ b: "", formula: "a - b", ...range }))).status).toBe(
-      400,
-    );
+      (await get("/api/series", computed({ formula: `${SIG_A} - Nope_1h.X`, ...range }))).body.error
+        .signalId,
+    ).toBe("testcar/Nope_1h.X");
     expect(
-      (await get("/api/series", { signal: "testcar/=c1", a: SPEED, ...range })).body.error.message,
-    ).toBe("a computed signal needs formula and a");
-    expect(
-      (await get("/api/series", computed({ a: "Nope_1h.X", ...range }))).body.error.message,
-    ).toContain("not in this list");
+      (await get("/api/series", computed({ formula: "Ign_A20h.MODE + 1", ...range }))).body.error
+        .signalId,
+    ).toBe("testcar/Ign_A20h.MODE");
 
     // The same refusals on /api/value and /api/extent.
     for (const [url, extra] of [
@@ -189,35 +243,80 @@ describe("computed signals over HTTP (test DB)", () => {
       ["/api/extent", {}],
     ] as const) {
       const base = computed(extra);
-      expect((await get(url, { ...base, formula: "a - c" })).body.error.code, url).toBe(
+      expect((await get(url, { ...base, formula: `${SIG_A} %` })).body.error.code, url).toBe(
         "invalid_formula",
       );
-      expect((await get(url, { ...base, a: "Nope_1h.X" })).status, url).toBe(404);
-      expect((await get(url, { ...base, a: "Ign_A20h.MODE" })).body.error.code, url).toBe(
+      expect((await get(url, { ...base, formula: `${SIG_A} - Nope_1h.X` })).status, url).toBe(404);
+      expect((await get(url, { ...base, formula: "Ign_A20h.MODE + 1" })).body.error.code, url).toBe(
         "not_numeric_signal",
       );
-      const noFormula = { signal: base.signal, a: SPEED, ...extra };
-      expect((await get(url, noFormula)).body.error.code, url).toBe("invalid_request");
       expect(
-        (await get(url, { signal: `testcar/${SPEED}`, formula: "a", ...extra })).body.error.code,
+        (await get(url, { ...base, formula: manyNames(9).join(" + ") })).body.error.message,
         url,
-      ).toBe("invalid_request");
+      ).toBe("At most 8 signals (with nested ones): 9");
+      expect((await get(url, { signal: base.signal, ...extra })).body.error.message, url).toBe(
+        "a computed signal needs formula",
+      );
+      expect(
+        (await get(url, { signal: `testcar/${SPEED}`, formula: SIG_A, ...extra })).body.error
+          .message,
+        url,
+      ).toBe("formula goes with a computed signal only");
     }
   });
 
+  // spec computed-signals "Injected text refused"
   it("never passes formula text on to the source", async () => {
     calls.length = 0;
     const res = await get("/api/series", {
-      ...computed({ formula: "a + 1); DROP TABLE signals --" }),
+      ...computed({ formula: `${SIG_A} + 1); DROP TABLE signals --` }),
       ...range,
     });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("invalid_formula");
-    expect(res.body.error.message).toBe('Unexpected ")" at 6');
+    expect(res.body.error.message).toBe('Unexpected ")" at 20');
     expect(calls).toEqual([]);
   });
 
   // spec computed-signals "Value and extent"
+  it("answers a computed value of three inputs and its extent", async () => {
+    const formula = `${SIG_A} - ${SIG_B} + ${SIG_C}`;
+    const parsed = parseFormula(formula);
+    if (!parsed.ok) throw new Error(parsed.message);
+    // Between rows of the 5 ms inputs: S + 2.5 ms.
+    const t = (S + 2_500_000n).toString();
+    for (const mode of ["step", "line"] as const) {
+      const ask = (query: Record<string, string>) => get("/api/value", { ...query, t, mode });
+      const sum = await ask({ signal: "testcar/=c1", formula });
+      const inputs = await Promise.all(
+        [SIG_A, SIG_B, SIG_C].map((n) => ask({ signal: `testcar/${n}` })),
+      );
+      expect(sum.status, mode).toBe(200);
+      type Wire = { t: string; v: number | null };
+      const neighbours = inputs.map((r) => {
+        const at = r.body.at as Wire | undefined;
+        const next = r.body.next as Wire | undefined;
+        return {
+          ...(at && { at: { t: BigInt(at.t), v: at.v } }),
+          ...(next && { next: { t: BigInt(next.t), v: next.v } }),
+        };
+      });
+      const want = computedValueAt(BigInt(t), mode, parsed.ast, neighbours, NO_GAPS);
+      expect(want.value.kind, mode).toBe(mode === "step" ? "held" : "interpolated");
+      expect(sum.body.value, mode).toEqual(want.value);
+      expect(sum.body.signalId).toBe("testcar/=c1");
+      expect(sum.body.at, mode).toEqual({ t: want.at?.t.toString(), v: want.at?.v });
+    }
+    // Extent: the latest first and the latest last of the three; all three run 00:00:00 … 09:59:59.995.
+    const extent = await get("/api/extent", { signal: "testcar/=c1", formula });
+    expect(extent.status).toBe(200);
+    expect(extent.body).toEqual({
+      signalId: "testcar/=c1",
+      first: T0.toString(),
+      last: (T0 + 35_999_995n * MS).toString(),
+    });
+  });
+
   it("answers a computed value and extent", async () => {
     const value = (t: string, mode?: string) =>
       get("/api/value", { ...computed(), t, ...(mode && { mode }) });
@@ -250,7 +349,7 @@ describe("computed signals over HTTP (test DB)", () => {
 
     // Extent: the later of the firsts and the later of the lasts. SIG_A runs 00:00:00 … 09:59:59.995,
     // SPEED 02:00:00 … 02:01:39.9.
-    const extent = await get("/api/extent", computed({ a: SIG_A, b: SPEED }));
+    const extent = await get("/api/extent", computed({ formula: `${SIG_A} - ${SPEED}` }));
     expect(extent.status).toBe(200);
     expect(extent.body).toEqual({
       signalId: "testcar/=c1",
@@ -261,8 +360,11 @@ describe("computed signals over HTTP (test DB)", () => {
 });
 
 describe("computed signals over a source with the required methods only", () => {
-  const A: RawPoint[] = Array.from({ length: 200_001 }, (_, i) => ({ t: BigInt(i), v: 1 }));
+  const base = fromIso("2026-10-01T00:00:00Z");
+  /** Points per input; the first input at even, the second at odd nanoseconds after `base`. */
+  const sizes = { "A.X": 100_001, "B.Y": 10 };
   const calls: { name: string; limit: number | undefined }[] = [];
+  let startedAtFirstAnswer = 0;
   const adapter: SourceAdapter = {
     info: { kind: "memory", database: "stub", table: "rows" },
     ping: async () => {},
@@ -272,7 +374,15 @@ describe("computed signals over a source with the required methods only", () => 
     ],
     raw: async (ref, _from, _to, limit) => {
       calls.push({ name: ref.name, limit });
-      const all = ref.name === "A.X" ? A : [{ t: 5n, v: 2 }];
+      // Answer late, so that a sequential reader could not have started the other input yet.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (startedAtFirstAnswer === 0) startedAtFirstAnswer = calls.length;
+      const n = sizes[ref.name as keyof typeof sizes];
+      const odd = ref.name === "B.Y" ? 1n : 0n;
+      const all: RawPoint[] = Array.from({ length: n }, (_, i) => ({
+        t: base + BigInt(i) * 2n + odd,
+        v: 1,
+      }));
       return limit === undefined ? all : all.slice(0, limit);
     },
     before: async () => undefined,
@@ -285,32 +395,45 @@ describe("computed signals over a source with the required methods only", () => 
   const app = buildApp({ catalog, source, workspace: workspace() });
   beforeAll(() => catalog.refresh());
   afterAll(() => app.close());
-
-  // spec data-source "Row cap"
-  it("answers computed_too_large from the fallback", async () => {
-    const res = await app.inject({
+  const ask = () =>
+    app.inject({
       url: "/api/series",
       query: {
         signal: "car/=c1",
-        formula: "a - b",
-        a: "A.X",
-        b: "B.Y",
+        formula: "A.X - B.Y",
         from: "2026-10-01T00:00:00Z",
         to: "2026-10-01T01:00:00Z",
         target: "1000",
       },
     });
+
+  // spec data-source "Row cap": 200,000 rows for all inputs, an even share (100,000) each
+  it("answers computed_too_large from the fallback", async () => {
+    sizes["A.X"] = 100_001;
+    sizes["B.Y"] = 10;
+    calls.length = 0;
+    startedAtFirstAnswer = 0;
+    const res = await ask();
     expect(res.statusCode).toBe(422);
     const { error } = res.json();
     expect(error.code).toBe("computed_too_large");
-    expect(error.message).toBe("more than 200,000 rows of A.X in this range: zoom in");
-    // The fallback read each input once with the bound one row above the cap.
+    expect(error.message).toBe("more than 100,000 rows of A.X in this range: zoom in");
+    // One wave: both reads started before either answered, each with the share plus one.
+    expect(startedAtFirstAnswer).toBe(2);
     expect(
       calls
-        .filter((c) => c.limit === 200_001)
+        .filter((c) => c.limit === 100_001)
         .map((c) => c.name)
         .sort(),
     ).toEqual(["A.X", "B.Y"]);
+  });
+
+  it("answers a computed series at exactly the share of each input", async () => {
+    sizes["A.X"] = 100_000;
+    sizes["B.Y"] = 100_000;
+    const res = await ask();
+    expect(res.statusCode).toBe(200);
+    expect(res.json().kind).toBe("buckets");
   });
 });
 
@@ -346,9 +469,7 @@ describe("computed signals hold an input within its period (memory source)", () 
       url: "/api/series",
       query: {
         signal: "car/=c1",
-        formula: "a - b",
-        a: "A.X",
-        b: "B.Y",
+        formula: "A.X - B.Y",
         from: "2026-10-02T00:00:00Z",
         to: "2026-10-02T00:00:03Z",
         target: "5000",

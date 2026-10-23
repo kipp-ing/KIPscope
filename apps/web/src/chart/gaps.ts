@@ -2,6 +2,7 @@ import {
   computedInputIds,
   computedRef,
   computedSignalGaps,
+  computedSources,
   GAP_REFRESH_MS,
   type GapInfo,
   holdsSample,
@@ -16,7 +17,7 @@ import {
   workWindow,
 } from "@kipscope/shared";
 import { useCallback, useSyncExternalStore } from "react";
-import { computedDefOf, fetchGaps, isCatalogLoading } from "../api.ts";
+import { computedDefList, computedDefOf, fetchGaps, isCatalogLoading } from "../api.ts";
 
 /** Scope keys whose extents and gap info are kept (add-case-open K12; the server keeps 4 scope lists too). */
 export const SCOPE_STORES = 4;
@@ -56,8 +57,8 @@ interface Entry {
 }
 
 /**
- * The signals whose gap info `signalIds` need: a computed ID stands for its used inputs on its data
- * ref (add-computed-signals C11, C3), dropped while it has no definition.
+ * The signals whose gap info `signalIds` need: a computed ID stands for its sources (nested ones
+ * flattened) on its data ref (F10, add-computed-signals C3), dropped while it has no definition.
  */
 function gapSignals(signalIds: readonly string[]): string[] {
   const out: string[] = [];
@@ -68,7 +69,7 @@ function gapSignals(signalIds: readonly string[]): string[] {
       continue;
     }
     const def = computedDefOf(id);
-    if (def) out.push(...computedInputIds(def, ref.dataRef));
+    if (def) out.push(...computedInputIds(def, computedDefList(), ref.dataRef));
   }
   return out;
 }
@@ -434,13 +435,14 @@ export function useGapInfo(
 
 /**
  * Gaps of one signal from its data ref's gap info (`signalGaps`); a computed signal's from its
- * inputs' periods (C3), only logger gaps while its definition is unknown.
+ * sources' periods (C3, F10), only logger gaps while its definition is unknown or does not flatten.
  */
 export function gapsOf(info: GapInfo | undefined, signalId: string): SignalGaps {
   const ref = computedRef(signalId);
   const def = ref && computedDefOf(signalId);
   // An ID the gap info does not know gets its data ref's logger gaps and no period.
-  return ref && def ? computedSignalGaps(info, ref.dataRef, def) : signalGaps(info, signalId);
+  if (!ref || !def) return signalGaps(info, signalId);
+  return computedSignalGaps(info, ref.dataRef, computedSources(def, computedDefList()) ?? []);
 }
 
 /**

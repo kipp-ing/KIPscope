@@ -2,14 +2,17 @@ import { type CaseEntry, caseScope } from "./case.ts";
 import { applyCaseCommand } from "./caseApply.ts";
 import {
   type ComputedDef,
+  checkFormula,
   computedInputIds,
   computedRef,
   computedSignalId,
+  computedUsers,
   MAX_COMPUTED,
+  type SignalCheck,
   withComputed,
 } from "./computed.ts";
 import { DEFAULT_EVENT_FILTER, formatEventFilter, parseEventFilter } from "./eventFilter.ts";
-import { bindFormula, parseFormula } from "./formula.ts";
+import { formulaInputs, MAX_FORMULA_LENGTH, parseFormula, renameInFormula } from "./formula.ts";
 import { clampToScope } from "./scope.ts";
 import { parseSignalId, signalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
@@ -47,8 +50,8 @@ export interface ApplyContext {
   /** Whether a signal has states (catalog: SignalInfo.states present), design E8. */
   hasStates(signalId: string): boolean;
   /**
-   * Without a scope: the first entry with this signal name in the list in use, for the inputs of
-   * computed.add/update (add-computed-signals C7); absent: inputs unchecked without a scope.
+   * Without a scope: the first entry with this signal name in the list in use, for the source
+   * signals and the name guard of computed.add/update (design F5); absent: unchecked without a scope.
    */
   inputInfo?(name: string): { states: boolean } | undefined;
   /** Whether the catalog has loaded; view.open needs it (absent = ready). */
@@ -227,12 +230,13 @@ function moveComputedUses(state: Workspace, id: string, to: string | undefined):
   return { ...state, windows, colors };
 }
 
-/** window.addSignal's message: a computed ID names its missing inputs (C7). */
+/** window.addSignal's message: a computed ID names its missing sources, nested ones too (F5). */
 function unknownSignalMessage(id: string, state: Workspace, catalog: ApplyContext): string {
   const ref = computedRef(id);
-  const def = ref && state.computed?.find((d) => d.id === ref.id);
+  const defs = state.computed ?? [];
+  const def = ref && defs.find((d) => d.id === ref.id);
   if (!ref || !def) return `unknown signal: ${id}`;
-  const missing = computedInputIds(def, ref.dataRef)
+  const missing = computedInputIds(def, defs, ref.dataRef)
     .filter((input) => !catalog.signalExists(input))
     .map((input) => parseSignalId(input)?.name ?? input);
   return `computed signal ${id}: not in this list: ${missing.join(", ")}`;
@@ -243,16 +247,24 @@ type ComputedCommand = Extract<
   { type: "computed.add" | "computed.update" | "computed.remove" }
 >;
 
+const tooLong = () => fail("invalid_formula", `At most ${MAX_FORMULA_LENGTH} characters`);
+
 /**
- * computed.add, computed.update and computed.remove (C7) with the refusals in the table's order.
- * An update makes a new ID and moves every use to it; a remove drops its assignments and colours.
+ * computed.add, computed.update and computed.remove (design F5) with the refusals in the table's
+ * order. The formula is canonical: a name is a definition of the workspace, else a source signal.
+ * An update gives the edited definition and every user (transitive) new IDs and moves their uses;
+ * a rename rewrites the direct users' formulas; a remove of a used definition is refused.
  */
 function applyComputed(state: Workspace, command: ComputedCommand, ctx: ApplyContext): ApplyResult {
   const defs = state.computed ?? [];
   const unknownComputed = (id: string) =>
     fail("unknown_computed", `unknown computed signal: ${id}`);
   if (command.type === "computed.remove") {
-    if (!defs.some((d) => d.id === command.id)) return unknownComputed(command.id);
+    const def = defs.find((d) => d.id === command.id);
+    if (!def) return unknownComputed(command.id);
+    const users = computedUsers(def.name, defs);
+    if (users.length > 0)
+      return fail("computed_in_use", `used by: ${users.map((u) => `"${u.name}"`).join(", ")}`);
     const workspace = pruneColors(moveComputedUses(state, command.id, undefined));
     return {
       ok: true,
@@ -268,60 +280,73 @@ function applyComputed(state: Workspace, command: ComputedCommand, ctx: ApplyCon
     if (!old) return unknownComputed(command.id);
   } else if (ctx.scopeRequired && !state.scope) return scopeRequired();
 
-  const bound = bindFormula(parseFormula(command.formula), {
-    a: command.a,
-    ...(command.b !== undefined && { b: command.b }),
-  });
-  if (!bound.ok) return fail("invalid_formula", bound.message);
   const name = command.name.trim();
+  const unit = command.unit?.trim();
+  // The definitions as they would be: the edited one replaced, direct users renamed.
+  const renamed = old !== undefined && old.name !== name ? old : undefined;
+  const nextDefs = defs.map((d): ComputedDef => {
+    if (d.id === old?.id)
+      return { id: d.id, name, formula: command.formula, ...(unit ? { unit } : {}) };
+    return renamed ? { ...d, formula: renameInFormula(d.formula, renamed.name, name) } : d;
+  });
+  const self = { ...(old && { id: old.id }), name };
+  const others = old ? nextDefs : defs;
+
+  // Parse errors first, then the names (a name equal to a listed signal would also read as a
+  // cycle), then cycle and limits, so the refusals follow the table's order.
+  const parsed = parseFormula(command.formula);
+  if (!parsed.ok) return fail("invalid_formula", parsed.message);
   if (defs.some((d) => d.id !== old?.id && d.name.toLowerCase() === name.toLowerCase()))
     return fail("duplicate_name", `Name already used: ${name}`);
+  const listed = state.scope
+    ? ctx.signalExists(signalId(state.scope.dataRef, name))
+    : ctx.inputInfo?.(name) !== undefined;
+  if (listed) return fail("duplicate_name", `Name used by a signal: ${name}`);
+  const structure = checkFormula(command.formula, others, self, () => "unchecked");
+  if (!structure.ok && structure.code === "invalid_formula")
+    return fail("invalid_formula", structure.message);
   if (!old && defs.length >= MAX_COMPUTED)
     return fail("computed_limit", `a workspace holds at most ${MAX_COMPUTED} computed signals`);
 
-  // Inputs on the scope's data ref, else in the list in use; an update checks changed ones only.
-  const changed = [bound.a, bound.b].filter(
-    (input, i): input is string =>
-      input !== undefined && (!old || input !== (i === 0 ? old.a : old.b)),
-  );
-  const inputState = (input: string): "unknown" | "states" | "ok" => {
+  // Sources on the scope's data ref, else in the list in use; an update checks new names only.
+  const parsedOld = old && parseFormula(old.formula);
+  const stored = new Set(parsedOld?.ok ? formulaInputs(parsedOld.ast) : []);
+  const signal: SignalCheck = (input) => {
+    if (stored.has(input)) return "unchecked";
     if (state.scope) {
       const id = signalId(state.scope.dataRef, input);
       if (!ctx.signalExists(id)) return "unknown";
-      return ctx.hasStates(id) ? "states" : "ok";
+      return ctx.hasStates(id) ? "states" : "numeric";
     }
-    if (!ctx.inputInfo) return "ok";
+    if (!ctx.inputInfo) return "unchecked";
     const info = ctx.inputInfo(input);
-    return info === undefined ? "unknown" : info.states ? "states" : "ok";
+    return info === undefined ? "unknown" : info.states ? "states" : "numeric";
   };
-  const states = changed.map((input) => [input, inputState(input)] as const);
-  const unknown = states.find(([, s]) => s === "unknown");
-  if (unknown) return fail("unknown_signal", `not in this list: ${unknown[0]}`);
-  const numericOnly = states.find(([, s]) => s === "states");
-  if (numericOnly)
-    return fail("not_numeric_signal", `${numericOnly[0]} has states: pick a numeric signal`);
+  const checked = checkFormula(command.formula, others, self, signal);
+  if (!checked.ok) return fail(checked.code, checked.message);
+  if (checked.formula.length > MAX_FORMULA_LENGTH) return tooLong();
 
   const id = `c${state.nextId}`;
-  const unit = command.unit?.trim();
-  const def: ComputedDef = {
-    id,
-    name,
-    formula: command.formula.trim(),
-    a: bound.a,
-    ...(bound.b !== undefined && { b: bound.b }),
-    ...(unit ? { unit } : {}),
-  };
-  const nextId = state.nextId + 1;
+  const def: ComputedDef = { id, name, formula: checked.formula, ...(unit ? { unit } : {}) };
   if (!old)
     return {
       ok: true,
-      workspace: withComputedDefs({ ...state, nextId }, [...defs, def]),
+      workspace: withComputedDefs({ ...state, nextId: state.nextId + 1 }, [...defs, def]),
       created: id,
     };
 
-  const nextDefs = defs.map((d) => (d.id === old.id ? def : d));
-  const moved = moveComputedUses(state, old.id, id);
-  const unitOf = withComputed(ctx, nextDefs).unitOf;
+  // Cascade: the edited definition, then its users in creation order, each with a new ID.
+  const newIds = new Map<string, string>([[old.id, id]]);
+  let nextId = state.nextId + 1;
+  for (const d of nextDefs) if (checked.users.includes(d.id)) newIds.set(d.id, `c${nextId++}`);
+  const finalDefs: ComputedDef[] = [];
+  for (const d of nextDefs) {
+    if (d.id === old.id) finalDefs.push(def);
+    else finalDefs.push({ ...d, id: newIds.get(d.id) ?? d.id });
+  }
+  let moved = state;
+  for (const [from, to] of newIds) moved = moveComputedUses(moved, from, to);
+  const unitOf = withComputed(ctx, finalDefs).unitOf;
   if (unitOf) {
     for (const w of moved.windows) {
       if (!isTimeseries(w) || !w.signals.some((s) => computedRef(s.signalId)?.id === id)) continue;
@@ -335,7 +360,7 @@ function applyComputed(state: Workspace, command: ComputedCommand, ctx: ApplyCon
   }
   return {
     ok: true,
-    workspace: withComputedDefs({ ...moved, nextId }, nextDefs),
+    workspace: withComputedDefs({ ...moved, nextId }, finalDefs),
     created: id,
   };
 }
@@ -382,12 +407,11 @@ function openView(
   let nextId = state.nextId;
   // The document's computed signals first, each with a fresh ID; window references `=<name>`
   // map to it, and every check sees these definitions (C10).
+  // Formulas name other entries by name, so they carry over unchanged (F14).
   const computed: ComputedDef[] = (doc.computed ?? []).map((c) => ({
     id: `c${nextId++}`,
     name: c.name,
     formula: c.formula,
-    a: c.a,
-    ...(c.b !== undefined && { b: c.b }),
     ...(c.unit !== undefined && { unit: c.unit }),
   }));
   const computedIds = new Map(computed.map((d) => [d.name.toLowerCase(), d.id]));

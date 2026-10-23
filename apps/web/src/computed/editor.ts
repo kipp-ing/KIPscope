@@ -1,29 +1,26 @@
 import {
-  bindFormula,
   type ComputedDef,
+  checkFormula,
+  type FormulaNames,
   type FormulaNode,
   formulaName,
   freeName,
   inferUnit,
   MAX_COMPUTED_NAME,
   MAX_COMPUTED_UNIT,
-  PRESETS,
-  type PresetId,
+  MAX_FORMULA_SIGNALS,
   parseFormula,
+  quoteName,
+  resolveFormula,
   type SignalInfo,
   shortSignalName,
-  shownName,
 } from "@kipscope/shared";
-import { HINTS } from "../help/hints.ts";
 
 /**
- * The editor's fields (add-computed-signals C12): `a` and `b` are signal names (no data ref), as
- * a definition stores them; `b` stays in its field when the formula does not use it. `nameAuto`
- * and `unitAuto`: the field follows inputs and formula until the user types in it.
+ * The editor's fields (F11): the formula as typed (names typed, F2), name and unit. `nameAuto` and
+ * `unitAuto`: the field follows the formula until the user types in it (F7).
  */
 export interface EditorState {
-  a?: string;
-  b?: string;
   formula: string;
   name: string;
   unit: string;
@@ -31,80 +28,88 @@ export interface EditorState {
   unitAuto: boolean;
 }
 
-type InfoOf = (name: string) => SignalInfo | undefined;
-
-const DIFFERENCE = "a - b";
-const ABSOLUTE = "abs(a)";
-
-/** A catalog signal the pickers accept: not computed, without states. */
-const pickable = (s: SignalInfo) => s.computed === undefined && s.states === undefined;
-
-/** The input's shown name after its first "." (C12 auto name). */
-const shortOf = (name: string | undefined, infoOf: InfoOf) =>
-  name === undefined ? undefined : shortSignalName(shownName(infoOf(name) ?? { name }));
+/** What typed names resolve against and the definitions a formula is checked with (F2, F5). */
+export interface EditorContext {
+  names: FormulaNames;
+  defs: readonly ComputedDef[];
+  /** The definition being edited; absent for a new one. */
+  selfId?: string;
+}
 
 /**
- * C12 prefill (lead pick 2): one or two selected catalog signals without states, in click order
- * (`selectedInClickOrder`, first clicked = `a`, L2), give `a` (and `b`) with Absolute or
- * Difference; anything else an empty editor with Difference. Name and unit follow (`withAuto`
- * against the other definitions refines the name).
+ * The names of the list in use (F2): its catalog signals once per name (computed infos left out)
+ * and the workspace's definitions.
  */
-export function prefill(selected: readonly SignalInfo[]): EditorState {
-  const empty: EditorState = {
-    formula: DIFFERENCE,
-    name: "",
-    unit: "",
-    nameAuto: true,
-    unitAuto: true,
-  };
-  if (selected.length === 0 || selected.length > 2 || !selected.every(pickable)) return empty;
-  const [a, b] = selected as [SignalInfo, SignalInfo | undefined];
-  const s: EditorState = {
-    ...empty,
-    a: a.name,
-    ...(b ? { b: b.name } : {}),
-    formula: b ? DIFFERENCE : ABSOLUTE,
-  };
-  const infoOf: InfoOf = (name) => selected.find((x) => x.name === name);
-  return withAuto(s, [], infoOf);
+export function formulaNames(
+  items: readonly SignalInfo[],
+  defs: readonly ComputedDef[],
+): FormulaNames {
+  const seen = new Set<string>();
+  const signals: { name: string; unit?: string; states: boolean }[] = [];
+  for (const s of items) {
+    if (s.computed !== undefined || seen.has(s.name)) continue;
+    seen.add(s.name);
+    signals.push({
+      name: s.name,
+      ...(s.unit !== undefined && { unit: s.unit }),
+      states: s.states !== undefined,
+    });
+  }
+  const computed = defs.map((d) => ({
+    name: d.name,
+    ...(d.unit !== undefined && { unit: d.unit }),
+  }));
+  return { signals, computed };
 }
 
-/** The bound formula of `s`, or undefined while it does not parse or bind. */
-function bound(s: Pick<EditorState, "formula" | "a" | "b">): FormulaNode | undefined {
-  const parsed = bindFormula(parseFormula(s.formula), {
-    ...(s.a !== undefined ? { a: s.a } : {}),
-    ...(s.b !== undefined ? { b: s.b } : {}),
+/**
+ * F12 prefill from the selection in click order (L2): numeric catalog signals and available computed
+ * signals, at most MAX_FORMULA_SIGNALS; 1 → `abs(X)`, 2 → `X - Y`, more → `X + Y + Z …`; the caret
+ * at the end. Name and unit follow (`withAuto`).
+ */
+export function prefill(selected: readonly SignalInfo[]): EditorState & { caret: number } {
+  const names = selected
+    .filter((s) =>
+      s.computed !== undefined ? s.computed.unavailable === undefined : s.states === undefined,
+    )
+    .slice(0, MAX_FORMULA_SIGNALS)
+    .map((s) => quoteName(s.computed !== undefined ? (s.displayName ?? s.name) : s.name));
+  const formula =
+    names.length === 0
+      ? ""
+      : names.length === 1
+        ? `abs(${names[0]})`
+        : names.length === 2
+          ? `${names[0]} - ${names[1]}`
+          : names.join(" + ");
+  return { formula, name: "", unit: "", nameAuto: true, unitAuto: true, caret: formula.length };
+}
+
+/** The other definitions (the edited one left out). */
+const othersOf = (ctx: EditorContext) => ctx.defs.filter((d) => d.id !== ctx.selfId);
+
+/** Auto name (without the ` 2` suffix) and unit of a canonical AST (F7). */
+function autoOf(ast: FormulaNode, ctx: EditorContext): { name: string; unit: string } {
+  const defOf = (name: string) => ctx.defs.find((d) => d.name === name);
+  const signalOf = (name: string) => ctx.names.signals.find((s) => s.name === name);
+  const name = formulaName(ast, (n) => (defOf(n) ? n : shortSignalName(n)));
+  const unit = inferUnit(ast, (n) => {
+    const def = defOf(n);
+    return def ? def.unit : signalOf(n)?.unit;
   });
-  return parsed.ok ? parsed.ast : undefined;
+  return {
+    name: name.length > MAX_COMPUTED_NAME ? `${name.slice(0, MAX_COMPUTED_NAME - 1)}…` : name,
+    unit: unit ?? "",
+  };
 }
-
-/** Auto name and unit of a bound formula, the name without the ` 2` suffix. */
-function autoOf(
-  ast: FormulaNode,
-  s: Pick<EditorState, "a" | "b">,
-  infoOf: InfoOf,
-): { name: string; unit: string } {
-  const aName = shortOf(s.a, infoOf) ?? "a";
-  const name = formulaName(ast, aName, shortOf(s.b, infoOf));
-  const aUnit = s.a === undefined ? undefined : infoOf(s.a)?.unit;
-  const bUnit = s.b === undefined ? undefined : infoOf(s.b)?.unit;
-  return { name, unit: inferUnit(ast, aUnit, bUnit) ?? "" };
-}
-
-const sameName = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
 
 /** The editor state of a stored definition; a field follows only if it equals its auto value. */
-export function fromDef(def: ComputedDef, infoOf: InfoOf): EditorState {
-  const s = {
-    a: def.a,
-    ...(def.b !== undefined ? { b: def.b } : {}),
-    formula: def.formula,
-  };
-  const ast = bound(s);
-  const auto = ast ? autoOf(ast, s, infoOf) : undefined;
+export function fromDef(def: ComputedDef, ctx: EditorContext): EditorState {
+  const parsed = parseFormula(def.formula);
+  const auto = parsed.ok ? autoOf(parsed.ast, ctx) : undefined;
   const unit = def.unit ?? "";
   return {
-    ...s,
+    formula: def.formula,
     name: def.name,
     unit,
     // A stored auto name may carry the ` 2` it got when its base was taken.
@@ -117,35 +122,57 @@ export function fromDef(def: ComputedDef, infoOf: InfoOf): EditorState {
   };
 }
 
+const sameName = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+
 /** Control characters are refused in names and units (C6), as the shared schema does. */
 const CONTROL = /\p{Cc}/u;
 
+/** The listed signal a definition name would hide (F2 guard), case ignored. */
+const signalNamed = (name: string, ctx: EditorContext) =>
+  ctx.names.signals.find((x) => sameName(x.name, name));
+
 /**
- * The first error of `s` (C12 live validation), undefined when Save may send it: the formula
- * (C1 messages), its inputs, then name and unit (C6). `others`: the other definitions.
+ * The canonical formula of `s` checked with the definitions (F11 live validation): typed names
+ * resolved (F2), then `checkFormula` with the edited definition replaced by the editor's state
+ * (cycles, limits with nested ones, a user pushed past a limit, a rename reaching its users).
  */
-export function editorError(
+function checked(
   s: EditorState,
-  others: readonly ComputedDef[],
-  infoOf: InfoOf,
-): string | undefined {
-  const parsed = parseFormula(s.formula);
-  if (!parsed.ok) return parsed.message;
-  const b = bindFormula(parsed, {
-    ...(s.a !== undefined ? { a: s.a } : {}),
-    ...(s.b !== undefined ? { b: s.b } : {}),
-  });
-  if (!b.ok) return b.message;
-  for (const input of [b.a, b.b]) {
-    if (input === undefined) continue;
-    const info = infoOf(input);
-    if (info?.states !== undefined) return HINTS.computedNumericOnly(shortSignalName(input));
-  }
+  ctx: EditorContext,
+): { ok: true; formula: string; ast: FormulaNode } | { ok: false; message: string } {
+  const resolved = resolveFormula(s.formula, ctx.names);
+  if (!resolved.ok) return resolved;
+  const self = ctx.defs.find((d) => d.id === ctx.selfId);
+  // A name the name rules refuse anyway keeps the stored one, so it reads as no cycle here.
+  const typed = s.name.trim();
+  const name = typed === "" || signalNamed(typed, ctx) ? (self?.name ?? "") : typed;
+  const signal = (n: string) => {
+    const found = ctx.names.signals.find((x) => x.name === n);
+    return found === undefined ? "unknown" : found.states ? "states" : "numeric";
+  };
+  const result = checkFormula(
+    resolved.formula,
+    ctx.defs,
+    self ? { id: self.id, name } : { name },
+    signal,
+  );
+  return result.ok ? { ok: true, formula: result.formula, ast: resolved.ast } : result;
+}
+
+/**
+ * The first error of `s` (F11), undefined when Save may send it: the formula (F1, F2, F4 messages),
+ * then name (C6, F2 guard) and unit.
+ */
+export function editorError(s: EditorState, ctx: EditorContext): string | undefined {
+  const formula = checked(s, ctx);
+  if (!formula.ok) return formula.message;
   const name = s.name.trim();
   if (name === "") return "Enter a name";
   if (name.length > MAX_COMPUTED_NAME) return `At most ${MAX_COMPUTED_NAME} characters`;
   if (CONTROL.test(name)) return "No control characters in the name";
-  if (others.some((d) => sameName(d.name, name))) return "Name already used";
+  if (othersOf(ctx).some((d) => sameName(d.name, name))) return "Name already used";
+  const signal = signalNamed(name, ctx);
+  if (signal) return `Name used by a signal: ${signal.name}`;
   const unit = s.unit.trim();
   if (unit.length > MAX_COMPUTED_UNIT) return `Unit: at most ${MAX_COMPUTED_UNIT} characters`;
   if (CONTROL.test(unit)) return "No control characters in the unit";
@@ -153,51 +180,23 @@ export function editorError(
 }
 
 /**
- * Name and unit after a change of inputs or formula (C12): a field with its auto flag follows the
- * auto value (a taken name gets ` 2`, ` 3`, …); while the formula does not bind, both stay.
+ * Name and unit after a change of the formula (F7): a field with its auto flag follows the auto
+ * value (a taken name gets ` 2`, ` 3`, …); while the formula does not resolve, both stay.
  */
-export function withAuto(
-  s: EditorState,
-  others: readonly ComputedDef[],
-  infoOf: InfoOf,
-): EditorState {
+export function withAuto(s: EditorState, ctx: EditorContext): EditorState {
   if (!s.nameAuto && !s.unitAuto) return s;
-  const ast = bound(s);
-  if (!ast) return s;
-  const auto = autoOf(ast, s, infoOf);
+  const resolved = resolveFormula(s.formula, ctx.names);
+  if (!resolved.ok) return s;
+  const auto = autoOf(resolved.ast, ctx);
   return {
     ...s,
-    ...(s.nameAuto ? { name: freeName(auto.name, others) } : {}),
+    ...(s.nameAuto ? { name: freeName(auto.name, othersOf(ctx)) } : {}),
     ...(s.unitAuto ? { unit: auto.unit } : {}),
   };
 }
 
-/** Picking a preset writes its formula; Custom keeps the text (C12). */
-export function withPreset(s: EditorState, id: PresetId): EditorState {
-  const formula = PRESETS.find((p) => p.id === id)?.formula;
-  return formula === undefined ? s : { ...s, formula };
-}
-
-/** Whether the formula of `s` uses `b` (picker b disabled otherwise, its value kept). */
-export function usesB(formula: string): boolean {
-  const parsed = parseFormula(formula);
-  return parsed.ok ? parsed.vars.has("b") : /\bb\b/.test(formula);
-}
-
-/** The command body Save sends; `b` only when the formula uses it, `unit` only when set. */
-export function commandBody(s: EditorState): {
-  name: string;
-  formula: string;
-  a: string;
-  b?: string;
-  unit?: string;
-} {
-  const unit = s.unit.trim();
-  return {
-    name: s.name.trim(),
-    formula: s.formula.trim(),
-    a: s.a ?? "",
-    ...(s.b !== undefined && usesB(s.formula) ? { b: s.b } : {}),
-    ...(unit !== "" ? { unit } : {}),
-  };
+/** The canonical formula Save sends (F11), undefined while the formula does not check. */
+export function canonicalFormula(s: EditorState, ctx: EditorContext): string | undefined {
+  const formula = checked(s, ctx);
+  return formula.ok ? formula.formula : undefined;
 }

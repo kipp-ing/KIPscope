@@ -45,21 +45,29 @@ const ref = (
   text?: boolean,
 ): SeriesRef => (text === undefined ? { dataRef, name, sna } : { dataRef, name, sna, text });
 const ramp = ref("conf-a", "Lin.RAMP");
+const beat = ref("conf-a", "Beat.HB");
 
 /** The Sna.CODE ranges of the conformance tests: 7 is SNA (fixture.ts). */
 const snaCode = ref("conf-a", "Sna.CODE", [{ lo: 6.5, hi: 7.5 }]);
 
-/** A computed ref over `conf-a` (add-computed-signals); `holdB`: b's hold limit in ns. */
-function computedOf(formula: string, a: SeriesRef, b?: SeriesRef, holdB?: bigint): ComputedRef {
+/**
+ * A computed ref over `conf-a`; `inputs` in the order the formula names them; `hold`: hold limits in
+ * ns by input name.
+ */
+function computedOf(
+  formula: string,
+  inputs: readonly SeriesRef[],
+  hold: Record<string, bigint> = {},
+): ComputedRef {
   const parsed = parseFormula(formula);
   if (!parsed.ok) throw new Error(`${formula}: ${parsed.message}`);
-  const input = (r: SeriesRef, hold?: bigint): ComputedInputRef =>
-    hold === undefined ? { ...r } : { ...r, holdNs: hold };
   return {
     dataRef: "conf-a",
     ast: parsed.ast,
-    a: input(a),
-    ...(b && { b: input(b, holdB) }),
+    inputs: inputs.map((r): ComputedInputRef => {
+      const holdNs = hold[r.name];
+      return holdNs === undefined ? { ...r } : { ...r, holdNs };
+    }),
   };
 }
 
@@ -638,9 +646,9 @@ export function describeConformance(target: ConformanceTarget): void {
         },
       );
 
-      // Computed signals (add-computed-signals, data-source "Computed series method"): the same rows
+      // Computed signals (computed-signals, data-source "Computed series method"): the same rows
       // `native` (the adapter's computedSeries) and `core only` (the fallback from raw points).
-      const diffRef = () => computedOf("a - b", ramp, snaCode);
+      const diffRef = () => computedOf("Lin.RAMP - Sna.CODE", [ramp, snaCode]);
 
       it("computes a difference per row with edges", async () => {
         const result = await queryComputed(
@@ -664,7 +672,7 @@ export function describeConformance(target: ConformanceTarget): void {
       });
 
       it("computes one input per row", async () => {
-        const abs = computedOf("abs(a - 5000)", ramp);
+        const abs = computedOf("abs(Lin.RAMP - 5000)", [ramp]);
         const result = await queryComputed(
           source,
           abs,
@@ -683,6 +691,37 @@ export function describeConformance(target: ConformanceTarget): void {
         expect(rawRows(result).map((r) => r.v)).toEqual([
           10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
         ]);
+      });
+
+      // spec computed-signals "Three inputs"
+      it("computes three inputs per row", async () => {
+        const three = computedOf("Lin.RAMP + Sna.CODE * 100 - Beat.HB", [ramp, snaCode, beat]);
+        const result = await queryComputed(
+          source,
+          three,
+          "conf-a/=c5",
+          B + S,
+          B + 1_200n * MS,
+          1000,
+        );
+        // Lin.RAMP is 100 + k at B + 1 s + k·10 ms; Sna.CODE holds 1 (x 100); Beat.HB is 0 at
+        // B + 1 s and 1 from B + 1.1 s: 200 + k for k = 0 … 9, then 199 + k for k = 10 … 19.
+        expect(rawRows(result)).toEqual(
+          Array.from({ length: 20 }, (_, k) => ({
+            t: B + S + BigInt(k) * 10n * MS,
+            v: k < 10 ? 200 + k : 199 + k,
+          })),
+        );
+        if (result.kind !== "raw") return;
+        expect(result.signalId).toBe("conf-a/=c5");
+        // One scan or three raw reads give the same rows as the rule on the inputs' raw points.
+        const a = await source.raw(ramp, B, B + 3n * S);
+        const b = await source.raw(snaCode, B, B + 3n * S);
+        const c = await source.raw(beat, B, B + 3n * S);
+        const rule = computeRows(three.ast, [{ points: a }, { points: b }, { points: c }]);
+        expect(rule.filter((r) => r.t >= B + S && r.t < B + 1_200n * MS)).toEqual(
+          rawRows(result).map((r) => ({ t: r.t, v: r.v })),
+        );
       });
 
       it("computes SNA from either input", async () => {
@@ -709,7 +748,7 @@ export function describeConformance(target: ConformanceTarget): void {
         // Sna.CODE is 0 at B: 0 / 0 is NaN, k / 0 is Infinity; held for the whole second.
         const result = await queryComputed(
           source,
-          computedOf("a / b", ramp, snaCode),
+          computedOf("Lin.RAMP / Sna.CODE", [ramp, snaCode]),
           "conf-a/=c3",
           B,
           B + S,
@@ -724,7 +763,7 @@ export function describeConformance(target: ConformanceTarget): void {
 
       it("holds an input only within its hold limit", async () => {
         // b (Sna.CODE, 1 at B + 1 s) holds 500 ms: rows B + 1 s … B + 1.5 s, 51 of them.
-        const held = computedOf("a - b", ramp, snaCode, 500n * MS);
+        const held = computedOf("Lin.RAMP - Sna.CODE", [ramp, snaCode], { "Sna.CODE": 500n * MS });
         const result = await queryComputed(source, held, "conf-a/=c1", B + S, B + 2n * S, 1000);
         expect(rawRows(result)).toEqual(
           Array.from({ length: 51 }, (_, k) => ({ t: B + S + BigInt(k) * 10n * MS, v: 99 + k })),
@@ -739,7 +778,7 @@ export function describeConformance(target: ConformanceTarget): void {
       it("gives no rows while an input has no data", async () => {
         const result = await queryComputed(
           source,
-          computedOf("a - b", ramp, ref("conf-a", "Nope.X")),
+          computedOf("Lin.RAMP - Nope.X", [ramp, ref("conf-a", "Nope.X")]),
           "conf-a/=c4",
           B + S,
           B + 2n * S,
@@ -793,7 +832,7 @@ export function describeConformance(target: ConformanceTarget): void {
         // ...each equal to the rule applied to the same raw points.
         const a = await source.raw(ramp, B, B + 3n * S);
         const b = await source.raw(snaCode, B, B + 3n * S);
-        expect(answer.points).toEqual(computeRows(diffRef().ast, { points: a }, { points: b }));
+        expect(answer.points).toEqual(computeRows(diffRef().ast, [{ points: a }, { points: b }]));
       });
 
       it("rejects an aborted call", async () => {

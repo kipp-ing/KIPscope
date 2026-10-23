@@ -13,6 +13,7 @@ import type {
   SourceSignal,
 } from "../../server/src/datasource.ts";
 import { loadDbcFiles } from "../../server/src/dbc.ts";
+import type { DisplayRules } from "../../server/src/names.ts";
 import { CatalogStore } from "../../server/src/scope.ts";
 import { ViewStore } from "../../server/src/views.ts";
 import { WorkspaceStore } from "../../server/src/workspace.ts";
@@ -183,6 +184,8 @@ export interface Harness {
   viewsDir: string;
   /** "METHOD path" of every request the server received. */
   requests: string[];
+  /** "METHOD url" with the query string, in the same order as `requests`. */
+  urls: string[];
   /** POSTs a command straight to the server (not through the CLI). */
   command(body: Record<string, unknown>): Promise<Record<string, unknown>>;
   /** GET /api/workspace. */
@@ -218,10 +221,15 @@ export interface Workspace {
  * `loadCatalog: false` leaves the catalog unloaded (503 `catalog_unavailable`).
  */
 export async function startServer(
-  options: { loadCatalog?: boolean; extra?: readonly SourceSignal[] } = {},
+  options: {
+    loadCatalog?: boolean;
+    extra?: readonly SourceSignal[];
+    /** Display-name rules of the catalogs (full and scoped), e.g. a rename giving a displayName. */
+    rules?: DisplayRules;
+  } = {},
 ): Promise<Harness> {
   const source = stubSource(options.extra);
-  const catalog = new Catalog(source, loadStubDbc);
+  const catalog = new Catalog(source, loadStubDbc, options.rules);
   if (options.loadCatalog !== false) await catalog.refresh();
   const viewsDir = join(mkdtempSync(join(tmpdir(), "kipscope-cli-views-")), "views");
   const views = new ViewStore(viewsDir);
@@ -239,7 +247,7 @@ export async function startServer(
     mode: "full",
     full: catalog,
     create: (scope: Scope) =>
-      new Catalog(source, loadStubDbc, undefined, undefined, undefined, scope),
+      new Catalog(source, loadStubDbc, options.rules, undefined, undefined, scope),
   });
   // `scope show` reads /api/meta, so the harness serves it (the source answers every ping).
   const meta = {
@@ -251,8 +259,10 @@ export async function startServer(
     typeof buildApp
   >[0]);
   const requests: string[] = [];
+  const urls: string[] = [];
   app.addHook("onRequest", async (request) => {
     requests.push(`${request.method} ${request.url.split("?")[0]}`);
+    urls.push(`${request.method} ${request.url}`);
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
   const address = app.server.address();
@@ -267,6 +277,7 @@ export async function startServer(
     views,
     viewsDir,
     requests,
+    urls,
     async command(body) {
       const res = await fetch(`${url}/api/commands`, {
         method: "POST",

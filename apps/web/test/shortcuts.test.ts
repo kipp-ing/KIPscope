@@ -108,6 +108,20 @@ describe("shortcut table", () => {
     expect(strip).not.toContain("click a bar");
   });
 
+  it("lists Tab and F2 of the computed editor in the Signal list group (improve-formula-editor)", () => {
+    const tab = SHORTCUTS.filter((s) => s.keys === "Tab");
+    expect(tab).toHaveLength(1);
+    expect(tab[0]?.group).toBe("Signal list");
+    expect(tab[0]?.action).toBe("Accept a suggestion in the formula field");
+    const f2 = SHORTCUTS.filter((s) => s.keys === "F2");
+    expect(f2).toHaveLength(1);
+    expect(f2[0]?.group).toBe("Signal list");
+    expect(f2[0]?.action).toBe("Edit the active computed signal");
+    // Both are handled in place (the explorer and the editor field), so they carry no global probe.
+    expect(tab[0]?.probe).toBeUndefined();
+    expect(f2[0]?.probe).toBeUndefined();
+  });
+
   it("has the six groups in order, with Shift+click for B and the drive keys", () => {
     const groups: string[] = [];
     for (const s of SHORTCUTS) if (!groups.includes(s.group)) groups.push(s.group);

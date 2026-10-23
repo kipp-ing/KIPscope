@@ -83,12 +83,14 @@ export interface ComputedInputRef extends SeriesRef {
   holdNs?: bigint;
 }
 
-/** A computed signal on one data ref (design C8): the parsed formula, never its text, and its inputs. */
+/**
+ * A computed signal on one data ref (design C8, F8): the parsed formula, never its text, and its
+ * inputs in `formulaInputs(ast)` order.
+ */
 export interface ComputedRef {
   dataRef: string;
   ast: FormulaNode;
-  a: ComputedInputRef;
-  b?: ComputedInputRef;
+  inputs: ComputedInputRef[];
 }
 
 /** Rows of a computed signal (design C8), without edges: the server adds them. */
@@ -222,8 +224,8 @@ export interface SourceAdapter {
   /**
    * Rows of a computed signal in [from, to) (design C2, C8): raw when the range holds at most
    * `target` rows of its inputs together, else buckets of the exact rows on the floor grid
-   * `k * width`. Compiles `ref.ast`, never formula text; the fallback reads `raw` per input with a
-   * bound of COMPUTED_MAX_ROWS rows.
+   * `k * width`. Compiles `ref.ast`, never formula text; the fallback reads `raw` of all inputs
+   * in parallel, each bounded by its even share of COMPUTED_MAX_ROWS (F8).
    */
   computedSeries?(
     ref: ComputedRef,

@@ -1,10 +1,12 @@
 import {
   type BucketSeries,
-  bindFormula,
   type ComputedParams,
   computedRowValue,
   encodeTimes,
   type FormulaNode,
+  MAX_FLAT_LENGTH,
+  MAX_FLAT_NODES,
+  MAX_FORMULA_SIGNALS,
   parseFormula,
   type RawSeries,
   type SeriesResult,
@@ -28,10 +30,6 @@ export function inputSeries(input: ComputedInputRef): SeriesRef {
   return ref;
 }
 
-/** The used inputs of a computed ref: a, then b. */
-export const computedInputs = (ref: ComputedRef): ComputedInputRef[] =>
-  ref.b ? [ref.a, ref.b] : [ref.a];
-
 /** A computed input with its seed and hold limit, both optional. */
 export function withSeed(
   input: SeriesRef,
@@ -45,8 +43,9 @@ export function withSeed(
 }
 
 /**
- * The computed point at `t` from each used input's current point there (design C2): none when an
- * input has none or holds it beyond its hold limit; SNA when one is SNA or the result not finite.
+ * The computed point at `t` from each input's current point there (design C2, F3), inputs in
+ * `formulaInputs` order: none when an input has none or holds it beyond its hold limit; SNA when
+ * one is SNA or the result not finite.
  */
 export function computedPointAt(
   ast: FormulaNode,
@@ -58,7 +57,7 @@ export function computedPointAt(
     if (!point || (holdNs !== undefined && t - point.t > holdNs)) return undefined;
     points.push(point);
   }
-  return { t, v: computedRowValue(ast, points[0] as RawPoint, points[1]) };
+  return { t, v: computedRowValue(ast, points) };
 }
 
 /**
@@ -82,16 +81,15 @@ export async function queryComputed(
   if (to <= from) throw new RangeError("empty time range: to must be after from");
   const head = { signalId, from: from.toString(), to: to.toString() };
   const width = bucketWidth(0n, span, target);
-  const inputs = computedInputs(ref);
+  const { inputs } = ref;
   const seeds = await Promise.all(
     inputs.map((input) => source.before(inputSeries(input), from, scope, abort)),
   );
   const seeded: ComputedRef = {
     dataRef: ref.dataRef,
     ast: ref.ast,
-    a: withSeed(inputSeries(ref.a), seeds[0], ref.a.holdNs),
+    inputs: inputs.map((input, i) => withSeed(inputSeries(input), seeds[i], input.holdNs)),
   };
-  if (ref.b) seeded.b = withSeed(inputSeries(ref.b), seeds[1], ref.b.holdNs);
   const answer = await source.computedSeries(seeded, from, to, target, width, abort);
 
   if (answer.kind === "buckets") {
@@ -153,7 +151,7 @@ export async function queryComputed(
 }
 
 export type ResolvedComputed =
-  | { ok: true; ast: FormulaNode; a: SeriesRef; b?: SeriesRef }
+  | { ok: true; ast: FormulaNode; inputs: SeriesRef[] }
   | {
       ok: false;
       status: 400 | 404 | 422;
@@ -163,24 +161,26 @@ export type ResolvedComputed =
     };
 
 /**
- * The request checks of design C8: parses and binds the formula (never splices its text), then
- * resolves each used input `<dataRef>/<name>` in the catalog; numeric signals only.
+ * The request checks of design F8: parses the flattened formula with the flat limits (never splices
+ * its text), at most MAX_FORMULA_SIGNALS names, then resolves each name `<dataRef>/<name>` exactly
+ * in the catalog (no short names, no definitions); numeric signals only. Inputs in
+ * `formulaInputs` order.
  */
 export function resolveComputed(
   params: ComputedParams,
   dataRef: string,
   catalog: Pick<Catalog, "get" | "snaRanges">,
 ): ResolvedComputed {
-  const parsed = parseFormula(params.formula);
+  const parsed = parseFormula(params.formula, { length: MAX_FLAT_LENGTH, nodes: MAX_FLAT_NODES });
   if (!parsed.ok) {
     return { ok: false, status: 400, code: "invalid_formula", message: parsed.message };
   }
-  const bound = bindFormula(parsed, params.b === undefined ? { a: params.a } : params);
-  if (!bound.ok) {
-    return { ok: false, status: 400, code: "invalid_formula", message: bound.message };
+  if (parsed.names.length > MAX_FORMULA_SIGNALS) {
+    const message = `At most ${MAX_FORMULA_SIGNALS} signals (with nested ones): ${parsed.names.length}`;
+    return { ok: false, status: 400, code: "invalid_formula", message };
   }
-  const refs: SeriesRef[] = [];
-  for (const name of bound.b === undefined ? [bound.a] : [bound.a, bound.b]) {
+  const inputs: SeriesRef[] = [];
+  for (const name of parsed.names) {
     const id = `${dataRef}/${name}`;
     const info = catalog.get(id);
     if (!info) {
@@ -201,8 +201,7 @@ export function resolveComputed(
         signalId: id,
       };
     }
-    refs.push({ dataRef, name, sna: catalog.snaRanges(id) });
+    inputs.push({ dataRef, name, sna: catalog.snaRanges(id) });
   }
-  const [a, b] = refs as [SeriesRef, SeriesRef | undefined];
-  return b ? { ok: true, ast: bound.ast, a, b } : { ok: true, ast: bound.ast, a };
+  return { ok: true, ast: parsed.ast, inputs };
 }

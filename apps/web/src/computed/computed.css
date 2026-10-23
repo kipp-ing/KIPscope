@@ -1,6 +1,7 @@
-/* Computed signal editor (add-computed-signals C12), D-055 tokens: a 360 px panel beside the
-   sidebar, 26 px controls, 12 px type, section labels, one primary (Save). Every row has a fixed
-   height and the error line is reserved, so the panel never changes size while typing. */
+/* Computed signal editor (add-computed-signals C12, improve-formula-editor F11), D-055 tokens: a
+   360 px panel beside the sidebar, 26 px controls, 12 px type, section labels, one primary (Save).
+   Every row has a fixed height and the error line is reserved, so the panel never changes size
+   while typing. */
 
 .computed-editor {
   position: fixed;
@@ -36,7 +37,6 @@
 }
 
 .computed-editor input[type="text"],
-.computed-editor select,
 .computed-editor button {
   height: var(--control-h);
   border: 1px solid var(--control-border);
@@ -50,79 +50,109 @@
 }
 
 .computed-editor input[type="text"]:focus-visible,
-.computed-editor select:focus-visible,
 .computed-editor button:focus-visible {
   outline: 2px solid var(--accent-ring);
   outline-offset: -1px;
 }
 
-.computed-editor :is(input, select, button):disabled {
+.computed-editor :is(input, button):disabled {
   border-color: var(--border);
   color: var(--disabled);
   background: var(--panel);
 }
 
-/* Picker: [a] [ field          × ▾ ] */
-.computed-picker {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.computed-picker .computed-var {
-  flex-shrink: 0;
-  width: 12px;
-  color: var(--muted);
-  text-align: center;
-}
-
-.computed-picker.disabled .computed-var {
-  color: var(--disabled);
-}
-
-.computed-field {
+/* Formula field (F11): a 4-line textarea over a tint layer with the same box and font. The textarea
+   draws the text and caret on a transparent background; the layer draws only the marks' backgrounds,
+   so a misaligned layer could shift a tint, never the text. */
+.computed-formula {
   position: relative;
-  display: flex;
-  flex: 1;
-  min-width: 0;
+  height: 82px;
+  border-radius: var(--radius);
+  background: var(--panel);
 }
 
-.computed-field input[type="text"] {
-  flex: 1;
-  width: 100%;
-  padding-right: 48px;
-  text-overflow: ellipsis;
-}
-
-.computed-field .computed-icon {
+.computed-formula textarea,
+.computed-formula .computed-tints {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 22px;
-  height: 24px;
-  padding: 0;
-  border: none;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 82px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  font-style: normal;
+  font-variant-numeric: normal;
+  line-height: 18px;
+  letter-spacing: normal;
+  tab-size: 8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.computed-formula textarea {
+  z-index: 1;
+  overflow-y: auto;
+  border-color: var(--control-border);
   background: transparent;
+  color: var(--text);
+  resize: none;
+}
+
+.computed-formula textarea::placeholder {
   color: var(--disabled);
-  line-height: 1;
-  cursor: pointer;
 }
 
-/* With × shown, ▾ keeps the right end and × sits left of it. */
-.computed-field .computed-icon:first-of-type:not(:last-of-type) {
-  right: 23px;
+.computed-formula textarea:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -1px;
 }
 
-.computed-field .computed-icon:hover:not(:disabled) {
-  color: var(--accent);
+.computed-formula .computed-tints {
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
 }
 
+/* Tints paint backgrounds only: no padding, border or font change, so no glyph moves. */
+.computed-tints mark {
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: transparent;
+  font: inherit;
+}
+
+.computed-tints mark.sig {
+  background: var(--accent-soft);
+}
+
+.computed-tints mark.sig.computed {
+  background: var(--band);
+}
+
+.computed-tints mark.bad {
+  text-decoration: underline wavy var(--error);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+/* Suggestions: right under the field, its width, drawn over the error line and the fields below. */
 .computed-list {
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
   right: 0;
-  z-index: 1;
+  z-index: 2;
   padding: 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -130,27 +160,25 @@
   box-shadow: 0 4px 14px rgb(15 23 42 / 0.15);
 }
 
-.computed-option,
-.computed-none {
+.computed-option {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 6px 0 4px;
   border-radius: var(--radius);
   white-space: nowrap;
-}
-
-.computed-none {
-  color: var(--muted);
-}
-
-.computed-option {
   cursor: pointer;
 }
 
 .computed-option.active {
   background: var(--accent-soft);
+}
+
+.computed-option-glyph {
+  flex: 0 0 10px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .computed-option-name {
@@ -165,6 +193,12 @@
   color: var(--accent-ink);
 }
 
+.computed-option mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
+}
+
 .computed-option-unit {
   flex-shrink: 0;
   max-width: 35%;
@@ -177,28 +211,12 @@
   cursor: default;
 }
 
-.computed-option.disabled .computed-option-name,
-.computed-option.disabled .computed-option-unit {
+.computed-option.disabled
+  :is(.computed-option-glyph, .computed-option-name, .computed-option-unit) {
   color: var(--disabled);
 }
 
-/* Preset select and formula field side by side. */
-.computed-formula {
-  display: flex;
-  gap: 6px;
-}
-
-.computed-formula select {
-  flex: 0 0 140px;
-  min-width: 0;
-  padding: 0 4px;
-}
-
-.computed-formula input[type="text"] {
-  flex: 1;
-}
-
-/* One line, reserved (M4): an error never moves the fields below it. */
+/* One line, reserved (M8): an error never moves the fields below it. */
 .computed-editor .computed-error {
   height: 16px;
   margin: 0;
@@ -208,6 +226,11 @@
   color: var(--error);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A new empty editor: the first error is a hint until the first keystroke (same line, same height). */
+.computed-editor .computed-error.quiet {
+  color: var(--muted);
 }
 
 .computed-names {

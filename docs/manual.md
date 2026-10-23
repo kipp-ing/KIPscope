@@ -7,7 +7,7 @@ KIPscope shows recorded vehicle data over time: CAN signals and diagnostic data 
 The screen, from left to right and top to bottom:
 
 - **Signal list**, with the tabs Signals and Events and their counts, 248 px wide (208 px below 1200 px); a cut name shows whole in its tooltip. The sidebar icon at the start of the top row, or `s`, hides or shows it.
-- **Top row**: the sidebar icon, Views, the range button, the icons Back, Reset and Link time axes, the toggles A, B and Diff, then at the end Share…, ⋯ (More: Digits and + Values window) and `?` for help. The range button shows the time range on screen and opens the range picker. Icons name themselves in their tooltips; a toggle that is on is tinted blue. On a narrow screen the Views label becomes an icon, nothing moves into ⋯, and Help (`?`) stays last.
+- **Top row**: the sidebar icon, Views, the range button, the icons Back, Reset and Link time axes, the toggles A, B and Diff, then at the end Share…, ⋯ (More: Digits and + Values window) and `?` for help. The range button shows the time range on screen and opens the range picker. Icons name themselves in their tooltips; a toggle that is on is blue. On a narrow screen the Views label becomes an icon, nothing moves into ⋯, and Help (`?`) stays last.
 - **Context row**, only with a session list or a scope: the session bar, or the scope with Widen and Clear.
 - **Time strip**: the whole recording in one row: a line where data exists, drives, event pins, the shown range and the cursor flags.
 - **Windows**: signals over time, or a table of values, in two columns on a wide screen.
@@ -25,7 +25,9 @@ A row shows the short name, unit and an SNA marker; its tooltip is the full DBC 
 
 Stars show in **★ Favourites** atop the list on every vehicle and session; `kipscope fav` changes them from a shell.
 
-**Computed:** `+` in **ƒ Computed** opens an editor: pick inputs `a`, `b` and a preset (Difference, Sum, Absolute, Minimum, Maximum, Scale) or your own formula. `Enter` saves it into the Add to target. Selected rows fill `a`, `b` in click order. `F2` or ✎ edits; `kipscope calc` from a shell.
+**Computed:** `+` in **ƒ Computed** opens a formula field. Type a signal name, short or full: `↑` `↓` pick a match, `Enter` or `Tab` writes its full name, `Esc` closes the list. Use `+ - * /`, `abs(x)`, `min(x, y, …)`, `max(…)`, up to 8 signals.
+
+Quote names with spaces: `abs("DNMOT − PNHV_SupBat_Curr")` uses that computed signal live. Errors show their position; states, loops and deleting a used one are refused. `Enter` saves into the Add to target; selected rows prefill. `F2` or ✎ edits; `kipscope calc add "abs(MS_312h.DNMOT)"` from a shell.
 
 ## Chart a signal
 
@@ -71,21 +73,21 @@ On the time strip, one row from the recording's start to its end:
 - Click a drive (a dark segment on the line) to fit it; `,` and `.` step between drives.
 - Click the **flag** A or B, or press `Shift+A` or `Shift+B`, to centre the view on that cursor, keeping the span. Close cursors share one `A·B` flag that centres on both; a cursor beyond the strip's end shows its flag there with ◂ or ▸.
 
-The **range button** in the top row reads the range on screen as start and duration: `26-10-13 15:06` and, after the stopwatch, `0:12 h`, `41 s` or, from two days, `9 d 11 h`. Hovering the start shows its full date (`Tue 2026-10-13 15:06`), hovering the duration its words (`Duration 12 min`). Click it or press `t` to open the **range picker**:
+The **range button** in the top row reads the range on screen as start and duration: `26-10-13 15:06` and, after the stopwatch, `0:12 h`, `41 s` or, from two days, `9 d 11 h`. Hovering the start shows its full date (`Tue 2026-10-13 15:06`), hovering the duration its words. Click it or press `t` to open the **range picker**:
 
 - **Go to** at the top takes a time or range: `15:08`, `15:07 .. 15:09`, `2026-10-13 15:15:30 +30s`, `1h` around the anchor, `+30min` to pan, `a` to centre on cursor A. A time without a date takes the date the view shows. `Enter` goes there and closes the picker; text it cannot read stays with the reason below.
 - The **calendar** shows two months. Under each day, small bars show how much was recorded in each two hours, dark where a drive ran; days without data are greyed out. Click a start day, then an end day; ‹ and › page to months with data. By keyboard: `Tab` to the days, arrows move a day or a week, `PageUp`/`PageDown` a month, `Enter` picks.
 - The **presets** line lists the drives of the start day, **Whole day**, and the whole recording, scope or session.
 - **From** and **To** each show a date as YY-MM-DD and a time field that takes `HH:MM`; To also takes `24:00`, the end of the day.
-- **Go** shows the range, as one step that **Back** undoes. **Cancel**, `Esc` or a click outside closes the picker and changes nothing. While it is open, the navigation keys do nothing.
+- **Go** shows the range, as one step that **Back** undoes. **Cancel**, `Esc` or a click outside closes the picker and changes nothing.
 
 Keys `+` and `-` zoom, `←` and `→` pan by half the span, with Shift by the whole span, on the window under the pointer. **Back** (the arrow icon after the range button, `Backspace`) returns to the previous range, up to 50 steps. **Reset** (the fit icon after Back: two bars with an arrow between, `Home`) shows all data.
 
 ### Sessions from the search tool
 
-The search tool, a separate tool, finds sessions; its "Open in KIPscope", or a dropped catalog file, opens a new workspace on one session of its list. The context row then shows the session bar: `SESSION`, `‹`, the position button such as `3 / 17` with the alignment's glyph, `›`, the title, the duration such as `0:10 h`, and **Unlink**. Hover the title for the start, kind and meta values, the position button for the alignment.
+The search tool finds sessions; its "Open in KIPscope", or a dropped catalog file, opens a new workspace on one session of its list. The context row then shows the session bar: `SESSION`, `‹`, the position button such as `3 / 17` with the alignment's glyph, `›`, the title, the duration such as `0:10 h`, and **Unlink**. Hover the title for the start, kind and meta values, the position button for the alignment.
 
-- `‹` and `›` on the bar, or the keys `[` and `]`, step through the sessions in the search tool's order. Windows, signals and filter stay, and each window keeps its distance from the alignment point. A thin line under the bar runs until the windows have drawn. A signal the next vehicle lacks reads `missing`.
+- `‹` and `›` on the bar, or the keys `[` and `]`, step through the sessions in the search tool's order. Windows, signals and filter stay, and each window keeps its distance from the alignment point. A signal the next vehicle lacks reads `missing`.
 - `3 / 17` opens the session list, each row with number, name, start such as `26-10-01 03:00` and duration; type to filter, then `Enter` or click a row. **Back to search** at its foot returns to the search tool.
 - **Align**, at the list's foot, sets what lines up between sessions: `Session start`, `Session end`, `Anchor from the finder`, or an event: right-click a pin and choose `Align sessions to this event`, or use `Align` on an Events row. A session without a matching event aligns to its start, and the message line says so.
 - **Unlink** shows the vehicle's whole recording: the bar reads `VEHICLE`, the strip marks the catalog's sessions of this vehicle, and the Events tab lists those near the view (`Nearby`). Click a mark, or **Link**, to return to a session.
@@ -93,13 +95,13 @@ The search tool, a separate tool, finds sessions; its "Open in KIPscope", or a d
 
 ### Workspaces and sharing
 
-Each browser tab works in its own **workspace**: the windows, signals, cursors, scope and session list, kept on the server at `/w/<id>`. A reload, or opening the address again, brings it back as you left it; an untouched workspace without an open tab is removed after 30 days.
+Each browser tab works in its own **workspace**: the windows, signals, cursors, scope and session list, kept on the server at `/w/<id>`. A reload brings it back as you left it; an untouched workspace without an open tab is removed after 30 days.
 
 **Share…**, near the end of the top row at every width:
 
 - **Copy link (own copy)** copies a link with this layout; the receiver gets their own workspace.
 - **Copy workspace link (same live workspace)** copies this workspace's address; whoever opens it works in it with you.
-- **Invite to this workspace** (on a shared server, owner only): `Private` keeps it to you, `Read` lets others with the link watch live, `Write` lets them change it with you. The setting applies at once.
+- **Invite to this workspace** (on a shared server, owner only): `Private` keeps it to you, `Read` lets others with the link watch live, `Write` lets them change it with you.
 
 With `Read`, the pill `Read-only` shows and changes are refused; "Copy link (own copy)" gives you a copy to work in.
 
@@ -111,7 +113,7 @@ With `Read`, the pill `Read-only` shows and changes are refused; "Copy link (own
 
 Events are faults (diagnostic trouble codes), state changes and logger errors. They show as pins on the time strip and as lines in the plots, with a glyph above the plot; hover one for its time, source and text. A click on a pin centres the view on it; a click on a glyph sets cursor A there. Strip pins by kind: an active fault a red tick with a head, a stored fault or a read a hollow mark, a change a violet block, else a grey dot.
 
-The count on the Events tab, such as `Events 13`, means 13 events pass the filter in the whole recording, not only in the time shown; its tooltip adds the total, such as 669 in the recording. A click on the tab opens it.
+The count on the Events tab, such as `Events 13`, means 13 events pass the filter in the whole recording, not only in the time shown; its tooltip adds the total, such as 669 in the recording.
 
 The Events tab (`e`) has the filter, presets such as Faults or Changes, and under Refine the field and chips per category and ECU; then the list. A click on an event puts cursor A on it (`Shift+click`: B) and centres the view only when the event lies outside it. Filter words include `faults`, `changes`, `active`, `logger`, `ecu:BMS` and any text; a leading `-` excludes. The default is `active changes`.
 

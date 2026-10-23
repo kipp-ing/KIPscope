@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DataSource, SourceAdapter, SourceInfo } from "../src/datasource.ts";
+import type { ComputedRef, DataSource, SourceAdapter, SourceInfo } from "../src/datasource.ts";
 import { Priority, type QueryClass, withPriority } from "../src/priority.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
 
@@ -278,7 +278,11 @@ describe("queuedAdapter scope", () => {
     const { adapter, seen } = stub();
     const queued = queuedAdapter(adapter, new QueryQueue(2)) as DataSource;
     const controller = new AbortController();
-    const computed = { dataRef: "car", ast: { op: "var", name: "a" }, a: sig } as const;
+    const computed: ComputedRef = {
+      dataRef: "car",
+      ast: { op: "sig", name: "a", at: 1 },
+      inputs: [sig],
+    };
     await queued.computedSeries(computed, 1000n, 5000n, 100, 40n, controller.signal);
     expect(seen.get("computedSeries")).toEqual([
       computed,

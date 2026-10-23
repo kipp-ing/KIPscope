@@ -380,7 +380,8 @@ function periodsOf(
 
 /**
  * Signal IDs of every window plus the events line (design P6); a computed signal contributes its
- * used inputs on its data ref, not itself (add-computed-signals C8), none without a definition.
+ * flattened sources on its data ref, not itself (add-computed-signals C8, F10), none without a
+ * definition or when it does not flatten.
  */
 export function workspaceSignals(workspace: Workspace): string[] {
   const ids = new Set<string>();
@@ -391,8 +392,9 @@ export function workspaceSignals(workspace: Workspace): string[] {
         ids.add(s.signalId);
         continue;
       }
-      const def = workspace.computed?.find((d) => d.id === computed.id);
-      if (def) for (const id of computedInputIds(def, computed.dataRef)) ids.add(id);
+      const defs = workspace.computed ?? [];
+      const def = defs.find((d) => d.id === computed.id);
+      if (def) for (const id of computedInputIds(def, defs, computed.dataRef)) ids.add(id);
     }
   for (const id of workspace.eventSignals ?? []) ids.add(id);
   return [...ids];

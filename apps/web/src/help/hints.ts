@@ -138,11 +138,11 @@ export const HINTS = {
   favourites: (inList: number, total: number) =>
     `Favourites: ${inList.toLocaleString("en-US")} of your ${total.toLocaleString("en-US")} starred signals are in this list`,
 
-  // Computed signals, add-computed-signals (C12).
-  computedNew:
-    "New computed signal: a formula over one or two signals, filled in from the selection",
+  // Computed signals, add-computed-signals (C12), improve-formula-editor (F11).
+  computedNew: "New computed signal: a formula over signals, filled in from the selection",
   computedEmpty: "None yet · + creates one",
-  computedEdit: "Edit computed signal: inputs, formula, name and unit · F2",
+  computedEdit: "Edit computed signal: formula, name and unit · F2",
+  formulaPlaceholder: "Type a signal, abs( min( max( or + - * /",
   /** `name`: the signal's short name (after its first "."). */
   computedNumericOnly: (name: string) => `${name} has states: pick a numeric signal`,
 

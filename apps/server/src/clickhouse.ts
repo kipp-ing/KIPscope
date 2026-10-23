@@ -5,7 +5,7 @@ import {
   ClickHouseLogLevel,
   createClient,
 } from "@clickhouse/client";
-import type { EventRow, FormulaNode, FormulaVar, StateRow, Timestamp } from "@kipscope/shared";
+import type { EventRow, FormulaNode, StateRow, Timestamp } from "@kipscope/shared";
 import {
   type ClickHouseConfig,
   DEFAULT_EVENT_MAPPING,
@@ -69,12 +69,13 @@ const num = (v: number | null) => v ?? Number.NaN;
 const NO_HOLD = 2n ** 63n - 1n;
 
 /**
- * SQL of a parsed formula (design C9): `vars` are column aliases, each constant becomes a query
- * parameter `{k<i>:Float64}` in `params`; no text of the formula reaches the query.
+ * SQL of a parsed formula (design C9, F9): `column(name)` gives each signal name's column alias,
+ * each constant becomes a query parameter `{k<i>:Float64}` in `params`; no text of the formula
+ * reaches the query. n-ary `min`/`max` compile to `least`/`greatest`.
  */
-export function compileFormula(
+export function formulaSql(
   ast: FormulaNode,
-  vars: Record<FormulaVar, string>,
+  column: (name: string) => string,
   params: Params,
 ): string {
   let k = 0;
@@ -85,16 +86,16 @@ export function compileFormula(
         params[name] = node.value;
         return `{${name}:Float64}`;
       }
-      case "var":
-        return vars[node.name];
+      case "sig":
+        return column(node.name);
       case "neg":
         return `(-${walk(node.arg)})`;
       case "abs":
         return `abs(${walk(node.arg)})`;
       case "min":
-        return `least(${walk(node.left)}, ${walk(node.right)})`;
+        return `least(${node.args.map(walk).join(", ")})`;
       case "max":
-        return `greatest(${walk(node.left)}, ${walk(node.right)})`;
+        return `greatest(${node.args.map(walk).join(", ")})`;
       default:
         return `(${walk(node.left)} ${node.op} ${walk(node.right)})`;
     }
@@ -380,11 +381,12 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
   }
 
   /**
-   * A computed series (design C9): one count() of the inputs' rows, then one scan that computes
-   * the rows from the parsed formula. Two inputs: a window over both, each input's last value, SNA
-   * flag and time `IGNORE NULLS` with a RANGE frame (rows at one time see each other), its seed when
-   * it has no row yet, its hold limit, one row per time. One input: the formula per row. Buckets
-   * group the exact rows.
+   * A computed series (design C9, F9): one count() of the inputs' rows, then one scan that computes
+   * the rows from the parsed formula. Several inputs: a window over all, each input's last value,
+   * SNA flag and time `IGNORE NULLS` with a RANGE frame (rows at one time see each other), its seed
+   * when it has no row yet, its hold limit, one row per time. One input: the formula per row.
+   * Signal names are parameters `{s<i>:String}` in `formulaInputs` order. Buckets group the exact
+   * rows.
    */
   async computedSeries(
     ref: ComputedRef,
@@ -395,11 +397,14 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
     abort?: AbortSignal,
   ): Promise<ComputedAnswer> {
     const { dataRef: refColumn, signal, time, value } = this.c;
-    const b = ref.b;
-    const names = b && b.name !== ref.a.name ? [ref.a.name, b.name] : [ref.a.name];
-    const range = `${refColumn} = {ref:String} AND ${signal} IN {names:Array(String)}
+    const { inputs } = ref;
+    const params: Params = { ref: ref.dataRef, from, to };
+    inputs.forEach((input, i) => {
+      params[`s${i}`] = input.name;
+    });
+    const names = inputs.map((_, i) => `{s${i}:String}`).join(", ");
+    const range = `${refColumn} = {ref:String} AND ${signal} IN (${names})
        AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")} AND ${time} IS NOT NULL`;
-    const params: Params = { ref: ref.dataRef, names, from, to };
     const [counted] = await this.rows<[string]>(
       `SELECT count() FROM ${this.table} WHERE ${range}`,
       params,
@@ -408,40 +413,43 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
     const raw = Number(counted?.[0] ?? 0) <= target;
 
     let rows: string;
-    if (!b) {
-      const sna = this.isSna(ref.a, "snaA");
+    const only = inputs.length === 1 ? inputs[0] : undefined;
+    if (only) {
+      const sna = this.isSna(only, "sna0");
       Object.assign(params, sna.params);
-      const formula = compileFormula(ref.ast, { a: value, b: value }, params);
+      const formula = formulaSql(ref.ast, () => value, params);
       rows = `SELECT x, if(s OR NOT isFinite(v0), NULL, v0) AS v FROM (
          SELECT toUnixTimestamp64Nano(${time}) AS x, ${sna.expr} AS s, ${formula} AS v0
          FROM ${this.table} WHERE ${range})
        ORDER BY x LIMIT 1 BY x`;
     } else {
-      const column = (input: ComputedInputRef, v: "a" | "b") => {
-        const sna = this.isSna(input, `sna${v.toUpperCase()}`);
+      const index = new Map(inputs.map((input, i) => [input.name, i]));
+      const column = (input: ComputedInputRef, i: number) => {
+        const sna = this.isSna(input, `sna${i}`);
         Object.assign(params, sna.params, {
-          [v]: input.name,
-          [`${v}SeedV`]: input.seed ? input.seed.v : null,
-          [`${v}SeedS`]: input.seed ? Number(input.seed.v === null) : null,
-          [`${v}SeedT`]: input.seed ? input.seed.t : null,
-          [`${v}Hold`]: input.holdNs ?? NO_HOLD,
+          [`sv${i}`]: input.seed ? input.seed.v : null,
+          [`ss${i}`]: input.seed ? Number(input.seed.v === null) : null,
+          [`st${i}`]: input.seed ? input.seed.t : null,
+          [`h${i}`]: input.holdNs ?? NO_HOLD,
         });
-        const mine = `${signal} = {${v}:String}`;
-        return `ifNull(last_value(if(${mine}, ${value}, NULL)) IGNORE NULLS OVER w, {${v}SeedV:Nullable(Float64)}) AS ${v}_v,
-           ifNull(last_value(if(${mine}, toUInt8(${sna.expr}), NULL)) IGNORE NULLS OVER w, {${v}SeedS:Nullable(UInt8)}) AS ${v}_s,
-           ifNull(last_value(if(${mine}, toUnixTimestamp64Nano(${time}), NULL)) IGNORE NULLS OVER w, {${v}SeedT:Nullable(Int64)}) AS ${v}_t`;
+        const mine = `${signal} = {s${i}:String}`;
+        return `ifNull(last_value(if(${mine}, ${value}, NULL)) IGNORE NULLS OVER w, {sv${i}:Nullable(Float64)}) AS i${i}_v,
+           ifNull(last_value(if(${mine}, toUInt8(${sna.expr}), NULL)) IGNORE NULLS OVER w, {ss${i}:Nullable(UInt8)}) AS i${i}_s,
+           ifNull(last_value(if(${mine}, toUnixTimestamp64Nano(${time}), NULL)) IGNORE NULLS OVER w, {st${i}:Nullable(Int64)}) AS i${i}_t`;
       };
-      const columns = `${column(ref.a, "a")},
-           ${column(b, "b")}`;
-      const formula = compileFormula(ref.ast, { a: "a_v", b: "b_v" }, params);
+      const columns = inputs.map(column).join(",\n           ");
+      const formula = formulaSql(ref.ast, (name) => `i${index.get(name)}_v`, params);
+      const anySna = inputs.map((_, i) => `i${i}_s`).join(" OR ");
+      const held = inputs
+        .map((_, i) => `i${i}_t IS NOT NULL AND x - i${i}_t <= {h${i}:Int64}`)
+        .join("\n           AND ");
       rows = `SELECT x, if(s OR NOT isFinite(v0), NULL, v0) AS v FROM (
-         SELECT x, ${formula} AS v0, a_s OR b_s AS s FROM (
+         SELECT x, ${formula} AS v0, ${anySna} AS s FROM (
            SELECT toUnixTimestamp64Nano(${time}) AS x,
            ${columns}
            FROM ${this.table} WHERE ${range}
            WINDOW w AS (ORDER BY ${time} RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))
-         WHERE a_t IS NOT NULL AND b_t IS NOT NULL
-           AND x - a_t <= {aHold:Int64} AND x - b_t <= {bHold:Int64})
+         WHERE ${held})
        ORDER BY x LIMIT 1 BY x`;
     }
 

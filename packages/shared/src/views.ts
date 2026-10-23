@@ -1,15 +1,16 @@
 import { z } from "zod";
 import { rebindSignalId } from "./case.ts";
 import {
-  ComputedInput,
+  type ComputedDef,
   ComputedName,
   ComputedUnit,
   computedRef,
   computedSignalId,
+  flattenFormula,
   MAX_COMPUTED,
 } from "./computed.ts";
 import { packCode, unpackCode } from "./encoding.ts";
-import { bindFormula, MAX_FORMULA_LENGTH, parseFormula } from "./formula.ts";
+import { type FormulaNode, formulaText, MAX_FORMULA_LENGTH, parseFormula } from "./formula.ts";
 import { parseSignalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
@@ -62,12 +63,13 @@ export type ViewWindowDoc =
     }
   | { kind: "values"; title?: string; mode: ValuesMode; signals: string[] };
 
-/** A computed signal in a view (add-computed-signals C10): no ID; windows list `<dataRef>/=<name>`. */
+/**
+ * A computed signal in a view (design F14): no ID; the formula canonical, another entry named by
+ * its name; windows list `<dataRef>/=<name>`.
+ */
 export interface ViewComputedDoc {
   name: string;
   formula: string;
-  a: string;
-  b?: string;
   unit?: string;
 }
 
@@ -312,8 +314,6 @@ function canonical(d: ViewDoc): ViewDoc {
       computed: d.computed.map((c) => ({
         name: c.name,
         formula: c.formula,
-        a: c.a,
-        ...(c.b !== undefined && { b: c.b }),
         ...(c.unit ? { unit: c.unit } : {}),
       })),
     }),
@@ -347,18 +347,17 @@ function dataRefs(windows: { signals: string[] }[], eventSignals: string[] = [])
 const ComputedEntry = z.object({
   name: ComputedName,
   formula: z.string().max(MAX_FORMULA_LENGTH),
-  a: ComputedInput,
-  b: ComputedInput.optional(),
   unit: ComputedUnit.optional(),
 });
-const KNOWN_COMPUTED = ["name", "formula", "a", "b", "unit"];
+const KNOWN_COMPUTED = ["name", "formula", "unit"];
 
 /**
- * The valid computed entries (C6, C1; names unique ignoring case, at most MAX_COMPUTED); each
- * other one left out with the warning `computed signal "<name>" left out: <reason>`.
+ * The valid computed entries (design F14): each one parsed (names unique ignoring case, at most
+ * MAX_COMPUTED), then the set checked for cycles and limits (F4); each other one left out with the
+ * warning `computed signal "<name>" left out: <reason>`.
  */
 function computedEntries(entries: readonly unknown[], warnings: string[]): ViewComputedDoc[] {
-  const out: ViewComputedDoc[] = [];
+  const parsedEntries: { doc: ViewComputedDoc; ast: FormulaNode }[] = [];
   const names = new Set<string>();
   for (const [i, entry] of entries.entries()) {
     const label = isRecord(entry) && typeof entry.name === "string" ? entry.name : `#${i + 1}`;
@@ -373,24 +372,30 @@ function computedEntries(entries: readonly unknown[], warnings: string[]): ViewC
       continue;
     }
     const c = parsed.data;
-    const bound = bindFormula(parseFormula(c.formula), {
-      a: c.a,
-      ...(c.b !== undefined && { b: c.b }),
-    });
+    const formula = parseFormula(c.formula);
     const name = c.name.toLowerCase();
-    if (!bound.ok) leftOut(bound.message);
+    if (!formula.ok) leftOut(formula.message);
     else if (names.has(name)) leftOut("Name already used");
-    else if (out.length >= MAX_COMPUTED) leftOut(`a view holds at most ${MAX_COMPUTED}`);
+    else if (parsedEntries.length >= MAX_COMPUTED) leftOut(`a view holds at most ${MAX_COMPUTED}`);
     else {
       names.add(name);
-      out.push({
-        name: c.name,
-        formula: c.formula.trim(),
-        a: bound.a,
-        ...(bound.b !== undefined && { b: bound.b }),
-        ...(c.unit ? { unit: c.unit } : {}),
+      parsedEntries.push({
+        doc: {
+          name: c.name,
+          formula: formulaText(formula.ast),
+          ...(c.unit ? { unit: c.unit } : {}),
+        },
+        ast: formula.ast,
       });
     }
+  }
+  // The set: names of other entries are references; a cycle or a limit leaves the entry out.
+  const defs: ComputedDef[] = parsedEntries.map(({ doc }, i) => ({ id: `v${i}`, ...doc }));
+  const out: ViewComputedDoc[] = [];
+  for (const { doc, ast } of parsedEntries) {
+    const flat = flattenFormula(ast, defs, doc.name);
+    if (flat.ok) out.push(doc);
+    else warnings.push(`computed signal "${doc.name}" left out: ${flat.message}`);
   }
   return out;
 }

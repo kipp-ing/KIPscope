@@ -45,12 +45,13 @@ export class ScanLimitError extends Error {
   }
 }
 
-/** Thrown by the computedSeries fallback beyond COMPUTED_MAX_ROWS rows of one input (design C8). */
+/**
+ * Thrown by the computedSeries fallback when one input holds more than its share of
+ * COMPUTED_MAX_ROWS (design F8, D-107): `share` = floor(COMPUTED_MAX_ROWS / n).
+ */
 export class ComputedTooLargeError extends Error {
-  constructor(signal: string) {
-    super(
-      `more than ${COMPUTED_MAX_ROWS.toLocaleString("en")} rows of ${signal} in this range: zoom in`,
-    );
+  constructor(signal: string, share: number) {
+    super(`more than ${share.toLocaleString("en")} rows of ${signal} in this range: zoom in`);
     this.name = "ComputedTooLargeError";
   }
 }
@@ -234,9 +235,10 @@ export function completeSource(adapter: SourceAdapter): DataSource {
 }
 
 /**
- * The computedSeries fallback (design C8): `raw` of each input with one row more than
- * COMPUTED_MAX_ROWS, then `computeRows`; raw when the inputs hold at most `target` rows together
- * (one input named twice counts once, as `signal IN (a, b)`), else buckets of the exact rows.
+ * The computedSeries fallback (design C8, F8): `raw` of all n inputs in one parallel wave, each with
+ * one row more than its share floor(COMPUTED_MAX_ROWS / n), so the rows in memory never exceed the
+ * cap (D-107); then `computeRows`; raw when the inputs hold at most `target` rows together, else
+ * buckets of the exact rows.
  */
 async function computeFromRaw(
   adapter: SourceAdapter,
@@ -248,20 +250,21 @@ async function computeFromRaw(
   abort?: AbortSignal,
 ): Promise<ComputedAnswer> {
   checkAbort(abort);
+  const share = Math.floor(COMPUTED_MAX_ROWS / ref.inputs.length);
   const read = async (input: ComputedInputRef) => {
-    const points = await adapter.raw(inputSeries(input), from, to, COMPUTED_MAX_ROWS + 1, abort);
-    if (points.length > COMPUTED_MAX_ROWS) throw new ComputedTooLargeError(input.name);
+    const points = await adapter.raw(inputSeries(input), from, to, share + 1, abort);
+    if (points.length > share) throw new ComputedTooLargeError(input.name, share);
     return points;
   };
-  const [a, b] = await Promise.all([read(ref.a), ref.b && read(ref.b)]);
-  const input = (points: RawPoint[], r: ComputedInputRef): ComputedSeriesInput => {
-    const i: ComputedSeriesInput = { points };
+  const points = await Promise.all(ref.inputs.map(read));
+  const inputs = ref.inputs.map((r, k): ComputedSeriesInput => {
+    const i: ComputedSeriesInput = { points: points[k] as RawPoint[] };
     if (r.seed) i.seed = r.seed;
     if (r.holdNs !== undefined) i.holdNs = r.holdNs;
     return i;
-  };
-  const rows = computeRows(ref.ast, input(a, ref.a), b && ref.b && input(b, ref.b));
-  const n = a.length + (b && ref.b && ref.b.name !== ref.a.name ? b.length : 0);
+  });
+  const rows = computeRows(ref.ast, inputs);
+  const n = inputs.reduce((sum, i) => sum + i.points.length, 0);
   if (n <= target) return { kind: "raw", points: rows };
   return { kind: "buckets", buckets: bucketRows(rows, width) };
 }

@@ -417,64 +417,144 @@ describe("the series fallback (speed-up-adx A2)", () => {
   });
 });
 
-describe("the computedSeries fallback (add-computed-signals)", () => {
+describe("the computedSeries fallback (improve-formula-editor F8, D-107)", () => {
   const ast = (text: string) => {
     const parsed = parseFormula(text);
     if (!parsed.ok) throw new Error(parsed.message);
     return parsed.ast;
   };
   const input = (name: string) => ({ dataRef: "conf-a", name, sna: [] });
-  const ref = (formula: string, extra: Partial<ComputedRef> = {}): ComputedRef => ({
+  /** Inputs in formulaInputs order. */
+  const ref = (formula: string, ...names: string[]): ComputedRef => ({
     dataRef: "conf-a",
     ast: ast(formula),
-    a: input("Lin.RAMP"),
-    b: input("Sna.CODE"),
-    ...extra,
+    inputs: names.map(input),
   });
+  const ramp = (formula: string) => ref(formula, "Lin.RAMP", "Sna.CODE");
+  const points = (count: number, offset = 0n) =>
+    Array.from({ length: count }, (_, i) => ({ t: BigInt(i) * 2n + offset, v: 1 }));
 
   /** A stub whose `raw` answers per signal name and records each call's arguments. */
-  function byName(answers: Record<string, RawPoint[]>) {
+  function byName(answers: Record<string, RawPoint[]>, delayMs = 0) {
     const raw: { name: string; limit: number | undefined; abort: AbortSignal | undefined }[] = [];
+    const flight = { inflight: 0, peak: 0, startedAtFirstAnswer: 0 };
     const adapter: SourceAdapter = {
       ...requiredOnly().adapter,
       raw: async (r, _from, _to, limit, abort) => {
         raw.push({ name: r.name, limit, abort });
+        flight.inflight++;
+        flight.peak = Math.max(flight.peak, flight.inflight);
+        if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (flight.startedAtFirstAnswer === 0) flight.startedAtFirstAnswer = raw.length;
+        flight.inflight--;
         return answers[r.name] ?? [];
       },
     };
-    return { adapter, raw };
+    return { adapter, raw, flight };
   }
+
+  const failure = (promise: Promise<unknown>) =>
+    promise.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
   // spec data-source "Row cap"
   it("refuses a computed series over the row cap", async () => {
     expect(COMPUTED_MAX_ROWS).toBe(200_000);
-    const big = Array.from({ length: COMPUTED_MAX_ROWS + 1 }, (_, i) => ({ t: BigInt(i), v: 1 }));
-    const { adapter, raw } = byName({ "Lin.RAMP": big, "Sna.CODE": [{ t: 0n, v: 2 }] });
+    // Two inputs share the cap: 100,000 each. The first has one row more.
+    const { adapter, raw, flight } = byName(
+      { "Lin.RAMP": points(100_001), "Sna.CODE": [{ t: 1n, v: 2 }] },
+      10,
+    );
     const source = completeSource(adapter);
-    const outcome = await source.computedSeries(ref("a - b"), 0n, 1_000_000n, 1000, 1000n).then(
-      () => undefined,
-      (error: unknown) => error,
+    const outcome = await failure(
+      source.computedSeries(ramp("Lin.RAMP - Sna.CODE"), 0n, 1_000_000n, 1000, 1000n),
     );
     expect(outcome).toBeInstanceOf(ComputedTooLargeError);
     expect((outcome as Error).message).toBe(
-      "more than 200,000 rows of Lin.RAMP in this range: zoom in",
+      "more than 100,000 rows of Lin.RAMP in this range: zoom in",
     );
-    // One raw call per input, each bounded by one row more than the cap.
+    // One wave: both raw calls started before either answered, each bounded by share + 1.
     expect(raw.map((c) => c.name).sort()).toEqual(["Lin.RAMP", "Sna.CODE"]);
-    expect(raw.every((c) => c.limit === COMPUTED_MAX_ROWS + 1)).toBe(true);
-  });
+    expect(flight.peak).toBe(2);
+    expect(flight.startedAtFirstAnswer).toBe(2);
+    expect(raw.every((c) => c.limit === 100_001)).toBe(true);
 
-  it("returns the rows at exactly 200,000 points", async () => {
-    const edge = Array.from({ length: COMPUTED_MAX_ROWS }, (_, i) => ({ t: BigInt(i), v: 1 }));
-    const { adapter } = byName({ "Lin.RAMP": edge });
-    const answer = await completeSource(adapter).computedSeries(
-      { dataRef: "conf-a", ast: ast("abs(a)"), a: input("Lin.RAMP") },
+    // 100,000 and 100,000 rows: the share exactly; it answers.
+    const edge = byName({ "Lin.RAMP": points(100_000), "Sna.CODE": points(100_000, 1n) });
+    const answer = await completeSource(edge.adapter).computedSeries(
+      ramp("Lin.RAMP - Sna.CODE"),
       0n,
       1_000_000n,
       10,
       100_000n,
     );
     expect(answer.kind).toBe("buckets");
+  });
+
+  it("splits the cap evenly over three inputs", async () => {
+    // floor(200,000 / 3) = 66,666 per input; the limit is 66,667.
+    const three = ref("Lin.RAMP + Sna.CODE + Lin.STEP", "Lin.RAMP", "Sna.CODE", "Lin.STEP");
+    const over = byName({
+      "Lin.RAMP": points(10),
+      "Sna.CODE": points(66_667, 1n),
+      "Lin.STEP": points(10, 5n),
+    });
+    const outcome = await failure(
+      completeSource(over.adapter).computedSeries(three, 0n, 1_000_000n, 1000, 1000n),
+    );
+    expect(outcome).toBeInstanceOf(ComputedTooLargeError);
+    expect((outcome as Error).message).toBe(
+      "more than 66,666 rows of Sna.CODE in this range: zoom in",
+    );
+    expect(over.raw.map((c) => c.limit)).toEqual([66_667, 66_667, 66_667]);
+    const edge = byName({
+      "Lin.RAMP": points(66_666),
+      "Sna.CODE": points(66_666, 1n),
+      "Lin.STEP": points(66_666, 3n),
+    });
+    const answer = await completeSource(edge.adapter).computedSeries(
+      three,
+      0n,
+      1_000_000n,
+      10,
+      100_000n,
+    );
+    expect(answer.kind).toBe("buckets");
+    // Never more than the cap in memory: n shares of floor(cap / n).
+    expect(66_666 * 3).toBeLessThanOrEqual(COMPUTED_MAX_ROWS);
+  });
+
+  it("returns the rows at exactly 200,000 points of one input", async () => {
+    const { adapter, raw } = byName({ "Lin.RAMP": points(COMPUTED_MAX_ROWS) });
+    const answer = await completeSource(adapter).computedSeries(
+      ref("abs(Lin.RAMP)", "Lin.RAMP"),
+      0n,
+      1_000_000n,
+      10,
+      100_000n,
+    );
+    expect(answer.kind).toBe("buckets");
+    expect(raw.map((c) => c.limit)).toEqual([COMPUTED_MAX_ROWS + 1]);
+    const over = byName({ "Lin.RAMP": points(COMPUTED_MAX_ROWS + 1) });
+    const outcome = await failure(
+      completeSource(over.adapter).computedSeries(
+        ref("abs(Lin.RAMP)", "Lin.RAMP"),
+        0n,
+        1_000_000n,
+        10,
+        100_000n,
+      ),
+    );
+    expect((outcome as Error).message).toBe(
+      "more than 200,000 rows of Lin.RAMP in this range: zoom in",
+    );
+  });
+
+  it("words the error with the share and the input", () => {
+    const error = new ComputedTooLargeError("MS_312h.DNMOT", 25_000);
+    expect(error.message).toBe("more than 25,000 rows of MS_312h.DNMOT in this range: zoom in");
   });
 
   it("computes rows from the raw points of each input", async () => {
@@ -486,8 +566,8 @@ describe("the computedSeries fallback (add-computed-signals)", () => {
       "Sna.CODE": [{ t: 15n, v: 10 }],
     });
     const source = completeSource(adapter);
-    // Union of times 10, 15, 20; no row at 10 (b has no point yet): 1 - 10, 2 - 10.
-    expect(await source.computedSeries(ref("a - b"), 0n, 100n, 10, 10n)).toEqual({
+    // Union of times 10, 15, 20; no row at 10 (Sna.CODE has no point yet): 1 - 10, 2 - 10.
+    expect(await source.computedSeries(ramp("Lin.RAMP - Sna.CODE"), 0n, 100n, 10, 10n)).toEqual({
       kind: "raw",
       points: [
         { t: 15n, v: -9 },
@@ -496,17 +576,18 @@ describe("the computedSeries fallback (add-computed-signals)", () => {
     });
     expect(raw).toHaveLength(2);
     // More input rows (3) than the target (2): buckets of 10 on the exact rows.
-    expect(await source.computedSeries(ref("a - b"), 0n, 100n, 2, 10n)).toEqual({
+    expect(await source.computedSeries(ramp("Lin.RAMP - Sna.CODE"), 0n, 100n, 2, 10n)).toEqual({
       kind: "buckets",
       buckets: [
         { start: 10n, count: 1, sna: 0, mean: -9, min: -9, max: -9 },
         { start: 20n, count: 1, sna: 0, mean: -8, min: -8, max: -8 },
       ],
     });
-    // The seed of b (last point before the range) counts, within its hold limit of 8 ns.
-    const seeded = ref("a - b", {
-      b: { ...input("Sna.CODE"), seed: { t: 5n, v: 100 }, holdNs: 8n },
-    });
+    // The seed of Sna.CODE (last point before the range) counts, within its hold limit of 8 ns.
+    const seeded: ComputedRef = {
+      ...ramp("Lin.RAMP - Sna.CODE"),
+      inputs: [input("Lin.RAMP"), { ...input("Sna.CODE"), seed: { t: 5n, v: 100 }, holdNs: 8n }],
+    };
     expect(await source.computedSeries(seeded, 0n, 100n, 10, 10n)).toEqual({
       kind: "raw",
       points: [
@@ -517,6 +598,27 @@ describe("the computedSeries fallback (add-computed-signals)", () => {
     });
   });
 
+  it("computes three inputs from their raw points", async () => {
+    const { adapter, raw } = byName({
+      "Lin.RAMP": [
+        { t: 10n, v: 1 },
+        { t: 20n, v: 2 },
+      ],
+      "Sna.CODE": [{ t: 15n, v: 10 }],
+      "Lin.STEP": [{ t: 12n, v: 100 }],
+    });
+    const three = ref("Lin.RAMP + Sna.CODE * Lin.STEP", "Lin.RAMP", "Sna.CODE", "Lin.STEP");
+    // Union 10, 12, 15, 20; a row once all three have a point (15): 1 + 10 * 100; at 20: 2 + 1000.
+    expect(await completeSource(adapter).computedSeries(three, 0n, 100n, 10, 10n)).toEqual({
+      kind: "raw",
+      points: [
+        { t: 15n, v: 1001 },
+        { t: 20n, v: 1002 },
+      ],
+    });
+    expect(raw.map((c) => c.name).sort()).toEqual(["Lin.RAMP", "Lin.STEP", "Sna.CODE"]);
+  });
+
   it("sends the computed fallback through the queue and stops on abort", async () => {
     const { adapter, raw } = byName({
       "Lin.RAMP": [{ t: 1n, v: 1 }],
@@ -525,13 +627,13 @@ describe("the computedSeries fallback (add-computed-signals)", () => {
     const queue = new QueryQueue(1);
     const source = completeSource(queuedAdapter(adapter, queue));
     const controller = new AbortController();
-    await source.computedSeries(ref("a - b"), 0n, 100n, 10, 10n, controller.signal);
+    await source.computedSeries(ramp("Lin.RAMP - Sna.CODE"), 0n, 100n, 10, 10n, controller.signal);
     expect(queue.peak).toBe(1);
     expect(raw).toHaveLength(2);
     const reason = new Error("client went away");
     controller.abort(reason);
     await expect(
-      source.computedSeries(ref("a - b"), 0n, 100n, 10, 10n, controller.signal),
+      source.computedSeries(ramp("Lin.RAMP - Sna.CODE"), 0n, 100n, 10, 10n, controller.signal),
     ).rejects.toBe(reason);
   });
 });
