@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-113: A patience hint on a slow Unlink, no prefetch (2026-10-23)
+
+Unlink reads the vehicle's extent (first and last row): on carserver 12–18 s for smart451's 490 M rows, since `utc` is the third sort key. The lead offered a background prefetch of the extent on case open with a longer cache. Jan: „naja, wenn man einen session katalog durchklickt wird quasi permanent vorgeladen? das wäre too much. lieber eine info: geduld es passiert was".
+
+- **Decision:** No prefetch. Change `add-unlink-hint`: while an Unlink is still on its way after about 1 s, a hint says that the whole vehicle's time range is being read and that this can take a few seconds; it goes when the result is rendered or refused. The progress line and `Unlinking…` (D-112) stay.
+- **Why:** Feedback costs no source queries; a prefetch would query for every vehicle stepped through, whether or not the user unlinks.
+
 ## D-112: Two papercuts seen on ADX (2026-10-23)
 
 Jan, testing on ADX with Edge on Windows: „4 digits geht nicht (wenn es im submenü ausgeblendet ist?) und unlink reagiert langsam. im ergebnis zu erwarten, der nutzer weiß nur nicht dass was passiert". On the lead's question: choosing 4 closes the "⋯" menu and Digits stays at 3.
