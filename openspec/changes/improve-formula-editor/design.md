@@ -12,7 +12,7 @@ See proposal.md for why. This change builds on the design of `openspec/changes/a
 
 ## Goals / Non-goals
 
-Goals: type a formula with signal names and get suggestions as in the explorer search (D-106); formulas over up to 8 source signals, including other computed signals as live references (D-106); old workspaces and views keep working. Non-goals: everything under "Out of scope" in proposal.md.
+Goals: type a formula with signal names and get suggestions as in the explorer search (D-106); formulas over up to 8 source signals, including other computed signals as live references (D-106). Non-goals: everything under "Out of scope" in proposal.md.
 
 ## Decisions
 
@@ -106,11 +106,9 @@ computed:
 - `withComputed`: a computed ID exists iff its definition exists, flattens, and every source exists on the ID's data ref; message `computed signal smart451/=c8: not in this list: CPC_508h.PNHV_SupBat_Curr`. A computed signal counts once towards `MAX_SIGNALS`.
 - A command body with `a` or `b` fails the `Command` schema like any unknown key (the server's usual 400 for a malformed command).
 
-### F6 Migration
+### F6 No migration
 
-- `migrateComputed(entry)`: an entry with a string `a`: the old formula is parsed with the new parser (old formulas name only `a` and `b`, which are bare names), each name `a` replaced by the name `entry.a`, `b` by `entry.b`, printed canonical, and `a`, `b` dropped. `{formula: "a - b", a: "Fast_100h.SIG_A", b: "Sna_800h.SPEED"}` → `{formula: "Fast_100h.SIG_A - Sna_800h.SPEED"}`; `{formula: "abs(a)", a: "1st.X", b: "Y.Z"}` → `{formula: "abs(\"1st.X\")"}` (an unused `b` is dropped). An entry it cannot migrate (a name other than `a`/`b`, or `b` used without `b`) is returned unchanged and then fails the schema.
-- `WorkspaceSchema` runs it on every `computed` entry before validation and drops entries that still fail (so one bad legacy entry never refuses the whole workspace; its window uses then show `missing`). The server writes the new form on the workspace's next save; every read migrates until then.
-- `parseViewDoc` runs it on every entry; a migrated entry gives no warning; one that still fails is left out with today's warning.
+Jan (via the lead, 2026-10-23): „es gibt kein bestand" — no definitions or views with `a`/`b` exist. No migration code: a workspace entry with `a`/`b` fails `WorkspaceSchema` as any malformed entry does today; a view entry with `a`/`b` is left out with today's warning (F14). Code a build round already wrote for migration is removed.
 
 ### F7 Auto name and unit
 
@@ -122,10 +120,10 @@ computed:
 
 - `/api/series`, `/api/value`, `/api/extent`: a computed `signal` (`<dataRef>/=<id>`) needs `formula` (≤ `MAX_FLAT_LENGTH` characters): the flattened canonical text over source signals. Refusals:
   - no `formula`: 400 `invalid_request`, `a computed signal needs formula`;
-  - `a` or `b` given: 400 `invalid_request`, `a and b are gone: write the signal names in formula`;
   - a plain signal with `formula`: 400 `invalid_request`, `formula goes with a computed signal only`;
   - parse (F1 messages with the flat limits 2,000 characters and 256 nodes) or more than 8 names: 400 `invalid_formula`;
   - a name not in the route's catalog on that data ref: 404 `unknown_signal`, `signalId` the input's ID, message `not in this list: <id>`; with states: 422 `not_numeric_signal`.
+- `a` and `b` are no longer parameters and get no special handling (like any unknown query parameter).
 - Names are matched exactly; the server knows no short names and no definitions (stateless, lead's point 4: names parsed from the formula, no list parameter).
 - Everything else as C8 with arrays in `formulaInputs` order: seeds and hold limits per input, raw edges, raw when the inputs' rows together ≤ target, else buckets from exact rows.
 - Fallback (lead, D-107; parallel because ADX latency dominates, D-097): one cap for all inputs of a request together, split evenly. All n inputs are read in parallel in one wave, each with `raw(input, from, to, share + 1)`, `share = floor(COMPUTED_MAX_ROWS / n)`; any input over its share fails with `computed_too_large`, message `more than 100,000 rows of MS_312h.DNMOT in this range: zoom in` (its share). So the total never exceeds the cap.
@@ -177,15 +175,15 @@ From `+` or the hint (C12), the explorer selection in click order (L2): numeric 
 
 - `calc add FORMULA [--name NAME] [--unit UNIT]`: FORMULA typed (F2: `resolveFormula` over the workspace's signal list and definitions): `Unknown signal` → `unknown_signal`, `Ambiguous` → `ambiguous_signal` with `error.candidates`, states → `not_numeric_signal`, other F1/F4 errors → `invalid_formula`; nothing sent on a refusal. Defaults: `freeName(formulaName(…))`, `inferUnit(…)` with the catalog's units and the definitions' units. Sends `computed.add` with the canonical formula.
 - `calc edit ID|NAME [--formula F] [--name NAME] [--unit UNIT]`: F resolved the same way; name and unit not re-derived.
-- `--a`, `--b`, `--no-b` on `calc add|edit`: usage error (exit 2) with `--a and --b are gone: write signal names in the formula, e.g. calc add "abs(MS_312h.DNMOT)"`.
+- `--a`, `--b`, `--no-b` are no longer options: the plain unknown-option usage error (exit 2).
 - `calc list` → `data {computed: [{id, name, formula, unit?}]}`; `calc rm` may now be refused `computed_in_use` (exit 1).
 - `value`/`extent` with a computed ID attach `formula` = the flattened text from the state's definitions.
-- Lead's leaning `calc add NAME "FORMULA"` overruled: the existing positional FORMULA keeps its meaning, the name keeps defaulting to the auto name as in the editor, and an old command (`calc add "a - b" --a …`) is refused with the hint instead of being misread as a name.
+- Lead's leaning `calc add NAME "FORMULA"` overruled: the existing positional FORMULA keeps its meaning, the name keeps defaulting to the auto name as in the editor, and an old command (`calc add "a - b" --a …`) fails as an unknown option instead of being misread as a name.
 
 ### F14 Views
 
 - `ViewDoc.computed?: {name, formula, unit?}[]`; formulas canonical, references to other entries by name; windows list `<dataRef>/=<name>` (C10). `version` stays 1.
-- `parseViewDoc`: F6 migration first; then the entries are checked as a set: each parses; names that are other entries' names are references; an entry in a cycle or over a limit (F4) is left out with `computed signal "<name>" left out: <reason>`. Names that are no entry are source signals (unchecked until open).
+- `parseViewDoc`: the entries are checked as a set: each parses; names that are other entries' names are references; an entry in a cycle or over a limit (F4) is left out with `computed signal "<name>" left out: <reason>`. Names that are no entry are source signals (unchecked until open).
 - `view.open`: fresh IDs in document order; window references by name; a reference without a definition is `missing`.
 
 ## Pinned interfaces
@@ -259,8 +257,6 @@ export function checkFormula(
   formula: string, defs: readonly ComputedDef[], self: { id?: string; name: string }, signal: SignalCheck,
 ): { ok: true; formula: string; sources: string[]; users: string[] }
  | { ok: false; code: "invalid_formula" | "unknown_signal" | "not_numeric_signal"; message: string };
-/** F6; returns other values unchanged. */
-export function migrateComputed(entry: unknown): unknown;
 export interface ComputedSeriesInput { points: readonly Point[]; seed?: Point; holdNs?: bigint }   // unchanged
 export function computeRows(ast: FormulaNode, inputs: readonly ComputedSeriesInput[]): Point[];
 export function computedRowValue(ast: FormulaNode, current: readonly Point[]): number | null;
@@ -275,7 +271,7 @@ export function computedValueAt(
 
 `signals.ts`: `SignalInfo.computed?: { formula: string; unavailable?: string }`.
 
-`workspace.ts`: `computed.add {name, formula: string max 500, unit?}`, `computed.update {id, name, formula, unit?}`, `computed.remove {id}`; `CommandErrorCode` gains `computed_in_use`; `WorkspaceSchema` preprocesses `computed` entries with `migrateComputed` and drops entries that still fail (F6).
+`workspace.ts`: `computed.add {name, formula: string max 500, unit?}`, `computed.update {id, name, formula, unit?}`, `computed.remove {id}`; `CommandErrorCode` gains `computed_in_use`; `WorkspaceSchema` entries `{id, name, formula, unit?}` (strict, as today).
 
 `views.ts`: `ViewDoc.computed?: { name: string; formula: string; unit?: string }[]`; `parseViewDoc`, `workspaceToView`, `openView` per F14.
 
@@ -355,7 +351,7 @@ export function formulaNames(items: readonly SignalInfo[], defs: readonly Comput
 
 - [The total cap makes "zoom in" come earlier with more inputs] → accepted (D-107): ADX and other non-ClickHouse sources only; ClickHouse never hits it. One parallel wave keeps latency at one round trip; an even split refuses a fast input beside slow ones earlier than a pooled cap would (accepted, lead).
 - [A definition named like a signal of another session's list] → canonical resolution prefers the definition there; the F2 guard only checks the list in use. Accepted: names with spaces or `−` (auto names) never collide with source names.
-- [Old clients send `a`/`b` after the deploy] → refused with a message that says what changed (F8); web and server ship together.
+- [Old clients send `a`/`b` after the deploy] → no `formula` gives 400 `a computed signal needs formula`; web and server ship together.
 - [Overlay tints drift from the text] → the layer copies the textarea's box and font and paints backgrounds only; a drift shows as a shifted tint, never as wrong text (UI check M9 measures it).
 - [Rename rewrites users' formulas] → done in the same command (one revision), so no state shows a dangling name.
 
@@ -372,8 +368,7 @@ export function formulaNames(items: readonly SignalInfo[], defs: readonly Comput
 - **M9 Look:** with `abs("DNMOT − PNHV_SupBat_Curr") + MS_312h.DNMOT` in the field: the computed name has a `--band` tint, `MS_312h.DNMOT` an `--accent-soft` tint, each `mark` has `padding` 0 and lies over its text (mark rect within ±1 px of a `Range` over the same characters in the textarea's mirror, or visibly in the screenshot); exactly one slate-900 button (Save); panel 360 px; field 82 px tall, `font-size` 12px; suggestion rows 22 px.
 - **M10 Esc:** list open → Esc closes the list, editor open with its text; Esc again closes the editor.
 - **M11 Step:** M2's signal shown, `]` → drawn on the next session with the same legend name.
-- **M12 Old definitions (only if the lead's workspace still holds definitions from before this change):** they are listed and drawn; their pencil shows the formula with full names.
-- **M13 Speed (goal, the lead):** `curl -s -o /dev/null -w '%{time_total}'` of `/api/series` for M1's formula over the busiest hour and the whole recording, `target=2000`, and for a three-input formula with a third numeric signal of the session; reported, not pass/fail.
+- **M12 Speed (goal, the lead):** `curl -s -o /dev/null -w '%{time_total}'` of `/api/series` for M1's formula over the busiest hour and the whole recording, `target=2000`, and for a three-input formula with a third numeric signal of the session; reported, not pass/fail.
 
 ## Answered questions (D-107)
 

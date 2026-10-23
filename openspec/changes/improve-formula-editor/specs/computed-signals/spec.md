@@ -72,19 +72,6 @@ In the formula field each resolved signal name SHALL be tinted (`--accent-soft`,
 - **THEN** the computed name's `mark` has background `--band` (`rgb(241, 245, 249)`), `MS_312h.DNMOT`'s `--accent-soft` (`rgb(224, 242, 254)`), every `mark` has `padding` 0px and sits over its characters in the screenshot
 - **Evidence:** UI check M9 on smart451 (screenshot, computed styles)
 
-### Requirement: Old definitions migrated
-Workspace definitions and view entries written with inputs `a` and `b` SHALL load with `a` and `b` replaced by their signal names in the formula; an entry that cannot be migrated SHALL be left out without refusing the workspace or the view (design F6). Origin: necessary consequence of D-106 (a/b gone) with D-105 (definitions in workspace and view, Q-1).
-
-#### Scenario: Workspace entries rewritten
-- **WHEN** `WorkspaceSchema` parses a workspace whose `computed` holds `{id: c1, name: Diff, formula: "a - b", a: Fast_100h.SIG_A, b: Sna_800h.SPEED, unit: A}`, `{id: c2, name: One, formula: "abs(a)", a: "1st.X", b: Y.Z}` and `{id: c3, name: Bad, formula: "a - b", a: X.A}`
-- **THEN** it is ok with `computed` `[{id: c1, name: Diff, formula: "Fast_100h.SIG_A - Sna_800h.SPEED", unit: A}, {id: c2, name: One, formula: "abs(\"1st.X\")"}]`
-- **Evidence:** `packages/shared/test/computedApply.test.ts` › "migrates definitions with a and b"
-
-#### Scenario: Old definitions on real data
-- **WHEN** the lead's workspace still holds definitions saved before this change (manual check M12)
-- **THEN** they are listed under `ƒ Computed`, drawn, and their pencil shows the formula with full signal names
-- **Evidence:** UI check M12 on smart451 (screenshot), or `not_run` when no such definition exists
-
 ### Requirement: Formula editor
 A `+` in the Computed header, the hint row, a pencil or `F2` SHALL open the editor: the formula field, a live error line naming the bad token's position, name, unit, Save (disabled while an error shows), Cancel, Delete when editing; no pickers, no preset dropdown. A selection SHALL prefill the field in click order (design F12, Q-3), caret at the end. Origin: D-106 („a/b fields gone", „a selection still prefills"); D-104; D-105 L2, L4.
 
@@ -201,7 +188,7 @@ An input SHALL be held at most 3 of its periods (`GAP_PERIODS`); a time where an
 - **Evidence:** UI check on smart451 (one screenshot)
 
 ### Requirement: Computed series, values and extents over HTTP
-`/api/series`, `/api/value` and `/api/extent` SHALL take a computed signal `<dataRef>/=<id>` with `formula`, the formula flattened over at most 8 source signals, read the names from the formula, resolve them exactly on that data ref within the route's scope and catalog, refuse `a` and `b`, and answer in today's shapes (design F8). Origin: add-computed-signals lead pick 3 (behaves like any signal); D-102 (scope and grant still bound it); stateless server and names from the formula: necessary consequence of D-106 (N inputs, nesting) with add-computed-signals C8.
+`/api/series`, `/api/value` and `/api/extent` SHALL take a computed signal `<dataRef>/=<id>` with `formula`, the formula flattened over at most 8 source signals, read the names from the formula, resolve them exactly on that data ref within the route's scope and catalog, and answer in today's shapes (design F8). Origin: add-computed-signals lead pick 3 (behaves like any signal); D-102 (scope and grant still bound it); stateless server and names from the formula: necessary consequence of D-106 (N inputs, nesting) with add-computed-signals C8.
 
 #### Scenario: Series equals the per-row rule
 - **WHEN** against the test DB `GET /api/series` asks for `testcar/=c1` with `formula=Fast_100h.SIG_A - Fast_100h.SIG_B + Fast_100h.SIG_C` over a 2 s range with target 5000, and the same range of the three inputs is read raw
@@ -209,8 +196,8 @@ An input SHALL be held at most 3 of its periods (`GAP_PERIODS`); a time where an
 - **Evidence:** `apps/server/test/computed.http.test.ts` › "serves a computed series"
 
 #### Scenario: Refused requests
-- **WHEN** computed requests come with no `formula`, with `formula=Fast_100h.SIG_A` and `a=Fast_100h.SIG_A`, with `formula=Fast_100h.SIG_A - Nope_1h.X`, with `formula=Ign_A20h.MODE + 1`, with `formula=Many_700h.S0000 + … + Many_700h.S0008` (9 names), and a plain signal comes with `formula=Fast_100h.SIG_A`
-- **THEN** they answer 400 `invalid_request` (`a computed signal needs formula`), 400 `invalid_request` (`a and b are gone: write the signal names in formula`), 404 `unknown_signal` (`signalId` `testcar/Nope_1h.X`), 422 `not_numeric_signal`, 400 `invalid_formula` (`At most 8 signals (with nested ones): 9`), 400 `invalid_request` (`formula goes with a computed signal only`)
+- **WHEN** computed requests come with no `formula`, with `formula=Fast_100h.SIG_A - Nope_1h.X`, with `formula=Ign_A20h.MODE + 1`, with `formula=Many_700h.S0000 + … + Many_700h.S0008` (9 names), and a plain signal comes with `formula=Fast_100h.SIG_A`
+- **THEN** they answer 400 `invalid_request` (`a computed signal needs formula`), 404 `unknown_signal` (`signalId` `testcar/Nope_1h.X`), 422 `not_numeric_signal`, 400 `invalid_formula` (`At most 8 signals (with nested ones): 9`), 400 `invalid_request` (`formula goes with a computed signal only`)
 - **Evidence:** `apps/server/test/computed.http.test.ts` › "refuses bad computed requests"
 
 #### Scenario: Value and extent
@@ -229,7 +216,7 @@ On ClickHouse a computed series SHALL read all its source signals in one scan of
 #### Scenario: Speed on carserver (goal)
 - **WHEN** the lead times `/api/series` for `MS_312h.DNMOT - CPC_508h.PNHV_SupBat_Curr` over the busiest hour and over the whole recording, target 2000, and a three-input formula with a third numeric signal of the session
 - **THEN** the times are reported against the goals 0.5 s and 3 s (not pass/fail)
-- **Evidence:** lead's `curl -s -o /dev/null -w '%{time_total}'` output (manual check M13)
+- **Evidence:** lead's `curl -s -o /dev/null -w '%{time_total}'` output (manual check M12)
 
 ### Requirement: Definitions in the workspace
 A workspace SHALL hold up to 20 computed signals (name, canonical formula, unit), changed only by `computed.add`, `computed.update` and `computed.remove` with the refusals of design F5. Names are unique ignoring case and never equal a signal name of the list in use; source signals must be numeric and in the list. Origin: D-102 („the definition lives in the workspace and the view"); add-computed-signals lead picks 4 and 5, D-105 Q-7; name guard: necessary consequence of design F2 (a definition name wins over a signal name).
@@ -313,7 +300,7 @@ The web SHALL send a computed signal's formula flattened over its source signals
 `docs/http-api.md` SHALL describe the `formula` parameter of design F8 without `a` and `b`, `docs/data-sources.md` the optional adapter method with N inputs, and `docs/manual.md` the formula field (typing names, the suggestion list, Tab and Enter, quoting, nesting), `F2` and `kipscope calc`. Origin: data-source "Adapter guide"; necessary consequence (manual and shortcuts kept in step).
 
 #### Scenario: Docs and keys
-- **WHEN** `pnpm test` runs, then `grep -c "a and b are gone" docs/http-api.md`, `grep -c "&a=" docs/http-api.md` and `grep -c "Tab" docs/manual.md`
+- **WHEN** `pnpm test` runs, then `grep -c "formula" docs/http-api.md`, `grep -c "&a=" docs/http-api.md` and `grep -c "Tab" docs/manual.md`
 - **THEN** `apps/web/test/manual.test.ts` and `apps/web/test/shortcuts.test.ts` pass with the `F2` and `Tab` rows; the greps print at least 1, 0 and at least 1
 - **Evidence:** the test run and the three commands
 

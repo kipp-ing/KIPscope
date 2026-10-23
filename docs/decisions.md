@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-108: No migration of computed definitions (2026-10-23)
+
+Jan, on the plan to rewrite definitions with `a`/`b`: „es gibt kein bestand".
+
+- **Decision:** `improve-formula-editor` carries no migration or legacy handling: a workspace or view entry with `a`/`b` is a broken entry like any other, request parameters `a`/`b` and CLI flags `--a`/`--b` get no special treatment.
+- **Why:** No such definitions exist; legacy code would only add surface.
+
 ## D-107: Formula editor answers (2026-10-23)
 
 Open questions of `improve-formula-editor` (design Q-1, Q-2, Q-4), Jan's answers; Q-3 and Q-5 by the spec owner's picks.

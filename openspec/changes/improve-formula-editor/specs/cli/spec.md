@@ -1,11 +1,11 @@
 ## MODIFIED Requirements
 
 ### Requirement: Computed signal commands
-The CLI SHALL offer `calc list`, `calc add FORMULA [--name NAME] [--unit UNIT]`, `calc edit ID|NAME [--formula F] [--name N] [--unit U]` and `calc rm ID|NAME` over the workspace commands of computed-signals (design F13 of improve-formula-editor), with signal and computed names typed in the formula and resolved as in the editor; `--a`, `--b` and `--no-b` SHALL be usage errors with a hint; `value` and `extent` SHALL take a computed ID. A refusal sends nothing. Origin: concept §7 (one command model for UI and CLI); add-computed-signals lead pick 7; names in the formula: D-106.
+The CLI SHALL offer `calc list`, `calc add FORMULA [--name NAME] [--unit UNIT]`, `calc edit ID|NAME [--formula F] [--name N] [--unit U]` and `calc rm ID|NAME` over the workspace commands of computed-signals (design F13 of improve-formula-editor), with signal and computed names typed in the formula and resolved as in the editor; `--a`, `--b` and `--no-b` are no longer options; `value` and `extent` SHALL take a computed ID. A refusal sends nothing. Origin: concept §7 (one command model for UI and CLI); add-computed-signals lead pick 7; names in the formula: D-106.
 
 #### Scenario: Forms
 - **WHEN** the argument lists `calc list`, `calc add "SIG_A - speed"`, `calc add "abs(SIG_A)" --name Abs --unit A`, `calc edit Diff --formula "abs(Diff2)"`, `calc rm c3`, `calc add`, `calc add "a - b" --a rpm`, `calc edit Diff --no-b` and `calc rm` are parsed
-- **THEN** the first five give the forms list, add (formula), add (formula, name, unit), edit (target `Diff`, formula) and rm (`c3`); the last four are usage errors (exit 2), the two with `--a`/`--no-b` with the message `--a and --b are gone: write signal names in the formula, e.g. calc add "abs(MS_312h.DNMOT)"`
+- **THEN** the first five give the forms list, add (formula), add (formula, name, unit), edit (target `Diff`, formula) and rm (`c3`); the last four are usage errors (exit 2), the two with `--a`/`--no-b` as unknown options
 - **Evidence:** `apps/cli/test/args.test.ts` › "maps the calc forms"
 
 #### Scenario: Add, list, edit, remove over HTTP

@@ -12,7 +12,7 @@ Today a formula names its inputs `a` and `b`, picked in two slots, with a preset
 - **Up to 8 source signals** (D-106, supersedes D-102's two): the per-row rule, the server routes, the ClickHouse single scan and the fallback generalize from two inputs to N ≤ 8.
 - **Computed signals in computed signals** (D-106): a formula may name another computed signal. It is a live reference: editing the inner one redraws every outer one; renaming it rewrites the outer formulas; deleting a used one is refused naming its users; cycles are refused; at most 8 source signals after resolving nested ones.
 - **Server stays stateless** (necessary consequence of design C8 of add-computed-signals): the web sends the formula flattened over source signals; the server re-parses it and reads the names from it. **BREAKING** for `/api/series`, `/api/value`, `/api/extent`: the `a` and `b` parameters are gone.
-- **Migration**: workspace definitions and view documents written with `a`/`b` load and are rewritten to the new form.
+- **No migration**: no definitions or views with `a`/`b` exist (Jan: „es gibt kein bestand"); such an entry is a broken entry like any other.
 - **`min`/`max` take two or more values** (D-107 Q-2).
 - **Prefill from a selection** stays (D-106, click order L2 of D-105): one signal gives `abs(X)`, two `X - Y`, more `X + Y + …`.
 - **CLI**: `kipscope calc add FORMULA` and `calc edit … --formula F` take names in the formula; `--a`, `--b`, `--no-b` are refused with a hint.
@@ -26,9 +26,9 @@ None.
 
 ### Modified Capabilities
 
-- `computed-signals`: formula language with signal names, N inputs, nesting, the completing formula field, migration of old definitions.
+- `computed-signals`: formula language with signal names, N inputs, nesting, the completing formula field.
 - `data-source`: the computed series method and its bounded fallback take N inputs; a three-input conformance case.
-- `saved-views`: view entries carry formulas with names; old entries with `a`/`b` are rewritten.
+- `saved-views`: view entries carry formulas with names and nested references.
 - `cli`: `calc add|edit` without `--a`/`--b`.
 
 ## Out of scope
