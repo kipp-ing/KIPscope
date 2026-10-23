@@ -1,10 +1,20 @@
 # KIPscope
 
-Interactive workspace for exploring recorded vehicle time series (e.g. CAN bus signals and diagnostic readings in ClickHouse or Azure Data Explorer). Search signals, lay them out in linked chart windows, zoom from a whole recording down to single samples, and read exact values and differences with two cursors. Everything in the UI is also a command, so a CLI (or an agent) can drive the same workspace.
+**A fast, scriptable scope for recorded vehicle data.** Search CAN bus signals and diagnostic readings, lay them out in linked chart windows, zoom from a whole recording down to single samples, and read exact values and differences with two cursors. Everything in the UI is also a command, so a CLI or an AI agent can drive the same workspace. The data stays where it is: ClickHouse, Azure Data Explorer or any source behind a small adapter.
+
+**v0.1.0** · [What's in it](CHANGELOG.md) · [Try the demo](#demo) · [Manual](docs/manual.md) · [License](#license)
 
 ![KIPscope: a launch from a traffic light in the demo recording, with speed, throttle and pack current, pack voltage and state of charge, cursors A and B with Diff, and a values window](docs/images/hero.png)
 
 <sub>All pictures show the [demo recording](#demo): simulated data of a smart fortwo electric drive (451), limited to signals the [Open Vehicle Monitoring System](https://github.com/openvehicles/Open-Vehicle-Monitoring-System-3) decodes publicly, with made-up message names and generic SAE fault codes.</sub>
+
+## Why KIPscope
+
+My own car is a smart fortwo electric drive (451). It used to report through an [OVMS](https://github.com/openvehicles/Open-Vehicle-Monitoring-System-3) module; today a self-built ESP32 logger (ESPCars) records its CAN bus and diagnostic readings into ClickHouse. What was missing was a way to look at those recordings the way engineers do with CANalyzer or CANape, and their licences are far out of reach for a private car.
+
+So I built one. KIPscope is a private project, paid from my own pocket on my own accounts: about €50 of AI tokens and roughly 8 hours of my own time, steering a small team of AI agents through spec-driven rounds ([OpenSpec](https://github.com/Fission-AI/OpenSpec); every spec, decision and round is in this repo). The pictures and the demo use only signals that OVMS decodes publicly.
+
+It paid off on the first real recordings: KIPscope shows that something is wrong with some of my smart's battery cells. The [charging picture](#what-it-does) shows that kind of view on simulated demo data: twelve cell voltages over a charge, one of them lagging.
 
 ## What it does
 
@@ -16,8 +26,9 @@ Interactive workspace for exploring recorded vehicle time series (e.g. CAN bus s
 - **Events in context.** Fault memory reads (DTCs), state changes and logger notes as pins on the strip and lines in the plots, with a filter and an Events tab.
 - **Honest gaps.** SNA values are never drawn; logger gaps break the lines and show as grey bands.
 - **Scriptable.** Every UI action is a workspace command; `kipscope` drives it from the shell, `--wait` until the UI rendered it. Saved views, YAML export and `#view=` links.
-- **Step through found sessions.** A search tool (finder), not part of KIPscope, hands over a list of sessions; `[` and `]` step through them with the layout kept and aligned to an event, Unlink shows the vehicle's whole recording.
-- **Made for corporate environments.** One shared server with Ping sign-in, rights from the finder, sharing that never widens access and bounded queries on large ADX tables ([below](#made-for-corporate-environments)).
+- **Step through found sessions.** An external search tool hands over a list of sessions (drives, charges, idle times); `[` and `]` step through them with the layout kept and aligned to an event, Unlink shows the vehicle's whole recording.
+- **Pluggable data sources.** Adapters for ClickHouse and Azure Data Explorer ship; another source is one adapter module with seven required methods and a conformance suite ([docs/data-sources.md](docs/data-sources.md)).
+- **Runs as a team server.** One shared server with enterprise SSO (OIDC), rights from a signed handoff, sharing that never widens access and bounded queries on large tables ([below](#runs-as-a-team-server)).
 
 ![Searching, dragging two signals into a window, fitting a drive on the TIME strip, zooming and setting cursors A and B with Diff](docs/images/workflow.gif)
 
@@ -48,9 +59,10 @@ scripts/demo.sh                               # UI http://localhost:5183, server
 | Manual (also in the app, `?`) | [docs/manual.md](docs/manual.md) |
 | Data sources and adapters | [docs/data-sources.md](docs/data-sources.md) |
 | HTTP API | [docs/http-api.md](docs/http-api.md) |
-| KIPscope in a company: overview, security model, setup | [docs/corporate.md](docs/corporate.md) |
-| Server deployment: sign-in (Ping), rights, workspaces | [docs/deploy.md](docs/deploy.md) |
-| Handoff from a search tool (finder): catalog, signature, link | [docs/handoff.md](docs/handoff.md) |
+| What's new per version | [CHANGELOG.md](CHANGELOG.md) |
+| KIPscope as a team server: overview, security model, setup | [docs/corporate.md](docs/corporate.md) |
+| Server deployment: sign-in (OIDC), rights, workspaces | [docs/deploy.md](docs/deploy.md) |
+| Handoff from a search tool: catalog, signature, link | [docs/handoff.md](docs/handoff.md) |
 | Requirements (German) | [docs/concept.md](docs/concept.md) |
 | Specs, one per capability | [openspec/specs/](openspec/specs/) |
 | Changes in flight and archived | [openspec/changes/](openspec/changes/) |
@@ -82,7 +94,7 @@ cp kipscope.example.yaml kipscope.yaml  # optional: names, groups, measurement, 
 
 ## Data sources
 
-The server reads one source, ClickHouse (default) or Azure Data Explorer (`KIPSCOPE_SOURCE=adx`); the adapter contract, every variable and "Connect your ADX" are in [docs/data-sources.md](docs/data-sources.md), the HTTP routes in [docs/http-api.md](docs/http-api.md).
+The server reads one source through an adapter: ClickHouse (default), Azure Data Explorer (`KIPSCOPE_SOURCE=adx`) or your own; the adapter contract, every variable and "Connect your ADX" are in [docs/data-sources.md](docs/data-sources.md), the HTTP routes in [docs/http-api.md](docs/http-api.md).
 
 **Real data (development):** ClickHouse `sdlog` on carserver (read-only user `letsview`, password in `.env` as `CLICKHOUSE_PASSWORD`), reachable only through an SSH tunnel:
 
@@ -126,7 +138,7 @@ The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or 
 
 **Workspaces:** each tab works in a workspace with its own address `/w/<id>` (old `/s/<id>` addresses still open); `/` reuses your latest workspace that no tab has open (or makes a new one), so two tabs never mirror each other, and a `#view=` or `?view=` link opens the view in a new workspace, so old tabs keep their case. `Share…` in the top row copies a link (own copy, or the same live workspace) and sets who else may open it; the Views menu lists your recent workspaces. The CLI and scripts without `--workspace` use the latest one. On first start older state dirs are migrated to the user `local` (the folder of round 1 becomes `workspaces/`, `workspace.json` becomes a workspace, `views/` moves to `users/local/views/`).
 
-**Sessions from a finder:** a catalog of sessions opens as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`, in a new workspace with the session bar. Locally an unsigned catalog is enough; to try it on your own recording, `kipscope case drives <dataRef> | kipscope case open -` makes one session per drive. A shared server with sign-in and signed catalogs: [Made for corporate environments](#made-for-corporate-environments).
+**Sessions from a search tool:** a catalog of sessions opens as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`, in a new workspace with the session bar. Locally an unsigned catalog is enough; to try it on your own recording, `kipscope case drives <dataRef> | kipscope case open -` makes one session per drive. A shared server with sign-in and signed catalogs: [Runs as a team server](#runs-as-a-team-server).
 
 Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the source address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
 
@@ -319,31 +331,31 @@ node apps/cli/src/main.ts cursor set a "2026-10-14 07:44:22.950"
 node apps/cli/src/main.ts state | jq -r .local.cursors.a   # 2026-10-14 07:44:22.950+02:00
 ```
 
-## Made for corporate environments
+## Runs as a team server
 
-KIPscope runs as one shared service: users need only a browser, the CLI and AI agents use the same API, and data, credentials and rights stay on the server. The overview with the picture, the security model and the setup steps is [docs/corporate.md](docs/corporate.md).
+Locally KIPscope is one user without a login. It also runs as one shared service: users need only a browser, the CLI and AI agents use the same API, and data, credentials and rights stay on the server. The overview with the picture, the security model and the setup steps is [docs/corporate.md](docs/corporate.md).
 
 ```
-search tool ──signed link──▶ browser ──https──▶ TLS proxy (Ping) ──▶ KIPscope ──one service identity──▶ ADX
-   finds sessions,                                                    guard, grants,
-   decides rights                                                     bounded queries
+search tool ──signed link──▶ browser ──https──▶ TLS proxy (SSO) ──▶ KIPscope ──one service identity──▶ data source
+   finds sessions,                                                   guard, grants,
+   decides rights                                                    bounded queries
 ```
 
 The search tool is a separate tool and not part of KIPscope; it is out of scope of this repo. KIPscope defines only the handoff interface (catalog, signature, link: [docs/handoff.md](docs/handoff.md)), so any search tool that signs a catalog works.
 
-- **Finder finds, KIPscope shows.** The search tool finds the sessions and hands over a catalog in any order, of any vehicles; KIPscope steps through it with the layout kept, preloads the neighbours and never scans a vehicle's whole history in one query, not even after Unlink.
-- **Sign-in with Ping Identity.** `KIPSCOPE_IDENTITY=oidc` checks Ping-issued tokens behind PingAccess or an OIDC proxy; another provider plugs in as a small adapter module with a conformance suite. CLI and AI callers send a bearer token from the company's token tool.
-- **Rights from the finder.** On a server a new workspace sees nothing. Only a catalog signed by the finder for the signed-in user widens its grant, by exactly the listed vehicles; roles decide nothing in KIPscope. One guard checks every route; a hidden vehicle and a missing one answer alike, and lists never show what the grant lacks.
+- **The search tool finds, KIPscope shows.** The search tool finds the sessions and hands over a catalog in any order, of any vehicles; KIPscope steps through it with the layout kept, preloads the neighbours and never scans a vehicle's whole history in one query, not even after Unlink.
+- **Enterprise SSO (OIDC).** `KIPSCOPE_IDENTITY=oidc` validates JWT access tokens of any OIDC provider that publishes discovery and a JWKS, behind an OIDC proxy; any other sign-in plugs in as a small adapter module with a conformance suite. CLI and AI callers send a bearer token (`KIPSCOPE_TOKEN` or a token command).
+- **Rights from the handoff.** On a server a new workspace sees nothing. Only a catalog signed by the search tool for the signed-in user widens its grant, by exactly the listed vehicles; roles decide nothing in KIPscope. One guard checks every route; a hidden vehicle and a missing one answer alike, and lists never show what the grant lacks.
 - **Workspaces you don't manage.** Each tab is a workspace at `/w/<id>`. Share… sends an own copy or invites to the live workspace (read or write); sharing never widens data access, and `KIPSCOPE_SHARE=off` keeps everything private. Saved views are per user and grant nothing.
-- **Large data.** ADX or ClickHouse, read with the server's service principal or managed identity; scoped catalog for large tables, query classes that keep the UI first, and a measured 400-day vehicle with every query well under a second.
+- **Large data.** Any source adapter, read with one service identity (for ADX a service principal or managed identity); scoped catalog for large tables, query classes that keep the UI first, and a measured 400-day vehicle with every query well under a second.
 - **Local stays simple.** Without these variables (`KIPSCOPE_IDENTITY=none`) there is no login and one user sees everything.
 
 | Topic | Guide |
 |---|---|
 | Overview, security model, setup checklist | [docs/corporate.md](docs/corporate.md) |
-| Server, Ping, own identity adapter, rights, trust boundary, ADX service identity | [docs/deploy.md](docs/deploy.md) |
-| For the finder: catalog, signature, keys, link, errors | [docs/handoff.md](docs/handoff.md) |
-| Sources: ADX setup, own adapter, scoped catalog | [docs/data-sources.md](docs/data-sources.md) |
+| Server, OIDC sign-in, own identity adapter, rights, trust boundary, service identity | [docs/deploy.md](docs/deploy.md) |
+| For the search tool: catalog, signature, keys, link, errors | [docs/handoff.md](docs/handoff.md) |
+| Sources: ClickHouse, ADX setup, own adapter, scoped catalog | [docs/data-sources.md](docs/data-sources.md) |
 
 ## License
 

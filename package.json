@@ -1,5 +1,6 @@
 {
   "name": "kipscope",
+  "version": "0.1.0",
   "private": true,
   "license": "AAL",
   "type": "module",

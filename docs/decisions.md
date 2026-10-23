@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-114: KIPscope as Jan's own product, v0.1.0 (2026-10-23)
+
+Jan promotes KIPscope as his own tool. A friend in marketing advised: say in the repo how it came about, and describe sign-in and data sources generically instead of naming one company stack.
+
+- **Decision:** The README opens with a pitch and "Why KIPscope" (Jan's smart 451, OVMS replaced by his own ESP32 logger ESPCars, CANalyzer/CANape out of reach, a private project on his own money and accounts, about €50 of AI tokens and 8 hours of his time, a cell problem found on his car). README and `docs/corporate.md` say enterprise SSO (OIDC), search tool and data-source adapters (ClickHouse, ADX, own); `docs/deploy.md` keeps Ping as the worked OIDC example. No claim about the time of day of the work. First tag `v0.1.0`, root `package.json` version `0.1.0`, `CHANGELOG.md`.
+- **Why:** A self-contained product page; facts only in the origin story.
+
 ## D-113: A patience hint on a slow Unlink, no prefetch (2026-10-23)
 
 Unlink reads the vehicle's extent (first and last row): on carserver 12–18 s for smart451's 490 M rows, since `utc` is the third sort key. The lead offered a background prefetch of the extent on case open with a longer cache. Jan: „naja, wenn man einen session katalog durchklickt wird quasi permanent vorgeladen? das wäre too much. lieber eine info: geduld es passiert was".
