@@ -58,7 +58,7 @@ The server SHALL compute every signal's group once per catalog load and deliver 
 - **Evidence:** the two curl commands
 
 ### Requirement: Grouped explorer list
-When at least one catalog entry has a group, the explorer SHALL show the matches under group headers (marker, name, match count; one line ≤ 24 px). Empty search: every group, collapsed, by name. Searching: only groups with a match, open, by best match, rank order inside. `Other` always last. The user's Favourites group (capability `favourites`, "Favourites group") SHALL come before all of these and follow its own rules; it SHALL NOT change the groups below it, their order, counts or state. The scenarios below hold for a user without favourites. Origin: D-053 („Empty search: all groups, collapsed. While searching: only groups with a hit, all open, ordered by their best hit …"; `Other` „always last"); name order: design G6; Favourites above: D-102 with D-080 (P1 „top of the explorer").
+When at least one catalog entry has a group, the explorer SHALL show the matches under group headers (marker, name, match count; one line ≤ 24 px). Empty search: every group, collapsed, by name. Searching: only groups with a match, open, by best match, rank order inside. `Other` always last. The user's Favourites group (capability `favourites`, "Favourites group") SHALL come before all of these and follow its own rules; it SHALL NOT change the groups below it, their order, counts or state. The Computed section (capability `computed-signals`, "Computed section in the explorer") SHALL come right after the Favourites group and before the groups, with the same guarantee. The scenarios below hold for a user without favourites and a list without the Computed section. Origin: D-053 („Empty search: all groups, collapsed. While searching: only groups with a hit, all open, ordered by their best hit …"; `Other` „always last"); name order: design G6; Favourites above: D-102 with D-080 (P1 „top of the explorer"); Computed right under Favourites: D-104.
 
 #### Scenario: Group order and state
 - **WHEN** `explorerItems` gets ranked matches from groups `ESP` (ranks 3, 5), `Other` (rank 1), `CGW` (rank 2) and `AC` (rank 4)
@@ -79,6 +79,11 @@ When at least one catalog entry has a group, the explorer SHALL show the matches
 - **WHEN** `explorerItems` gets the matches of "Group order and state" with favourites the names of ranks 5 and 2, searching and with an empty query
 - **THEN** the items after the Favourites header and its copies are exactly the items of "Group order and state" for the same query, counts included
 - **Evidence:** `apps/web/test/explorer.test.ts` › "puts favourites in a group at the top"
+
+#### Scenario: Groups unchanged below the Computed section
+- **WHEN** `explorerItems` gets the matches of "Group order and state" with one computed match, searching and with an empty query
+- **THEN** the items after the `ƒ Computed` header and its row are exactly the items of "Group order and state" for the same query, counts included
+- **Evidence:** `apps/web/test/explorer.test.ts` › "puts the Computed section under Favourites"
 
 ### Requirement: Group collapse
 A click on a group header, or Enter while it is the active item, SHALL open or close that group. Each query change SHALL restore the state of "Grouped explorer list"; the state SHALL NOT be remembered, also not across a reload. When no entry has a group, the list SHALL be flat as before this change, below the Favourites group when the user has favourites in the list (capability `favourites`). Origin: D-053 (state per empty or running search); header click and Enter, no remembered state: design G6; flat list: necessary consequence of D-035's "no file … as today"; Favourites above the flat list: D-102 with D-080 (P1 „top of the explorer").

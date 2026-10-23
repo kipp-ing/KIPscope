@@ -4,6 +4,19 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-106: Typed formulas with completion, computed signals in computed signals (2026-10-23)
+
+Jan, after testing `add-computed-signals`: „its buatiful. now to make it harder: can we use computed signals in new computed signals? and for ease of use: yes this way is cool, but dated. I dream I just type a signal (like in finder) have dropdown to select, or just enter an abs( or a + and it just works?" On the lead's questions: at most 8 signals, nested ones live, presets and a/b fields gone.
+
+- **Decision:** New change `improve-formula-editor`. One formula field replaces the a/b pickers and the preset dropdown: typing offers signals (ranked like the explorer search) and functions (`abs`, `min`, `max`) in a dropdown; operators and parentheses are typed as text. A formula names signals directly, also computed ones. A formula holds at most 8 source signals after resolving nested computed signals (supersedes D-102's two inputs). A computed signal used in another is a live reference: editing the inner one changes the outer one; deleting a used one is refused with the users named; cycles are refused. A selection still prefills the field (click order, L2 of D-105).
+- **Why:** Typing is faster than picking slots and scales past two inputs; live references keep one definition of truth.
+
+## D-105: add-computed-signals accepted (2026-10-23)
+
+Jan, after testing it over a tunnel: „its buatiful". No veto on the picks taken while he was away (D-104).
+
+- **Decision:** `add-computed-signals` design Q-1 … Q-8 stand as picked: definitions in workspace and view only (Q-1); the Computed section open on the empty search (Q-2); pencil or `F2` edits, a click selects (Q-3); non-finite results are SNA (Q-4); an input's last value is held for at most 3 of its periods (Q-5); a product's unit is empty (Q-6); an input not in the list is refused (Q-7); a new computed signal is added like Enter on a row (Q-8). Lead decisions L1–L4 stand: D-066 kept, prefill in click order, Save like Enter including New window, Esc closes the innermost list.
+
 ## D-104: Computed signals now, under Favourites, basics only (2026-10-22)
 
 Jan, before an 8 h break: „signalberechnung. ich dachte unter favourites gibt es ein drop down mit magie. schnapp dir ein paar agenten was schlaues zu bauen … so wie halt sinn macht, schön aussieht. leicht zu bedienen. wir brauche keine ultra fancy funktionen die basics reichen."
