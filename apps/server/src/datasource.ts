@@ -1,7 +1,7 @@
 import type { EventRow, FormulaNode, StateRow, Timestamp } from "@kipscope/shared";
 import type { QueryRunner } from "./queue.ts";
 
-/** One data ref and a half-open window [from, to), from < to (D-078, issue #1 item 1). */
+/** One data ref and a half-open window [from, to), from < to (D-078, the ADX feedback item 1). */
 export interface Scope {
   dataRef: string;
   from: Timestamp;

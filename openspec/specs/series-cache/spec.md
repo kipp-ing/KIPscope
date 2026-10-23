@@ -462,7 +462,7 @@ Signal extents and gap info SHALL be kept for the 4 most recently used scope key
 - **Evidence:** `apps/web/test/rescope.test.ts` › "keeps extents and gap info for four scopes"
 
 ### Requirement: Extent before the first load
-A window SHALL get a signal's extent before it requests any series tile for that signal under the current scope, unless the view is complete from the cache. Once the extent is known, a load SHALL start within its `update` call. A failed extent request SHALL load the view at once, as before. Origin: data fact (search tool team's measurement after `speed-up-adx`, 2026-10-22: `series` → `extent` → `series` → `series` per signal, serially); the report's P4, agreed by Jan on 2026-10-22.
+A window SHALL get a signal's extent before it requests any series tile for that signal under the current scope, unless the view is complete from the cache. Once the extent is known, a load SHALL start within its `update` call. A failed extent request SHALL load the view at once, as before. Origin: data fact (ADX testers's measurement after `speed-up-adx`, 2026-10-22: `series` → `extent` → `series` → `series` per signal, serially); the report's P4, agreed by Jan on 2026-10-22.
 
 #### Scenario: Extent before the first series request
 - **WHEN** a loader with the window options (fake extent `0` … `4294967295`, fake signal DENSE of design W9) gets the view `[0, 4294967296)` at target 257 on an empty cache

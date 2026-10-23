@@ -78,7 +78,7 @@ flowchart LR
 
 1. **ADX:** a service principal or managed identity with Database Viewer, logged in with `az login` as the user that runs KIPscope; tables in the default layout or a stored function ([data-sources.md › Connect your ADX](data-sources.md#connect-your-adx)).
 2. **Server:** `pnpm build`, a `.env` with identity, origins, web and state dir, behind the TLS proxy on loopback ([deploy.md › Build and start](deploy.md#build-and-start)). Start on a fresh state dir.
-3. **Sign-in (OIDC):** `KIPSCOPE_IDENTITY=oidc` with issuer and audience; the browser through an OIDC proxy that forwards the token ([deploy.md › OIDC](deploy.md#ping-identity-with-oidc), with Ping as the worked example). A sign-in without OIDC: an own adapter module with the conformance suite ([deploy.md › Your own adapter](deploy.md#your-own-adapter)).
+3. **Sign-in (OIDC):** `KIPSCOPE_IDENTITY=oidc` with issuer and audience; the browser through an OIDC proxy that forwards the token ([deploy.md › OIDC sign-in](deploy.md#oidc-sign-in-with-oidc)). A sign-in without OIDC: an own adapter module with the conformance suite ([deploy.md › Your own adapter](deploy.md#your-own-adapter)).
 4. **Search tool keys:** the search tool publishes its public key set; KIPscope gets `KIPSCOPE_FINDER_JWKS`, `KIPSCOPE_FINDER_ISSUER`, `KIPSCOPE_FINDER_AUDIENCE` ([handoff.md › Server variables](handoff.md#server-variables)).
 5. **Vehicle names:** `KIPSCOPE_CASE_DATAREF` maps the search tool's vehicle (VIN) to KIPscope's data ref, default `{object}`.
 6. **The search tool's "Open in KIPscope" action:** its server builds and signs the catalog and opens `https://<kipscope>/open#cases=<code>` in the tab `kipscope` ([handoff.md](handoff.md)).

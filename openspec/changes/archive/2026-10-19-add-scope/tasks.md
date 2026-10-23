@@ -69,5 +69,5 @@ Write areas (disjoint):
 ## Workflow follow-up
 
 - Lead: Jan's answers to Q-1 … Q-3 before round 1; manual checks of design "Manual checks (lead)" and scope "carserver in scoped mode"; `pnpm build && pnpm test && pnpm lint`, `test:adx`, `pnpm smoke`.
-- Tell the Azure users on issue #1 that the contract (design Z1, `docs/data-sources.md` "Scope") is settled.
+- Tell the ADX testers on the ADX feedback that the contract (design Z1, `docs/data-sources.md` "Scope") is settled.
 - On archive: the ledger entry of design "Ledger entry on archive" with Jan's answers; `docs/status.md` "Next" item 1.2.

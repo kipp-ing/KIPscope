@@ -91,7 +91,7 @@ const wildcard = WILDCARD_HOSTS.has(config.host);
 // A configured LAN address is the one other name the Host check admits (design H3).
 const extraHost = loopback || wildcard ? undefined : config.host;
 
-// Default metadata paths that don't exist are skipped with one info line; set paths still warn per load (issue #1).
+// Default metadata paths that don't exist are skipped with one info line; set paths still warn per load (the ADX feedback).
 const skippedDefaults: string[] = [];
 const metadataPaths = (key: string, paths: string[]): string[] => {
   if (process.env[key]) return paths;

@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Explorer follows the scope
-The explorer SHALL load the catalog again whenever the workspace's scope changes (`scopeKey`), and SHALL drop an answer whose `scope` is not the current one. In scoped mode without a scope it SHALL show `No scope set. Open a view link or run kipscope scope set REF FROM TO.` instead of the list and SHALL not retry until the scope changes. While an answer has `partial`, it SHALL show `Signals of session <k>; the vehicle's full list is loading` above the list and load the catalog again every 10 s until an answer has no `partial`. Origin: necessary consequence of "Catalog contents" (the browser holds the list, signal-catalog design E3); issue #1 item 2; partial: object-view "Signal list loads lazily" (D-086).
+The explorer SHALL load the catalog again whenever the workspace's scope changes (`scopeKey`), and SHALL drop an answer whose `scope` is not the current one. In scoped mode without a scope it SHALL show `No scope set. Open a view link or run kipscope scope set REF FROM TO.` instead of the list and SHALL not retry until the scope changes. While an answer has `partial`, it SHALL show `Signals of session <k>; the vehicle's full list is loading` above the list and load the catalog again every 10 s until an answer has no `partial`. Origin: necessary consequence of "Catalog contents" (the browser holds the list, signal-catalog design E3); the ADX feedback item 2; partial: object-view "Signal list loads lazily" (D-086).
 
 #### Scenario: Reload on scope change
 - **WHEN** the explorer's loader is fed the scopes "", then {testcar, T1, T2}, then the same again, then {testcar, T1 − 1 h, T2 + 1 h}, and the answer for the second scope arrives after the third scope was set

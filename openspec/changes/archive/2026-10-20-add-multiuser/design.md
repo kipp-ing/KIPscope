@@ -5,7 +5,7 @@
 - **Jan's decisions:**
   - D-079: „das soll auf einem server laufen, dem gleichen vielleicht wie [Suchtool]. lokal ist immer nur der browser. Multiuser ist also pflicht. eine zugriffsberechtigung im Server muss später auch einbaubar sein".
   - D-083: „jedes sesseion braucht rechte, ja. ADX rechte sind serverrechte hier keine unterscheidung" (its SSO part is superseded by D-084).
-  - D-084: „1: bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten. 2. keine Ahnung es gibt rollen,. die bestätigt ein tool in verbindung mit PIng id. not my business. muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauben. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutezer alle platformen sehen. q4 views je nutzer, ja". Its rules part is superseded by D-085.
+  - D-084: „1: bei mir lokal ohne login, bin mein eigener herr. für [den server] brauche ich was mit regeln und rechten. [identity provider] sollte möglich sein mit unterschiedlichen rechten. 2. keine Ahnung es gibt rollen,. die bestätigt ein tool in verbindung mit [identity provider]. not my business. muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauben. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutezer alle platformen sehen. q4 views je nutzer, ja". Its rules part is superseded by D-085.
   - D-085: „wir können das rechtemanagement in [Suchtool] packen. das mit der zeitlichen session set stimmt nicht. die liste kann beliebig sortiert sein beliebige VINs." Rights live in the search tool; the KIPscope rules file is in question.
   - D-086: „unlink ist aktuelles fahrzeug. unlink ist für den user unbegrenzt, rechte haben keinen zeit bezug des objekts. der ist ja". Read as: rights per object with no time part, and the exploration's other recommendations accepted. Q1: "session" is the data section; the server state is the invisible "workspace", renamed in this change. Q11: the rules file drops out of this change. Q13: a view grants nothing.
   - On a workspace per case with its own URL („old tabs keep their case"), Jan answered „ja". D-082: catalogs are keyed by scope. D-081: query classes. D-078: the finder hands over cases.
@@ -52,7 +52,7 @@ Rounds 1–4 built every part below under the name "session", with a rules file.
 ## Goals / Non-Goals
 
 **Goals:**
-- Identity as a pluggable adapter, with `none` as the default and a built-in that works with Ping Identity.
+- Identity as a pluggable adapter, with `none` as the default and a built-in that works with any OIDC provider.
 - Data access decided per workspace by a grant that only the server widens, and that is enforced at one place for every route, the CLI included. Deny by default on a server; nothing leaks through errors or counts.
 - Many workspaces with owner, share level, grant, own URL, live channel and state file, invisible in daily use. Sharing never widens data access.
 - Views per user. The CLI and AI callers authenticate through the same adapter.
@@ -63,7 +63,7 @@ Rounds 1–4 built every part below under the name "session", with a rules file.
 
 ## Jan's answers
 
-- **Q-1 Identity mechanism → pluggable adapter (D-084).** `none` stays the default (M1); the built-in `oidc` validates Ping-issued tokens (M15); a module adapter is loaded from config (M1).
+- **Q-1 Identity mechanism → pluggable adapter (D-084).** `none` stays the default (M1); the built-in `oidc` validates OIDC-issued tokens (M15); a module adapter is loaded from config (M1).
 - **Q-2 CLI identity → the same adapter (D-084).** The CLI sends a bearer token the company's tool obtained (M13).
 - **Q-3 Rights → the search tool (D-085, D-086 Q11).** Superseded: the rules file of D-084 is dropped. KIPscope holds what the search tool vouched for as a grant per workspace (M3) and enforces it in one guard (M6).
 - **Q-4 Saved views → per user.** „q4 views je nutzer, ja".
@@ -336,7 +336,7 @@ export function workspaceRights(user: string, entry: WorkspaceEntry): WorkspaceR
 ```
 
 - **No data condition.** The data condition of the built `sessionRights` goes, because a workspace's data is always covered by its own grant (M3 invariant). Under Q-6 (b), the receiver would also need every data ref of the workspace covered by the union of the grants of their own workspaces: one more argument and one function.
-- **Same Ping tenant by construction:** a server has exactly one identity adapter, and with `oidc` one issuer. A token of another issuer is refused (`invalid_token`, M15), so every user who can be invited is of the same tenant. There is no tenant field.
+- **Same identity provider by construction:** a server has exactly one identity adapter, and with `oidc` one issuer. A token of another issuer is refused (`invalid_token`, M15), so every user who can be invited is of the same tenant. There is no tenant field.
 - **What an invited user sees** (Q-6 (a)): the shared workspace's grant, while they are in that workspace. Their own workspaces never gain it. "Copy link (own copy)" or `POST /api/workspaces {open}` made from it gets the initial grant, so on a server that open is refused `forbidden_data`.
 - **Share and delete:** `POST /api/workspaces/:id/share` and `DELETE` need the owner, else 403 `not_owner`. Setting `read` or `write` with `KIPSCOPE_SHARE=off` answers 403 `share_not_permitted`; `private` is always allowed.
 
@@ -518,7 +518,7 @@ As built, renamed:
 - **`docs/http-api.md`:** the `/api/w/<id>` prefix rule, the default workspace, the access level of every route, `/api/workspaces…`, the error codes and `X-KIPscope-Workspace`.
 - **README:** the variables (`KIPSCOPE_SHARE`, `KIPSCOPE_WORKSPACE_IDLE_DAYS`, no `KIPSCOPE_RULES`) and the CLI forms.
 
-### M15: The `oidc` built-in for Ping Identity (`apps/server/src/identity/oidc.ts`)
+### M15: The `oidc` built-in for OIDC providers (`apps/server/src/identity/oidc.ts`)
 
 Built in round 1, unchanged:
 - KIPscope acts as an OIDC resource server with `jose`.
@@ -579,4 +579,4 @@ Built in round 1, unchanged:
 - **A misconfigured proxy** breaks the trust boundary. Mitigations are as built (`oidc` trusts signatures; the example checks the peer; the start log).
 - **An invited user with write** can change the owner's windows within the grant (last command wins; concept §7).
 - **An own copy on a server shows nothing** until `add-case-open` (Q-7).
-- **Not testable here:** a real PingFederate or PingOne, the company's token tool, and the search tool's signing. `grantObjects` is exercised by tests only until `add-case-open`.
+- **Not testable here:** a real OIDC provider, the company's token tool, and the search tool's signing. `grantObjects` is exercised by tests only until `add-case-open`.

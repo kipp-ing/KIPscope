@@ -42,7 +42,7 @@ The server SHALL compute a data ref's logger gaps and `through` (its last row's 
 ## ADDED Requirements
 
 ### Requirement: Measured periods only for signals in use
-The server SHALL measure a period only for a signal named in a `/api/gaps` or `/api/value` request or held by the workspace (a window's signals, the events line). Each measurement SHALL also take every workspace signal of the same data ref not yet measured in this catalog load, in one sample query per data ref and request. DBC and diag periods need no query and stay listed for every signal. Origin: issue #1 item 7 (~2,400 signals took 17–34 s); concept §3 (at most 50 signals shown).
+The server SHALL measure a period only for a signal named in a `/api/gaps` or `/api/value` request or held by the workspace (a window's signals, the events line). Each measurement SHALL also take every workspace signal of the same data ref not yet measured in this catalog load, in one sample query per data ref and request. DBC and diag periods need no query and stay listed for every signal. Origin: the ADX feedback item 7 (~2,400 signals took 17–34 s); concept §3 (at most 50 signals shown).
 
 #### Scenario: Large catalog, small workspace
 - **WHEN** a stub source with a native `firstTimes` that records the names it gets lists 2,400 signals `S0001` … `S2400` of data ref `big`, none with a DBC or diag period; the workspace has a timeseries window with `big/S0001` and `big/S0002`, a values window with `big/S0003`, and `big/S0004` on the events line; the catalog loads and its prefetch ends; then `/api/gaps?dataRef=big`, `/api/gaps?dataRef=big&signal=big/S0001&signal=big/S0100` and `/api/value?signal=big/S0200&t=0` arrive one after the other

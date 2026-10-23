@@ -2,7 +2,7 @@
 
 ## Why
 
-The search tool team measured KIPscope on a real ADX cluster (GitHub issue #1, comment of 2026-10-22, sections 1 and 2): one open of a 37-min drive takes about 11 s, 19 HTTP requests cause about 35–55 ADX queries, and "the cost is the number of serial ADX round trips, not payload or rendering". A single ADX round trip costs 0.6–8 s; the `extent` fallback (two `top 1` scans) took 4–17 s per signal; `/api/series` waits for a `count` before it sends its data query; the queue of 4 slots, sized for ClickHouse, makes most of the `/api/series` p90 of 8.9 s queue wait; `/api/meta` pinged ADX 1,590 times in 12 h. Jan agreed on 2026-10-22 to the lead's cut: the server-side items P1, P2, P5, P6 and an investigation of P9 now, everything else later.
+The ADX testers measured KIPscope on a real ADX cluster (the ADX feedback, comment of 2026-10-22, sections 1 and 2): one open of a 37-min drive takes about 11 s, 19 HTTP requests cause about 35–55 ADX queries, and "the cost is the number of serial ADX round trips, not payload or rendering". A single ADX round trip costs 0.6–8 s; the `extent` fallback (two `top 1` scans) took 4–17 s per signal; `/api/series` waits for a `count` before it sends its data query; the queue of 4 slots, sized for ClickHouse, makes most of the `/api/series` p90 of 8.9 s queue wait; `/api/meta` pinged ADX 1,590 times in 12 h. Jan agreed on 2026-10-22 to the lead's cut: the server-side items P1, P2, P5, P6 and an investigation of P9 now, everything else later.
 
 ## What Changes
 
@@ -12,7 +12,7 @@ The search tool team measured KIPscope on a real ADX cluster (GitHub issue #1, c
 - **P6, cached ping:** `/api/meta` reuses a reachable ping result for 15 s; a failed ping is not reused. The ping stays outside the query queue (it already is).
 - **P9, `/api/value` latency investigated:** its edge lookups already carry the scope filter; no change in this change. The findings are in design A6.
 
-Timing targets of the report (`/api/extent` p90 < 1.5 s, no series request waiting > 0.5 s in the queue, first curve < 1.5 s) are **measured by the search tool team after release** on their cluster. This change's evidence is local: query counts per request on a fake Kusto client, KQL shape, answers on the Kusto emulator and the ClickHouse test DB, cache hits and config defaults.
+Timing targets of the report (`/api/extent` p90 < 1.5 s, no series request waiting > 0.5 s in the queue, first curve < 1.5 s) are **measured by the ADX testers after release** on their cluster. This change's evidence is local: query counts per request on a fake Kusto client, KQL shape, answers on the Kusto emulator and the ClickHouse test DB, cache hits and config defaults.
 
 ## Non-goals (later changes)
 

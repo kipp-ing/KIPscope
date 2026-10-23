@@ -2,7 +2,7 @@
 
 ## Why
 
-The team building a search tool (finder; not part of KIPscope, D-090) tried the handoff of `add-case-open` and reported findings in GitHub issue #1 (comment 2026-10-21). The lead checked them against the code; Jan approved the first group („group 1"). They are small gaps between `docs/handoff.md`, the specs and the code: a trim rule that, read literally, empties the short side first; four facts the guide does not state; a back-link warning the file-drop path throws away; and loopback finders refused in identity `none`.
+The team building a search tool (finder; not part of KIPscope, D-090) tried the handoff of `add-case-open` and reported findings in the ADX feedback (comment 2026-10-21). The lead checked them against the code; Jan approved the first group („group 1"). They are small gaps between `docs/handoff.md`, the specs and the code: a trim rule that, read literally, empties the short side first; four facts the guide does not state; a back-link warning the file-drop path throws away; and loopback finders refused in identity `none`.
 
 ## What Changes
 

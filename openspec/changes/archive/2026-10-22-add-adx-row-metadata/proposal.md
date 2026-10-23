@@ -2,7 +2,7 @@
 
 ## Why
 
-On ADX every signal without a DBC or diagnostic catalog entry has no unit and no SNA: KIPscope reads both only from metadata files keyed by the signal name. Some ADX tables carry this per row instead (issue #1, last comment, M3 "Units and SNA from the table"): a unit column, and a text column that holds either a state name (`FALSE`, `ACV_ST`) or a sentinel (`SNA`, `INVLD`). State names already work through `KIPSCOPE_COLUMN_TEXT`; units and sentinels do not. A sentinel row today counts as a valid value and, worse, makes its signal a text (state) signal.
+On ADX every signal without a DBC or diagnostic catalog entry has no unit and no SNA: KIPscope reads both only from metadata files keyed by the signal name. Some ADX tables carry this per row instead (the ADX feedback, last comment, M3 "Units and SNA from the table"): a unit column, and a text column that holds either a state name (`FALSE`, `ACV_ST`) or a sentinel (`SNA`, `INVLD`). State names already work through `KIPSCOPE_COLUMN_TEXT`; units and sentinels do not. A sentinel row today counts as a valid value and, worse, makes its signal a text (state) signal.
 
 Jan decided (D-100, 2026-10-22, „ja gut"): "No metadata file. The ADX source reads units and SNA from the table (M3): optional `KIPSCOPE_COLUMN_UNIT`, read by the scoped signal list in its existing summarize and used when no DBC or diag unit exists, per data ref; optional `KIPSCOPE_SNA_TEXTS` (e.g. `SNA,INVLD`): a row whose text is in the list is SNA (a gap, no label), and such texts alone do not make a signal a state signal. State names keep coming from `KIPSCOPE_COLUMN_TEXT`."
 

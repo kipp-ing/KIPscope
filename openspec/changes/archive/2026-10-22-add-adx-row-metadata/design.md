@@ -2,7 +2,7 @@
 
 ## Context
 
-Source: D-100 (2026-10-22), quoted in proposal.md; origin text: issue #1, last comment, section "M3 — Units and SNA from the table". M1 and M2 of that comment are out of scope.
+Source: D-100 (2026-10-22), quoted in proposal.md; origin text: the ADX feedback, last comment, section "M3 — Units and SNA from the table". M1 and M2 of that comment are out of scope.
 
 Today (read before writing this design):
 
@@ -123,7 +123,7 @@ Web: `formatSource(signal: SignalInfo): string` keeps its signature (R6). `Signa
 | Number | Where | Off by ×2 |
 |---|---|---|
 | 1 query per `listSignals` | R2 | Exact, tested. A second query would add one ADX round trip (0.16–0.34 s measured, D-098) to every open in scoped mode, where the list is on the open's path. |
-| Extra cost of `take_anyif` and the `in` test | R2, R3 | Not measured; a goal, not a gate. Same scan, one more column read and aggregate. If it doubled the scoped list's duration, an open would wait one list duration longer; the variables are off by default, and the search tool team measures after release (as for D-097). |
+| Extra cost of `take_anyif` and the `in` test | R2, R3 | Not measured; a goal, not a gate. Same scan, one more column read and aggregate. If it doubled the scoped list's duration, an open would wait one list duration longer; the variables are off by default, and the ADX testers measures after release (as for D-097). |
 | `SNA,INVLD` (2 entries) | R1 | A list of 4 or 1 changes nothing: one `in` over a short dynamic array. |
 | 22 rows, 5 sentinel rows in `KMeta` | R7 | Exact fixture counts; the tests compare exact values. |
 

@@ -110,7 +110,7 @@ Each "Go to", preset and key step SHALL push the range shown before it to the ta
 - **Evidence:** UI check (header before, after the hold and after Back)
 
 ### Requirement: Navigation stops at the scope edge
-While the workspace has a scope, every navigation (keys, wheel, "Go to", presets, Home, Back, strip actions, drive keys) SHALL end inside it through the server's clamp, and none SHALL change the scope. When a result carries `clamped`, the message line SHALL show `Stopped at the scope edge. Widen shows more.`; with a linked catalog `Stopped at the session edge. Unlink shows the whole vehicle.`, and in an object scope `Stopped at the end of the vehicle's data.` Origin: D-078 („navigation stops there, widening it is an explicit step"); issue #1 item 4; session and vehicle wording: D-086 (Unlink replaces Widen in a case workspace).
+While the workspace has a scope, every navigation (keys, wheel, "Go to", presets, Home, Back, strip actions, drive keys) SHALL end inside it through the server's clamp, and none SHALL change the scope. When a result carries `clamped`, the message line SHALL show `Stopped at the scope edge. Widen shows more.`; with a linked catalog `Stopped at the session edge. Unlink shows the whole vehicle.`, and in an object scope `Stopped at the end of the vehicle's data.` Origin: D-078 („navigation stops there, widening it is an explicit step"); the ADX feedback item 4; session and vehicle wording: D-086 (Unlink replaces Widen in a case workspace).
 
 #### Scenario: Message on a clamped result
 - **WHEN** the UI's command handler gets `{ok: true, revision: 9, clamped: true}` for a `window.setRange`, and then `{ok: true, revision: 10}`

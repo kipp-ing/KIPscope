@@ -245,7 +245,7 @@ The panel SHALL show below the list one key line naming each mark colour and lin
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, computed colours)
 
 ### Requirement: Events of a scope
-While the workspace has a scope, `GET /api/events` for its data ref SHALL answer only the table events in the scope and the state changes of the listed signals within it, the first row in the scope being a `snapshot` (design Z9). `from` and `to` SHALL be intersected with the scope, and loads SHALL be cached per scope. In an object scope `from` and `to` SHALL be required and SHALL take the scope's place, loads cached per window (object-view "Gaps and events follow the view"). Origin: issue #1 item 4; issue #1 (`stateChanges` „all time for one signal"); D-078; object scope: D-086.
+While the workspace has a scope, `GET /api/events` for its data ref SHALL answer only the table events in the scope and the state changes of the listed signals within it, the first row in the scope being a `snapshot` (design Z9). `from` and `to` SHALL be intersected with the scope, and loads SHALL be cached per scope. In an object scope `from` and `to` SHALL be required and SHALL take the scope's place, loads cached per window (object-view "Gaps and events follow the view"). Origin: the ADX feedback item 4; the ADX feedback (`stateChanges` „all time for one signal"); D-078; object scope: D-086.
 
 #### Scenario: testcar events in a scope
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/events?dataRef=testcar` is sent, then the same with `&signal=testcar/Ign_A20h.MODE`

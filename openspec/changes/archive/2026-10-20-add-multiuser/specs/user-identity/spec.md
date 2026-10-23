@@ -64,8 +64,8 @@ Origin: necessary consequence of D-084 (a user and an administrator must see as 
   - no answer has a `rights` field
 - **Evidence:** `apps/server/test/identity.http.test.ts` › "reports roles and the share switch"
 
-### Requirement: OIDC tokens from Ping Identity
-The `oidc` adapter SHALL accept a request only with a JWT in `KIPSCOPE_OIDC_HEADER` (default `Authorization: Bearer`) that is signed by a key of the issuer's JWKS with an algorithm of `KIPSCOPE_OIDC_ALGS` (never `none` or `HS*`), whose `iss` equals the issuer, whose `aud` contains the audience, whose `exp` is in the future and `nbf` (if present) in the past within 30 s, and whose user claim matches `USER_ID`; it SHALL take the roles from the roles claim (array, or a space- or comma-separated string; missing: none). An unknown key ID SHALL refetch the JWKS at most once per 30 s. The token SHALL never be logged or echoed. Origin: D-084 („PING id sollte möglich sein mit unterschiedlichen rechten"); design M15 (PingFederate and PingOne issue such tokens). Numbers: design "Numbers".
+### Requirement: OIDC access tokens
+The `oidc` adapter SHALL accept a request only with a JWT in `KIPSCOPE_OIDC_HEADER` (default `Authorization: Bearer`) that is signed by a key of the issuer's JWKS with an algorithm of `KIPSCOPE_OIDC_ALGS` (never `none` or `HS*`), whose `iss` equals the issuer, whose `aud` contains the audience, whose `exp` is in the future and `nbf` (if present) in the past within 30 s, and whose user claim matches `USER_ID`; it SHALL take the roles from the roles claim (array, or a space- or comma-separated string; missing: none). An unknown key ID SHALL refetch the JWKS at most once per 30 s. The token SHALL never be logged or echoed. Origin: D-084 („[identity provider] sollte möglich sein mit unterschiedlichen rechten"); design M15 (PingFederate and PingOne issue such tokens). Numbers: design "Numbers".
 
 #### Scenario: Token checks
 - **WHEN** the test app runs `oidc` against a local JWKS server and `GET /api/me` is sent with: a valid RS256 token for `alice` with `roles: ["testers"]`; the same with `roles: "testers viewers"`; no header; `Bearer` + garbage; a token signed by another key; `alg: none`; HS256 signed with the JWKS public key as secret; a wrong `iss`; a wrong `aud`; `exp` 31 s ago; `exp` 29 s ago; `nbf` in 60 s; and user `../x`
@@ -82,8 +82,8 @@ The `oidc` adapter SHALL accept a request only with a JWT in `KIPSCOPE_OIDC_HEAD
 - **THEN** `GET /api/me` answers user `bob` with roles `[viewers]`
 - **Evidence:** `apps/server/test/identity/oidc.test.ts` › "reads user and roles from configured claims"
 
-#### Scenario: Against a real Ping tenant
-- **WHEN** a KIPscope server runs `oidc` against the company's PingFederate or PingOne and `KIPSCOPE_TOKEN_COMMAND=<company tool> kipscope whoami` runs
+#### Scenario: Against a real OIDC provider
+- **WHEN** a KIPscope server runs `oidc` against a real OIDC provider (e.g. PingFederate, PingOne, Entra ID, Keycloak) and `KIPSCOPE_TOKEN_COMMAND=<company tool> kipscope whoami` runs
 - **THEN** it exits 0 with the user and roles the IdP issued
 - **Evidence:** Jan's deployment check with `docs/deploy.md` (not run in rounds)
 

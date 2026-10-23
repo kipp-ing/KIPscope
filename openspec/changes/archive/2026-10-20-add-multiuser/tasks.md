@@ -175,6 +175,6 @@ Write areas of groups 7–12 (disjoint):
 ## Workflow follow-up
 
 - **Before round 5,** the lead asks Jan Q-6 and Q-7 (proposal "Open questions"). Tasks follow the recommended answers. Q-6 (b) adds one function in 8.2 and one scenario.
-- **Not checked here:** a real PingFederate or PingOne, the company's token tool, and the search tool's signing (`add-case-open`).
+- **Not checked here:** a real OIDC provider, the company's token tool, and the search tool's signing (`add-case-open`).
 - **At archive:** copy the project-wide decisions into `docs/decisions.md`: the identity adapter, `oidc` for Ping, the grant and `grantObjects` as the one widening path, the guard, the workspaces, views per user, `KIPSCOPE_SHARE`, and the spec owner's defaults. Update the purpose lines of `server-access` and `workspace-state`, which still say "local only" and "the open workspace".
 - **Round log 1–4** (2026-10-19): `rounds.md`. Open from round 4, still for the lead: the CLI test hang in `apps/cli/test/multi.ts` (fixed in commit c49a6e9); `catalog_unavailable` shown as loading has no scenario (spec owner if wanted); the coulds listed there.

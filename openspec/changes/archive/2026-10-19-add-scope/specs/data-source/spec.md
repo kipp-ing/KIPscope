@@ -5,7 +5,7 @@ T1 = 2026-10-01T01:00:00Z, T2 = 02:00:00Z (test DB `testcar`). Fixture and scope
 ## MODIFIED Requirements
 
 ### Requirement: Required source methods
-Every adapter SHALL implement `ping`, `listSignals`, `raw`, `before`, `after`, `buckets` and `refBuckets` and expose `info` (kind, database, table, events table label), with the signatures of design C1 of `add-adx-source` as extended by design Z1 of `add-scope` (`listSignals`, `before`, `after` and `refBuckets` take an optional `scope` before `abort`). `listSignals` SHALL flag each signal whose rows carry text. Origin: D-006 („ADX follows behind the same adapter interface"); Jan (2026-10-17) „the interfaces shall be lean and documented"; scope: D-078, issue #1 item 1.
+Every adapter SHALL implement `ping`, `listSignals`, `raw`, `before`, `after`, `buckets` and `refBuckets` and expose `info` (kind, database, table, events table label), with the signatures of design C1 of `add-adx-source` as extended by design Z1 of `add-scope` (`listSignals`, `before`, `after` and `refBuckets` take an optional `scope` before `abort`). `listSignals` SHALL flag each signal whose rows carry text. Origin: D-006 („ADX follows behind the same adapter interface"); Jan (2026-10-17) „the interfaces shall be lean and documented"; scope: D-078, the ADX feedback item 1.
 
 #### Scenario: Signal list
 - **WHEN** `listSignals` runs on the conformance tables
@@ -20,7 +20,7 @@ Every adapter SHALL implement `ping`, `listSignals`, `raw`, `before`, `after`, `
 ## ADDED Requirements
 
 ### Requirement: Scope argument
-`listSignals`, `before`, `after`, `refBuckets`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges` and `events` SHALL take an optional `scope: Scope {dataRef, from, to}` before `abort` (design Z1). With a scope each SHALL answer exactly as if the source held only the rows of `scope.dataRef` with `from ≤ time < to`; without one, as before. Origin: issue #1 item 1 („Adapters filter by data ref and by time ≥ `from` and < `to`"); D-078.
+`listSignals`, `before`, `after`, `refBuckets`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges` and `events` SHALL take an optional `scope: Scope {dataRef, from, to}` before `abort` (design Z1). With a scope each SHALL answer exactly as if the source held only the rows of `scope.dataRef` with `from ≤ time < to`; without one, as before. Origin: the ADX feedback item 1 („Adapters filter by data ref and by time ≥ `from` and < `to`"); D-078.
 
 #### Scenario: Signals of a scope
 - **WHEN** `listSignals(S)` and `listSignals(S2)` run
@@ -56,7 +56,7 @@ The server SHALL never pass a scope of another data ref than the method's own, a
 - **Evidence:** `apps/server/test/scope.http.test.ts` › "keeps every call inside the scope in full mode"
 
 ### Requirement: Fallbacks keep the scope
-Every fallback of an optional method SHALL pass its scope to the core methods it calls and SHALL use `scope.from … scope.to` where it used the whole time axis (design Z2). Origin: necessary consequence of "Scope argument" (a core-only adapter would otherwise scan the whole history); issue #1 („the gap info falls back to `firstTimes`").
+Every fallback of an optional method SHALL pass its scope to the core methods it calls and SHALL use `scope.from … scope.to` where it used the whole time axis (design Z2). Origin: necessary consequence of "Scope argument" (a core-only adapter would otherwise scan the whole history); the ADX feedback („the gap info falls back to `firstTimes`").
 
 #### Scenario: Core calls carry the scope
 - **WHEN** a recording stub with only the required methods is completed and `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes` (3 names) and `stateChanges` are called with scope {conf-a, B + 5 s, B + 35 s}
@@ -64,7 +64,7 @@ Every fallback of an optional method SHALL pass its scope to the core methods it
 - **Evidence:** `apps/server/test/fallbacks.test.ts` › "passes the scope to every core call"
 
 ### Requirement: Scoped queries carry both filters
-For a call with a scope, the ClickHouse and ADX adapters SHALL send only queries that filter by the scope's data ref and by both of its time bounds (design Z3). Unscoped calls SHALL send the same queries as before this change. Origin: issue #1 acceptance („In scoped mode, no query runs without both a data ref and a time filter"); data-source "ClickHouse answers as before".
+For a call with a scope, the ClickHouse and ADX adapters SHALL send only queries that filter by the scope's data ref and by both of its time bounds (design Z3). Unscoped calls SHALL send the same queries as before this change. Origin: the ADX feedback acceptance („In scoped mode, no query runs without both a data ref and a time filter"); data-source "ClickHouse answers as before".
 
 #### Scenario: ClickHouse query texts
 - **WHEN** a ClickHouse adapter on a client that records query texts and parameters runs every method that takes a scope, once with scope {conf-a, B + 5 s, B + 35 s} and once without
@@ -77,7 +77,7 @@ For a call with a scope, the ClickHouse and ADX adapters SHALL send only queries
 - **Evidence:** `apps/server/test/adx.test.ts` › "scopes every query by data ref and time"
 
 ### Requirement: Scope in the adapter guide
-`docs/data-sources.md` SHALL document the scope: the rule of design Z1 with every method that takes it, the server's guarantees, the fallbacks of Z2, the scoped conformance cases, and the ClickHouse and ADX filter shapes. It SHALL also document `KIPSCOPE_CATALOG` and `KIPSCOPE_SCOPE_PAD`, which `.env.example` SHALL list too. Origin: issue #1 („We'd send the ADX adapter part … once the contract in item 1 is settled"); D-074 („lean and documented").
+`docs/data-sources.md` SHALL document the scope: the rule of design Z1 with every method that takes it, the server's guarantees, the fallbacks of Z2, the scoped conformance cases, and the ClickHouse and ADX filter shapes. It SHALL also document `KIPSCOPE_CATALOG` and `KIPSCOPE_SCOPE_PAD`, which `.env.example` SHALL list too. Origin: the ADX feedback („We'd send the ADX adapter part … once the contract in item 1 is settled"); D-074 („lean and documented").
 
 #### Scenario: Guide names every scoped method
 - **WHEN** a test reads `docs/data-sources.md`

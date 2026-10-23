@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Gap info of a scope
-While the workspace has a scope, `GET /api/gaps` for its data ref SHALL answer the gap info of the scope only (design Z9): logger gaps between rows in the scope, `through` the last row in it, periods measured from its rows. The info SHALL be cached per scope, and the 5-min poll SHALL count only the active scope's rows. Origin: issue #1 item 4; D-078 („nothing scans a data ref's whole history").
+While the workspace has a scope, `GET /api/gaps` for its data ref SHALL answer the gap info of the scope only (design Z9): logger gaps between rows in the scope, `through` the last row in it, periods measured from its rows. The info SHALL be cached per scope, and the 5-min poll SHALL count only the active scope's rows. Origin: the ADX feedback item 4; D-078 („nothing scans a data ref's whole history").
 
 #### Scenario: A scope that cuts a logger gap
 - **WHEN** the test server has scope {gapcar, `1790985900000000000`, `1790986200000000000`} and `GET /api/gaps?dataRef=gapcar` is sent

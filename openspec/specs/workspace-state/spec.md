@@ -404,7 +404,7 @@ The workspace SHALL hold the view it came from or was saved as: name (absent whe
 - **Evidence:** `packages/shared/test/apply.test.ts` › "marks the open view modified"
 
 ### Requirement: Open replaces the workspace
-The command `view.open` SHALL replace windows, link flag, colours, cursors, diff mode, options, measurement, event filter, events-line signals and scope with the view's, as one revision, following saved-views "Open a view" and "Open sets the scope". A view that resolves no scope SHALL leave the workspace without one. IDs SHALL never be reused within a server run. Origin: D-011 D8 (all changes are commands, so UI, CLI and later undo use the same action, concept §10); concept §8; scope: issue #1 item 3, D-078.
+The command `view.open` SHALL replace windows, link flag, colours, cursors, diff mode, options, measurement, event filter, events-line signals and scope with the view's, as one revision, following saved-views "Open a view" and "Open sets the scope". A view that resolves no scope SHALL leave the workspace without one. IDs SHALL never be reused within a server run. Origin: D-011 D8 (all changes are commands, so UI, CLI and later undo use the same action, concept §10); concept §8; scope: the ADX feedback item 3, D-078.
 
 #### Scenario: Open through the command endpoint
 - **WHEN** `POST /api/commands {type: "view.open", view: <v1 document>}` is sent, and once with `view: {kipscope: "view", version: 9}`

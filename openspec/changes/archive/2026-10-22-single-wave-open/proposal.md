@@ -2,7 +2,7 @@
 
 ## Why
 
-The search tool team measured an open after `speed-up-adx` (D-097, 2026-10-22): per signal the web still runs four serial round trips, `series` (target 769, extent unknown) → `extent` → `series` (257) → `series` (overview, 1281), so an open of 4 signals sends 16 requests and the peak in flight equals the number of signals; the server's query queue (8 slots on ADX) is not the limit. Their report's item P4: "Opening a session issues one series fetch per signal". The overview already covers the view when the view spans the signal's data (design Z2 of `improve-zoom-speed` meant it to: "the full-extent view of a window about 1,000 px wide usually has the overview's level and is served by it"), but the loader fetches the view first and the overview only after it. Jan agreed on 2026-10-22 (via the lead) to build P4 alone; P3 (batch endpoints) comes later.
+The ADX testers measured an open after `speed-up-adx` (D-097, 2026-10-22): per signal the web still runs four serial round trips, `series` (target 769, extent unknown) → `extent` → `series` (257) → `series` (overview, 1281), so an open of 4 signals sends 16 requests and the peak in flight equals the number of signals; the server's query queue (8 slots on ADX) is not the limit. Their report's item P4: "Opening a session issues one series fetch per signal". The overview already covers the view when the view spans the signal's data (design Z2 of `improve-zoom-speed` meant it to: "the full-extent view of a window about 1,000 px wide usually has the overview's level and is served by it"), but the loader fetches the view first and the overview only after it. Jan agreed on 2026-10-22 (via the lead) to build P4 alone; P3 (batch endpoints) comes later.
 
 ## What Changes
 
@@ -22,7 +22,7 @@ No HTTP payload, server, CLI or `packages/shared` change.
 - A timeout that loads the view when its extent is slow.
 - Changing the known warm-cache behaviour of D-039 (raw vs buckets of a sparse view can depend on what was loaded before).
 - Any change to when series load in a background tab, to the window's width measurement, or to the App's double-click reset (it keeps its own `fetchExtent`).
-- Wall-clock targets: the search tool team measures on ADX after release.
+- Wall-clock targets: the ADX testers measures on ADX after release.
 
 ## Capabilities
 

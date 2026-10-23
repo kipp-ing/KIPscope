@@ -1,6 +1,6 @@
 # Handing sessions to KIPscope
 
-For the implementers of a search tool (finder): how to send an ordered list of found sessions (a *catalog*) to KIPscope, so the user steps through them in one workspace without a page load. KIPscope does not search; the finder decides which sessions and, on a server, which vehicles the user may see (D-078, D-085, D-086). Design: [add-case-open](../openspec/changes/archive/2026-10-20-add-case-open/design.md) K2–K5, K15. Routes: [http-api.md](http-api.md). User side: [manual.md](manual.md).
+For the implementers of a search tool: how to send an ordered list of found sessions (a *catalog*) to KIPscope, so the user steps through them in one workspace without a page load. KIPscope does not search; the finder decides which sessions and, on a server, which vehicles the user may see (D-078, D-085, D-086). Design: [add-case-open](../openspec/changes/archive/2026-10-20-add-case-open/design.md) K2–K5, K15. Routes: [http-api.md](http-api.md). User side: [manual.md](manual.md).
 
 The search tool is not part of KIPscope and is out of scope of this repo. KIPscope defines only this interface: the catalog document, its signature and the link. Any search tool that signs a catalog as described here works.
 
@@ -98,7 +98,7 @@ The signed form is a JWS in compact serialisation, `<header>.<payload>.<signatur
 |---|---|
 | `iss` | Your issuer, compared exactly with `KIPSCOPE_FINDER_ISSUER`. |
 | `aud` | The KIPscope server (string or array); must contain `KIPSCOPE_FINDER_AUDIENCE`. |
-| `sub` | The Ping user the catalog is for. It must equal the user signed in to KIPscope (the claim named by `KIPSCOPE_FINDER_USER_CLAIM`, default `sub`), so a forwarded link opens for nobody else. |
+| `sub` | The user the catalog is for (the identity provider's user ID). It must equal the user signed in to KIPscope (the claim named by `KIPSCOPE_FINDER_USER_CLAIM`, default `sub`), so a forwarded link opens for nobody else. |
 | `iat` | Issued at, seconds since 1970. |
 | `exp` | Expiry, seconds since 1970. |
 | `cases` | The catalog document above. |

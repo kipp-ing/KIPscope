@@ -135,7 +135,7 @@ An invited user SHALL see in a shared workspace exactly what its grant covers. S
 
 Only users of the same identity provider SHALL be invited: the server's one adapter and, for `oidc`, its one issuer. Setting the share level `read` or `write` SHALL answer 403 `share_not_permitted` when `KIPSCOPE_SHARE` is `off`, and `private` SHALL always be allowed.
 
-Origin: D-085 (the search tool decides what each user sees); D-084 (share levels stay; sharing must not show data the user's rights hide); the lead's brief 2026-10-20: the receiver gets read or write only within the same Ping tenant. What the receiver sees follows the recommendation of open question Q-6 (proposal); the stricter alternative changes the first sentence only. Share switch: spec owner's default (design "Revision", item 4).
+Origin: D-085 (the search tool decides what each user sees); D-084 (share levels stay; sharing must not show data the user's rights hide); the lead's brief 2026-10-20: the receiver gets read or write only within the same identity provider. What the receiver sees follows the recommendation of open question Q-6 (proposal); the stricter alternative changes the first sentence only. Share switch: spec owner's default (design "Revision", item 4).
 
 #### Scenario: Invited user and the owner's grant
 - **WHEN**

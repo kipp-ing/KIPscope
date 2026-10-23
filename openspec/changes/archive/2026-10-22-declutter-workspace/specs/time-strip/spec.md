@@ -146,7 +146,7 @@ The strip SHALL draw the shown events of its data ref as pins in the lane at the
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot, tooltip text, pin and hit rects, strip height)
 
 ### Requirement: Strip shows the scope
-While the workspace has a scope, the strip SHALL show the scope's data ref whatever the windows hold, and its info (the tooltip line of "Time strip") SHALL read `<shown> of <span> in scope`; in scoped mode without a scope the track SHALL show `No scope set`. Double-click, drive clicks and drive keys then act within the scope. Origin: issue #1 item 4 („The time strip … cover[s] only the scope's range"); D-078; info as tooltip: D-092; no `1 bar =`: D-094 (no bars).
+While the workspace has a scope, the strip SHALL show the scope's data ref whatever the windows hold, and its info (the tooltip line of "Time strip") SHALL read `<shown> of <span> in scope`; in scoped mode without a scope the track SHALL show `No scope set`. Double-click, drive clicks and drive keys then act within the scope. Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078; info as tooltip: D-092; no `1 bar =`: D-094 (no bars).
 
 #### Scenario: Label with a scope
 - **WHEN** `stripLabel` gets the range [T1 + 10 min, T1 + 20 min) and a density with `scope` [T1, T2) and width 30 s; and the same range with a density without `scope` whose `first` is T1 and `last` 6 d later

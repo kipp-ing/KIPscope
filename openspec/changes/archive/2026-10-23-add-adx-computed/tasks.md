@@ -54,4 +54,4 @@ Write areas (disjoint per task):
 ## 5. Lead
 
 - [x] 5.1 Manual check M1 (design.md) on the emulator server, reported (goal, not a gate).
-- [x] 5.2 `docs/status.md`: follow-up for the search tool team. Time a computed series on a real ADX cluster: a two-input formula over a whole recording and over a busy hour, unchunked and chunked, against the fallback's "zoom in". Not a gate (D-111).
+- [x] 5.2 `docs/status.md`: follow-up for the ADX testers. Time a computed series on a real ADX cluster: a two-input formula over a whole recording and over a busy hour, unchunked and chunked, against the fallback's "zoom in". Not a gate (D-111).

@@ -108,7 +108,7 @@ Two consecutive non-empty buckets of width w starting at s1 < s2 SHALL be split 
 - **Evidence:** `packages/shared/test/gaps.test.ts` › "splits buckets only where a gap is certain"
 
 ### Requirement: Measured periods only for signals in use
-The server SHALL measure a period only for a signal named in a `/api/gaps` or `/api/value` request or held by the workspace (a window's signals, the events line). Each measurement SHALL also take every workspace signal of the same data ref not yet measured in this catalog load, in one sample query per data ref and request. DBC and diag periods need no query and stay listed for every signal. Origin: issue #1 item 7 (~2,400 signals took 17–34 s); concept §3 (at most 50 signals shown).
+The server SHALL measure a period only for a signal named in a `/api/gaps` or `/api/value` request or held by the workspace (a window's signals, the events line). Each measurement SHALL also take every workspace signal of the same data ref not yet measured in this catalog load, in one sample query per data ref and request. DBC and diag periods need no query and stay listed for every signal. Origin: the ADX feedback item 7 (~2,400 signals took 17–34 s); concept §3 (at most 50 signals shown).
 
 #### Scenario: Large catalog, small workspace
 - **WHEN** a stub source with a native `firstTimes` that records the names it gets lists 2,400 signals `S0001` … `S2400` of data ref `big`, none with a DBC or diag period; the workspace has a timeseries window with `big/S0001` and `big/S0002`, a values window with `big/S0003`, and `big/S0004` on the events line; the catalog loads and its prefetch ends; then `/api/gaps?dataRef=big`, `/api/gaps?dataRef=big&signal=big/S0001&signal=big/S0100` and `/api/value?signal=big/S0200&t=0` arrive one after the other
@@ -139,7 +139,7 @@ The browser tab SHALL send its timeseries windows' signal IDs (at most 100 per d
 - **Evidence:** UI check (screenshot of the network entry and the window)
 
 ### Requirement: Gap info of a scope
-While the workspace has a scope, `GET /api/gaps` for its data ref SHALL answer the gap info of the scope only (design Z9): logger gaps between rows in the scope, `through` the last row in it, periods measured from its rows. The info SHALL be cached per scope, and the 5-min poll SHALL count only the active scope's rows. In an object scope the same SHALL hold for the asked work window `[from, to)` instead of the whole scope (object-view "Gaps and events follow the view"). Origin: issue #1 item 4; D-078 („nothing scans a data ref's whole history"); object scope: D-086.
+While the workspace has a scope, `GET /api/gaps` for its data ref SHALL answer the gap info of the scope only (design Z9): logger gaps between rows in the scope, `through` the last row in it, periods measured from its rows. The info SHALL be cached per scope, and the 5-min poll SHALL count only the active scope's rows. In an object scope the same SHALL hold for the asked work window `[from, to)` instead of the whole scope (object-view "Gaps and events follow the view"). Origin: the ADX feedback item 4; D-078 („nothing scans a data ref's whole history"); object scope: D-086.
 
 #### Scenario: A scope that cuts a logger gap
 - **WHEN** the test server has scope {gapcar, `1790985900000000000`, `1790986200000000000`} and `GET /api/gaps?dataRef=gapcar` is sent

@@ -2,14 +2,14 @@
 
 ## Context
 
-- **Inputs:** D-078: „KIPscope shows one case at a time: a **scope** (one data ref and one time window) … Every source query is bounded by the scope; nothing scans a data ref's whole history. The scope is a hard edge for now: navigation stops there, widening it is an explicit step." D-079 (multiuser later), D-080 (books later), D-074 (lean contract: 7 required methods, fallbacks, one conformance suite), D-070 (view document v1, tolerant reading, `#view=` links). Issue #1 items 1–5 and its acceptance. Concept §8: the saved state includes the „Datenreferenz". Concept §9: „Untersuchung direkt öffnen: Datensatz, Zeitpunkt, Vor-/Nachlauf".
-- **Data facts (issue #1, real ADX table, viewer rights):** one data ref, 24 h: the catalog takes ≤ 1.6 s and lists ≈ 2,300 signals. Unscoped, that ref's history buckets and the table-wide distinct (dataref, signal) both time out at 120 s, and `catalog not loaded; retrying` repeats forever. The prototype with a static scope (a filtered sub-expression around the table) loads the catalog in 3 s and series in < 1.5 s.
+- **Inputs:** D-078: „KIPscope shows one case at a time: a **scope** (one data ref and one time window) … Every source query is bounded by the scope; nothing scans a data ref's whole history. The scope is a hard edge for now: navigation stops there, widening it is an explicit step." D-079 (multiuser later), D-080 (books later), D-074 (lean contract: 7 required methods, fallbacks, one conformance suite), D-070 (view document v1, tolerant reading, `#view=` links). The ADX feedback items 1–5 and its acceptance. Concept §8: the saved state includes the „Datenreferenz". Concept §9: „Untersuchung direkt öffnen: Datensatz, Zeitpunkt, Vor-/Nachlauf".
+- **Data facts (the ADX feedback, real ADX table, viewer rights):** one data ref, 24 h: the catalog takes ≤ 1.6 s and lists ≈ 2,300 signals. Unscoped, that ref's history buckets and the table-wide distinct (dataref, signal) both time out at 120 s, and `catalog not loaded; retrying` repeats forever. The prototype with a static scope (a filtered sub-expression around the table) loads the catalog in 3 s and series in < 1.5 s.
 - **Code today:** `datasource.ts` `SourceAdapter` (7 required, 7 optional, `events` capability); `fallbacks.ts` `completeSource` computes the optional ones from the core with `TIME_MIN … TIME_MAX` ranges; one global `Catalog` (`catalog.ts`) loaded at start with retries (`keepCatalogLoaded`). After each load, density, gap info and events are prefetched for every data ref (`density.ts`, `gaps.ts`, `events.ts`). Gap info polls `refCount` every 5 min. Routes take `dataRef` or `signal` and query unbounded history (`routes/series.ts`, `routes/events.ts`). `ApplyContext` (`packages/shared/src/apply.ts`) checks signals against the one catalog. `view.open` is applied synchronously through `workspace.execute`.
 - **Query classes (`improve-query-priority`, done):** four classes, highest first: `interactive`, `metadata`, `background`, `preload` (`apps/server/src/priority.ts`, `withPriority(class, …)`). Routes and catalog loads are `interactive`. Prefetches and polls are `background`. Neighbour preloading (D-078) is `preload`. That change also decides which signals get their periods measured. This change does not touch `queue.ts`, `priority.ts` or that choice. It only passes the scope to the queries that the gap info, density and events already send, and builds on that change's `gaps.ts`.
 
 ## Goals / Non-Goals
 
-**Goals:** a scope bounds every source query of a workspace. In scoped mode no query runs without a data ref and a time filter. A view or link opens with a scope and its signal list. The strip, gaps and events cover the scope. Navigation stops at the edge, and "Widen" is the explicit step. The adapter contract is pinned well enough that the Azure users can write their adapter part against it.
+**Goals:** a scope bounds every source query of a workspace. In scoped mode no query runs without a data ref and a time filter. A view or link opens with a scope and its signal list. The strip, gaps and events cover the scope. Navigation stops at the edge, and "Widen" is the explicit step. The adapter contract is pinned well enough that the ADX testers can write their adapter part against it.
 
 **Non-goals:** see proposal "Out of scope".
 
@@ -27,7 +27,7 @@ The chosen design keeps the issue's „without a scope, behaviour stays as it is
 ### Z1: Source contract (pinned, `apps/server/src/datasource.ts`)
 
 ```ts
-/** One data ref and a half-open window [from, to), from < to (D-078, issue #1 item 1). */
+/** One data ref and a half-open window [from, to), from < to (D-078, the ADX feedback item 1). */
 export interface Scope {
   dataRef: string;
   from: Timestamp; // bigint ns
@@ -71,7 +71,7 @@ Queueing, aborts, and `STATE_SCAN_PAGE`/`STATE_SCAN_MAX` stay as they are.
 ### Z3: Adapter queries (`clickhouse.ts`, `adx.ts`)
 
 - **ClickHouse:** every query of a scoped call adds `AND <dataRef column> = {ref} AND <time column> >= {from} AND <time column> < {to}` as query parameters. `listSignals(scope)` is one `GROUP BY signal` query over the scoped rows with the text flag. Unscoped calls send byte for byte today's queries (data-source "ClickHouse answers as before").
-- **ADX:** one helper builds the scoped table expression `<table> | where <dataref> == sref and <timestamp> >= sfrom and <timestamp> < sto`, with parameters `sref`, `sfrom`, `sto` and bounds rounded up to the tick as today. Every scoped query starts from that expression instead of the bare table (the prototype's „filtered sub-expression"). The same helper serves the events table. No new native method. Native `firstTimes` is the Azure users' contribution and must take `scope` as in Z1.
+- **ADX:** one helper builds the scoped table expression `<table> | where <dataref> == sref and <timestamp> >= sfrom and <timestamp> < sto`, with parameters `sref`, `sfrom`, `sto` and bounds rounded up to the tick as today. Every scoped query starts from that expression instead of the bare table (the prototype's „filtered sub-expression"). The same helper serves the events table. No new native method. Native `firstTimes` is the ADX testers' contribution and must take `scope` as in Z1.
 
 ### Z4: Conformance cases with a scope (pinned for the tester, `apps/server/test/conformance/suite.ts`)
 
@@ -279,12 +279,12 @@ With Q-2 (a), window signals of another data ref go to `report.skipped` with rea
 - **Widen ×3:** ×1.5 needs about twice as many clicks to reach days. ×6 reaches years in four clicks, and on ADX the catalog of a year-long scope would time out again (its failure leaves the old scope in place, Z10).
 - **4 scope catalogs:** ≈ 2,300 entries each, a few MB at most. 2 would leave no room for neighbour preloading (`add-case-open`), and 8 costs nothing noticeable.
 - **Conformance scopes S, S2, S3:** fixture facts, not tunables. Each one is chosen so that an edge cuts a run of rows, a logger gap or another data ref.
-- **Goal "link opens on ADX within the timeout":** prototype 3 s for the catalog. Twice that is still usable, and only the Azure users can measure it on the real table.
+- **Goal "link opens on ADX within the timeout":** prototype 3 s for the catalog. Twice that is still usable, and only the ADX testers can measure it on the real table.
 
 ## Risks / Trade-offs
 
 - [A scope widened to years on ADX times out again] → the failed load leaves the old scope and catalog in place and the UI shows the error. A maximum span stays out of scope until someone needs it.
-- [Third-party adapters break] → the four required methods gain a parameter (**BREAKING**). The only external adapter is the Azure users' unmerged one, and they asked for this contract.
+- [Third-party adapters break] → the four required methods gain a parameter (**BREAKING**). The only external adapter is the ADX testers' unmerged one, and they asked for this contract.
 - [A full-mode user loses whole-history browsing after an open (Q-1 (a))] → "Clear" restores it in one click.
 - [`before`/`after` bounded by the scope] → a line or a cursor value right at the scope's start has no earlier neighbour. The pad makes that rare in the shown range.
 - [Scope commands now await a catalog load inside `POST /api/commands`] → only `scope.set` and `view.open`. Other commands stay synchronous and are applied against the workspace as it is when they arrive.

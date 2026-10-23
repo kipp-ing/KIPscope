@@ -2,11 +2,11 @@
 
 ## Why
 
-Issue #1, item 7 (Azure users, measured on a real ADX table): „Interactive queries first. Background work (density, gap prefetch) should never hold every query slot. Either give series, extent and value requests priority, or reserve a slot for them. Also measure periods only for the signals in the open view, not the whole catalog: 17–34 s for ~2,400 signals, against a handful in a view."
+The ADX feedback, item 7 (ADX testers, measured on a real ADX table): „Interactive queries first. Background work (density, gap prefetch) should never hold every query slot. Either give series, extent and value requests priority, or reserve a slot for them. Also measure periods only for the signals in the open view, not the whole catalog: 17–34 s for ~2,400 signals, against a handful in a view."
 
-Today every source query goes through one FIFO queue with 4 slots (series-query "Bounded database load", D-011 D7). After each catalog load the server prefetches density, gap info and events for every data ref (time-strip, data-gaps, events), and the gap info measures a period for every catalog signal without a DBC or diag period (data-gaps "Measured period", D-068). Without a native `firstTimes` that is one `raw` query per signal (data-source "Optional methods fall back"): ~2,400 queries on the Azure users' vehicle. A series request queued behind them waits until all have run; issue #1: „plots stay empty for minutes". `/api/value` also waits for the whole gap info of its data ref, so cursor readouts wait the same.
+Today every source query goes through one FIFO queue with 4 slots (series-query "Bounded database load", D-011 D7). After each catalog load the server prefetches density, gap info and events for every data ref (time-strip, data-gaps, events), and the gap info measures a period for every catalog signal without a DBC or diag period (data-gaps "Measured period", D-068). Without a native `firstTimes` that is one `raw` query per signal (data-source "Optional methods fall back"): ~2,400 queries on the ADX testers' vehicle. A series request queued behind them waits until all have run; the ADX feedback: „plots stay empty for minutes". `/api/value` also waits for the whole gap info of its data ref, so cursor readouts wait the same.
 
-D-078 (Jan, 2026-10-19): „Background preloading must never delay interactive queries (issue #1, item 7)." Planned changes add more work to the same queue: `add-scope` (every query bounded by scope), D-080's P1 metadata batch at case open, D-078's neighbour preloading. They need a place in the order now.
+D-078 (Jan, 2026-10-19): „Background preloading must never delay interactive queries (the ADX feedback, item 7)." Planned changes add more work to the same queue: `add-scope` (every query bounded by scope), D-080's P1 metadata batch at case open, D-078's neighbour preloading. They need a place in the order now.
 
 ## What Changes
 
@@ -17,8 +17,8 @@ D-078 (Jan, 2026-10-19): „Background preloading must never delay interactive q
 
 ### Out of scope
 
-- Scope in the source contract, scoped catalog, bounded strip/gaps/events, `scope set` (change `add-scope`, issue #1 items 1–5). Logger gaps, density and events still cover a data ref's whole history here.
-- A native ADX `firstTimes` (the Azure users offered it, issue #1 "Contribution").
+- Scope in the source contract, scoped catalog, bounded strip/gaps/events, `scope set` (change `add-scope`, the ADX feedback items 1–5). Logger gaps, density and events still cover a data ref's whole history here.
+- A native ADX `firstTimes` (the ADX testers offered it, the ADX feedback "Contribution").
 - The `metadata` and `preload` work itself (D-080 books, D-078 neighbours); fairness between users (D-079, `add-multiuser`).
 - Preempting or cancelling running background queries; a second queue or a second connection pool; per-class timeouts; a UI for queue state.
 - Changes to any ClickHouse or ADX query text.

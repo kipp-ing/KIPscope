@@ -6,7 +6,7 @@ See proposal.md for the why. Current state, as far as it shapes this design:
 
 - `apps/server/src/queue.ts`: `QueryQueue(limit)` is one FIFO (`waiting.shift()`); `queuedAdapter` wraps every adapter method except `ping` and `info`. `main.ts` builds `completeSource(queuedAdapter(adapter, new QueryQueue(KIPSCOPE_QUERY_CONCURRENCY = 4)))`, so the fallbacks sit outside the queue and each of their inner queries takes its own slot (data-source design C3).
 - `apps/server/src/routes/series.ts`: after each catalog load, `density.prefetch` then `gaps.prefetch` over every data ref, then a 5 min `gaps.refresh` poll chain. `routes/events.ts`: `events.prefetch` over every data ref plus the events-line signals, in parallel to the density chain.
-- `apps/server/src/gaps.ts`: `GapCache.get(dataRef)` computes `refCount`, then `loggerGaps` and `firstTimes(dataRef, every catalog signal without a static period, 1001)` in parallel. `/api/gaps` and `/api/value` both await it. ClickHouse has a native `firstTimes` (one query); ADX has none today, so the fallback sends one `raw(…, limit 1001)` per name: ~2,400 on the Azure users' vehicle (issue #1).
+- `apps/server/src/gaps.ts`: `GapCache.get(dataRef)` computes `refCount`, then `loggerGaps` and `firstTimes(dataRef, every catalog signal without a static period, 1001)` in parallel. `/api/gaps` and `/api/value` both await it. ClickHouse has a native `firstTimes` (one query); ADX has none today, so the fallback sends one `raw(…, limit 1001)` per name: ~2,400 on the ADX testers' vehicle (the ADX feedback).
 - `apps/web/src/chart/gaps.ts`: `GapInfoStore` fetches `/api/gaps?dataRef=` once per data ref per tab, refetches every 5 min; a window's render acknowledgement waits for `settled`.
 
 ## Goals / Non-Goals
@@ -23,9 +23,9 @@ Chosen: **priority classes**, plus the rule that work below `interactive` never 
 
 | Option | First interactive query after a background burst starts | Throughput of an 8-signal window while background is busy |
 |---|---|---|
-| FIFO (today) | after every query queued before it: 2,400 fallback `raw` calls on ADX, minutes (issue #1) | after the burst |
+| FIFO (today) | after every query queued before it: 2,400 fallback `raw` calls on ADX, minutes (the ADX feedback) | after the burst |
 | Kept slot only (FIFO otherwise) | at once | 1 slot: 8 series × (count + data) ≈ 16 queries in a row, ≈ 8 s at 0.5 s each instead of ≈ 2 s |
-| Priority only | when the first of 4 running background queries ends: CH `loggerGaps` ≈ 7 s (data-gaps "Load on carserver"); an unscoped ADX `refBuckets` runs into the 120 s timeout (issue #1) | every freed slot |
+| Priority only | when the first of 4 running background queries ends: CH `loggerGaps` ≈ 7 s (data-gaps "Load on carserver"); an unscoped ADX `refBuckets` runs into the 120 s timeout (the ADX feedback) | every freed slot |
 | **Priority + kept slot** | at once | 1 slot at once, then every slot that frees |
 
 Cost: background work gets 3 of 4 slots. The prefetches run mostly one or two queries at a time (density and gap info per data ref in turn, events beside them), so they lose little; only fan-outs (a `firstTimes` fallback, now ≤ 100 names) are slowed by ≤ 4/3.

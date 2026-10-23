@@ -352,7 +352,7 @@ When no signal of a dragged selection has named states and is off the events lin
 - **Evidence:** `apps/web/test/drag.test.ts` › "adds the selection's new state signals on the strip"; `apps/web/test/strip.test.ts` › "names a selection that has no new state signals"
 
 ### Requirement: Density of a scope
-While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. In an object scope the answer SHALL be coarse, and with `from` and `to` it SHALL cover `[from, to) ∩ scope` (object-view "Coarse strip over the vehicle", "Detail around the view"). Origin: issue #1 item 4 („The time strip … cover[s] only the scope's range"); D-078; object scope: D-086.
+While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. In an object scope the answer SHALL be coarse, and with `from` and `to` it SHALL cover `[from, to) ∩ scope` (object-view "Coarse strip over the vehicle", "Detail around the view"). Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078; object scope: D-086.
 
 #### Scenario: One hour of testcar
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/density?dataRef=testcar` is sent
@@ -370,7 +370,7 @@ While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` S
 - **Evidence:** `apps/server/test/density.http.test.ts` › "covers part of the scope"
 
 ### Requirement: Strip shows the scope
-While the workspace has a scope, the strip SHALL show the scope's data ref whatever the windows hold, and its info (the tooltip line of "Time strip") SHALL read `<shown> of <span> in scope`; in scoped mode without a scope the track SHALL show `No scope set`. Double-click, drive clicks and drive keys then act within the scope. Origin: issue #1 item 4 („The time strip … cover[s] only the scope's range"); D-078; info as tooltip: D-092; no `1 bar =`: D-094 (no bars).
+While the workspace has a scope, the strip SHALL show the scope's data ref whatever the windows hold, and its info (the tooltip line of "Time strip") SHALL read `<shown> of <span> in scope`; in scoped mode without a scope the track SHALL show `No scope set`. Double-click, drive clicks and drive keys then act within the scope. Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078; info as tooltip: D-092; no `1 bar =`: D-094 (no bars).
 
 #### Scenario: Label with a scope
 - **WHEN** `stripLabel` gets the range [T1 + 10 min, T1 + 20 min) and a density with `scope` [T1, T2) and width 30 s; and the same range with a density without `scope` whose `first` is T1 and `last` 6 d later

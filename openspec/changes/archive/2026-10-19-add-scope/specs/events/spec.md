@@ -5,7 +5,7 @@ T1 = 2026-10-01T01:00:00Z, T2 = 02:00:00Z (test DB `testcar`).
 ## ADDED Requirements
 
 ### Requirement: Events of a scope
-While the workspace has a scope, `GET /api/events` for its data ref SHALL answer only the table events in the scope and the state changes of the listed signals within it, the first row in the scope being a `snapshot` (design Z9). `from` and `to` SHALL be intersected with the scope, and loads SHALL be cached per scope. Origin: issue #1 item 4; issue #1 (`stateChanges` „all time for one signal"); D-078.
+While the workspace has a scope, `GET /api/events` for its data ref SHALL answer only the table events in the scope and the state changes of the listed signals within it, the first row in the scope being a `snapshot` (design Z9). `from` and `to` SHALL be intersected with the scope, and loads SHALL be cached per scope. Origin: the ADX feedback item 4; the ADX feedback (`stateChanges` „all time for one signal"); D-078.
 
 #### Scenario: testcar events in a scope
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/events?dataRef=testcar` is sent, then the same with `&signal=testcar/Ign_A20h.MODE`

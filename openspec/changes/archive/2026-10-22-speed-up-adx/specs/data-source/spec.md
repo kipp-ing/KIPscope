@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Series in one call
-The optional method `series(ref, from, to, target, width, scope)` SHALL answer what a series request needs in one call (design A2): when `[from, to)` holds at most `target` points (counted as `count` counts them, SNA points included), those points as `raw` gives them, plus `before(ref, from, scope)` and `after(ref, to, scope)`; otherwise the non-empty buckets of `buckets(ref, from, to, width)`. Without a native `series`, the server SHALL compute it with exactly today's calls: `count` first, then `raw`, `before` and `after` in parallel, or `buckets`. Origin: data fact (search tool team's report of 2026-10-22, P2: `/api/series` awaits `count` before its data query, two serial ADX round trips of 0.6–8 s each, ×12 per open); Jan's agreement to the lead's cut (2026-10-22, P2); D-074 (a fast path where the fallback costs more than twice: two serial round trips against one).
+The optional method `series(ref, from, to, target, width, scope)` SHALL answer what a series request needs in one call (design A2): when `[from, to)` holds at most `target` points (counted as `count` counts them, SNA points included), those points as `raw` gives them, plus `before(ref, from, scope)` and `after(ref, to, scope)`; otherwise the non-empty buckets of `buckets(ref, from, to, width)`. Without a native `series`, the server SHALL compute it with exactly today's calls: `count` first, then `raw`, `before` and `after` in parallel, or `buckets`. Origin: data fact (ADX testers's report of 2026-10-22, P2: `/api/series` awaits `count` before its data query, two serial ADX round trips of 0.6–8 s each, ×12 per open); Jan's agreement to the lead's cut (2026-10-22, P2); D-074 (a fast path where the fallback costs more than twice: two serial round trips against one).
 
 #### Scenario: Series natively and from the core
 - **WHEN** the conformance suite calls `series` on `conf-a` with (a) `Lin.RAMP` over [B + 1 s, B + 2 s), target 100, width 10,204,082 ns; (b) the same with target 99; (c) `Lin.RAMP` over [B, B + 100 s), target 11, width 10 s; (d) `Sna.CODE` with SNA range 6.5 … 7.5 over [B + 40 s, B + 50 s), target 20; (e) `Diag.door` as a text signal over [B + 100 s, B + 200 s), target 10; (f) `Lin.RAMP` over [B + 5 s, B + 6 s), target 100, with scope {conf-a, B + 5 s, B + 35 s}; (g) `Nope.X` over [B, B + 100 s), target 100
@@ -52,7 +52,7 @@ The ClickHouse adapter SHALL implement every optional method natively except `se
 - **Evidence:** `apps/server/test/fallbacks.test.ts` › "takes series from the fallback on ClickHouse"
 
 ### Requirement: Scope argument
-`listSignals`, `before`, `after`, `refBuckets`, `extent`, `series`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges` and `events` SHALL take an optional `scope: Scope {dataRef, from, to}` before `abort` (design Z1). With a scope each SHALL answer exactly as if the source held only the rows of `scope.dataRef` with `from ≤ time < to`; without one, as before. Origin: issue #1 item 1 („Adapters filter by data ref and by time ≥ `from` and < `to`"); D-078; `series`: necessary consequence of "Series in one call" (its edges are `before` and `after` with the scope).
+`listSignals`, `before`, `after`, `refBuckets`, `extent`, `series`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges` and `events` SHALL take an optional `scope: Scope {dataRef, from, to}` before `abort` (design Z1). With a scope each SHALL answer exactly as if the source held only the rows of `scope.dataRef` with `from ≤ time < to`; without one, as before. Origin: the ADX feedback item 1 („Adapters filter by data ref and by time ≥ `from` and < `to`"); D-078; `series`: necessary consequence of "Series in one call" (its edges are `before` and `after` with the scope).
 
 #### Scenario: Signals of a scope
 - **WHEN** `listSignals(S)` and `listSignals(S2)` run
@@ -98,7 +98,7 @@ The server SHALL never pass a scope of another data ref than the method's own, a
 - **Evidence:** `apps/server/test/scope.test.ts` › "guards series by scope and range"
 
 ### Requirement: Scope in the adapter guide
-`docs/data-sources.md` SHALL document the scope: the rule of design Z1 with every method that takes it, the server's guarantees, the fallbacks of Z2, the scoped conformance cases, and the ClickHouse and ADX filter shapes. It SHALL also document `KIPSCOPE_CATALOG` and `KIPSCOPE_SCOPE_PAD`, which `.env.example` SHALL list too. Origin: issue #1 („We'd send the ADX adapter part … once the contract in item 1 is settled"); D-074 („lean and documented").
+`docs/data-sources.md` SHALL document the scope: the rule of design Z1 with every method that takes it, the server's guarantees, the fallbacks of Z2, the scoped conformance cases, and the ClickHouse and ADX filter shapes. It SHALL also document `KIPSCOPE_CATALOG` and `KIPSCOPE_SCOPE_PAD`, which `.env.example` SHALL list too. Origin: the ADX feedback („We'd send the ADX adapter part … once the contract in item 1 is settled"); D-074 („lean and documented").
 
 #### Scenario: Guide names every scoped method
 - **WHEN** a test reads `docs/data-sources.md`

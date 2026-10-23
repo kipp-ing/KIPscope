@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Query classes
-Every source query SHALL run in one of the classes `interactive`, `metadata`, `background`, `preload` (highest first): queries for an HTTP request and the catalog load `interactive`, the prefetches after a catalog load and the gap polls `background`, a fallback's inner queries in their caller's class. Origin: issue #1 item 7; D-078 („Background preloading must never delay interactive queries"); `metadata`: D-080 P1; `preload`: D-078 neighbours.
+Every source query SHALL run in one of the classes `interactive`, `metadata`, `background`, `preload` (highest first): queries for an HTTP request and the catalog load `interactive`, the prefetches after a catalog load and the gap polls `background`, a fallback's inner queries in their caller's class. Origin: the ADX feedback item 7; D-078 („Background preloading must never delay interactive queries"); `metadata`: D-080 P1; `preload`: D-078 neighbours.
 
 #### Scenario: Prefetch and polls run as background
 - **WHEN** a stub adapter with only the required methods plus `events`, behind a queue of limit 4 and the server's fallbacks, records the class of every call it gets; its catalog (data ref `car`, 3 signals, one of them in a window and on the events line) loads; a `/api/series` request for that signal follows; and a gap poll runs 5 min later (fake timers)
@@ -9,7 +9,7 @@ Every source query SHALL run in one of the classes `interactive`, `metadata`, `b
 - **Evidence:** `apps/server/test/priority.test.ts` › "tags prefetches and polls as background and requests as interactive"
 
 ### Requirement: Interactive queries first
-When a query slot is free, the server SHALL start the oldest waiting query of the highest-ranked class that may start; a waiting query never starts before a waiting query of a higher class. Running queries SHALL run to their end (no preemption); aborts work as in "Bounded database load". Origin: issue #1 item 7 („give series, extent and value requests priority"); D-078.
+When a query slot is free, the server SHALL start the oldest waiting query of the highest-ranked class that may start; a waiting query never starts before a waiting query of a higher class. Running queries SHALL run to their end (no preemption); aborts work as in "Bounded database load". Origin: the ADX feedback item 7 („give series, extent and value requests priority"); D-078.
 
 #### Scenario: Start order by class
 - **WHEN** a queue of limit 4 gets 20 `background` tasks B1–B20 that each run until the test releases them, then one `preload` task P, one `metadata` task M and three `interactive` tasks I1–I3, in this order; then the test releases B1, I1, I2, I3, M and after that every running task, one at a time
@@ -22,7 +22,7 @@ When a query slot is free, the server SHALL start the oldest waiting query of th
 - **Evidence:** `apps/server/test/queue.test.ts` › "drops an aborted query from its class"
 
 ### Requirement: A slot kept for interactive queries
-With a query limit L above 1, a query below `interactive` SHALL start only while fewer than L − 1 queries run, so that an interactive query that finds no other interactive query running or waiting starts at once. With L = 1 no slot is kept. Origin: issue #1 item 7 („should never hold every query slot … or reserve a slot for them"); one slot: design P2.
+With a query limit L above 1, a query below `interactive` SHALL start only while fewer than L − 1 queries run, so that an interactive query that finds no other interactive query running or waiting starts at once. With L = 1 no slot is kept. Origin: the ADX feedback item 7 („should never hold every query slot … or reserve a slot for them"); one slot: design P2.
 
 #### Scenario: Interactive query during a background fan-out
 - **WHEN** a queue of limit 4 gets 2,400 `background` tasks that each run until released, then one `interactive` task

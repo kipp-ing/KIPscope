@@ -39,7 +39,7 @@ None.
 
 ## Out of scope
 
-- Timing on a real ADX cluster. That belongs to the search tool team after release (D-111). The lead notes it as a follow-up in `docs/status.md`. It is not a gate.
+- Timing on a real ADX cluster. That belongs to the ADX testers after release (D-111). The lead notes it as a follow-up in `docs/status.md`. It is not a gate.
 - Folding the seeds (`before` per input) and the raw answer's edges into the native query. `queryComputed` keeps reading them as today.
 - A separate per-row path without `scan` for one input (design Q-4).
 - More than 3 chunks, chunks split by row counts, chunking the raw answer or a one-input formula.

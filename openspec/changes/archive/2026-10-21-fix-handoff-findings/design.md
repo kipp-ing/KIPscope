@@ -2,7 +2,7 @@
 
 ## Context
 
-A search tool's team (finder; not part of KIPscope and not named here, D-090) built against `docs/handoff.md` and the `add-case-open` code and reported findings in GitHub issue #1 (comment 2026-10-21). The lead checked each against the code; Jan approved group 1. The facts this design rests on:
+A search tool's team (finder; not part of KIPscope and not named here, D-090) built against `docs/handoff.md` and the `add-case-open` code and reported findings in the ADX feedback (comment 2026-10-21). The lead checked each against the code; Jan approved group 1. The facts this design rests on:
 
 | # | Finding | Where today |
 |---|---|---|

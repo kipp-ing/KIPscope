@@ -1,6 +1,6 @@
 # Deploy KIPscope on a server
 
-Locally KIPscope needs no login: `KIPSCOPE_IDENTITY=none` (the default) makes every request the user `local` with every right, as on Jan's machine (D-084). This guide is for a shared server: several users, each seeing only the data the search tool (finder) granted their workspace, behind a TLS proxy. Specs: [user-identity](../openspec/specs/user-identity/spec.md), [data-access](../openspec/specs/data-access/spec.md), [workspaces](../openspec/specs/workspaces/spec.md), [server-access](../openspec/specs/server-access/spec.md); routes: [http-api.md](http-api.md); data sources: [data-sources.md](data-sources.md).
+Locally KIPscope needs no login: `KIPSCOPE_IDENTITY=none` (the default) makes every request the user `local` with every right, as on Jan's machine (D-084). This guide is for a shared server: several users, each seeing only the data the search tool granted their workspace, behind a TLS proxy. Specs: [user-identity](../openspec/specs/user-identity/spec.md), [data-access](../openspec/specs/data-access/spec.md), [workspaces](../openspec/specs/workspaces/spec.md), [server-access](../openspec/specs/server-access/spec.md); routes: [http-api.md](http-api.md); data sources: [data-sources.md](data-sources.md).
 
 ## The picture
 
@@ -25,13 +25,13 @@ pnpm --filter @kipscope/server start        # reads .env at the repo root
 
 The server serves the built UI when `KIPSCOPE_WEB_DIR` names its directory (absolute, or relative to the repo root): a `GET` outside `/api/` answers the file, or `index.html` for app paths such as `/w/<id>` (and the old `/s/<id>`, which the UI turns into `/w/<id>`). These files hold no data and need no identity; the proxy guards the page. `index.html` is sent with `cache-control: no-cache`, files under `assets/` as immutable. Without the variable the server serves no files (the local setup, where Vite serves the UI).
 
-A minimal `.env` for a server with Ping (sections below):
+A minimal `.env` for a server with OIDC sign-in (sections below):
 
 ```sh
 KIPSCOPE_HOST=127.0.0.1                     # only the proxy on this machine reaches the port
 KIPSCOPE_PORT=7310
 KIPSCOPE_IDENTITY=oidc
-KIPSCOPE_OIDC_ISSUER=https://auth.pingone.eu/<envId>/as
+KIPSCOPE_OIDC_ISSUER=https://sso.example.com/realms/kipscope
 KIPSCOPE_OIDC_AUDIENCE=https://kipscope.example.com
 KIPSCOPE_OIDC_ROLES_CLAIM=groups
 KIPSCOPE_SHARE=on                           # off: workspaces stay private
@@ -62,9 +62,9 @@ At start the server logs one line naming the identity (`oidc` with issuer and au
 
 The source variables (`KIPSCOPE_SOURCE`, `CLICKHOUSE_URL`, `KIPSCOPE_ADX_*`, …) are in [data-sources.md](data-sources.md#all-variables).
 
-## Ping Identity with `oidc`
+## OIDC sign-in with `oidc`
 
-KIPscope acts as an OIDC resource server: it validates a JWT access token on every request and takes the user and roles from its claims. The same check serves the browser (the proxy adds the token) and the CLI and AI callers (a bearer token from the company's tool). It works with PingFederate, PingOne and any other OIDC provider that publishes discovery and a JWKS.
+KIPscope acts as an OIDC resource server: it validates a JWT access token on every request and takes the user and roles from its claims. The same check serves the browser (the proxy adds the token) and the CLI and AI callers (a bearer token from the company's tool). It works with any OIDC provider that publishes discovery and a JWKS, such as Microsoft Entra ID, Keycloak, Okta, PingFederate or PingOne.
 
 What KIPscope checks, in this order (any failure refuses the request `invalid_token`; no token at all is `unauthenticated`): the token is at most 16 KB; its `alg` is one of `KIPSCOPE_OIDC_ALGS`; its `kid` is in the JWKS (an unknown `kid` refetches the JWKS at most once per 30 s, so key rotation works); the signature is valid; `iss` equals the issuer exactly; `aud` contains the audience; `exp` is in the future and `nbf`, if present, in the past (30 s tolerance); the user claim is a valid user ID. The token is never logged.
 
@@ -72,6 +72,9 @@ What KIPscope checks, in this order (any failure refuses the request `invalid_to
 
 | IdP | `KIPSCOPE_OIDC_ISSUER` |
 |---|---|
+| Microsoft Entra ID | `https://login.microsoftonline.com/<tenantId>/v2.0` (v2 access tokens: set `accessTokenAcceptedVersion` to 2 in the app manifest) |
+| Keycloak | `https://<host>/realms/<realm>` |
+| Okta | `https://<org>.okta.com/oauth2/<authServerId>` (a custom authorization server; `default` works) |
 | PingFederate | `https://<pf-host>` (its base URL, with the port when it is not 443, e.g. `https://sso.example.com:9031`) |
 | PingOne | `https://auth.pingone.<region>/<envId>/as` (`<region>` `eu`, `com`, `ca` or `asia`; `<envId>` the environment ID) |
 
@@ -79,15 +82,16 @@ Check it with `curl <issuer>/.well-known/openid-configuration`: the answer's `is
 
 ### Access token, audience and claims
 
+- **Any provider:** the access token must be a JWT signed with RS256, PS256 or ES256, its audience must be `KIPSCOPE_OIDC_AUDIENCE`, and a claim should carry the user's group or role names (Keycloak: `realm_access.roles`; Entra ID: `roles` from app roles or `groups`).
 - **PingFederate:** the access token must be a JWT (an access token manager of the JSON Web Token type, signed with RS256, PS256 or ES256). Set its audience to the value of `KIPSCOPE_OIDC_AUDIENCE`, and fulfil a claim with the user's group or role names from the attribute contract.
 - **PingOne:** define a custom resource for KIPscope; its audience is `KIPSCOPE_OIDC_AUDIENCE`, and an attribute mapping adds the roles claim (for example `groups`, the user's group names). PingOne's `sub` is the user's UUID; to show a readable name, map an attribute such as the username into a claim and name it in `KIPSCOPE_OIDC_USER_CLAIM`.
 - **Roles claim:** `KIPSCOPE_OIDC_ROLES_CLAIM` names the claim the IdP fills (`groups`, `roles`, or a dotted path). Roles are shown, for checking, and decide nothing in KIPscope: which data a user sees is the search tool's decision ([Rights](#rights)). `GET /api/me`, `kipscope whoami` and the footer's user tooltip show the user, the roles and whether sharing is allowed.
 
 ### Browser: through an OIDC proxy
 
-KIPscope has no login page of its own. A proxy in front signs the user in at Ping and passes the user's token to KIPscope on every request **and on the live channel's WebSocket upgrade** (`GET /api/live`, also `/api/w/<id>/live`); without the token there the live channel is refused 401.
+KIPscope has no login page of its own. A proxy in front signs the user in at the identity provider and passes the user's token to KIPscope on every request **and on the live channel's WebSocket upgrade** (`GET /api/live`, also `/api/w/<id>/live`); without the token there the live channel is refused 401.
 
-- **oauth2-proxy** (OIDC provider = PingFederate or PingOne):
+- **oauth2-proxy** (any OIDC provider):
   - `--pass-access-token` sends the access token as `X-Forwarded-Access-Token`; set `KIPSCOPE_OIDC_HEADER=x-forwarded-access-token`. The audience is then that of the access token (the resource above).
   - or `--pass-authorization-header`, which sends `Authorization: Bearer <ID token>`; the audience is then the proxy's client ID, and the roles claim must be in the ID token.
   - oauth2-proxy forwards WebSocket upgrades with the same headers. `--skip-jwt-bearer-tokens` (with `--extra-jwt-issuers` when needed) lets requests that already carry a bearer token, such as the CLI's, pass without a cookie.
@@ -97,7 +101,7 @@ Set `KIPSCOPE_ORIGINS` to the address the browser shows (`https://kipscope.examp
 
 ### CLI and AI callers
 
-The CLI sends `Authorization: Bearer <token>` on every request and never validates or stores tokens itself. It takes the token from `--token T`, else `KIPSCOPE_TOKEN`, else the output of `KIPSCOPE_TOKEN_COMMAND`: a shell command run once per call (10 s timeout) that prints a token, typically the company's Ping-connected tool (device flow for a person, client credentials for an AI service account):
+The CLI sends `Authorization: Bearer <token>` on every request and never validates or stores tokens itself. It takes the token from `--token T`, else `KIPSCOPE_TOKEN`, else the output of `KIPSCOPE_TOKEN_COMMAND`: a shell command run once per call (10 s timeout) that prints a token, typically the company's SSO token tool (device flow for a person, client credentials for an AI service account):
 
 ```sh
 alias kipscope="node apps/cli/src/main.ts"   # from the repo root

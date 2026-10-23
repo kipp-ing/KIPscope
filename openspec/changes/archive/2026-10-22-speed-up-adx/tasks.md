@@ -50,4 +50,4 @@ Write areas (disjoint per group):
 ## 7. Lead
 
 - [x] 7.1 Record D-097 in `docs/decisions.md` (no native ADX `count`; ADX default 8 superseding D-011 D7 for ADX); done by the lead.
-- [x] 7.2 Send the search tool team the release commit and ask them to measure their section 5 timeline (report targets: `/api/extent` p90 < 1.5 s, no series request waiting > 0.5 s in the queue); their numbers are not a gate of this change.
+- [x] 7.2 Send the ADX testers the release commit and ask them to measure their section 5 timeline (report targets: `/api/extent` p90 < 1.5 s, no series request waiting > 0.5 s in the queue); their numbers are not a gate of this change.

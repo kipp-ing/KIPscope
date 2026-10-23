@@ -2,7 +2,7 @@
 
 ## Context
 
-Source: the search tool team's performance report on GitHub issue #1 (comment of 2026-10-22, sections 1 and 2), measured on a real ADX cluster (~2.6k signals per vehicle, `KIPSCOPE_CATALOG=scoped`, opened through `/open#cases=`). Jan agreed on 2026-10-22 to the lead's cut: P1, P2, P5, P6 and an investigation of P9, all server-side. Facts this design rests on:
+Source: the ADX testers' performance report on the ADX feedback (comment of 2026-10-22, sections 1 and 2), measured on a real ADX cluster (~2.6k signals per vehicle, `KIPSCOPE_CATALOG=scoped`, opened through `/open#cases=`). Jan agreed on 2026-10-22 to the lead's cut: P1, P2, P5, P6 and an investigation of P9, all server-side. Facts this design rests on:
 
 | Fact | Where today |
 |---|---|
@@ -20,7 +20,7 @@ Source: the search tool team's performance report on GitHub issue #1 (comment of
 
 **Goals:** fewer serial ADX round trips per open (P1, P2), less queue wait on ADX (P5), fewer pings (P6), all with unchanged HTTP payloads and unchanged ClickHouse queries; evidence that runs locally (query counts on a fake Kusto client in `pnpm test`, answers on the emulator in `test:adx` and on the ClickHouse test DB).
 
-**Non-Goals:** the proposal's non-goals; any wall-clock target (the report's targets are measured by the search tool team after release); any change in `packages/shared`, `apps/web` or the CLI.
+**Non-Goals:** the proposal's non-goals; any wall-clock target (the report's targets are measured by the ADX testers after release); any change in `packages/shared`, `apps/web` or the CLI.
 
 ## Decisions
 
@@ -106,7 +106,7 @@ Every reference to the signals table goes through `scoped()`, so with a scope th
 
 `config.ts`: `queryConcurrency: positiveInt(env, "KIPSCOPE_QUERY_CONCURRENCY", DEFAULT_QUERY_CONCURRENCY[source.kind])` with `export const DEFAULT_QUERY_CONCURRENCY = { clickhouse: 4, adx: 8 } as const`. The queue, its classes and the kept slot are unchanged (`kept` stays 1, so 7 slots for below-`interactive` work).
 
-Why 8 of 8–12: after A2 one series request is one query, so the report's 6 requests in flight plus the extents of an open fit in 8 slots without waiting; 8 is twice today's sized-for-ClickHouse value. **Off by ×2:** 4 is today's measured queue wait; 16 would let one user's open send 16 concurrent queries to a shared cluster, which risks the cluster's own request throttling on a small SKU and multiplies across users (the queue is per server, not per user), so the higher value is left to `KIPSCOPE_QUERY_CONCURRENCY`. The effect is unmeasured locally (the emulator is not the cluster); the search tool team measures queue wait after release.
+Why 8 of 8–12: after A2 one series request is one query, so the report's 6 requests in flight plus the extents of an open fit in 8 slots without waiting; 8 is twice today's sized-for-ClickHouse value. **Off by ×2:** 4 is today's measured queue wait; 16 would let one user's open send 16 concurrent queries to a shared cluster, which risks the cluster's own request throttling on a small SKU and multiplies across users (the queue is per server, not per user), so the higher value is left to `KIPSCOPE_QUERY_CONCURRENCY`. The effect is unmeasured locally (the emulator is not the cluster); the ADX testers measures queue wait after release.
 
 ### A5: Ping reuse 15 s, reachable results only
 
@@ -125,7 +125,7 @@ The hypothesis "`/api/value`'s edge lookups run without the scope filter" does n
 - The route passes the workspace's source scope to both calls (`source.before(ref, t + 1n, scope, …)`, `source.after(ref, t + 1n, scope, …)`), and the ADX `edge` applies `scoped()`: data ref `== sref` and time `>= sfrom`, `< sto` on the table before any other operator. `adx.test.ts` › "scopes every query by data ref and time" checks exactly this for `before` and `after`. In scoped mode a call without a scope cannot reach the source (guard). `raw` is bounded by the request's range, the edges by the scope; for a handed-over session that scope is the session ± `KIPSCOPE_SCOPE_PAD` (1 h).
 - Likely causes of the p90 of 18.4 s, outside this cut: (1) `/api/value` waits for gap info (D-062; D-081 consequence: "`/api/value` … still wait for gap info"); on a cold gap cache that is a `loggerGaps` over the scope or work window, which the guide estimates at 7.2 s on a large table; (2) queue wait behind the series waves at 4 slots (A4 helps); (3) the cluster's 3–6× spread for one query shape. 
 - One observation for a later change: in an object scope (after Unlink, D-086) the scope is the vehicle's whole extent, so `before`/`after` may scan that signal's whole history for their `top 1`. Bounding them by the work window would change which value a cursor next to a long silence reads, so it needs Jan; it does not apply to the report's session opens.
-- What would settle it: the search tool team's log of `/api/value` with queue wait and the gap cache state per request.
+- What would settle it: the ADX testers' log of `/api/value` with queue wait and the gap cache state per request.
 
 No task follows from P9.
 

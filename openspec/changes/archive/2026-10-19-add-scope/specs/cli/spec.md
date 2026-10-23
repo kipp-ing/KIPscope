@@ -5,7 +5,7 @@ T1 = 2026-10-01T01:00:00Z = `1790816400000000000`, T2 = 02:00:00Z = `17908200000
 ## ADDED Requirements
 
 ### Requirement: Scope commands
-The CLI SHALL offer `scope set REF FROM TO`, `scope show`, `scope widen` and `scope clear` as in design Z13, each printing one JSON line and honouring `--wait`; FROM and TO follow "Time arguments". `scope widen` without a scope SHALL exit 1 with `scope_required` and send nothing; a missing or extra argument SHALL be a usage error. Origin: issue #1 item 5 („`scope set <ref> <from> <to>`"); D-078 (explicit widening); concept §7.
+The CLI SHALL offer `scope set REF FROM TO`, `scope show`, `scope widen` and `scope clear` as in design Z13, each printing one JSON line and honouring `--wait`; FROM and TO follow "Time arguments". `scope widen` without a scope SHALL exit 1 with `scope_required` and send nothing; a missing or extra argument SHALL be a usage error. Origin: the ADX feedback item 5 („`scope set <ref> <from> <to>`"); D-078 (explicit widening); concept §7.
 
 #### Scenario: Forms map to commands
 - **WHEN** the argument lists `scope set testcar 2026-10-01T01:00:00Z 2026-10-01T02:00:00Z`, `scope clear`, `scope set testcar 2026-10-01T01:00:00Z` and `scope show extra` are parsed

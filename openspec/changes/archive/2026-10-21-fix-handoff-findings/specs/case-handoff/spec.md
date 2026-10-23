@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Balanced trim
-A catalog whose encoded link is too long SHALL be trimmed by dropping, while too long, the far end of the longer side around `current` (tie: the side before), keeping order and other keys and lowering `current` by the number dropped before it; a fitting catalog SHALL stay unchanged, one that does not fit with `current` alone SHALL be refused `link_too_long` (design X1). Origin: finder finding (issue #1, 2026-10-21); D-070.
+A catalog whose encoded link is too long SHALL be trimmed by dropping, while too long, the far end of the longer side around `current` (tie: the side before), keeping order and other keys and lowering `current` by the number dropped before it; a fitting catalog SHALL stay unchanged, one that does not fit with `current` alone SHALL be refused `link_too_long` (design X1). Origin: finder finding (the ADX feedback, 2026-10-21); D-070.
 
 #### Scenario: Short side kept
 - **WHEN** `trimCases` gets L(3540) (L(n): sessions `c0` … `c<n−1>`, `origin {tool: "t"}`, `pad "60s"`, unknown key `x: 1`; encoder `doc => "x".repeat(doc.cases.length)`) with `current` 2 and `maxChars` 213
@@ -24,7 +24,7 @@ A catalog whose encoded link is too long SHALL be trimmed by dropping, while too
 - **Evidence:** `packages/shared/test/caseTrim.test.ts` › "leaves a fitting catalog alone and refuses one that cannot fit"
 
 ### Requirement: Open warnings shown
-The open report's `warnings` SHALL be shown in the message line after an open by link and by a dropped file, in one notice with the open's case notice: case texts first, then the warnings, joined by ` · `. Origin: finder finding (issue #1, comment 2026-10-21: the file drop discards the answer, the link path overwrites one notice with the other); "Back link only to the finder".
+The open report's `warnings` SHALL be shown in the message line after an open by link and by a dropped file, in one notice with the open's case notice: case texts first, then the warnings, joined by ` · `. Origin: finder finding (the ADX feedback, comment 2026-10-21: the file drop discards the answer, the link path overwrites one notice with the other); "Back link only to the finder".
 
 #### Scenario: One notice for case texts and warnings
 - **WHEN** the open notice is built for a report with `missing` `["othercar/Irr_200h.JITTER"]` and `warnings` `["origin.url https://evil.example/ dropped: its origin is not in KIPSCOPE_FINDER_ORIGINS"]`, for one with only that warning, and for one with neither
@@ -57,7 +57,7 @@ The open's notice (texts of "Open warnings shown") SHALL also show in the sessio
 ## MODIFIED Requirements
 
 ### Requirement: Back link only to the finder
-`origin.url` SHALL be kept only when its origin is listed in `KIPSCOPE_FINDER_ORIGINS`, or, in identity `none` only, when it is an `http` or `https` URL whose host is `localhost`, `127.0.0.1` or `[::1]`, on any port; otherwise it SHALL be dropped with a warning in the open report. Origin: exploration "Security" („no link can point anywhere else"); loopback in `none`: finder finding (issue #1, comment 2026-10-21), matching the Host guard that accepts loopback on any port (server-access).
+`origin.url` SHALL be kept only when its origin is listed in `KIPSCOPE_FINDER_ORIGINS`, or, in identity `none` only, when it is an `http` or `https` URL whose host is `localhost`, `127.0.0.1` or `[::1]`, on any port; otherwise it SHALL be dropped with a warning in the open report. Origin: exploration "Security" („no link can point anywhere else"); loopback in `none`: finder finding (the ADX feedback, comment 2026-10-21), matching the Host guard that accepts loopback on any port (server-access).
 
 #### Scenario: Foreign back link
 - **WHEN** C4 with `origin.url` `https://finder.example/#f=1` is opened with `KIPSCOPE_FINDER_ORIGINS=https://finder.example`, and again with `origin.url` `https://evil.example/`
@@ -70,7 +70,7 @@ The open's notice (texts of "Open warnings shown") SHALL also show in the sessio
 - **Evidence:** `apps/server/test/case.http.test.ts` › "keeps a loopback back link in identity none"
 
 ### Requirement: Guide for the finder
-`docs/handoff.md` SHALL document every key of the catalog document, a field mapping, the order rule, the JWS header, the deflate-raw payload, the claims and lifetime, a signing example, the JWKS, the link and its limit, the balanced trim rule ("Balanced trim"), that length limits count UTF-16 code units (JavaScript string length) while the inflated limit counts UTF-8 bytes, that one bad entry refuses the whole catalog with `invalid_catalog`, that with `view` each chart opens at the session scope `[from − pad, to + pad)` and the view's own chart times and cursors are not used, the named tab and its opener rule (KIPscope sets no Cross-Origin-Opener-Policy; with `noopener` or a COOP that severs the opener every click opens a new tab), the loopback back link in `none`, and the user-visible errors. Origin: D-086 Q9 („[Suchtool] button … once the payload is fixed"); trim, lengths, refusal, view times and opener: finder findings (issue #1, comment 2026-10-21).
+`docs/handoff.md` SHALL document every key of the catalog document, a field mapping, the order rule, the JWS header, the deflate-raw payload, the claims and lifetime, a signing example, the JWKS, the link and its limit, the balanced trim rule ("Balanced trim"), that length limits count UTF-16 code units (JavaScript string length) while the inflated limit counts UTF-8 bytes, that one bad entry refuses the whole catalog with `invalid_catalog`, that with `view` each chart opens at the session scope `[from − pad, to + pad)` and the view's own chart times and cursors are not used, the named tab and its opener rule (KIPscope sets no Cross-Origin-Opener-Policy; with `noopener` or a COOP that severs the opener every click opens a new tab), the loopback back link in `none`, and the user-visible errors. Origin: D-086 Q9 („[Suchtool] button … once the payload is fixed"); trim, lengths, refusal, view times and opener: finder findings (the ADX feedback, comment 2026-10-21).
 
 #### Scenario: Guide names every key and claim
 - **WHEN** the docs test reads `docs/handoff.md`

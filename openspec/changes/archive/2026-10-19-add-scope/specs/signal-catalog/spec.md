@@ -5,7 +5,7 @@ T1 = 2026-10-01T01:00:00Z = `1790816400000000000`, T2 = 02:00:00Z = `17908200000
 ## MODIFIED Requirements
 
 ### Requirement: Catalog contents
-The catalog SHALL list exactly the signals that have data in the source, per data reference (for vehicle data: the vehicle). Signals that exist only in metadata files SHALL NOT be listed. While the workspace has a scope, the catalog in use SHALL be that scope's list: exactly the signals of the scope's data ref with at least one row in the scope (`listSignals(scope)`), with the same metadata, display names and groups as the full catalog. Origin: concept §4; scope: issue #1 item 2 („The list loads on demand for the active scope"), D-078 („the catalog cover[s] the scope only").
+The catalog SHALL list exactly the signals that have data in the source, per data reference (for vehicle data: the vehicle). Signals that exist only in metadata files SHALL NOT be listed. While the workspace has a scope, the catalog in use SHALL be that scope's list: exactly the signals of the scope's data ref with at least one row in the scope (`listSignals(scope)`), with the same metadata, display names and groups as the full catalog. Origin: concept §4; scope: the ADX feedback item 2 („The list loads on demand for the active scope"), D-078 („the catalog cover[s] the scope only").
 
 #### Scenario: Signal defined in DBC without data
 - **WHEN** a DBC file defines a signal that never occurs in the database
@@ -17,7 +17,7 @@ The catalog SHALL list exactly the signals that have data in the source, per dat
 - **Evidence:** `apps/server/test/catalog.test.ts` › "lists the signals of a scope"
 
 ### Requirement: Catalog loads until it succeeds
-While a catalog in use has never loaded, the server SHALL load it again by itself 1, 2, 4, 8 and 16 s after the first five failures in a row and 30 s after each later one, and SHALL stop once a load succeeds. A later failed refresh SHALL keep the loaded catalog and start no background retry. In full mode this holds for the full catalog from the start. In both modes it holds for the signal list of a scope restored at start. Origin: D-042 (carserver's 23:00 reboot) and necessary consequence: without it, a start while the tunnel is down answers 503 to every series request until someone posts a refresh. Numbers: design H5. Scoped mode: issue #1 item 2 (no list at start).
+While a catalog in use has never loaded, the server SHALL load it again by itself 1, 2, 4, 8 and 16 s after the first five failures in a row and 30 s after each later one, and SHALL stop once a load succeeds. A later failed refresh SHALL keep the loaded catalog and start no background retry. In full mode this holds for the full catalog from the start. In both modes it holds for the signal list of a scope restored at start. Origin: D-042 (carserver's 23:00 reboot) and necessary consequence: without it, a start while the tunnel is down answers 503 to every series request until someone posts a refresh. Numbers: design H5. Scoped mode: the ADX feedback item 2 (no list at start).
 
 #### Scenario: Source down at start
 - **WHEN** the catalog's source fails its first four loads at once and answers the fifth (fake timers)
@@ -37,7 +37,7 @@ While a catalog in use has never loaded, the server SHALL load it again by itsel
 ## ADDED Requirements
 
 ### Requirement: Explorer follows the scope
-The explorer SHALL load the catalog again whenever the workspace's scope changes (`scopeKey`), and SHALL drop an answer whose `scope` is not the current one. In scoped mode without a scope it SHALL show `No scope set. Open a view link or run kipscope scope set REF FROM TO.` instead of the list and SHALL not retry until the scope changes. Origin: necessary consequence of "Catalog contents" (the browser holds the list, signal-catalog design E3); issue #1 item 2.
+The explorer SHALL load the catalog again whenever the workspace's scope changes (`scopeKey`), and SHALL drop an answer whose `scope` is not the current one. In scoped mode without a scope it SHALL show `No scope set. Open a view link or run kipscope scope set REF FROM TO.` instead of the list and SHALL not retry until the scope changes. Origin: necessary consequence of "Catalog contents" (the browser holds the list, signal-catalog design E3); the ADX feedback item 2.
 
 #### Scenario: Reload on scope change
 - **WHEN** the explorer's loader is fed the scopes "", then {testcar, T1, T2}, then the same again, then {testcar, T1 − 1 h, T2 + 1 h}, and the answer for the second scope arrives after the third scope was set

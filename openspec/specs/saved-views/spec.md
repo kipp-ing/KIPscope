@@ -118,7 +118,7 @@ A view opened with linked time axes SHALL have one range in all its timeseries w
 - **Evidence:** `packages/shared/test/apply.test.ts` › "aligns ranges of a linked view"
 
 ### Requirement: Open needs the catalog
-Opening a view SHALL need the signal list it is checked against. A view that resolves a scope (saved-views "Open sets the scope") SHALL first load that scope's list, and answer 503 `catalog_unavailable` and change nothing when that load fails. A view that resolves no scope SHALL need the full catalog in full mode, answering 503 `catalog_unavailable` while it has never loaded, and SHALL be refused with `scope_required` in scoped mode. Origin: necessary consequence (without a list every signal would count as missing); issue #1 item 3 („The scope's signal list loads before the view's signals are checked").
+Opening a view SHALL need the signal list it is checked against. A view that resolves a scope (saved-views "Open sets the scope") SHALL first load that scope's list, and answer 503 `catalog_unavailable` and change nothing when that load fails. A view that resolves no scope SHALL need the full catalog in full mode, answering 503 `catalog_unavailable` while it has never loaded, and SHALL be refused with `scope_required` in scoped mode. Origin: necessary consequence (without a list every signal would count as missing); the ADX feedback item 3 („The scope's signal list loads before the view's signals are checked").
 
 #### Scenario: Catalog not loaded
 - **WHEN** the test server's full catalog has never loaded and a view with only a values window and no cursors (no scope) is opened
@@ -307,7 +307,7 @@ After an open, the strip SHALL show `Opened "<title>"` and, if any, how many sig
 - **Evidence:** UI check on smart451 (A's strip text before and after the CLI open, one screenshot of A after); `apps/web/test/views.test.ts` › "notices an open from elsewhere" (`openedElsewhere` for a foreign `view.open` push, the tab's own revision, and another command); `apps/web/test/livestate.test.ts` › "keeps the last view open across later pushes" (`applyLiveMessage` sets `lastOpen` on a `view.open` push, keeps it over a following `window.setRange` push, never sets it from the connect state)
 
 ### Requirement: Scope in a view document
-A view document SHALL accept an optional `scope` `{dataRef, from, to}` (ISO UTC to the ns), written after `data` by `workspaceToView` and `linkViewDoc` when the workspace has a scope, and SHALL stay `version: 1`. A `scope` whose `to` is not after `from` SHALL be refused with `invalid_view`. Origin: issue #1 item 3 („may carry an explicit optional `scope`"; „The view v1 link format does not change"); concept §8; D-070 (unknown keys dropped with a warning).
+A view document SHALL accept an optional `scope` `{dataRef, from, to}` (ISO UTC to the ns), written after `data` by `workspaceToView` and `linkViewDoc` when the workspace has a scope, and SHALL stay `version: 1`. A `scope` whose `to` is not after `from` SHALL be refused with `invalid_view`. Origin: the ADX feedback item 3 („may carry an explicit optional `scope`"; „The view v1 link format does not change"); concept §8; D-070 (unknown keys dropped with a warning).
 
 #### Scenario: Round trip with a scope
 - **WHEN** a workspace with scope {testcar, T1, T2} and one window is turned into a document, written as YAML, read with `parseViewDoc`, and opened; and the same document is read by a parser without the `scope` key in its known keys
@@ -320,7 +320,7 @@ A view document SHALL accept an optional `scope` `{dataRef, from, to}` (ISO UTC 
 - **Evidence:** `apps/server/test/views.test.ts` › "writes the canonical YAML form" (unchanged)
 
 ### Requirement: Open sets the scope
-Opening a view, a `#view=` link or `?view=<name>` SHALL set the workspace's scope in both modes (design Q-1 (a)): the command's `scope`, else the document's, else `viewScope` (design Z8: the first signal's data ref and the union of window ranges and cursors, padded by `KIPSCOPE_SCOPE_PAD`). A view without a data ref or a time sets none. Origin: issue #1 item 3; D-078 („shows one case at a time").
+Opening a view, a `#view=` link or `?view=<name>` SHALL set the workspace's scope in both modes (design Q-1 (a)): the command's `scope`, else the document's, else `viewScope` (design Z8: the first signal's data ref and the union of window ranges and cursors, padded by `KIPSCOPE_SCOPE_PAD`). A view without a data ref or a time sets none. Origin: the ADX feedback item 3; D-078 („shows one case at a time").
 
 #### Scenario: Derived scope
 - **WHEN** `viewScope` gets, with pad 1 h, a document whose windows are `testcar` [T1, T1 + 10 min) and [T1 + 30 min, T1 + 40 min) with cursor A at T1 + 50 min; one whose first window shows `othercar/X.Y` and second `testcar/X.Y`; one with only a values window and no cursor; and one with `scope` {testcar, T1, T2}

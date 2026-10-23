@@ -13,7 +13,7 @@ import type { IdentifyResult, IdentityAdapter, IdentityLog, IdentityRequest } fr
 
 /**
  * The `oidc` built-in (add-multiuser M15): KIPscope as an OIDC resource server. It validates a JWT
- * access token (PingFederate, PingOne or any OIDC IdP) and takes user and roles from its claims.
+ * access token (any OIDC IdP, e.g. Entra ID, Keycloak, Okta, PingFederate) and takes user and roles from its claims.
  * Signature checks are jose's. The token is never logged or echoed.
  */
 

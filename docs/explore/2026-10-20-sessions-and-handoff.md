@@ -43,7 +43,7 @@ Pictures are in [2026-10-20-sessions/](2026-10-20-sessions/). They are cropped t
 **Not tested:**
 - Share levels between two users (`Read-only` pill, 4403). This needs the example identity module on a second port.
 - `#view=` links by clipboard.
-- A real Ping tenant.
+- A real OIDC provider.
 - The 1440 × 900 window: the browser stayed at 1000 × 470 in one tab and 1440 × 648 in the other.
 
 To clean up, I deleted my own test workspace. Opening `/` also touched Jan's `4u5z1wl3vo` workspace, which only changed its last-active time.
@@ -100,7 +100,7 @@ https://kipscope.example/open#cases=<deflate-raw, base64url JSON>
 
 - **Signed catalog.** The search tool's server signs the catalog as a JWS (EdDSA or ES256, its own key pair); the link carries `#cases=<JWS>`. KIPscope verifies it with the search tool's public key (`KIPSCOPE_FINDER_JWKS`, a file or URL). The signature adds about 100 characters; the 200-session estimate still fits.
 - **Claims.** `iss` (the search tool), `aud` (this KIPscope), `sub` (the Ping user the search tool saw), `exp` (short, e.g. 10 min to open the link), and the catalog. The grant is exactly the sessions listed, plus, if the search tool allows it, each object's unlink horizon (`grant.objects: {VIN: {from, to}}`).
-- **Bound to the user.** KIPscope accepts the link only if `sub` matches the signed-in user (same Ping tenant). A forwarded link does not open for someone else.
+- **Bound to the user.** KIPscope accepts the link only if `sub` matches the signed-in user (same identity provider). A forwarded link does not open for someone else.
 - **The grant lives in the workspace.** Once opened, the workspace's guard allows queries only inside the grant (data refs and windows), for as long as the workspace lives; stepping and preload need no further call to the search tool. Sharing a workspace never widens it: the receiver needs their own grant (D-084's rule, now with the search tool as the source).
 - **Local `none` mode** stays as today: no login, unsigned catalogs accepted, everything visible.
 - Each session's object becomes a data ref through KIPscope's own mapping (`KIPSCOPE_CASE_DATAREF`, default `{object}`).
@@ -261,7 +261,7 @@ Each question comes with a recommended answer; "ja" accepts it.
 4. **Stepping keeps the dashboard:** windows keep their position relative to the session start. "Align to this event" on an event pin makes every session show the same event instead. *Recommended: ja.*
 5. **Unlink horizon:** 31 days around the session by default, Widen up to 1 year, never unbounded, with the catalog's sessions as marks on the strip. *Recommended: ja (numbers can change after the first ADX measurement).*
 6. **Cache:** tiles survive session switches in memory, and neighbours are preloaded in the background (`add-case-open`). After that, an IndexedDB store keeps up to 1 GB for 14 days, per user (`add-tile-store`). *Recommended: ja.*
-7. **Object → data ref:** the data ref is the VIN as the search tool sends it, configurable by a template. The Azure users confirm how ADX names a vehicle. *Recommended: ja.*
+7. **Object → data ref:** the data ref is the VIN as the search tool sends it, configurable by a template. The ADX testers confirm how ADX names a vehicle. *Recommended: ja.*
 8. **Local testing without the search tool:** the search tool has no data for Jan's own cars. `kipscope case drives <dataRef>` builds a catalog from the strip's drives (D-060), so the session bar can be used on smart451 and the demo. It is a dev aid, and finding stays with the search tool (D-078). *Recommended: ja.*
 9. **The search tool's button:** the search tool adds "Open in KIPscope" in its own repo and after its own rules; that work is out of scope of KIPscope. Because of D-085 the link is built by the search tool's server (it signs), not in the browser. *Recommended: ja, once the payload is fixed.*
 

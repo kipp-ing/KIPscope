@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Density of a scope
-While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. In an object scope the answer SHALL be coarse, and with `from` and `to` it SHALL cover `[from, to) ∩ scope` (object-view "Coarse strip over the vehicle", "Detail around the view"). Origin: issue #1 item 4 („The time strip … cover[s] only the scope's range"); D-078; object scope: D-086.
+While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. In an object scope the answer SHALL be coarse, and with `from` and `to` it SHALL cover `[from, to) ∩ scope` (object-view "Coarse strip over the vehicle", "Detail around the view"). Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078; object scope: D-086.
 
 #### Scenario: One hour of testcar
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/density?dataRef=testcar` is sent

@@ -5,7 +5,7 @@ T1 = 2026-10-01T01:00:00Z = `1790816400000000000`, T2 = 02:00:00Z = `17908200000
 ## ADDED Requirements
 
 ### Requirement: Density of a scope
-While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. Origin: issue #1 item 4 („The time strip … cover[s] only the scope's range"); D-078.
+While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078.
 
 #### Scenario: One hour of testcar
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/density?dataRef=testcar` is sent
@@ -18,7 +18,7 @@ While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` S
 - **Evidence:** `apps/server/test/density.test.ts` › "computes a scope's density from one bucket query"
 
 ### Requirement: Strip shows the scope
-While the workspace has a scope, the strip SHALL show the scope's data ref whatever the windows hold, and its right label SHALL read `<shown> of <span> in scope · 1 bar = <width>`; in scoped mode without a scope it SHALL show `No scope set`. Double-click, drive clicks and drive keys then act within the scope. Origin: issue #1 item 4 („The time strip … cover[s] only the scope's range"); D-078.
+While the workspace has a scope, the strip SHALL show the scope's data ref whatever the windows hold, and its right label SHALL read `<shown> of <span> in scope · 1 bar = <width>`; in scoped mode without a scope it SHALL show `No scope set`. Double-click, drive clicks and drive keys then act within the scope. Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078.
 
 #### Scenario: Label with a scope
 - **WHEN** `stripLabel` gets the range [T1 + 10 min, T1 + 20 min), a density with `scope` [T1, T2) and width 30 s

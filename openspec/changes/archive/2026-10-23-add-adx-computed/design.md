@@ -32,7 +32,7 @@ Goals:
 - one round trip for an unchunked answer
 - chunks on long ranges as on ClickHouse
 
-Not goals: a timing target. The emulator is no cluster, and timing on a real cluster belongs to the search tool team (D-111). Everything under "Out of scope" in proposal.md.
+Not goals: a timing target. The emulator is no cluster, and timing on a real cluster belongs to the ADX testers (D-111). Everything under "Out of scope" in proposal.md.
 
 ## Decisions
 
@@ -228,7 +228,7 @@ Unchanged: `DataSource`, `SourceAdapter`, `ComputedRef`, `ComputedAnswer`, `queu
 - **Q-1 Chunks k ≤ 3** on ADX too, not up to 7 (ADX queue width 8 minus the kept slot). D-110 says „at most 3"; on ADX an open sends one query per shown signal at once (D-098), so 3 chunks per computed signal leave room for the others. `COMPUTED_CHUNKS` in `adx.ts` is the one place to change it.
 - **Q-2 Threshold 1,000,000 input rows**, as D-110. Not measured on a cluster (D-111).
 - **Q-3 Count folded into the query.** An unchunked answer costs one round trip (D-097). A chunked one costs two serial round trips (count-only answer, then the chunks in parallel). The alternative, a separate count first on every request, would cost two round trips on every request.
-- **Q-4 One input through the same `scan`**, not a separate per-row path. Less code and the same rows. A one-input formula over a long range then pays a serial scan without chunks. A per-row path is a later option if the search tool team's timing shows it.
+- **Q-4 One input through the same `scan`**, not a separate per-row path. Less code and the same rows. A one-input formula over a long range then pays a serial scan without chunks. A per-row path is a later option if the ADX testers' timing shows it.
 
 ## Numbers
 
@@ -249,6 +249,6 @@ Unchanged: `DataSource`, `SourceAdapter`, `ComputedRef`, `ComputedAnswer`, `queu
 
 - **Order after `scan`.** K-5 relies on the scan output keeping the sort order. If a Kusto version breaks that, `next()` fails or picks the wrong row. Mitigation: the conformance case "computes at shared times". If needed, `serialize` after the scan.
 - **Ties within one input.** Two rows of the same input at the same time: the held value depends on the tie order, as on ClickHouse and in the core. That is a data oddity, out of scope.
-- **Serial scan on a cluster.** `order by` + `scan` run on one node. That is why the chunks exist. Their gain on a cluster is the search tool team's measurement.
+- **Serial scan on a cluster.** `order by` + `scan` run on one node. That is why the chunks exist. Their gain on a cluster is the ADX testers' measurement.
 - **Query timeout.** A chunk over about 1.4 M rows must finish within `KIPSCOPE_QUERY_TIMEOUT_S`. A timeout answers as any ADX query timeout does today.
 - **Unknown engine limits.** The emulator accepted the shape. A cluster on another engine version might refuse the tabular lambda with a bool parameter. Fallback: emit the `rows_` body twice, inline, with the guard in each (generated text, no user text). That is a finding for the lead, not a silent change.

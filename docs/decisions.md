@@ -6,9 +6,9 @@ Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
 ## D-114: KIPscope as Jan's own product, v0.1.0 (2026-10-23)
 
-Jan promotes KIPscope as his own tool. A friend in marketing advised: say in the repo how it came about, and describe sign-in and data sources generically instead of naming one company stack.
+Jan promotes KIPscope as his own tool; the README becomes its product page.
 
-- **Decision:** The README opens with a pitch and "Why KIPscope" (Jan's smart 451, OVMS replaced by his own ESP32 logger ESPCars, CANalyzer/CANape out of reach, a private project on his own money and accounts, about €50 of AI tokens and 8 hours of his time, a cell problem found on his car). README and `docs/corporate.md` say enterprise SSO (OIDC), search tool and data-source adapters (ClickHouse, ADX, own); `docs/deploy.md` keeps Ping as the worked OIDC example. No claim about the time of day of the work. First tag `v0.1.0`, root `package.json` version `0.1.0`, `CHANGELOG.md`.
+- **Decision:** The README opens with a pitch and "Why KIPscope" (Jan's smart 451, OVMS replaced by his own ESP32 logger ESPCars, CANalyzer/CANape out of reach, a private project on his own money and accounts, about €50 of AI tokens and 8 hours of his time, a cell problem found on his car). The docs describe sign-in as enterprise SSO (OIDC) with any provider, the search tool generically and data sources as adapters (ClickHouse, ADX, own). First tag `v0.1.0`, root `package.json` version `0.1.0`, `CHANGELOG.md`.
 - **Why:** A self-contained product page; facts only in the origin story.
 
 ## D-113: A patience hint on a slow Unlink, no prefetch (2026-10-23)
@@ -29,7 +29,7 @@ Jan, testing on ADX with Edge on Windows: „4 digits geht nicht (wenn es im sub
 
 On ADX computed signals use the bounded fallback (raw rows into the server, at most 200,000 rows, else "zoom in"), so a computed signal over a long range shows nothing there. The lead offered a native ADX query with the chunking of D-110. Jan: „ja, wär cool".
 
-- **Decision:** Change `add-adx-computed` after `speed-up-computed`: the ADX adapter compiles the parsed formula into one KQL query per chunk (last value per input carried forward, hold limits, SNA, one row per time, buckets from exact rows), never user text in a query; chunked like D-110 on long ranges. Checked on the emulator by the conformance suite; timing on a real cluster belongs to the search tool team.
+- **Decision:** Change `add-adx-computed` after `speed-up-computed`: the ADX adapter compiles the parsed formula into one KQL query per chunk (last value per input carried forward, hold limits, SNA, one row per time, buckets from exact rows), never user text in a query; chunked like D-110 on long ranges. Checked on the emulator by the conformance suite; timing on a real cluster belongs to the ADX testers.
 - **Why:** The users of the search tool work on ADX; the fallback cannot serve wide ranges.
 
 ## D-110: Chunked computed scan on ClickHouse (2026-10-23)
@@ -107,7 +107,7 @@ Open questions of `add-adx-row-metadata` (design Q-1 … Q-3), Jan: „alles ok"
 
 ## D-100: Units and SNA from the ADX table instead of a metadata file (2026-10-22)
 
-Jan doubted that D-099 is efficient: a metadata file needs an entry for every ADX name (~2.6k signals per vehicle, all platforms), and the caller does not know them all. The search tool team extended issue #1 (comment of 2026-10-22, M3): some ADX tables carry the metadata per row, a unit column and a text column holding either a state name or a sentinel (`SNA`, `INVLD`). Jan: „ja gut".
+Jan doubted that D-099 is efficient: a metadata file needs an entry for every ADX name (~2.6k signals per vehicle, all platforms), and the caller does not know them all. The ADX testers extended the ADX feedback (comment of 2026-10-22, M3): some ADX tables carry the metadata per row, a unit column and a text column holding either a state name or a sentinel (`SNA`, `INVLD`). Jan: „ja gut".
 
 - **Decision:** Supersedes D-099. No metadata file. The ADX source reads units and SNA from the table (M3): optional `KIPSCOPE_COLUMN_UNIT`, read by the scoped signal list in its existing summarize and used when no DBC or diag unit exists, per data ref; optional `KIPSCOPE_SNA_TEXTS` (e.g. `SNA,INVLD`): a row whose text is in the list is SNA (a gap, no label), and such texts alone do not make a signal a state signal. State names keep coming from `KIPSCOPE_COLUMN_TEXT`.
 - **Why:** Nobody has to produce or pass metadata for all signals; KIPscope reads it only for the scope, in a query that runs anyway, and per data ref, so platforms cannot collide. Description, range and cycle are not needed for this.
@@ -123,17 +123,17 @@ On ADX every signal shows `· no DBC entry`: KIPscope reads metadata only from D
 
 ## D-098: One series wave on open (2026-10-22)
 
-After `speed-up-adx` the search tool team re-measured (issue #1, 2026-10-22): peak in flight equals the number of signals, because each signal runs series → extent → series → series one after another, so the queue width is not the limit. Jan agreed to take P4 alone as the change `single-wave-open`; P3 (batch endpoints per window) comes after it.
+After `speed-up-adx` the ADX testers re-measured (the ADX feedback, 2026-10-22): peak in flight equals the number of signals, because each signal runs series → extent → series → series one after another, so the queue width is not the limit. Jan agreed to take P4 alone as the change `single-wave-open`; P3 (batch endpoints per window) comes after it.
 
 - **Decision:** The web loader asks a signal's extent before its first series request, then fetches one series and derives the other tiles from it where the result equals the server's answer (design W1, W2): the overview serves the view when the view's level is at or above the overview's, and a view spanning the extent serves the overview. Rendered output stays the same. Jan, Q-1 ("accept"): a view the overview cannot serve waits for the extent round trip (0.16–0.34 s on ADX) instead of guessing from its width.
 - **Why:** It halves the requests of an open (4 signals: 16 → 8) and the serial round trips per signal (4 → 2). A guess would cost a second request whenever it is wrong.
 
-## D-097: ADX speed-ups from the search tool team's report (2026-10-22)
+## D-097: ADX speed-ups from the ADX testers' report (2026-10-22)
 
-The search tool team measured KIPscope on a real ADX cluster (issue #1, comment of 2026-10-22, P1–P9): an open takes about 11 s, spent in 35–55 serial ADX queries. Jan agreed to the lead's cut for the change `speed-up-adx`; the rest (P3 batch endpoints, P4 one tile wave on open, P7 `/open` before the full signal list, P8 loading state) comes later.
+The ADX testers measured KIPscope on a real ADX cluster (the ADX feedback, comment of 2026-10-22, P1–P9): an open takes about 11 s, spent in 35–55 serial ADX queries. Jan agreed to the lead's cut for the change `speed-up-adx`; the rest (P3 batch endpoints, P4 one tile wave on open, P7 `/open` before the full signal list, P8 loading state) comes later.
 
 - **Decision:** ADX gets native `extent` and a new optional `series` method: one query that returns raw points with edges or buckets, so each series request costs one round trip. The fallback keeps today's calls, so ClickHouse is unchanged. The native ADX `count` is dropped (Jan, Q-1: "drop it"): after `series`, nothing on ADX calls it, and D-074 allows a fast path only where measurement shows the fallback costs more than twice as much. The default query queue width is 8 slots for ADX and stays 4 for ClickHouse; `KIPSCOPE_QUERY_CONCURRENCY` still overrides it. This supersedes D-011 D7 ("at most 4 concurrent DB queries") for ADX. A reachable `/api/meta` ping is reused for 15 s; a failed ping is not reused. P9 needs no change: `/api/value` already passes the scope (design A6).
-- **Why:** On ADX, latency dominates rather than throughput, and the cost is the number of serial round trips. The report's timing targets are measured by the search tool team after release, not used as a gate.
+- **Why:** On ADX, latency dominates rather than throughput, and the cost is the number of serial round trips. The report's timing targets are measured by the ADX testers after release, not used as a gate.
 
 ## D-096: Legend without metadata after a cold load stays (2026-10-21)
 
@@ -178,10 +178,10 @@ Jan: „can we have an agent to unclutter again? its so crowded. we need a speci
 
 ## D-091: Handoff findings of the search tool's team (2026-10-21)
 
-Jan, on the issue #1 comment of 2026-10-21: „start with group one as proposed"; on the missing events table: „this will be bigger" (backlog); on the open warning: „keep it until leaving the session"; after his hand check: „looks ok".
+Jan, on the the ADX feedback comment of 2026-10-21: „start with group one as proposed"; on the missing events table: „this will be bigger" (backlog); on the open warning: „keep it until leaving the session"; after his hand check: „looks ok".
 
 - **Decision:** A link too long is trimmed by dropping the far end of the longer side around `current` (tie: before), shipped as `trimCases` and `kipscope case url --trim`. In identity `none` a loopback `origin.url` is kept on any port. The open report (warnings, missing signals, align fallback) shows on every open path: in the bottom bar's notice and as a note in the session bar that stays until ✕ or the next accepted step, go or unlink (the bottom bar keeps D-089's rule). The guide states UTF-16 lengths, whole-catalog refusal, the view's times and the opener rule.
-- **Why:** The finder team's findings; the warning in the bottom bar alone went unnoticed in Jan's check.
+- **Why:** The ADX testers' findings; the warning in the bottom bar alone went unnoticed in Jan's check.
 - **Consequences:** A missing events table, ADX speed, aliases, per-kind views, columns and a handoff store are in the backlog ([status.md](status.md), Next 5). `pnpm smoke` skips an expected API 4xx (`unknown_signal`) by its body code. Archive: [2026-10-21-fix-handoff-findings](../openspec/changes/archive/2026-10-21-fix-handoff-findings/).
 
 ## D-090: The search tool is out of scope and not named (2026-10-20)
@@ -204,9 +204,9 @@ From the archived change `add-case-open`; details there (design K1–K17). Jan: 
 
 From the archived change `add-multiuser`; details there (design M1–M15).
 
-- **Decision:** Identity is a pluggable adapter (`KIPSCOPE_IDENTITY`: `none` default, `oidc` for Ping-issued JWTs, `module:<path>`); roles are shown, they decide nothing. The server state is a **workspace** (`/w/<id>`, `/api/w/<id>/…`, `X-KIPscope-Workspace`, `--workspace`, `kipscope workspace …`); "session" is reserved for the finder's data section, legacy names only in `LEGACY_*` constants. Each workspace has an owner, a share level (`private`, `read`, `write`) and a grant of data refs (`all` with `none`; empty on a server until a handoff widens it through `grantObjects(workspaceId, dataRefs)`, the only widening path; a stored `all` counts as empty on a server). One guard on every route checks the grant; refusals leak nothing. Sharing never widens data: an invited user sees the workspace's grant only inside it (D-087 Q-6). `KIPSCOPE_SHARE=on|off` is the share right. `/` reuses a free workspace of the user, else creates one; `#view=` and `?view=` open a new one, and views grant nothing; `?view=` takes a slug or the title the menu shows. Views per user under `<stateDir>/users/<user>/views/`. The UI shows Share… and Recent only; gate pages say who is signed in.
+- **Decision:** Identity is a pluggable adapter (`KIPSCOPE_IDENTITY`: `none` default, `oidc` for JWTs of any OIDC provider, `module:<path>`); roles are shown, they decide nothing. The server state is a **workspace** (`/w/<id>`, `/api/w/<id>/…`, `X-KIPscope-Workspace`, `--workspace`, `kipscope workspace …`); "session" is reserved for the finder's data section, legacy names only in `LEGACY_*` constants. Each workspace has an owner, a share level (`private`, `read`, `write`) and a grant of data refs (`all` with `none`; empty on a server until a handoff widens it through `grantObjects(workspaceId, dataRefs)`, the only widening path; a stored `all` counts as empty on a server). One guard on every route checks the grant; refusals leak nothing. Sharing never widens data: an invited user sees the workspace's grant only inside it (D-087 Q-6). `KIPSCOPE_SHARE=on|off` is the share right. `/` reuses a free workspace of the user, else creates one; `#view=` and `?view=` open a new one, and views grant nothing; `?view=` takes a slug or the title the menu shows. Views per user under `<stateDir>/users/<user>/views/`. The UI shows Share… and Recent only; gate pages say who is signed in.
 - **Why:** D-079, D-083 … D-087; Jan: „gut, archivieren".
-- **Consequences:** `add-case-open` widens grants after a verified signed catalog. Not run before the archive: the 1440×900 step of 12.5 ("Share in the row when there is room"), a dev server restart and a restart with the tunnel down, a real Ping tenant ([deploy.md](deploy.md)). During the lead's UI check a test agent deleted Jan's workspace `lhwad0nv1m` (a "Speeds" layout, recoverable by `?view=Speeds`).
+- **Consequences:** `add-case-open` widens grants after a verified signed catalog. Not run before the archive: the 1440×900 step of 12.5 ("Share in the row when there is room"), a dev server restart and a restart with the tunnel down, a real OIDC provider ([deploy.md](deploy.md)). During the lead's UI check a test agent deleted Jan's workspace `lhwad0nv1m` (a "Speeds" layout, recoverable by `?view=Speeds`).
 
 ## D-087: Answers on add-multiuser Q-6, Q-7 and add-case-open Q-1 … Q-6 (2026-10-20)
 
@@ -234,17 +234,17 @@ Jan on the exploration [2026-10-20-sessions-and-handoff.md](explore/2026-10-20-s
 
 ## D-084: Pluggable identity, roles and rights per data ref (2026-10-19)
 
-Jan on `add-multiuser` Q-1, Q-2, Q-4: „1: bei mir lokal ohne login, bin mein eigener herr. für corp usage brauche ich was mit regeln und rechten. PING id sollte möglich sein mit unterschiedlichen rechten. 2. keine Ahnung es gibt rollen,. die bestätigt ein tool in verbindung mit PIng id. not my business. muss halt anpassbar sein. da darf jeder auch seinen eigenen krams einbauben. nur rollen und recht müssen wirken können und sicher genug sein, also hier darf nicht jeder nutezer alle platformen sehen. q4 views je nutzer, ja“.
+Jan on `add-multiuser` Q-1, Q-2, Q-4: locally no login, he is his own master; a shared server needs rules and rights, with sign-in through an enterprise identity provider and different rights per user; roles come from a tool tied to that provider, so it must be adaptable and anyone may plug in their own; roles and rights must work and be safe enough, since not every user may see every platform; views per user, yes.
 
-- **Decision:** Supersedes D-083 in part: „ping“ means Ping Identity (PingID), not the search tool's login. Identity is a pluggable adapter like the data source: it turns a request (browser or CLI) into a user with roles. KIPscope ships `none` (local, no login, one user who may do everything; the default) and a corporate path that works with Ping Identity; an organisation may plug in its own adapter (its own tool confirms the roles). KIPscope itself enforces rules: roles map to rights, and rights limit which data (platforms, data refs) a user can see, in every query, list, view and CLI call, on the server. Saved views are per user (Q-4 (a)). ADX access stays the server's identity (D-083); the data limits are KIPscope's own.
+- **Decision:** Supersedes D-083 in part: sign-in goes through an enterprise OIDC provider, not the search tool's login. Identity is a pluggable adapter like the data source: it turns a request (browser or CLI) into a user with roles. KIPscope ships `none` (local, no login, one user who may do everything; the default) and a server path that works with any OIDC provider; an organisation may plug in its own adapter (its own tool confirms the roles). KIPscope itself enforces rules: roles map to rights, and rights limit which data (platforms, data refs) a user can see, in every query, list, view and CLI call, on the server. Saved views are per user (Q-4 (a)). ADX access stays the server's identity (D-083); the data limits are KIPscope's own.
 - **Why:** Jan runs KIPscope alone; in a company not every user may see every platform, and how roles are confirmed differs per company.
 - **Consequences:** `add-multiuser` is revised: identity adapter contract, role-to-rights rules, data-ref filtering at one place on the server, CLI callers authenticated through the same adapter. Open: what a „platform“ is in the data (a data ref pattern, or a column in the source).
 
 ## D-083: Multiuser answers: SSO hook, rights per session, ADX as the server (2026-10-19)
 
-Jan on the questions of D-079: „Ein SSO hook mit ping oder authentik wäre gut. jedes sesseion braucht rechte, ja. ADX rechte sind serverrechte hier keine unterscheidung“.
+Jan on the questions of D-079: an SSO hook to an identity provider (for example authentik) would be good; every session needs rights; ADX rights are the server's, with no distinction per user.
 
-- **Decision:** KIPscope learns who a user is through an SSO hook, with the search tool's login („ping“) or authentik as the identity provider; no own user store. Every session (one opened case, its own workspace) carries rights: who may open and change it. Source access is the server's own: on ADX the server's identity reads for every user, with no per-user distinction.
+- **Decision:** KIPscope learns who a user is through an SSO hook, with an OIDC identity provider (for example authentik); no own user store. Every session (one opened case, its own workspace) carries rights: who may open and change it. Source access is the server's own: on ADX the server's identity reads for every user, with no per-user distinction.
 - **Why:** KIPscope runs on a server next to the search tool (D-079); users already sign in there.
 - **Consequences:** `add-multiuser` specs the hook (one place that turns a request into a user, as D-079 asked), workspaces per session with an owner and rights, and the CLI against a remote server. Rights on data refs stay out until someone needs them, since ADX makes no distinction.
 
@@ -253,7 +253,7 @@ Jan on the questions of D-079: „Ein SSO hook mit ping oder authentik wäre gut
 From the archived change `add-scope`; details there.
 
 - **Decision:** A scope (one data ref, `[from, to)`) is an optional workspace field. With it every source query is bounded (contract argument `scope`, „as if the source held only the scope's rows"), the signal list is per scope (4 kept), the strip, gaps and events cover the scope, and range commands are clamped into it (span kept; „Stopped at the scope edge. Widen shows more."). `KIPSCOPE_CATALOG=scoped` drops the start-up catalog and requires a scope; a guard refuses any query without one. A view opens with its `scope` or a derived one (data ref of the first window's first signal, union of the window ranges padded by `KIPSCOPE_SCOPE_PAD`, 1 h); view documents stay v1. „Widen" adds one span on each side (×3), „Clear" drops the scope (not in scoped mode). CLI `scope set|show|widen|clear`. Lead fix: a series range cut to the scope keeps the bucket width of the asked span. Jan's answers: Q-1 (a) opening a view sets the scope in full mode too, Q-2 (a) other data refs' signals are skipped `out_of_scope`, Q-3 (a) ×3.
-- **Why:** D-078; issue #1 items 1–5 (unbounded queries time out on large ADX tables). Jan: „Empfehlungen übernehmen", then „sieht aber gut aus. das archievieren wir so, ich teste morgen mehr".
+- **Why:** D-078; the ADX feedback items 1–5 (unbounded queries time out on large ADX tables). Jan: „Empfehlungen übernehmen", then „sieht aber gut aus. das archievieren wir so, ich teste morgen mehr".
 - **Consequences:** The source contract gains an optional `scope` on 11 methods (breaking for adapter authors). Not run before the archive: restart with the tunnel down in scoped mode, the strip at 1440×900 and 1000×557 on smart451, „Copy link" by clipboard (task 4.3); Jan tests on 2026-10-20.
 
 ## D-081: Query classes (2026-10-19)
@@ -261,7 +261,7 @@ From the archived change `add-scope`; details there.
 From the archived change `improve-query-priority`; details there.
 
 - **Decision:** Every source query runs in one of four classes, highest first: `interactive` (HTTP requests, catalog loads), `metadata` (D-080 P1 batch), `background` (prefetches, polls), `preload` (D-078 neighbours). A free slot goes to the oldest waiting query of the highest class; running queries are never preempted; one slot is kept for `interactive`. Shared work that a request joins is raised to its class and ranks by when it was raised. Measured periods only for the signals a request names (≤ 100) plus the workspace's window and events-line signals. Jan's answers: Q-1 (a) strict priority, Q-2 (a) strip, gaps and events requests are `interactive`.
-- **Why:** Issue #1 item 7: ~2,400 period queries held every slot, plots stayed empty for minutes. Jan: gaps in handed-over sessions are rare, so gap info must never delay the first draw.
+- **Why:** The ADX feedback item 7: ~2,400 period queries held every slot, plots stayed empty for minutes. Jan: gaps in handed-over sessions are rare, so gap info must never delay the first draw.
 - **Consequences:** `/api/value` and the render acknowledgement still wait for gap info (D-062: no value across a gap); add-scope bounds those queries.
 
 ## D-080: Signal books with three priorities and a learned book (2026-10-19)
@@ -272,8 +272,8 @@ Jan: „1 a und b und ev. ein "lernbuch"? die meisten nutzer nehmen immer die gl
   - **P1 core:** top of the explorer in book order; existence in the scope and metadata are fetched right when a case opens, in one batched request.
   - **P2 book:** below P1; metadata when a row becomes visible, is hovered or added.
   - **P3 rest:** every other name in the scope; last in the search; metadata only on hover or add, never ahead.
-- **Why:** Up to 10,000 signal names per data ref; names in a scope are cheap (issue #1: ~2,300 in 1.6 s for 24 h), metadata for all of them are not. Most users reuse the same few signals, each user different ones.
-- **Consequences:** The learned book needs a user identity (D-079). Where ADX holds units, descriptions and SNA is still open: the Azure users explain it on issue #1 (Jan: „das ist in ADX alles da, aber wie genau müssen adx nutzer erklären“).
+- **Why:** Up to 10,000 signal names per data ref; names in a scope are cheap (the ADX feedback: ~2,300 in 1.6 s for 24 h), metadata for all of them are not. Most users reuse the same few signals, each user different ones.
+- **Consequences:** The learned book needs a user identity (D-079). Where ADX holds units, descriptions and SNA is still open: the ADX testers explain it on the ADX feedback (Jan: „das ist in ADX alles da, aber wie genau müssen adx nutzer erklären“).
 
 ## D-079: KIPscope runs on a server, multiuser (2026-10-19)
 
@@ -288,8 +288,8 @@ Jan: „das soll auf einem server laufen, dem gleichen vielleicht wie [Suchtool]
 Jan: „Kipview soll nicht datenabschnitte finden. es soll gefundene Datenabschnitte effizient darstellen. Das [Suchtool] ist zum finden. dort sind gefundene Sessions verfügbar. diese sollen hierher effizient übergeben werden.“ Then: „4 ja, erstmal hart. 5 immer nur eins, aber im finder gibt es immer "benachbarte" sessions. wäre toll man kann die mit einem klick wählen. das nachladen muss für die nächste halt auch noch klappen.“
 
 - **Decision:** KIPscope shows one case at a time: a **scope** (one data ref and one time window) handed over by the finder together with context metadata (VIN, session kind, origin), a signal book (D-080) and the signals of its windows. Every source query is bounded by the scope; nothing scans a data ref's whole history. The scope is a hard edge for now: navigation stops there, widening it is an explicit step. The finder may list the case's neighbouring sessions; one click switches to a neighbour (same windows and signals, new scope), and the neighbours are preloaded in the background so the switch is fast. The handoff works as a link, a CLI call and a file, all one command; concept §9 „Untersuchung direkt öffnen“ becomes a requirement.
-- **Why:** On large ADX tables unbounded queries time out (issue #1); finding sessions is the search tool's job.
-- **Consequences:** Finding sessions leaves KIPscope: the backlog item „split the data stream into sessions“ is dropped and D-067's session kinds belong to the search tool. Time strip, gaps, events and the catalog cover the scope only. Background preloading must never delay interactive queries (issue #1, item 7).
+- **Why:** On large ADX tables unbounded queries time out (the ADX feedback); finding sessions is the search tool's job.
+- **Consequences:** Finding sessions leaves KIPscope: the backlog item „split the data stream into sessions“ is dropped and D-067's session kinds belong to the search tool. Time strip, gaps, events and the catalog cover the scope only. Background preloading must never delay interactive queries (the ADX feedback, item 7).
 
 ## D-077: Real DBC names out of the repo (2026-10-17)
 

@@ -9,7 +9,7 @@ With `KIPSCOPE_SOURCE=adx` the server SHALL read `KIPSCOPE_COLUMN_UNIT` (unit co
 - **Evidence:** `apps/server/test/config.test.ts` › "reads the ADX row metadata settings"
 
 ### Requirement: Units from the table
-With a unit column the ADX signal list SHALL read `take_anyif(<unit>, isnotempty(<unit>))` per data ref and signal in the summarize it already runs, scoped and unscoped, in one query. A listed signal SHALL carry that unit when non-empty after trimming, else none. A configured unit column that does not exist SHALL fail the list. Origin: D-100 („in its existing summarize … per data ref"); issue #1 M3; unscoped: design R2, Q-2; missing column: necessary consequence (set explicitly).
+With a unit column the ADX signal list SHALL read `take_anyif(<unit>, isnotempty(<unit>))` per data ref and signal in the summarize it already runs, scoped and unscoped, in one query. A listed signal SHALL carry that unit when non-empty after trimming, else none. A configured unit column that does not exist SHALL fail the list. Origin: D-100 („in its existing summarize … per data ref"); the ADX feedback M3; unscoped: design R2, Q-2; missing column: necessary consequence (set explicitly).
 
 #### Scenario: Unit in the signal list query
 - **WHEN** an ADX adapter with `unit: "unit"` on a fake Kusto client that records each query runs `listSignals()` and `listSignals(scope)` with scope {conf-a, B + 5 s, B + 35 s}, and an adapter without `unit` runs the same
@@ -22,7 +22,7 @@ With a unit column the ADX signal list SHALL read `take_anyif(<unit>, isnotempty
 - **Evidence:** `apps/server/test/adx.test.ts` › "reads units from the table per data ref"
 
 ### Requirement: SNA by row text
-With SNA texts, every ADX value query (`raw`, `before`, `after`, `series`, `buckets`, `stateChanges`) SHALL treat a row whose text is in the list as SNA, as a value in a DBC SNA range is treated (null value, bucket SNA count, left out of state changes, returned as SNA neighbour), together with the ranges, the list passed as a query parameter. Row-based methods SHALL count such rows as rows. Origin: D-100 („a gap, no label"); issue #1 M3 („like a DBC SNA value"); parameter and rows: design R3.
+With SNA texts, every ADX value query (`raw`, `before`, `after`, `series`, `buckets`, `stateChanges`) SHALL treat a row whose text is in the list as SNA, as a value in a DBC SNA range is treated (null value, bucket SNA count, left out of state changes, returned as SNA neighbour), together with the ranges, the list passed as a query parameter. Row-based methods SHALL count such rows as rows. Origin: D-100 („a gap, no label"); the ADX feedback M3 („like a DBC SNA value"); parameter and rows: design R3.
 
 #### Scenario: SNA list as a parameter
 - **WHEN** an ADX adapter with `snaTexts: ["SNA", "INVLD"]` on the recording fake runs `raw`, `before`, `after`, `series`, `buckets`, `stateChanges` and `listSignals`, and an adapter without `snaTexts` runs the same
