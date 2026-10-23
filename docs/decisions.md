@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-112: Two papercuts seen on ADX (2026-10-23)
+
+Jan, testing on ADX with Edge on Windows: „4 digits geht nicht (wenn es im submenü ausgeblendet ist?) und unlink reagiert langsam. im ergebnis zu erwarten, der nutzer weiß nur nicht dass was passiert". On the lead's question: choosing 4 closes the "⋯" menu and Digits stays at 3.
+
+- **Decision:** Change `fix-adx-papercuts`: (1) Digits in the "⋯" menu becomes a two-button segmented control `3 | 4` instead of a native select, whose popup Edge on Windows reports as a pointer down outside the menu; (2) Unlink and Link show the progress line of a session step (DW4) and their button reads `Unlinking…` / `Linking…`, disabled, until the result's revision is rendered or the command is refused.
+- **Why:** A native popup inside a popover that closes on outside pointer downs is fragile across browsers; slow commands need visible feedback.
+
 ## D-111: Native computed series on ADX (2026-10-23)
 
 On ADX computed signals use the bounded fallback (raw rows into the server, at most 200,000 rows, else "zoom in"), so a computed signal over a long range shows nothing there. The lead offered a native ADX query with the chunking of D-110. Jan: „ja, wär cool".
