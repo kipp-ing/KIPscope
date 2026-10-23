@@ -151,4 +151,7 @@ export const HINTS = {
   filterSessions:
     "Filter sessions: by title, object, kind, id, start or a meta value; Enter opens the first match",
   catalogRow: "Step to this session, aligned as set under Align",
+
+  // Patience hint of a slow Unlink (D-113).
+  unlinkSlow: "Unlinking: reading the whole vehicle's time range; this can take a few seconds",
 } as const;

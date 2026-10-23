@@ -160,6 +160,24 @@ export function pendingAction(
   return undefined;
 }
 
+/** How long an Unlink runs before the patience hint shows (D-113). */
+export const UNLINK_HINT_DELAY_MS = 1000;
+
+/** True only for a pending Unlink; Link never gets the hint (D-113). */
+export function patienceHintFor(action: PendingAction | undefined): boolean {
+  return action === "Unlinking…";
+}
+
+/** Calls `show` once after `delayMs` (setTimeout); the returned function cancels it,
+ *  and is a no-op once `show` ran. */
+export function startPatienceTimer(
+  show: () => void,
+  delayMs: number = UNLINK_HINT_DELAY_MS,
+): () => void {
+  const timer = setTimeout(show, delayMs);
+  return () => clearTimeout(timer);
+}
+
 /** True exactly when pendingTarget(c, pending, input) or pendingAction(c, input) gives a value. */
 export function startsPending(
   c: Pick<WorkspaceCase, "current" | "count" | "linked">,

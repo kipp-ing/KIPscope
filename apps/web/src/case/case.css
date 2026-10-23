@@ -260,6 +260,16 @@
   }
 }
 
+/* The patience hint of a slow Unlink (D-113): muted, truncates before the title text gives way. */
+.context-row .session-unlink-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
 /* The open's report (X4a, DW7): warning tone, a pill after the title, at most 470 px, its text
    truncated with the full text as tooltip; stays until ✕ or the next accepted case.go, case.step
    or case.unlink. */

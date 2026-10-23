@@ -42,8 +42,10 @@ import {
   endsOpenNote,
   openNoteText,
   type PendingAction,
+  patienceHintFor,
   pendingAction,
   pendingTarget,
+  startPatienceTimer,
   startsPending,
 } from "./case/sessionBar.ts";
 import {
@@ -594,12 +596,20 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   /** The revision the pending step or action waits for, once its result is in. */
   const awaitedRevision = useRef<number | undefined>(undefined);
   const renderedRevision = useRef(-1);
+  // A pending Unlink still on its way after UNLINK_HINT_DELAY_MS shows the patience hint in the
+  // session bar until `Unlinking…` goes (D-113).
+  const [unlinkHint, setUnlinkHint] = useState(false);
+  const cancelHint = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => cancelHint.current?.(), []);
   const endStep = useCallback(() => {
     pendingRef.current = undefined;
     actionPendingRef.current = undefined;
     awaitedRevision.current = undefined;
+    cancelHint.current?.();
+    cancelHint.current = undefined;
     setPending(undefined);
     setActionPending(undefined);
+    setUnlinkHint(false);
     setProgress(false);
   }, []);
   // The session bar sends without waiting; its result goes to the message line like any command.
@@ -614,8 +624,13 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         pendingRef.current = target;
         actionPendingRef.current = action;
         awaitedRevision.current = undefined;
+        cancelHint.current?.();
+        cancelHint.current = patienceHintFor(action)
+          ? startPatienceTimer(() => setUnlinkHint(true))
+          : undefined;
         setPending(target);
         setActionPending(action);
+        setUnlinkHint(false);
         setProgress(true);
       }
       const settle = (result: CommandResult | undefined) => {
@@ -1773,6 +1788,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                 pending={pending}
                 progress={progress}
                 actionPending={actionPending}
+                unlinkHint={unlinkHint}
                 onCommand={caseCommand}
                 openNote={openNote}
                 onDismissNote={() => setOpenNote(undefined)}

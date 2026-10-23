@@ -28,6 +28,8 @@ interface SessionBarProps {
   progress?: boolean;
   /** Unlink or Link on its way: the action button's text, disabled while set (D-112). */
   actionPending?: PendingAction | undefined;
+  /** The patience hint's text shows while true and actionPending is "Unlinking…" (D-113). */
+  unlinkHint?: boolean;
   /** Sends one case command; App shows its result in the message line (caseResultEvents). */
   onCommand: (command: CommandInput) => void;
   /** No commands (read-only workspace, a command on its way): every control is disabled. */
@@ -110,7 +112,8 @@ const alignGlyph = (align: SessionSlots["align"]) => (
  * truncates, the label leaves below the compact width (case.css). A step on its way shows its
  * target at once (DW4) with the progress line, Unlink or Link on its way `Unlinking…`/`Linking…`
  * (D-112); texts not known yet are skeletons in their slots.
- * The open note (X4a, DW7) sits in the title slot after the title.
+ * The open note (X4a, DW7) sits in the title slot after the title; a slow Unlink's patience hint
+ * (D-113) sits between them.
  */
 export function SessionBar({
   caseState: c,
@@ -118,6 +121,7 @@ export function SessionBar({
   pending,
   progress = false,
   actionPending,
+  unlinkHint = false,
   onCommand,
   disabled = false,
   openNote,
@@ -156,6 +160,13 @@ export function SessionBar({
       </button>
     </span>
   );
+  // The live region stands from the click; only its text arrives after the delay (D-113).
+  const hintText = unlinkHint ? HINTS.unlinkSlow : "";
+  const hint = actionPending === "Unlinking…" && (
+    <span className="session-unlink-hint" role="status" title={hintText || undefined}>
+      {hintText}
+    </span>
+  );
   return (
     <div className="context-row" aria-busy={progress || undefined}>
       <span className="slot-label">{s.label}</span>
@@ -176,6 +187,7 @@ export function SessionBar({
             {s.title}
           </span>
         )}
+        {hint}
         {note}
       </span>
       <span className="slot-duration">

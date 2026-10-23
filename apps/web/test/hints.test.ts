@@ -99,6 +99,16 @@ describe("hints table", () => {
     }
   });
 
+  it("words the Unlink patience hint (D-113)", () => {
+    // case-navigation "Hint wording": W1 = capital start, at most 140 characters, no closing period.
+    expect(HINTS.unlinkSlow).toBe(
+      "Unlinking: reading the whole vehicle's time range; this can take a few seconds",
+    );
+    expect(/^[A-Z]/.test(HINTS.unlinkSlow)).toBe(true);
+    expect(HINTS.unlinkSlow.length).toBeLessThanOrEqual(140);
+    expect(HINTS.unlinkSlow.endsWith(".")).toBe(false);
+  });
+
   it("words the star and Favourites hints", () => {
     // add-favourites "Header tooltip": the same facts as `5 of your 7 starred signals are in this list`.
     for (const [inList, total] of [

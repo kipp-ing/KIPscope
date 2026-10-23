@@ -23,12 +23,15 @@ import {
   goFirstMatch,
   moreText,
   openNoteText,
+  patienceHintFor,
   pendingAction,
   pendingTarget,
   sessionSlots,
+  startPatienceTimer,
   startsPending,
   stepCommand,
   timesSlot,
+  UNLINK_HINT_DELAY_MS,
 } from "../src/case/sessionBar.ts";
 import { HINTS } from "../src/help/hints.ts";
 import { caseStepKey } from "../src/keys.ts";
@@ -537,6 +540,87 @@ describe("session bar markup", () => {
     const cls = (html: string) => /class="([^"]*\bslot-action\b[^"]*)"/.exec(html)?.[1];
     expect(cls(unlinking)).toBe(cls(idle));
     expect(cls(linking)).toBe(cls(bar({ caseState: caseAt(0, false) })));
+  });
+
+  it("starts the Unlink hint after the delay, only for Unlink", () => {
+    // case-navigation "Patience hint helpers" (D-113).
+    expect(UNLINK_HINT_DELAY_MS).toBe(1000);
+    expect(patienceHintFor("Unlinking…")).toBe(true);
+    expect(patienceHintFor("Linking…")).toBe(false);
+    expect(patienceHintFor(undefined)).toBe(false);
+
+    vi.useFakeTimers();
+    try {
+      const first = vi.fn();
+      startPatienceTimer(first);
+      vi.advanceTimersByTime(999);
+      expect(first).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(first).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(5000);
+      expect(first).toHaveBeenCalledTimes(1);
+
+      const second = vi.fn();
+      const cancelSecond = startPatienceTimer(second);
+      vi.advanceTimersByTime(500);
+      cancelSecond();
+      vi.advanceTimersByTime(5000);
+      expect(second).not.toHaveBeenCalled();
+
+      const third = vi.fn();
+      const cancelThird = startPatienceTimer(third);
+      vi.advanceTimersByTime(UNLINK_HINT_DELAY_MS);
+      expect(third).toHaveBeenCalledTimes(1);
+      expect(() => cancelThird()).not.toThrow();
+      vi.advanceTimersByTime(5000);
+      expect(third).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the Unlink hint in the title slot", () => {
+    // case-navigation "Patience hint markup" (D-113): the span exists, empty, from the click on.
+    const decode = (t: string) => t.replace(/&#x27;/g, "'").replace(/&#39;/g, "'");
+    const hints = (html: string) => html.match(/session-unlink-hint/g)?.length ?? 0;
+    const title = (html: string) => slotHtml(html, "slot-title") ?? "";
+    const shown = bar({ progress: true, actionPending: "Unlinking…", unlinkHint: true });
+    const empty = bar({ progress: true, actionPending: "Unlinking…", unlinkHint: false });
+    const linking = bar({
+      caseState: caseAt(0, false),
+      progress: true,
+      actionPending: "Linking…",
+      unlinkHint: true,
+    });
+    const idle = bar();
+
+    // The first: one element inside slot-title, after slot-title-text, with role, text and title.
+    expect(hints(shown)).toBe(1);
+    const inTitle = title(shown);
+    expect(hints(inTitle)).toBe(1);
+    expect(inTitle.indexOf("slot-title-text")).toBeGreaterThanOrEqual(0);
+    expect(inTitle.indexOf("session-unlink-hint")).toBeGreaterThan(
+      inTitle.indexOf("slot-title-text"),
+    );
+    const span = slotHtml(shown, "session-unlink-hint") ?? "";
+    expect(span).toMatch(/role="status"/);
+    expect(decode(textIn(span))).toBe(HINTS.unlinkSlow);
+    expect(decode(/title="([^"]*)"/.exec(span)?.[1] ?? "")).toBe(HINTS.unlinkSlow);
+
+    // The second: the live region exists with no text.
+    expect(hints(empty)).toBe(1);
+    expect(hints(title(empty))).toBe(1);
+    const emptySpan = slotHtml(empty, "session-unlink-hint") ?? "";
+    expect(emptySpan).toMatch(/role="status"/);
+    expect(textIn(emptySpan)).toBe("");
+
+    // The third and the fourth: no element.
+    expect(hints(linking)).toBe(0);
+    expect(hints(idle)).toBe(0);
+    expect(linking).not.toContain(HINTS.unlinkSlow.slice(0, 20));
+
+    // All four hold the same slot elements in the same order.
+    for (const html of [shown, empty, linking, idle]) expect(slotOrder(html)).toEqual(SLOT_ORDER);
   });
 
   it("starts a pending state only for a target or an action", () => {
