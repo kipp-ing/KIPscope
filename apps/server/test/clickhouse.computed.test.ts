@@ -294,7 +294,8 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
         FROM + 33n * S,
         FROM + 66n * S,
       ]);
-      // The first chunk keeps its seeds and its range start; the others read the lookback.
+      // The first chunk keeps its seeds and its range start; the others read the lookback and carry
+      // the request's seeds too (design C-3).
       const [first, second, third] = byStart as [Recorded, Recorded, Recorded];
       expect(BigInt(String(first.params.from))).toBe(FROM);
       expect(first.params.sv0).toBe(1);
@@ -306,15 +307,47 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
       ] as const) {
         expect(BigInt(String(chunk.params.from))).toBe(cs - hold);
         for (const i of [0, 1, 2]) {
-          expect(chunk.params[`sv${i}`]).toBeNull();
-          expect(chunk.params[`ss${i}`]).toBeNull();
-          expect(chunk.params[`st${i}`]).toBeNull();
+          expect(chunk.params[`sv${i}`]).toEqual(first.params[`sv${i}`]);
+          expect(chunk.params[`ss${i}`]).toEqual(first.params[`ss${i}`]);
+          expect(chunk.params[`st${i}`]).toEqual(first.params[`st${i}`]);
         }
       }
       // The chunks cover the range: the last one ends at the range end, the others at the next start.
       expect(BigInt(String(first.params.to))).toBe(FROM + 33n * S);
       expect(BigInt(String(second.params.to))).toBe(FROM + 66n * S);
       expect(BigInt(String(third.params.to))).toBe(TO);
+      // The 40 s hold case (spec "Lookback stays inside the request"): c_1 - L lies before `from`.
+      {
+        const { source: bigHold, queries: bigQueries } = counting(5000, {
+          computedChunkRows: 1000,
+        });
+        const bigAnswer = await run(bigHold, three(40n * S), 100);
+        expect(bigAnswer.kind).toBe("buckets");
+        expect(bigQueries).toHaveLength(4);
+        const scans = bigQueries.slice(1);
+        const byStart = [...scans].sort((x, y) =>
+          BigInt(String(x.params.cs)) < BigInt(String(y.params.cs)) ? -1 : 1,
+        ) as [Recorded, Recorded, Recorded];
+        const [first, second, third] = byStart;
+        expect(byStart.map((q) => BigInt(String(q.params.cs)))).toEqual([
+          FROM,
+          FROM + 33n * S,
+          FROM + 66n * S,
+        ]);
+        // L = 40 s: the 2nd chunk's start minus L (FROM - 7 s) is clamped to FROM, the 3rd reads from
+        // FROM + 26 s.
+        expect(BigInt(String(first.params.from))).toBe(FROM);
+        expect(BigInt(String(second.params.from))).toBe(FROM);
+        expect(BigInt(String(third.params.from))).toBe(FROM + 26n * S);
+        for (const chunk of [second, third]) {
+          for (const i of [0, 1, 2]) {
+            expect(chunk.params[`sv${i}`]).toEqual(first.params[`sv${i}`]);
+            expect(chunk.params[`ss${i}`]).toEqual(first.params[`ss${i}`]);
+            expect(chunk.params[`st${i}`]).toEqual(first.params[`st${i}`]);
+          }
+        }
+        expect(first.params.sv0).toBe(1);
+      }
     });
 
     it("does not chunk without hold limits, raw or small", async () => {

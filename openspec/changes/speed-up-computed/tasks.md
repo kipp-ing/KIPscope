@@ -36,7 +36,7 @@ Write areas (disjoint per task):
 
 ## 4. apps/server/src (round 2)
 
-- [ ] 4.1 Chunked bucket scan as pinned in design C-1 … C-4 and "Pinned interfaces" (round 2).
+- [x] 4.1 Chunked bucket scan as pinned in design C-1 … C-4 and "Pinned interfaces" (round 2).
   - **Reopened, round 3 fix only (reviewer, `clickhouse.ts:531`):** chunk j > 0 scans from max(`c_j − L`, `from`) and carries the request's seeds, like chunk 0 (design C-3). `DataSource = Required<Omit<SourceAdapter, "useQueue">>` as pinned. Verify: "Lookback stays inside the request", "Chunked buckets equal unchunked ones" (c), "Chunk queries".
   - Round 2 parts, built:
   - `queue.ts`: `QueryRunner`; `queuedAdapter` calls `adapter.useQueue` when present and passes `computedSeries` through unqueued.
@@ -52,12 +52,12 @@ Write areas (disjoint per task):
 - [x] 5.1 `clickhouse.computed.test.ts`: "splits a large bucket scan into chunks" and "does not chunk without hold limits, raw or small" (spec "Chunk queries"). The `counting` helper takes the constructor option.
 - [x] 5.2 `clickhouse.chunks.test.ts` (new, against `sdlog.conf_signals` like the conformance ClickHouse source): "chunked buckets equal unchunked ones", cases (a) and (b) of the spec.
 - [x] 5.3 `queue.test.ts`: "queues each computed query, not the whole call" (spy on `queue.run`). Existing queue tests that expect `computedSeries` queued as one call follow the pinned wiring.
-- [ ] 5.5 Round 3: "Chunked buckets equal unchunked ones" case (c), "keeps the lookback inside the request" (`clickhouse.chunks.test.ts`), and in "splits a large bucket scan into chunks" the seeds equal the first chunk's, plus the 40 s hold case with `from` = `FROM`. Then rerun 5.4.
+- [x] 5.5 Round 3: "Chunked buckets equal unchunked ones" case (c), "keeps the lookback inside the request" (`clickhouse.chunks.test.ts`), and in "splits a large bucket scan into chunks" the seeds equal the first chunk's, plus the 40 s hold case with `from` = `FROM`. Then rerun 5.4.
 - [x] 5.4 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`.
 
 ## 3. Lead (carserver)
 
 S1 and S2 are run after round 1 and again after round 2.
 
-- [ ] 3.1 Manual check S2 "Same answer on real data" (design.md), with the answer saved before the round.
-- [ ] 3.2 Manual check S1 "Speed on carserver (goal)": reported against ≤ 2 s (whole recording), ≤ 0.30 s (25 min window) and ≤ 0.5 s (busiest hour); the three-input formula reported without a goal.
+- [x] 3.1 Manual check S2 "Same answer on real data" (design.md), with the answer saved before the round.
+- [x] 3.2 Manual check S1 "Speed on carserver (goal)": reported against ≤ 2 s (whole recording), ≤ 0.30 s (25 min window) and ≤ 0.5 s (busiest hour); the three-input formula reported without a goal.

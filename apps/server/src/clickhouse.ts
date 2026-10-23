@@ -419,9 +419,10 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
    * A bucket answer over several inputs with more than `computedChunkRows` rows and a finite hold
    * limit on every input is split into up to COMPUTED_CHUNKS chunks at bucket starts (D-110, C-1,
    * C-2), scanned in parallel with one linked abort (C-4); their buckets, in order, are the answer.
-   * Chunk 0 keeps the seeds; every later chunk reads a lookback of the largest hold limit before
-   * its start instead, with null seeds and no extra query (C-3). All chunks keep only rows at
-   * `{cs:Int64}` (the chunk start, `from` unchunked) or later, so they share one SQL text.
+   * Every chunk carries the request's seeds; a later chunk also reads a lookback of the largest
+   * hold limit before its start, clamped to `from`, so no scan leaves the request (C-3). All
+   * chunks keep only rows at `{cs:Int64}` (the chunk start, `from` for chunk 0 and unchunked) or
+   * later, so they share one SQL text.
    */
   async computedSeries(
     ref: ComputedRef,
@@ -526,15 +527,8 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
       const parts = await Promise.all(
         starts.map((cs, j) => {
           const chunkParams: Params = { ...params, w: width, cs, to: starts[j + 1] ?? to };
-          if (j > 0) {
-            // C-3: a lookback of the largest hold limit instead of seeds.
-            chunkParams.from = cs - lookback;
-            inputs.forEach((_, i) => {
-              chunkParams[`sv${i}`] = null;
-              chunkParams[`ss${i}`] = null;
-              chunkParams[`st${i}`] = null;
-            });
-          }
+          // C-3: a lookback of the largest hold limit, never before `from`; the request's seeds.
+          if (j > 0) chunkParams.from = cs - lookback > from ? cs - lookback : from;
           return scan(chunkParams, signal).catch((error: unknown) => {
             local.abort();
             throw error;
