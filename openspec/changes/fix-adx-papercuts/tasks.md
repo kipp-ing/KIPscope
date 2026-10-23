@@ -30,6 +30,6 @@ Write areas (disjoint per task):
 ## 4. UI checks (UI user, after 1–3)
 
 - [x] 4.1 number-format "Real click on 4 keeps the menu open".
-- [ ] 4.2 saved-views "Overflow menu by keyboard".
+- [x] 4.2 saved-views "Overflow menu by keyboard".
 - [x] 4.3 case-navigation "Unlink and Link on smart451" (MutationObserver record, no test hook).
 - [ ] 4.4 case-navigation "Probe over steps" and "Step on smart451" still pass (regression of the sequence change).
