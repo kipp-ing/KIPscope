@@ -126,16 +126,16 @@ A `+` in the Computed header, the hint row, a pencil or `F2` SHALL open the edit
 ## MODIFIED Requirements
 
 ### Requirement: Formula language
-A formula SHALL consist of signal names (design F1, "Signal names in a formula"), numbers, `+ - * /`, parentheses, `abs(x)`, `min(x, y)`, `max(x, y)`, name at least one signal, and hold at most 500 characters and 64 parts; nothing else parses. Errors SHALL name what is wrong and its 1-based position. Origin: D-102 („+ - * /, constants, abs, min(a,b), max(a,b) … never user-written KQL or SQL"); names: D-106; 500 characters: necessary consequence of D-106's 8 signals with full names (design Numbers).
+A formula SHALL consist of signal names (design F1, "Signal names in a formula"), numbers, `+ - * /`, parentheses, `abs(x)`, `min(x, y, …)`, `max(x, y, …)` with two or more values, name at least one signal, and hold at most 500 characters and 64 parts; nothing else parses. Errors SHALL name what is wrong and its 1-based position. Origin: D-102 („+ - * /, constants, abs, min(a,b), max(a,b) … never user-written KQL or SQL"); names: D-106; two or more values: D-107 Q-2; 500 characters: necessary consequence of D-106's 8 signals with full names (design Numbers).
 
 #### Scenario: Accepted and refused formulas
-- **WHEN** `parseFormula` reads `MS_312h.DNMOT - CPC_508h.PNHV_SupBat_Curr`, ` abs(X.A) `, `min(X.A, "DNMOT − PNHV") * 0.5`, `-X.A / (Y.B + 1e3)`, `X.A − Y.B` (U+2212), `max(X.A,2) + X.A`, `"say \"hi\"" + "abs"`, then `X.A - `, `abs(X.A, Y.B)`, `min(X.A)`, `(X.A + Y.B`, `X.A % 2`, `1e999 + X.A`, `2 * 3`, `"DNMOT − P`, `"" + X.A`, `abs + 1`, the empty text and a 501-character formula
-- **THEN** the first seven are ok with `names` [`MS_312h.DNMOT`, `CPC_508h.PNHV_SupBat_Curr`], [`X.A`], [`X.A`, `DNMOT − PNHV`], [`X.A`, `Y.B`], [`X.A`, `Y.B`], [`X.A`], [`say "hi"`, `abs`]; the others fail with `Unexpected end at 7`, `abs takes one value: abs(x)`, `min takes two values: min(x, y)`, `Missing ")" at 11`, `Unexpected "%" at 5`, `Number too large at 1`, `Use at least one signal`, `Missing closing " at 1`, `Empty name at 1`, `Unexpected "+" at 5`, `Enter a formula`, `At most 500 characters`
+- **WHEN** `parseFormula` reads `MS_312h.DNMOT - CPC_508h.PNHV_SupBat_Curr`, ` abs(X.A) `, `min(X.A, "DNMOT − PNHV") * 0.5`, `-X.A / (Y.B + 1e3)`, `X.A − Y.B` (U+2212), `max(X.A,2) + X.A`, `"say \"hi\"" + "abs"`, `max(X.A, Y.B, 3, Z.C)`, then `X.A - `, `abs(X.A, Y.B)`, `min(X.A)`, `(X.A + Y.B`, `X.A % 2`, `1e999 + X.A`, `2 * 3`, `"DNMOT − P`, `"" + X.A`, `abs + 1`, the empty text and a 501-character formula
+- **THEN** the first eight are ok with `names` [`MS_312h.DNMOT`, `CPC_508h.PNHV_SupBat_Curr`], [`X.A`], [`X.A`, `DNMOT − PNHV`], [`X.A`, `Y.B`], [`X.A`, `Y.B`], [`X.A`], [`say "hi"`, `abs`], [`X.A`, `Y.B`, `Z.C`]; the others fail with `Unexpected end at 7`, `abs takes one value: abs(x)`, `min takes two or more values: min(x, y, …)`, `Missing ")" at 11`, `Unexpected "%" at 5`, `Number too large at 1`, `Use at least one signal`, `Missing closing " at 1`, `Empty name at 1`, `Unexpected "+" at 5`, `Enter a formula`, `At most 500 characters`
 - **Evidence:** `packages/shared/test/formula.test.ts` › "parses the formula language", "reports errors with positions"
 
 #### Scenario: Evaluation
-- **WHEN** `evalFormula` and `compileFormula` evaluate `abs(X.A - Y.B)` at (3, 5), `min(X.A, Y.B) * 2` at (3, 5), `max(X.A, -Y.B)` at (3, 5), `-X.A * 2 - 1` at 3 and `X.A / Y.B` at (1, 0)
-- **THEN** both give 2, 6, 3, −7 and a non-finite number
+- **WHEN** `evalFormula` and `compileFormula` evaluate `abs(X.A - Y.B)` at (3, 5), `min(X.A, Y.B) * 2` at (3, 5), `max(X.A, -Y.B)` at (3, 5), `min(X.A, Y.B, Z.C)` at (3, 5, -1), `-X.A * 2 - 1` at 3 and `X.A / Y.B` at (1, 0)
+- **THEN** both give 2, 6, 3, −1, −7 and a non-finite number
 - **Evidence:** `packages/shared/test/formula.test.ts` › "evaluates formulas in double precision"
 
 ### Requirement: Formula text never reaches a query
@@ -284,8 +284,8 @@ Source signals SHALL resolve on the computed signal's data ref, so a session ste
 The editor SHALL fill the name from the formula with short signal names and the names of nested computed signals, and the unit when it is unambiguous (design F7), and keep both following until the user types in that field. An outer signal's saved name and unit SHALL NOT change when an inner one is edited (design Q-4). Origin: add-computed-signals lead pick 1, D-105 Q-6; Q-4: design pick.
 
 #### Scenario: Auto name and unit
-- **WHEN** `formulaName` and `inferUnit` get `MS_312h.DNMOT - CPC_508h.PNHV_SupBat_Curr` (rpm, A), `abs(MS_312h.DNMOT)`, `min(X.A, Y.B)` with both in A, `X.A * 1` with X.A in A, `(X.A + Y.B) / 2`, `abs("DNMOT − PNHV_SupBat_Curr")` with that definition's unit A, `"DNMOT − PNHV_SupBat_Curr" * 2`, and `X.A + Y.B + Z.C` all in V
-- **THEN** the names are `DNMOT − PNHV_SupBat_Curr`, `abs(DNMOT)`, `min(A, B)`, `A × 1`, `(A + B) / 2`, `abs(DNMOT − PNHV_SupBat_Curr)`, `(DNMOT − PNHV_SupBat_Curr) × 2`, `A + B + C`; the units none, rpm, A, none, none, A, none, V
+- **WHEN** `formulaName` and `inferUnit` get `MS_312h.DNMOT - CPC_508h.PNHV_SupBat_Curr` (rpm, A), `abs(MS_312h.DNMOT)`, `min(X.A, Y.B)` with both in A, `X.A * 1` with X.A in A, `(X.A + Y.B) / 2`, `abs("DNMOT − PNHV_SupBat_Curr")` with that definition's unit A, `"DNMOT − PNHV_SupBat_Curr" * 2`, `X.A + Y.B + Z.C` all in V, and `max(X.A, Y.B, 0)` both in V
+- **THEN** the names are `DNMOT − PNHV_SupBat_Curr`, `abs(DNMOT)`, `min(A, B)`, `A × 1`, `(A + B) / 2`, `abs(DNMOT − PNHV_SupBat_Curr)`, `(DNMOT − PNHV_SupBat_Curr) × 2`, `A + B + C`, `max(A, B, 0)`; the units none, rpm, A, none, none, A, none, V, V
 - **Evidence:** `packages/shared/test/formula.test.ts` › "names formulas with short signal names", "infers units only when unambiguous"; `apps/web/test/computedEditor.test.ts` › "follows the formula with name and unit until typed"
 
 ### Requirement: Edit and delete

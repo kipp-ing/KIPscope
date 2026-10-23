@@ -24,7 +24,7 @@ sum     := product (("+" | "-") product)*
 product := unary (("*" | "/") unary)*
 unary   := "-" unary | primary
 primary := number | name | "(" sum ")"
-         | "abs" "(" sum ")" | ("min" | "max") "(" sum "," sum ")"
+         | "abs" "(" sum ")" | ("min" | "max") "(" sum ("," sum)+ ")"
 name    := bare | quoted
 bare    := [A-Za-z_][A-Za-z0-9_.]*        -- except the words abs, min, max
 quoted  := '"' ( any character except '"' and '\'  |  '\"'  |  '\\' )+ '"'
@@ -39,8 +39,8 @@ number  := digits ["." digits] | "." digits, then optionally ("e" | "E") ["+" | 
   - `Enter a formula` · `Use at least one signal` · `At most 500 characters` · `Too complex: at most 64 parts` · `Number too large at 1`
   - `Unexpected "%" at 5` (a token: its text, e.g. `Unexpected "X.A" at 2` for `2X.A`) · `Unexpected end at 7` (at = length + 1)
   - `Missing ")" at 11` · `Missing closing " at 1` (at = the opening quote) · `Empty name at 1`
-  - `abs takes one value: abs(x)` · `min takes two values: min(x, y)` · `max takes two values: max(x, y)`
-- Printing `formulaText(ast)`: names by `quoteName`, binary operators ` + `, ` - `, ` * `, ` / `, unary `-x`, `abs(x)`, `min(x, y)`, `max(x, y)`; parentheses only where needed (operators are left-associative: a right operand of `-` or `/` of the same precedence keeps them, a sum under `*`, `/` or unary minus keeps them). **Canonical text** = `formulaText(parseFormula(text).ast)`.
+  - `abs takes one value: abs(x)` · `min takes two or more values: min(x, y, …)` · `max takes two or more values: max(x, y, …)` (D-107 Q-2)
+- Printing `formulaText(ast)`: names by `quoteName`, binary operators ` + `, ` - `, ` * `, ` / `, unary `-x`, `abs(x)`, `min(x, y, …)`, `max(x, y, …)`; parentheses only where needed (operators are left-associative: a right operand of `-` or `/` of the same precedence keeps them, a sum under `*`, `/` or unary minus keeps them). **Canonical text** = `formulaText(parseFormula(text).ast)`.
 - `quoteName(name)`: the name bare when it matches `bare` and is not `abs`, `min`, `max`; else in double quotes with `\` and `"` escaped by `\`. `MS_312h.DNMOT` → `MS_312h.DNMOT`; `DNMOT − PNHV_SupBat_Curr` → `"DNMOT − PNHV_SupBat_Curr"`; `1st.X` → `"1st.X"`; `abs` → `"abs"`; `say "hi"` → `"say \"hi\""`.
 - `formulaInputs(ast)`: the distinct names in first appearance (depth first, left to right). Every array of per-input data below is in this order.
 - Evaluation in IEEE double as before; non-finite → SNA (D-105 Q-4).
@@ -114,8 +114,8 @@ computed:
 
 ### F7 Auto name and unit
 
-- `formulaName(ast, label)`: `label(name)` is `shortSignalName(name)` for a source signal and the definition's name for a definition. Operators ` + `, ` − `, ` × `, ` / `; `abs(x)`, `min(x, y)`, `max(x, y)`; parentheses only where needed; a label containing a space is wrapped in parentheses when it is an operand of an operator or of unary minus, not when it is a function argument (`(DNMOT − PNHV_SupBat_Curr) × 2`, `abs(DNMOT − PNHV_SupBat_Curr)`); cut to 60 with `…`; a taken name gets ` 2`, ` 3`, … (`freeName`).
-- `inferUnit(ast, unitOf)`: `unitOf(name)` is a signal's unit or a definition's stored unit. `+`, `-`, `min`, `max`: equal units on both sides keep it, a constant side adopts the other side's unit, else none; `abs` and unary minus keep it; `*`, `/` none (D-105 Q-6) (lead's point 6).
+- `formulaName(ast, label)`: `label(name)` is `shortSignalName(name)` for a source signal and the definition's name for a definition. Operators ` + `, ` − `, ` × `, ` / `; `abs(x)`, `min(x, y, …)`, `max(x, y, …)`; parentheses only where needed; a label containing a space is wrapped in parentheses when it is an operand of an operator or of unary minus, not when it is a function argument (`(DNMOT − PNHV_SupBat_Curr) × 2`, `abs(DNMOT − PNHV_SupBat_Curr)`); cut to 60 with `…`; a taken name gets ` 2`, ` 3`, … (`freeName`).
+- `inferUnit(ast, unitOf)`: `unitOf(name)` is a signal's unit or a definition's stored unit. `+`, `-`, `min`, `max`: equal units on all operands keep it (constants adopt it), else none; `abs` and unary minus keep it; `*`, `/` none (D-105 Q-6) (lead's point 6).
 - Name and unit follow the formula until typed in (as C12); when editing, a field follows only if its stored value equals the auto value of the stored formula.
 
 ### F8 Server routes
@@ -128,11 +128,11 @@ computed:
   - a name not in the route's catalog on that data ref: 404 `unknown_signal`, `signalId` the input's ID, message `not in this list: <id>`; with states: 422 `not_numeric_signal`.
 - Names are matched exactly; the server knows no short names and no definitions (stateless, lead's point 4: names parsed from the formula, no list parameter).
 - Everything else as C8 with arrays in `formulaInputs` order: seeds and hold limits per input, raw edges, raw when the inputs' rows together ≤ target, else buckets from exact rows.
-- Fallback: `raw(input, from, to, COMPUTED_MAX_ROWS + 1)` per input as before; over the cap: `computed_too_large` naming that input.
+- Fallback (lead, D-107; parallel because ADX latency dominates, D-097): one cap for all inputs of a request together, split evenly. All n inputs are read in parallel in one wave, each with `raw(input, from, to, share + 1)`, `share = floor(COMPUTED_MAX_ROWS / n)`; any input over its share fails with `computed_too_large`, message `more than 100,000 rows of MS_312h.DNMOT in this range: zoom in` (its share). So the total never exceeds the cap.
 
 ### F9 ClickHouse
 
-C9 generalized: one `count()` over `signal IN ({s0:String}, …, {s<n-1>:String})`, then one scan with three `last_value(…) IGNORE NULLS OVER w` columns per input (value, SNA flag, time) seeded by parameters, the row condition "every input's time not null and within its hold" and `LIMIT 1 BY x`; constants `{k<i>:Float64}`. Signal parameter names `s<i>` follow `formulaInputs` order. One input: no window, as today. Exactly two queries per request.
+C9 generalized (n-ary `min`/`max` compile to `least(…)`/`greatest(…)`, D-107 Q-2): one `count()` over `signal IN ({s0:String}, …, {s<n-1>:String})`, then one scan with three `last_value(…) IGNORE NULLS OVER w` columns per input (value, SNA flag, time) seeded by parameters, the row condition "every input's time not null and within its hold" and `LIMIT 1 BY x`; constants `{k<i>:Float64}`. Signal parameter names `s<i>` follow `formulaInputs` order. One input: no window, as today. Exactly two queries per request.
 
 ### F10 Web: infos and requests
 
@@ -162,7 +162,7 @@ Editor layout (C12 otherwise unchanged: 360 px, placement, Delete, Cancel, Save 
 
 - Placeholder `HINTS.formulaPlaceholder`: `Type a signal, abs( min( max( or + - * /`.
 - **Token at the caret** (`tokenAt(text, caret)`): inside a quoted name (an unclosed or closed quote pair around the caret): from the opening quote to the closing quote (or the caret when unclosed), `quoted: true`, query = the unescaped text between the opening quote and the caret; otherwise the maximal run of `[A-Za-z0-9_.]` around the caret when it starts with a letter or `_`, query = its part before the caret. None when the query is empty or the run starts with a digit.
-- **Suggestions** (`suggestions(token, index, exclude)`), at most 8: first the functions whose name starts with the query ignoring case (not when quoted), shown `abs(x)`, `min(x, y)`, `max(x, y)`; then `searchSignals(index, query)` over the list in use plus the computed infos (the explorer's ranking), without the definition being edited and its users (they would close a cycle). Computed rows show `ƒ` and their name; others their shown name (mono) and unit. A signal with states is listed in `--disabled` with `title` `HINTS.computedNumericOnly(short)` and is not accepted.
+- **Suggestions** (`suggestions(token, index, exclude)`), at most 8: first the functions whose name starts with the query ignoring case (not when quoted), shown `abs(x)`, `min(x, y, …)`, `max(x, y, …)`; then `searchSignals(index, query)` over the list in use plus the computed infos (the explorer's ranking), without the definition being edited and its users (they would close a cycle). Computed rows show `ƒ` and their name; others their shown name (mono) and unit. A signal with states is listed in `--disabled` with `title` `HINTS.computedNumericOnly(short)` and is not accepted.
 - **Accept** (`accept(text, token, s)`): the token is replaced by `quoteName(name)` (catalog: the full name; computed: the definition's name), caret after it; a function inserts `abs(` with the caret after `(` (when a `(` already follows the token, only the caret moves past it).
 - **Keys** in the field: with the list open ↑/↓ move the active row, Enter or Tab accept, Esc closes only the list (L4); a mouse-down on a row accepts without leaving the field. With the list closed Enter saves when valid (never a newline), Esc cancels the editor, Tab moves focus. The list opens on an input event that leaves a token at the caret and closes on accept, Esc, blur, or when the caret leaves the token.
 - **Tint** (lead's point 2, cheap and robust form): a highlight layer behind the textarea with the same box, font, padding, border width (transparent), `white-space: pre-wrap`, `overflow-wrap: anywhere` and synced `scrollTop`; its text is transparent and only `mark` elements paint backgrounds: a resolved signal `mark.sig` in `--accent-soft`, a computed one `mark.sig.computed` in `--band`, both 3 px radius, **no padding, border or font change** (so nothing moves the glyphs); the bad token of the current error `mark.bad` with a wavy `--error` underline. The textarea draws the text itself with a transparent background, so a misaligned layer could only shift tints, never text or caret. `highlightSpans(text, names)` (pure) gives the spans.
@@ -203,7 +203,8 @@ export type FormulaNode =
   | { op: "num"; value: number }
   | { op: "sig"; name: string; at: number }   // at: 1-based position of the name token
   | { op: "neg" | "abs"; arg: FormulaNode }
-  | { op: "+" | "-" | "*" | "/" | "min" | "max"; left: FormulaNode; right: FormulaNode };
+  | { op: "+" | "-" | "*" | "/"; left: FormulaNode; right: FormulaNode }
+  | { op: "min" | "max"; args: FormulaNode[] };   // two or more (D-107 Q-2)
 export type ParsedFormula =
   | { ok: true; ast: FormulaNode; names: readonly string[] }   // names = formulaInputs(ast)
   | { ok: false; message: string; at?: number };
@@ -301,7 +302,7 @@ export function resolveComputed(
 ): { ok: true; ast: FormulaNode; inputs: SeriesRef[] }
  | { ok: false; status: 400 | 404 | 422; code: "invalid_formula" | "unknown_signal" | "not_numeric_signal"; message: string; signalId?: string };
 // queryComputed(source, ref, signalId, from, to, target, scope?, abort?, span?) unchanged in signature
-// apps/server/src/fallbacks.ts: ComputedTooLargeError(signal) unchanged
+// apps/server/src/fallbacks.ts: class ComputedTooLargeError extends Error { constructor(signal: string, share: number) }   // F8 message
 // apps/server/src/gaps.ts workspaceSignals: a computed ID contributes computedInputIds(def, defs, dataRef)
 ```
 
@@ -347,12 +348,12 @@ export function formulaNames(items: readonly SignalInfo[], defs: readonly Comput
 | `MAX_FLAT_NODES` | 256 | Nesting can double nodes per level (`c2 = c1 * c1`); 256 allows 4× reuse of a full 64-node formula. 128 refuses that; 512 makes ClickHouse SQL ≈ 2× longer, still fine. |
 | Suggestions | 8 rows × 22 px | 4 rows hide candidates of an ambiguous short name; 16 rows (352 px) cover Save at 900 px tall. |
 | Formula field | 4 lines (82 px) | ≈ 46 characters per line at 12 px mono in 336 px: 4 lines show ≈ 180 characters (an 8-signal formula needs scrolling only past that); 2 lines show two full names; 8 lines make the panel ≈ 400 px tall. |
-| Row cap of the fallback | 200,000 per input (unchanged) | With 8 inputs a request may hold 1.6 M points before refusing (≈ 130 MB heap); see Risks. |
+| Row cap of the fallback | 200,000 rows of all inputs together, `floor(200,000 / n)` per input (D-107, lead) | 100,000: "zoom in" from about 16 min of one 100 Hz input alone, 2 min of each of 8; 400,000: about 30 MB more heap per request. Never more than the cap in memory, whatever n. |
 | ClickHouse goal (not pass/fail) | two inputs as D-102 (busiest hour ≤ 0.5 s, whole recording ≤ 3 s); three inputs reported | The scan reads each extra input's rows once more; 3 inputs roughly ×1.5. |
 
 ## Risks
 
-- [The fallback with 8 fast inputs reads up to 1.6 M points] → only ADX and other non-ClickHouse sources; carserver uses ClickHouse. If it bites, a total cap across inputs is a one-line change (not done now: the lead asked for the cap per input as before).
+- [The total cap makes "zoom in" come earlier with more inputs] → accepted (D-107): ADX and other non-ClickHouse sources only; ClickHouse never hits it. One parallel wave keeps latency at one round trip; an even split refuses a fast input beside slow ones earlier than a pooled cap would (accepted, lead).
 - [A definition named like a signal of another session's list] → canonical resolution prefers the definition there; the F2 guard only checks the list in use. Accepted: names with spaces or `−` (auto names) never collide with source names.
 - [Old clients send `a`/`b` after the deploy] → refused with a message that says what changed (F8); web and server ship together.
 - [Overlay tints drift from the text] → the layer copies the textarea's box and font and paints backgrounds only; a drift shows as a shifted tint, never as wrong text (UI check M9 measures it).
@@ -374,12 +375,13 @@ export function formulaNames(items: readonly SignalInfo[], defs: readonly Comput
 - **M12 Old definitions (only if the lead's workspace still holds definitions from before this change):** they are listed and drawn; their pencil shows the formula with full names.
 - **M13 Speed (goal, the lead):** `curl -s -o /dev/null -w '%{time_total}'` of `/api/series` for M1's formula over the busiest hour and the whole recording, `target=2000`, and for a three-input formula with a third numeric signal of the session; reported, not pass/fail.
 
-## Open questions for Jan
+## Answered questions (D-107)
 
-Jan is reachable today; each has a pick (✔) so the round can start, and the lead asks all at once.
+Jan answered on 2026-10-23 (D-107); Q-3 and Q-5 stand as picked.
 
-- **Q-1 Name written into the field after picking a suggestion.** (a) ✔ the full name (`MS_312h.DNMOT`): unambiguous on every session, what is stored anyway, and what the pencil shows later. (b) the short name when unique in the list (`DNMOT`), stored as the full name: shorter while typing, but the text changes to full names after Save and may turn ambiguous on another list.
-- **Q-2 `min`/`max` with more than two values.** (a) ✔ two values as today (D-102 `min(a,b)`; "new functions" are out of scope): `max(X, max(Y, Z))`. (b) any number of values (`max(X, Y, Z)`), handy with up to 8 signals; a small parser and SQL change (`greatest(…)` takes many).
-- **Q-3 Prefill with three or more selected signals.** (a) ✔ `X + Y + Z …` (lead's leaning). (b) the names only, separated by ` , ` for the user to finish. (c) as (a) but `max(…)` nested.
-- **Q-4 Does an outer signal's name and unit follow an edit of an inner one?** (a) ✔ no: the outer's values follow live (D-106), its formula text follows a rename, but its saved name and unit stay as saved (no legend label changes under a window nobody touched). (b) yes, when the outer's name or unit was still the auto value.
-- **Q-5 An edit of an inner signal that would push an outer one past 8 signals.** (a) ✔ refused, naming the outer one (like deleting a used one, D-106). (b) allowed; the outer one turns unavailable with that reason until fixed.
+- **Q-1 Name written into the field after picking a suggestion:** the full name (`MS_312h.DNMOT`).
+- **Q-2 `min`/`max`:** two or more values (`max(X, Y, Z, W)`), against the pick of two only; grammar, messages, printing, auto name, unit rule and SQL (`least`/`greatest`) follow (F1, F7, F9).
+- **Q-3 Prefill with three or more selected signals:** `X + Y + Z …`.
+- **Q-4 Outer name and unit after an inner edit:** unchanged; values and formula text follow.
+- **Q-5 An inner edit pushing an outer one past 8 signals:** refused, naming the outer one.
+- **Lead (D-107):** the fallback's row cap counts all inputs of one request together; lead after that: read in one parallel wave with an even share per input (F8).

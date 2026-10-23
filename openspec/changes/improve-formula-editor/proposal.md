@@ -13,6 +13,7 @@ Today a formula names its inputs `a` and `b`, picked in two slots, with a preset
 - **Computed signals in computed signals** (D-106): a formula may name another computed signal. It is a live reference: editing the inner one redraws every outer one; renaming it rewrites the outer formulas; deleting a used one is refused naming its users; cycles are refused; at most 8 source signals after resolving nested ones.
 - **Server stays stateless** (necessary consequence of design C8 of add-computed-signals): the web sends the formula flattened over source signals; the server re-parses it and reads the names from it. **BREAKING** for `/api/series`, `/api/value`, `/api/extent`: the `a` and `b` parameters are gone.
 - **Migration**: workspace definitions and view documents written with `a`/`b` load and are rewritten to the new form.
+- **`min`/`max` take two or more values** (D-107 Q-2).
 - **Prefill from a selection** stays (D-106, click order L2 of D-105): one signal gives `abs(X)`, two `X - Y`, more `X + Y + …`.
 - **CLI**: `kipscope calc add FORMULA` and `calc edit … --formula F` take names in the formula; `--a`, `--b`, `--no-b` are refused with a hint.
 - **Docs**: `docs/http-api.md`, `docs/data-sources.md`, `docs/manual.md`, README CLI reference.
@@ -32,7 +33,7 @@ None.
 
 ## Out of scope
 
-- New functions (variadic `min`/`max`, derivative, integral, filters, conditionals, comparisons, unit conversion) (D-104 „die basics reichen"; D-106 names only `abs`, `min`, `max`).
+- New functions (derivative, integral, filters, conditionals, comparisons, unit conversion) (D-104 „die basics reichen"; D-106 names only `abs`, `min`, `max`).
 - A per-user or shared formula library; computed signals per user (D-105 Q-1).
 - Native ADX compilation (stays the fallback, as in add-computed-signals).
 - Completion anywhere but the formula field (explorer search, CLI shell completion).
