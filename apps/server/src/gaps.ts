@@ -1,4 +1,6 @@
 import {
+  computedInputIds,
+  computedRef,
   type GapInfo,
   LOGGER_GAP_GRID,
   LOGGER_GAP_MIN,
@@ -376,10 +378,22 @@ function periodsOf(
   return periods;
 }
 
-/** Signal IDs of every window plus the events line (design P6). */
+/**
+ * Signal IDs of every window plus the events line (design P6); a computed signal contributes its
+ * used inputs on its data ref, not itself (add-computed-signals C8), none without a definition.
+ */
 export function workspaceSignals(workspace: Workspace): string[] {
   const ids = new Set<string>();
-  for (const w of workspace.windows) for (const s of w.signals) ids.add(s.signalId);
+  for (const w of workspace.windows)
+    for (const s of w.signals) {
+      const computed = computedRef(s.signalId);
+      if (!computed) {
+        ids.add(s.signalId);
+        continue;
+      }
+      const def = workspace.computed?.find((d) => d.id === computed.id);
+      if (def) for (const id of computedInputIds(def, computed.dataRef)) ids.add(id);
+    }
   for (const id of workspace.eventSignals ?? []) ids.add(id);
   return [...ids];
 }

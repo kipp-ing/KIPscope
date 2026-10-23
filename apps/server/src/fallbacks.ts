@@ -1,5 +1,18 @@
-import { type StateRow, TIME_MAX, TIME_MIN, type Timestamp } from "@kipscope/shared";
+import {
+  COMPUTED_MAX_ROWS,
+  type ComputedSeriesInput,
+  computeRows,
+  type StateRow,
+  TIME_MAX,
+  TIME_MIN,
+  type Timestamp,
+} from "@kipscope/shared";
+import { inputSeries } from "./computed.ts";
 import type {
+  Bucket,
+  ComputedAnswer,
+  ComputedInputRef,
+  ComputedRef,
   DataSource,
   LoggerGaps,
   RawPoint,
@@ -32,6 +45,16 @@ export class ScanLimitError extends Error {
   }
 }
 
+/** Thrown by the computedSeries fallback beyond COMPUTED_MAX_ROWS rows of one input (design C8). */
+export class ComputedTooLargeError extends Error {
+  constructor(signal: string) {
+    super(
+      `more than ${COMPUTED_MAX_ROWS.toLocaleString("en")} rows of ${signal} in this range: zoom in`,
+    );
+    this.name = "ComputedTooLargeError";
+  }
+}
+
 /** The optional methods of design C1, in its order (start log, tests). */
 const OPTIONAL = [
   "count",
@@ -42,6 +65,7 @@ const OPTIONAL = [
   "loggerGaps",
   "firstTimes",
   "stateChanges",
+  "computedSeries",
   "events",
 ] as const;
 
@@ -199,9 +223,76 @@ export function completeSource(adapter: SourceAdapter): DataSource {
       adapter.stateChanges?.bind(adapter) ??
       ((ref, by, limit, scope, abort) => scanStateChanges(adapter, ref, by, limit, scope, abort)),
 
+    computedSeries:
+      adapter.computedSeries?.bind(adapter) ??
+      ((ref, from, to, target, width, abort) =>
+        computeFromRaw(adapter, ref, from, to, target, width, abort)),
+
     events: adapter.events?.bind(adapter) ?? (async () => undefined),
   };
   return source;
+}
+
+/**
+ * The computedSeries fallback (design C8): `raw` of each input with one row more than
+ * COMPUTED_MAX_ROWS, then `computeRows`; raw when the inputs hold at most `target` rows together
+ * (one input named twice counts once, as `signal IN (a, b)`), else buckets of the exact rows.
+ */
+async function computeFromRaw(
+  adapter: SourceAdapter,
+  ref: ComputedRef,
+  from: Timestamp,
+  to: Timestamp,
+  target: number,
+  width: bigint,
+  abort?: AbortSignal,
+): Promise<ComputedAnswer> {
+  checkAbort(abort);
+  const read = async (input: ComputedInputRef) => {
+    const points = await adapter.raw(inputSeries(input), from, to, COMPUTED_MAX_ROWS + 1, abort);
+    if (points.length > COMPUTED_MAX_ROWS) throw new ComputedTooLargeError(input.name);
+    return points;
+  };
+  const [a, b] = await Promise.all([read(ref.a), ref.b && read(ref.b)]);
+  const input = (points: RawPoint[], r: ComputedInputRef): ComputedSeriesInput => {
+    const i: ComputedSeriesInput = { points };
+    if (r.seed) i.seed = r.seed;
+    if (r.holdNs !== undefined) i.holdNs = r.holdNs;
+    return i;
+  };
+  const rows = computeRows(ref.ast, input(a, ref.a), b && ref.b && input(b, ref.b));
+  const n = a.length + (b && ref.b && ref.b.name !== ref.a.name ? b.length : 0);
+  if (n <= target) return { kind: "raw", points: rows };
+  return { kind: "buckets", buckets: bucketRows(rows, width) };
+}
+
+/** Rows (ascending) on the floor grid `k * width`: valid and SNA counts, mean, min, max of the valid. */
+function bucketRows(rows: readonly RawPoint[], width: bigint): Bucket[] {
+  const buckets: Bucket[] = [];
+  let bucket: Bucket | undefined;
+  let sum = 0;
+  const close = () => {
+    if (bucket && bucket.count > 0) bucket.mean = sum / bucket.count;
+  };
+  for (const row of rows) {
+    const start = row.t - (((row.t % width) + width) % width);
+    if (bucket?.start !== start) {
+      close();
+      bucket = { start, count: 0, sna: 0, mean: null, min: null, max: null };
+      buckets.push(bucket);
+      sum = 0;
+    }
+    if (row.v === null) {
+      bucket.sna++;
+      continue;
+    }
+    bucket.count++;
+    sum += row.v;
+    if (bucket.min === null || row.v < bucket.min) bucket.min = row.v;
+    if (bucket.max === null || row.v > bucket.max) bucket.max = row.v;
+  }
+  close();
+  return buckets;
 }
 
 /** Whether `point` is a state change after `prev` (design E7, as the ClickHouse query). */

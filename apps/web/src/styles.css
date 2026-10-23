@@ -340,6 +340,82 @@ body {
   font-weight: normal;
 }
 
+/* Computed section (add-computed-signals C12): the header's + (18 × 22 px), the hint row, the ƒ in
+   the indent where other rows have the star, the pencil before the +, unavailable rows. */
+.explorer .group-head .computed-new,
+.explorer .row .edit {
+  flex-shrink: 0;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--disabled);
+  font-size: 14px;
+  font-weight: normal;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.explorer .group-head .computed-new {
+  margin-right: -6px;
+}
+
+.explorer .row .edit {
+  font-size: 12px;
+  visibility: hidden;
+}
+
+.explorer .row:hover .edit,
+.explorer .row.active .edit {
+  visibility: visible;
+}
+
+.explorer .group-head .computed-new:hover,
+.explorer .row .edit:hover {
+  color: var(--accent);
+}
+
+.explorer .computed-hint {
+  height: 22px;
+  padding: 0 4px 0 18px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 22px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.explorer .computed-hint:hover {
+  background: var(--bg);
+}
+
+.explorer .computed-hint.active {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.explorer .row .computed-glyph {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 18px;
+  height: 22px;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 22px;
+  text-align: center;
+}
+
+.explorer .row.unavailable .name,
+.explorer .row.unavailable .row-unit {
+  color: var(--disabled);
+}
+
 .explorer .show-more {
   display: block;
   margin: 6px 12px 12px;

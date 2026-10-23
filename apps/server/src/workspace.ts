@@ -16,10 +16,12 @@ import type { Catalog } from "./catalog.ts";
 
 /**
  * Apply context of a signal list (add-scope Z10): the scope's list, the full catalog, or none
- * (every signal unknown, not ready). `scopeRequired` in scoped mode.
+ * (every signal unknown, not ready). `scopeRequired` in scoped mode. With a loaded list that can
+ * list its entries, `inputInfo` finds a computed signal's input by name: the first entry with that
+ * name (add-computed-signals C7); without one, inputs go unchecked.
  */
 export function catalogContext(
-  catalog: Pick<Catalog, "get" | "loadedAt"> | undefined,
+  catalog: (Pick<Catalog, "get" | "loadedAt"> & Partial<Pick<Catalog, "all">>) | undefined,
   scopeRequired = false,
 ): ApplyContext {
   const ctx: ApplyContext = {
@@ -29,6 +31,13 @@ export function catalogContext(
     catalogReady: () => catalog?.loadedAt !== undefined,
   };
   if (scopeRequired) ctx.scopeRequired = true;
+  const all = catalog?.all?.bind(catalog);
+  if (all && catalog?.loadedAt !== undefined) {
+    ctx.inputInfo = (name) => {
+      const info = all().find((s) => s.name === name);
+      return info && { states: info.states !== undefined };
+    };
+  }
   return ctx;
 }
 

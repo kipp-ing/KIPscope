@@ -1,5 +1,9 @@
 import {
   buildSearchIndex,
+  type CommandInput,
+  type CommandResult,
+  type ComputedDef,
+  computedRef,
   type Digits,
   type SignalInfo,
   searchSignals,
@@ -10,11 +14,14 @@ import {
   windowTitle,
 } from "@kipscope/shared";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ApiRequestError, changeFavourites, fetchCatalog } from "../api.ts";
 import { SNA_ALPHA } from "../chart/build.ts";
 import { DRAG_THRESHOLD_PX, type ExplorerDragSource } from "../chart/drag.ts";
+import { ComputedEditor } from "../computed/ComputedEditor.tsx";
+import { type EditorState, fromDef, prefill, withAuto } from "../computed/editor.ts";
 import { HINTS } from "../help/hints.ts";
-import { isSearchKey, isStarKey } from "../keys.ts";
+import { isEditKey, isSearchKey, isStarKey } from "../keys.ts";
 import type { SidebarPart } from "../layout/sidebar.ts";
 import { CatalogLoader, NO_SCOPE_TEXT, partialText } from "./catalogLoader.ts";
 import {
@@ -26,7 +33,7 @@ import {
   nextShown,
   visibleCount,
 } from "./format.ts";
-import { type ExplorerItem, explorerItems, firstSignal } from "./groups.ts";
+import { COMPUTED_GROUP, type ExplorerItem, explorerItems, firstSignal } from "./groups.ts";
 import { Highlight } from "./Highlight.tsx";
 import { SignalCard } from "./SignalCard.tsx";
 import {
@@ -80,27 +87,49 @@ interface Props {
   eventsTab?: TabEvents | undefined;
   /** The user's favourite names from the live channel (add-favourites F9); undefined until the first. */
   favourites?: readonly string[] | undefined;
+  /**
+   * The computed signals' infos of the list in use (`computedInfos`, add-computed-signals C11);
+   * absent: no Computed section.
+   */
+  computed?: readonly SignalInfo[] | undefined;
+  /** The workspace's computed definitions, for the editor (C12). */
+  computedDefs?: readonly ComputedDef[] | undefined;
+  /** Sends the editor's computed.add|update|remove (App's command, results shown as any command's). */
+  onCommand?: (input: CommandInput) => Promise<CommandResult>;
 }
 
 /** A row by what it shows (add-favourites F10): a signal and whether it is the Favourites copy, or a header. */
-type RowKey = { id: string; copy: boolean } | { group: string };
+type RowKey = { id: string; copy: boolean } | { group: string } | { hint: true };
 
 function rowKey(item: ExplorerItem | undefined): RowKey | undefined {
   if (!item) return undefined;
+  if (item.kind === "hint") return { hint: true };
   return item.kind === "group"
     ? { group: item.name }
     : { id: item.match.signal.id, copy: item.inFavourites === true };
+}
+
+/** A computed row that cannot be shown here (C12): its inputs are not in the list. */
+const unavailable = (s: SignalInfo) => s.computed?.unavailable !== undefined;
+
+/** The open editor: the edited definition (none for a new one), its first state and its place. */
+interface EditorOpen {
+  def?: ComputedDef;
+  initial: EditorState;
+  position: { left: number; top: number };
 }
 
 /** Index of the row `key` in `items`, else `old` clamped to the items (F10); -1 for no items. */
 function findRow(items: readonly ExplorerItem[], key: RowKey | undefined, old: number): number {
   if (key) {
     const i = items.findIndex((it) =>
-      "group" in key
-        ? it.kind === "group" && it.name === key.group
-        : it.kind === "signal" &&
-          it.match.signal.id === key.id &&
-          (it.inFavourites === true) === key.copy,
+      "hint" in key
+        ? it.kind === "hint"
+        : "group" in key
+          ? it.kind === "group" && it.name === key.group
+          : it.kind === "signal" &&
+            it.match.signal.id === key.id &&
+            (it.inFavourites === true) === key.copy,
     );
     if (i >= 0) return i;
   }
@@ -139,6 +168,9 @@ export function SignalExplorer({
   children,
   eventsTab,
   favourites,
+  computed,
+  computedDefs,
+  onCommand,
 }: Props) {
   const [catalog, setCatalog] = useState<SignalInfo[] | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -206,9 +238,16 @@ export function SignalExplorer({
   const matches = useMemo(() => searchSignals(index, query), [index, query]);
   const grouped = useMemo(() => (catalog ?? []).some((s) => s.group !== undefined), [catalog]);
   const searching = query.trim() !== "";
+  // The Computed section (C12): the computed infos through the same search.
+  const computedIndex = useMemo(() => buildSearchIndex(computed ?? []), [computed]);
+  const computedSection = useMemo(
+    // Not before the list is in: an empty section would claim there are no definitions.
+    () => (computed && catalog ? { matches: searchSignals(computedIndex, query) } : undefined),
+    [computed, catalog, computedIndex, query],
+  );
   const items = useMemo(
-    () => explorerItems(matches, searching, grouped, toggled, favourites),
-    [matches, searching, grouped, toggled, favourites],
+    () => explorerItems(matches, searching, grouped, toggled, favourites, computedSection),
+    [matches, searching, grouped, toggled, favourites, computedSection],
   );
   const starred = useMemo(() => new Set(favourites), [favourites]);
   // Header tooltip (F7): distinct favourite names in this catalog, of all the user's favourites.
@@ -283,18 +322,88 @@ export function SignalExplorer({
     setToggled(next);
     // A closed group's rows leave the selection (design M5).
     setSelection(
-      pruneSelection(selection, explorerItems(matches, searching, grouped, next, favourites)),
+      pruneSelection(
+        selection,
+        explorerItems(matches, searching, grouped, next, favourites, computedSection),
+      ),
     );
     setActive(i);
     closeCard();
   };
 
-  /** `+` and Enter: the whole selection when the row is in one of two or more, else the row (L3). */
+  /**
+   * `+` and Enter: the whole selection when the row is in one of two or more, else the row (L3);
+   * unavailable computed rows are never added (C12).
+   */
   const addSet = (s: SignalInfo) => {
-    const selected = selectedInOrder(selection, items);
+    if (unavailable(s)) return;
+    const blocked = new Set((computed ?? []).filter(unavailable).map((c) => c.id));
+    const selected = selectedInOrder(selection, items).filter((id) => !blocked.has(id));
     if (selection.ids.has(s.id) && selected.length >= 2) onAddMany(selected, target);
     else onAdd(s, target);
   };
+
+  // The computed signal editor (C12): opened by the header's +, the hint row, a row's pencil or F2.
+  const [editor, setEditor] = useState<EditorOpen | undefined>();
+  /** The ID (`c<n>`) of a definition just created: its row becomes active and is added (Q-8). */
+  const created = useRef<string | undefined>(undefined);
+  const asideRef = useRef<HTMLElement>(null);
+  const catalogByName = useMemo(() => {
+    const byName = new Map<string, SignalInfo>();
+    for (const s of catalog ?? []) if (!byName.has(s.name)) byName.set(s.name, s);
+    return byName;
+  }, [catalog]);
+  const infoOfName = (name: string) => catalogByName.get(name);
+
+  /** Left edge 8 px right of the sidebar, top at the Computed header (the editor clamps it). */
+  const editorPosition = () => {
+    const aside = asideRef.current?.getBoundingClientRect();
+    const head = listRef.current?.querySelector("[data-computed-head]")?.getBoundingClientRect();
+    return { left: (aside?.right ?? 0) + 8, top: head?.top ?? aside?.top ?? 0 };
+  };
+
+  /** New computed signal, prefilled from the selection in list order (lead pick 2). */
+  const openNew = () => {
+    if (!onCommand) return;
+    const byId = new Map<string, SignalInfo>();
+    for (const it of items) if (it.kind === "signal") byId.set(it.match.signal.id, it.match.signal);
+    const selected = selectedInOrder(selection, items).flatMap((id) => byId.get(id) ?? []);
+    const initial = withAuto(prefill(selected), computedDefs ?? [], infoOfName);
+    closeCard();
+    setEditor({ initial, position: editorPosition() });
+  };
+
+  /** Edit the definition behind a computed row. */
+  const openEdit = (s: SignalInfo) => {
+    const ref = computedRef(s.id);
+    const def = ref && computedDefs?.find((d) => d.id === ref.id);
+    if (!def || !onCommand) return;
+    closeCard();
+    setEditor({ def, initial: fromDef(def, infoOfName), position: editorPosition() });
+  };
+
+  const closeEditor = (id?: string) => {
+    setEditor(undefined);
+    created.current = id;
+    keepKeys();
+  };
+
+  // After a new Save: once its info is in, its row becomes active and it is added to the "Add to"
+  // target window like the row's + (Q-8); a refused add flashes as today and keeps the definition.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs only when the computed infos change
+  useEffect(() => {
+    const id = created.current;
+    if (id === undefined) return;
+    const info = computed?.find((c) => computedRef(c.id)?.id === id);
+    if (!info) return;
+    created.current = undefined;
+    const at = findRow(items, { id: info.id, copy: false }, -1);
+    if (at >= 0) {
+      setActive(at);
+      setSelection(NO_SELECTION);
+    }
+    if (target !== NEW_WINDOW && !unavailable(info)) onAdd(info, target);
+  }, [computed]);
 
   /** The pending star request (F10): the row its click came from and that row's offsetTop then, or
    * no press for the key. The next favourites list keeps that row in place, after the key the active
@@ -313,10 +422,17 @@ export function SignalExplorer({
     const selected = selectedInOrder(selection, items);
     let names = [s.name];
     if (selection.ids.has(s.id) && selected.length >= 2) {
-      const nameOf = new Map<string, string>();
+      const nameOf = new Map<string, string | undefined>();
+      // Computed signals have no star (C12): they leave the starred names out.
       for (const it of items)
-        if (it.kind === "signal") nameOf.set(it.match.signal.id, it.match.signal.name);
-      names = [...new Set(selected.map((id) => nameOf.get(id) ?? id))];
+        if (it.kind === "signal")
+          nameOf.set(
+            it.match.signal.id,
+            it.match.signal.computed ? undefined : it.match.signal.name,
+          );
+      names = [
+        ...new Set(selected.flatMap((id) => (nameOf.has(id) ? (nameOf.get(id) ?? []) : [id]))),
+      ];
     }
     const change = toggleFavourites(starred, names);
     if (!change) return;
@@ -491,8 +607,16 @@ export function SignalExplorer({
     if (isStarKey(e, isMacPlatform(navigator.platform))) {
       e.preventDefault();
       const item = items[activeItem];
-      if (item?.kind !== "signal") return;
+      if (item?.kind !== "signal" || item.match.signal.computed) return;
       star(item.match.signal);
+      return;
+    }
+    // F2 on an active computed row opens its editor (C12).
+    if (isEditKey(e)) {
+      const item = items[activeItem];
+      if (item?.kind !== "signal" || !item.match.signal.computed) return;
+      e.preventDefault();
+      openEdit(item.match.signal);
       return;
     }
     switch (e.key) {
@@ -520,6 +644,7 @@ export function SignalExplorer({
         if (!item) return;
         e.preventDefault();
         if (item.kind === "group") toggleGroup(item.name, activeItem);
+        else if (item.kind === "hint") openNew();
         else addSet(item.match.signal);
         return;
       }
@@ -546,7 +671,7 @@ export function SignalExplorer({
   return (
     // While the events show, the explorer's own elements stay mounted but hidden (events.css), so
     // query, scroll position and active row survive the switch.
-    <aside className={part === "events" ? "explorer part-events" : "explorer"}>
+    <aside ref={asideRef} className={part === "events" ? "explorer part-events" : "explorer"}>
       <div className="sidebar-switch" role="tablist" aria-label="Sidebar">
         {(["signals", "events"] as const).map((p) => {
           const tab: { count?: string; title?: string } =
@@ -634,6 +759,7 @@ export function SignalExplorer({
                   aria-expanded={item.open}
                   className={i === activeItem ? "group-head active" : "group-head"}
                   title={item.favourites ? favouritesHint : undefined}
+                  data-computed-head={item.computed ? "" : undefined}
                   onClick={() => {
                     toggleGroup(item.name, i);
                     keepKeys();
@@ -646,11 +772,122 @@ export function SignalExplorer({
                     {item.name}
                   </span>
                   <span className="group-count">{item.count}</span>
+                  {item.computed && onCommand && (
+                    <button
+                      type="button"
+                      className="computed-new"
+                      aria-label="New computed signal"
+                      title={HINTS.computedNew}
+                      tabIndex={-1}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        // A click on + opens the editor; it does not toggle the section.
+                        e.stopPropagation();
+                        openNew();
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+              );
+            }
+            if (item.kind === "hint") {
+              return (
+                // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the combobox
+                // biome-ignore lint/a11y/useKeyWithClickEvents: Enter in the search opens the editor
+                <div
+                  key={`h:${COMPUTED_GROUP}`}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={false}
+                  className={i === activeItem ? "computed-hint active" : "computed-hint"}
+                  onClick={() => {
+                    setActive(i);
+                    openNew();
+                  }}
+                >
+                  {item.text}
                 </div>
               );
             }
             const m = item.match;
             const s = m.signal;
+            if (s.computed) {
+              const off = s.computed.unavailable;
+              return (
+                // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the combobox
+                // biome-ignore lint/a11y/useKeyWithClickEvents: Shift+Arrow in the search selects by keyboard
+                <div
+                  key={`c:${s.id}`}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={selection.ids.has(s.id)}
+                  aria-disabled={off !== undefined || undefined}
+                  aria-describedby={card?.index === i ? cardId : undefined}
+                  className={`row computed${off !== undefined ? " unavailable" : ""}${i === activeItem ? " active" : ""}${selection.ids.has(s.id) ? " selected" : ""}`}
+                  title={off}
+                  onPointerEnter={() => requestCard(i, false)}
+                  onPointerLeave={releaseCard}
+                  onPointerDown={(e) => {
+                    pressAt.current = { index: i, x: e.clientX, y: e.clientY };
+                    closeCard();
+                  }}
+                  onClick={(e) => clickRow(e, i)}
+                >
+                  {/* In the row's 18 px indent where other rows have the star (C12). */}
+                  <span className="computed-glyph" aria-hidden="true">
+                    ƒ
+                  </span>
+                  <span className="sna-dot none" />
+                  <span
+                    className={onDragStart && off === undefined ? "name draggable" : "name"}
+                    title={off ?? shownName(s)}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0 || !onDragStart || off !== undefined) return;
+                      onDragStart({ signalId: s.id }, e);
+                    }}
+                  >
+                    <Highlight text={shownName(s)} ranges={m.shown} />
+                  </span>
+                  {s.unit && (
+                    <span className="unit row-unit">
+                      <Highlight text={s.unit} ranges={m.unit} />
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="edit"
+                    title={HINTS.computedEdit}
+                    aria-label="Edit computed signal"
+                    tabIndex={-1}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEdit(s);
+                    }}
+                  >
+                    ✎
+                  </button>
+                  {off === undefined && (
+                    <button
+                      type="button"
+                      className="add"
+                      title={addLabel}
+                      aria-label={addLabel}
+                      tabIndex={-1}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addSet(s);
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+              );
+            }
             const selected = selection.ids.has(s.id);
             const isStarred = starred.has(s.name);
             const starHint = HINTS.star(isStarred);
@@ -768,6 +1005,20 @@ export function SignalExplorer({
         />
       )}
       {part === "events" && children}
+      {editor &&
+        onCommand &&
+        createPortal(
+          <ComputedEditor
+            def={editor.def}
+            initial={editor.initial}
+            defs={computedDefs ?? []}
+            catalog={catalog ?? []}
+            position={editor.position}
+            sendCommand={onCommand}
+            onClose={closeEditor}
+          />,
+          document.body,
+        )}
     </aside>
   );
 }

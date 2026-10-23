@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { rebindSignalId } from "./case.ts";
+import {
+  ComputedInput,
+  ComputedName,
+  ComputedUnit,
+  computedRef,
+  computedSignalId,
+  MAX_COMPUTED,
+} from "./computed.ts";
 import { packCode, unpackCode } from "./encoding.ts";
+import { bindFormula, MAX_FORMULA_LENGTH, parseFormula } from "./formula.ts";
 import { parseSignalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
@@ -53,6 +62,15 @@ export type ViewWindowDoc =
     }
   | { kind: "values"; title?: string; mode: ValuesMode; signals: string[] };
 
+/** A computed signal in a view (add-computed-signals C10): no ID; windows list `<dataRef>/=<name>`. */
+export interface ViewComputedDoc {
+  name: string;
+  formula: string;
+  a: string;
+  b?: string;
+  unit?: string;
+}
+
 export interface ViewDoc {
   kipscope: "view";
   version: 1;
@@ -70,6 +88,8 @@ export interface ViewDoc {
   digits: Digits;
   measurement?: Measurement;
   events?: { filter?: string; signals?: string[] };
+  /** Computed signals, creation order; absent when none (C10). */
+  computed?: ViewComputedDoc[];
   /** Palette index (0…9) per signal ID; absent entries get the next free colour on open. */
   colors?: Record<string, number>;
   windows: ViewWindowDoc[];
@@ -207,6 +227,8 @@ const ViewDocBody = z.object({
       signals: z.array(Id).max(MAX_VIEW_WINDOW_SIGNALS).optional(),
     })
     .optional(),
+  // Entries are checked one by one in parseViewDoc: a broken one is left out with a warning.
+  computed: z.array(z.unknown()).max(MAX_VIEW_WINDOW_SIGNALS).optional(),
   colors: z.record(Id, z.number()).optional(),
   windows: z
     .array(z.discriminatedUnion("kind", [TimeseriesWindowDoc, ValuesWindowDoc]))
@@ -226,6 +248,7 @@ const KNOWN_TOP = [
   "digits",
   "measurement",
   "events",
+  "computed",
   "colors",
   "windows",
 ];
@@ -285,6 +308,15 @@ function canonical(d: ViewDoc): ViewDoc {
           ...(e.signals?.length ? { signals: e.signals } : {}),
         },
       }),
+    ...(d.computed?.length && {
+      computed: d.computed.map((c) => ({
+        name: c.name,
+        formula: c.formula,
+        a: c.a,
+        ...(c.b !== undefined && { b: c.b }),
+        ...(c.unit ? { unit: c.unit } : {}),
+      })),
+    }),
     ...(d.colors && Object.keys(d.colors).length > 0 && { colors: d.colors }),
     windows: d.windows.map((w): ViewWindowDoc => {
       const title = w.title ? { title: w.title } : {};
@@ -310,6 +342,57 @@ function dataRefs(windows: { signals: string[] }[], eventSignals: string[] = [])
     (id) => parseSignalId(id)?.dataRef,
   );
   return [...new Set(refs.filter((r): r is string => r !== undefined))].sort();
+}
+
+const ComputedEntry = z.object({
+  name: ComputedName,
+  formula: z.string().max(MAX_FORMULA_LENGTH),
+  a: ComputedInput,
+  b: ComputedInput.optional(),
+  unit: ComputedUnit.optional(),
+});
+const KNOWN_COMPUTED = ["name", "formula", "a", "b", "unit"];
+
+/**
+ * The valid computed entries (C6, C1; names unique ignoring case, at most MAX_COMPUTED); each
+ * other one left out with the warning `computed signal "<name>" left out: <reason>`.
+ */
+function computedEntries(entries: readonly unknown[], warnings: string[]): ViewComputedDoc[] {
+  const out: ViewComputedDoc[] = [];
+  const names = new Set<string>();
+  for (const [i, entry] of entries.entries()) {
+    const label = isRecord(entry) && typeof entry.name === "string" ? entry.name : `#${i + 1}`;
+    const leftOut = (reason: string) =>
+      warnings.push(`computed signal "${label}" left out: ${reason}`);
+    unknownKeys(entry, KNOWN_COMPUTED, `computed[${i}].`, warnings);
+    const parsed = ComputedEntry.safeParse(entry);
+    if (!parsed.success) {
+      leftOut(
+        parsed.error.issues.map((e) => `${e.path.join(".") || "entry"}: ${e.message}`).join("; "),
+      );
+      continue;
+    }
+    const c = parsed.data;
+    const bound = bindFormula(parseFormula(c.formula), {
+      a: c.a,
+      ...(c.b !== undefined && { b: c.b }),
+    });
+    const name = c.name.toLowerCase();
+    if (!bound.ok) leftOut(bound.message);
+    else if (names.has(name)) leftOut("Name already used");
+    else if (out.length >= MAX_COMPUTED) leftOut(`a view holds at most ${MAX_COMPUTED}`);
+    else {
+      names.add(name);
+      out.push({
+        name: c.name,
+        formula: c.formula.trim(),
+        a: bound.a,
+        ...(bound.b !== undefined && { b: bound.b }),
+        ...(c.unit ? { unit: c.unit } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 /** Validates a parsed YAML/JSON value; upgrades older versions (none yet); unknown keys → warnings. */
@@ -346,8 +429,10 @@ export function parseViewDoc(data: unknown): ParsedView {
     );
   }
   const v = parsed.data;
+  const computed = computedEntries(v.computed ?? [], warnings);
   const doc = canonical({
     ...v,
+    computed,
     kipscope: "view",
     version: VIEW_VERSION,
     data: v.data ?? dataRefs(v.windows, v.events?.signals),
@@ -360,8 +445,15 @@ export function workspaceToView(
   ws: Workspace,
   meta: { title: string; note?: string; saved?: string },
 ): ViewDoc {
+  // A computed signal as `<dataRef>/=<name>`: a view holds no IDs (C10).
+  const names = new Map((ws.computed ?? []).map((c) => [c.id, c.name]));
+  const docId = (signalId: string) => {
+    const ref = computedRef(signalId);
+    const name = ref && names.get(ref.id);
+    return ref && name !== undefined ? computedSignalId(ref.dataRef, name) : signalId;
+  };
   const windows: ViewWindowDoc[] = ws.windows.map((w) => {
-    const signals = w.signals.map((s) => s.signalId);
+    const signals = w.signals.map((s) => docId(s.signalId));
     const title = w.title !== undefined ? { title: w.title } : {};
     if (!isTimeseries(w)) return { kind: "values", ...title, mode: w.mode, signals };
     return {
@@ -377,8 +469,9 @@ export function workspaceToView(
   });
   // Colours of window signals in order of first appearance.
   const colors: Record<string, number> = {};
-  for (const id of windows.flatMap((w) => w.signals)) {
-    const index = ws.colors[id];
+  for (const s of ws.windows.flatMap((w) => w.signals)) {
+    const id = docId(s.signalId);
+    const index = ws.colors[s.signalId];
     if (index !== undefined && !(id in colors)) colors[id] = index;
   }
   const iso = (t: string | undefined) => (t === undefined ? undefined : viewIso(BigInt(t)));
@@ -410,6 +503,9 @@ export function workspaceToView(
       ...(ws.eventFilter !== undefined && { filter: ws.eventFilter }),
       ...(ws.eventSignals && { signals: ws.eventSignals }),
     },
+    ...(ws.computed && {
+      computed: ws.computed.map(({ id: _id, ...c }) => c),
+    }),
     colors,
     windows,
   });

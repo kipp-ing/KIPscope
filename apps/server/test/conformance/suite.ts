@@ -3,9 +3,19 @@
  * (`<name> native`) and reduced to its required methods (`<name> core only`). Expected values come from
  * the fixture definition (`fixture.ts`) and the numbers in the data-source spec, never from a source.
  */
-import { TIME_MAX, TIME_MIN } from "@kipscope/shared";
+import {
+  computeRows,
+  decodeTimes,
+  parseFormula,
+  type SeriesResult,
+  TIME_MAX,
+  TIME_MIN,
+} from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
+import { queryComputed } from "../../src/computed.ts";
 import type {
+  ComputedInputRef,
+  ComputedRef,
   DataSource,
   Scope,
   SeriesRef,
@@ -35,6 +45,29 @@ const ref = (
   text?: boolean,
 ): SeriesRef => (text === undefined ? { dataRef, name, sna } : { dataRef, name, sna, text });
 const ramp = ref("conf-a", "Lin.RAMP");
+
+/** The Sna.CODE ranges of the conformance tests: 7 is SNA (fixture.ts). */
+const snaCode = ref("conf-a", "Sna.CODE", [{ lo: 6.5, hi: 7.5 }]);
+
+/** A computed ref over `conf-a` (add-computed-signals); `holdB`: b's hold limit in ns. */
+function computedOf(formula: string, a: SeriesRef, b?: SeriesRef, holdB?: bigint): ComputedRef {
+  const parsed = parseFormula(formula);
+  if (!parsed.ok) throw new Error(`${formula}: ${parsed.message}`);
+  const input = (r: SeriesRef, hold?: bigint): ComputedInputRef =>
+    hold === undefined ? { ...r } : { ...r, holdNs: hold };
+  return {
+    dataRef: "conf-a",
+    ast: parsed.ast,
+    a: input(a),
+    ...(b && { b: input(b, holdB) }),
+  };
+}
+
+/** Times and values of a raw result; fails on buckets. */
+function rawRows(result: SeriesResult): { t: bigint; v: number | null }[] {
+  if (result.kind !== "raw") throw new Error("expected a raw series");
+  return decodeTimes(result.t).map((t, i) => ({ t, v: result.v[i] as number | null }));
+}
 
 /**
  * The three scopes of design Z4 of add-scope over the C7 fixture, all on `conf-a`.
@@ -604,6 +637,164 @@ export function describeConformance(target: ConformanceTarget): void {
           expect(await missing.events("conf-a", 100)).toBeUndefined();
         },
       );
+
+      // Computed signals (add-computed-signals, data-source "Computed series method"): the same rows
+      // `native` (the adapter's computedSeries) and `core only` (the fallback from raw points).
+      const diffRef = () => computedOf("a - b", ramp, snaCode);
+
+      it("computes a difference per row with edges", async () => {
+        const result = await queryComputed(
+          source,
+          diffRef(),
+          "conf-a/=c1",
+          B + S,
+          B + 2n * S,
+          1000,
+        );
+        // Ramp n at B + n·10 ms is 100 + k at B + 1 s + k·10 ms; Sna.CODE holds 1 (n = 1): 99 + k.
+        expect(rawRows(result)).toEqual(
+          Array.from({ length: 100 }, (_, k) => ({ t: B + S + BigInt(k) * 10n * MS, v: 99 + k })),
+        );
+        if (result.kind !== "raw") return;
+        expect(result.signalId).toBe("conf-a/=c1");
+        // before: the computed point at the latest seed (ramp 99 at B + 990 ms, Sna.CODE 0 at B).
+        expect(result.before).toEqual({ t: String(B + 990n * MS), v: 99 });
+        // after: at B + 2 s both inputs have a point: 200 - 2.
+        expect(result.after).toEqual({ t: String(B + 2n * S), v: 198 });
+      });
+
+      it("computes one input per row", async () => {
+        const abs = computedOf("abs(a - 5000)", ramp);
+        const result = await queryComputed(
+          source,
+          abs,
+          "conf-a/=c2",
+          B + 49_900n * MS,
+          B + 50_100n * MS,
+          1000,
+        );
+        // n = 4990 … 5009 at B + n·10 ms.
+        expect(rawRows(result)).toEqual(
+          Array.from({ length: 20 }, (_, i) => ({
+            t: B + BigInt(4990 + i) * 10n * MS,
+            v: Math.abs(4990 + i - 5000),
+          })),
+        );
+        expect(rawRows(result).map((r) => r.v)).toEqual([
+          10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        ]);
+      });
+
+      it("computes SNA from either input", async () => {
+        const result = await queryComputed(
+          source,
+          diffRef(),
+          "conf-a/=c1",
+          B + 49_500n * MS,
+          B + 50_500n * MS,
+          1000,
+        );
+        // Sna.CODE n = 49 is SNA (7) up to B + 50 s; from there n = 50 gives 0: ramp 5000 … 5049.
+        const rows = rawRows(result);
+        expect(rows.map((r) => r.t)).toEqual(
+          Array.from({ length: 100 }, (_, k) => B + 49_500n * MS + BigInt(k) * 10n * MS),
+        );
+        expect(rows.slice(0, 50).every((r) => r.v === null)).toBe(true);
+        expect(rows.slice(50).map((r) => r.v)).toEqual(
+          Array.from({ length: 50 }, (_, j) => 5000 + j),
+        );
+      });
+
+      it("gives SNA for non-finite results", async () => {
+        // Sna.CODE is 0 at B: 0 / 0 is NaN, k / 0 is Infinity; held for the whole second.
+        const result = await queryComputed(
+          source,
+          computedOf("a / b", ramp, snaCode),
+          "conf-a/=c3",
+          B,
+          B + S,
+          1000,
+        );
+        const rows = rawRows(result);
+        expect(rows.map((r) => r.t)).toEqual(
+          Array.from({ length: 100 }, (_, k) => B + BigInt(k) * 10n * MS),
+        );
+        expect(rows.every((r) => r.v === null)).toBe(true);
+      });
+
+      it("holds an input only within its hold limit", async () => {
+        // b (Sna.CODE, 1 at B + 1 s) holds 500 ms: rows B + 1 s … B + 1.5 s, 51 of them.
+        const held = computedOf("a - b", ramp, snaCode, 500n * MS);
+        const result = await queryComputed(source, held, "conf-a/=c1", B + S, B + 2n * S, 1000);
+        expect(rawRows(result)).toEqual(
+          Array.from({ length: 51 }, (_, k) => ({ t: B + S + BigInt(k) * 10n * MS, v: 99 + k })),
+        );
+        if (result.kind !== "raw") return;
+        // The seed of b (B + 0, 990 ms old at the latest seed time) is stale: no before edge.
+        expect(result.before).toBeUndefined();
+        // b has a fresh point at B + 2 s again.
+        expect(result.after).toEqual({ t: String(B + 2n * S), v: 198 });
+      });
+
+      it("gives no rows while an input has no data", async () => {
+        const result = await queryComputed(
+          source,
+          computedOf("a - b", ramp, ref("conf-a", "Nope.X")),
+          "conf-a/=c4",
+          B + S,
+          B + 2n * S,
+          1000,
+        );
+        expect(rawRows(result)).toEqual([]);
+        if (result.kind !== "raw") return;
+        expect(result.before).toBeUndefined();
+        expect(result.after).toBeUndefined();
+      });
+
+      it("buckets computed rows exactly", async () => {
+        const answer = await source.computedSeries(diffRef(), B, B + 100n * S, 100, 10n * S);
+        expect(answer.kind).toBe("buckets");
+        if (answer.kind !== "buckets") return;
+        // Ramp n = 1000·i … 1000·i + 999 minus Sna.CODE (second mod 5, mean 2); bucket 4 is all
+        // SNA (Sna.CODE is 7 from B + 40 s to B + 50 s).
+        expect(answer.buckets).toEqual(
+          Array.from({ length: 10 }, (_, i) =>
+            i === 4
+              ? { start: B + 40n * S, count: 0, sna: 1000, mean: null, min: null, max: null }
+              : {
+                  start: B + BigInt(i) * 10n * S,
+                  count: 1000,
+                  sna: 0,
+                  mean: 1000 * i + 497.5,
+                  min: 1000 * i,
+                  max: 1000 * i + 995,
+                },
+          ),
+        );
+        // The same through queryComputed: buckets of the answer's width, no edges.
+        const viaQuery = await queryComputed(source, diffRef(), "conf-a/=c1", B, B + 100n * S, 100);
+        expect(viaQuery.kind).toBe("buckets");
+        if (viaQuery.kind === "buckets")
+          expect(
+            viaQuery.count.reduce((x, y) => x + y, 0) + viaQuery.sna.reduce((x, y) => x + y, 0),
+          ).toBe(10_000);
+      });
+
+      it("computes at shared times", async () => {
+        const answer = await source.computedSeries(diffRef(), B, B + 3n * S, 1000, 3n * MS);
+        expect(answer.kind).toBe("raw");
+        if (answer.kind !== "raw") return;
+        // 300 rows: Sna.CODE rows at B, B + 1 s, B + 2 s share their times with Lin.RAMP rows.
+        expect(answer.points).toHaveLength(300);
+        expect(answer.points[0]).toEqual({ t: B, v: 0 });
+        expect(answer.points[99]).toEqual({ t: B + 990n * MS, v: 99 });
+        expect(answer.points[100]).toEqual({ t: B + S, v: 99 });
+        expect(answer.points[299]).toEqual({ t: B + 2990n * MS, v: 297 });
+        // ...each equal to the rule applied to the same raw points.
+        const a = await source.raw(ramp, B, B + 3n * S);
+        const b = await source.raw(snaCode, B, B + 3n * S);
+        expect(answer.points).toEqual(computeRows(diffRef().ast, { points: a }, { points: b }));
+      });
 
       it("rejects an aborted call", async () => {
         const reason = new Error("stopped by the conformance test");

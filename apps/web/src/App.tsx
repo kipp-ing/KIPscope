@@ -2,11 +2,13 @@ import {
   type CommandInput,
   type CommandResult,
   type CursorName,
+  computedInfos,
   DEFAULT_EVENT_FILTER,
   type DiagEvent,
   describeEventFilter,
   EMPTY_WORKSPACE,
   type EventList,
+  isComputedId,
   isTimeseries,
   mergeEvents,
   navAnchor,
@@ -29,7 +31,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
 import { runPlan } from "./addSignals.ts";
-import { fetchExtent, isCatalogLoading, sendCommand, signalInfo } from "./api.ts";
+import { fetchExtent, isCatalogLoading, sendCommand, setComputedDefs, signalInfo } from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar, RangeButton } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
@@ -335,6 +337,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   // Signal metadata seen in the explorer or looked up for signals already in the workspace.
   const infos = useRef(new Map<string, SignalInfo>());
   const [, setInfoVersion] = useState(0);
+  /** The signal list in use: the explorer's last loaded catalog (computed infos, C11). */
+  const [listInUse, setListInUse] = useState<readonly SignalInfo[]>([]);
   const remember = useCallback((signals: SignalInfo[]) => {
     let added = false;
     for (const s of signals) {
@@ -349,6 +353,29 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   const unitOf = useCallback((id: string) => infos.current.get(id)?.unit, []);
 
   const workspace = live.workspace;
+
+  // Computed signals (add-computed-signals C11): on every state, the infos of the definitions on the
+  // list in use replace the previous ones (an edit changes the ID, a rename the shown name), and
+  // requests read the definitions. Set during render, so this render's windows request with them.
+  const computedDefs = workspace?.computed;
+  const computed = useMemo(
+    () => computedInfos(computedDefs ?? [], listInUse, workspace?.scope?.dataRef),
+    [computedDefs, listInUse, workspace?.scope?.dataRef],
+  );
+  const placedComputed = useRef<readonly SignalInfo[]>([]);
+  if (placedComputed.current !== computed) {
+    for (const id of infos.current.keys()) if (isComputedId(id)) infos.current.delete(id);
+    for (const s of computed) infos.current.set(s.id, s);
+    placedComputed.current = computed;
+    setComputedDefs(computedDefs ?? []);
+  }
+  const onSeen = useCallback(
+    (signals: SignalInfo[]) => {
+      setListInUse(signals);
+      remember(signals);
+    },
+    [remember],
+  );
   // The scope's identity: windows load again and the footer's meta follows on a change (add-scope Z12).
   const workspaceScope = scopeKey(workspace?.scope);
   const meta = useMeta(live.connected, workspaceScope);
@@ -445,7 +472,10 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   const onMark = useCallback((windowId: string) => setMarked(windowId), []);
   const onTarget = useCallback((t: string) => setMarked(t === NEW_WINDOW ? undefined : t), []);
   const signalIds = [...new Set(windows.flatMap((w) => w.signals.map((s) => s.signalId)))];
-  const missingKey = signalIds.filter((id) => !infos.current.has(id)).join(",");
+  // Computed IDs are never looked up: their infos come from the definitions (C11).
+  const missingKey = signalIds
+    .filter((id) => !infos.current.has(id) && !isComputedId(id))
+    .join(",");
   // A server still loading its catalog (503 `catalog_unavailable`) is asked again soon; any other
   // failure leaves the metadata unknown (the window shows the bare ID), never an unhandled rejection.
   useEffect(() => {
@@ -1613,7 +1643,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         windows={windows}
         onAdd={addSignal}
         onAddMany={addSignals}
-        onSeen={remember}
+        onSeen={onSeen}
         onDragStart={onDragStart}
         dragging={activeDrag !== undefined}
         colorOf={explorerColorOf}
@@ -1626,6 +1656,9 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         onPart={setPart}
         eventsTab={eventsTab}
         favourites={live.favourites}
+        computed={computed}
+        computedDefs={computedDefs ?? []}
+        onCommand={command}
       >
         <EventsPanel
           list={stripList}

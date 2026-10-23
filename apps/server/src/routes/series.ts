@@ -1,11 +1,17 @@
 import {
   CALENDAR_GRID_NS,
   CALENDAR_SPAN_MAX_NS,
+  type ComputedParams,
   type CursorValue,
   type CursorValueResult,
+  computedSignalGaps,
+  computedValueAt,
   type Extent,
   evaluateAt,
   GAP_REFRESH_MS,
+  type GapInfo,
+  holdLimit,
+  isComputedId,
   MAX_GAP_SIGNALS,
   parseSignalId,
   type SignalInfo,
@@ -21,8 +27,10 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import { CalendarCache } from "../calendar.ts";
-import type { RawPoint, Scope, SeriesRef } from "../datasource.ts";
+import { queryComputed, type ResolvedComputed, resolveComputed, withSeed } from "../computed.ts";
+import type { ComputedRef, RawPoint, Scope, SeriesRef, SignalRef } from "../datasource.ts";
 import { type CacheScope, DensityCache, type DensityPart } from "../density.ts";
+import { ComputedTooLargeError } from "../fallbacks.ts";
 import { GapCache, workspaceSignals } from "../gaps.ts";
 import { type Access, queryDataRefs } from "../guard.ts";
 import {
@@ -49,6 +57,16 @@ const Time = TimeInput.transform(BigInt);
 /** `case=N` (add-case-open K10): bounded by catalog entry N's scope instead of the workspace's. */
 const CaseIndex = z.coerce.number().int().min(0).optional();
 
+/**
+ * A computed signal's parameters (design C8); the formula's length and grammar are the parser's
+ * checks (`invalid_formula`).
+ */
+const ComputedQuery = {
+  formula: z.string().optional(),
+  a: z.string().min(1).optional(),
+  b: z.string().min(1).optional(),
+};
+
 const SeriesQuery = z
   .object({
     signal: z.string().min(1),
@@ -56,10 +74,11 @@ const SeriesQuery = z
     to: Time,
     target: z.coerce.number().int().min(MIN_TARGET).max(MAX_TARGET).default(2000),
     case: CaseIndex,
+    ...ComputedQuery,
   })
   .refine((q) => q.to > q.from, { message: "to must be after from", path: ["to"] });
 
-const ExtentQuery = z.object({ signal: z.string().min(1), case: CaseIndex });
+const ExtentQuery = z.object({ signal: z.string().min(1), case: CaseIndex, ...ComputedQuery });
 
 /** `from` and `to` go together and `to` is after `from` (add-case-open K10). */
 const pairedRange = <T extends z.ZodType<{ from?: bigint | undefined; to?: bigint | undefined }>>(
@@ -110,7 +129,44 @@ const ValueQuery = z.object({
   signal: z.string().min(1),
   t: Time,
   mode: ValuesMode.default("line"),
+  ...ComputedQuery,
 });
+
+/**
+ * The computed parameters of a request (design C8): present for a computed signal (`=<id>`),
+ * which needs `formula` and `a`; a plain signal takes none of them.
+ */
+function computedQuery(q: {
+  signal: string;
+  formula?: string | undefined;
+  a?: string | undefined;
+  b?: string | undefined;
+}): { ok: true; params?: ComputedParams } | { ok: false; message: string } {
+  if (!isComputedId(q.signal)) {
+    return q.formula === undefined && q.a === undefined && q.b === undefined
+      ? { ok: true }
+      : { ok: false, message: "formula, a and b go with a computed signal only" };
+  }
+  if (q.formula === undefined || q.a === undefined)
+    return { ok: false, message: "a computed signal needs formula and a" };
+  const params: ComputedParams = { formula: q.formula, a: q.a };
+  if (q.b !== undefined) params.b = q.b;
+  return { ok: true, params };
+}
+
+/** The refusal of a computed request's checks (design C8). */
+const refuseComputed = (
+  reply: Parameters<typeof apiError>[0],
+  r: Extract<ResolvedComputed, { ok: false }>,
+) => apiError(reply, r.status, r.code, r.message, r.signalId ? { signalId: r.signalId } : {});
+
+/** The used inputs of a resolved computed signal: a, then b. */
+const inputsOf = (r: Extract<ResolvedComputed, { ok: true }>): SeriesRef[] =>
+  r.b ? [r.a, r.b] : [r.a];
+
+/** Hold limit of an input (design C2) from the gap info of the inputs. */
+const holdOf = (info: GapInfo, input: SignalRef) =>
+  holdLimit(signalGaps(info, `${input.dataRef}/${input.name}`).period);
 
 /** Window and events-line signals of every workspace with a live client, united (add-multiuser M9). */
 export function openSignals(workspaces: Workspaces): string[] {
@@ -451,6 +507,12 @@ export const seriesRoutes =
     app.get("/api/extent", { config: { access: SIGNAL_ACCESS } }, async (request, reply) => {
       const query = parseInput(ExtentQuery, request.query, reply);
       if (!query) return reply;
+      const computed = computedQuery(query);
+      if (!computed.ok) {
+        return apiError(reply, 400, "invalid_request", computed.message, {
+          signalId: query.signal,
+        });
+      }
       const scoped =
         query.case === undefined
           ? routeScope(deps, request, reply)
@@ -468,10 +530,26 @@ export const seriesRoutes =
           },
         );
       }
-      if (!ref || (catalog?.loadedAt && !catalog.get(query.signal))) {
+      if (!ref || (!computed.params && catalog?.loadedAt && !catalog.get(query.signal))) {
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
+      }
+      // A computed signal's extent spans its inputs' (design C5); its inputs need the catalog.
+      let refs: SignalRef[] = [ref];
+      if (computed.params) {
+        if (!catalog?.loadedAt) {
+          return apiError(
+            reply,
+            503,
+            "catalog_unavailable",
+            "signal catalog not loaded yet; computed inputs cannot be checked",
+            { signalId: query.signal },
+          );
+        }
+        const resolved = resolveComputed(computed.params, ref.dataRef, catalog);
+        if (!resolved.ok) return refuseComputed(reply, resolved);
+        refs = inputsOf(resolved);
       }
       const controller = new AbortController();
       request.raw.on("close", () => {
@@ -479,18 +557,25 @@ export const seriesRoutes =
       });
 
       try {
-        const extent = await withRequestClass(request, () =>
-          source.extent(ref, scope, controller.signal),
+        const extents = await withRequestClass(request, () =>
+          Promise.all(refs.map((r) => source.extent(r, scope, controller.signal))),
         );
-        if (!extent) {
-          return apiError(reply, 404, "no_data", `no data for signal: ${query.signal}`, {
-            signalId: query.signal,
-          });
+        // The latest first and the latest last of the inputs; a plain signal's own.
+        let first: bigint | undefined;
+        let last: bigint | undefined;
+        for (const extent of extents) {
+          if (!extent) {
+            return apiError(reply, 404, "no_data", `no data for signal: ${query.signal}`, {
+              signalId: query.signal,
+            });
+          }
+          if (first === undefined || extent.first > first) first = extent.first;
+          if (last === undefined || extent.last > last) last = extent.last;
         }
         const body: Extent = {
           signalId: query.signal,
-          first: extent.first.toString(),
-          last: extent.last.toString(),
+          first: String(first),
+          last: String(last),
         };
         return body;
       } catch (error) {
@@ -504,6 +589,12 @@ export const seriesRoutes =
     app.get("/api/series", { config: { access: SIGNAL_ACCESS } }, async (request, reply) => {
       const query = parseInput(SeriesQuery, request.query, reply);
       if (!query) return reply;
+      const computed = computedQuery(query);
+      if (!computed.ok) {
+        return apiError(reply, 400, "invalid_request", computed.message, {
+          signalId: query.signal,
+        });
+      }
       const scoped =
         query.case === undefined
           ? routeScope(deps, request, reply)
@@ -541,11 +632,13 @@ export const seriesRoutes =
         );
       }
       const ref = parseSignalId(query.signal);
-      if (!ref || !catalog.get(query.signal)) {
+      if (!ref || (!computed.params && !catalog.get(query.signal))) {
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
       }
+      const resolved = computed.params && resolveComputed(computed.params, ref.dataRef, catalog);
+      if (resolved && !resolved.ok) return refuseComputed(reply, resolved);
 
       // A client that goes away (e.g. after zooming on) aborts its queued and running queries.
       const controller = new AbortController();
@@ -554,6 +647,36 @@ export const seriesRoutes =
       });
 
       try {
+        if (resolved) {
+          // Hold limits from the gap info of the inputs (design C2, C8), cached like a value's.
+          return await withRequestClass(request, async () => {
+            const inputs = inputsOf(resolved);
+            const info = await gaps.get(
+              ref.dataRef,
+              inputs.map((i) => `${i.dataRef}/${i.name}`),
+              scoped.scope && cacheScopeOf(scoped.scope),
+              rangeWindow(from, to, scoped.scope),
+            );
+            const computedRef: ComputedRef = {
+              dataRef: ref.dataRef,
+              ast: resolved.ast,
+              a: withSeed(resolved.a, undefined, holdOf(info, resolved.a)),
+            };
+            if (resolved.b)
+              computedRef.b = withSeed(resolved.b, undefined, holdOf(info, resolved.b));
+            return queryComputed(
+              source,
+              computedRef,
+              query.signal,
+              from,
+              to,
+              query.target,
+              scope,
+              controller.signal,
+              query.to - query.from,
+            );
+          });
+        }
         return await withRequestClass(request, () =>
           querySeries(
             source,
@@ -573,6 +696,9 @@ export const seriesRoutes =
         // The server's own computation failed on valid input: a retry would fail again (design H2).
         if (error instanceof RangeError)
           return apiError(reply, 400, "invalid_request", message, range);
+        // The fallback's row cap (design C8): the caller zooms in.
+        if (error instanceof ComputedTooLargeError)
+          return apiError(reply, 422, "computed_too_large", message, range);
         return apiError(reply, 502, "source_error", message, range);
       }
     });
@@ -582,6 +708,8 @@ export const seriesRoutes =
       const query = parseInput(ValueQuery, request.query, reply);
       if (!query) return reply;
       const details = { signalId: query.signal };
+      const computed = computedQuery(query);
+      if (!computed.ok) return apiError(reply, 400, "invalid_request", computed.message, details);
       const scoped = routeScope(deps, request, reply);
       if (!scoped) return reply;
       const scope = scoped.source;
@@ -605,8 +733,71 @@ export const seriesRoutes =
           details,
         );
       }
+      const signalRef = parseSignalId(query.signal);
+      if (signalRef && computed.params) {
+        const resolved = resolveComputed(computed.params, signalRef.dataRef, catalog);
+        if (!resolved.ok) return refuseComputed(reply, resolved);
+        const controller = new AbortController();
+        request.raw.on("close", () => {
+          if (!reply.raw.writableEnded) controller.abort();
+        });
+        try {
+          // Each input's raw neighbours and the gap info of the inputs (design C4).
+          const inputs = inputsOf(resolved);
+          const [neighbours, gapInfo] = await Promise.all([
+            Promise.all(
+              inputs.map((i) =>
+                Promise.all([
+                  source.before(i, query.t + 1n, scope, controller.signal),
+                  source.after(i, query.t + 1n, scope, controller.signal),
+                ]),
+              ),
+            ),
+            gaps.get(
+              signalRef.dataRef,
+              inputs.map((i) => `${i.dataRef}/${i.name}`),
+              scoped.scope && cacheScopeOf(scoped.scope),
+              valueWindow(query.t, scoped.scope),
+            ),
+          ]);
+          const near = (i: number) => {
+            const [at, next] = neighbours[i] as [RawPoint | undefined, RawPoint | undefined];
+            const n: { at?: RawPoint; next?: RawPoint; holdNs?: bigint } = {};
+            if (at) n.at = at;
+            if (next) n.next = next;
+            const hold = holdOf(gapInfo, inputs[i] as SeriesRef);
+            if (hold !== undefined) n.holdNs = hold;
+            return n;
+          };
+          const result = computedValueAt(
+            query.t,
+            query.mode,
+            resolved.ast,
+            near(0),
+            resolved.b ? near(1) : undefined,
+            computedSignalGaps(
+              gapInfo,
+              signalRef.dataRef,
+              resolved.b ? { a: resolved.a.name, b: resolved.b.name } : { a: resolved.a.name },
+            ),
+          );
+          const body: CursorValueResult = {
+            signalId: query.signal,
+            t: query.t.toString(),
+            mode: query.mode,
+            value: result.value,
+          };
+          if (result.at) body.at = edgePoint(result.at, false);
+          if (result.next) body.next = edgePoint(result.next, false);
+          return body;
+        } catch (error) {
+          if (controller.signal.aborted) return reply;
+          const message = error instanceof Error ? error.message : String(error);
+          return apiError(reply, 502, "source_error", message, details);
+        }
+      }
       const info = catalog.get(query.signal);
-      if (!parseSignalId(query.signal) || !info) {
+      if (!signalRef || !info) {
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -669,9 +860,17 @@ export const seriesRoutes =
   };
 
 /** The work window of `[t, t + 1 ns)` in an object scope (add-case-open K11); else undefined. */
-function valueWindow(t: bigint, scope: WorkspaceScope | undefined): Scope | undefined {
+const valueWindow = (t: bigint, scope: WorkspaceScope | undefined): Scope | undefined =>
+  rangeWindow(t, t + 1n, scope);
+
+/** The work window of `[from, to)` in an object scope (add-case-open K11); else undefined. */
+function rangeWindow(
+  from: bigint,
+  to: bigint,
+  scope: WorkspaceScope | undefined,
+): Scope | undefined {
   if (!scope?.object) return undefined;
-  const w = workWindow({ from: t.toString(), to: (t + 1n).toString() }, scope);
+  const w = workWindow({ from: from.toString(), to: to.toString() }, scope);
   return { dataRef: scope.dataRef, from: BigInt(w.from), to: BigInt(w.to) };
 }
 

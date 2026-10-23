@@ -10,7 +10,12 @@ import {
   viewName,
   workspaceToView,
 } from "../src/views.ts";
-import { Command, EMPTY_WORKSPACE, type Workspace } from "../src/workspace.ts";
+import {
+  Command,
+  EMPTY_WORKSPACE,
+  type TimeseriesWindow,
+  type Workspace,
+} from "../src/workspace.ts";
 
 const ctx = {
   signalExists: (id: string) => id.startsWith("smart451/") || id.startsWith("car/"),
@@ -437,5 +442,142 @@ describe("scope in a view document (add-scope)", () => {
       }),
     );
     expect(good).toMatchObject({ ok: true, warnings: [] });
+  });
+});
+
+describe("computed signals in a view document", () => {
+  const known = new Set(["testcar/Fast_100h.SIG_A", "testcar/Sna_800h.SPEED", "testcar/Temp_1h.T"]);
+  const plainCtx = {
+    signalExists: (id: string) => known.has(id),
+    hasStates: () => false,
+    unitOf: () => undefined,
+  };
+  const openPlain = (state: Workspace, view: unknown) =>
+    applyCommand(state, Command.parse({ type: "view.open", view }), plainCtx);
+
+  const source: Workspace = {
+    ...EMPTY_WORKSPACE,
+    nextId: 5,
+    windows: [
+      {
+        id: "w4",
+        kind: "timeseries",
+        range: { from: NS(T0), to: NS(T0 + 20_000_000_000n) },
+        display: { mode: "line", envelope: false },
+        signals: [
+          { id: "a5", signalId: "testcar/Fast_100h.SIG_A" },
+          { id: "a6", signalId: "testcar/=c3" },
+        ],
+      },
+    ],
+    colors: { "testcar/Fast_100h.SIG_A": 0, "testcar/=c3": 4 },
+    computed: [
+      {
+        id: "c3",
+        name: "Diff",
+        formula: "a - b",
+        a: "Fast_100h.SIG_A",
+        b: "Sna_800h.SPEED",
+        unit: "A",
+      },
+    ],
+  };
+
+  const { computed: _defs, ...bareSource } = source;
+
+  // spec saved-views "Round trip"
+  it("round-trips computed signals through a view document", () => {
+    const doc = workspaceToView(source, { title: "With computed", saved: SAVED_AT });
+    expect(doc.computed).toEqual([
+      {
+        name: "Diff",
+        formula: "a - b",
+        a: "Fast_100h.SIG_A",
+        b: "Sna_800h.SPEED",
+        unit: "A",
+      },
+    ]);
+    // The window lists the name; no ID of the definition anywhere.
+    expect(doc.windows[0]?.signals).toEqual(["testcar/Fast_100h.SIG_A", "testcar/=Diff"]);
+    expect(JSON.stringify(doc)).not.toMatch(/c3/);
+
+    const wire = JSON.parse(JSON.stringify(doc));
+    const parsed = parseViewDoc(wire);
+    if (!parsed.ok) throw new Error(parsed.message);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.doc.computed).toEqual(doc.computed);
+    expect(parsed.doc.version).toBe(1);
+
+    const opened = openPlain({ ...EMPTY_WORKSPACE, nextId: 40 }, parsed.doc);
+    if (!opened.ok) throw new Error(`${opened.code}: ${opened.message}`);
+    const defs = opened.workspace.computed ?? [];
+    expect(defs).toHaveLength(1);
+    const def = defs[0];
+    expect(def).toMatchObject({
+      name: "Diff",
+      formula: "a - b",
+      a: "Fast_100h.SIG_A",
+      b: "Sna_800h.SPEED",
+      unit: "A",
+    });
+    expect(def?.id).toMatch(/^c\d+$/);
+    expect(Number(def?.id.slice(1))).toBeGreaterThanOrEqual(40);
+    expect(opened.workspace.windows[0]?.signals.map((s) => s.signalId)).toEqual([
+      "testcar/Fast_100h.SIG_A",
+      `testcar/=${def?.id}`,
+    ]);
+    expect(opened.report?.missing).toEqual([]);
+    // No ID of the document's source workspace came along.
+    expect(JSON.stringify(opened.workspace)).not.toMatch(/c3\b/);
+  });
+
+  it("keeps a document without computed signals as it was", () => {
+    const doc = workspaceToView({ ...bareSource, windows: [] }, { title: "Plain" });
+    expect(doc.computed ?? []).toEqual([]);
+    const parsed = parseViewDoc(JSON.parse(JSON.stringify(doc)));
+    if (!parsed.ok) throw new Error(parsed.message);
+    expect(parsed.warnings).toEqual([]);
+    const opened = openPlain(EMPTY_WORKSPACE, parsed.doc);
+    if (!opened.ok) throw new Error(opened.message);
+    expect(opened.workspace.computed ?? []).toEqual([]);
+  });
+
+  // spec saved-views "Broken entry and missing reference"
+  it("leaves out a broken computed entry with a warning", () => {
+    const emptyWindow = { ...(source.windows[0] as TimeseriesWindow), signals: [] };
+    const base = workspaceToView(
+      { ...bareSource, colors: {}, windows: [emptyWindow] },
+      { title: "Broken" },
+    );
+    const wire = JSON.parse(
+      JSON.stringify({
+        ...base,
+        computed: [
+          { name: "Bad", formula: "a - c", a: "Fast_100h.SIG_A", b: "Sna_800h.SPEED" },
+          { name: "Good", formula: "abs(a)", a: "Fast_100h.SIG_A" },
+        ],
+        windows: base.windows.map((w) => ({
+          ...w,
+          signals: ["testcar/=Nope", "testcar/=Good"],
+        })),
+      }),
+    );
+    const parsed = parseViewDoc(wire);
+    if (!parsed.ok) throw new Error(parsed.message);
+    expect(parsed.warnings).toEqual([
+      'computed signal "Bad" left out: Unknown name "c": use a, b, numbers, + - * / ( ), abs, min, max',
+    ]);
+    expect(parsed.doc.computed).toEqual([
+      { name: "Good", formula: "abs(a)", a: "Fast_100h.SIG_A" },
+    ]);
+
+    const opened = openPlain(EMPTY_WORKSPACE, parsed.doc);
+    if (!opened.ok) throw new Error(`${opened.code}: ${opened.message}`);
+    expect(opened.report?.missing).toEqual(["testcar/=Nope"]);
+    const defs = opened.workspace.computed ?? [];
+    expect(defs.map((d) => d.name)).toEqual(["Good"]);
+    // The known reference is shown; the missing one is reported, as for any missing signal.
+    const ids = opened.workspace.windows[0]?.signals.map((s) => s.signalId) ?? [];
+    expect(ids).toContain(`testcar/=${defs[0]?.id}`);
   });
 });

@@ -8,9 +8,12 @@ import {
   type CommandErrorCode,
   type CommandInput,
   type CommandResult,
+  type ComputedDef,
   type CreateWorkspaceAnswer,
   type CreateWorkspaceRequest,
   type CursorValueResult,
+  computedParams,
+  computedRef,
   type Density,
   type EventList,
   type Extent,
@@ -115,6 +118,39 @@ export interface CaseRequestOptions {
   preload?: boolean;
 }
 
+// Computed signals (add-computed-signals C11): the workspace's definitions by ID, so a request for
+// `<dataRef>/=<id>` carries its formula and inputs; the server keeps no definitions per request.
+const computedDefs = new Map<string, ComputedDef>();
+
+/** Replaces the definitions requests for computed IDs read (on every live state). */
+export function setComputedDefs(defs: readonly ComputedDef[]): void {
+  computedDefs.clear();
+  for (const def of defs) computedDefs.set(def.id, def);
+}
+
+/** The definition of a computed signal ID by its `=<id>` part (any data ref); undefined otherwise. */
+export function computedDefOf(signalId: string): ComputedDef | undefined {
+  const ref = computedRef(signalId);
+  return ref === undefined ? undefined : computedDefs.get(ref.id);
+}
+
+/**
+ * Adds `formula`, `a`, `b` of a computed `signalId` to `params` (C8); a computed ID without a
+ * definition gives the error to reject with, before any request.
+ */
+function addComputed(params: URLSearchParams, signalId: string): ApiRequestError | undefined {
+  if (computedRef(signalId) === undefined) return undefined;
+  const def = computedDefOf(signalId);
+  if (!def) {
+    return new ApiRequestError(0, "unknown_computed", `no computed signal ${signalId}`);
+  }
+  const p = computedParams(def);
+  params.set("formula", p.formula);
+  params.set("a", p.a);
+  if (p.b !== undefined) params.set("b", p.b);
+  return undefined;
+}
+
 export function fetchSeries(
   r: SeriesRequest & CaseRequestOptions,
   abort: AbortSignal,
@@ -125,6 +161,8 @@ export function fetchSeries(
     to: r.to,
     target: String(r.target),
   });
+  const refused = addComputed(params, r.signalId);
+  if (refused) return Promise.reject(refused);
   if (r.case !== undefined) params.set("case", String(r.case));
   return getJson(`/api/series?${params}`, abort, r.preload ? PRELOAD_HEADERS : undefined);
 }
@@ -136,7 +174,10 @@ export function fetchCursorValue(
   mode: ValuesMode,
   abort: AbortSignal,
 ): Promise<CursorValueResult> {
-  return getJson(`/api/value?${new URLSearchParams({ signal: signalId, t, mode })}`, abort);
+  const params = new URLSearchParams({ signal: signalId, t, mode });
+  const refused = addComputed(params, signalId);
+  if (refused) return Promise.reject(refused);
+  return getJson(`/api/value?${params}`, abort);
 }
 
 export function fetchExtent(
@@ -144,6 +185,8 @@ export function fetchExtent(
   options: CaseRequestOptions & { abort?: AbortSignal } = {},
 ): Promise<Extent> {
   const params = new URLSearchParams({ signal: signalId });
+  const refused = addComputed(params, signalId);
+  if (refused) return Promise.reject(refused);
   if (options.case !== undefined) params.set("case", String(options.case));
   return getJson(
     `/api/extent?${params}`,

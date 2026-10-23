@@ -46,6 +46,8 @@ const SAMPLES: Record<string, unknown[][]> = {
     [5, 7],
     [1, 1],
   ],
+  // add-computed-signals C12: the numeric-only hint names the signal's short name.
+  computedNumericOnly: [["MODE"], ["PNHV_SupBat_Curr"]],
 };
 
 function texts(): { id: string; text: string }[] {
@@ -117,6 +119,29 @@ describe("hints table", () => {
     const key = SHORTCUTS.find((s) => s.keys === "Ctrl/Cmd+D");
     expect(key?.group).toBe("Signal list");
     expect(key?.action).toBe("Star or unstar the row or the selection");
+  });
+
+  it("words the computed signal hints", () => {
+    // add-computed-signals: the four hints of the Computed section and the editor.
+    expect(HINTS.computedEmpty).toBe("No computed signals yet: click + to build one");
+    expect(HINTS.computedNew.startsWith("New computed signal")).toBe(true);
+    expect(HINTS.computedEdit.startsWith("Edit computed signal")).toBe(true);
+    // The pencil names its key, which is in the key list.
+    expect(HINTS.computedEdit.endsWith(" \u00b7 F2")).toBe(true);
+    const key = SHORTCUTS.find((s) => s.keys === "F2");
+    expect(key?.group).toBe("Signal list");
+    expect(key?.action).toBe("Edit the active computed signal");
+    expect(HINTS.computedNumericOnly("MODE")).toBe("MODE has states: pick a numeric signal");
+    expect(HINTS.computedNumericOnly("PNHV_SupBat_Curr")).toContain("PNHV_SupBat_Curr");
+    for (const text of [
+      HINTS.computedNew,
+      HINTS.computedEmpty,
+      HINTS.computedEdit,
+      HINTS.computedNumericOnly("MODE"),
+    ]) {
+      expect(text.length).toBeLessThanOrEqual(140);
+      expect(text.endsWith(".")).toBe(false);
+    }
   });
 
   it("takes every tooltip from the hints table", () => {

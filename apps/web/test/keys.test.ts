@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isHelpKey, isSearchKey, isStarKey, isTextField, NavRepeat, navKey } from "../src/keys.ts";
+import {
+  isEditKey,
+  isHelpKey,
+  isSearchKey,
+  isStarKey,
+  isTextField,
+  NavRepeat,
+  navKey,
+} from "../src/keys.ts";
 
 /** No DOM in the tests: plain objects shaped like the element properties isTextField reads. */
 const el = (tagName: string, props: { type?: string; isContentEditable?: boolean } = {}) =>
@@ -265,5 +273,29 @@ describe("isStarKey", () => {
     expect(isStarKey(key("d"), true)).toBe(false);
     expect(isStarKey(key("s", { ctrlKey: true }), false)).toBe(false);
     expect(isStarKey(key("Enter", { ctrlKey: true }), false)).toBe(false);
+  });
+});
+
+describe("isEditKey", () => {
+  const key = (
+    k: string,
+    mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {},
+  ) => ({
+    key: k,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  // add-computed-signals: F2 on the active computed row opens its editor.
+  it("maps F2 to edit", () => {
+    expect(isEditKey(key("F2"))).toBe(true);
+    // Any modifier, or another key, is not the edit key.
+    for (const mods of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }])
+      expect(isEditKey(key("F2", mods))).toBe(false);
+    for (const other of ["F1", "F3", "Enter", "e", "E", "f2", " "])
+      expect(isEditKey(key(other))).toBe(false);
   });
 });

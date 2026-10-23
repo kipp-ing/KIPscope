@@ -17,15 +17,15 @@ The Start here card above the windows sums up the first moves; × hides it, and 
 
 ## Find a signal
 
-Press `/` and type. Every word must occur in the signal's name, short name, description or unit, and parts of words match: `pack` finds PackVoltage and PackCurrent, `cellv` the 93 cell voltages. An empty search lists all signals (135 in the demo recording) in closed groups per sending ECU (Favourites open); click a group to open it. While you search, only groups with a match show, open.
+Press `/` and type; every word must match the name, short name, description or unit, also in part: `pack` finds PackVoltage and PackCurrent, `cellv` the 93 cell voltages. An empty search shows closed groups per ECU (Favourites and Computed open); click one to open it. Searching shows only groups with a match, open.
 
-A row shows the short name, the unit and an SNA marker; its tooltip is the full DBC name, such as VEH_200h.VehSpeed for VehSpeed.
+A row shows the short name, unit and an SNA marker; its tooltip is the full DBC name (VEH_200h.VehSpeed). Hover it, or move there with `↑` and `↓`, for a card with its DBC and catalog data and the windows showing it. `Esc` clears the search.
 
-Hover a row, or move to it with `↑` and `↓`, and a card shows what the DBC and diagnostic catalog know: full name, description, message and CAN ID, unit, scaling, raw step, range, SNA codes, state names, source file, and the windows that show the signal. `Esc` clears the search.
+**Favourites:** the ☆ at a row's left edge or `Ctrl/Cmd+D` stars the row or the selection; again unstars.
 
-**Favourites:** the ☆ at a row's left edge (on hover) or `Ctrl/Cmd+D` stars the row, or all selected rows; again unstars.
+Stars show in **★ Favourites** atop the list on every vehicle and session; `kipscope fav` changes them from a shell.
 
-Your stars show in **★ Favourites** atop the list, by name on every vehicle and session; `kipscope fav` changes them from a shell.
+**Computed:** select one or two rows, click `+` in **ƒ Computed**, press `Enter`: `abs(a)` or `a - b` goes into the Add to window. Inputs are numeric signals; a formula takes `a`, `b`, numbers, `+ - * /`, `abs`, `min`, `max`. `F2` or ✎ edits; `kipscope calc` works from a shell.
 
 ## Chart a signal
 

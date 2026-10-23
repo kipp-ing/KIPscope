@@ -140,6 +140,7 @@ export function stubSource(extra: readonly SourceSignal[] = []): DataSource {
     after: async (ref, t) => (POINTS.get(id(ref)) ?? []).find((p) => p.t >= t),
     count: unused,
     series: unused,
+    computedSeries: unused,
     raw: unused,
     buckets: unused,
     refExtent: unused,
@@ -216,8 +217,10 @@ export interface Workspace {
  * Starts the real server app in-process on a free port with the stub source and catalog.
  * `loadCatalog: false` leaves the catalog unloaded (503 `catalog_unavailable`).
  */
-export async function startServer(options: { loadCatalog?: boolean } = {}): Promise<Harness> {
-  const source = stubSource();
+export async function startServer(
+  options: { loadCatalog?: boolean; extra?: readonly SourceSignal[] } = {},
+): Promise<Harness> {
+  const source = stubSource(options.extra);
   const catalog = new Catalog(source, loadStubDbc);
   if (options.loadCatalog !== false) await catalog.refresh();
   const viewsDir = join(mkdtempSync(join(tmpdir(), "kipscope-cli-views-")), "views");

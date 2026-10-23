@@ -52,6 +52,14 @@ export function isStarKey(e: KeyLike & { shiftKey: boolean }, mac: boolean): boo
 }
 
 /**
+ * `F2` without any modifier opens the editor of the active computed row (add-computed-signals
+ * C12). The explorer search handles it in place.
+ */
+export function isEditKey(e: KeyLike & { shiftKey: boolean }): boolean {
+  return e.key === "F2" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+}
+
+/**
  * Navigation keys (design N6): zoom, pan, page, reset, the range picker (`goTo` opens it,
  * add-range-picker R11), the strip's drives (S9), its events (improve-events P7) and a cursor
  * brought into view (declutter-workspace DW23).

@@ -245,6 +245,7 @@ describe("queuedAdapter scope", () => {
       loggerGaps: record("loggerGaps", { gaps: [] }),
       firstTimes: record("firstTimes", new Map()),
       stateChanges: record("stateChanges", []),
+      computedSeries: record("computedSeries", { kind: "raw", points: [] }),
       events: record("events", []),
     } as DataSource;
     return { adapter, seen };
@@ -272,6 +273,22 @@ describe("queuedAdapter scope", () => {
       [sig, 1000n, 5000n, 100, 40n, scope],
     ],
   ];
+
+  it("passes a computed series call on with its abort signal (it takes no scope)", async () => {
+    const { adapter, seen } = stub();
+    const queued = queuedAdapter(adapter, new QueryQueue(2)) as DataSource;
+    const controller = new AbortController();
+    const computed = { dataRef: "car", ast: { op: "var", name: "a" }, a: sig } as const;
+    await queued.computedSeries(computed, 1000n, 5000n, 100, 40n, controller.signal);
+    expect(seen.get("computedSeries")).toEqual([
+      computed,
+      1000n,
+      5000n,
+      100,
+      40n,
+      controller.signal,
+    ]);
+  });
 
   it("covers the 12 methods of the contract that take a scope", () => {
     expect(calls.map(([name]) => name).sort()).toEqual(

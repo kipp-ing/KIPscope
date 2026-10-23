@@ -1,15 +1,29 @@
 import { groupOf, OTHER_GROUP, type SignalMatch } from "@kipscope/shared";
+import { HINTS } from "../help/hints.ts";
 
 /** Name and toggle key of the user's Favourites group (add-favourites F5). */
 export const FAVOURITES_GROUP = "★ Favourites";
 
+/** Name and toggle key of the Computed section (add-computed-signals C12). */
+export const COMPUTED_GROUP = "ƒ Computed";
+
 /**
- * One line of the explorer list: a group header or a signal row (design G6). `favourites` marks
- * the Favourites header, `inFavourites` a favourite's copy under it (add-favourites F5).
+ * One line of the explorer list: a group header, a signal row or a hint (design G6). `favourites`
+ * marks the Favourites header, `inFavourites` a favourite's copy under it (add-favourites F5);
+ * `computed` the Computed header, whose rows carry `match.signal.computed` and whose `hint` item
+ * stands in for an empty section (add-computed-signals C12).
  */
 export type ExplorerItem =
-  | { kind: "group"; name: string; count: number; open: boolean; favourites?: true }
-  | { kind: "signal"; match: SignalMatch; inFavourites?: true };
+  | {
+      kind: "group";
+      name: string;
+      count: number;
+      open: boolean;
+      favourites?: true;
+      computed?: true;
+    }
+  | { kind: "signal"; match: SignalMatch; inFavourites?: true }
+  | { kind: "hint"; text: string };
 
 /**
  * grouped false → one signal item per match, as today.
@@ -22,6 +36,10 @@ export type ExplorerItem =
  * `★ Favourites` comes first (open unless toggled, also on an empty query), then a copy of each
  * favourite match (searching: rank order; else the order of `favourites`, data refs in catalog
  * order), then the items above unchanged.
+ * computed (C12): the Computed section right after the Favourites group, before the items above
+ * (absent: no section). Its matches are the computed signals matching the query (all of them on
+ * an empty query). Header `ƒ Computed` with their count, open unless toggled on both queries;
+ * searching without a match: no section; empty query without any: the header and one hint item.
  */
 export function explorerItems(
   matches: readonly SignalMatch[],
@@ -29,8 +47,10 @@ export function explorerItems(
   grouped: boolean,
   toggled: ReadonlySet<string>,
   favourites: readonly string[] = [],
+  computed?: { matches: readonly SignalMatch[] },
 ): ExplorerItem[] {
   const items = [...favouriteItems(matches, searching, toggled, favourites)];
+  if (computed) items.push(...computedItems(computed.matches, searching, toggled));
   if (!grouped) {
     for (const match of matches) items.push({ kind: "signal", match });
     return items;
@@ -91,6 +111,23 @@ function favouriteItems(
       for (const match of byName.get(name) ?? [])
         items.push({ kind: "signal", match, inFavourites: true });
   }
+  return items;
+}
+
+/** The Computed header, then its rows or the hint (C12). */
+function computedItems(
+  matches: readonly SignalMatch[],
+  searching: boolean,
+  toggled: ReadonlySet<string>,
+): ExplorerItem[] {
+  if (searching && matches.length === 0) return [];
+  const open = !toggled.has(COMPUTED_GROUP);
+  const items: ExplorerItem[] = [
+    { kind: "group", name: COMPUTED_GROUP, count: matches.length, open, computed: true },
+  ];
+  if (!open) return items;
+  if (matches.length === 0) items.push({ kind: "hint", text: HINTS.computedEmpty });
+  for (const match of matches) items.push({ kind: "signal", match });
   return items;
 }
 

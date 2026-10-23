@@ -1,6 +1,16 @@
 import { z } from "zod";
 import type { CaseEntry, WorkspaceCase } from "./case.ts";
+import {
+  type ComputedDef,
+  ComputedInput,
+  ComputedName,
+  ComputedUnit,
+  MAX_COMPUTED,
+  MAX_COMPUTED_NAME,
+  MAX_COMPUTED_UNIT,
+} from "./computed.ts";
 import { MAX_FILTER_LENGTH } from "./eventFilter.ts";
+import { MAX_FORMULA_LENGTH } from "./formula.ts";
 import { fromIso, parseTimestamp, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
 import type { WorkspaceSummary } from "./workspaces.ts";
@@ -232,6 +242,8 @@ export interface Workspace {
   scope?: WorkspaceScope;
   /** The open catalog (add-case-open K2, K6); the entries stay in GET /api/case. */
   case?: WorkspaceCase;
+  /** Computed signals in creation order (add-computed-signals C6); absent when empty. */
+  computed?: ComputedDef[];
 }
 
 export const EMPTY_WORKSPACE: Workspace = {
@@ -295,6 +307,15 @@ const MeasurementText = (max: number) =>
     .trim()
     .max(max)
     .refine((s) => !/\p{Cc}/u.test(s), { message: "no line breaks or control characters" });
+
+/** Body of computed.add and computed.update (C7). */
+const computedBody = {
+  name: ComputedName,
+  formula: z.string().max(MAX_FORMULA_LENGTH),
+  a: ComputedInput,
+  b: ComputedInput.optional(),
+  unit: ComputedUnit.optional(),
+};
 
 export const Command = z.discriminatedUnion("type", [
   z
@@ -402,6 +423,10 @@ export const Command = z.discriminatedUnion("type", [
   z.object({ type: z.literal("case.unlink") }),
   /** `at`: the chosen event's time (UI); absent: the server resolves the point (K9). */
   z.object({ type: z.literal("case.align"), align: CaseAlign, at: TimeInput.optional() }),
+  /** Computed signals (add-computed-signals C7); strict; update takes the whole definition. */
+  z.strictObject({ type: z.literal("computed.add"), ...computedBody }),
+  z.strictObject({ type: z.literal("computed.update"), id: Id, ...computedBody }),
+  z.strictObject({ type: z.literal("computed.remove"), id: Id }),
 ]);
 export type Command = z.infer<typeof Command>;
 /** Command as a caller writes it (times may be ISO). */
@@ -444,6 +469,16 @@ export type CommandErrorCode =
   | "case_open"
   /** case.align event without `at` and no match in the current session. */
   | "no_matching_event"
+  /** computed.add/update: the formula does not parse or bind (C1 message). */
+  | "invalid_formula"
+  /** computed.add/update: an input has states (C6). */
+  | "not_numeric_signal"
+  /** computed.add/update: another computed signal has this name, ignoring case. */
+  | "duplicate_name"
+  /** computed.add: MAX_COMPUTED definitions exist. */
+  | "computed_limit"
+  /** computed.update/remove: no definition with this ID. */
+  | "unknown_computed"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */
@@ -632,4 +667,17 @@ export const WorkspaceSchema: z.ZodType<Workspace> = z.strictObject({
     })
     .exactOptional(),
   case: WorkspaceCaseSchema.exactOptional(),
+  computed: z
+    .array(
+      z.strictObject({
+        id: Id,
+        name: z.string().min(1).max(MAX_COMPUTED_NAME),
+        formula: z.string().max(MAX_FORMULA_LENGTH),
+        a: ComputedInput,
+        b: ComputedInput.exactOptional(),
+        unit: z.string().max(MAX_COMPUTED_UNIT).exactOptional(),
+      }),
+    )
+    .max(MAX_COMPUTED)
+    .exactOptional(),
 });

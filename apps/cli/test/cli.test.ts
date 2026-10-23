@@ -30,6 +30,7 @@ import {
   startHangingServer,
   startServer,
   stubSource,
+  T0,
 } from "./helpers.ts";
 import { type MultiServer, startMulti } from "./multi.ts";
 
@@ -55,7 +56,7 @@ afterAll(() => h.close());
 /** A fresh server per test body, closed afterwards. */
 async function withServer<T>(
   fn: (s: Harness) => Promise<T>,
-  options?: { loadCatalog?: boolean },
+  options?: { loadCatalog?: boolean; extra?: readonly SourceSignal[] },
 ): Promise<T> {
   const s = await startServer(options);
   try {
@@ -2216,5 +2217,201 @@ describe("favourites (add-favourites F11)", () => {
     expect(added.out.data.warnings).toEqual(["not in this list: Other_900h.FOREIGN"]);
     const list = await fav(s, "list");
     expect(list.out.data.names).toEqual(["Sna_800h.RPM", "Other_900h.FOREIGN"]);
+  });
+});
+
+describe("computed signals (add-computed-signals C13)", () => {
+  /** The workspace scoped to testcar, as the spec's scenarios want it. */
+  async function scoped(s: Harness) {
+    const set = await cli(
+      s,
+      "scope",
+      "set",
+      "testcar",
+      "2026-10-01T00:00:00Z",
+      "2026-10-01T04:00:00Z",
+    );
+    expect(set.code, set.stderr.join("")).toBe(0);
+  }
+  const computed = async (s: Harness) => (await cli(s, "calc", "list")).out.data.computed;
+  const posts = (s: Harness) => s.requests.filter((r) => r.startsWith("POST")).length;
+
+  // spec cli "Add, list, edit, remove over HTTP"
+  it("adds, lists, edits and removes computed signals", async () => {
+    await withServer(async (s) => {
+      await scoped(s);
+      const empty = await cli(s, "calc", "list");
+      expect(empty.code).toBe(0);
+      expect(empty.out.data.computed).toEqual([]);
+
+      const added = await cli(s, "calc", "add", "a - b", "--a", "SIG_A", "--b", "speed");
+      expect(added.code, added.stderr.join("")).toBe(0);
+      expect(added.out.ok).toBe(true);
+      expect(added.out.command).toMatchObject({
+        type: "computed.add",
+        name: "SIG_A \u2212 SPEED",
+        formula: "a - b",
+        a: "Fast_100h.SIG_A",
+        b: "Sna_800h.SPEED",
+      });
+      const id: string = added.out.created;
+      expect(id).toMatch(/^c\d+$/);
+      expect(await computed(s)).toEqual([
+        {
+          id,
+          name: "SIG_A \u2212 SPEED",
+          formula: "a - b",
+          a: "Fast_100h.SIG_A",
+          b: "Sna_800h.SPEED",
+        },
+      ]);
+
+      // Edit by name (ignoring case): a new ID, the stored parts kept, b dropped.
+      const edited = await cli(
+        s,
+        "calc",
+        "edit",
+        "sig_a \u2212 speed",
+        "--formula",
+        "abs(a)",
+        "--no-b",
+        "--name",
+        "Abs",
+      );
+      expect(edited.code, edited.stderr.join("")).toBe(0);
+      const next: string = edited.out.created;
+      expect(next).toMatch(/^c\d+$/);
+      expect(next).not.toBe(id);
+      const after = await computed(s);
+      expect(after).toEqual([{ id: next, name: "Abs", formula: "abs(a)", a: "Fast_100h.SIG_A" }]);
+      expect("b" in after[0]).toBe(false);
+
+      // Edit by ID: only the unit changes; name and formula stay as stored.
+      const unit = await cli(s, "calc", "edit", next, "--unit", "V");
+      expect(unit.code, unit.stderr.join("")).toBe(0);
+      expect((await computed(s))[0]).toMatchObject({ name: "Abs", formula: "abs(a)", unit: "V" });
+
+      // Remove by name; the list is empty again.
+      const removed = await cli(s, "calc", "rm", "Abs");
+      expect(removed.code, removed.stderr.join("")).toBe(0);
+      expect(await computed(s)).toEqual([]);
+    });
+  });
+
+  it("numbers a taken auto name", async () => {
+    await withServer(async (s) => {
+      await scoped(s);
+      const first = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+      const second = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+      expect(first.code, first.stderr.join("")).toBe(0);
+      expect(second.code, second.stderr.join("")).toBe(0);
+      expect((await computed(s)).map((d: { name: string }) => d.name)).toEqual([
+        "abs(SPEED)",
+        "abs(SPEED) 2",
+      ]);
+    });
+  });
+
+  // spec cli "Refusals and a computed value"
+  it("refuses bad calc arguments and reads a computed value", async () => {
+    const extra = [
+      { dataRef: "testcar", name: "Sna_800h.TEMP" },
+      { dataRef: "testcar", name: "Tmp_A21h.TEMP" },
+    ];
+    await withServer(
+      async (s) => {
+        await scoped(s);
+        const revision = await revisionOf(s);
+        const sent = posts(s);
+
+        const badFormula = await cli(s, "calc", "add", "a - c", "--a", "SIG_A");
+        expect(badFormula.code).toBe(1);
+        expect(badFormula.out).toMatchObject({ ok: false, error: { code: "invalid_formula" } });
+        expect(badFormula.out.error.message).toContain('Unknown name "c"');
+
+        const ambiguous = await cli(s, "calc", "add", "a", "--a", "temp");
+        expect(ambiguous.code).toBe(1);
+        expect(ambiguous.out.error).toMatchObject({
+          code: "ambiguous_signal",
+          candidates: ["Sna_800h.TEMP", "Tmp_A21h.TEMP"],
+        });
+
+        const unknownSignal = await cli(s, "calc", "add", "a", "--a", "NOPE");
+        expect(unknownSignal.code).toBe(1);
+        expect(unknownSignal.out.error.code).toBe("unknown_signal");
+
+        const unknown = await cli(s, "calc", "rm", "Nope");
+        expect(unknown.code).toBe(1);
+        expect(unknown.out.error.code).toBe("unknown_computed");
+        expect((await cli(s, "calc", "edit", "Nope", "--unit", "V")).out.error.code).toBe(
+          "unknown_computed",
+        );
+
+        // Nothing was sent, the state's revision is as it was.
+        expect(await revisionOf(s)).toBe(revision);
+        expect(posts(s)).toBe(sent);
+
+        // A computed value: abs(SPEED) at T0 + 1.05 s, between the points 10 and 11.
+        const added = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+        expect(added.code, added.stderr.join("")).toBe(0);
+        const id = added.out.created as string;
+        const t = String(T0 + 1_050_000_000n);
+        const value = await cli(s, "value", `testcar/=${id}`, t);
+        expect(value.code, value.stderr.join("")).toBe(0);
+        expect(value.out.data).toMatchObject({
+          signalId: `testcar/=${id}`,
+          value: { kind: "interpolated", value: 10.5 },
+        });
+        // The definition's parameters went along with the request.
+        const request = s.requests.filter((r) => r.startsWith("GET /api/value")).at(-1);
+        expect(request).toBeDefined();
+
+        // The extent of a one-input computed signal is its input's.
+        const extent = await cli(s, "extent", `testcar/=${id}`);
+        expect(extent.code, extent.stderr.join("")).toBe(0);
+        expect(extent.out.data).toMatchObject({
+          first: String(T0),
+          last: String(T0 + 99_900_000_000n),
+        });
+
+        // A computed ID without a definition: refused, no request.
+        const gets = s.requests.filter((r) => r.startsWith("GET /api/value")).length;
+        const missing = await cli(s, "value", "testcar/=c999", t);
+        expect(missing.code).toBe(1);
+        expect(missing.out.error.code).toBe("unknown_computed");
+        expect(s.requests.filter((r) => r.startsWith("GET /api/value")).length).toBe(gets);
+      },
+      { extra },
+    );
+  });
+
+  it("adds a computed ID to a window like any signal", async () => {
+    await withServer(async (s) => {
+      await scoped(s);
+      const added = await cli(s, "calc", "add", "abs(a)", "--a", "speed");
+      const id = added.out.created as string;
+      const w = await cli(
+        s,
+        "window",
+        "create",
+        "--from",
+        "2026-10-01T01:00:00Z",
+        "--to",
+        "2026-10-01T01:10:00Z",
+      );
+      expect(w.code, w.stderr.join("")).toBe(0);
+      const windowId: string = w.out.created;
+      const shown = await cli(s, "signal", "add", windowId, `testcar/=${id}`);
+      expect(shown.code, shown.stderr.join("")).toBe(0);
+      expect(shown.out.command).toMatchObject({
+        type: "window.addSignal",
+        windowId,
+        signalId: `testcar/=${id}`,
+      });
+      // Removing the definition takes it out of the window.
+      expect((await cli(s, "calc", "rm", id)).code).toBe(0);
+      const state = await s.workspace();
+      expect(window(state, windowId).signals).toEqual([]);
+    });
   });
 });

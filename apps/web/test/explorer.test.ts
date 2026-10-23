@@ -31,7 +31,12 @@ import {
   visibleCount,
   windowsShowing,
 } from "../src/explorer/format.ts";
-import { explorerItems, FAVOURITES_GROUP, firstSignal } from "../src/explorer/groups.ts";
+import {
+  COMPUTED_GROUP,
+  explorerItems,
+  FAVOURITES_GROUP,
+  firstSignal,
+} from "../src/explorer/groups.ts";
 import { HINTS } from "../src/help/hints.ts";
 
 function win(id: string, signalIds: string[], title?: string): TimeseriesWindow {
@@ -173,7 +178,9 @@ describe("explorer groups", () => {
     items.map((i) =>
       i.kind === "group"
         ? `${i.name} ${i.count} ${i.open ? "open" : "closed"}`
-        : i.match.signal.name,
+        : i.kind === "hint"
+          ? `hint ${i.text}`
+          : i.match.signal.name,
     );
 
   it("groups matches by best hit, Other last, collapsed on an empty query", () => {
@@ -282,7 +289,9 @@ describe("explorer favourites (add-favourites)", () => {
     items.map((i) =>
       i.kind === "group"
         ? `${i.name} ${i.count} ${i.open ? "open" : "closed"}${i.favourites ? " *" : ""}`
-        : `${i.match.signal.name}${i.inFavourites ? " *" : ""}`,
+        : i.kind === "hint"
+          ? `hint ${i.text}`
+          : `${i.match.signal.name}${i.inFavourites ? " *" : ""}`,
     );
   const base = (searching: boolean, grouped = true, toggled = none) =>
     explorerItems(ranked, searching, grouped, toggled);
@@ -728,5 +737,209 @@ describe("explorer catalog per scope (add-scope)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** A computed row as `computedInfos` makes it (C11): `=<id>` name, formula in the description. */
+function computedMatch(id: string, name: string, unavailable?: string): SignalMatch {
+  const signal: SignalInfo = {
+    id: `c/=${id}`,
+    dataRef: "c",
+    name: `=${id}`,
+    displayName: name,
+    description: "A.X − B.Y",
+    unit: "A",
+    computed: {
+      formula: "a - b",
+      a: "A.X",
+      b: "B.Y",
+      ...(unavailable !== undefined && { unavailable }),
+    },
+  };
+  return {
+    signal,
+    tier: 0,
+    name: [],
+    shown: [],
+    unit: [],
+    description: [],
+  } as unknown as SignalMatch;
+}
+
+describe("explorer Computed section (add-computed-signals)", () => {
+  // Rank order of signal-groups "Group order and state": 1 Other, 2 CGW, 3 ESP, 4 AC, 5 ESP.
+  const ranked = [
+    match("r1", undefined),
+    match("r2", "CGW"),
+    match("r3", "ESP"),
+    match("r4", "AC"),
+    match("r5", "ESP"),
+  ];
+  const none = new Set<string>();
+  const stars = ["r5", "r2"];
+  const one = { matches: [computedMatch("c1", "Diff")] };
+  const base = (searching: boolean) => explorerItems(ranked, searching, true, none);
+  const header = (count: number, open: boolean) => ({
+    kind: "group",
+    name: COMPUTED_GROUP,
+    count,
+    open,
+    computed: true,
+  });
+
+  // spec computed-signals "Items of the section"; signal-groups "Groups unchanged below the Computed section"
+  it("puts the Computed section under Favourites", () => {
+    expect(COMPUTED_GROUP).toBe("ƒ Computed");
+
+    for (const searching of [true, false]) {
+      // Favourites header and copies (3 items), the Computed header and its row, then today's items.
+      const items = explorerItems(ranked, searching, true, none, stars, one);
+      expect(items[0]).toMatchObject({ kind: "group", name: FAVOURITES_GROUP, favourites: true });
+      expect(items[3]).toMatchObject(header(1, true));
+      expect(items[4]).toMatchObject({ kind: "signal" });
+      expect((items[4] as { match: SignalMatch }).match.signal.computed).toBeDefined();
+      expect(items.slice(5)).toEqual(base(searching));
+      // Without favourites the section comes first.
+      const first = explorerItems(ranked, searching, true, none, [], one);
+      expect(first[0]).toMatchObject(header(1, true));
+      expect(first.slice(2)).toEqual(base(searching));
+    }
+
+    // Empty query without a definition: the header with count 0 and one hint item, then the groups.
+    const empty = explorerItems(ranked, false, true, none, stars, { matches: [] });
+    expect(empty[3]).toMatchObject(header(0, true));
+    expect(empty[4]).toEqual({ kind: "hint", text: HINTS.computedEmpty });
+    expect(empty.slice(5)).toEqual(base(false));
+    expect(HINTS.computedEmpty).toBe("No computed signals yet: click + to build one");
+
+    // Searching without a computed match: no Computed header and no hint.
+    const searching = explorerItems(ranked, true, true, none, stars, { matches: [] });
+    expect(searching.some((i) => i.kind === "hint")).toBe(false);
+    expect(searching.some((i) => i.kind === "group" && i.name === COMPUTED_GROUP)).toBe(false);
+    expect(searching).toEqual(explorerItems(ranked, true, true, none, stars));
+
+    // Toggling the section closes it on both queries; the groups below do not change.
+    const closed = new Set([COMPUTED_GROUP]);
+    for (const query of [true, false]) {
+      const items = explorerItems(ranked, query, true, closed, [], one);
+      expect(items[0]).toMatchObject(header(1, false));
+      expect(items.slice(1)).toEqual(explorerItems(ranked, query, true, closed));
+    }
+    const noDef = explorerItems(ranked, false, true, closed, [], { matches: [] });
+    expect(noDef[0]).toMatchObject(header(0, false));
+    expect(noDef.some((i) => i.kind === "hint")).toBe(false);
+
+    // Absent: exactly today's items (no section, no header).
+    expect(explorerItems(ranked, false, true, none, stars)).toEqual(
+      explorerItems(ranked, false, true, none, stars, undefined),
+    );
+    expect(
+      explorerItems(ranked, false, true, none, stars).some(
+        (i) => i.kind === "group" && i.name === COMPUTED_GROUP,
+      ),
+    ).toBe(false);
+    // The flat list gets the section too, above the five matches.
+    const flat = explorerItems(ranked, true, false, none, [], one);
+    expect(flat[0]).toMatchObject(header(1, true));
+    expect(flat.slice(2).map((i) => (i.kind === "signal" ? i.match.signal.name : "?"))).toEqual([
+      "r1",
+      "r2",
+      "r3",
+      "r4",
+      "r5",
+    ]);
+  });
+});
+
+describe("explorer computed row markup (add-computed-signals)", () => {
+  afterEach(() => {
+    vi.doUnmock("../src/explorer/catalogLoader.ts");
+    vi.resetModules();
+  });
+
+  async function render(computed: SignalInfo[]) {
+    const items: SignalInfo[] = [
+      { id: "c/A.X", dataRef: "c", name: "A.X" },
+      { id: "c/B.Y", dataRef: "c", name: "B.Y" },
+    ] as SignalInfo[];
+    vi.resetModules();
+    vi.doMock("../src/explorer/catalogLoader.ts", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../src/explorer/catalogLoader.ts")>()),
+      CatalogLoader: class {
+        constructor(_fetch: unknown, report: (r: CatalogReport) => void) {
+          report({ kind: "loaded", snapshot: { items } as unknown as CatalogSnapshot });
+        }
+        setScope() {}
+        dispose() {}
+      },
+    }));
+    const { SignalExplorer } = await import("../src/explorer/SignalExplorer.tsx");
+    return renderToStaticMarkup(
+      createElement(SignalExplorer, {
+        windows: [],
+        onAdd: () => {},
+        onAddMany: () => {},
+        onSeen: () => {},
+        digits: 3,
+        target: "new",
+        onTarget: () => {},
+        open: true,
+        onOpen: () => {},
+        part: "signals",
+        onPart: () => {},
+        favourites: [],
+        computed,
+        computedDefs: [],
+        onCommand: async () => ({ ok: false, code: "network", message: "unused" }),
+      } as never),
+    );
+  }
+
+  const rowsOf = (html: string) =>
+    [...html.matchAll(/<div\b([^>]*\bclass="row[ "][^>]*)>(.*?)<\/div>/gs)].map((m) => ({
+      tag: m[1] ?? "",
+      inner: m[2] ?? "",
+    }));
+
+  // spec computed-signals "Row markup"
+  it("renders computed rows with a pencil and no star", async () => {
+    const html = await render([
+      computedMatch("c1", "Diff").signal,
+      computedMatch("c2", "Broken", "not in this list: C.Z").signal,
+    ]);
+    const rows = rowsOf(html).filter((r) => /\bcomputed\b/.test(r.tag));
+    expect(rows).toHaveLength(2);
+    const [ok, off] = rows as [(typeof rows)[number], (typeof rows)[number]];
+    for (const row of rows) {
+      // The glyph in the indent where other rows have the star; no star button; a pencil.
+      expect(row.inner).toMatch(/aria-hidden="true"[^>]*>ƒ</);
+      expect(row.inner).not.toMatch(/class="star\b/);
+      expect(row.inner).not.toContain("★");
+      expect(row.inner).not.toContain("☆");
+      const pencil = /<button\b([^>]*\bclass="edit"[^>]*)>/.exec(row.inner);
+      expect(pencil, `pencil in ${row.tag}`).not.toBeNull();
+      expect(pencil?.[1]).toContain(`title="${HINTS.computedEdit}"`);
+    }
+    // The available row has the + button, the unavailable one has none and says why.
+    expect(ok.inner).toMatch(/<button\b[^>]*\bclass="add"/);
+    expect(ok.tag).not.toContain("unavailable");
+    expect(off.inner).not.toMatch(/\bclass="add"/);
+    expect(off.tag).toContain('title="not in this list: C.Z"');
+  });
+
+  it("renders the Computed header with a plus and the hint", async () => {
+    const withRows = await render([computedMatch("c1", "Diff").signal]);
+    const chunk = withRows.split('class="group-head').find((c) => c.includes(COMPUTED_GROUP));
+    const head = chunk?.slice(0, chunk.indexOf("</div>"));
+    expect(head, "the Computed header").toBeDefined();
+    expect(head).toMatch(/group-count">1</);
+    expect(head).toContain('aria-label="New computed signal"');
+    expect(head).toContain(`title="${HINTS.computedNew}"`);
+    expect(withRows).not.toContain(HINTS.computedEmpty);
+
+    const empty = await render([]);
+    expect(empty).toContain(COMPUTED_GROUP);
+    expect(empty).toContain(HINTS.computedEmpty);
+    expect(empty).toMatch(/group-count">0</);
   });
 });

@@ -11,6 +11,7 @@ import {
   WORKSPACE_ID,
   WorkspaceShare,
 } from "@kipscope/shared";
+import type { CalcInvocation } from "./calc.ts";
 import type { CaseInvocation } from "./case.ts";
 import type { FavInvocation } from "./favourites.ts";
 import { CliError } from "./output.ts";
@@ -62,6 +63,7 @@ export type Invocation =
   | { kind: "workspace"; action: "delete"; id: string }
   | ViewInvocation
   | FavInvocation
+  | CalcInvocation
   | CaseInvocation;
 
 export const DEFAULT_SERVER = "http://localhost:7310";
@@ -150,6 +152,16 @@ Favourites (your starred signals, by name on every vehicle and workspace):
                                    list is stored as given, with a warning)
   fav rm NAME...                   (a favourite, its part after the first ".", or a full ID)
 
+Computed signals (formulas of one or two signals, stored in the workspace):
+  calc list
+  calc add FORMULA --a SIGNAL [--b SIGNAL] [--name NAME] [--unit UNIT]
+                                   (FORMULA: a, b, numbers, + - * / ( ), abs, min, max, e.g.
+                                   "a - b"; NAME and UNIT default to the auto name and unit)
+  calc edit ID|NAME [--formula F] [--a SIGNAL] [--b SIGNAL | --no-b] [--name NAME]
+            [--unit UNIT]
+                                   (replaces the given parts; prints the new ID as created)
+  calc rm ID|NAME                  (ID: c7 as in calc list; NAME ignoring case)
+
 Options (anywhere on the line; "--" ends options):
   --server URL        http(s) server address (default: $KIPSCOPE_URL, else ${DEFAULT_SERVER});
                       a workspace link (URL/w/ID) also names the workspace
@@ -168,7 +180,8 @@ M        line|step|markers
 TIME     decimal ns; YYYY-MM-DD[T| ]HH:MM[:SS[.f{1,9}]] with Z or +HH:MM, or without zone
          as local time (TZ); a or b, optionally +DURATION or -DURATION (cursor anchor)
 DURATION [+|-]<decimal><unit>, unit ns|us|µs|ms|s|min|h (e.g. +500ms, -1.5s)
-SIGNAL   full ID (dataRef/name) or a unique bare name (SPEED_DISP)
+SIGNAL   full ID (dataRef/name) or a unique bare name (SPEED_DISP); value and extent also
+         take a computed ID (dataRef/=c7)
 REF      assignment ID (a3) or a SIGNAL shown in window W; of scope set: a data ref (testcar)
 FILTER   words: active changes faults … all none; ecu:X name:X text:X "phrase"; -term excludes
 
@@ -196,6 +209,10 @@ const VALUE_OPTIONS = new Set([
   "--page",
   "--workspace",
   "--token",
+  "--formula",
+  "--a",
+  "--b",
+  "--unit",
 ]);
 const FLAG_OPTIONS = new Set([
   "--wait",
@@ -207,6 +224,7 @@ const FLAG_OPTIONS = new Set([
   "--overwrite",
   "--open",
   "--trim",
+  "--no-b",
 ]);
 const GLOBAL_OPTIONS = new Set([
   "--server",
@@ -406,6 +424,7 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
     "workspace",
     "case",
     "fav",
+    "calc",
   ].includes(first);
   const form = group ? `${first} ${second ?? ""}`.trim() : first;
   const args = pos.slice(group ? 2 : 1);
@@ -695,6 +714,51 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       take([1, Number.POSITIVE_INFINITY]);
       if (args.includes("")) usage("NAME is empty");
       return { kind: "fav", action: form === "fav add" ? "add" : "rm", names: args };
+    case "calc list":
+      take(0);
+      return { kind: "calc", action: "list" };
+    case "calc add": {
+      if (args.length === 0) usage("calc add needs a FORMULA (see --help)");
+      const opt = take(1, ["--a", "--b", "--name", "--unit"]);
+      const [a, b, name, unit] = ["--a", "--b", "--name", "--unit"].map(opt);
+      if (a === undefined) usage("calc add needs --a SIGNAL (see --help)");
+      if (a === "" || b === "") usage("SIGNAL is empty");
+      return {
+        kind: "calc",
+        action: "add",
+        formula: arg(0),
+        a,
+        ...(b !== undefined && { b }),
+        ...(name !== undefined && { name }),
+        ...(unit !== undefined && { unit }),
+      };
+    }
+    case "calc edit": {
+      const parts = ["--formula", "--a", "--b", "--name", "--unit"];
+      if (args.length === 0) usage("calc edit needs an ID or NAME (see --help)");
+      const opt = take(1, [...parts, "--no-b"]);
+      const [formula, a, b, name, unit] = parts.map(opt);
+      if (b !== undefined && opts.has("--no-b")) usage("--b and --no-b exclude each other");
+      if (a === "" || b === "") usage("SIGNAL is empty");
+      if (!opts.has("--no-b") && [formula, a, b, name, unit].every((p) => p === undefined)) {
+        usage("calc edit needs --formula, --a, --b, --no-b, --name or --unit");
+      }
+      return {
+        kind: "calc",
+        action: "edit",
+        target: arg(0),
+        ...(formula !== undefined && { formula }),
+        ...(a !== undefined && { a }),
+        ...(b !== undefined && { b }),
+        ...(opts.has("--no-b") && { noB: true as const }),
+        ...(name !== undefined && { name }),
+        ...(unit !== undefined && { unit }),
+      };
+    }
+    case "calc rm":
+      if (args.length === 0) usage("calc rm needs an ID or NAME (see --help)");
+      take(1);
+      return { kind: "calc", action: "rm", target: arg(0) };
     case "case open":
       take(1);
       if (arg(0) === "") usage("FILE is empty");

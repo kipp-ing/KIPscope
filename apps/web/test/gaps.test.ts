@@ -1,5 +1,6 @@
 import { type BucketSeries, encodeTimes, type GapInfo, type RawSeries } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setComputedDefs } from "../src/api.ts";
 import { bandsIn, GAP_RETRY_MS, GapInfoStore } from "../src/chart/gaps.ts";
 
 /** 5 min (design G9 (c)); a literal so that the test does not depend on the product constant. */
@@ -302,5 +303,36 @@ describe("gap info refetch", () => {
     release();
     await vi.advanceTimersByTimeAsync(REFRESH_MS * 3);
     expect(fetchInfo).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("gap info of computed signals (add-computed-signals)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    setComputedDefs([]);
+  });
+
+  // spec computed-signals "Parameters and gap signals"
+  it("asks gap info for a computed signal's inputs", async () => {
+    setComputedDefs([{ id: "c7", name: "Diff", formula: "a - b", a: "A.X", b: "B.Y" }]);
+    const fetchInfo = vi
+      .fn<(dataRef: string, signals: readonly string[]) => Promise<GapInfo>>()
+      .mockResolvedValue({ dataRef: "car", logger: [], periods: {} });
+    const store = new GapInfoStore(fetchInfo);
+    const release = store.ask(["car/=c7", "car/C.Z"], vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    // The inputs stand in for the computed ID; the computed ID itself is never asked.
+    expect(fetchInfo).toHaveBeenCalledTimes(1);
+    expect(fetchInfo).toHaveBeenCalledWith("car", ["car/A.X", "car/B.Y", "car/C.Z"]);
+    expect(fetchInfo.mock.calls.flatMap((c) => c[1]).some((id) => id.includes("=c7"))).toBe(false);
+    // The state is read by the same IDs the window asks with.
+    expect(store.state(["car/=c7", "car/C.Z"]).settled).toBe(true);
+    // The same data ref of another session names the inputs there.
+    release();
+    const other = store.ask(["other/=c7"], vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchInfo).toHaveBeenCalledWith("other", ["other/A.X", "other/B.Y"]);
+    other();
   });
 });

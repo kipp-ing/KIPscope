@@ -22,6 +22,7 @@ import {
   workspacePath,
 } from "@kipscope/shared";
 import { type GlobalOptions, type Invocation, parseArgs, USAGE } from "./args.ts";
+import { type CalcInvocation, calcCommand, computedDefs, computedQuery } from "./calc.ts";
 import { runCase } from "./case.ts";
 import { type Client, createClient, type Deadline } from "./client.ts";
 import { runFavourites } from "./favourites.ts";
@@ -197,7 +198,10 @@ async function executeWith(
       }
       case "extent": {
         const signal = await resolveSignal(invocation.signal, lookups);
-        const extent = await client.get<Extent>("/api/extent", { signal });
+        const extent = await client.get<Extent>("/api/extent", {
+          signal,
+          ...(await computedQuery(signal, lookups)),
+        });
         body.data = extent;
         body.local = { first: local(extent.first), last: local(extent.last) };
         return result("ok", body);
@@ -205,7 +209,11 @@ async function executeWith(
       case "value": {
         const signal = await resolveSignal(invocation.signal, lookups);
         const t = await resolveTime(invocation.t, lookups);
-        const query: Record<string, string> = { signal, t: t.toString() };
+        const query: Record<string, string> = {
+          signal,
+          t: t.toString(),
+          ...(await computedQuery(signal, lookups)),
+        };
         if (invocation.mode) query.mode = invocation.mode;
         const value = await client.get<CursorValueResult>("/api/value", query);
         body.data = value;
@@ -302,6 +310,12 @@ async function executeWith(
       case "workspace":
         await runWorkspace(invocation, options, client, body);
         return result("ok", body);
+      case "calc":
+        if (invocation.action !== "list") {
+          return await runCommand(invocation, options, client, lookups, deadline, body);
+        }
+        body.data = { computed: await computedDefs(lookups) };
+        return result("ok", body);
       case "fav":
         await runFavourites(invocation, client, lookups, body);
         return result("ok", body);
@@ -353,8 +367,11 @@ async function runWorkspace(
   }
 }
 
+/** A command form, or a `calc add|edit|rm` whose command is built when the call runs (C13). */
 async function runCommand(
-  invocation: Extract<Invocation, { kind: "command" }>,
+  invocation:
+    | Extract<Invocation, { kind: "command" }>
+    | Exclude<CalcInvocation, { action: "list" }>,
   options: GlobalOptions,
   client: Client,
   lookups: Lookups,
@@ -364,9 +381,12 @@ async function runCommand(
   let command: CommandInput;
   try {
     // A raw `command JSON` goes out as parsed; only templates of the forms hold refs to resolve.
-    command = invocation.raw
-      ? (invocation.template as CommandInput)
-      : await resolveCommand(invocation.template, lookups);
+    command =
+      invocation.kind === "calc"
+        ? await calcCommand(invocation, lookups)
+        : invocation.raw
+          ? (invocation.template as CommandInput)
+          : await resolveCommand(invocation.template, lookups);
   } catch (e) {
     // A lookup refused it (cursor_off, unknown_signal, …): nothing was sent.
     if (e instanceof CliError && e.outcome === "rejected") body.accepted = false;

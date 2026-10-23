@@ -925,3 +925,89 @@ describe("case forms (add-case-open K15)", () => {
     expect(USAGE).toMatch(/test aid/);
   });
 });
+
+describe("calc forms (add-computed-signals C13)", () => {
+  const parse = (...argv: string[]) => parseArgs(argv, {}).invocation;
+
+  // spec cli "Forms"
+  it("maps the calc forms", () => {
+    expect(parse("calc", "list")).toEqual({ kind: "calc", action: "list" });
+    // FORMULA and SIGNALs are kept as typed; the call resolves them against the list.
+    expect(parse("calc", "add", "a - b", "--a", "rpm", "--b", "speed")).toEqual({
+      kind: "calc",
+      action: "add",
+      formula: "a - b",
+      a: "rpm",
+      b: "speed",
+    });
+    expect(
+      parse(
+        "calc",
+        "add",
+        "abs(a)",
+        "--a",
+        "testcar/Sna_800h.RPM",
+        "--name",
+        "Abs",
+        "--unit",
+        "rpm",
+      ),
+    ).toEqual({
+      kind: "calc",
+      action: "add",
+      formula: "abs(a)",
+      a: "testcar/Sna_800h.RPM",
+      name: "Abs",
+      unit: "rpm",
+    });
+    expect(parse("calc", "edit", "Diff", "--formula", "abs(a)", "--no-b")).toEqual({
+      kind: "calc",
+      action: "edit",
+      target: "Diff",
+      formula: "abs(a)",
+      noB: true,
+    });
+    expect(
+      parse("calc", "edit", "c3", "--a", "rpm", "--b", "speed", "--name", "N", "--unit", "U"),
+    ).toEqual({
+      kind: "calc",
+      action: "edit",
+      target: "c3",
+      a: "rpm",
+      b: "speed",
+      name: "N",
+      unit: "U",
+    });
+    expect(parse("calc", "rm", "c3")).toEqual({ kind: "calc", action: "rm", target: "c3" });
+    // Options may stand anywhere on the line.
+    expect(parse("--a", "rpm", "calc", "add", "a * 2")).toMatchObject({
+      action: "add",
+      formula: "a * 2",
+      a: "rpm",
+    });
+
+    // No FORMULA, no --a, no ID|NAME, nothing to change, --b with --no-b, extra words, an unknown
+    // action and a bare `calc` are usage errors (exit 2).
+    for (const argv of [
+      ["calc", "add"],
+      ["calc", "add", "a"],
+      ["calc", "add", "a", "--a", "rpm", "extra"],
+      ["calc", "rm"],
+      ["calc", "edit"],
+      ["calc", "edit", "Diff"],
+      ["calc", "edit", "Diff", "--b", "speed", "--no-b"],
+      ["calc", "list", "x"],
+      ["calc", "frob"],
+      ["calc"],
+    ]) {
+      const error = usageError(argv);
+      expect(error.outcome, argv.join(" ")).toBe("usage");
+      expect(EXIT[error.outcome], argv.join(" ")).toBe(2);
+    }
+  });
+
+  it("names the calc forms and the computed ID in the usage text", () => {
+    for (const form of ["calc list", "calc add", "calc edit", "calc rm", "--no-b"])
+      expect(USAGE).toContain(form);
+  });
+});

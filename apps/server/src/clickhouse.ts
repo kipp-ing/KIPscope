@@ -5,7 +5,7 @@ import {
   ClickHouseLogLevel,
   createClient,
 } from "@clickhouse/client";
-import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
+import type { EventRow, FormulaNode, FormulaVar, StateRow, Timestamp } from "@kipscope/shared";
 import {
   type ClickHouseConfig,
   DEFAULT_EVENT_MAPPING,
@@ -14,6 +14,9 @@ import {
 } from "./config.ts";
 import type {
   Bucket,
+  ComputedAnswer,
+  ComputedInputRef,
+  ComputedRef,
   DataSource,
   RawPoint,
   RefBucket,
@@ -61,6 +64,43 @@ const hasCode = (error: unknown, codes: ReadonlySet<string>) =>
 
 /** Float64 NaN and infinities arrive as JSON null. */
 const num = (v: number | null) => v ?? Number.NaN;
+
+/** Hold limit of an input without one (design C9): large enough never to bite. */
+const NO_HOLD = 2n ** 63n - 1n;
+
+/**
+ * SQL of a parsed formula (design C9): `vars` are column aliases, each constant becomes a query
+ * parameter `{k<i>:Float64}` in `params`; no text of the formula reaches the query.
+ */
+export function compileFormula(
+  ast: FormulaNode,
+  vars: Record<FormulaVar, string>,
+  params: Params,
+): string {
+  let k = 0;
+  const walk = (node: FormulaNode): string => {
+    switch (node.op) {
+      case "num": {
+        const name = `k${k++}`;
+        params[name] = node.value;
+        return `{${name}:Float64}`;
+      }
+      case "var":
+        return vars[node.name];
+      case "neg":
+        return `(-${walk(node.arg)})`;
+      case "abs":
+        return `abs(${walk(node.arg)})`;
+      case "min":
+        return `least(${walk(node.left)}, ${walk(node.right)})`;
+      case "max":
+        return `greatest(${walk(node.left)}, ${walk(node.right)})`;
+      default:
+        return `(${walk(node.left)} ${node.op} ${walk(node.right)})`;
+    }
+  };
+  return walk(ast);
+}
 
 /**
  * ClickHouse adapter for a long-format table (design D5). Identifiers come from validated config;
@@ -154,12 +194,12 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
    * SNA predicate on the value column (design S3) with its parameters: true when the value lies in
    * one of the ref's closed SNA ranges; the constant 0 with no parameters when it has none.
    */
-  private isSna(ref: SeriesRef): { expr: string; params: Params } {
+  private isSna(ref: SeriesRef, p = "sna"): { expr: string; params: Params } {
     if (ref.sna.length === 0) return { expr: "0", params: {} };
     return {
       expr: `arrayExists((lo, hi) -> ${this.c.value} >= lo AND ${this.c.value} <= hi,
-                         {snaLo:Array(Float64)}, {snaHi:Array(Float64)})`,
-      params: { snaLo: ref.sna.map((r) => r.lo), snaHi: ref.sna.map((r) => r.hi) },
+                         {${p}Lo:Array(Float64)}, {${p}Hi:Array(Float64)})`,
+      params: { [`${p}Lo`]: ref.sna.map((r) => r.lo), [`${p}Hi`]: ref.sna.map((r) => r.hi) },
     };
   }
 
@@ -337,6 +377,102 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
       min,
       max,
     }));
+  }
+
+  /**
+   * A computed series (design C9): one count() of the inputs' rows, then one scan that computes
+   * the rows from the parsed formula. Two inputs: a window over both, each input's last value, SNA
+   * flag and time `IGNORE NULLS` with a RANGE frame (rows at one time see each other), its seed when
+   * it has no row yet, its hold limit, one row per time. One input: the formula per row. Buckets
+   * group the exact rows.
+   */
+  async computedSeries(
+    ref: ComputedRef,
+    from: Timestamp,
+    to: Timestamp,
+    target: number,
+    width: bigint,
+    abort?: AbortSignal,
+  ): Promise<ComputedAnswer> {
+    const { dataRef: refColumn, signal, time, value } = this.c;
+    const b = ref.b;
+    const names = b && b.name !== ref.a.name ? [ref.a.name, b.name] : [ref.a.name];
+    const range = `${refColumn} = {ref:String} AND ${signal} IN {names:Array(String)}
+       AND ${time} >= ${this.ns("from")} AND ${time} < ${this.ns("to")} AND ${time} IS NOT NULL`;
+    const params: Params = { ref: ref.dataRef, names, from, to };
+    const [counted] = await this.rows<[string]>(
+      `SELECT count() FROM ${this.table} WHERE ${range}`,
+      params,
+      abort,
+    );
+    const raw = Number(counted?.[0] ?? 0) <= target;
+
+    let rows: string;
+    if (!b) {
+      const sna = this.isSna(ref.a, "snaA");
+      Object.assign(params, sna.params);
+      const formula = compileFormula(ref.ast, { a: value, b: value }, params);
+      rows = `SELECT x, if(s OR NOT isFinite(v0), NULL, v0) AS v FROM (
+         SELECT toUnixTimestamp64Nano(${time}) AS x, ${sna.expr} AS s, ${formula} AS v0
+         FROM ${this.table} WHERE ${range})
+       ORDER BY x LIMIT 1 BY x`;
+    } else {
+      const column = (input: ComputedInputRef, v: "a" | "b") => {
+        const sna = this.isSna(input, `sna${v.toUpperCase()}`);
+        Object.assign(params, sna.params, {
+          [v]: input.name,
+          [`${v}SeedV`]: input.seed ? input.seed.v : null,
+          [`${v}SeedS`]: input.seed ? Number(input.seed.v === null) : null,
+          [`${v}SeedT`]: input.seed ? input.seed.t : null,
+          [`${v}Hold`]: input.holdNs ?? NO_HOLD,
+        });
+        const mine = `${signal} = {${v}:String}`;
+        return `ifNull(last_value(if(${mine}, ${value}, NULL)) IGNORE NULLS OVER w, {${v}SeedV:Nullable(Float64)}) AS ${v}_v,
+           ifNull(last_value(if(${mine}, toUInt8(${sna.expr}), NULL)) IGNORE NULLS OVER w, {${v}SeedS:Nullable(UInt8)}) AS ${v}_s,
+           ifNull(last_value(if(${mine}, toUnixTimestamp64Nano(${time}), NULL)) IGNORE NULLS OVER w, {${v}SeedT:Nullable(Int64)}) AS ${v}_t`;
+      };
+      const columns = `${column(ref.a, "a")},
+           ${column(b, "b")}`;
+      const formula = compileFormula(ref.ast, { a: "a_v", b: "b_v" }, params);
+      rows = `SELECT x, if(s OR NOT isFinite(v0), NULL, v0) AS v FROM (
+         SELECT x, ${formula} AS v0, a_s OR b_s AS s FROM (
+           SELECT toUnixTimestamp64Nano(${time}) AS x,
+           ${columns}
+           FROM ${this.table} WHERE ${range}
+           WINDOW w AS (ORDER BY ${time} RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))
+         WHERE a_t IS NOT NULL AND b_t IS NOT NULL
+           AND x - a_t <= {aHold:Int64} AND x - b_t <= {bHold:Int64})
+       ORDER BY x LIMIT 1 BY x`;
+    }
+
+    if (raw) {
+      const points = await this.rows<[string, number | null]>(
+        `SELECT toString(x), v FROM (${rows})`,
+        params,
+        abort,
+      );
+      return { kind: "raw", points: points.map(([t, v]) => ({ t: BigInt(t), v })) };
+    }
+    const buckets = await this.rows<
+      [string, string, string, number | null, number | null, number | null]
+    >(
+      `SELECT toString(x - positiveModulo(x, {w:Int64})) AS b,
+              countIf(v IS NOT NULL), countIf(v IS NULL), avg(v), min(v), max(v)
+       FROM (${rows}) GROUP BY b ORDER BY toInt64(b)`,
+      { ...params, w: width },
+      abort,
+    );
+    return {
+      kind: "buckets",
+      buckets: buckets.map(([start, count, sna, mean, min, max]) => ({
+        start: BigInt(start),
+        count: Number(count),
+        sna: Number(sna),
+        mean,
+        min,
+        max,
+      })),
+    };
   }
 
   // The two density queries read only the data-ref column (partition and first sort key, so other

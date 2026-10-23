@@ -186,6 +186,10 @@ export function queuedAdapter(adapter: SourceAdapter, queue: QueryQueue): Source
   if (stateChanges)
     queued.stateChanges = (ref, by, limit, scope, abort) =>
       queue.run((a) => stateChanges(ref, by, limit, scope, a), abort);
+  const computedSeries = adapter.computedSeries?.bind(adapter);
+  if (computedSeries)
+    queued.computedSeries = (ref, from, to, target, width, abort) =>
+      queue.run((a) => computedSeries(ref, from, to, target, width, a), abort);
   const events = adapter.events?.bind(adapter);
   if (events)
     queued.events = (dataRef, limit, scope, abort) =>

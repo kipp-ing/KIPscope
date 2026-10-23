@@ -1,7 +1,9 @@
+import { EMPTY_WORKSPACE, type Workspace } from "@kipscope/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource, SourceAdapter } from "../src/datasource.ts";
+import { workspaceSignals } from "../src/gaps.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { closeApps, gated, quiet, stateOf, unlink, unlinked } from "./caseApp.ts";
 import { at, c4, sameScope, scopeNs, scopeOfCall } from "./caseKit.ts";
@@ -550,5 +552,46 @@ describe("gap info of a work window (add-case-open)", () => {
     live.close();
     expect(gapCalls(calls.slice(mark)).map((c) => c.method)).toEqual([]);
     expect(gapCalls(calls)).toEqual([]);
+  });
+});
+
+describe("gap signals of a workspace with computed signals (add-computed-signals)", () => {
+  const timeseries = (id: string, ids: string[]): Workspace["windows"][number] => ({
+    id,
+    kind: "timeseries",
+    range: { from: "0", to: "1000" },
+    display: { mode: "line", envelope: false },
+    signals: ids.map((signalId, i) => ({ id: `a${id}${i}`, signalId })),
+  });
+  const base: Workspace = {
+    ...EMPTY_WORKSPACE,
+    computed: [
+      { id: "c1", name: "Diff", formula: "a - b", a: "Cyc", b: "Odd" },
+      { id: "c2", name: "Abs", formula: "abs(a)", a: "Odd" },
+    ],
+  };
+
+  // spec computed-signals "Parameters and gap signals" (server side of the gap request)
+  it("lists a computed ID's inputs instead of the ID", () => {
+    const ws: Workspace = {
+      ...base,
+      windows: [timeseries("w1", ["car/Cyc", "car/=c1"]), timeseries("w2", ["car/=c2"])],
+      eventSignals: ["car/Mode"],
+    };
+    const ids = workspaceSignals(ws);
+    expect([...ids].sort()).toEqual(["car/Cyc", "car/Mode", "car/Odd"]);
+    expect(ids.some((id) => id.includes("=c"))).toBe(false);
+    // Each ID once.
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("resolves the inputs on the computed ID's own data ref", () => {
+    const ws: Workspace = { ...base, windows: [timeseries("w1", ["other/=c1"])] };
+    expect([...workspaceSignals(ws)].sort()).toEqual(["other/Cyc", "other/Odd"]);
+  });
+
+  it("lists nothing for a computed ID without a definition", () => {
+    const ws: Workspace = { ...base, windows: [timeseries("w1", ["car/=c9", "car/Cyc"])] };
+    expect(workspaceSignals(ws)).toEqual(["car/Cyc"]);
   });
 });

@@ -1,12 +1,13 @@
-import type { SignalInfo } from "@kipscope/shared";
+import { COMPUTED_MAX_ROWS, parseFormula, type SignalInfo } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource } from "../src/clickhouse.ts";
 import type { EventMapping, TableMapping } from "../src/config.ts";
-import type { RawPoint, Scope, SourceAdapter, SourceInfo } from "../src/datasource.ts";
+import type { ComputedRef, RawPoint, Scope, SourceAdapter, SourceInfo } from "../src/datasource.ts";
 import { EventsCache } from "../src/events.ts";
 import {
+  ComputedTooLargeError,
   completeSource,
   nativeMethods,
   STATE_SCAN_MAX,
@@ -407,10 +408,130 @@ describe("the series fallback (speed-up-adx A2)", () => {
       "loggerGaps",
       "firstTimes",
       "stateChanges",
+      "computedSeries",
       "events",
     ]);
     expect((adapter as SourceAdapter).series).toBeUndefined();
     // The completed source still has it.
     expect(typeof completeSource(adapter).series).toBe("function");
+  });
+});
+
+describe("the computedSeries fallback (add-computed-signals)", () => {
+  const ast = (text: string) => {
+    const parsed = parseFormula(text);
+    if (!parsed.ok) throw new Error(parsed.message);
+    return parsed.ast;
+  };
+  const input = (name: string) => ({ dataRef: "conf-a", name, sna: [] });
+  const ref = (formula: string, extra: Partial<ComputedRef> = {}): ComputedRef => ({
+    dataRef: "conf-a",
+    ast: ast(formula),
+    a: input("Lin.RAMP"),
+    b: input("Sna.CODE"),
+    ...extra,
+  });
+
+  /** A stub whose `raw` answers per signal name and records each call's arguments. */
+  function byName(answers: Record<string, RawPoint[]>) {
+    const raw: { name: string; limit: number | undefined; abort: AbortSignal | undefined }[] = [];
+    const adapter: SourceAdapter = {
+      ...requiredOnly().adapter,
+      raw: async (r, _from, _to, limit, abort) => {
+        raw.push({ name: r.name, limit, abort });
+        return answers[r.name] ?? [];
+      },
+    };
+    return { adapter, raw };
+  }
+
+  // spec data-source "Row cap"
+  it("refuses a computed series over the row cap", async () => {
+    expect(COMPUTED_MAX_ROWS).toBe(200_000);
+    const big = Array.from({ length: COMPUTED_MAX_ROWS + 1 }, (_, i) => ({ t: BigInt(i), v: 1 }));
+    const { adapter, raw } = byName({ "Lin.RAMP": big, "Sna.CODE": [{ t: 0n, v: 2 }] });
+    const source = completeSource(adapter);
+    const outcome = await source.computedSeries(ref("a - b"), 0n, 1_000_000n, 1000, 1000n).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(outcome).toBeInstanceOf(ComputedTooLargeError);
+    expect((outcome as Error).message).toBe(
+      "more than 200,000 rows of Lin.RAMP in this range: zoom in",
+    );
+    // One raw call per input, each bounded by one row more than the cap.
+    expect(raw.map((c) => c.name).sort()).toEqual(["Lin.RAMP", "Sna.CODE"]);
+    expect(raw.every((c) => c.limit === COMPUTED_MAX_ROWS + 1)).toBe(true);
+  });
+
+  it("returns the rows at exactly 200,000 points", async () => {
+    const edge = Array.from({ length: COMPUTED_MAX_ROWS }, (_, i) => ({ t: BigInt(i), v: 1 }));
+    const { adapter } = byName({ "Lin.RAMP": edge });
+    const answer = await completeSource(adapter).computedSeries(
+      { dataRef: "conf-a", ast: ast("abs(a)"), a: input("Lin.RAMP") },
+      0n,
+      1_000_000n,
+      10,
+      100_000n,
+    );
+    expect(answer.kind).toBe("buckets");
+  });
+
+  it("computes rows from the raw points of each input", async () => {
+    const { adapter, raw } = byName({
+      "Lin.RAMP": [
+        { t: 10n, v: 1 },
+        { t: 20n, v: 2 },
+      ],
+      "Sna.CODE": [{ t: 15n, v: 10 }],
+    });
+    const source = completeSource(adapter);
+    // Union of times 10, 15, 20; no row at 10 (b has no point yet): 1 - 10, 2 - 10.
+    expect(await source.computedSeries(ref("a - b"), 0n, 100n, 10, 10n)).toEqual({
+      kind: "raw",
+      points: [
+        { t: 15n, v: -9 },
+        { t: 20n, v: -8 },
+      ],
+    });
+    expect(raw).toHaveLength(2);
+    // More input rows (3) than the target (2): buckets of 10 on the exact rows.
+    expect(await source.computedSeries(ref("a - b"), 0n, 100n, 2, 10n)).toEqual({
+      kind: "buckets",
+      buckets: [
+        { start: 10n, count: 1, sna: 0, mean: -9, min: -9, max: -9 },
+        { start: 20n, count: 1, sna: 0, mean: -8, min: -8, max: -8 },
+      ],
+    });
+    // The seed of b (last point before the range) counts, within its hold limit of 8 ns.
+    const seeded = ref("a - b", {
+      b: { ...input("Sna.CODE"), seed: { t: 5n, v: 100 }, holdNs: 8n },
+    });
+    expect(await source.computedSeries(seeded, 0n, 100n, 10, 10n)).toEqual({
+      kind: "raw",
+      points: [
+        { t: 10n, v: -99 },
+        { t: 15n, v: -9 },
+        { t: 20n, v: -8 },
+      ],
+    });
+  });
+
+  it("sends the computed fallback through the queue and stops on abort", async () => {
+    const { adapter, raw } = byName({
+      "Lin.RAMP": [{ t: 1n, v: 1 }],
+      "Sna.CODE": [{ t: 1n, v: 1 }],
+    });
+    const queue = new QueryQueue(1);
+    const source = completeSource(queuedAdapter(adapter, queue));
+    const controller = new AbortController();
+    await source.computedSeries(ref("a - b"), 0n, 100n, 10, 10n, controller.signal);
+    expect(queue.peak).toBe(1);
+    expect(raw).toHaveLength(2);
+    const reason = new Error("client went away");
+    controller.abort(reason);
+    await expect(
+      source.computedSeries(ref("a - b"), 0n, 100n, 10, 10n, controller.signal),
+    ).rejects.toBe(reason);
   });
 });

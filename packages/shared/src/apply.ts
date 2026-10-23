@@ -1,8 +1,17 @@
 import { type CaseEntry, caseScope } from "./case.ts";
 import { applyCaseCommand } from "./caseApply.ts";
+import {
+  type ComputedDef,
+  computedInputIds,
+  computedRef,
+  computedSignalId,
+  MAX_COMPUTED,
+  withComputed,
+} from "./computed.ts";
 import { DEFAULT_EVENT_FILTER, formatEventFilter, parseEventFilter } from "./eventFilter.ts";
+import { bindFormula, parseFormula } from "./formula.ts";
 import { clampToScope } from "./scope.ts";
-import { parseSignalId } from "./signals.ts";
+import { parseSignalId, signalId } from "./signals.ts";
 import { fromIso, TIME_MAX, TIME_MIN, toIso } from "./time.ts";
 import { MIN_SPAN_NS } from "./timenav.ts";
 import { parseViewDoc, rebindView } from "./views.ts";
@@ -37,6 +46,11 @@ export interface ApplyContext {
   unitOf?(signalId: string): string | undefined;
   /** Whether a signal has states (catalog: SignalInfo.states present), design E8. */
   hasStates(signalId: string): boolean;
+  /**
+   * Without a scope: the first entry with this signal name in the list in use, for the inputs of
+   * computed.add/update (add-computed-signals C7); absent: inputs unchecked without a scope.
+   */
+  inputInfo?(name: string): { states: boolean } | undefined;
   /** Whether the catalog has loaded; view.open needs it (absent = ready). */
   catalogReady?(): boolean;
   /** Scoped mode (KIPSCOPE_CATALOG=scoped): scope.clear and catalog-checked commands need a scope. */
@@ -182,6 +196,150 @@ function withEventSignals(state: Workspace, eventSignals: string[]): Workspace {
   return eventSignals.length > 0 ? { ...rest, eventSignals } : rest;
 }
 
+/** Sets `computed`; absent when empty. */
+function withComputedDefs(state: Workspace, computed: ComputedDef[]): Workspace {
+  const { computed: _removed, ...rest } = state;
+  return computed.length > 0 ? { ...rest, computed } : rest;
+}
+
+/**
+ * Every window assignment and colour of computed `id` (on any data ref) moved to computed `to`,
+ * assignment IDs and colour indexes kept; dropped when `to` is undefined (C6, C7).
+ */
+function moveComputedUses(state: Workspace, id: string, to: string | undefined): Workspace {
+  const move = (signalId: string): string | undefined => {
+    const ref = computedRef(signalId);
+    if (ref?.id !== id) return signalId;
+    return to === undefined ? undefined : computedSignalId(ref.dataRef, to);
+  };
+  const windows = state.windows.map((w) => ({
+    ...w,
+    signals: w.signals.flatMap((s) => {
+      const signalId = move(s.signalId);
+      return signalId === undefined ? [] : [{ id: s.id, signalId }];
+    }),
+  }));
+  const colors: Record<string, number> = {};
+  for (const [signalId, index] of Object.entries(state.colors)) {
+    const next = move(signalId);
+    if (next !== undefined) colors[next] = index;
+  }
+  return { ...state, windows, colors };
+}
+
+/** window.addSignal's message: a computed ID names its missing inputs (C7). */
+function unknownSignalMessage(id: string, state: Workspace, catalog: ApplyContext): string {
+  const ref = computedRef(id);
+  const def = ref && state.computed?.find((d) => d.id === ref.id);
+  if (!ref || !def) return `unknown signal: ${id}`;
+  const missing = computedInputIds(def, ref.dataRef)
+    .filter((input) => !catalog.signalExists(input))
+    .map((input) => parseSignalId(input)?.name ?? input);
+  return `computed signal ${id}: not in this list: ${missing.join(", ")}`;
+}
+
+type ComputedCommand = Extract<
+  Command,
+  { type: "computed.add" | "computed.update" | "computed.remove" }
+>;
+
+/**
+ * computed.add, computed.update and computed.remove (C7) with the refusals in the table's order.
+ * An update makes a new ID and moves every use to it; a remove drops its assignments and colours.
+ */
+function applyComputed(state: Workspace, command: ComputedCommand, ctx: ApplyContext): ApplyResult {
+  const defs = state.computed ?? [];
+  const unknownComputed = (id: string) =>
+    fail("unknown_computed", `unknown computed signal: ${id}`);
+  if (command.type === "computed.remove") {
+    if (!defs.some((d) => d.id === command.id)) return unknownComputed(command.id);
+    const workspace = pruneColors(moveComputedUses(state, command.id, undefined));
+    return {
+      ok: true,
+      workspace: withComputedDefs(
+        workspace,
+        defs.filter((d) => d.id !== command.id),
+      ),
+    };
+  }
+  let old: ComputedDef | undefined;
+  if (command.type === "computed.update") {
+    old = defs.find((d) => d.id === command.id);
+    if (!old) return unknownComputed(command.id);
+  } else if (ctx.scopeRequired && !state.scope) return scopeRequired();
+
+  const bound = bindFormula(parseFormula(command.formula), {
+    a: command.a,
+    ...(command.b !== undefined && { b: command.b }),
+  });
+  if (!bound.ok) return fail("invalid_formula", bound.message);
+  const name = command.name.trim();
+  if (defs.some((d) => d.id !== old?.id && d.name.toLowerCase() === name.toLowerCase()))
+    return fail("duplicate_name", `Name already used: ${name}`);
+  if (!old && defs.length >= MAX_COMPUTED)
+    return fail("computed_limit", `a workspace holds at most ${MAX_COMPUTED} computed signals`);
+
+  // Inputs on the scope's data ref, else in the list in use; an update checks changed ones only.
+  const changed = [bound.a, bound.b].filter(
+    (input, i): input is string =>
+      input !== undefined && (!old || input !== (i === 0 ? old.a : old.b)),
+  );
+  const inputState = (input: string): "unknown" | "states" | "ok" => {
+    if (state.scope) {
+      const id = signalId(state.scope.dataRef, input);
+      if (!ctx.signalExists(id)) return "unknown";
+      return ctx.hasStates(id) ? "states" : "ok";
+    }
+    if (!ctx.inputInfo) return "ok";
+    const info = ctx.inputInfo(input);
+    return info === undefined ? "unknown" : info.states ? "states" : "ok";
+  };
+  const states = changed.map((input) => [input, inputState(input)] as const);
+  const unknown = states.find(([, s]) => s === "unknown");
+  if (unknown) return fail("unknown_signal", `not in this list: ${unknown[0]}`);
+  const numericOnly = states.find(([, s]) => s === "states");
+  if (numericOnly)
+    return fail("not_numeric_signal", `${numericOnly[0]} has states: pick a numeric signal`);
+
+  const id = `c${state.nextId}`;
+  const unit = command.unit?.trim();
+  const def: ComputedDef = {
+    id,
+    name,
+    formula: command.formula.trim(),
+    a: bound.a,
+    ...(bound.b !== undefined && { b: bound.b }),
+    ...(unit ? { unit } : {}),
+  };
+  const nextId = state.nextId + 1;
+  if (!old)
+    return {
+      ok: true,
+      workspace: withComputedDefs({ ...state, nextId }, [...defs, def]),
+      created: id,
+    };
+
+  const nextDefs = defs.map((d) => (d.id === old.id ? def : d));
+  const moved = moveComputedUses(state, old.id, id);
+  const unitOf = withComputed(ctx, nextDefs).unitOf;
+  if (unitOf) {
+    for (const w of moved.windows) {
+      if (!isTimeseries(w) || !w.signals.some((s) => computedRef(s.signalId)?.id === id)) continue;
+      const units = windowUnits(w, unitOf);
+      if (units.length > MAX_UNITS)
+        return fail(
+          "too_many_units",
+          `a window shows at most ${MAX_UNITS} units: ${w.id} would show ${units.length} with ${unit ? `unit ${unit}` : "no unit"}`,
+        );
+    }
+  }
+  return {
+    ok: true,
+    workspace: withComputedDefs({ ...moved, nextId }, nextDefs),
+    created: id,
+  };
+}
+
 /**
  * view.open (design V2): the document replaces the workspace; IDs continue from `state.nextId`,
  * window signals follow the rules of window.addSignal, and what is left out goes into the report.
@@ -222,6 +380,30 @@ function openView(
     warnings: [...parsed.warnings, ...(rebound?.warnings ?? [])],
   };
   let nextId = state.nextId;
+  // The document's computed signals first, each with a fresh ID; window references `=<name>`
+  // map to it, and every check sees these definitions (C10).
+  const computed: ComputedDef[] = (doc.computed ?? []).map((c) => ({
+    id: `c${nextId++}`,
+    name: c.name,
+    formula: c.formula,
+    a: c.a,
+    ...(c.b !== undefined && { b: c.b }),
+    ...(c.unit !== undefined && { unit: c.unit }),
+  }));
+  const computedIds = new Map(computed.map((d) => [d.name.toLowerCase(), d.id]));
+  /** Workspace signal ID → the document's, for its colours. */
+  const docIds = new Map<string, string>();
+  const resolve = (docId: string): string => {
+    const parsed = parseSignalId(docId);
+    const id = parsed?.name.startsWith("=")
+      ? computedIds.get(parsed.name.slice(1).toLowerCase())
+      : undefined;
+    if (parsed === undefined || id === undefined) return docId;
+    const resolved = computedSignalId(parsed.dataRef, id);
+    docIds.set(resolved, docId);
+    return resolved;
+  };
+  const checks = withComputed(ctx, computed);
   const otherRef = (signalId: string) =>
     scope !== undefined && parseSignalId(signalId)?.dataRef !== scope.dataRef;
 
@@ -245,14 +427,15 @@ function openView(
   const kept = new Set<string>();
   windows = windows.map((window, index) => {
     let w = window;
-    for (const signalId of doc.windows[index]?.signals ?? []) {
+    for (const docId of doc.windows[index]?.signals ?? []) {
+      const signalId = resolve(docId);
       const skip = (reason: OpenReport["skipped"][number]["reason"]) =>
-        report.skipped.push({ signalId, window: index, reason });
+        report.skipped.push({ signalId: docId, window: index, reason });
       if (otherRef(signalId)) skip("out_of_scope");
-      else if (!ctx.signalExists(signalId)) missing.add(signalId);
+      else if (!checks.signalExists(signalId)) missing.add(docId);
       else if (w.signals.some((s) => s.signalId === signalId)) skip("already_in_window");
       else if (!kept.has(signalId) && kept.size >= MAX_SIGNALS) skip("signal_limit");
-      else if (checkUnits(w, signalId, ctx)) skip("too_many_units");
+      else if (checkUnits(w, signalId, checks)) skip("too_many_units");
       else {
         w = { ...w, signals: [...w.signals, { id: `a${nextId++}`, signalId }] };
         kept.add(signalId);
@@ -287,7 +470,7 @@ function openView(
 
   // The document's colours first, so the others take the least used of what remains.
   const colors: Record<string, number> = {};
-  const fromDoc = (id: string) => doc.colors?.[id];
+  const fromDoc = (id: string) => doc.colors?.[docIds.get(id) ?? id];
   for (const id of kept) {
     const index = fromDoc(id);
     if (
@@ -314,6 +497,7 @@ function openView(
     options: { digits: doc.digits },
   };
   workspace = withMeasurement(workspace, doc.measurement ?? {});
+  workspace = withComputedDefs(workspace, computed);
 
   const filter = doc.events?.filter;
   if (filter !== undefined) {
@@ -376,7 +560,9 @@ export function applyCommand(state: Workspace, command: Command, ctx: ApplyConte
   return { ...result, workspace: { ...result.workspace, view: { ...view, modified: true } } };
 }
 
-function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyResult {
+function applyOne(state: Workspace, command: Command, catalog: ApplyContext): ApplyResult {
+  // Every signal check sees the computed signals (C7); view.open uses the document's instead.
+  const ctx = withComputed(catalog, state.computed);
   const updateWindow = (
     windowId: string,
     update: (w: WorkspaceWindow) => WorkspaceWindow | ApplyResult,
@@ -470,7 +656,7 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
     case "window.addSignal": {
       if (ctx.scopeRequired && !state.scope) return scopeRequired();
       if (!ctx.signalExists(command.signalId)) {
-        return fail("unknown_signal", `unknown signal: ${command.signalId}`);
+        return fail("unknown_signal", unknownSignalMessage(command.signalId, state, catalog));
       }
       const signals = distinctSignals(state);
       if (!signals.has(command.signalId) && signals.size >= MAX_SIGNALS) {
@@ -752,7 +938,12 @@ function applyOne(state: Workspace, command: Command, ctx: ApplyContext): ApplyR
     }
 
     case "view.open":
-      return openView(state, command, ctx);
+      return openView(state, command, catalog);
+
+    case "computed.add":
+    case "computed.update":
+    case "computed.remove":
+      return applyComputed(state, command, catalog);
 
     case "scope.set": {
       if (state.case) return caseOpen();

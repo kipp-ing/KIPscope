@@ -235,13 +235,18 @@ const SCOPE_ARG = {
 } as const satisfies Partial<Record<keyof DataSource, number>>;
 
 /** Methods without a scope whose range must lie inside a held scope of their data ref. */
-const RANGED = ["raw", "buckets", "count"] as const satisfies readonly (keyof DataSource)[];
+const RANGED = [
+  "raw",
+  "buckets",
+  "count",
+  "computedSeries",
+] as const satisfies readonly (keyof DataSource)[];
 
 type Method = (...args: unknown[]) => Promise<unknown>;
 
 /**
  * Scoped mode's guard around the completed source (design Z10): a data call without a scope, or
- * a `raw`, `buckets`, `count` or `series` whose range is not inside a scope `held` returns for
+ * a `raw`, `buckets`, `count`, `series` or `computedSeries` whose range is not inside a scope `held` returns for
  * that data ref, rejects with ScopeGuardError before it reaches `source`; the first refusal of each
  * method is logged as a bug. `ping` and `info` pass.
  */

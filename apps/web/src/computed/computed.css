@@ -1,0 +1,279 @@
+/* Computed signal editor (add-computed-signals C12), D-055 tokens: a 360 px panel beside the
+   sidebar, 26 px controls, 12 px type, section labels, one primary (Save). Every row has a fixed
+   height and the error line is reserved, so the panel never changes size while typing. */
+
+.computed-editor {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 360px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.12);
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.computed-editor .mono {
+  font-family: var(--font-mono);
+  font-size: var(--name-size);
+}
+
+.computed-editor .computed-title {
+  margin-bottom: 2px;
+  font-weight: 600;
+  color: var(--name);
+}
+
+.computed-editor .section-label {
+  margin-top: 4px;
+}
+
+.computed-editor input[type="text"],
+.computed-editor select,
+.computed-editor button {
+  height: var(--control-h);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.computed-editor input[type="text"] {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.computed-editor input[type="text"]:focus-visible,
+.computed-editor select:focus-visible,
+.computed-editor button:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -1px;
+}
+
+.computed-editor :is(input, select, button):disabled {
+  border-color: var(--border);
+  color: var(--disabled);
+  background: var(--panel);
+}
+
+/* Picker: [a] [ field          × ▾ ] */
+.computed-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.computed-picker .computed-var {
+  flex-shrink: 0;
+  width: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.computed-picker.disabled .computed-var {
+  color: var(--disabled);
+}
+
+.computed-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.computed-field input[type="text"] {
+  flex: 1;
+  width: 100%;
+  padding-right: 48px;
+  text-overflow: ellipsis;
+}
+
+.computed-field .computed-icon {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--disabled);
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* With × shown, ▾ keeps the right end and × sits left of it. */
+.computed-field .computed-icon:first-of-type:not(:last-of-type) {
+  right: 23px;
+}
+
+.computed-field .computed-icon:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.computed-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 1;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 4px 14px rgb(15 23 42 / 0.15);
+}
+
+.computed-option,
+.computed-none {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.computed-none {
+  color: var(--muted);
+}
+
+.computed-option {
+  cursor: pointer;
+}
+
+.computed-option.active {
+  background: var(--accent-soft);
+}
+
+.computed-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--name);
+}
+
+.computed-option.active .computed-option-name {
+  color: var(--accent-ink);
+}
+
+.computed-option-unit {
+  flex-shrink: 0;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.computed-option.disabled {
+  cursor: default;
+}
+
+.computed-option.disabled .computed-option-name,
+.computed-option.disabled .computed-option-unit {
+  color: var(--disabled);
+}
+
+/* Preset select and formula field side by side. */
+.computed-formula {
+  display: flex;
+  gap: 6px;
+}
+
+.computed-formula select {
+  flex: 0 0 140px;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.computed-formula input[type="text"] {
+  flex: 1;
+}
+
+/* One line, reserved (M4): an error never moves the fields below it. */
+.computed-editor .computed-error {
+  height: 16px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--error);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.computed-names {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+}
+
+.computed-names label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.computed-names .section-label {
+  margin-top: 0;
+}
+
+.computed-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.computed-actions .computed-spacer {
+  flex: 1;
+}
+
+.computed-actions button {
+  padding: 0 12px;
+  color: var(--label);
+  cursor: pointer;
+}
+
+.computed-actions button:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+/* Save: the panel's one primary (design-language "One primary per surface"). */
+.computed-actions button.primary {
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: #fff;
+}
+
+.computed-actions button.primary:hover:not(:disabled) {
+  background: var(--name);
+}
+
+.computed-actions button.primary:disabled {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Delete: a text button in the error colour (C12). */
+.computed-actions button.computed-delete {
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--error);
+}
+
+.computed-actions button.computed-delete:hover:not(:disabled) {
+  background: var(--error-fill);
+}

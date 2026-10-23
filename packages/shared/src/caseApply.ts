@@ -8,6 +8,7 @@ import {
   rebindSignalId,
   type WorkspaceCase,
 } from "./case.ts";
+import { computedInputIds, computedRef, withComputed } from "./computed.ts";
 import { clampToScope } from "./scope.ts";
 import { parseSignalId } from "./signals.ts";
 import { toIso } from "./time.ts";
@@ -203,7 +204,14 @@ export function openCase(input: OpenCaseInput): { workspace: Workspace; missing:
     entry,
   };
   const workspace: Workspace = { ...base, windows, cursors, scope, case: workspaceCase };
-  return { workspace, missing: missingSignals(workspace, input.known) };
+  // A computed signal is known iff its definition is and its inputs are on its data ref (C7).
+  const known = (id: string): boolean => {
+    const ref = computedRef(id);
+    if (!ref) return input.known(id);
+    const def = workspace.computed?.find((d) => d.id === ref.id);
+    return def !== undefined && computedInputIds(def, ref.dataRef).every(input.known);
+  };
+  return { workspace, missing: missingSignals(workspace, known) };
 }
 
 /** case.go to `index` (K6): offsets kept, signals rebound, cursors moved, linked. */
@@ -244,8 +252,10 @@ function goTo(state: Workspace, c: WorkspaceCase, index: number, ctx: ApplyConte
     scope,
     case: { ...kept, current: index, linked: true, alignAt, entry: target },
   };
+  // Computed signals count as missing when an input is (C7).
+  const checks = withComputed(ctx, workspace.computed);
   const missing = missingSignals(workspace, (id) =>
-    parseSignalId(id)?.dataRef !== target.dataRef ? true : ctx.signalExists(id),
+    parseSignalId(id)?.dataRef !== target.dataRef ? true : checks.signalExists(id),
   );
   return {
     ok: true,

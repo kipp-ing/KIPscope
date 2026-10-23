@@ -10,7 +10,7 @@ The routes of the KIPscope server (default `http://127.0.0.1:7310`), for your ow
 - **Grant** ([deploy.md](deploy.md#rights)): each workspace holds the data refs it may read, decided by the search tool (finder). With `none` it is everything; on a server a new workspace's grant is empty until a handoff from the search tool widens it. No request sets a grant; a client only reads `granted` (`"all"` or the number of data refs) in the workspace summary.
 - **JSON bodies:** request bodies are `application/json` only; any other type, `text/plain` included, gets 415. A POST without a body is fine. Bodies up to 1 MiB (Fastify's default, else 413), `POST /api/workspaces` up to 4 MB for a catalog; a view text for import at most 256 KiB (413 `view_too_large`); a live channel message at most 256 KiB (the connection closes with 1009).
 - **Times** are decimal nanoseconds since 1970-01-01T00:00:00Z as strings (`"1791158400000000000"`), in answers and in query fields; query fields also accept ISO-8601 (`2026-10-05T00:00:00Z`). Bounds lie within 1900-01-01 … 2262-04-11.
-- **Signal IDs** are `<dataRef>/<name>`, e.g. `smart451/BMS.SOC`; URL-encode them in query strings.
+- **Signal IDs** are `<dataRef>/<name>`, e.g. `smart451/BMS.SOC`; URL-encode them in query strings. A computed signal is `<dataRef>/=<id>`, e.g. `smart451/=c7` (see "Computed signals" below).
 - **Errors** answer `{"error": {"code": "...", "message": "..."}}`, sometimes with more fields (`signalId`, `reason`, the range). 400 `invalid_request` for a bad query or body; 404 for an unknown signal, data ref or view; 502 `source_error` when the database query failed.
 - **Catalog not loaded:** routes that need the signal catalog answer 503 `catalog_unavailable` with `reason` (still loading, or source unreachable) until the first load succeeded.
 - **Scope** ([scope](../openspec/specs/scope/spec.md), D-078): the workspace may hold a scope, one data ref and a half-open time window `[from, to)`. While it does, every data route answers as if the source held only that window of that data ref: the catalog and signal search list the scope's signals (`scope` in the answer), density, gaps and events cover the scope, series ranges are cut to it, and every source query carries the data ref and both time bounds. A signal or `dataRef` of another data ref, a series range wholly outside, or a `value` time outside answers 409 `out_of_scope`. With `KIPSCOPE_CATALOG=scoped` and no scope, the catalog and data routes answer 409 `scope_required`, and `/api/meta` reports catalog state `no_scope`. The scope changes only through the commands `scope.set` and `scope.clear` and through opening a view (which sets the view's scope, else one derived from its windows, cursors and `KIPSCOPE_SCOPE_PAD`); loading the new scope's signal list first can answer 503 `catalog_unavailable`, with the workspace unchanged. Range commands are clamped into the scope (`clamped: true` in the result); commands refused for the scope (`scope_required`, `out_of_scope`) answer 422 like other rejected commands.
@@ -38,9 +38,9 @@ Each workspace ([workspaces](../openspec/specs/workspaces/spec.md)) has an ID of
 | `GET /api/signals` | workspace | search the catalog, one page | `q`, `offset`, `limit` | [signal-catalog](../openspec/specs/signal-catalog/spec.md) |
 | `GET /api/catalog` | workspace | the whole catalog, unpaged | — | [signal-catalog](../openspec/specs/signal-catalog/spec.md) |
 | `POST /api/catalog/refresh` | workspace | reload signals from the source and the DBC files | no body | [signal-catalog](../openspec/specs/signal-catalog/spec.md) |
-| `GET /api/extent` | workspace, `signal` | first and last time of a signal | `signal`, `case` (catalog index: bounded by that session's scope) | [series-query](../openspec/specs/series-query/spec.md) |
-| `GET /api/series` | workspace, `signal` | points or buckets of a signal for a range, sized to the target | `signal`, `from`, `to`, `target` (default 2000), `case` (catalog index: bounded by that session's scope instead of the workspace's; another data ref answers 409 `out_of_scope`) | [series-query](../openspec/specs/series-query/spec.md) |
-| `GET /api/value` | workspace, `signal` | a signal's value at a time (cursor reading) | `signal`, `t`, `mode` (`line` or `step`) | [series-query](../openspec/specs/series-query/spec.md) |
+| `GET /api/extent` | workspace, `signal` | first and last time of a signal | `signal`, `case` (catalog index: bounded by that session's scope); `formula`, `a`, `b` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
+| `GET /api/series` | workspace, `signal` | points or buckets of a signal for a range, sized to the target | `signal`, `from`, `to`, `target` (default 2000), `case` (catalog index: bounded by that session's scope instead of the workspace's; another data ref answers 409 `out_of_scope`); `formula`, `a`, `b` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
+| `GET /api/value` | workspace, `signal` | a signal's value at a time (cursor reading) | `signal`, `t`, `mode` (`line` or `step`); `formula`, `a`, `b` for a computed signal | [series-query](../openspec/specs/series-query/spec.md), [computed-signals](../openspec/specs/computed-signals/spec.md) |
 | `GET /api/density` | workspace, `dataRef` | row counts of a data ref over its whole extent, drive grid and drives (time strip); with `from` and `to` over that part of the scope; in an object scope without them coarse (`coarse: true`, bars only, no drives) | `dataRef`, `from` and `to` (together) | [time-strip](../openspec/specs/time-strip/spec.md) |
 | `GET /api/calendar` | workspace, `dataRef` | rows per hour and drives (60 s grid) of one window of at most 32 d, cut to the scope, for the range picker; an empty window answers zeros | `dataRef`, `from`, `to` (both whole minutes, `to` after `from`) | [range-picker](../openspec/specs/range-picker/spec.md) |
 | `GET /api/gaps` | workspace, `dataRef`, `signal` | logger gaps and periods of a data ref; in an object scope of the work window | `dataRef`, `signal` (repeated, at most 100), `from` and `to` (the work window: required in an object scope, at most 32 d; refused outside one) | [data-gaps](../openspec/specs/data-gaps/spec.md) |
@@ -67,6 +67,26 @@ Each workspace ([workspaces](../openspec/specs/workspaces/spec.md)) has an ID of
 | `DELETE /api/workspaces/:id` | user | delete a workspace (owner only); its live connections close with 4404 | — | [workspaces](../openspec/specs/workspaces/spec.md) |
 
 Access: the level of "Access levels" above, then the request fields whose data refs are checked against the workspace's grant (403 `forbidden_data`). Catalog, signals and meta answer only the granted data refs. Views are per user: a user never sees or changes another user's views.
+
+## Computed signals
+
+A computed signal (`<dataRef>/=<id>`, defined in the workspace's `computed` list by the commands `computed.add`, `computed.update`, `computed.remove`) is read through `GET /api/series`, `GET /api/value` and `GET /api/extent` with three more query parameters ([computed-signals](../openspec/specs/computed-signals/spec.md)):
+
+| Parameter | Meaning |
+|---|---|
+| `formula` | the formula, at most 200 characters: `a`, `b`, numbers, `+ - * /`, parentheses, `abs(x)`, `min(x, y)`, `max(x, y)`; it must use `a` |
+| `a` | the signal name (no data ref) of input `a`; resolved as `<dataRef>/<a>` on the signal's data ref |
+| `b` | the signal name of input `b`; needed when the formula uses `b`, dropped when it does not |
+
+The server parses the formula itself and never puts request text into a query. Answers keep their shapes (`RawSeries`, `BucketSeries`, `CursorValueResult`, `Extent`) with `signalId` the computed ID. Rows lie at the inputs' point times, each input holding its last point for at most 3 of its periods; a row is SNA (`null`) when an input's held point is SNA or the result is not finite. A series is raw when the range holds at most `target` input rows, else buckets of the exact rows. An extent spans from the later of the inputs' firsts to the later of their lasts.
+
+| Route | Errors |
+|---|---|
+| `/api/series` | 400 `invalid_request` (a computed signal without `formula` or `a`, or a plain signal with `formula`, `a` or `b`); 400 `invalid_formula` (the parser's message, e.g. `Unknown name "c": use a, b, numbers, + - * / ( ), abs, min, max`); 404 `unknown_signal` (an input not in the list in use, `signalId` the input's ID, message `not in this list: <id>`); 422 `not_numeric_signal` (an input with states); 422 `computed_too_large` (a source without a native computed series and more than 200,000 rows of one input in the range, message `more than 200,000 rows of <name> in this range: zoom in`) |
+| `/api/value` | the same, without `computed_too_large` |
+| `/api/extent` | the same, without `computed_too_large`; 404 `no_data` when an input has no data |
+
+Example: `/api/series?signal=smart451%2F%3Dc7&formula=a%20-%20b&a=MS_312h.DNMOT&b=CPC_508h.PNHV_SupBat_Curr&from=…&to=…&target=2000`.
 
 ## Sessions from a finder
 

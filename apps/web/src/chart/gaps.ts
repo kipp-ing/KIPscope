@@ -1,4 +1,7 @@
 import {
+  computedInputIds,
+  computedRef,
+  computedSignalGaps,
   GAP_REFRESH_MS,
   type GapInfo,
   holdsSample,
@@ -6,12 +9,14 @@ import {
   MAX_GAP_SIGNALS,
   parseSignalId,
   type SeriesResult,
+  type SignalGaps,
+  signalGaps,
   type TimeRange,
   type WorkspaceScope,
   workWindow,
 } from "@kipscope/shared";
 import { useCallback, useSyncExternalStore } from "react";
-import { fetchGaps, isCatalogLoading } from "../api.ts";
+import { computedDefOf, fetchGaps, isCatalogLoading } from "../api.ts";
 
 /** Scope keys whose extents and gap info are kept (add-case-open K12; the server keeps 4 scope lists too). */
 export const SCOPE_STORES = 4;
@@ -50,8 +55,26 @@ interface Entry {
   again?: true;
 }
 
-/** The IDs once each, first occurrence first. */
-const keyOf = (signalIds: readonly string[]) => [...new Set(signalIds)].join("\n");
+/**
+ * The signals whose gap info `signalIds` need: a computed ID stands for its used inputs on its data
+ * ref (add-computed-signals C11, C3), dropped while it has no definition.
+ */
+function gapSignals(signalIds: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const id of signalIds) {
+    const ref = computedRef(id);
+    if (ref === undefined) {
+      out.push(id);
+      continue;
+    }
+    const def = computedDefOf(id);
+    if (def) out.push(...computedInputIds(def, ref.dataRef));
+  }
+  return out;
+}
+
+/** The gap signals of the IDs once each, first occurrence first. */
+const keyOf = (signalIds: readonly string[]) => [...new Set(gapSignals(signalIds))].join("\n");
 const idsOf = (key: string) => (key === "" ? [] : key.split("\n"));
 
 /** `signalIds` by data ref, in order; IDs without a data ref are left out. */
@@ -407,6 +430,17 @@ export function useGapInfo(
     [key, scope, from, to],
   );
   return useSyncExternalStore(subscribe, snapshot);
+}
+
+/**
+ * Gaps of one signal from its data ref's gap info (`signalGaps`); a computed signal's from its
+ * inputs' periods (C3), only logger gaps while its definition is unknown.
+ */
+export function gapsOf(info: GapInfo | undefined, signalId: string): SignalGaps {
+  const ref = computedRef(signalId);
+  const def = ref && computedDefOf(signalId);
+  // An ID the gap info does not know gets its data ref's logger gaps and no period.
+  return ref && def ? computedSignalGaps(info, ref.dataRef, def) : signalGaps(info, signalId);
 }
 
 /**

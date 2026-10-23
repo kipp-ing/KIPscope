@@ -102,6 +102,11 @@ export interface SignalInfo {
    * carry text, or diag.kind "enum", D-061; not diag.kind "text"). Absent: no states (D-059, design N1).
    */
   states?: "labels" | "text";
+  /**
+   * A computed signal's definition (add-computed-signals C11); `unavailable`: why it cannot be
+   * shown on this data ref (`not in this list: …`). Absent for catalog signals.
+   */
+  computed?: { formula: string; a: string; b?: string; unavailable?: string };
 }
 
 /** `displayName ?? name`. */

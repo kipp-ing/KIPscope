@@ -1,4 +1,4 @@
-import type { Digits, SignalMatch, WorkspaceWindow } from "@kipscope/shared";
+import { type Digits, type SignalMatch, shownName, type WorkspaceWindow } from "@kipscope/shared";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import {
   formatDbcRange,
@@ -51,6 +51,32 @@ export function SignalCard({
     const top = Math.max(GAP, Math.min(anchor.top, window.innerHeight - height - GAP));
     setPos((p) => (p.left === left && p.top === top ? p : { left, top }));
   }, [anchor.right, anchor.top]);
+
+  // A computed signal's card (add-computed-signals C12): name, the formula with full input names
+  // (its description, C11), unit, nothing else.
+  if (signal.computed) {
+    return (
+      <div
+        ref={ref}
+        id={id}
+        role="tooltip"
+        className="signal-card"
+        style={{ left: pos.left, top: pos.top }}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+      >
+        <div className="signal-card-name">
+          <Highlight text={shownName(signal)} ranges={match.shown} />
+        </div>
+        {signal.description && (
+          <div className="signal-card-description signal-card-formula">
+            <Highlight text={signal.description} ranges={match.description} />
+          </div>
+        )}
+        {unit && <Fields fields={[["Unit", unit]]} />}
+      </div>
+    );
+  }
 
   const fields: [string, ReactNode][] = [];
   if (dbc) fields.push(["Message", `${dbc.message} · ${formatMessageId(dbc.messageId)}`]);

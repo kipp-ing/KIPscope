@@ -109,6 +109,7 @@ export const SHORTCUTS: Shortcut[] = [
     keys: "Ctrl/Cmd+D",
     action: "Star or unstar the row or the selection",
   },
+  { group: "Signal list", keys: "F2", action: "Edit the active computed signal" },
 
   { group: "In a plot", keys: "click", action: "Set cursor A" },
   { group: "In a plot", keys: "Shift+click", action: "Set cursor B" },

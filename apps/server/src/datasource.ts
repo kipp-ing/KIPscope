@@ -1,4 +1,4 @@
-import type { EventRow, StateRow, Timestamp } from "@kipscope/shared";
+import type { EventRow, FormulaNode, StateRow, Timestamp } from "@kipscope/shared";
 
 /** One data ref and a half-open window [from, to), from < to (D-078, issue #1 item 1). */
 export interface Scope {
@@ -75,6 +75,25 @@ export interface LoggerGaps {
 /** What one series request needs (design A2): raw points with edges, or buckets. */
 export type SeriesAnswer =
   | { kind: "raw"; points: RawPoint[]; before?: RawPoint; after?: RawPoint }
+  | { kind: "buckets"; buckets: Bucket[] };
+
+/** One input of a computed signal (design C8): `seed` its last point before the range, `holdNs` its hold limit (C2). */
+export interface ComputedInputRef extends SeriesRef {
+  seed?: RawPoint;
+  holdNs?: bigint;
+}
+
+/** A computed signal on one data ref (design C8): the parsed formula, never its text, and its inputs. */
+export interface ComputedRef {
+  dataRef: string;
+  ast: FormulaNode;
+  a: ComputedInputRef;
+  b?: ComputedInputRef;
+}
+
+/** Rows of a computed signal (design C8), without edges: the server adds them. */
+export type ComputedAnswer =
+  | { kind: "raw"; points: RawPoint[] }
   | { kind: "buckets"; buckets: Bucket[] };
 
 /** Labels of a source for meta, footer and log messages; never a URL or a credential. */
@@ -200,6 +219,20 @@ export interface SourceAdapter {
     scope?: Scope,
     abort?: AbortSignal,
   ): Promise<Map<string, Timestamp[]>>;
+  /**
+   * Rows of a computed signal in [from, to) (design C2, C8): raw when the range holds at most
+   * `target` rows of its inputs together, else buckets of the exact rows on the floor grid
+   * `k * width`. Compiles `ref.ast`, never formula text; the fallback reads `raw` per input with a
+   * bound of COMPUTED_MAX_ROWS rows.
+   */
+  computedSeries?(
+    ref: ComputedRef,
+    from: Timestamp,
+    to: Timestamp,
+    target: number,
+    width: bigint,
+    abort?: AbortSignal,
+  ): Promise<ComputedAnswer>;
   /** Rows of one signal (SNA left out) where the state changes, plus its first row; at most `limit` rows (E7). */
   stateChanges?(
     ref: SeriesRef,

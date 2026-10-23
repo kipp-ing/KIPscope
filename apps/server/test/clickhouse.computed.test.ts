@@ -1,0 +1,163 @@
+import { parseFormula } from "@kipscope/shared";
+import { describe, expect, it } from "vitest";
+import { ClickHouseSource } from "../src/clickhouse.ts";
+import type { EventMapping, TableMapping } from "../src/config.ts";
+import type { ComputedInputRef, ComputedRef } from "../src/datasource.ts";
+
+// A client that records every query text and its parameters and answers a canned row count, so
+// the compiled SQL is checked without a database (the conformance cases run the real queries).
+const mapping: TableMapping = {
+  database: "sdlog",
+  table: "conf_signals",
+  dataRef: "vehicle",
+  signal: "signal",
+  time: "utc",
+  value: "value",
+  text: "text",
+};
+const events: EventMapping = {
+  table: "conf_events",
+  source: "source",
+  kind: "kind",
+  name: "name",
+  value: "value",
+  text: "text",
+  detail: "detail",
+};
+
+interface Recorded {
+  query: string;
+  params: Record<string, unknown>;
+}
+
+/** `count` answers the row count of the count query; the scan answers no rows. */
+function counting(count: number) {
+  const queries: Recorded[] = [];
+  const client = {
+    query: async (o: { query: string; query_params?: Record<string, unknown> }) => {
+      queries.push({ query: o.query, params: o.query_params ?? {} });
+      const isCount = /\bcount\s*\(/i.test(o.query) && !/\bOVER\b/i.test(o.query);
+      return { json: async () => (isCount ? [[String(count)]] : []) };
+    },
+  };
+  const source = new ClickHouseSource(client as never, mapping, 30, events);
+  return { source, queries };
+}
+
+const ast = (text: string) => {
+  const parsed = parseFormula(text);
+  if (!parsed.ok) throw new Error(parsed.message);
+  return parsed.ast;
+};
+
+const SIG_A = "Fast_100h.SIG_A";
+const SPEED = "Sna_800h.SPEED";
+const input = (name: string, extra: Partial<ComputedInputRef> = {}): ComputedInputRef => ({
+  dataRef: "testcar",
+  name,
+  sna: [],
+  ...extra,
+});
+const refOf = (formula: string, a: ComputedInputRef, b?: ComputedInputRef): ComputedRef => ({
+  dataRef: "testcar",
+  ast: ast(formula),
+  a,
+  ...(b && { b }),
+});
+
+const FROM = 1_791_158_400_000_000_000n;
+const TO = FROM + 100_000_000_000n;
+
+async function run(source: ClickHouseSource, ref: ComputedRef, target: number) {
+  if (typeof source.computedSeries !== "function")
+    throw new Error("ClickHouseSource has no computedSeries yet");
+  return source.computedSeries(ref, FROM, TO, target, 1_000_000_000n);
+}
+
+const everything = (queries: Recorded[]) => queries.map((q) => q.query).join("\n;\n");
+const paramValues = (queries: Recorded[]) =>
+  queries.flatMap((q) => Object.values(q.params).map((v) => String(v)));
+
+describe("ClickHouse computed series compile (add-computed-signals C9)", () => {
+  // spec computed-signals "Constants and names as parameters"
+  it("compiles constants and names as parameters", async () => {
+    const { source, queries } = counting(5000);
+    const ref = refOf(
+      "a * 2.5 + b",
+      input(SIG_A, { seed: { t: FROM - 5_000_000n, v: 0.25 }, holdNs: 15_000_000n }),
+      input(SPEED, {
+        sna: [{ lo: 510.5, hi: 511.5 }],
+        seed: { t: FROM - 100_000_000n, v: 7 },
+        holdNs: 300_000_000n,
+      }),
+    );
+    await run(source, ref, 100);
+    expect(queries.length).toBeGreaterThan(0);
+    const sql = everything(queries);
+    // The constant is a bound parameter.
+    expect(sql).toContain("{k0:Float64}");
+    expect(sql).not.toContain("2.5");
+    // Neither signal name, nor the data ref, SNA bound, seed or hold limit is in the text.
+    expect(sql).not.toContain(SIG_A);
+    expect(sql).not.toContain(SPEED);
+    expect(sql).not.toContain("testcar");
+    expect(sql).not.toContain("510.5");
+    expect(sql).not.toContain("511.5");
+    expect(sql).not.toContain("15000000");
+    expect(sql).not.toContain("300000000");
+    // The parameters hold them.
+    const scan = queries.find((q) => "k0" in q.params);
+    expect(scan, "a query with parameter k0").toBeDefined();
+    expect(Number(scan?.params.k0)).toBe(2.5);
+    const values = paramValues(queries);
+    expect(values).toContain(SIG_A);
+    expect(values).toContain(SPEED);
+    expect(values).toContain("testcar");
+    expect(values.some((v) => v.includes("510.5"))).toBe(true);
+    expect(values).toContain("15000000");
+    expect(values).toContain("300000000");
+  });
+
+  it("binds every constant of a formula on its own", async () => {
+    const { source, queries } = counting(5000);
+    await run(source, refOf("a * 2.5 + b * 7", input(SIG_A), input(SPEED)), 100);
+    const sql = everything(queries);
+    expect(sql).toContain("{k0:Float64}");
+    expect(sql).toContain("{k1:Float64}");
+    expect(sql).not.toMatch(/\b2\.5\b/);
+    const scan = queries.find((q) => "k0" in q.params);
+    expect(new Set([Number(scan?.params.k0), Number(scan?.params.k1)])).toEqual(new Set([2.5, 7]));
+  });
+
+  // spec computed-signals "Query count"
+  it("computes in one scan", async () => {
+    const { source, queries } = counting(5000);
+    await run(source, refOf("a - b", input(SIG_A), input(SPEED)), 100);
+    // The count and the scan, nothing else.
+    expect(queries).toHaveLength(2);
+    const [count, scan] = queries as [Recorded, Recorded];
+    expect(count.query).toMatch(/count\s*\(/i);
+    expect(count.query).not.toMatch(/\bOVER\b/i);
+    expect(scan.query).toContain("IGNORE NULLS OVER");
+    for (const { query } of queries) {
+      expect(query).not.toMatch(/\bJOIN\b/i);
+      expect(query).not.toMatch(/\bUNION\b/i);
+    }
+  });
+
+  it("sends the same two queries for a raw answer", async () => {
+    const { source, queries } = counting(50);
+    const answer = await run(source, refOf("a - b", input(SIG_A), input(SPEED)), 100);
+    expect(queries).toHaveLength(2);
+    expect(queries[1]?.query).toContain("IGNORE NULLS OVER");
+    expect(answer.kind).toBe("raw");
+  });
+
+  it("reads one input without a window", async () => {
+    const { source, queries } = counting(5000);
+    await run(source, refOf("abs(a)", input(SIG_A)), 100);
+    expect(queries).toHaveLength(2);
+    expect(queries[1]?.query).not.toMatch(/\bOVER\b/i);
+    expect(queries[1]?.query).toMatch(/\babs\(/);
+  });
+});

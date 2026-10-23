@@ -18,7 +18,6 @@ import {
   type SignalInfo,
   shortLabel,
   shownName,
-  signalGaps,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
 } from "@kipscope/shared";
@@ -68,7 +67,7 @@ import {
   stackFlags,
 } from "./cursors.ts";
 import { DRAG_THRESHOLD_PX, type DragSource, type DropState } from "./drag.ts";
-import { bandsIn, heldWorkWindow, useGapInfo } from "./gaps.ts";
+import { bandsIn, heldWorkWindow, gapsOf as signalGapsOf, useGapInfo } from "./gaps.ts";
 import { draggedHeight, heightCommand, startsHeightDrag, trackHeightDrag } from "./height.ts";
 import type { Insets } from "./insets.ts";
 import { linkedPreview, shownRange, useLinkedPreview } from "./linkedPreview.ts";
@@ -91,6 +90,7 @@ import {
   type LoadRequest,
   loadKey,
   loadStatusText,
+  MISSING,
   SeriesLoader,
   windowTargets,
 } from "./loader.ts";
@@ -868,9 +868,10 @@ export function TimeseriesWindow({
   const heldWindow = useRef<{ from: string; to: string } | undefined>(undefined);
   heldWindow.current = heldWorkWindow(heldWindow.current, w.range, scopeOfKey(scopeKey));
   const gapInfo = useGapInfo(signalIds, scopeKey, heldWindow.current);
+  // A computed signal's gaps come from its inputs' periods (add-computed-signals C3).
   const gapsOf = (signalId: string): SignalGaps => {
     const dataRef = parseSignalId(signalId)?.dataRef;
-    return signalGaps(dataRef === undefined ? undefined : gapInfo.infos.get(dataRef), signalId);
+    return signalGapsOf(dataRef === undefined ? undefined : gapInfo.infos.get(dataRef), signalId);
   };
   const gapsOfRef = useRef(gapsOf);
   gapsOfRef.current = gapsOf;
@@ -950,10 +951,22 @@ export function TimeseriesWindow({
       windowTargets.delete(w.id);
     };
   }, [w.id, target, width]);
+  // An unavailable computed signal (its inputs are not in the list) sends no request; its legend
+  // row reads `missing` with the reason (add-computed-signals C11).
+  const offOf = (signalId: string) => info(signalId)?.computed?.unavailable;
+  const offKey = w.signals
+    .filter((s) => offOf(s.signalId) !== undefined)
+    .map((s) => s.id)
+    .join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: offKey stands for the unavailable signals
+  const requestable = useMemo(
+    () => w.signals.filter((s) => offOf(s.signalId) === undefined),
+    [w.signals, offKey],
+  );
   const loadRequests = (from: string, to: string): LoadRequest[] =>
     width === 0
       ? []
-      : w.signals.map((s) => ({ key: s.id, signalId: s.signalId, from, to, target }));
+      : requestable.map((s) => ({ key: s.id, signalId: s.signalId, from, to, target }));
   // Loads follow the shown range during the gesture (Z1); the acknowledgement the committed one.
   // Keyed on the signals' content and the range-command count, not the `signals` array, which is
   // new on every revision: unrelated revisions do not retry a failed signal (H7).
@@ -963,12 +976,12 @@ export function TimeseriesWindow({
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
   const requests = useMemo(
     () => loadRequests(viewFrom, viewTo),
-    [loadKey(w.signals, rangeSets), viewFrom, viewTo, target, width],
+    [loadKey(w.signals, rangeSets), offKey, viewFrom, viewTo, target, width],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
   const committedRequests = useMemo(
     () => loadRequests(w.range.from, w.range.to),
-    [signalsKey, w.range.from, w.range.to, target, width],
+    [signalsKey, offKey, w.range.from, w.range.to, target, width],
   );
   // Readout values (D-031): the exact value at each committed cursor from the server, like the
   // values window, inside or outside the zoom (readoutSource). Markers evaluate as line.
@@ -986,14 +999,14 @@ export function TimeseriesWindow({
   const exactRequests = useMemo(
     () =>
       valueRequests(
-        w.signals,
+        requestable,
         {
           ...(committed.a === undefined ? {} : { a: committed.a }),
           ...(committed.b === undefined ? {} : { b: committed.b }),
         },
         valueMode,
       ),
-    [w.signals, committed.a, committed.b, valueMode],
+    [requestable, committed.a, committed.b, valueMode],
   );
   useEffect(() => values.update(exactRequests), [values, exactRequests]);
   const exactOf = new Map(exactRequests.map((r) => [r.key, r]));
@@ -1008,7 +1021,7 @@ export function TimeseriesWindow({
     const state = loader.get(s.id);
     const result = state?.result;
     const states = stateLevels(meta);
-    if (isMissing(state)) input.missing = true;
+    if (isMissing(state) || meta?.computed?.unavailable !== undefined) input.missing = true;
     if (meta?.unit) input.unit = meta.unit;
     if (result) input.result = result;
     if (states) input.states = states;
@@ -1838,15 +1851,17 @@ export function TimeseriesWindow({
           // Without metadata (a signal the shown data ref lacks has none) the bare name, as a
           // loaded row shows it, so the first step to a session with the signal moves no column.
           const name = meta ? shownName(meta) : (parsed?.name ?? s.signalId);
-          // The shown data ref lacks the signal (DW13): a muted pill, "—" cells with the reason.
-          const missing = isMissing(state);
+          // The shown data ref lacks the signal (DW13): a muted pill, "—" cells with the reason. An
+          // unavailable computed signal reads the same, its reason the missing inputs (C11).
+          const off = meta?.computed?.unavailable;
+          const missing = isMissing(state) || off !== undefined;
           const missingSignal = parsed && {
             dataRef: parsed.dataRef,
             name: meta ? shownName(meta) : parsed.name,
           };
-          const missingTitle = missingSignal
-            ? HINTS.missing(missingSignal.dataRef, missingSignal.name)
-            : undefined;
+          const missingTitle =
+            off ??
+            (missingSignal ? HINTS.missing(missingSignal.dataRef, missingSignal.name) : undefined);
           const gaps = gapsOf(s.signalId);
           const sourceOf = (name: CursorName) => {
             const t = cursors[name];
@@ -1865,7 +1880,9 @@ export function TimeseriesWindow({
           const cellAt = (name: CursorName, source: ReadoutSource) =>
             cursors[name] === undefined
               ? { text: NO_VALUE, title: "cursor off" }
-              : sourceCell(source, meta?.unit, digits, meta, missingSignal);
+              : off !== undefined
+                ? { text: NO_VALUE, title: off }
+                : sourceCell(source, meta?.unit, digits, meta, missingSignal);
           return (
             <li
               key={s.id}
@@ -1924,7 +1941,11 @@ export function TimeseriesWindow({
                   missing ? missingTitle : state?.error ? loadStatusText(state, inCase) : undefined
                 }
               >
-                {!missing && state?.error ? FAILED_PILL : loadStatusText(state, inCase)}
+                {off !== undefined
+                  ? MISSING
+                  : !missing && state?.error
+                    ? FAILED_PILL
+                    : loadStatusText(state, inCase)}
               </span>
               {/* Without a share an empty cell keeps the column; only a shown share is the share. */}
               {sna ? (
