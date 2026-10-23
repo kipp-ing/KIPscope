@@ -71,7 +71,8 @@ const NO_HOLD = 2n ** 63n - 1n;
 /**
  * SQL of a parsed formula (design C9, F9): `column(name)` gives each signal name's column alias,
  * each constant becomes a query parameter `{k<i>:Float64}` in `params`; no text of the formula
- * reaches the query. n-ary `min`/`max` compile to `least`/`greatest`.
+ * reaches the query. n-ary `min`/`max` compile to `least`/`greatest` that carry NaN (design S-4):
+ * each argument appears once, under a fresh alias `_kf<n>`, and any NaN argument gives NaN.
  */
 export function formulaSql(
   ast: FormulaNode,
@@ -79,6 +80,13 @@ export function formulaSql(
   params: Params,
 ): string {
   let k = 0;
+  let kf = 0;
+  const extreme = (fn: string, args: FormulaNode[]) => {
+    const aliases = args.map(() => `_kf${kf++}`);
+    const nan = aliases.map((a) => `isNaN(${a})`).join(" OR ");
+    const list = args.map((arg, i) => `(${walk(arg)}) AS ${aliases[i]}`).join(", ");
+    return `if(${nan}, nan, ${fn}(${list}))`;
+  };
   const walk = (node: FormulaNode): string => {
     switch (node.op) {
       case "num": {
@@ -93,9 +101,9 @@ export function formulaSql(
       case "abs":
         return `abs(${walk(node.arg)})`;
       case "min":
-        return `least(${node.args.map(walk).join(", ")})`;
+        return extreme("least", node.args);
       case "max":
-        return `greatest(${node.args.map(walk).join(", ")})`;
+        return extreme("greatest", node.args);
       default:
         return `(${walk(node.left)} ${node.op} ${walk(node.right)})`;
     }
@@ -382,11 +390,13 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
 
   /**
    * A computed series (design C9, F9): one count() of the inputs' rows, then one scan that computes
-   * the rows from the parsed formula. Several inputs: a window over all, each input's last value,
-   * SNA flag and time `IGNORE NULLS` with a RANGE frame (rows at one time see each other), its seed
-   * when it has no row yet, its hold limit, one row per time. One input: the formula per row.
-   * Signal names are parameters `{s<i>:String}` in `formulaInputs` order. Buckets group the exact
-   * rows.
+   * the rows from the parsed formula. Several inputs (design S-1..S-6): a window over all with a
+   * ROWS frame; each input's last value `IGNORE NULLS` with SNA folded in as NaN and its last time
+   * as a running max, its seed when it has no row yet, its hold limit; one row per time, the last
+   * row at that time (`leadInFrame` over a second window of the same order), so its frame holds
+   * every row at that time. One input: the formula per row, one row per time. Signal names are
+   * parameters `{s<i>:String}` in `formulaInputs` order. The raw answer orders the rows; buckets
+   * group them.
    */
   async computedSeries(
     ref: ComputedRef,
@@ -433,29 +443,29 @@ export class ClickHouseSource implements Omit<DataSource, "series"> {
           [`h${i}`]: input.holdNs ?? NO_HOLD,
         });
         const mine = `${signal} = {s${i}:String}`;
-        return `ifNull(last_value(if(${mine}, ${value}, NULL)) IGNORE NULLS OVER w, {sv${i}:Nullable(Float64)}) AS i${i}_v,
-           ifNull(last_value(if(${mine}, toUInt8(${sna.expr}), NULL)) IGNORE NULLS OVER w, {ss${i}:Nullable(UInt8)}) AS i${i}_s,
-           ifNull(last_value(if(${mine}, toUnixTimestamp64Nano(${time}), NULL)) IGNORE NULLS OVER w, {st${i}:Nullable(Int64)}) AS i${i}_t`;
+        return `ifNull(last_value(if(${mine}, if(${sna.expr}, nan, ${value}), NULL)) IGNORE NULLS OVER w,
+                  if({ss${i}:Nullable(UInt8)} = 1, nan, {sv${i}:Nullable(Float64)})) AS i${i}_v,
+           ifNull(max(if(${mine}, x, NULL)) OVER w, {st${i}:Nullable(Int64)}) AS i${i}_t`;
       };
       const columns = inputs.map(column).join(",\n           ");
       const formula = formulaSql(ref.ast, (name) => `i${index.get(name)}_v`, params);
-      const anySna = inputs.map((_, i) => `i${i}_s`).join(" OR ");
       const held = inputs
         .map((_, i) => `i${i}_t IS NOT NULL AND x - i${i}_t <= {h${i}:Int64}`)
         .join("\n           AND ");
-      rows = `SELECT x, if(s OR NOT isFinite(v0), NULL, v0) AS v FROM (
-         SELECT x, ${formula} AS v0, ${anySna} AS s FROM (
+      rows = `SELECT x, if(NOT isFinite(v0), NULL, v0) AS v FROM (
+         SELECT x, ${formula} AS v0 FROM (
            SELECT toUnixTimestamp64Nano(${time}) AS x,
-           ${columns}
+           ${columns},
+           leadInFrame(x, 1, x + 1) OVER w2 AS nx
            FROM ${this.table} WHERE ${range}
-           WINDOW w AS (ORDER BY ${time} RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))
-         WHERE ${held})
-       ORDER BY x LIMIT 1 BY x`;
+           WINDOW w AS (ORDER BY ${time} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+                  w2 AS (ORDER BY ${time} ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING))
+         WHERE nx != x AND ${held})`;
     }
 
     if (raw) {
       const points = await this.rows<[string, number | null]>(
-        `SELECT toString(x), v FROM (${rows})`,
+        `SELECT toString(x), v FROM (${rows}) ORDER BY x`,
         params,
         abort,
       );

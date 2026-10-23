@@ -761,6 +761,48 @@ export function describeConformance(target: ConformanceTarget): void {
         expect(rows.every((r) => r.v === null)).toBe(true);
       });
 
+      // spec computed-signals "SNA and NaN inside min and max": an SNA or NaN argument makes the
+      // result NaN (null), as Math.min / Math.max do, whatever the argument order.
+      it("keeps SNA through min and max", async () => {
+        const window = (
+          formula: string,
+          id: string,
+          inputs: readonly SeriesRef[],
+          from: bigint,
+          to: bigint,
+        ) => queryComputed(source, computedOf(formula, inputs), id, from, to, 1000);
+        const from = B + 49_500n * MS;
+        const to = B + 50_500n * MS;
+        const times = Array.from({ length: 100 }, (_, k) => from + BigInt(k) * 10n * MS);
+
+        // Sna.CODE is SNA (n = 49) up to B + 50 s, then 0; Lin.RAMP is 5000 … 5049 from there.
+        const lo = rawRows(
+          await window("min(Sna.CODE, Lin.RAMP)", "conf-a/=c6", [snaCode, ramp], from, to),
+        );
+        expect(lo.map((r) => r.t)).toEqual(times);
+        expect(lo.slice(0, 50).every((r) => r.v === null)).toBe(true);
+        expect(lo.slice(50).map((r) => r.v)).toEqual(Array.from({ length: 50 }, () => 0));
+
+        const hi = rawRows(
+          await window("max(Sna.CODE, Lin.RAMP)", "conf-a/=c7", [snaCode, ramp], from, to),
+        );
+        expect(hi.map((r) => r.t)).toEqual(times);
+        expect(hi.slice(0, 50).every((r) => r.v === null)).toBe(true);
+        expect(hi.slice(50).map((r) => r.v)).toEqual(
+          Array.from({ length: 50 }, (_, j) => 5000 + j),
+        );
+
+        // Sna.CODE is 0 at B: 0 / 0 is NaN (null), k / 0 is +Infinity and min(Infinity, 1) is 1.
+        const nan = rawRows(
+          await window("min(Lin.RAMP / Sna.CODE, 1)", "conf-a/=c8", [ramp, snaCode], B, B + S),
+        );
+        expect(nan.map((r) => r.t)).toEqual(
+          Array.from({ length: 100 }, (_, k) => B + BigInt(k) * 10n * MS),
+        );
+        expect(nan[0]?.v).toBeNull();
+        expect(nan.slice(1).every((r) => r.v === 1)).toBe(true);
+      });
+
       it("holds an input only within its hold limit", async () => {
         // b (Sna.CODE, 1 at B + 1 s) holds 500 ms: rows B + 1 s … B + 1.5 s, 51 of them.
         const held = computedOf("Lin.RAMP - Sna.CODE", [ramp, snaCode], { "Sna.CODE": 500n * MS });

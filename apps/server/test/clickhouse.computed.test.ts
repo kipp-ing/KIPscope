@@ -76,6 +76,16 @@ async function run(source: ClickHouseSource, ref: ComputedRef, target: number) {
   return source.computedSeries(ref, FROM, TO, target, 1_000_000_000n);
 }
 
+/** The scan of a several-input computed series is a ROWS-framed window query (spec "Query count"). */
+function expectRowsFrameScan(query: string) {
+  expect(query).toContain("ROWS BETWEEN");
+  expect(query).toContain("IGNORE NULLS OVER");
+  expect(query).not.toContain("RANGE BETWEEN");
+  expect(query).not.toContain("LIMIT 1 BY");
+}
+const occurrences = (text: string, word: string) =>
+  text.match(new RegExp(`\\b${word}\\b`, "g"))?.length ?? 0;
+
 const everything = (queries: Recorded[]) => queries.map((q) => q.query).join("\n;\n");
 const paramValues = (queries: Recorded[]) =>
   queries.flatMap((q) => Object.values(q.params).map((v) => String(v)));
@@ -145,7 +155,7 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
     const [count, scan] = queries as [Recorded, Recorded];
     expect(count.query).toMatch(/count\s*\(/i);
     expect(count.query).not.toMatch(/\bOVER\b/i);
-    expect(scan.query).toContain("IGNORE NULLS OVER");
+    expectRowsFrameScan(scan.query);
     for (const { query } of queries) {
       expect(query).not.toMatch(/\bJOIN\b/i);
       expect(query).not.toMatch(/\bUNION\b/i);
@@ -156,7 +166,7 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
     const { source, queries } = counting(50);
     const answer = await run(source, refOf(`${SIG_A} - ${SPEED}`, input(SIG_A), input(SPEED)), 100);
     expect(queries).toHaveLength(2);
-    expect(queries[1]?.query).toContain("IGNORE NULLS OVER");
+    expectRowsFrameScan(queries[1]?.query ?? "");
     expect(answer.kind).toBe("raw");
   });
 
@@ -188,7 +198,7 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
     expect(scan.query).toContain("{s1:String}");
     expect(scan.query).toContain("{s2:String}");
     expect(scan.query).not.toContain("{s3:String}");
-    expect(scan.query).toContain("IGNORE NULLS OVER");
+    expectRowsFrameScan(scan.query);
     for (const { query } of queries) {
       expect(query).not.toMatch(/\bJOIN\b/i);
       expect(query).not.toMatch(/\bUNION\b/i);
@@ -204,6 +214,17 @@ describe("ClickHouse computed series compile (computed signals C9, F9)", () => {
     await run(source, refOf(`${SPEED} - ${SIG_A}`, input(SPEED), input(SIG_A)), 100);
     const scan = queries[1] as Recorded;
     expect([scan.params.s0, scan.params.s1]).toEqual([SPEED, SIG_A]);
+  });
+
+  // spec computed-signals "SNA and NaN inside min and max" (design S-4)
+  it("keeps NaN through min and max in the SQL", async () => {
+    const { source, queries } = counting(5000);
+    await run(source, refOf(`min(min(${SIG_A}, 1), ${SPEED})`, input(SIG_A), input(SPEED)), 100);
+    const scan = queries[1] as Recorded;
+    expect(scan.query).toContain("isNaN(");
+    // Each argument appears once: its definition and one use, however deeply min is nested.
+    expect(occurrences(scan.query, "i0_v")).toBe(2);
+    expect(occurrences(scan.query, "i1_v")).toBe(2);
   });
 
   it("compiles n-ary min and max", async () => {

@@ -11,7 +11,7 @@ Write areas (disjoint per task):
 
 ## 1. apps/server/src
 
-- [ ] 1.1 `clickhouse.ts`:
+- [x] 1.1 `clickhouse.ts`:
   - **Several-input rows query:**
     - S-1: ROWS frame.
     - S-2: `i<i>_t` as a running `max` with its seed.
@@ -26,11 +26,11 @@ Write areas (disjoint per task):
 
 ## 2. Tests (tester)
 
-- [ ] 2.1 `clickhouse.computed.test.ts`:
+- [x] 2.1 `clickhouse.computed.test.ts`:
   - "computes in one scan", "sends the same two queries for a raw answer" and "computes three inputs in one scan" assert `ROWS BETWEEN` and `IGNORE NULLS OVER`, and no `RANGE BETWEEN` and no `LIMIT 1 BY` (spec "Query count").
   - New "keeps NaN through min and max in the SQL": the formula `` `min(min(${SIG_A}, 1), ${SPEED})` `` gives a scan that contains `isNaN(`, and `i0_v` and `i1_v` exactly twice each (their definition and one use). That means each argument appears once (design S-4).
-- [ ] 2.2 `conformance/suite.ts`: new case "keeps SNA through min and max" with the three formulas and values of computed-signals "SNA and NaN inside min and max", native and core only. It must fail on ClickHouse native before 1.1 (at least the `min(Sna.CODE, Lin.RAMP)` and `min(Lin.RAMP / Sna.CODE, 1)` rows).
-- [ ] 2.3 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`. Every computed case is green in all four runs, including "computes at shared times", "holds an input only within its hold limit", "computes SNA from either input", "gives SNA for non-finite results", "buckets computed rows exactly" and "computes a difference per row with edges" (data-source "Same rows natively and from the core").
+- [x] 2.2 `conformance/suite.ts`: new case "keeps SNA through min and max" with the three formulas and values of computed-signals "SNA and NaN inside min and max", native and core only. It must fail on ClickHouse native before 1.1 (at least the `min(Sna.CODE, Lin.RAMP)` and `min(Lin.RAMP / Sna.CODE, 1)` rows).
+- [x] 2.3 Run `pnpm build && pnpm test && pnpm lint` and `pnpm --filter @kipscope/server test:adx`. Every computed case is green in all four runs, including "computes at shared times", "holds an input only within its hold limit", "computes SNA from either input", "gives SNA for non-finite results", "buckets computed rows exactly" and "computes a difference per row with edges" (data-source "Same rows natively and from the core").
 
 ## 3. Lead (carserver)
 
