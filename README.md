@@ -12,7 +12,7 @@
 
 My own car is a smart fortwo electric drive (451). It used to report through an [OVMS](https://github.com/openvehicles/Open-Vehicle-Monitoring-System-3) module; today a self-built ESP32 logger [ESPCars](https://github.com/kipp-ing/ESPCars)  records its CAN bus and diagnostic readings into ClickHouse. What was missing was a way to look at those recordings the way engineers do with CANalyzer or CANape, and their licences are far out of reach for a private car.
 
-So I built one. KIPscope is a private project, built with a small team of AI agents through spec-driven rounds [(OpenSpec)](https://github.com/Fission-AI/OpenSpec). 
+So I built one. KIPscope is a private project, built with a small team of AI agents through spec-driven rounds [(OpenSpec)](https://github.com/Fission-AI/OpenSpec): [how that worked](docs/agentic-engineering.md).
 
 It paid off on the first real recordings: KIPscope shows that something is wrong with some of my smart's battery cells. The [charging picture](#what-it-does) shows that kind of view on simulated demo data: twelve cell voltages over a charge, one of them lagging.
 
@@ -69,6 +69,7 @@ scripts/demo.sh                               # UI http://localhost:5183, server
 | Decisions | [docs/decisions.md](docs/decisions.md) |
 | State and next steps | [docs/status.md](docs/status.md) |
 | Team roles and round flow | [docs/team.md](docs/team.md) |
+| How it was built with an agent team, and how to reuse that | [docs/agentic-engineering.md](docs/agentic-engineering.md) |
 
 ## Layout
 
