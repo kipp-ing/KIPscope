@@ -2,7 +2,7 @@
 
 KIPscope was built by a small team of AI agents (Claude Code subagents) working spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec), with Jan as the only human: he wrote the concept, made the decisions and judged the results. This page describes how that setup came about, why it worked, and how to take it to another project. Everything it claims can be checked in this repository.
 
-It is a worked example for the book *Efficient Agentic Engineering*.
+It is a worked example of efficient agentic coding: agents building software. Agentic engineering is broader and also covers agents set up for everyday office work; this page is only about the coding side.
 
 ## In numbers
 
