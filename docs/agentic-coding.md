@@ -15,6 +15,7 @@ It is a worked example for the book *Efficient Agentic Coding*: agents building 
 | Decisions | 114 in the ledger ([decisions.md](decisions.md)), 48 of them quote Jan's own words |
 | Tests | 150 test files, written from the specs' scenarios |
 | Changes only to fix earlier ones | 2 of 43 (`fix-handoff-findings`, `fix-adx-papercuts`), both from the first use outside the dev setup |
+| Jan's prompts | 171 in 24 sessions, about 130 characters on average, many of them a decision ("alle ja", "ja, wär cool"); counted from the local session logs, without answers to multiple-choice questions |
 | Cost | about €50 of AI tokens and about 8 hours of Jan's time (D-114) |
 | Team definition | 8 agent files of about 20 lines each, one 180-line workflow, a 13-line [AGENTS.md](../AGENTS.md) |
 
