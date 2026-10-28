@@ -334,6 +334,8 @@ The `--preview` run does the same against the preview's proxy target.
 
 ## Questions for Jan
 
+Jan, 2026-10-28: „ja passt“: every default below stands (Q-1 … Q-7).
+
 Each has a default that the specs and tasks use; an answer other than the default changes only the named requirement.
 
 - **Q-1 Full mode:** keep `KIPSCOPE_CATALOG=full` as an opt-in for small sources such as the test DB and demos (**default**), or remove it entirely? Removing it means migrating about 20 server test files to scopes (one more round).
