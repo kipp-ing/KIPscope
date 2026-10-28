@@ -225,7 +225,7 @@ The picker SHALL offer one chip per drive of the start day reading its start and
 - **Evidence:** UI check on smart451 (button and strip after Go and after Back)
 
 ### Requirement: Apply and cancel
-Go and Enter in any of the picker's fields SHALL apply what "Go on typed text" names with one command for the bar target, as "Go to" did (all windows while linked, the target only while unlinked, one zoom history entry), and close the picker. Cancel, Esc and a click outside SHALL close it without a command. While it is open the navigation keys SHALL do nothing. Origin: D-092 (mock: Go, Cancel); time-navigation "Navigation targets", "Navigation in the zoom history".
+Go and Enter in any of the picker's fields SHALL apply what "Go on typed text" names with one command for the bar target, as "Go to" did (all windows while linked, the target only while unlinked, one zoom history entry), and close the picker. Cancel, Esc and a click outside SHALL close it without a command; Esc SHALL do so wherever focus is while the picker is open (in the picker, on the page body after a click on a non-focusable part of the picker such as the month title or the legend), unless a control inside the picker consumes that Esc itself, and focus SHALL then return to the range button. While it is open the navigation keys SHALL do nothing. Origin: D-092 (mock: Go, Cancel); time-navigation "Navigation targets", "Navigation in the zoom history"; Esc after focus left: review day 2026-10-28 T-06 (Esc was handled on the dialog root only, and App ignores keys while the picker is open, so a click on the month title or the legend left Esc dead).
 
 #### Scenario: Go and Back
 - **WHEN** two linked windows show smart451 at a 20 min range, the user opens the picker, clicks **Whole day** and Go, then clicks "Back"
@@ -236,6 +236,11 @@ Go and Enter in any of the picker's fields SHALL apply what "Go on typed text" n
 - **WHEN** the user opens the picker, clicks a day and presses Esc; opens it, clicks a day and clicks Cancel; opens it, clicks a day cell and presses `-`, `→` and `Home`; and the key handler gets `+` while the picker is open
 - **THEN** the revision and the shown range never change and the picker is closed after Esc and Cancel; the handler returns no action
 - **Evidence:** `apps/web/test/keys.test.ts` › "ignores navigation keys while the range picker is open"; UI check (revision before and after)
+
+#### Scenario: Esc after focus left the picker
+- **WHEN** on smart451 at 1440×900 the user opens the picker, clicks the left month's title (a real pointer click) and presses Esc; opens it again, clicks the calendar legend and presses Esc
+- **THEN** after each click `document.activeElement` is outside the picker's fields (the body or the dialog itself); after each Esc the picker is closed (no `role="dialog"` with `aria-label="Go to"` in the page), `document.activeElement` is the range button, and the revision is unchanged
+- **Evidence:** UI check on smart451 (`document.activeElement` and the dialog's presence read from the page after each click and each Esc; `kipscope state` revision before and after; one screenshot after the first Esc); reviewer reads `apps/web/src/bar/RangePicker.tsx`: the Escape listener is on `document` while the picker is mounted and removed on unmount, and the dialog root's own Escape handler is gone (one handler, so one Esc closes once)
 
 ### Requirement: Go on typed text
 The last edit of this open SHALL decide what Go applies: while typing non-blank text is the latest edit, Go SHALL apply that text (refused: reason in the result line, no command) and stay enabled. A later draft change (day, chip, preset, From or To) SHALL hand Go back to the draft and clear the reason; typing again leads again; paging changes neither. Origin: lead's default of 2026-10-21, refined after round 6 (design Q-7), confirmed by Jan: D-115 (3); "this open": the field keeps its text.
