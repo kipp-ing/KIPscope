@@ -769,7 +769,11 @@ export function SignalExplorer({
         </select>
       </label>
       {error && <p className="error">{catalog ? error : `${error} (retrying)`}</p>}
-      {catalog && partial && <p className="count partial">{partialText(session ?? 1)}</p>}
+      {catalog && partial && (
+        <p className="count partial" title={HINTS.partialList}>
+          {partialText(session ?? 1)}
+        </p>
+      )}
       {/* The counts sit on the tabs (design DW14); only states keep a line here. */}
       {!catalog &&
         (noScope ? (

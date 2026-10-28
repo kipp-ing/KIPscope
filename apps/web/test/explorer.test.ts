@@ -703,7 +703,7 @@ describe("explorer catalog per scope (add-scope)", () => {
       expect(reports).toHaveLength(1);
       expect((reports[0] as { snapshot: CatalogSnapshot }).snapshot.partial).toBe(true);
       // The note names the session whose list stands in.
-      expect(partialText(3)).toBe("Signals of session 3; the vehicle's full list is loading");
+      expect(partialText(3)).toBe("Signals of session 3");
 
       // Not before 10 s; then it asks again.
       await vi.advanceTimersByTimeAsync(PARTIAL_RELOAD_MS - 1);

@@ -152,6 +152,10 @@ export const HINTS = {
     "Filter sessions: by title, object, kind, id, start or a meta value; Enter opens the first match",
   catalogRow: "Step to this session, aligned as set under Align",
 
+  // Note above a partial signal list (speed-up-whole-scans Q-4).
+  partialList:
+    "Signals of session: the last linked session's list; the vehicle's full list is not loaded while unlinked",
+
   // Patience hint of a slow Unlink (D-113).
   unlinkSlow: "Unlinking: reading the whole vehicle's time range; this can take a few seconds",
 } as const;

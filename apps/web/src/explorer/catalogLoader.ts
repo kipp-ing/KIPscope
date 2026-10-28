@@ -7,9 +7,11 @@ export const CATALOG_RETRY_MS = 5000;
 /** Reload interval while the answer is `partial` (signal-catalog "Explorer follows the scope", add-case-open K14). */
 export const PARTIAL_RELOAD_MS = 10_000;
 
-/** Note above the list while it is `partial`: the list of session `k` (1-based) stands in. */
-export const partialText = (k: number): string =>
-  `Signals of session ${k}; the vehicle's full list is loading`;
+/**
+ * Note above the list while it is `partial`: the list of session `k` (1-based) stands in. Unlinked,
+ * the vehicle's list is not loaded (speed-up-whole-scans Q-4); its tooltip is `HINTS.partialList`.
+ */
+export const partialText = (k: number): string => `Signals of session ${k}`;
 
 /** Text of the explorer in scoped mode without a scope (signal-catalog "Explorer follows the scope"). */
 export const NO_SCOPE_TEXT =
