@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-118: Calendar density filled day by day at the lowest priority (2026-10-28)
+
+- **Context:** D-117 bounds every raw query. Jan: „das einzige, was ich da noch wünsche ist die density in der zeitauswahl. die sollte einfach immer in niedrigster prio gefüllt werden". Measured on carserver: hourly counts of smart451 for one day 5.1 s; a whole month in one query hits the 30 s limit.
+- **Decision:** The range picker's calendar density is the exception that may cover a whole vehicle's months, but only as one day per query, in the lowest priority class (below preload and background, at most one in flight, any interactive query first). Finished days are kept on the server across restarts; past days are final, today is rechecked. The months the picker would show are filled ahead for the vehicles of open workspaces, so the calendar is usually complete when opened; days not counted yet are marked and fill in (concept §10).
+- **Why:** The cost depends on rows per vehicle and day, not on the size of the lake; two months cost about 5 min of idle source time once per vehicle.
+- **Consequences:** Part of `speed-up-whole-scans`; amends D-117.
+
 ## D-117: No whole-data scans; finding is the search tool's job (2026-10-28)
 
 - **Context:** T-15 (docs/todo.md): smart451 holds 768 M rows and grows about 50 M a day; scans over the whole recording (logger gaps, density, extent, calendar, the catalog's `SELECT DISTINCT`) hit the source's 30 s limit, so gaps, density and value answer 502. Jan: „der datensee wird bald TBs haben"; „suchtool ist schon wichtig, ohne dass fehlt ja das ‚finden'. im see stochern über alles ist ja quatsch".
