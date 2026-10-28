@@ -202,12 +202,12 @@ The window's signal list SHALL show per signal the share of SNA points among all
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Linked time zoom
-While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-click reset, history back, "Reset", navigation keys, "Go to" and span presets in or for any window SHALL change the time range of all windows. During a wheel, pan or key gesture in one window, every linked window SHALL show and load the previewed range in the same frame, each at its own resolution; the range command SHALL still be sent once, by the gesture's window. While unlinked, each window SHALL keep its own range. Origin: D-017; D-027; D-041 („every linked window shows the preview range and loads during the gesture like the zoomed one").
+While the time axes are linked, wheel zoom, wheel pan, rectangle zoom, double-click reset, history back, "Reset", navigation keys and the range picker in or for any window SHALL change the time range of all windows. During a wheel, pan or key gesture in one window, every linked window SHALL show and load the previewed range in the same frame, each at its own resolution; the range command SHALL still be sent once, by the gesture's window. While unlinked, each window SHALL keep its own range. Origin: D-017; D-027; D-041; D-092.
 
 #### Scenario: Zoom one of two linked windows
-- **WHEN** "Link time axes" is on, window 1 shows `ICL_3A2h.SPEED_DISP`, window 2 shows `DCU_2B8h.HTR_HV_Volt`, and the user Ctrl+wheel-zooms in window 1
-- **THEN** within 1 s window 2's header shows the same range as window 1 and its curve is reloaded for it
-- **Evidence:** UI check (screenshot of both headers); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
+- **WHEN** "Link time axes" is on, window 1 shows `smart451/COMBI_412h.V_ANZ`, window 2 shows `smart451/BMS.cell_voltage_sum`, and the user Ctrl+wheel-zooms in window 1
+- **THEN** within 1 s window 2's time axis shows the same range as window 1 and its curve is reloaded for it
+- **Evidence:** UI check (screenshot of both axes); `packages/shared/test/apply.test.ts` › "applies a range to all windows while linked"
 
 #### Scenario: Linked windows follow the gesture
 - **WHEN** the two linked windows have rested 2 s on one hour and one Ctrl+wheel event arrives over window 1 (design T1 of change `improve-zoom-speed`)
@@ -449,17 +449,17 @@ A double-click in the plot SHALL set the window's range to the union of its sign
 - **Evidence:** UI check (screenshot of the header); `apps/web/test/zoom.test.ts` › "computes the extent range rounded up to the next millisecond"
 
 ### Requirement: Zoom history
-Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, "Go to", span preset, time-strip action and drive key SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. "Back" SHALL be disabled when there is no previous range. Origin: D-018 ("zoom history back"); D-025 (one "Back", in the bar); D-027 (new navigation undone alike); D-057 (strip actions as "Go to"; a double-click on the strip replaces its first click's entry, `time-strip` "Double-click shows the whole recording").
+Each committed wheel zoom, wheel pan, rectangle zoom, double-click reset, "Reset", navigation key, range picker apply, time-strip action and drive key SHALL be recorded; the option bar's "Back" and the Backspace key SHALL return to the previous range, up to 50 steps. While linked, all windows SHALL share one history; while unlinked, each window has its own. "Back" SHALL be disabled when there is no previous range. Origin: D-018; D-025; D-027; D-057 (strip actions as "Go to"; a strip double-click replaces its first click's entry); D-092.
 
 #### Scenario: Two steps back
-- **WHEN** the user zooms a SPEED_DISP window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
+- **WHEN** the user zooms a `smart451/COMBI_412h.V_ANZ` window from its full extent into the morning of 2026-10-13, then into 09:56–09:58, then presses Backspace twice with the pointer over the window
 - **THEN** the window shows the morning range, then the full extent, and the bar's "Back" is disabled
-- **Evidence:** UI check (screenshots of the header after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
+- **Evidence:** UI check (screenshots of the range button after each step); `apps/web/test/zoom.test.ts` › "keeps a bounded zoom history", "shares one history while linked"
 
 #### Scenario: Strip steps back
 - **WHEN** a smart451 window at its full extent gets a strip drag over one local day, then a click on a drive segment, then Backspace twice with the pointer over the window
 - **THEN** the window shows the dragged day, then the full extent; if the browser tool cannot drag, the drag is replaced by `.` (a drive key) and the check runs the same way
-- **Evidence:** UI check on smart451 at 1440×900 (header after each step)
+- **Evidence:** UI check on smart451 at 1440×900 (range button after each step)
 
 ### Requirement: Backspace target
 Backspace SHALL act on the window under the pointer, else the window zoomed last, and SHALL do nothing while a text field has focus. Origin: D-018; D-025.
@@ -533,12 +533,12 @@ While dragging, the window list SHALL scroll when the pointer is within 48 px of
 - **Evidence:** UI check (two screenshots 2 s apart show the same first window)
 
 ### Requirement: Option bar
-Above the windows, an option bar SHALL stay visible while the window list scrolls. After the sidebar button it SHALL hold, in this order: "Views" (with the open view's title and the Read-only pill, `saved-views`); a separator; the range control (time-navigation; its content is owned by `add-range-picker`); "Back" and "Reset" as 26 × 26 px icon buttons (`aria-label` `Back` and `Reset`; Reset's tooltip names `Home`, Back's names `Backspace` while there is an earlier range and otherwise reads `Back: no earlier time range yet`); the "Link time axes" icon toggle ("Link toggle"); a separator; the cursor pills "A", "B" and "Diff" (cursors spec); then, at the row's end and at every width, "Share…", the "⋯" menu and "?" (`guidance` "Help panel"). The Digits control (number-format "Digits option", a segmented control `3 | 4`) and "+ Values window" SHALL always be items of the "⋯" menu, never in the row (`saved-views` "Top-row overflow menu"). Origin: D-023 (cursor toggles, diff mode, "Link time axes", zoom back and reset in a bar); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option); order, icons and the "⋯" items: D-092 (7) (supersedes D-071's width rule for Digits and "+ Values window") and mock `Main.dc.html`; Share in the row at every width: D-095 (critic 15, supersedes the compact-width move of D-092's mock); Digits as a segmented control: D-112 (1).
+Above the windows, an option bar SHALL stay visible while the window list scrolls. After the sidebar button it SHALL hold, in this order (the order of `declutter-workspace`, design DW8): "Views" (with the open view's title and the Read-only pill, `saved-views`); a separator; the range control holding the range button (range-picker) and no Span select; "Back" and "Reset" as 26 × 26 px icon buttons (`aria-label` `Back` and `Reset`; Reset's tooltip names `Home`, Back's names `Backspace` while there is an earlier range and otherwise reads `Back: no earlier time range yet`); the "Link time axes" icon toggle ("Link toggle"); a separator; the cursor pills "A", "B" and "Diff" (cursors spec); then, at the row's end and at every width, "Share…", the "⋯" menu and "?" (`guidance` "Help panel"). The Digits control (number-format "Digits option", a segmented control `3 | 4`) and "+ Values window" SHALL always be items of the "⋯" menu, never in the row (`saved-views` "Top-row overflow menu"), which holds no Span select. Origin: D-023 (cursor toggles, diff mode, "Link time axes", zoom back and reset in a bar); D-025 (one "Back", one "Reset"); D-027 (time navigation); D-026 (digits option); D-092 (1), (2) (range button, no Span select); order, icons and the "⋯" items: D-092 (7) (supersedes D-071's width rule for Digits and "+ Values window") and mock `Main.dc.html`; Share in the row at every width: D-095 (critic 15); Digits as a segmented control: D-112 (1); as `declutter-workspace` specifies them.
 
 #### Scenario: Scrolled down
 - **WHEN** six windows exist and the list is scrolled to the end
-- **THEN** the option bar is fully visible above the windows with its controls in that order
-- **Evidence:** UI check (screenshot)
+- **THEN** the option bar is fully visible above the windows with its controls in the order `Views`, range button (`Go to`), `Back`, `Reset`, `Link time axes`, `A`, `B`, `Diff`, `Share…`, `⋯`, `?`; the open ⋯ menu holds the digits option and `+ Values window`; neither the row nor the menu holds a Span select
+- **Evidence:** UI check (screenshot of the row and of the open ⋯ menu)
 
 #### Scenario: Order in the row
 - **WHEN** the option bar is rendered to static markup for a workspace with a timeseries window, its overflow menu closed
@@ -904,3 +904,16 @@ A y range whose span is at most 1e-9 of its largest magnitude SHALL widen to its
 - **WHEN** a window on smart451 shows only `SAS_0C2h.LWS_SPEED` over a constant stretch of Drive 2, 11:30–11:50 local, aggregated (over the whole drive the signal jumps to about 0 at 11:23 and 11:56 local, so the axis spans 0 … −1.5 k and the line lies at the bottom)
 - **THEN** the line is drawn in the middle of the plot (the axis spans −1433.6 ± 143.36, so its tick labels lie within −1.58 k and −1.29 k, `°/s`; about −1.30 k … −1.55 k were seen), the tick labels are readable, and the console shows no uncaught exception
 - **Evidence:** UI check on smart451 (screenshot, console); `pnpm smoke` passes
+
+### Requirement: Own range of an unlinked window
+While "Link time axes" is off, each timeseries window's header SHALL show its own range in its range slot as small muted start and duration (range-picker "Start and duration"), equal to the plotted range also during a preview, truncated first, the formatter's `tip` as tooltip. Origin: D-092 (1) („a window with link off shows its own range"); D-093; D-095; preview: "Header shows the plotted range". A linked window's header is `declutter-workspace`'s.
+
+#### Scenario: Own range text
+- **WHEN** `ownRangeText` gets 2026-10-13T13:06:03Z–13:18:33Z with link off, and the same with link on
+- **THEN** `26-10-13 15:06  0:12 h` with the tooltip `Tue 2026-10-13 15:06 · Duration 12 min`, then nothing
+- **Evidence:** `apps/web/test/rangeLine.test.ts` › "shows a window's own range only while unlinked"
+
+#### Scenario: Two unlinked windows
+- **WHEN** "Link time axes" is off on smart451, window 1 shows a 20 min range and window 2 was zoomed to 2026-10-13 15:08:00 – 15:09:00, then window 2 is wheel-zoomed once
+- **THEN** window 1's header shows its 20 min range (`… 0:20 h`), window 2's header `26-10-13 15:08  0:01 h`, then its new range matching its axis during and after the zoom; the range button shows window 2's range
+- **Evidence:** UI check on smart451 at 1440×900 (screenshot of both headers and the button after each step)

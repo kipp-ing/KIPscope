@@ -24,7 +24,6 @@ Bugs and open questions from the review day of 2026-10-28: every main spec (and 
 ## Docs and cleanup
 
 - `docs/http-api.md` "Request class" omits `GET /api/calendar`, which honours `X-KIPscope-Class` (`apps/server/src/routes/series.ts:426`); the comment at `apps/server/src/http.ts:240-244` is stale the same way.
-- `docs/http-api.md` links `openspec/specs/range-picker/spec.md`, which exists only after `add-range-picker` is synced or archived.
 - README CLI table: no rows for `events list|filter|add|remove` and `digits 3|4`; the output-key sentence (`README.md:312`) lacks `removedWindow` and `workspace`.
 - Dead code since D-092: `SPAN_PRESETS` (`apps/web/src/bar/bar.ts:12`) and `formatRange` (`apps/web/src/time/axis.ts:173`) with their tests.
 - `docs/status.md` "What runs" still calls the strip "data density … bars" (D-094 removed the bars).

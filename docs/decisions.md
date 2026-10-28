@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-116: Range picker conventions (2026-10-28, archive of `add-range-picker`)
+
+- **Decision:** The range button and picker replace the header range and the Span select (D-092). `GET /api/calendar` gives hours from `from`, drives on the 60 s grid, at most 32 d, cut to the scope, cached per window and run in the caller's request class. Start and duration come from one formatter `startDuration` (D-093, D-095): `H:MM h` below 48 h, `D d H h` from 48 h, seconds only under 1 min, the full date and the duration in words as tooltips, the same `DurationTag` everywhere. The calendar is a keyboard grid with one tab stop; with a linked catalog it shows the session only. Design Q-1 (a day click keeps the From/To times), Q-3 (`Whole session` / `Whole scope` / `Whole recording`) and Q-6 (a day's tooltip keeps its weekday) stand as defaults; Q-2, Q-4 and Q-5 were superseded by D-093 and D-095; Q-7 ("the last edit wins") was confirmed by D-115 (3).
+- **Why:** One readable range control and one way to write a range across button, picker, session list and strip.
+- **Consequences:** Main spec `range-picker`; `time-navigation` lost "Span presets"; `timeseries-window` gained "Own range of an unlinked window".
+
 ## D-115: Answers from the review day (2026-10-28)
 
 The review day checked every spec against the code ([todo.md](todo.md)); Jan answered three of its questions.
