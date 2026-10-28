@@ -11,6 +11,7 @@ import {
   dayBars,
   dayDrives,
   dayLabel,
+  dayPending,
   dayTip,
   draftOf,
   draftRange,
@@ -255,6 +256,37 @@ describe("day bars", () => {
     expect(dayTip(scoped, day("2026-10-10"), "scope")).toBe("Sat 26-10-10 · outside the scope");
     expect(dayTip(scoped, day("2026-10-10"), "session")).toBe("Sat 26-10-10 · outside the session");
     expect(dayTip(scoped, day("2026-10-10"), "object")).toBe("Sat 26-10-10 · no data");
+  });
+});
+
+describe("days not counted yet", () => {
+  // 2026-10-14T00:00:00Z = 1791936000 s and 2026-10-15T00:00:00Z = 1792022400 s, by hand.
+  const pending = [{ from: "1791936000000000000", to: "1792022400000000000" }];
+
+  it("marks days not counted yet", () => {
+    const month: CalendarDensity = { ...drivecarMonth(), pending };
+    // The local days 2026-10-14 (22:00Z the day before … 22:00Z) and 2026-10-15 both overlap the
+    // pending UTC day; 2026-10-13 ends at 22:00Z on the 13th and does not.
+    for (const date of ["2026-10-14", "2026-10-15"]) {
+      expect(dayPending(month, day(date)), date).toBe(true);
+      expect(
+        dayBars(month, day(date)).every((b) => b.count === 0 && !b.drive),
+        date,
+      ).toBe(true);
+    }
+    expect(dayPending(month, day("2026-10-13"))).toBe(false);
+    expect(dayPending(month, day("2026-10-02"))).toBe(false);
+    const { pending: _pending, ...counted } = month;
+    expect(dayPending(counted, day("2026-10-14"))).toBe(false);
+    expect(dayPending(undefined, day("2026-10-14"))).toBe(false);
+
+    // The tooltips.
+    expect(dayTip(month, day("2026-10-14"), "none")).toBe("Wed 26-10-14 · not counted yet");
+    expect(dayTip(month, day("2026-10-15"), "none")).toBe("Thu 26-10-15 · not counted yet");
+    // Not counted yet in any scope kind, and counted days keep their tips.
+    expect(dayTip(month, day("2026-10-14"), "object")).toBe("Wed 26-10-14 · not counted yet");
+    expect(dayTip(month, day("2026-10-13"), "none")).toBe("Tue 26-10-13 · no data");
+    expect(dayTip(month, day("2026-10-02"), "none")).toBe("Fri 26-10-02 · 233,161 rows · 2 drives");
   });
 });
 
@@ -796,6 +828,164 @@ describe("month grid size (round 2)", () => {
   it("an open pair of a 5-row and a 6-row month has the same cell count", () => {
     expect(monthCells(2026, 10).length).toBe(monthCells(2026, 8).length);
     expect(monthCells(2026, 2).length).toBe(monthCells(2026, 8).length);
+  });
+});
+
+describe("the picker fills in (speed-up-whole-scans)", () => {
+  // The component function runs outside a renderer (see the hooks mock at the top): its effects are
+  // collected and run here, against a stubbed `fetch` and fake timers.
+  class Doc extends EventTarget {
+    override removeEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      super.removeEventListener(
+        type,
+        listener,
+        typeof options === "boolean" ? { capture: options } : options,
+      );
+    }
+  }
+  afterEach(() => {
+    hooks.capture = false;
+    hooks.effects.length = 0;
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /** October 2026 as the server answers it; `pending` days when asked for. */
+  const octoberAnswer = (dataRef: string, withPending: boolean): CalendarDensity => ({
+    dataRef,
+    from: M10_FROM,
+    to: M10_TO,
+    hours: new Array<number>(745).fill(0),
+    drives: [],
+    ...(withPending
+      ? { pending: [{ from: "1791936000000000000", to: "1792022400000000000" }] }
+      : {}),
+  });
+
+  /** Opens the picker on `dataRef`; `answers` says per call of October whether it has `pending`. */
+  function open(dataRef: string, answers: boolean[]) {
+    const calls: { month: string }[] = [];
+    vi.stubGlobal("document", new Doc());
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url, "http://x");
+      if (u.pathname !== "/api/calendar") return new Response("{}", { status: 404 });
+      const october = u.searchParams.get("from") === M10_FROM;
+      if (october) calls.push({ month: "october" });
+      const october_ = calls.filter((c) => c.month === "october").length;
+      const body = october
+        ? octoberAnswer(dataRef, answers[october_ - 1] ?? false)
+        : {
+            ...octoberAnswer(dataRef, false),
+            from: u.searchParams.get("from"),
+            to: u.searchParams.get("to"),
+          };
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    hooks.capture = true;
+    hooks.effects.length = 0;
+    RangePicker({
+      range: { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:33Z") },
+      dataRef,
+      scope: undefined,
+      kind: "none",
+      typed: "",
+      onTyped: () => {},
+      onGoTo: () => undefined,
+      onApply: () => {},
+      onClose: () => {},
+    } as Parameters<typeof RangePicker>[0]);
+    hooks.capture = false;
+    const cleanups = hooks.effects.map((effect) => effect()).filter((c) => typeof c === "function");
+    return {
+      october: () => calls.filter((c) => c.month === "october").length,
+      close: () => {
+        for (const c of cleanups) c();
+      },
+    };
+  }
+
+  it("fetches again while days are pending", async () => {
+    vi.useFakeTimers();
+    // First answer with `pending`, second without: the second fetch comes 3 s after the first and
+    // no third follows.
+    const picker = open("pendingcar", [true, false]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(picker.october()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(picker.october()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(picker.october()).toBe(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(picker.october()).toBe(2);
+    picker.close();
+
+    // Opened again for another data ref and closed after the first answer with `pending`: no fetch
+    // follows the close.
+    const closed = open("pendingcar2", [true, true, true]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closed.october()).toBe(1);
+    closed.close();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(closed.october()).toBe(1);
+  });
+
+  it("draws a pending day as a dotted baseline without bars, still pickable", async () => {
+    // A kept answer with `pending` days lands in the module's cache; the markup then shows those
+    // days with the baseline element and no bars, and does not disable them.
+    const picker = open("pendingmarkup", [true]);
+    await vi.waitFor(() => expect(picker.october()).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    picker.close();
+    const html = renderToStaticMarkup(
+      createElement(RangePicker, {
+        range: { from: fromIso("2026-10-13T13:06:03Z"), to: fromIso("2026-10-13T13:18:33Z") },
+        dataRef: "pendingmarkup",
+        scope: undefined,
+        kind: "none" as const,
+        typed: "",
+        onTyped: () => {},
+        onGoTo: () => undefined,
+        onApply: () => {},
+        onClose: () => {},
+      }),
+    );
+    const cell = (date: string) => {
+      const found = html.match(new RegExp(`<button[^>]*data-day="${date}"[\\s\\S]*?</button>`));
+      if (!found) throw new Error(`no cell for ${date}`);
+      return found[0];
+    };
+    for (const date of ["2026-10-14", "2026-10-15"]) {
+      expect(cell(date), date).toContain("day-pending");
+      expect(cell(date), date).not.toContain("day-bars");
+      expect(cell(date), date).not.toContain('aria-disabled="true"');
+      expect(cell(date), date).toContain("not counted yet");
+    }
+    // A counted day without rows is muted and not pickable; it has no baseline.
+    expect(cell("2026-10-13")).not.toContain("day-pending");
+    expect(cell("2026-10-13")).toContain('aria-disabled="true"');
+  });
+
+  it("keeps asking every 3 s while days stay pending, and not at all without pending", async () => {
+    vi.useFakeTimers();
+    const slow = open("pendingcar3", [true, true, true, false]);
+    await vi.advanceTimersByTimeAsync(0);
+    for (const expected of [2, 3, 4]) {
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(slow.october()).toBe(expected);
+    }
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(slow.october()).toBe(4);
+    slow.close();
+
+    // An answer without `pending` is not asked again.
+    const plain = open("pendingcar4", [false]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(plain.october()).toBe(1);
+    plain.close();
   });
 });
 

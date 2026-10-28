@@ -144,6 +144,23 @@ describe("query classes through the whole stack", () => {
       expect(poll.some((c) => c.method === "refBuckets")).toBe(true);
       expect(poll.some((c) => c.method === "raw" && c.limit === 1001)).toBe(true);
       expect(poll.filter((c) => c.cls !== "background")).toEqual([]);
+
+      // The calendar of a data ref without a scope (full mode) answers from counted vehicle-days;
+      // the days it lacks are counted afterwards, every call in `idle` (D-118).
+      const beforeCalendar = calls.length;
+      const day = 86_400_000_000_000n;
+      const calendar = await app.inject({
+        url: "/api/calendar",
+        query: { dataRef: "car", from: "0", to: (2n * day).toString() },
+      });
+      expect(calendar.statusCode, calendar.body).toBe(200);
+      expect(calendar.json().pending).toHaveLength(2);
+      // The request itself made no source call.
+      expect(calls.length).toBe(beforeCalendar);
+      await settle();
+      const counted = calls.slice(beforeCalendar);
+      expect(counted.some((c) => c.method === "refBuckets")).toBe(true);
+      expect(counted.filter((c) => c.cls !== "idle")).toEqual([]);
     } finally {
       await app.close();
     }

@@ -67,8 +67,15 @@ export interface Config {
   projectFile: { path: string; required: boolean };
   /** Views and the state file (design V4); `KIPSCOPE_STATE_DIR`, default `<repo root>/.kipscope`. */
   stateDir: string;
-  /** `KIPSCOPE_CATALOG` (add-scope Z11): `full` loads the whole catalog at start, `scoped` only a scope's list. */
+  /**
+   * `KIPSCOPE_CATALOG` (add-scope Z11): `scoped` (default) loads only a scope's list, `full` the
+   * whole catalog at start (small sources only, speed-up-whole-scans B7).
+   */
   catalogMode: CatalogMode;
+  /** `KIPSCOPE_SCAN_ROWS` (speed-up-whole-scans B1): rows one scan may read at most. */
+  scanRows: number;
+  /** `KIPSCOPE_SCAN_SPAN` in ns, > 0 (B1): the widest range one scan may span. */
+  scanSpan: bigint;
   /** `KIPSCOPE_SCOPE_PAD` in ns, ≥ 0: padding on each side of a scope derived from a view (Z8, Z11). */
   scopePad: bigint;
   /** `KIPSCOPE_IDENTITY` (add-multiuser M1). */
@@ -124,6 +131,11 @@ export const CATALOG_MODES = ["full", "scoped"] as const;
 export type CatalogMode = (typeof CATALOG_MODES)[number];
 
 const DEFAULT_SCOPE_PAD_TEXT = "1h";
+/** `KIPSCOPE_SCAN_ROWS` default (speed-up-whole-scans B1). */
+export const DEFAULT_SCAN_ROWS = 150_000_000;
+const DEFAULT_SCAN_SPAN_TEXT = "7d";
+/** `KIPSCOPE_SCAN_SPAN` default (B1), in ns. */
+export const DEFAULT_SCAN_SPAN = 7n * 24n * 3_600_000_000_000n;
 /** `KIPSCOPE_SCOPE_PAD` default (add-scope Z11), in ns. */
 export const DEFAULT_SCOPE_PAD = parseDuration(DEFAULT_SCOPE_PAD_TEXT);
 
@@ -239,7 +251,7 @@ function positiveInt(env: Env, key: string, fallback: number): number {
 }
 
 function catalogMode(env: Env): CatalogMode {
-  const raw = env.KIPSCOPE_CATALOG || "full";
+  const raw = env.KIPSCOPE_CATALOG || "scoped";
   if (!(CATALOG_MODES as readonly string[]).includes(raw))
     throw new Error(`KIPSCOPE_CATALOG: ${CATALOG_MODES.join(" or ")}, not ${raw}`);
   return raw as CatalogMode;
@@ -258,6 +270,34 @@ function scopePad(env: Env): bigint {
   if (pad < 0n)
     throw new Error(`${key}: a duration of at least 0 (e.g. 30min, 1h, 0s), not ${raw}`);
   return pad;
+}
+
+/** `KIPSCOPE_SCAN_ROWS` (B1): decimal digits only, so `1e6` or `1.5` is refused. */
+function scanRows(env: Env): number {
+  const key = "KIPSCOPE_SCAN_ROWS";
+  const raw = env[key];
+  if (!raw) return DEFAULT_SCAN_ROWS;
+  const value = Number(raw);
+  if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(value) || value <= 0)
+    throw new Error(`${key}: a positive integer of digits only (e.g. 150000000), not ${raw}`);
+  return value;
+}
+
+/**
+ * `KIPSCOPE_SCAN_SPAN` (B1): a CLI duration above 0. `parseDuration` knows no days, so a `d`
+ * suffix is read as 24 h each (`7d`, `1.5d`).
+ */
+function scanSpan(env: Env): bigint {
+  const key = "KIPSCOPE_SCAN_SPAN";
+  const raw = env[key] || DEFAULT_SCAN_SPAN_TEXT;
+  let span: bigint;
+  try {
+    span = raw.endsWith("d") ? parseDuration(`${raw.slice(0, -1)}h`) * 24n : parseDuration(raw);
+  } catch {
+    span = 0n;
+  }
+  if (span <= 0n) throw new Error(`${key}: a duration above 0 (e.g. 7d, 12h), not ${raw}`);
+  return span;
 }
 
 function required(env: Env, key: string): string {
@@ -531,6 +571,8 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     stateDir: resolve(root, env.KIPSCOPE_STATE_DIR || ".kipscope"),
     catalogMode: catalogMode(env),
     scopePad: scopePad(env),
+    scanRows: scanRows(env),
+    scanSpan: scanSpan(env),
     identity,
     origins,
     share: share(env),

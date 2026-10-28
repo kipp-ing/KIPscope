@@ -17,7 +17,15 @@ import {
   workWindow,
 } from "@kipscope/shared";
 import { useCallback, useSyncExternalStore } from "react";
-import { computedDefList, computedDefOf, fetchGaps, isCatalogLoading } from "../api.ts";
+import {
+  computedDefList,
+  computedDefOf,
+  errorText,
+  fetchGaps,
+  isCatalogLoading,
+  isTooWide,
+  scanSpanNs,
+} from "../api.ts";
 
 /** Scope keys whose extents and gap info are kept (add-case-open K12; the server keeps 4 scope lists too). */
 export const SCOPE_STORES = 4;
@@ -54,6 +62,13 @@ interface Entry {
   named: ReadonlySet<string>;
   /** The scope changed while a fetch was in flight: its answer is dropped and fetched again. */
   again?: true;
+  /** The shown range last asked with, in an object scope (`ask`'s `view`). */
+  view?: TimeRange;
+  /**
+   * The work window answered `too_wide`: the entry asks with this shown range instead (object-view
+   * "Gaps and events follow the view"), again when a later view leaves it.
+   */
+  narrow?: TimeRange;
 }
 
 /**
@@ -120,8 +135,11 @@ const entryKey = (p: Place) => `${p.scope}\n${p.ref}\n${windowText(p.window)}`;
  * windows ask for; a newly asked signal starts a fetch at once (or right after the one in
  * flight). A failure is kept as an error and fetched again every `retryMs` while any window still
  * asks for that data ref; a 503 `catalog_unavailable` is no error but loading, fetched again
- * within GAP_LOADING_RETRY_MS. A loaded info is fetched again every `refreshMs` while asked for
- * (G9 (c)): replaced only by a different answer, kept on a failure without an error.
+ * within GAP_LOADING_RETRY_MS. A 422 `too_wide` is an error with the server's message, fetched
+ * again after `refreshMs` (data-gaps "Gap info within the scan bound"); a work window asked with
+ * its shown range asks that range once first. A loaded info is fetched again every `refreshMs`
+ * while asked for (G9 (c)): replaced only by a different answer, kept on a failure without an
+ * error.
  */
 export class GapInfoStore {
   /** By entryKey: per scope key and data ref (and work window in an object scope, K12). */
@@ -171,14 +189,16 @@ export class GapInfoStore {
   }
 
   /**
-   * Asks for `signalIds` under scope key `scope` (in an object scope with its work `window`) until
-   * the returned release is called; `listener` hears every change.
+   * Asks for `signalIds` under scope key `scope` (in an object scope with its work `window`, and
+   * the shown range `view` to fall back to) until the returned release is called; `listener`
+   * hears every change.
    */
   ask(
     signalIds: readonly string[],
     listener: () => void,
     scope = "",
     window?: TimeRange,
+    view?: TimeRange,
   ): () => void {
     const refs = new Map(
       [...byDataRef(idsOf(keyOf(signalIds)))].map(([ref, ids]) => {
@@ -195,6 +215,13 @@ export class GapInfoStore {
         if (window) this.trimWindows(place);
       }
       for (const id of ids) entry.asks.set(id, (entry.asks.get(id) ?? 0) + 1);
+      if (window && view) entry.view = view;
+      // A view outside the shown range a too-wide work window fell back to asks for that view.
+      if (window && view && entry.narrow && !inside(entry.narrow, view)) {
+        entry.narrow = view;
+        if (entry.loading) entry.again = true;
+        else this.load(ref, entry);
+      }
       // A loaded info whose refetch fell due while nobody asked is fetched again now.
       if (!entry.loading && entry.retry === undefined && entry.refresh === undefined)
         this.load(ref, entry);
@@ -304,10 +331,8 @@ export class GapInfoStore {
       return true;
     };
     const { place } = entry;
-    (place.window
-      ? this.fetchInfo(place.ref, names, place.window)
-      : this.fetchInfo(place.ref, names)
-    ).then(
+    const range = entry.narrow ?? place.window;
+    (range ? this.fetchInfo(place.ref, names, range) : this.fetchInfo(place.ref, names)).then(
       (info) => {
         entry.loading = false;
         if (stale()) return;
@@ -335,18 +360,29 @@ export class GapInfoStore {
           this.next(ref, entry);
           return;
         }
+        const tooWide = isTooWide(error);
+        // A too-wide work window: its shown range once, before an error shows.
+        if (tooWide && place.window && entry.view && !entry.narrow) {
+          entry.narrow = entry.view;
+          this.load(ref, entry);
+          return;
+        }
         // The server still loads its catalog: not an error, the data ref stays unsettled and is
         // fetched again soon.
         const loading = isCatalogLoading(error);
         const hadError = entry.error !== undefined;
         if (loading) delete entry.error;
-        else entry.error = error instanceof Error ? error.message : String(error);
+        else entry.error = errorText(error);
         entry.retry = setTimeout(
           () => {
             delete entry.retry;
             if (entry.asks.size > 0) this.load(ref, entry);
           },
-          loading ? Math.min(this.retryMs, GAP_LOADING_RETRY_MS) : this.retryMs,
+          loading
+            ? Math.min(this.retryMs, GAP_LOADING_RETRY_MS)
+            : tooWide
+              ? this.refreshMs
+              : this.retryMs,
         );
         if (!loading || hadError) this.changed(ref);
       },
@@ -377,40 +413,46 @@ export class GapInfoStore {
   }
 }
 
+/** `view` lies inside `range`. */
+const inside = (range: TimeRange, view: TimeRange) =>
+  BigInt(range.from) <= BigInt(view.from) && BigInt(view.to) <= BigInt(range.to);
+
 /** The tab's gap info, shared by all windows (like the strip's densities). */
 export const gapInfoStore = new GapInfoStore();
 
 /**
  * The work window to ask gap info for in an object scope (K11): `held` while it still contains
- * `view`, else the work window around `view`; undefined outside an object scope.
+ * `view`, else the work window around `view` of at most `maxSpanNs` (speed-up-whole-scans B3, the
+ * server's `KIPSCOPE_SCAN_SPAN` by default); undefined outside an object scope.
  */
 export function heldWorkWindow(
   held: TimeRange | undefined,
   view: TimeRange,
   scope: WorkspaceScope | undefined,
+  maxSpanNs: bigint = scanSpanNs(),
 ): TimeRange | undefined {
   if (!scope?.object) return undefined;
-  const inside =
-    held !== undefined &&
-    BigInt(held.from) <= BigInt(view.from) &&
-    BigInt(view.to) <= BigInt(held.to);
-  return inside ? held : workWindow(view, scope);
+  return held !== undefined && inside(held, view) ? held : workWindow(view, scope, maxSpanNs);
 }
 
 /**
  * Gap info of the data refs of `signalIds` under scope key `scope` (in an object scope of the work
- * `window`, K11) from the tab's store; asks for those signals while the component is mounted.
- * Never holds back a draw: a signal without its period yet splits at logger gaps only until the
- * answer is in (P8).
+ * `window`, K11, falling back to the shown range `view`) from the tab's store; asks for those
+ * signals while the component is mounted. Never holds back a draw: a signal without its period
+ * yet splits at logger gaps only until the answer is in (P8).
  */
 export function useGapInfo(
   signalIds: readonly string[],
   scope = "",
   window?: TimeRange,
+  view?: TimeRange,
 ): GapInfoState {
   const key = keyOf(signalIds);
   const from = window?.from;
   const to = window?.to;
+  // The shown range matters only with a work window.
+  const viewFrom = window ? view?.from : undefined;
+  const viewTo = window ? view?.to : undefined;
   const subscribe = useCallback(
     (onChange: () => void) =>
       gapInfoStore.ask(
@@ -418,8 +460,9 @@ export function useGapInfo(
         onChange,
         scope,
         from !== undefined && to !== undefined ? { from, to } : undefined,
+        viewFrom !== undefined && viewTo !== undefined ? { from: viewFrom, to: viewTo } : undefined,
       ),
-    [key, scope, from, to],
+    [key, scope, from, to, viewFrom, viewTo],
   );
   const snapshot = useCallback(
     () =>

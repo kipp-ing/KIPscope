@@ -27,6 +27,8 @@ function metaOf(over: Partial<ServerMeta> = {}): ServerMeta {
       checkedAt: "2026-10-16T13:08:01.000Z",
     },
     catalog: { mode: "full", state: "loaded", size: 1234, loadedAt: "2026-10-16T13:07:12.000Z" },
+    // The server's defaults (speed-up-whole-scans B1): 150 M rows, 7 d, 1 h of pad.
+    limits: { scanRows: 150_000_000, scanSpan: "604800000000000", scopePad: "3600000000000" },
     ...over,
   };
 }

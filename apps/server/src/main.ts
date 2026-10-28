@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   attributionText,
   EMPTY_WORKSPACE,
+  formatSpan,
   type Grant,
   type Measurement,
   scopeKey,
@@ -10,6 +11,7 @@ import {
 } from "@kipscope/shared";
 import { accessLog, isLoopbackHost } from "./access.ts";
 import { buildApp } from "./app.ts";
+import { CalendarDays } from "./calendarDays.ts";
 import { Catalog, keepCatalogLoaded, warnDisplayFallbacks } from "./catalog.ts";
 import { loadConfig, REPO_ROOT } from "./config.ts";
 import type { Scope } from "./datasource.ts";
@@ -22,6 +24,7 @@ import { readBuildInfo } from "./meta.ts";
 import { NO_RULES } from "./names.ts";
 import { loadProject, ProjectFileError } from "./project.ts";
 import { QueryQueue, queuedAdapter } from "./queue.ts";
+import { createScanBound } from "./scanBound.ts";
 import { CatalogStore, guardScoped, openScopes } from "./scope.ts";
 import { createAdapter } from "./sources.ts";
 import { userViews } from "./views.ts";
@@ -73,9 +76,12 @@ try {
   licenseMissing = true;
 }
 
-// Fallbacks outside the queue: each inner query of a fallback takes its own slot (design C3).
+// Fallbacks outside the queue: each inner query of a fallback takes its own slot (design C3). The
+// series fallback refuses more rows than the scan bound's (speed-up-whole-scans B9).
 const adapter = createAdapter(config);
-const completed = completeSource(queuedAdapter(adapter, new QueryQueue(config.queryConcurrency)));
+const completed = completeSource(queuedAdapter(adapter, new QueryQueue(config.queryConcurrency)), {
+  scanRows: config.scanRows,
+});
 // Scoped mode (add-scope Z10): a data call without a scope, or a range outside every held scope,
 // is refused before the queue and logged once per method as a bug.
 const source =
@@ -84,6 +90,16 @@ const source =
         error: (message) => app.log.error(message),
       })
     : completed;
+// The scan bound (B1, B2): every list load, density, gap info and plain-scope calendar checks its
+// range through it first, sharing one count per range.
+const bound = createScanBound(source, { rows: config.scanRows, spanNs: config.scanSpan });
+// The calendar's vehicle-days, counted at `idle` and kept in `<stateDir>/calendar` (B6).
+const calendarDays = new CalendarDays(source, {
+  dir: join(config.stateDir, "calendar"),
+  sourceInfo: source.info,
+  scanRows: config.scanRows,
+  warn: (message) => app.log.warn(message),
+});
 
 const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "[::]"]);
 const loopback = isLoopbackHost(config.host);
@@ -140,12 +156,15 @@ const catalogs = new CatalogStore({
   create: newCatalog,
   // The lists of workspaces with a live client stay held however many other scopes load (M9).
   keep: () => openScopes(workspaces),
+  bound,
 });
 const deps = {
   catalog,
   catalogs,
   scopePad: config.scopePad,
   source,
+  bound,
+  calendarDays,
   workspaces,
   // Each user's saved views in `<stateDir>/users/<user>/views/` (add-multiuser M9).
   viewsOf: userViews(config.stateDir),
@@ -192,6 +211,7 @@ const CLOSE_ADAPTER_MS = 2_000;
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => {
     workspaces.stop();
+    calendarDays.stop();
     const closing = identity?.close?.().catch(() => {}) ?? Promise.resolve();
     const timeout = new Promise((done) => setTimeout(done, CLOSE_ADAPTER_MS).unref());
     void Promise.race([closing, timeout]).finally(() => process.kill(process.pid, signal));
@@ -199,6 +219,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
 
 app.log.info(attributionText());
 app.log.info(`catalog mode ${config.catalogMode}`);
+app.log.info(
+  `scan bound ${config.scanRows.toLocaleString("en-US")} rows, ${formatSpan(config.scanSpan)}`,
+);
 app.log.info(
   `source ${source.info.kind} ${source.info.database}: native ${nativeMethods(adapter).join(", ") || "none"}`,
 );

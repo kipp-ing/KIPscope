@@ -5,6 +5,7 @@ import {
   type Density,
   type DiagEvent,
   type Drive,
+  formatSpan,
   parseSignalId,
   scopeKey,
   type TimeRange,
@@ -12,7 +13,7 @@ import {
   type WorkspaceScope,
 } from "@kipscope/shared";
 import { type CSSProperties, type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { fetchDensity } from "../api.ts";
+import { errorText, fetchDensity, isTooWide } from "../api.ts";
 import { barTarget } from "../bar/bar.ts";
 import { alignToEvent } from "../case/sessionBar.ts";
 import { useGapInfo } from "../chart/gaps.ts";
@@ -23,7 +24,15 @@ import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { formatDate, formatTime } from "./axis.ts";
 import { NO_SCOPE, SCOPE_HINTS, scopeRange } from "./scope.ts";
-import { formatSpan, nextWorkWindow, RETRY_MS, stripDataRef, stripLabel } from "./strip.ts";
+import {
+  densityRetryMs,
+  nextWorkWindow,
+  RETRY_MS,
+  scopeDensity,
+  stripDataRef,
+  stripLabel,
+  TOO_WIDE_NOTE,
+} from "./strip.ts";
 import {
   bothRange,
   brushRange,
@@ -74,15 +83,14 @@ function densityKey(dataRef: string, scope: WorkspaceScope | undefined): string 
   return scope ? scopeKey(scope) : dataRef;
 }
 
-/** The key an answer belongs to: the scope it was computed for (a coarse one: an object scope), else its data ref. */
+/** The key an answer belongs to: the scope it was computed for, else its data ref. */
 function answerKey(d: Density): string {
-  if (!d.scope) return d.dataRef;
-  const scope = { dataRef: d.dataRef, ...d.scope };
-  return scopeKey(d.coarse ? { ...scope, object: true } : scope);
+  return d.scope ? scopeKey({ dataRef: d.dataRef, ...d.scope }) : d.dataRef;
 }
 
-/** The density of `dataRef` (within `scope`) if the strip loaded it (design S9: the drive keys read it). */
+/** The density of `dataRef` (within `scope`) if the strip loaded it (design S9: the drive keys read it); an object scope's track needs none. */
 export function loadedDensity(dataRef: string, scope?: WorkspaceScope): Density | undefined {
+  if (scope?.object) return scopeDensity(scope);
   return densities.get(densityKey(dataRef, scope));
 }
 
@@ -137,20 +145,35 @@ export function useWorkWindow(
   return window;
 }
 
-/** Fetches the detail density of a work window (K11), retried every RETRY_MS while it stays. */
+/** Work-window keys whose detail density answered `too_wide`: the shown range is asked instead. */
+const tooWideDetails = new Set<string>();
+
+type Detail = { key: string; density: Density } | { key: string; tooWide: string };
+
+/**
+ * Fetches the detail density of a work window (K11), retried every RETRY_MS while it stays; a
+ * `too_wide` work window once more as the shown range `view` (object-view "Gaps and events follow
+ * the view"), a too-wide shown range not again until it changes.
+ */
 function useDetailDensity(
   dataRef: string | undefined,
   scope: WorkspaceScope | undefined,
   window: TimeRange | undefined,
-): Density | undefined {
-  const key =
+  view: TimeRange | undefined,
+): Detail | undefined {
+  const windowKey =
     dataRef !== undefined && scope?.object && window ? detailKey(scope, window) : undefined;
-  const [loaded, setLoaded] = useState<{ key: string; density: Density }>();
+  // Bumped when the work window answered too wide: the next render asks the shown range.
+  const [, setNarrowed] = useState(0);
+  const narrow = windowKey !== undefined && view !== undefined && tooWideDetails.has(windowKey);
+  const range = narrow ? view : window;
+  const key = windowKey !== undefined && scope && range ? detailKey(scope, range) : undefined;
+  const [loaded, setLoaded] = useState<Detail>();
   const [attempt, setAttempt] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; key stands for dataRef, scope and window
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; key stands for dataRef, scope and the range
   useEffect(() => {
-    if (key === undefined || dataRef === undefined || !scope || !window) return;
+    if (key === undefined || dataRef === undefined || !scope || !range) return;
     const show = (density: Density) => {
       shownDetails.set(scopeKey(scope), density);
       setLoaded({ key, density });
@@ -163,13 +186,22 @@ function useDetailDensity(
     }
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    fetchDensity(dataRef, abort.signal, window).then(
+    fetchDensity(dataRef, abort.signal, range).then(
       (density) => {
         rememberDetail(key, density);
         if (!abort.signal.aborted) show(density);
       },
-      () => {
-        if (!abort.signal.aborted) timer = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
+      (error: unknown) => {
+        if (abort.signal.aborted) return;
+        if (!isTooWide(error)) {
+          timer = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
+        } else if (!narrow && windowKey !== undefined && view !== undefined) {
+          tooWideDetails.add(windowKey);
+          setNarrowed((n) => n + 1);
+        } else {
+          shownDetails.delete(scopeKey(scope));
+          setLoaded({ key, tooWide: errorText(error) });
+        }
       },
     );
     return () => {
@@ -178,27 +210,41 @@ function useDetailDensity(
     };
   }, [key, attempt]);
 
-  return key !== undefined && loaded?.key === key ? loaded.density : undefined;
+  return key !== undefined && loaded?.key === key ? loaded : undefined;
 }
 
 type Load =
   | { key: string; state: "loading" }
   | { key: string; state: "failed"; message: string }
+  | { key: string; state: "tooWide"; message: string }
   | { key: string; state: "loaded"; density: Density };
 
-/** Fetches the density of `dataRef` (of the scope, when set), retrying a failure every RETRY_MS while the key stays. */
+/**
+ * Fetches the density of `dataRef` (of the scope, when set), retrying a failure every RETRY_MS
+ * while the key stays; a `too_wide` answer is asked again only when the key or `shown` (the shown
+ * range) changes. An object scope asks nothing: its track spans the scope (object-view B5).
+ */
 function useDensity(
   dataRef: string | undefined,
   scope: WorkspaceScope | undefined,
+  shown: string,
 ): Load | undefined {
   const [load, setLoad] = useState<Load>();
   // Bumped by the retry timer; a changed key fetches at once through its own dependency.
   const [attempt, setAttempt] = useState(0);
+  const object = scope?.object === true;
   const key = dataRef === undefined ? undefined : densityKey(dataRef, scope);
+  const tooWideKey = load?.state === "tooWide" ? load.key : undefined;
+
+  // A too-wide strip asks again once the shown range changed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: shown is the trigger
+  useEffect(() => {
+    if (tooWideKey !== undefined) setAttempt((n) => n + 1);
+  }, [shown]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger; key stands for dataRef and scope
   useEffect(() => {
-    if (dataRef === undefined || key === undefined) return;
+    if (dataRef === undefined || key === undefined || object) return;
     const cached = densities.get(key);
     if (cached) {
       setLoad({ key, state: "loaded", density: cached });
@@ -206,7 +252,9 @@ function useDensity(
     }
     // A retry keeps "Recording unavailable" until it succeeds, so the strip does not flicker.
     setLoad((prev) =>
-      prev?.key === key && prev.state === "failed" ? prev : { key, state: "loading" },
+      prev?.key === key && (prev.state === "failed" || prev.state === "tooWide")
+        ? prev
+        : { key, state: "loading" },
     );
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -221,9 +269,10 @@ function useDensity(
       },
       (error: unknown) => {
         if (abort.signal.aborted) return;
-        const message = error instanceof Error ? error.message : String(error);
-        setLoad({ key, state: "failed", message });
-        timer = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
+        const message = errorText(error);
+        const retry = densityRetryMs(error);
+        setLoad({ key, state: retry === undefined ? "tooWide" : "failed", message });
+        if (retry !== undefined) timer = setTimeout(() => setAttempt((n) => n + 1), retry);
       },
     );
     return () => {
@@ -232,7 +281,13 @@ function useDensity(
     };
   }, [key, attempt]);
 
-  return key !== undefined && load?.key === key ? load : undefined;
+  const scopeTrack = useMemo(
+    () => (object && scope ? scopeDensity(scope) : undefined),
+    [object, scope],
+  );
+  if (key === undefined) return undefined;
+  if (scopeTrack) return { key, state: "loaded", density: scopeTrack };
+  return load?.key === key ? load : undefined;
 }
 
 /** The shown events of the strip's data ref and their total before the filter (add-events V3, V5). */
@@ -449,8 +504,10 @@ export function TimeStrip({
   const linked = open?.linked === true;
   const object = scope?.object === true;
   const dataRef = stripDataRef(workspace);
-  const load = useDensity(dataRef, scope);
-  const detail = useDetailDensity(dataRef, scope, object ? workWindow : undefined);
+  const targetWindow = barTarget(workspace);
+  const target = targetWindow?.range;
+  const load = useDensity(dataRef, scope, target ? `${target.from} ${target.to}` : "");
+  const detail = useDetailDensity(dataRef, scope, object ? workWindow : undefined, target);
   // Logger gaps of the strip's data ref from the windows' shared gap info (DW10): the signals of
   // that data ref the windows show, so no request of its own; none shown, breaks at empty buckets only.
   const gapIds = useMemo(
@@ -462,7 +519,7 @@ export function TimeStrip({
           ),
     [workspace.windows, dataRef],
   );
-  const gapInfo = useGapInfo(gapIds, scopeKey(scope), object ? workWindow : undefined);
+  const gapInfo = useGapInfo(gapIds, scopeKey(scope), object ? workWindow : undefined, target);
   const loggerJson = dataRef === undefined ? undefined : gapInfo.infos.get(dataRef)?.logger;
   const logger = useMemo(
     () => loggerJson?.map((g) => ({ from: BigInt(g.from), to: BigInt(g.to) })),
@@ -470,15 +527,16 @@ export function TimeStrip({
   );
   // The pin a right click opened `Align sessions to this event` for (K14), and where.
   const [pinMenu, setPinMenu] = useState<{ pin: number; x: number }>();
-  const targetWindow = barTarget(workspace);
-  const target = targetWindow?.range;
   const range = target ? { from: BigInt(target.from), to: BigInt(target.to) } : undefined;
   const targetKey = target ? `${targetWindow?.id} ${target.from} ${target.to}` : "";
   const density = load?.state === "loaded" ? load.density : undefined;
   // Loading (DW4, time-strip "Time strip states"): while a step runs, and while the density of the
   // current key loads: no presence line, drives, pins, window or flags.
   const loading =
-    dataRef !== undefined && load?.state !== "failed" && (stepping === true || !density);
+    dataRef !== undefined &&
+    load?.state !== "failed" &&
+    load?.state !== "tooWide" &&
+    (stepping === true || !density);
 
   const trackRef = useRef<HTMLDivElement>(null);
   const [px, setPx] = useState(0);
@@ -512,9 +570,10 @@ export function TimeStrip({
   );
 
   const tr = density && px > 0 && !loading ? trackOf(density, px) : undefined;
-  // In an object scope the drive row shows the work window's drives (K14); a linked session is
-  // the drive, so none then (D-094).
-  const driveDensity = object ? detail : density;
+  // In an object scope the drive row and the presence line show the work window's detail
+  // (object-view "Catalog marks on the strip"); a linked session is the drive, so none then (D-094).
+  const detailDensity = detail && "density" in detail ? detail.density : undefined;
+  const driveDensity = object ? detailDensity : density;
   const drives = linked ? [] : (driveDensity?.drives ?? []);
   const sessions = useMemo(
     () =>
@@ -568,13 +627,19 @@ export function TimeStrip({
   } else if (load?.state === "failed") {
     note = "Recording unavailable";
     trackTitle = load.message;
+  } else if (load?.state === "tooWide") {
+    note = TOO_WIDE_NOTE;
+    trackTitle = load.message;
+  } else if (detail && "tooWide" in detail && !loading) {
+    note = TOO_WIDE_NOTE;
+    trackTitle = detail.tooWide;
   } else if (density && !loading) {
-    // An object scope is the vehicle's whole recording, no window the user set (K14).
+    // An object scope spans the catalog's sessions, no window the user set (object-view).
     const hint =
-      density.scope && !density.coarse
+      density.scope && !object
         ? SCOPE_HINTS.info(formatSpan(BigInt(density.scope.to) - BigInt(density.scope.from)))
         : HINTS.stripInfo(formatSpan(BigInt(density.last) - BigInt(density.first)));
-    trackTitle = `${stripLabel(density, labelRange)}\n${hint}`;
+    trackTitle = `${stripLabel(object && scope ? scope : density, labelRange)}\n${hint}`;
   } else {
     note = "Loading recording…";
     trackTitle = note;
@@ -773,7 +838,9 @@ export function TimeStrip({
           right: Math.min(tr.px, Math.max(drag.x0, drag.x1)),
         }
       : undefined;
-  const lines = tr && density ? presence(tr, density, logger, shown) : undefined;
+  // In an object scope the line exists only inside the work window (its detail density).
+  const lineDensity = object ? detailDensity : density;
+  const lines = tr && lineDensity ? presence(tr, lineDensity, logger, shown) : undefined;
   const days = tr && span && !linked ? dayTicks(tr, span.from, span.to) : [];
   const cursorT = (t: string | undefined) => (t === undefined ? undefined : BigInt(t));
   const ta = cursorT(workspace.cursors.a);

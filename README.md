@@ -133,13 +133,26 @@ pnpm --filter @kipscope/web dev      # UI at http://localhost:5173, proxies /api
 
 The UI's dev server proxies `/api` and the live channel to `KIPSCOPE_SERVER_URL` (default `http://127.0.0.1:7310`).
 
-`pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads; an API answer the specs expect (404 `unknown_signal` for a signal a session lacks) is not a console error. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It opens your free workspace (or else the latest) at `/w/<id>` and blocks every write to `/api` except the one start-up `POST /api/workspaces {reuse: true}`, which may create one empty workspace when you have none, so it never changes a workspace.
+**Scoped by default:** the server starts with `KIPSCOPE_CATALOG=scoped` and reads nothing until a workspace has a scope, one data ref and a time window (KIPscope never scans a source's whole data, D-117). A workspace without a scope shows the **Scope card** above its windows, prefilled from them: check data ref, From and To and click **Set scope**. From the CLI (`kipscope` is `node apps/cli/src/main.ts`, section [CLI](#cli)):
+
+```sh
+kipscope scope set smart451 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z
+# or sessions: one per drive, found one UTC day at a time (at most 32 days)
+kipscope case drives smart451 2026-10-20T00:00:00Z 2026-10-28T00:00:00Z > drives.json
+kipscope case open drives.json
+```
+
+Once your latest workspace has a scope, `kipscope case drives` without `--workspace` is bound to that scope and answers `out_of_scope`; run it before setting a scope, or pass `--workspace ID` of a workspace without a scope.
+
+Every scan is bounded: a range over `KIPSCOPE_SCAN_SPAN` (default `7d`) or holding more than `KIPSCOPE_SCAN_ROWS` rows (default `150000000`, one full smart451 day fits) answers `too wide: …; choose a shorter range` instead of timing out. `KIPSCOPE_CATALOG=full` (a start-up catalog of every data ref) is for small sources such as the test DB; [docs/data-sources.md](docs/data-sources.md#scope) has the details.
+
+`pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads; an API answer the specs expect (404 `unknown_signal` for a signal a session lacks) is not a console error. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It creates its own scoped workspace (`POST /api/workspaces {open: {view}}`, sent by the script) with `--scope REF FROM TO` (default `smart451 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z`) and one timeseries window of `--signal ID` (default `smart451/BMS.cell_voltage_max`) over 10:00–11:00Z, opens it at `/w/<id>`, blocks every write the page sends to `/api`, and deletes the workspace on every exit path, so it never changes yours. It prints the IDs it created and deleted.
 
 The server answers only requests whose `Host` names `localhost`, `127.0.0.1` or `[::1]` (or a non-loopback `KIPSCOPE_HOST`, or a host of `KIPSCOPE_ORIGINS`) and whose `Origin`, if any, is such a host; other requests get 403. Locally there is no login (`KIPSCOPE_IDENTITY=none`, the default): every request is the user `local`, every workspace sees all data, and a non-loopback `KIPSCOPE_HOST` logs a warning at start.
 
 **Workspaces:** each tab works in a workspace with its own address `/w/<id>` (old `/s/<id>` addresses still open); `/` reuses your latest workspace that no tab has open (or makes a new one), so two tabs never mirror each other, and a `#view=` or `?view=` link opens the view in a new workspace, so old tabs keep their case. `Share…` in the top row copies a link (own copy, or the same live workspace) and sets who else may open it; the Views menu lists your recent workspaces. The CLI and scripts without `--workspace` use the latest one. On first start older state dirs are migrated to the user `local` (the folder of round 1 becomes `workspaces/`, `workspace.json` becomes a workspace, `views/` moves to `users/local/views/`).
 
-**Sessions from a search tool:** a catalog of sessions opens as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`, in a new workspace with the session bar. Locally an unsigned catalog is enough; to try it on your own recording, `kipscope case drives <dataRef> | kipscope case open -` makes one session per drive. A shared server with sign-in and signed catalogs: [Runs as a team server](#runs-as-a-team-server).
+**Sessions from a search tool:** a catalog of sessions opens as a link `/open#cases=<code>`, a file (`kipscope case open FILE`, or dropped on the window) or `POST /api/workspaces {open: {cases}}`, in a new workspace with the session bar. Locally an unsigned catalog is enough; to try it on your own recording, `kipscope case drives <dataRef> FROM TO > drives.json` then `kipscope case open drives.json` makes one session per drive. A shared server with sign-in and signed catalogs: [Runs as a team server](#runs-as-a-team-server).
 
 Besides the workspace API the server answers `GET /api/meta` (data source and whether it answers, catalog state, build commit; never the source address or credentials) and `GET /api/license` (the repo's `LICENSE` as text). The UI's footer reads both.
 
@@ -289,11 +302,11 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `case next` \| `case prev` | `case.step {by: 1 \| -1}`: the next or previous session in catalog order, windows kept at their offset |
 | `case go N` | `case.go {index: N − 1}`: session N (1-based) |
 | `case link [N]` | `case.go` to session N, default the current one: back from the whole vehicle to a session |
-| `case unlink` | `case.unlink`: the scope becomes the vehicle's whole recording |
+| `case unlink` | `case.unlink`: the scope becomes the span of the catalog's sessions of that vehicle (no source query) |
 | `case align start\|end\|anchor` | `case.align`: what lines up between sessions |
 | `case align event KIND SOURCE NAME [TEXT]` | `case.align` to the first matching event of each session |
 | `case url FILE\|- [--trim]` | prints the link `<server>/open#cases=<code>` of a catalog; longer than 8,192 characters: exit 2 `link_too_long`; `--trim` drops sessions by the balanced trim of [handoff.md](docs/handoff.md) until it fits (unsigned catalogs only; `local.dropped`, `local.position`) |
-| `case drives REF` | prints a catalog with one session per drive of REF (a test aid; pipe it to `case open -`) |
+| `case drives REF FROM TO` | prints a catalog with one session per drive of REF in `[FROM, TO)`, at most 32 days: one bounded density per UTC day, a too-wide day as four 6 h parts, drives touching at an edge merged (a test aid; `> drives.json`, then `case open drives.json`, or pipe it to `case open -`); exit 1 `no_data` without drives, `too_wide` when a 6 h part is still too wide |
 | `command JSON` | the JSON as is (no anchors, names or REFs resolved) |
 | `view save TITLE [--name N] [--note TEXT] [--overwrite]` | `POST /api/views`: saves the workspace as view N (default derived from TITLE); `data.view`, `revision` |
 | `view open NAME` | `POST /api/views/open`: one command (`accepted`, `revision`, `data.report` of missing or left-out signals); honours `--wait` |

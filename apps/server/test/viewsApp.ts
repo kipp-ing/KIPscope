@@ -15,7 +15,7 @@ export const SIGNALS: SignalRef[] = [
 ];
 
 /**
- * Source with the signal list only; the catalog refresh needs nothing else here. A scope's list is
+ * Source with the signal list and a row count only; the catalog refresh needs nothing else here. A scope's list is
  * the signals of its data ref (design Z1); `fail` makes every scoped list fail.
  */
 function stubSource(listCalls: (Scope | undefined)[], fail: () => boolean): DataSource {
@@ -28,6 +28,8 @@ function stubSource(listCalls: (Scope | undefined)[], fail: () => boolean): Data
       return scope ? SIGNALS.filter((s) => s.dataRef === scope.dataRef) : SIGNALS;
     },
     extent: async () => undefined,
+    // The scan bound's row count (speed-up-whole-scans): always within the bound here.
+    refCount: async () => 0,
   } as unknown as DataSource;
 }
 

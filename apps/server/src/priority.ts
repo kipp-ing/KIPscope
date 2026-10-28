@@ -1,7 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** Class of a source query; decides which waiting query the queue starts first (design P1, P9). */
-export type QueryClass = "interactive" | "metadata" | "background" | "preload";
+/**
+ * Class of a source query; decides which waiting query the queue starts first (design P1, P9).
+ * `idle` is the calendar's day counting: it runs only while nothing interactive runs or waits,
+ * one at a time (speed-up-whole-scans B6, D-118).
+ */
+export type QueryClass = "interactive" | "metadata" | "background" | "preload" | "idle";
 
 /** Highest first; a class's rank is its index. */
 export const QUERY_CLASSES: readonly QueryClass[] = [
@@ -9,6 +13,7 @@ export const QUERY_CLASSES: readonly QueryClass[] = [
   "metadata",
   "background",
   "preload",
+  "idle",
 ];
 
 /** Index of `cls` in QUERY_CLASSES (0 = highest); the queue uses this, no copy. */

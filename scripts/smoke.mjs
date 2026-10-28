@@ -5,9 +5,14 @@
 // Plain Node >= 22 (global WebSocket), no dependencies. Never touches Jan's Chrome profile: Chrome
 // runs with a fresh temp profile and only this script's own child is killed.
 //
-//   pnpm smoke                      http://localhost:5173/ (the running dev server); `/` opens the
-//                                   user's free workspace (or else the latest) at /w/<id>
-//   pnpm smoke --url <url>          another page
+//   pnpm smoke                      http://localhost:5173/ (the running dev server): creates its own
+//                                   scoped workspace by POST /api/workspaces {open: {view}}, opens it
+//                                   at /w/<id> and deletes it on every exit path (speed-up-whole-scans B11)
+//   pnpm smoke --scope REF FROM TO  the scope of that workspace (default smart451
+//                                   2026-10-27T00:00:00Z 2026-10-28T00:00:00Z)
+//   pnpm smoke --signal ID          the signal of its one timeseries window, 10:00–11:00Z of the
+//                                   scope's first day (default smart451/BMS.cell_voltage_max)
+//   pnpm smoke --url <url>          another page; a path other than `/` is opened as it is
 //   pnpm smoke --preview            builds nothing; serves apps/web/dist with `vite preview` on a free
 //                                   port (own child, stopped at the end) and checks that
 import { spawn } from "node:child_process";
@@ -25,11 +30,25 @@ const VIEWPORTS = [
 ];
 // Module requests: Vite dev (/src/, /@vite/, /@fs/, prebundled deps) and the built bundle (/assets/).
 const MODULE = /\/(src|@vite|@fs|@id|node_modules|assets)\//;
+// One day of smart451 within the scan bound (114.9 M rows, design B1, B11).
+const DEFAULT_SCOPE = ["smart451", "2026-10-27T00:00:00Z", "2026-10-28T00:00:00Z"];
+const DEFAULT_SIGNAL = "smart451/BMS.cell_voltage_max";
 const argv = process.argv.slice(2);
-const arg = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
-let url = arg("--url") ?? "http://localhost:5173/";
-// The start-up reuse POST (`/` with no workspace yet) may pass once; see resolveStart.
-let allowReuse = false;
+const arg = (name, n = 1) =>
+  argv.includes(name) ? argv.slice(argv.indexOf(name) + 1, argv.indexOf(name) + 1 + n) : undefined;
+if (argv.includes("--help")) {
+  console.log(`usage: node scripts/smoke.mjs [--preview] [--url URL] [--scope REF FROM TO] [--signal ID]
+  --preview            check apps/web/dist served by vite preview instead of the dev server
+  --url URL            the page (default http://localhost:5173/); a path other than / is opened as is
+  --scope REF FROM TO  scope of the smoke's own workspace (default ${DEFAULT_SCOPE.join(" ")})
+  --signal ID          signal of its timeseries window (default ${DEFAULT_SIGNAL})`);
+  process.exit(0);
+}
+let url = arg("--url")?.[0] ?? "http://localhost:5173/";
+const scopeArg = arg("--scope", 3) ?? DEFAULT_SCOPE;
+const signalArg = arg("--signal")?.[0] ?? DEFAULT_SIGNAL;
+// The smoke's own workspace: its ID and the origin it was created on, until it is deleted.
+let own;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Polls `cond` up to `tries` times, `ms` apart; the caller checks the outcome itself.
@@ -52,7 +71,9 @@ function cleanup() {
   rmSync(profile, { recursive: true, force: true, maxRetries: 3 });
 }
 process.on("exit", cleanup);
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(130));
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => finish([`stopped by ${sig}`], 130));
+for (const ev of ["uncaughtException", "unhandledRejection"])
+  process.on(ev, (e) => finish([`smoke itself failed: ${e?.message ?? e}`]));
 setTimeout(() => finish(["timed out after 90 s"]), 90_000).unref();
 
 // Failures, tagged with the step that was running when they arrived.
@@ -64,14 +85,18 @@ const fail = (text) => {
   if (!failures.includes(line)) failures.push(line);
 };
 
-function finish(extra = []) {
+let finishing = false;
+async function finish(extra = [], code) {
+  if (finishing) return;
+  finishing = true;
   failures.push(...extra);
+  await dropWorkspace();
   if (!failures.length) {
     console.log(
       `smoke ${url}: pass (load, help, search, sidebar, views, overflow ${overflowSeen ? "" : "(not shown) "}at`,
     );
     console.log(`  ${VIEWPORTS.map((v) => v.join("x")).join(" and ")})`);
-    process.exit(0);
+    process.exit(code ?? 0);
   }
   console.log(`smoke ${url}: FAIL (${failures.length})`);
   for (const f of failures.slice(0, 12)) console.log(`- ${f}`);
@@ -81,7 +106,7 @@ function finish(extra = []) {
   if (stale && existsSync(resolve(WEB, dirname(stale[2]), stale[1].split("?")[0]))) {
     console.log("hint: Vite holds a stale resolution: the lead restarts Vite");
   }
-  process.exit(1);
+  process.exit(code ?? 1);
 }
 
 // --- CDP over the built-in WebSocket ------------------------------------------------------------
@@ -169,10 +194,10 @@ const handlers = {
       fail(`HTTP ${r.status} for ${new URL(r.url).pathname}`);
     }
   },
-  // The smoke must not change the shared workspace: writes to /api are blocked and reported, except
-  // the one start-up `POST /api/workspaces {reuse: true}` when the user has no workspace yet.
+  // The page must not write, not even to the smoke's own workspace: writes to /api are blocked
+  // and reported.
   "Fetch.requestPaused": ({ requestId, request }) => {
-    if (request.method === "GET" || request.method === "HEAD" || isStartupReuse(request)) {
+    if (request.method === "GET" || request.method === "HEAD") {
       return send("Fetch.continueRequest", { requestId });
     }
     fail(`blocked ${request.method} ${new URL(request.url).pathname} (smoke must not write)`);
@@ -180,32 +205,82 @@ const handlers = {
   },
 };
 
-function isStartupReuse(request) {
-  if (!allowReuse || request.method !== "POST") return false;
-  if (new URL(request.url).pathname !== "/api/workspaces") return false;
-  let body;
-  try {
-    body = JSON.parse(request.postData ?? "");
-  } catch {
-    return false;
-  }
-  if (JSON.stringify(body) !== '{"reuse":true}') return false;
-  allowReuse = false;
-  return true;
+// A v1 view document: the scope and one timeseries window with the signal over 10:00–11:00Z of
+// the scope's first day, or the scope's first hour when that lies outside it.
+function smokeView() {
+  const [dataRef, fromText, toText] = scopeArg;
+  const iso = (text, what) => {
+    const t = Date.parse(text);
+    if (!/[zZ]|[+-]\d{2}:\d{2}$/.test(text) || Number.isNaN(t))
+      throw new Error(`--scope ${what}: not an ISO time with Z or an offset: ${text}`);
+    return t;
+  };
+  const from = iso(fromText, "FROM");
+  const to = iso(toText, "TO");
+  if (to <= from) throw new Error("--scope: TO must be after FROM");
+  const H = 3_600_000;
+  let wFrom = Math.floor(from / (24 * H)) * 24 * H + 10 * H;
+  if (wFrom < from || wFrom + H > to) wFrom = from;
+  const wTo = Math.min(wFrom + H, to);
+  const at = (t) => new Date(t).toISOString();
+  return {
+    kipscope: "view",
+    version: 1,
+    title: "smoke",
+    data: [dataRef],
+    scope: { dataRef, from: at(from), to: at(to) },
+    linkTime: true,
+    cursors: { diff: false },
+    digits: 3,
+    windows: [
+      {
+        kind: "timeseries",
+        from: at(wFrom),
+        to: at(wTo),
+        mode: "line",
+        envelope: false,
+        signals: [signalArg],
+      },
+    ],
+  };
 }
 
-// `/` makes the app reuse or create a workspace by POST; the smoke instead opens the user's free
-// workspace (no tab on it), or else the latest, at /w/<id>. Only a user without any workspace gets
-// the one reuse POST, which creates an empty workspace.
-async function resolveStart() {
+// `/` gets the smoke's own scoped workspace (sent by the script, not the page) at /w/<id>.
+async function createWorkspace() {
   const page = new URL(url);
   if (page.pathname !== "/" || page.search || page.hash) return;
-  const res = await fetch(new URL("/api/workspaces", page));
-  if (!res.ok) throw new Error(`GET /api/workspaces: HTTP ${res.status}`);
-  const { workspaces } = await res.json();
-  const ws = workspaces.find((w) => w.clients === 0) ?? workspaces[0];
-  if (ws) url = new URL(`/w/${ws.id}`, page).href;
-  else allowReuse = true;
+  const res = await fetch(new URL("/api/workspaces", page), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ open: { view: smokeView() } }),
+  });
+  const body = await res.json().catch(() => undefined);
+  const id = body?.workspace?.id;
+  if (!res.ok || typeof id !== "string") {
+    const code = body?.code ?? body?.error?.code ?? `HTTP ${res.status}`;
+    const message = body?.message ?? body?.error?.message ?? "";
+    throw new Error(`cannot create the smoke workspace: ${code}: ${message}`);
+  }
+  own = { id, origin: page.origin };
+  url = new URL(`/w/${id}`, page).href;
+  console.log(`smoke workspace ${id} created (scope ${scopeArg.join(" ")}, ${signalArg})`);
+}
+
+// Deletes the smoke's own workspace; called on every exit path through finish().
+async function dropWorkspace() {
+  if (!own) return;
+  const { id, origin } = own;
+  own = undefined;
+  try {
+    const res = await fetch(new URL(`/api/workspaces/${id}`, origin), {
+      method: "DELETE",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) console.log(`smoke workspace ${id} deleted`);
+    else failures.push(`cannot delete the smoke workspace ${id}: HTTP ${res.status}`);
+  } catch (e) {
+    failures.push(`cannot delete the smoke workspace ${id}: ${e.message}`);
+  }
 }
 
 // Network quiet for 500 ms, at most `max` ms (the live WebSocket does not count as a request).
@@ -313,7 +388,7 @@ async function main() {
       200,
     );
   }
-  await resolveStart();
+  await createWorkspace();
   // Port 0: Chrome picks a free port and writes it to DevToolsActivePort in the profile.
   const flags =
     "--headless=new --remote-debugging-port=0 --no-first-run --no-default-browser-check \

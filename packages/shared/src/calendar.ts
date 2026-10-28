@@ -12,6 +12,8 @@ export const CALENDAR_HOUR_NS = 3_600_000_000_000n;
 export const CALENDAR_SPAN_MAX_NS = 32n * 86_400_000_000_000n;
 /** Windows the server keeps per cache (LRU). */
 export const MAX_CALENDAR_WINDOWS = 12;
+/** Refetch interval of the open picker while `pending` is present (design B6). */
+export const CALENDAR_PENDING_REFETCH_MS = 3_000;
 
 /** GET /api/calendar answer (spec range-picker "Calendar density"). Decimal ns strings. */
 export interface CalendarDensity {
@@ -25,4 +27,6 @@ export interface CalendarDensity {
   drives: Drive[];
   /** Present while the workspace has a scope (object scopes too): where rows may lie. */
   scope?: { from: string; to: string };
+  /** UTC days of the window not counted yet (design B6); absent: none. */
+  pending?: { from: string; to: string }[];
 }

@@ -18,6 +18,7 @@ import type { CacheScope } from "./density.ts";
 import { type RequestUser, requestGrant, requestUser, requestWorkspace } from "./guard.ts";
 import { currentPriority, lowerClass, withPriority } from "./priority.ts";
 import { type CatalogView, catalogView } from "./rights.ts";
+import type { ScanBound, TooWideError } from "./scanBound.ts";
 import { CatalogStore, openScopes, scopeOf, sourceScope } from "./scope.ts";
 import type { WorkspaceEntry, Workspaces } from "./workspaces.ts";
 
@@ -30,6 +31,19 @@ export function apiError(
 ) {
   const body: ApiError = { error: { code, message, ...extra } };
   return reply.code(status).send(body);
+}
+
+/**
+ * 422 `too_wide` of a range the scan bound refused (scope "Too wide answers"): `rows` and `limit`,
+ * or `span` and `maxSpan`, as decimal strings.
+ */
+export function tooWide(reply: FastifyReply, error: TooWideError): FastifyReply {
+  const extra: Omit<ApiError["error"], "code" | "message"> = {};
+  if (error.rows !== undefined) extra.rows = String(error.rows);
+  if (error.limit !== undefined) extra.limit = String(error.limit);
+  if (error.span !== undefined) extra.span = String(error.span);
+  if (error.maxSpan !== undefined) extra.maxSpan = String(error.maxSpan);
+  return apiError(reply, 422, "too_wide", error.message, extra);
 }
 
 /** Parses request input with a Zod schema; on failure sends 400 and returns undefined. */
@@ -55,6 +69,8 @@ export interface ScopeDeps {
   source: DataSource;
   /** Every workspace (add-multiuser M4); routes reach the request's one through `workspaceOf`. */
   workspaces: Workspaces;
+  /** The scan bound over `source` (speed-up-whole-scans B2), shared by every check. */
+  bound: ScanBound;
   /** The signal lists (add-scope Z10); without it a full-mode store over `catalog` (tests). */
   catalogs?: CatalogStore;
   /** `KIPSCOPE_SCOPE_PAD` in ns; default config's DEFAULT_SCOPE_PAD. */
@@ -83,6 +99,7 @@ export function catalogsOf(deps: ScopeDeps): CatalogStore {
       create: (scope) =>
         new Catalog(deps.source, async () => new Map(), undefined, undefined, undefined, scope),
       keep: () => openScopes(deps.workspaces),
+      bound: deps.bound,
     });
     defaultStores.set(deps, store);
   }
@@ -199,13 +216,16 @@ export interface RouteScope {
 /**
  * The scope of the workspace a request serves and its signal list, filtered by the workspace's
  * grant (add-scope Z10, add-multiuser M6). In scoped mode without a scope it answers 409
- * `scope_required` and returns undefined. A scope's list that is not loaded starts loading, so the
- * caller's 503 `catalog_unavailable` lasts only until it has.
+ * `scope_required` and returns undefined, unless the route gives `ownWindow`: that window is then
+ * the source scope, with no workspace scope and no signal list (speed-up-whole-scans B10). A
+ * scope's list that is not loaded starts loading, so the caller's 503 `catalog_unavailable` lasts
+ * only until it has.
  */
 export function routeScope(
   deps: ScopeDeps,
   request: FastifyRequest,
   reply: FastifyReply,
+  opts: { ownWindow?: Scope } = {},
 ): RouteScope | undefined {
   const catalogs = catalogsOf(deps);
   const grant = grantOf(request);
@@ -213,6 +233,7 @@ export function routeScope(
   const scope = scopeOf(request);
   if (!scope) {
     if (catalogs.mode === "scoped") {
+      if (opts.ownWindow) return { source: opts.ownWindow, catalog: undefined };
       scopeRequired(reply);
       return undefined;
     }

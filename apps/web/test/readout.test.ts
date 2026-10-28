@@ -290,6 +290,18 @@ describe("readout source (D-031)", () => {
     expect(readoutSource(exact("complete", 23), avg, true)).toEqual({ value: avg, loading: false });
   });
 
+  it("shows a too-wide value as — with the server's message as its tooltip", () => {
+    const message =
+      "too wide: 2,000 rows, more than the 1,000 a query may read; choose a shorter range";
+    const wide = readoutSource(
+      { ...exact("error"), error: message, errorStatus: 422, errorCode: "too_wide" },
+      avg,
+      false,
+    );
+    // The message itself, not `failed: …`.
+    expect(sourceCell(wide, "V", 3)).toEqual({ text: "—", title: message });
+  });
+
   it("shows a failed request as — with the message, and Δ as —", () => {
     const failed = readoutSource(exact("error"), avg, false);
     expect(sourceCell(failed, "V", 3)).toEqual({ text: "—", title: "failed: boom" });

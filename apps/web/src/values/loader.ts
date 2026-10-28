@@ -1,5 +1,5 @@
 import type { CursorValueResult, RenderError, ValuesMode } from "@kipscope/shared";
-import { ApiRequestError, isCatalogLoading } from "../api.ts";
+import { ApiRequestError, errorText, isCatalogLoading } from "../api.ts";
 import { GAP_LOADING_RETRY_MS } from "../chart/gaps.ts";
 import { RETRY_DELAYS_MS } from "../chart/loader.ts";
 
@@ -155,7 +155,8 @@ export class ValueLoader {
           return;
         }
         this.waits.delete(key);
-        const message = error instanceof Error ? error.message : String(error);
+        // A too-wide answer keeps the server's message (`too wide: …`).
+        const message = errorText(error);
         this.states.set(key, {
           status: "error",
           request: id,

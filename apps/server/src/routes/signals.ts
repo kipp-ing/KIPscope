@@ -9,8 +9,17 @@ import {
   warnDisplayFallbacks,
 } from "../catalog.ts";
 import type { Access } from "../guard.ts";
-import { apiError, catalogsOf, grantOf, parseInput, routeScope, workspaceOf } from "../http.ts";
+import {
+  apiError,
+  catalogsOf,
+  grantOf,
+  parseInput,
+  routeScope,
+  tooWide,
+  workspaceOf,
+} from "../http.ts";
 import { type CatalogView, catalogView } from "../rights.ts";
+import { TooWideError } from "../scanBound.ts";
 import { noteObjectScope } from "../scope.ts";
 
 const SearchQuery = z.object({
@@ -29,14 +38,14 @@ function catalogUnavailable(reply: FastifyReply, catalog: CatalogView | undefine
 /** The workspace's lists, filtered by its grant (add-multiuser M6): no data ref named. */
 const ACCESS: Access = { level: "workspace" };
 
-/** The workspace's scope's signal list, else the full catalog (add-scope Z10). */
+/**
+ * The workspace's scope's signal list, else the full catalog (add-scope Z10); in an object scope
+ * the session's (B5). A list the scan bound refused answers 422 `too_wide`.
+ */
 export const signalRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    /**
-     * The request's scope and list; in an object scope the session's list while the vehicle's
-     * own one loads (add-case-open K11).
-     */
+    /** The request's scope and list; in an object scope the session's list (K11, B5). */
     const scopedList = (request: FastifyRequest, reply: FastifyReply) => {
       noteObjectScope(catalogsOf(deps), workspaceOf(request).store.workspace);
       return routeScope(deps, request, reply);
@@ -50,7 +59,8 @@ export const signalRoutes =
       if (!scoped) return reply;
       const { catalog } = scoped;
       if (!catalog?.loadedAt) {
-        return catalogUnavailable(reply, catalog);
+        const refused = catalogsOf(deps).refusal(scoped.scope);
+        return refused ? tooWide(reply, refused) : catalogUnavailable(reply, catalog);
       }
       const page: SignalPage = catalog.search(query.q, query.offset, query.limit);
       return page;
@@ -62,7 +72,8 @@ export const signalRoutes =
       if (!scoped) return reply;
       const { catalog, scope } = scoped;
       if (!catalog?.loadedAt) {
-        return catalogUnavailable(reply, catalog);
+        const refused = catalogsOf(deps).refusal(scope);
+        return refused ? tooWide(reply, refused) : catalogUnavailable(reply, catalog);
       }
       const snapshot: CatalogSnapshot = {
         items: [...catalog.all()],
@@ -82,10 +93,10 @@ export const signalRoutes =
       try {
         if (scope) {
           // A loaded list loads again; one that never loaded joins its first load. An object
-          // scope's own list, not the session's that serves while it loads (K11).
+          // scope's is its session's (B5).
           const catalogs = catalogsOf(deps);
-          const held = scope.object ? catalogs.entry(scope) : catalogs.get(scope);
-          if (held && (held.loadedAt || scope.object)) {
+          const held = catalogs.get(scope);
+          if (held?.loadedAt) {
             catalog = held;
             await catalog.refresh();
           } else catalog = await catalogs.load(scope);
@@ -94,6 +105,7 @@ export const signalRoutes =
           await catalog.refresh();
         }
       } catch (error) {
+        if (error instanceof TooWideError) return tooWide(reply, error);
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
       }

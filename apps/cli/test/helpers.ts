@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import type { EventRow, StateRow } from "@kipscope/shared";
 import { buildApp } from "../../server/src/app.ts";
 import { Catalog } from "../../server/src/catalog.ts";
+import { DEFAULT_SCAN_ROWS, DEFAULT_SCAN_SPAN } from "../../server/src/config.ts";
 import type {
   DataSource,
   RawPoint,
@@ -14,6 +15,7 @@ import type {
 } from "../../server/src/datasource.ts";
 import { loadDbcFiles } from "../../server/src/dbc.ts";
 import type { DisplayRules } from "../../server/src/names.ts";
+import { createScanBound } from "../../server/src/scanBound.ts";
 import { CatalogStore } from "../../server/src/scope.ts";
 import { ViewStore } from "../../server/src/views.ts";
 import { WorkspaceStore } from "../../server/src/workspace.ts";
@@ -243,11 +245,14 @@ export async function startServer(
     { beforeOpen: (previous) => views.beforeOpen(previous) },
   );
   // The signal lists of scopes carry the same DBC metadata as the full catalog (add-scope Z10).
+  // The scan bound at the server's defaults (speed-up-whole-scans B1), over the stub's row count.
+  const bound = createScanBound(source, { rows: DEFAULT_SCAN_ROWS, spanNs: DEFAULT_SCAN_SPAN });
   const catalogs = new CatalogStore({
     mode: "full",
     full: catalog,
     create: (scope: Scope) =>
       new Catalog(source, loadStubDbc, options.rules, undefined, undefined, scope),
+    bound,
   });
   // `scope show` reads /api/meta, so the harness serves it (the source answers every ping).
   const meta = {
@@ -255,9 +260,15 @@ export async function startServer(
     source: source.info,
     ping: async () => {},
   };
-  const app = buildApp({ catalog, catalogs, source, workspace: store, views, meta } as Parameters<
-    typeof buildApp
-  >[0]);
+  const app = buildApp({
+    catalog,
+    catalogs,
+    source,
+    bound,
+    workspace: store,
+    views,
+    meta,
+  } as Parameters<typeof buildApp>[0]);
   const requests: string[] = [];
   const urls: string[] = [];
   app.addHook("onRequest", async (request) => {

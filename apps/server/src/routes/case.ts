@@ -19,9 +19,16 @@ import type { AppDeps } from "../app.ts";
 import type { CacheScope } from "../density.ts";
 import { EventsCache } from "../events.ts";
 import type { Access } from "../guard.ts";
-import { apiError, catalogsOf, parseInput, withRequestClass, workspaceOf } from "../http.ts";
-import { ObjectExtents } from "../objectScope.ts";
+import {
+  apiError,
+  catalogsOf,
+  parseInput,
+  tooWide,
+  withRequestClass,
+  workspaceOf,
+} from "../http.ts";
 import { covers } from "../rights.ts";
+import { TooWideError } from "../scanBound.ts";
 import { sourceScope } from "../scope.ts";
 import type { WorkspaceEntry } from "../workspaces.ts";
 
@@ -54,7 +61,6 @@ export function addScopeWarmer(deps: object, warmer: ScopeWarmer): () => void {
 }
 
 const eventCaches = new WeakMap<object, EventsCache>();
-const extentCaches = new WeakMap<object, ObjectExtents>();
 
 /**
  * The events case alignment reads (add-case-open K9), one cache per deps: a session's events are
@@ -78,17 +84,6 @@ function eventsOf(deps: AppDeps): EventsCache {
     eventCaches.set(deps, cache);
   }
   return cache;
-}
-
-/** The vehicles' extents for Unlink (K9, K11): `deps.objectExtents`, else one per deps. */
-export function objectExtentsOf(deps: AppDeps): ObjectExtents {
-  if (deps.objectExtents) return deps.objectExtents;
-  let extents = extentCaches.get(deps);
-  if (!extents) {
-    extents = new ObjectExtents(deps.source);
-    extentCaches.set(deps, extents);
-  }
-  return extents;
 }
 
 /** Catalog entry `index` of a workspace (K6): from its catalog, else the current entry it holds. */
@@ -217,6 +212,7 @@ export const caseRoutes =
           await catalogs.load(scope, abort);
         } catch (error) {
           if (abort.aborted) return reply;
+          if (error instanceof TooWideError) return tooWide(reply, error);
           const message = error instanceof Error ? error.message : String(error);
           return apiError(reply, 503, "catalog_unavailable", message, {
             reason: catalogs.get(scope)?.unavailableReason ?? message,

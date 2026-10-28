@@ -6,6 +6,7 @@ import {
   type CommandResult,
   caseScope,
   type LiveServerMessage,
+  objectSpan,
   parseViewDoc,
   RenderedMessage,
   viewScope,
@@ -20,14 +21,16 @@ import { DEFAULT_SCOPE_PAD } from "../config.ts";
 import type { Access } from "../guard.ts";
 import { catalogsOf, commandStatus, userOf, workspaceOf } from "../http.ts";
 import { catalogView, covers, dataRefsOfCommand, grantedOf, workspaceRights } from "../rights.ts";
-import { noteObjectScope } from "../scope.ts";
+import { TooWideError } from "../scanBound.ts";
+import { linkedScopeOf, noteObjectScope } from "../scope.ts";
 import { catalogContext } from "../workspace.ts";
 import { summaryOf, type WorkspaceEntry } from "../workspaces.ts";
-import { alignmentOf, caseEntryOf, objectExtentsOf, reboundEventSignals } from "./case.ts";
+import { alignmentOf, caseEntryOf, reboundEventSignals } from "./case.ts";
 
 /**
- * A command result, the 503 of a scope whose signal list did not load (add-scope Z10), or the 502
- * of a case pre-step whose source query failed (add-case-open K9).
+ * A command result, the 503 of a scope whose signal list did not load (add-scope Z10), the 422
+ * `too_wide` of one the scan bound refused, or the 502 of a case pre-step whose source query
+ * failed (add-case-open K9).
  */
 export type CommandAnswer =
   | CommandResult
@@ -59,6 +62,20 @@ function targetScope(
   const parsed = parseViewDoc(command.view);
   const target = parsed.ok ? viewScope(parsed.doc, pad) : undefined;
   return target ? { changes: true, target } : { changes: true };
+}
+
+/** The command result of a scope list the scan bound refused (scope "A too-wide scope is refused"). */
+export function tooWideResult(error: TooWideError): Extract<CommandResult, { ok: false }> {
+  const result: Extract<CommandResult, { ok: false }> = {
+    ok: false,
+    code: "too_wide",
+    message: error.message,
+  };
+  if (error.rows !== undefined) result.rows = String(error.rows);
+  if (error.limit !== undefined) result.limit = String(error.limit);
+  if (error.span !== undefined) result.span = String(error.span);
+  if (error.maxSpan !== undefined) result.maxSpan = String(error.maxSpan);
+  return result;
 }
 
 /** Settles once the last accepted scope-changing command is applied or refused, per workspace store. */
@@ -93,8 +110,8 @@ export interface RunOptions {
  * Executes one command the way POST /api/commands does (add-scope Z10) in the request's workspace
  * and sets the reply's status. Signal lookups see only what the workspace's grant covers
  * (add-multiuser M6). A command that changes the scope first loads the target scope's signal list
- * and is checked against it; when that load fails it answers 503 `catalog_unavailable` and changes
- * nothing. Other commands are checked against the list of the workspace's scope as it stands,
+ * and is checked against it; when that load fails it answers 503 `catalog_unavailable`, or 422
+ * `too_wide` when the scan bound refused it, and changes nothing. Other commands are checked against the list of the workspace's scope as it stands,
  * without waiting for it; without a scope, as before against the full catalog. In scoped mode every context has `scopeRequired`.
  * Scope-changing commands apply in the order they were accepted: the last accepted wins.
  */
@@ -141,6 +158,7 @@ export async function runCommand(
       const loaded = await loading;
       if ("error" in loaded) {
         const { error } = loaded;
+        if (error instanceof TooWideError) return answer(tooWideResult(error));
         const message = error instanceof Error ? error.message : String(error);
         return answer({
           ok: false,
@@ -189,9 +207,10 @@ interface CaseRun {
 
 /**
  * The pre-steps of the case commands (add-case-open K9) before `execute`: `case.go` and
- * `case.step` load the target session's list (503 `catalog_unavailable`, unchanged) and resolve
- * its alignment point; `case.align` in event mode without `at` resolves the point in the current
- * session; `case.unlink` gets the vehicle's extent (502 `source_error`, unchanged) and no list.
+ * `case.step` load the target session's list (503 `catalog_unavailable`, or 422 `too_wide` from
+ * the scan bound, unchanged) and resolve its alignment point; `case.align` in event mode without
+ * `at` resolves the point in the current session; `case.unlink` spans the catalog's sessions of
+ * the vehicle (`objectSpan`, B4) with no source query and no list.
  * The target's data ref must lie in the grant (403 `forbidden_data`). Refusals that need no
  * server work (`no_case`, `case_end`, `case_unlinked`) are the store's. Case commands apply in the
  * order they were accepted, after every scope change accepted before, and read the case (target
@@ -250,6 +269,7 @@ async function runCaseCommand(
       const scope = caseScope(target, pad);
       const loaded = await (index === early && prefetch ? prefetch : loadList(scope));
       if ("error" in loaded) {
+        if (loaded.error instanceof TooWideError) return run.answer(tooWideResult(loaded.error));
         const message = errorText(loaded.error);
         return run.answer({
           ok: false,
@@ -296,20 +316,15 @@ async function runCaseCommand(
       return execute(current(), point.fallback ? {} : { alignAt: point.t });
     });
   }
-  // case.unlink: the vehicle's extent of the scope as it stands when it applies, no list first
-  // (K11, lazy).
+  // case.unlink: the span of the catalog's sessions on the scope's vehicle as the scope stands
+  // when it applies, no query and no list (B4, D-117).
   return inAcceptedOrder(store, async () => {
     const scope = store.workspace.scope;
-    if (!store.workspace.case?.linked || !scope) return execute(current());
-    let extent: { from: bigint; to: bigint };
-    try {
-      extent = await objectExtentsOf(deps).get(scope.dataRef);
-    } catch (error) {
-      return sourceFailed(error);
-    }
-    const result = execute(current(), {
-      extent: { from: extent.from.toString(), to: extent.to.toString() },
-    });
+    const open = store.workspace.case;
+    if (!open?.linked || !scope) return execute(current());
+    const cases = deps.workspaces.caseOf(entry.record.id) ?? { entries: [open.entry] };
+    const span = objectSpan(cases, scope.dataRef, scope, BigInt(open.pad));
+    const result = execute(current(), { extent: { from: span.from, to: span.to } });
     if (result.ok) noteObjectScope(catalogs, store.workspace);
     return result;
   });
@@ -337,18 +352,29 @@ export const workspaceRoutes =
     const heartbeatMs = deps.liveHeartbeatMs ?? LIVE_HEARTBEAT_MS;
     const catalogs = catalogsOf(deps);
 
-    /** Keeps the scope's signal list loading until it has loaded once (signal-catalog H5); returns stop(). */
-    const keepScopeLoaded = (scope: WorkspaceScope | undefined): (() => void) => {
+    /**
+     * Keeps the scope's signal list loading until it has loaded once (signal-catalog H5), in an
+     * object scope the session's (B5); a scope the bound refuses is not retried. Returns stop().
+     */
+    const keepScopeLoaded = (workspace: Workspace): (() => void) => {
+      const scope = workspace.scope?.object ? linkedScopeOf(workspace) : workspace.scope;
       if (!scope) return () => {};
-      return keepCatalogLoaded(catalogs.entry(scope), {
+      let stop = () => {};
+      stop = keepCatalogLoaded(catalogs.entry(scope), {
         loaded() {},
         failed(error, retryInMs) {
+          if (error instanceof TooWideError) {
+            app.log.warn({ dataRef: scope.dataRef }, `scope catalog not loaded: ${error.message}`);
+            stop();
+            return;
+          }
           app.log.error(
             { error: String(error), retryInMs, dataRef: scope.dataRef },
             "scope catalog not loaded; retrying",
           );
         },
       });
+      return () => stop();
     };
 
     /** Applies one command; the endpoint the UI and the CLI share. */
@@ -414,7 +440,7 @@ export const workspaceRoutes =
           })
         : () => {};
       noteObjectScope(catalogs, store.workspace);
-      let stopLoading = keepScopeLoaded(store.workspace.scope);
+      let stopLoading = keepScopeLoaded(store.workspace);
       // The registry's own listener runs first (it subscribed when the workspace was added), so a
       // command that takes this user's access closes the channel before its state is sent.
       const unsubscribe = store.subscribe((revision, state, command) =>
@@ -439,7 +465,7 @@ export const workspaceRoutes =
         if (event.scopeChanged) {
           noteObjectScope(catalogs, store.workspace);
           stopLoading();
-          stopLoading = keepScopeLoaded(store.workspace.scope);
+          stopLoading = keepScopeLoaded(store.workspace);
         }
       });
 

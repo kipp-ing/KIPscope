@@ -10,9 +10,10 @@ import {
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { fetchEvents } from "../src/api.ts";
 import { alignToEvent } from "../src/case/sessionBar.ts";
 import { EventsPanel } from "../src/events/EventsPanel.tsx";
-import { appliedFilter, previewedFilter } from "../src/events/eventsData.ts";
+import { appliedFilter, eventsKey, previewedFilter } from "../src/events/eventsData.ts";
 import {
   dayBands,
   inView,
@@ -376,16 +377,42 @@ describe("events panel with a catalog (add-case-open)", () => {
     });
   });
 
-  it("asks events for the work window in an object scope", () => {
+  it("asks events for the work window in an object scope", async () => {
+    // The work window of a 10-minute view at 12:00: 6 h centred on it, on whole hours: 09:00 …
+    // 16:00 (7 h) of 2026-10-01 (design B3).
     const window = {
-      from: String(atB(0, 0, 0)),
-      to: String(atB(0, 0, 0) + 3n * 86_400_000_000_000n),
+      from: String(atB(9, 0, 0)),
+      to: String(atB(16, 0, 0)),
     };
     const nearby = panel({ nearby: window });
+    // The switch reads `In view | Nearby` in an object scope, `All` outside one.
     expect(nearby).toContain("Nearby");
-    expect(nearby).toContain("Events within 3 d around the view");
+    expect(nearby).toContain("Events within 7 h around the view");
     expect(nearby).toContain("In view");
+    expect(nearby).not.toMatch(/>All</);
     expect(panel()).not.toContain("Nearby");
+    expect(panel()).toMatch(/>All</);
+
+    // The request names the work window: both from and to, and a window of its own cache key.
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(url);
+      return Promise.resolve(new Response(JSON.stringify(list), { status: 200 }));
+    });
+    try {
+      await fetchEvents("testcar", [], undefined, window);
+      const params = new URL(asked[0] as string, "http://x").searchParams;
+      expect(new URL(asked[0] as string, "http://x").pathname).toBe("/api/events");
+      expect(params.get("dataRef")).toBe("testcar");
+      expect(params.get("from")).toBe(window.from);
+      expect(params.get("to")).toBe(window.to);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const scoped = { dataRef: "testcar", from: window.from, to: window.to, object: true as const };
+    expect(eventsKey("testcar", [], scoped, window)).not.toBe(
+      eventsKey("testcar", [], scoped, { from: window.from, to: String(atB(12, 0, 0)) }),
+    );
 
     const workspace = {
       ...caseWorkspace({ current: 0 }),
@@ -403,7 +430,7 @@ describe("events panel with a catalog (add-case-open)", () => {
       events: { shown: 1, total: 9, nearby: nearbyHint(window) },
     }).events;
     expect(nearbyTab.count).toBe("1");
-    expect(nearbyTab.title).toBe("Events within 3 d around the view");
+    expect(nearbyTab.title).toBe("Events within 7 h around the view");
     const linkedTab = sidebarTabs({ signals: 553, events: { shown: 1, total: 9 } }).events;
     expect(linkedTab.count).toBe("1");
     expect(linkedTab.title).toContain("9 in the recording");

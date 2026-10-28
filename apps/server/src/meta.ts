@@ -2,9 +2,11 @@ import { execFileSync } from "node:child_process";
 import type { CatalogState, Grant, ServerMeta } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { Catalog } from "./catalog.ts";
+import { DEFAULT_SCOPE_PAD } from "./config.ts";
 import type { SourceInfo } from "./datasource.ts";
 import { apiError, grantOf, workspaceOf } from "./http.ts";
 import { type CatalogView, catalogView } from "./rights.ts";
+import type { ScanBound } from "./scanBound.ts";
 import { type CatalogStore, noteObjectScope } from "./scope.ts";
 
 /** The repo's commit when the server started (design F2). */
@@ -129,8 +131,17 @@ export function metaRoutes(deps: {
   /** Catalog mode and scope lists (add-scope Z10); absent: full mode with `catalog`. */
   catalogs?: CatalogStore;
   licenseText?: string;
+  /** The scan bound, for `limits` (speed-up-whole-scans B1). */
+  bound: Pick<ScanBound, "rows" | "spanNs">;
+  /** `KIPSCOPE_SCOPE_PAD` in ns; default DEFAULT_SCOPE_PAD. */
+  scopePad?: bigint;
 }): FastifyPluginAsync {
   const { meta, catalog, catalogs, licenseText } = deps;
+  const limits: ServerMeta["limits"] = {
+    scanRows: deps.bound.rows,
+    scanSpan: deps.bound.spanNs.toString(),
+    scopePad: (deps.scopePad ?? DEFAULT_SCOPE_PAD).toString(),
+  };
   /** The ping in progress; concurrent requests share it (single flight). */
   let running: Promise<PingResult> | undefined;
   /** The last reachable result and when its ping ended (design A5); a failed one is never kept. */
@@ -167,6 +178,7 @@ export function metaRoutes(deps: {
           ...ping,
         },
         catalog: catalogMeta(catalogs, catalog, workspace.scope, grantOf(request)),
+        limits,
       };
       return body;
     });

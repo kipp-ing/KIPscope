@@ -376,6 +376,62 @@ describe("scoped mode", () => {
     expect(t.calls.every((c) => c.method === "ping")).toBe(true);
   });
 
+  it("answers a bounded density without a scope in scoped mode", async () => {
+    vi.useRealTimers();
+    const t = await open({ adapter: testSource(), mode: "scoped" });
+    // 2026-10-02T00:00:00Z = 1790899200 s and 2026-10-03T00:00:00Z = 1790985600 s, by hand.
+    const D2 = 1790899200000000000n;
+    const D3 = 1790985600000000000n;
+    const window = { dataRef: "drivecar", from: D2, to: D3 };
+    const res = await t.get(
+      "/api/density?dataRef=drivecar&from=2026-10-02T00:00:00Z&to=2026-10-03T00:00:00Z",
+    );
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.dataRef).toBe("drivecar");
+    expect(res.body.first).toBe(D2.toString());
+    expect(res.body.last).toBe((D3 - 1n).toString());
+    // The drives of that day: whatever the bar width, every drive lies inside the day and the
+    // first starts within 15 min of 01:00:00 (1790902800 s, where drivecar's first drive begins).
+    const drives = res.body.drives as { from: string; to: string; rows: number }[];
+    expect(drives.length).toBeGreaterThanOrEqual(2);
+    for (const drive of drives)
+      expect(BigInt(drive.from) >= D2 && BigInt(drive.to) <= D3).toBe(true);
+    const first = drives[0] as { from: string };
+    expect(BigInt(first.from)).toBeGreaterThanOrEqual(1790902800000000000n - 900_000_000_000n);
+    expect(BigInt(first.from)).toBeLessThanOrEqual(1790902800000000000n + 900_000_000_000n);
+    // All 233,161 rows of drivecar lie on that day.
+    expect((res.body.counts as number[]).reduce((a, b) => a + b, 0)).toBe(233_161);
+    // Every adapter call is a ping or carries exactly that window as its scope.
+    expectBounded(t.calls, window);
+    expect(t.guardLog).toEqual([]);
+
+    // Without from and to: still 409.
+    const bare = await t.get("/api/density?dataRef=drivecar");
+    expect(bare.status).toBe(409);
+    expect(codeOf(bare.body)).toBe("scope_required");
+
+    // The window is bounded like any scan: a span over the bound is refused with no query.
+    const mark = t.calls.length;
+    const wide = await t.get(
+      "/api/density?dataRef=drivecar&from=2026-10-02T00:00:00Z&to=2026-10-12T00:00:00Z",
+    );
+    expect(wide.status).toBe(422);
+    expect(wide.body.error.code).toBe("too_wide");
+    expect(wide.body.error.span).toBe((10n * 86_400n * S).toString());
+    expect(t.calls.slice(mark).every((c) => c.method === "ping")).toBe(true);
+
+    // Other routes still answer 409 without a scope.
+    for (const url of [
+      "/api/gaps?dataRef=drivecar",
+      "/api/events?dataRef=drivecar",
+      "/api/calendar?dataRef=drivecar&from=2026-10-02T00:00:00Z&to=2026-10-03T00:00:00Z",
+    ]) {
+      const other = await t.get(url);
+      expect(other.status, url).toBe(409);
+      expect(codeOf(other.body), url).toBe("scope_required");
+    }
+  });
+
   // The last two runs sit behind a query queue of 3 slots, as main.ts builds the source: every
   // queue wrapper has to pass the scope on, or the scoped-mode guard refuses the call.
   const RUNS = [
@@ -558,7 +614,8 @@ describe("scoped mode", () => {
 describe("gap info never delays the first draw (Jan, add-scope)", () => {
   it("does not make a series answer wait for gap info", async () => {
     const memory = memoryAdapter(MEMORY);
-    // The gap info's three queries never answer: a slow carserver scan.
+    // The gap info's two scans never answer: a slow carserver scan. The row count in front of them
+    // is the scan bound's and answers at once: a scope's list load waits for it (speed-up-whole-scans).
     const hang = () => new Promise<never>(() => {});
     const adapter: SourceAdapter = {
       ...memory,
@@ -575,7 +632,7 @@ describe("gap info never delays the first draw (Jan, add-scope)", () => {
       count: (...a) => memory.count(...a),
       stateChanges: (...a) => memory.stateChanges(...a),
       events: (...a) => memory.events(...a),
-      refCount: hang,
+      refCount: (...a) => memory.refCount(...a),
       loggerGaps: hang,
       firstTimes: hang,
     };
@@ -586,7 +643,7 @@ describe("gap info never delays the first draw (Jan, add-scope)", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     // The scope's gap prefetch is running (and stuck); the first draw does not wait for it. (A cursor
     // readout, /api/value, still waits for the gap info of its signal: that is not the first draw.)
-    expect(t.calls.some((c) => c.method === "loggerGaps" || c.method === "refCount")).toBe(true);
+    expect(t.calls.some((c) => c.method === "loggerGaps")).toBe(true);
 
     const signal = "testcar/Fast_100h.SIG_A";
     const range = "from=2026-10-01T01:00:00Z&to=2026-10-01T02:00:00Z";

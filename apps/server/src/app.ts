@@ -1,13 +1,17 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { type AccessOptions, hostAllowed, originAllowed } from "./access.ts";
+import { CalendarDays } from "./calendarDays.ts";
 import type { FinderConfig } from "./case.ts";
+import { DEFAULT_SCAN_ROWS, DEFAULT_SCAN_SPAN } from "./config.ts";
 import type { FavouritesOf } from "./favourites.ts";
 import { type RequestUser, registerGuard } from "./guard.ts";
 import { apiError, rewriteUrl, type ScopeDeps, workspacePrefixOf } from "./http.ts";
 import type { IdentityAdapter } from "./identity.ts";
 import { type MetaDeps, metaRoutes } from "./meta.ts";
-import type { ObjectExtents } from "./objectScope.ts";
 import { caseRoutes } from "./routes/case.ts";
 import { eventsRoutes } from "./routes/events.ts";
 import { favouritesRoutes } from "./routes/favourites.ts";
@@ -17,6 +21,7 @@ import { signalRoutes } from "./routes/signals.ts";
 import { viewRoutes } from "./routes/views.ts";
 import { workspaceRoutes } from "./routes/workspace.ts";
 import { workspacesRoutes } from "./routes/workspaces.ts";
+import { createScanBound } from "./scanBound.ts";
 import type { ViewStore, ViewsOf } from "./views.ts";
 import { webRoutes } from "./web.ts";
 import type { WorkspaceStore } from "./workspace.ts";
@@ -57,15 +62,19 @@ export interface AppDeps extends ScopeDeps {
   liveHeartbeatMs?: number;
   /** The finder handoff (add-case-open K4); absent: the defaults of `loadConfig` without variables. */
   finder?: FinderConfig;
-  /** The vehicles' extents for Unlink (K11); absent: one over `source`. */
-  objectExtents?: ObjectExtents;
+  /** The calendar's vehicle-days (speed-up-whole-scans B6), in `<stateDir>/calendar`. */
+  calendarDays: CalendarDays;
 }
 
 /**
  * What `buildApp` takes: the deps with a workspace registry, or with one workspace store that
- * becomes the only workspace, owned by `local` (tests written before workspaces).
+ * becomes the only workspace, owned by `local` (tests written before workspaces). Without `bound`
+ * a bound over `source` at the defaults of `loadConfig`; without `calendarDays` a day store in a
+ * temporary directory that counts only the days a request asks for (no fill ahead), stopped with
+ * the app (tests).
  */
-export type AppInput = Omit<AppDeps, "workspaces"> &
+export type AppInput = Omit<AppDeps, "workspaces" | "bound" | "calendarDays"> &
+  Partial<Pick<AppDeps, "bound" | "calendarDays">> &
   (
     | { workspaces: Workspaces; workspace?: never }
     | { workspace: WorkspaceStore; workspaces?: never }
@@ -84,20 +93,42 @@ export function workspaceResolver(workspaces: Workspaces) {
   };
 }
 
+/** A day store that counts only what `window()` asks: `want` (fill ahead) does nothing. */
+class RequestDays extends CalendarDays {
+  override want(): void {}
+}
+
 export function buildApp(
   input: AppInput,
   options: { logger?: boolean; extraHost?: string; origins?: readonly string[] } = {},
 ): FastifyInstance {
-  const { workspace, workspaces, ...rest } = input;
+  const { workspace, workspaces, bound, calendarDays, ...rest } = input;
   const registry = workspaces ?? singleWorkspace(workspace as WorkspaceStore);
+  const scanBound =
+    bound ?? createScanBound(rest.source, { rows: DEFAULT_SCAN_ROWS, spanNs: DEFAULT_SCAN_SPAN });
+  // `/api/w/<id>/…` serves `/api/…` for workspace <id> (add-multiuser M5).
+  const app = Fastify({ logger: options.logger ?? false, rewriteUrl });
+  let days = calendarDays;
+  if (!days) {
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-calendar-"));
+    const own = new RequestDays(rest.source, {
+      dir,
+      // A test stub may have no info; its day file is then named as no real source.
+      sourceInfo: rest.source.info ?? { kind: "unknown", database: "", table: "" },
+      scanRows: scanBound.rows,
+      warn: (message) => app.log.warn(message),
+    });
+    app.addHook("onClose", async () => own.stop());
+    days = own;
+  }
   const deps: AppDeps = {
     // `case=N` reads the workspace's catalog (add-case-open K10).
     caseCatalog: (id) => registry.caseOf(id),
     ...rest,
     workspaces: registry,
+    bound: scanBound,
+    calendarDays: days,
   };
-  // `/api/w/<id>/…` serves `/api/…` for workspace <id> (add-multiuser M5).
-  const app = Fastify({ logger: options.logger ?? false, rewriteUrl });
   const access: AccessOptions = {
     ...(options.extraHost === undefined ? {} : { extraHost: options.extraHost }),
     ...(options.origins === undefined ? {} : { origins: options.origins }),

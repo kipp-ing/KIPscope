@@ -31,7 +31,14 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Acknowledger } from "./ack.ts";
 import { runPlan } from "./addSignals.ts";
-import { fetchExtent, isCatalogLoading, sendCommand, setComputedDefs, signalInfo } from "./api.ts";
+import {
+  fetchExtent,
+  isCatalogLoading,
+  sendCommand,
+  serverLimits,
+  setComputedDefs,
+  signalInfo,
+} from "./api.ts";
 import { barTarget, resetSignals } from "./bar/bar.ts";
 import { OptionBar, RangeButton } from "./bar/OptionBar.tsx";
 import { type OverflowTail, OverflowTailContext } from "./bar/OverflowMenu.tsx";
@@ -90,6 +97,7 @@ import { StatusBar } from "./footer/StatusBar.tsx";
 import { useMeta } from "./footer/useMeta.ts";
 import { HelpPanel } from "./help/HelpPanel.tsx";
 import { HINTS } from "./help/hints.ts";
+import { ScopeCard } from "./help/ScopeCard.tsx";
 import { StartCard } from "./help/StartCard.tsx";
 import { dismissStart, hasLearned, learn, showStartAgain, startDismissed } from "./help/storage.ts";
 import { caseStepKey, isHelpKey, isTextField, type NavKey, NavRepeat, navKey } from "./keys.ts";
@@ -206,6 +214,7 @@ function EventsLoader({
   signalsKey,
   scope,
   window,
+  view,
   onList,
 }: {
   dataRef: string;
@@ -215,10 +224,12 @@ function EventsLoader({
   scope: WorkspaceScope | undefined;
   /** In an object scope: the work window the events cover (K11). */
   window: TimeRange | undefined;
+  /** The bar target's shown range: asked once a work window answered too wide (object-view). */
+  view: TimeRange | undefined;
   onList: (dataRef: string, list: EventList | undefined) => void;
 }) {
   const signals = useMemo(() => (signalsKey ? signalsKey.split(",") : []), [signalsKey]);
-  const list = useEvents(dataRef, signals, scope, window);
+  const list = useEvents(dataRef, signals, scope, window, view);
   useEffect(() => onList(dataRef, list), [dataRef, list, onList]);
   useEffect(() => () => onList(dataRef, undefined), [dataRef, onList]);
   return null;
@@ -385,6 +396,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   // The scope's identity: windows load again and the footer's meta follows on a change (add-scope Z12).
   const workspaceScope = scopeKey(workspace?.scope);
   const meta = useMeta(live.connected, workspaceScope);
+  // Scoped mode without a scope (B8): the Scope card shows, timeseries windows ask nothing.
+  const noScope = meta.meta?.catalog.mode === "scoped" && !workspace?.scope;
 
   // Next-step hints (H7, S1) retire for good once the workspace has shown B on, or Diff on.
   const [learned, setLearned] = useState(() => ({ b: hasLearned("b"), diff: hasLearned("diff") }));
@@ -1670,6 +1683,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
             signalsKey={eventSignals.filter((id) => dataRefOf(id) === ref).join(",")}
             scope={workspace?.scope}
             window={ref === workspace?.scope?.dataRef ? workWindow : undefined}
+            view={barWindow?.range}
             onList={onEventList}
           />
         ))}
@@ -1811,6 +1825,16 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
               stepping={progress && actionPending === undefined}
             />
           </div>
+          {/* Scoped mode without a scope (scope "Scope card"): the card first; an open catalog
+              always sets a scope. */}
+          {workspace && noScope && meta.meta && (
+            <ScopeCard
+              workspace={workspace}
+              pad={BigInt(meta.meta.limits?.scopePad ?? serverLimits().scopePad)}
+              onCommand={command}
+              hidden={activeDrag !== undefined}
+            />
+          )}
           {/* Hidden during a drag but kept in place, so nothing below it moves (B1, B2). */}
           {workspace && (windows.length === 0 || !startHidden) && (
             <StartCard
@@ -1858,6 +1882,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     onMark={onMark}
                     linked={linked}
                     nextHints={nextHints}
+                    noScope={noScope}
                     {...eventsProp(windowEvents.get(w.id))}
                     {...dropProp(dropStateOf(w.id))}
                     {...dropActionProp}

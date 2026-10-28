@@ -24,7 +24,7 @@ const MISSING_NAMES = 3;
 /** Messages after a case command result (design K14). */
 export const CASE_MESSAGES = {
   clampedLinked: "Stopped at the session edge. Unlink shows the whole vehicle.",
-  clampedObject: "Stopped at the end of the vehicle's data.",
+  clampedObject: "Stopped at the end of the catalog's sessions.",
   noAnchor: "No anchor in this session; aligned to its start.",
   noEvent: (name: string) => `No ${name} in this session; aligned to its start.`,
 } as const;

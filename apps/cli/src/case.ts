@@ -4,9 +4,11 @@ import {
   type CasesDocument,
   type CreateWorkspaceAnswer,
   casesLinkUrl,
+  DAY_NS,
   type Density,
   decodeCasesLink,
   encodeCasesLink,
+  floorDiv,
   formatLocal,
   isSignedCases,
   MAX_CASES_TEXT,
@@ -25,7 +27,7 @@ export type CaseInvocation =
   | { kind: "case"; action: "open"; file: string }
   | { kind: "case"; action: "show" }
   | { kind: "case"; action: "url"; file: string; trim?: true }
-  | { kind: "case"; action: "drives"; dataRef: string };
+  | { kind: "case"; action: "drives"; dataRef: string; from: bigint; to: bigint };
 
 /** Executes one of these forms and fills `body`; failures throw CliError. */
 export async function runCase(
@@ -80,23 +82,27 @@ export async function runCase(
       return;
     }
     case "drives": {
-      const density = await client.get<Density>("/api/density", { dataRef: invocation.dataRef });
-      if (density.drives.length === 0) {
-        throw new CliError("rejected", "no_data", `no drive in the strip of ${invocation.dataRef}`);
-      }
       const ref = invocation.dataRef;
+      const drives = await drivesOf(client, ref, invocation.from, invocation.to);
+      if (drives.length === 0) {
+        throw new CliError(
+          "rejected",
+          "no_data",
+          `no drive of ${ref} in ${toIso(invocation.from)} … ${toIso(invocation.to)}`,
+        );
+      }
       const doc = {
         kipscope: "cases",
         version: 1,
         origin: { tool: "kipscope case drives" },
-        cases: density.drives.map((d, i) => {
-          const from = toIso(BigInt(d.from));
+        cases: drives.map((d, i) => {
+          const from = toIso(d.from);
           return {
             id: `${ref}|drive|${from}`,
             object: ref,
             kind: "driving",
             from,
-            to: toIso(BigInt(d.to)),
+            to: toIso(d.to),
             title: `Drive ${i + 1}`,
             meta: { rows: d.rows },
           };
@@ -106,6 +112,52 @@ export async function runCase(
       return;
     }
   }
+}
+
+const PART_NS = 6n * 3_600_000_000_000n;
+
+/**
+ * The drives of `ref` in [from, to) (cli "Catalog from drives", design B10): one bounded density
+ * per UTC day cut to the range, one request at a time; a day answering too_wide again as four 6 h
+ * parts; drives that touch at a day or part edge merged, their rows summed.
+ */
+async function drivesOf(
+  client: Client,
+  ref: string,
+  from: bigint,
+  to: bigint,
+): Promise<{ from: bigint; to: bigint; rows: number }[]> {
+  const drives: { from: bigint; to: bigint; rows: number }[] = [];
+  const edges = new Set<bigint>();
+  const ask = (a: bigint, b: bigint) =>
+    client.get<Density>("/api/density", { dataRef: ref, from: toIso(a), to: toIso(b) });
+  const add = (density: Density, a: bigint, b: bigint) => {
+    edges.add(a);
+    for (const d of density.drives) {
+      const drive = { from: BigInt(d.from), to: BigInt(d.to), rows: d.rows };
+      const last = drives[drives.length - 1];
+      if (last !== undefined && last.to === drive.from && edges.has(drive.from)) {
+        last.to = drive.to;
+        last.rows += drive.rows;
+      } else drives.push(drive);
+    }
+    edges.add(b);
+  };
+  for (let day = floorDiv(from, DAY_NS) * DAY_NS; day < to; day += DAY_NS) {
+    const a = from > day ? from : day;
+    const b = to < day + DAY_NS ? to : day + DAY_NS;
+    try {
+      add(await ask(a, b), a, b);
+    } catch (error) {
+      if (!(error instanceof CliError && error.code === "too_wide")) throw error;
+      for (let part = day; part < day + DAY_NS; part += PART_NS) {
+        const pa = a > part ? a : part;
+        const pb = b < part + PART_NS ? b : part + PART_NS;
+        if (pa < pb) add(await ask(pa, pb), pa, pb);
+      }
+    }
+  }
+  return drives;
 }
 
 /** `case url --trim` (design X2): the balanced trim of a document or an unsigned code. */

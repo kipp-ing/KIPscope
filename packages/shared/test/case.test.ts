@@ -18,6 +18,7 @@ import {
   matchesEvent,
   parseCasesDocument,
   rebindSignalId,
+  WORK_MIN_NS,
   workWindow,
 } from "../src/case.ts";
 import { openCase } from "../src/caseApply.ts";
@@ -263,33 +264,53 @@ describe("work window", () => {
     BigInt(Date.UTC(y, m - 1, d, h, min)) * 1_000_000n;
   const range = (from: bigint, to: bigint) => ({ from: String(from), to: String(to) });
 
+  const H = 3_600_000_000_000n;
+  const MAX = 7n * DAY; // KIPSCOPE_SCAN_SPAN default
+
   it("computes the work window", () => {
-    // 10 min at 2026-06-10 12:00 → ±1 d, on day edges: three days.
-    expect(workWindow(range(ms(2026, 6, 10, 12), ms(2026, 6, 10, 12, 10)), scope)).toEqual(
-      range(ms(2026, 6, 9), ms(2026, 6, 12)),
+    // A 10-min view at 2026-06-10 12:00: ±10 min is under 6 h, so 6 h centred on the view
+    // (09:05 … 15:05), floored and ceiled to whole hours: [09:00, 16:00).
+    expect(workWindow(range(ms(2026, 6, 10, 12), ms(2026, 6, 10, 12, 10)), scope, MAX)).toEqual(
+      range(ms(2026, 6, 10, 9), ms(2026, 6, 10, 16)),
     );
-    // A 3-day view: ±3 d → nine days.
-    expect(workWindow(range(ms(2026, 6, 10), ms(2026, 6, 13)), scope)).toEqual(
-      range(ms(2026, 6, 7), ms(2026, 6, 16)),
+    // A 3-day view from 06-10 00:00: ±3 d would be nine days, over 7 d − 2 h = 166 h; so 166 h
+    // centred on the centre 06-11 12:00 (83 h each side): [06-08 01:00, 06-14 23:00).
+    expect(workWindow(range(ms(2026, 6, 10), ms(2026, 6, 13)), scope, MAX)).toEqual(
+      range(ms(2026, 6, 8, 1), ms(2026, 6, 14, 23)),
     );
-    // A 90-day view: 30 days centred on the view, widened to whole days (31 or 32 days).
+    // A 90-day view: at most 7 d, on whole UTC hours, around the view's centre.
     const view = range(ms(2026, 1, 1), ms(2026, 4, 1));
-    const wide = workWindow(view, scope);
-    const days = (BigInt(wide.to) - BigInt(wide.from)) / DAY;
-    expect(days === 31n || days === 32n || days === 30n).toBe(true);
-    expect(BigInt(wide.to) - BigInt(wide.from)).toBeLessThanOrEqual(32n * DAY);
-    expect(BigInt(wide.from) % DAY).toBe(0n);
-    expect(BigInt(wide.to) % DAY).toBe(0n);
+    const wide = workWindow(view, scope, MAX);
+    expect(BigInt(wide.to) - BigInt(wide.from)).toBeLessThanOrEqual(MAX);
+    expect(BigInt(wide.to) - BigInt(wide.from)).toBeGreaterThanOrEqual(MAX - 2n * H);
+    expect(BigInt(wide.from) % H).toBe(0n);
+    expect(BigInt(wide.to) % H).toBe(0n);
     const centre = (BigInt(view.from) + BigInt(view.to)) / 2n;
-    expect(BigInt(wide.from)).toBeLessThanOrEqual(centre - 15n * DAY);
-    expect(BigInt(wide.to)).toBeGreaterThanOrEqual(centre + 15n * DAY);
-    // 2 h after the scope's start the window starts at the scope's from.
-    const near = workWindow(range(ms(2025, 8, 1, 8), ms(2025, 8, 1, 8, 10)), scope);
-    expect(near).toEqual({ from: scope.from, to: String(ms(2025, 8, 3)) });
+    expect(BigInt(wide.from)).toBeLessThanOrEqual(centre);
+    expect(BigInt(wide.to)).toBeGreaterThanOrEqual(centre);
+    expect(centre - BigInt(wide.from) - (BigInt(wide.to) - centre)).toSatisfy(
+      (d: bigint) => d >= -2n * H && d <= 2n * H,
+    );
+    // 2 h after the scope's start the 6 h window (05:05 … 11:05, floored/ceiled) is cut to the
+    // scope: it starts at the scope's from (06:00) and ends at 12:00.
+    const near = workWindow(range(ms(2025, 8, 1, 8), ms(2025, 8, 1, 8, 10)), scope, MAX);
+    expect(near).toEqual({ from: scope.from, to: String(ms(2025, 8, 1, 12)) });
+  });
+
+  it("follows the bound it is given", () => {
+    // With a 1 d bound a 3-day view gets at most one day, on whole hours.
+    const wide = workWindow(range(ms(2026, 6, 10), ms(2026, 6, 13)), scope, DAY);
+    expect(BigInt(wide.to) - BigInt(wide.from)).toBeLessThanOrEqual(DAY);
+    expect(BigInt(wide.from) % H).toBe(0n);
+    expect(BigInt(wide.to) % H).toBe(0n);
+  });
+
+  it("has a minimum of six hours", () => {
+    expect(WORK_MIN_NS).toBe(6n * H);
   });
 
   it("never leaves the scope", () => {
-    const late = workWindow(range(ms(2026, 9, 5, 5), ms(2026, 9, 5, 5, 30)), scope);
+    const late = workWindow(range(ms(2026, 9, 5, 5), ms(2026, 9, 5, 5, 30)), scope, MAX);
     expect(late.to).toBe(scope.to);
     expect(BigInt(late.from)).toBeGreaterThanOrEqual(BigInt(scope.from));
   });

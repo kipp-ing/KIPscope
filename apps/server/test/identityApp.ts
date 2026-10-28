@@ -17,14 +17,16 @@ import {
 import { vi } from "vitest";
 import WebSocket from "ws";
 import { buildApp } from "../src/app.ts";
+import { CalendarDays } from "../src/calendarDays.ts";
 import type { FinderConfig } from "../src/case.ts";
 import { Catalog } from "../src/catalog.ts";
-import type { CatalogMode } from "../src/config.ts";
+import { type CatalogMode, DEFAULT_SCAN_ROWS, DEFAULT_SCAN_SPAN } from "../src/config.ts";
 import type { DataSource, Scope, SourceAdapter } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { completeSource } from "../src/fallbacks.ts";
 import { type FavouritesOf, userFavourites } from "../src/favourites.ts";
 import type { IdentityAdapter } from "../src/identity.ts";
+import { createScanBound, type ScanBound } from "../src/scanBound.ts";
 import { CatalogStore, guardScoped, openScopes } from "../src/scope.ts";
 import { userViews } from "../src/views.ts";
 import { seedFor, WorkspaceRegistry } from "../src/workspaces.ts";
@@ -222,6 +224,10 @@ export interface MultiAppOptions {
   extraHost?: string;
   /** `KIPSCOPE_SCOPE_PAD` in ns. */
   scopePad?: bigint;
+  /** `KIPSCOPE_SCAN_ROWS` (default: the config's 150 M). */
+  scanRows?: number;
+  /** `KIPSCOPE_SCAN_SPAN` in ns (default: the config's 7 d). */
+  scanSpan?: bigint;
   /** Content of `LICENSE` for `GET /api/license`. */
   licenseText?: string;
   /**
@@ -238,6 +244,9 @@ export interface MultiApp {
   app: ReturnType<typeof buildApp>;
   workspaces: WorkspaceRegistry;
   catalogs: CatalogStore;
+  /** The scan bound and the calendar's vehicle-days the app was wired with. */
+  bound: ScanBound;
+  days: CalendarDays;
   /** The favourites store of the app (undefined unless `favourites` was set). */
   favouritesOf: FavouritesOf | undefined;
   /** The full catalog (never loaded in scoped mode). */
@@ -262,7 +271,9 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
   const { adapter, calls } = recording(
     options.adapter ?? (memoryAdapter(SIGNALS) as SourceAdapter),
   );
-  const completed = completeSource(adapter);
+  const scanRows = options.scanRows ?? DEFAULT_SCAN_ROWS;
+  const scanSpan = options.scanSpan ?? DEFAULT_SCAN_SPAN;
+  const completed = completeSource(adapter, { scanRows });
   let catalogs: CatalogStore;
   const source: DataSource =
     mode === "scoped"
@@ -289,11 +300,20 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
     log: { info: () => {}, warn: (m) => warnings.push(m) },
   });
   workspaces.start();
+  const bound = createScanBound(source, { rows: scanRows, spanNs: scanSpan }, options.now);
   catalogs = new CatalogStore({
     mode,
     full: catalog,
     create: newCatalog,
     keep: () => openScopes(workspaces),
+    bound,
+  });
+  const days = new CalendarDays(source, {
+    dir: join(stateDir, "calendar"),
+    sourceInfo: source.info,
+    scanRows,
+    ...(options.now ? { now: options.now } : {}),
+    warn: (m) => warnings.push(m),
   });
   if (mode === "full" && options.loadFullCatalog !== false) await catalog.refresh();
 
@@ -303,6 +323,8 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
       catalog,
       catalogs,
       source,
+      bound,
+      calendarDays: days,
       workspaces,
       viewsOf: userViews(stateDir),
       ...(favouritesOf ? { favouritesOf } : {}),
@@ -371,6 +393,8 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
     app,
     workspaces,
     catalogs,
+    bound,
+    days,
     favouritesOf,
     catalog,
     calls,
@@ -389,6 +413,7 @@ export async function multiApp(options: MultiAppOptions = {}): Promise<MultiApp>
       const closing = app.close();
       app.server.closeAllConnections();
       await closing;
+      days.stop();
       workspaces.stop();
       if (own) rmSync(stateDir, { recursive: true, force: true });
     },

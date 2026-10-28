@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { clampToScope, scopeKey, widenScope } from "../src/scope.ts";
+import { clampToScope, scopeKey, tooWideText, widenScope, windowsScope } from "../src/scope.ts";
 import { TIME_MIN } from "../src/time.ts";
 import { type ViewDoc, viewScope } from "../src/views.ts";
-import type { WorkspaceScope } from "../src/workspace.ts";
+import { EMPTY_WORKSPACE, type Workspace, type WorkspaceScope } from "../src/workspace.ts";
 
 const MIN = 60n * 1_000_000_000n;
 const H = 60n * MIN;
@@ -118,5 +118,79 @@ describe("scope of a view (add-scope Z8)", () => {
   it("clamps the padded scope to the time bounds", () => {
     const d = doc([ts(["testcar/X.Y"], TIME_MIN + MIN, TIME_MIN + 2n * MIN)]);
     expect(viewScope(d, PAD)?.from).toBe(TIME_MIN.toString());
+  });
+});
+
+describe("too-wide answers (speed-up-whole-scans)", () => {
+  it("words a too-wide answer", () => {
+    // Rows: counts in groups of three digits (en-US), the limit likewise.
+    expect(tooWideText({ rows: "230000000", limit: "150000000" })).toBe(
+      "too wide: 230,000,000 rows, more than the 150,000,000 a query may read; choose a shorter range",
+    );
+    // Span: 1,468,800 s = 17 d; 604,800 s = 7 d (formatSpan: largest unit that is reached).
+    expect(tooWideText({ span: "1468800000000000", maxSpan: "604800000000000" })).toBe(
+      "too wide: 17 d is more than the 7 d a query may span; choose a shorter range",
+    );
+    // Counts below 1,000 get no group separator.
+    expect(tooWideText({ rows: "2000", limit: "1000" })).toBe(
+      "too wide: 2,000 rows, more than the 1,000 a query may read; choose a shorter range",
+    );
+    expect(tooWideText({ rows: "999", limit: "5" })).toBe(
+      "too wide: 999 rows, more than the 5 a query may read; choose a shorter range",
+    );
+  });
+});
+
+describe("scope of the windows (speed-up-whole-scans)", () => {
+  const tsWindow = (id: string, signalId: string, from: bigint, to: bigint) => ({
+    id,
+    kind: "timeseries" as const,
+    range: { from: from.toString(), to: to.toString() },
+    display: { mode: "line" as const, envelope: false },
+    signals: [{ id: `${id}s1`, signalId }],
+  });
+  const wsOf = (over: Partial<Workspace>): Workspace => ({ ...EMPTY_WORKSPACE, ...over });
+
+  it("derives a scope from the windows", () => {
+    // One window [T1 + 10 min, T1 + 20 min) with 1 h pad: [T1 − 50 min, T1 + 80 min).
+    const one = wsOf({
+      windows: [tsWindow("w1", "testcar/Fast_100h.SIG_A", T1 + 10n * MIN, T1 + 20n * MIN)],
+    });
+    expect(windowsScope(one, H)).toEqual(scopeOf("testcar", T1 - 50n * MIN, T1 + 80n * MIN));
+    // "1790813400000000000" and "1790821200000000000" by hand (1790816400 s ∓ 3000 s / + 4800 s).
+    expect(windowsScope(one, H)).toEqual({
+      dataRef: "testcar",
+      from: "1790813400000000000",
+      to: "1790821200000000000",
+    });
+
+    // The union of two windows and a cursor (a cursor counts as [t, t + 1 ns)); the first window's
+    // first signal decides the data ref.
+    const two = wsOf({
+      windows: [
+        tsWindow("w1", "othercar/X.Y", T1, T1 + 10n * MIN),
+        tsWindow("w2", "testcar/X.Y", T1 + 30n * MIN, T1 + 40n * MIN),
+      ],
+      cursors: { a: (T1 + 50n * MIN).toString(), diff: false },
+    });
+    expect(windowsScope(two, H)).toEqual(scopeOf("othercar", T1 - H, T1 + 50n * MIN + 1n + H));
+
+    // Pad 0: exactly the union.
+    expect(windowsScope(one, 0n)).toEqual(scopeOf("testcar", T1 + 10n * MIN, T1 + 20n * MIN));
+
+    // Padding stays inside the time bounds.
+    const early = wsOf({
+      windows: [tsWindow("w1", "testcar/X.Y", TIME_MIN + MIN, TIME_MIN + 2n * MIN)],
+    });
+    expect(windowsScope(early, H)?.from).toBe(TIME_MIN.toString());
+
+    // No timeseries window with a signal: nothing to derive from.
+    expect(windowsScope(EMPTY_WORKSPACE, H)).toBeUndefined();
+    expect(
+      windowsScope(
+        wsOf({ windows: [{ ...tsWindow("w1", "testcar/X.Y", T1, T2), signals: [] }] }),
+        H,
+      ),
+    ).toBeUndefined();
   });
 });

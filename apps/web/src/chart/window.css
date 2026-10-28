@@ -272,7 +272,19 @@
 }
 
 .window .plot {
+  position: relative;
   min-height: 0;
+}
+
+/* Scoped mode without a scope (scope "Scope card"): the plot's only content, muted. */
+.window .plot .plot-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  pointer-events: none;
 }
 
 /* Hides the crosshair without touching uPlot's mouse state, until the next move in the plot. */

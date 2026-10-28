@@ -568,6 +568,7 @@ describe("useMeta on a scope change", () => {
       checkedAt: "2026-10-16T13:08:01.000Z",
     },
     catalog: { mode, state: "loaded", size, loadedAt: "2026-10-16T13:07:12.000Z" },
+    limits: { scanRows: 150_000_000, scanSpan: "604800000000000", scopePad: "3600000000000" },
   });
 
   it("footer count follows the scope", async () => {

@@ -33,7 +33,9 @@ const perClass = <T>(value: () => T) =>
 /**
  * Runs at most `limit` source queries at once and queues the rest (design D7). The waiting query
  * of the highest class starts first, the oldest within a class, and a query below `interactive`
- * never takes one of the `kept` slots (improve-query-priority P1). A queued query whose request
+ * never takes one of the `kept` slots (improve-query-priority P1). An `idle` query starts only
+ * while no `interactive` query runs or waits and no other `idle` query runs (speed-up-whole-scans
+ * B6). A queued query whose request
  * was aborted is dropped before it reaches the source; a running one gets the abort signal, which
  * closes its HTTP request and makes ClickHouse cancel it.
  */
@@ -141,6 +143,12 @@ export class QueryQueue {
       // A lower class has the same or a stricter bound, so nothing else may start either.
       const bound = entry.priority.cls === "interactive" ? this.limit : this.limit - this.kept;
       if (this.running >= bound) return;
+      // Only idle work waits now; it starts beside no interactive query, one at a time (B6).
+      if (
+        entry.priority.cls === "idle" &&
+        (this.runningByClass.interactive > 0 || this.runningByClass.idle > 0)
+      )
+        return;
       this.waiting.splice(best, 1);
       entry.start();
     }

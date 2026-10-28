@@ -478,6 +478,8 @@ export type CommandErrorCode =
   | "unknown_computed"
   /** computed.remove: another computed signal names it (design F5). */
   | "computed_in_use"
+  /** The target scope's signal list is over the scan bound (speed-up-whole-scans); workspace unchanged. */
+  | "too_wide"
   /** Client only: the request did not reach the server (never sent by the server). */
   | "network"
   /** Client only: the answer was not a command result (never sent by the server). */
@@ -499,7 +501,16 @@ export type CommandResult =
       /** case.go/step/align: the mode could not be resolved; aligned to the session start. */
       alignFallback?: true;
     }
-  | { ok: false; code: CommandErrorCode; message: string };
+  | {
+      ok: false;
+      code: CommandErrorCode;
+      message: string;
+      /** too_wide: as ApiError.error (decimal strings; span and maxSpan in ns). */
+      rows?: string;
+      limit?: string;
+      span?: string;
+      maxSpan?: string;
+    };
 
 /** What view.open left out (design V2). */
 export interface OpenReport {

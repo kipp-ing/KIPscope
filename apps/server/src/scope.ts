@@ -4,7 +4,7 @@ import type { Catalog } from "./catalog.ts";
 import type { CatalogMode } from "./config.ts";
 import type { DataSource, Scope, SignalRef } from "./datasource.ts";
 import { workspaceOf } from "./http.ts";
-import { withPriority } from "./priority.ts";
+import { type ScanBound, TooWideError } from "./scanBound.ts";
 import type { WorkspaceEntry } from "./workspaces.ts";
 
 /** Scope catalogs the store keeps besides the kept ones; the least recently used one is dropped (design Z10). */
@@ -23,8 +23,8 @@ export function scopeOf(request: FastifyRequest): WorkspaceScope | undefined {
 }
 
 /**
- * The session scope a workspace left with Unlink (add-case-open K11): its list answers while the
- * vehicle's own one loads; undefined outside an object scope.
+ * The session scope a workspace left with Unlink (add-case-open K11): its list answers for the
+ * object scope (speed-up-whole-scans B5); undefined outside an object scope.
  */
 export function linkedScopeOf(workspace: Workspace): WorkspaceScope | undefined {
   const { scope, case: open } = workspace;
@@ -77,7 +77,9 @@ type LoadedListener = (scope: WorkspaceScope, catalog: Catalog) => void;
  * The signal lists the server holds (design Z10): the full catalog (full mode only) and one
  * catalog per scope. The catalogs of the scopes `keep` returns (those of the workspaces with a live
  * client, add-multiuser M9) are never dropped; of the others at most MAX_SCOPE_CATALOGS stay, the
- * least recently used dropped first.
+ * least recently used dropped first. Every scope list load goes through the scan bound and rejects
+ * with its TooWideError (scope "A too-wide scope is refused"). An object scope loads no list of its
+ * own: the last linked session's answers, `partial` (speed-up-whole-scans B5, D-117).
  */
 export class CatalogStore {
   readonly mode: CatalogMode;
@@ -85,10 +87,13 @@ export class CatalogStore {
   readonly full: Catalog | undefined;
   private readonly create: (scope: Scope) => Catalog;
   private readonly keep: () => Iterable<WorkspaceScope>;
+  private readonly bound: Pick<ScanBound, "check">;
   /** Scope catalogs by `scopeKey`, least recently used first. */
   private readonly scoped = new Map<string, { scope: WorkspaceScope; catalog: Catalog }>();
-  /** Object scope key → the session scope whose list answers while the vehicle's loads (K11). */
+  /** Object scope key → the session scope whose list answers for it (K11, B5). */
   private readonly linked = new Map<string, WorkspaceScope>();
+  /** Scope key → the bound's refusal of its last load, until a load passes. */
+  private readonly refusals = new Map<string, TooWideError>();
   private readonly listeners = new Set<LoadedListener>();
 
   constructor(options: {
@@ -96,37 +101,37 @@ export class CatalogStore {
     full?: Catalog;
     create: (scope: Scope) => Catalog;
     keep?: () => Iterable<WorkspaceScope>;
+    bound: Pick<ScanBound, "check">;
   }) {
     this.mode = options.mode;
     this.full = options.mode === "full" ? options.full : undefined;
     this.create = options.create;
     this.keep = options.keep ?? (() => []);
+    this.bound = options.bound;
   }
 
   /**
    * The scope's catalog, loaded or not, else without a scope the full catalog; if any. For an
-   * object scope (K11): the vehicle's own list once loaded, until then the list of the session
-   * `objectScope` named for it (its load started in the background class).
+   * object scope: the list of the session `objectScope` named for it (B5).
    */
   get(scope?: WorkspaceScope): Catalog | undefined {
     if (!scope) return this.full;
     if (scope.object) {
-      const own = this.entry(scope);
-      if (own.loadedAt) return own;
       const linked = this.linked.get(scopeKey(scope));
-      return (linked && this.held(linked)) ?? own;
+      return linked && this.held(linked);
     }
     return this.held(scope);
   }
 
-  /** The held catalog of exactly `scope` (an object scope's own list), marked as used. */
+  /** The held catalog of exactly `scope`, marked as used. */
   own(scope: WorkspaceScope): Catalog | undefined {
     return this.held(scope);
   }
 
   /**
-   * Names the session list that answers for an object scope while the vehicle's own list loads
-   * (add-case-open K11) and starts that load; the session's list starts loading too.
+   * Names the session list that answers for an object scope (add-case-open K11, B5) and starts
+   * the session's load if it has not loaded. The object scope is held (for the scoped-mode guard)
+   * by a catalog that never loads: no list over the object scope.
    */
   objectScope(scope: WorkspaceScope, linked: WorkspaceScope): void {
     this.linked.set(scopeKey(scope), linked);
@@ -135,12 +140,9 @@ export class CatalogStore {
     if (!session.loadedAt) session.refresh().catch(() => {});
   }
 
-  /** Whether `get(scope)` answers a session's list in place of the vehicle's (K11 `partial`). */
+  /** Whether `get(scope)` answers a session's list in place of the scope's: all the time unlinked (B5). */
   partial(scope: WorkspaceScope | undefined): boolean {
-    if (!scope?.object) return false;
-    if (this.held(scope)?.loadedAt) return false;
-    const linked = this.linked.get(scopeKey(scope));
-    return linked !== undefined && this.held(linked)?.loadedAt !== undefined;
+    return scope?.object === true;
   }
 
   private held(scope: WorkspaceScope): Catalog | undefined {
@@ -153,9 +155,9 @@ export class CatalogStore {
   }
 
   /**
-   * The scope's catalog, created (not loaded) when the store does not hold it yet. An object
-   * scope's list starts loading at once in the `background` class (K11), so a request joining it
-   * never raises it.
+   * The scope's catalog, created (not loaded) when the store does not hold it yet. Its loads go
+   * through the scan bound first: a refused one rejects with the TooWideError and sends no
+   * `listSignals`.
    */
   entry(scope: WorkspaceScope): Catalog {
     const held = this.held(scope);
@@ -163,6 +165,19 @@ export class CatalogStore {
     const own: WorkspaceScope = { dataRef: scope.dataRef, from: scope.from, to: scope.to };
     if (scope.object) own.object = true;
     const catalog = this.create(sourceScope(own));
+    const refresh = catalog.refresh.bind(catalog);
+    const key = scopeKey(own);
+    catalog.refresh = () =>
+      this.bound.check(own.dataRef, sourceScope(own)).then(
+        () => {
+          this.refusals.delete(key);
+          return refresh();
+        },
+        (error: unknown) => {
+          if (error instanceof TooWideError) this.refusals.set(key, error);
+          throw error;
+        },
+      );
     catalog.onLoaded(() => {
       for (const listener of this.listeners) listener(own, catalog);
     });
@@ -174,26 +189,35 @@ export class CatalogStore {
       if (kept.has(key)) continue;
       this.scoped.delete(key);
       this.linked.delete(key);
+      this.refusals.delete(key);
       others--;
     }
-    if (own.object) withPriority("background", () => catalog.refresh()).catch(() => {});
     return catalog;
   }
 
   /**
-   * Resolves with the scope's catalog once it has loaded; rejects with the load's error. Single
-   * flight per scope: concurrent loads share one `listSignals` (Catalog.refresh). `abort` ends
-   * only this caller's wait.
+   * Resolves with the scope's catalog once it has loaded; rejects with the load's error (a
+   * TooWideError when the bound refuses the scope). Single flight per scope: concurrent loads
+   * share one `listSignals` (Catalog.refresh). `abort` ends only this caller's wait. An object
+   * scope resolves with its session's list (B5), and without one named rejects.
    */
   async load(scope: WorkspaceScope, abort?: AbortSignal): Promise<Catalog> {
     if (scope.object) {
-      // Lazy (K11): the session's list while the vehicle's own one loads in the background.
-      const current = this.get(scope);
-      if (current?.loadedAt) return current;
+      const linked = this.linked.get(scopeKey(scope));
+      if (!linked)
+        throw new Error("an object scope lists the signals of its session only; none is named");
+      return this.load(linked, abort);
     }
     const catalog = this.entry(scope);
     if (!catalog.loadedAt) await abortable(catalog.refresh(), abort);
     return catalog;
+  }
+
+  /** The bound's refusal of the last load of the list `get(scope)` answers; undefined when none. */
+  refusal(scope: WorkspaceScope | undefined): TooWideError | undefined {
+    if (!scope) return undefined;
+    const listed = scope.object ? this.linked.get(scopeKey(scope)) : scope;
+    return listed && this.refusals.get(scopeKey(listed));
   }
 
   /** The scopes the store holds a catalog for, loaded or not, least recently used first. */

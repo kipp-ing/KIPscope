@@ -168,11 +168,15 @@ describe("measured periods only for signals in use", () => {
     // 2,400 signals S0001 ... S2400 of data ref `big`, none with a DBC or diag period.
     const names = Array.from({ length: 2400 }, (_, i) => `S${String(i + 1).padStart(4, "0")}`);
     const asked: string[][] = [];
+    let counts = 0;
     const source = {
       listSignals: async () => names.map((name) => ({ dataRef: "big", name })),
       refExtent: async () => undefined,
       events: async () => [],
-      refCount: async () => 100,
+      refCount: async () => {
+        counts++;
+        return 100;
+      },
       loggerGaps: async () => ({ gaps: [], last: 9n * S }),
       before: async () => undefined,
       after: async () => undefined,
@@ -230,6 +234,10 @@ describe("measured periods only for signals in use", () => {
       // In all: 3 calls (prefetch, second request, value request) with 4 + 1 + 1 = 6 names.
       expect(asked).toHaveLength(3);
       expect(asked.flat()).toHaveLength(6);
+
+      // One count query for the data ref, shared by the scan bound, the density, the events and
+      // the gap info (the count is kept 5 min).
+      expect(counts).toBe(1);
     } finally {
       await app.close();
     }
@@ -271,7 +279,8 @@ function refreshSource() {
 describe("gap info follows new rows", () => {
   // 5 min (design G9 (b)); a literal so that the test does not depend on the product constant.
   const POLL_MS = 300_000;
-  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
+  // Date too: the scan bound keeps a range's count for 5 min by the clock, and the poll counts again.
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
   afterEach(() => vi.useRealTimers());
 
   const flush = async () => {
@@ -428,7 +437,9 @@ describe("gap info of a work window (add-case-open)", () => {
   });
 
   it("computes and polls the gap info of a work window", async () => {
-    // The vehicle's rows span five days (2026-10-01 … 2026-10-05); the work window is 2026-10-03.
+    // The vehicle's rows span five days (2026-10-01 … 2026-10-05); the catalog holds one session
+    // (2026-10-03 00:00:10 … 00:01:00, pad 60 s), so the object scope is 2026-10-02T23:59:10Z …
+    // 2026-10-03T00:02:00Z (G − 50 s … G + 120 s); the work window asked for is 2026-10-03, cut to the scope.
     const G = 1790985600n * S; // 2026-10-03T00:00:00Z
     const DAY = 86_400n * S;
     const MS = 1_000_000n;
@@ -468,8 +479,8 @@ describe("gap info of a work window (add-case-open)", () => {
     const { workspace } = await stateOf(t.anon, id);
     expect(workspace.scope).toMatchObject({
       dataRef: "gapcar",
-      from: (G - 2n * DAY).toString(),
-      to: (G + 3n * DAY).toString(),
+      from: (G - 50n * S).toString(),
+      to: (G + 120n * S).toString(),
       object: true,
     });
 
@@ -496,15 +507,16 @@ describe("gap info of a work window (add-case-open)", () => {
     expect(count("refCount").length).toBe(before + 1);
     expect(count("loggerGaps")).toHaveLength(1);
 
-    const window = { dataRef: "gapcar", from: G, to: G + DAY };
+    // The asked day, cut to the object scope: 2026-10-03T00:00:00Z … 00:02:00Z.
+    const window = { dataRef: "gapcar", from: G, to: G + 120n * S };
     for (const name of ["loggerGaps", "firstTimes", "refCount"]) {
       for (const call of count(name)) expect(scopeOfCall(call), name).toEqual(window);
     }
-    // Never the vehicle's whole scope.
+    // Never the whole object scope.
     expect(
       calls
         .slice(mark)
-        .some((c) => scopeOfCall(c)?.from === G - 2n * DAY && scopeOfCall(c)?.to === G + 3n * DAY),
+        .some((c) => scopeOfCall(c)?.from === G - 50n * S && scopeOfCall(c)?.to === G + 120n * S),
     ).toBe(false);
     expect(count("refExtent")).toEqual([]);
   });
@@ -513,11 +525,11 @@ describe("gap info of a work window (add-case-open)", () => {
   const session = scopeNs("testcar", at(0, 59), at(1, 11));
   const holdsSession = (method: string, args: unknown[]) =>
     method === "refBuckets" && sameScope(scopeOfCall({ method, args }), session);
+  // The gap info's own queries; the row count of the scan bound in front of the scope's list load
+  // is not one of them (speed-up-whole-scans).
   const gapCalls = (calls: readonly { method: string; args: unknown[] }[]) =>
     calls.filter(
-      (c) =>
-        ["refCount", "loggerGaps", "firstTimes"].includes(c.method) &&
-        sameScope(scopeOfCall(c), session),
+      (c) => ["loggerGaps", "firstTimes"].includes(c.method) && sameScope(scopeOfCall(c), session),
     );
 
   it("runs the session's gap prefetch while the workspace stays linked", async () => {
@@ -552,6 +564,98 @@ describe("gap info of a work window (add-case-open)", () => {
     live.close();
     expect(gapCalls(calls.slice(mark)).map((c) => c.method)).toEqual([]);
     expect(gapCalls(calls)).toEqual([]);
+  });
+});
+
+describe("gap info within the scan bound (speed-up-whole-scans)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const flush = async () => {
+    for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(0);
+  };
+
+  it("takes the value's gap info from the scope", async () => {
+    const F = 1790985900000000000n;
+    const scope = { dataRef: "car", from: F, to: F + 3600n * S };
+    // 1,001 rows of Cyc, 100 ms apart, from F + 1 s (a period that can be measured).
+    const rows: [bigint, number][] = Array.from({ length: 1001 }, (_, i) => [
+      F + S + BigInt(i) * 100n * MS,
+      i,
+    ]);
+    const t = await scopeApp({
+      adapter: memoryAdapter([{ dataRef: "car", name: "Cyc", rows }]),
+    });
+    try {
+      const set = await t.command({
+        type: "scope.set",
+        dataRef: "car",
+        from: scope.from.toString(),
+        to: scope.to.toString(),
+      });
+      expect(set.status, JSON.stringify(set.body)).toBe(200);
+      const value = await t.get(`/api/value?signal=car/Cyc&t=${(F + 5n * S).toString()}`);
+      expect(value.status, JSON.stringify(value.body)).toBe(200);
+
+      const mine = (name: string) => t.calls.filter((c) => c.method === name);
+      // The only logger-gap query carries the scope, after one count with the same scope.
+      expect(mine("loggerGaps")).toHaveLength(1);
+      expect(mine("loggerGaps")[0]?.args[3]).toEqual(scope);
+      const counts = mine("refCount");
+      expect(counts).toHaveLength(1);
+      expect(counts[0]?.args[1]).toEqual(scope);
+      expect(t.calls.indexOf(counts[0] as never)).toBeLessThan(
+        t.calls.indexOf(mine("loggerGaps")[0] as never),
+      );
+      // Nothing waited for gap info of more than the scope.
+      expect(mine("refExtent")).toEqual([]);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("polls only data refs within the bound", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const rowsOf = (n: number): [bigint, number][] =>
+      Array.from({ length: n }, (_, i) => [BigInt(i + 1) * S, i]);
+    // testcar holds 10 rows, the bound is 5: over it. othercar (3 rows) and thirdcar (2) are within.
+    const t = await scopeApp({
+      adapter: memoryAdapter([
+        { dataRef: "testcar", name: "S", rows: rowsOf(10) },
+        { dataRef: "othercar", name: "S", rows: rowsOf(3) },
+        { dataRef: "thirdcar", name: "S", rows: rowsOf(2) },
+      ]),
+      scanRows: 5,
+      startup: true,
+    });
+    try {
+      // The start-up catalog load and its prefetches.
+      await flush();
+      await vi.advanceTimersByTimeAsync(1000);
+      await flush();
+      const prefetched = t.calls.filter((c) => c.method === "loggerGaps").map((c) => c.args[0]);
+      expect(prefetched.sort()).toEqual(["othercar", "thirdcar"]);
+
+      // One poll, 5 min later (nothing is open with a scope).
+      const mark = t.calls.length;
+      await vi.advanceTimersByTimeAsync(5 * 60_000 + 1000);
+      await flush();
+      const polled = t.calls.slice(mark);
+      const refOf = (c: { method: string; args: unknown[] }) => {
+        const first = c.args[0];
+        return typeof first === "string" ? first : (first as { dataRef?: string })?.dataRef;
+      };
+      // No count and no logger-gap query for testcar; one count for each of the others.
+      expect(polled.filter((c) => refOf(c) === "testcar" && c.method !== "ping")).toEqual([]);
+      for (const ref of ["othercar", "thirdcar"]) {
+        expect(
+          polled.filter((c) => c.method === "refCount" && refOf(c) === ref),
+          ref,
+        ).toHaveLength(1);
+      }
+      expect(polled.filter((c) => c.method === "loggerGaps")).toEqual([]);
+    } finally {
+      await t.close();
+    }
   });
 });
 

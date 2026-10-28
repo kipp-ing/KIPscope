@@ -1,5 +1,5 @@
 import type { Extent, SeriesResult } from "@kipscope/shared";
-import { ApiRequestError, isCatalogLoading } from "../api.ts";
+import { ApiRequestError, errorText, isCatalogLoading } from "../api.ts";
 import type { RecoverReason, SeriesCache } from "./cache.ts";
 import { GAP_LOADING_RETRY_MS } from "./gaps.ts";
 import {
@@ -83,12 +83,22 @@ export function isMissing(
   return state?.errorStatus === 404 && state.errorCode === "unknown_signal";
 }
 
+/** The status text of a series the scan bound refused (series-query "Series within the row budget"). */
+export const TOO_WIDE = "too wide";
+
+/** The failure is a 422 `too_wide`: `error` holds the server's message (`too wide: …`). */
+export function isTooWideState(state: { errorCode?: string | undefined } | undefined): boolean {
+  return state?.errorCode === "too_wide";
+}
+
 /**
  * The legend's status text of a signal: MISSING for a 404 `unknown_signal`, in a case or not
- * (`_inCase` no longer changes it, DW13); failed while another error is kept; empty when complete.
+ * (`_inCase` no longer changes it, DW13); TOO_WIDE for a 422 `too_wide`; failed while another
+ * error is kept; empty when complete.
  */
 export function loadStatusText(state: LoadState | undefined, _inCase = false): string {
   if (isMissing(state)) return MISSING;
+  if (isTooWideState(state)) return TOO_WIDE;
   if (state?.error !== undefined) return `failed: ${state.error}`;
   return state?.status === "complete" ? "" : "loading";
 }
@@ -702,7 +712,8 @@ export class SeriesLoader {
         : {
             status: "error",
             request: id,
-            error: error instanceof Error ? error.message : String(error),
+            // A too-wide answer keeps the server's message (`too wide: …`) for the tooltip.
+            error: errorText(error),
             ...(error instanceof ApiRequestError
               ? { errorStatus: error.status, errorCode: error.code }
               : {}),

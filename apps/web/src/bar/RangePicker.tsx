@@ -1,4 +1,5 @@
 import {
+  CALENDAR_PENDING_REFETCH_MS,
   type CalendarDensity,
   type Density,
   scopeKey,
@@ -14,6 +15,7 @@ import {
   dayBars,
   dayDrives,
   dayLabel,
+  dayPending,
   dayTip,
   draftOf,
   draftRange,
@@ -30,6 +32,7 @@ import {
 } from "../time/calendar.ts";
 import { DurationTag } from "../time/Duration.tsx";
 import { startDuration } from "../time/rangeLine.ts";
+import { scopeDensity } from "../time/strip.ts";
 import { wholeRange } from "../time/stripGeometry.ts";
 import "./rangePicker.css";
 
@@ -238,6 +241,8 @@ export function RangePicker({
   // Bumped when an answer lands in the module cache.
   const [, setLanded] = useState(0);
   const inFlight = useRef(new Map<string, AbortController>());
+  // Months whose answer still has days not counted yet, asked again after CALENDAR_PENDING_REFETCH_MS.
+  const refetch = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const root = useRef<HTMLDivElement>(null);
   const typedRef = useRef<HTMLInputElement>(null);
   const [shift, setShift] = useState(0);
@@ -250,14 +255,21 @@ export function RangePicker({
   const cache = answersFor(sKey);
   const keyOf = (m: Month) => (dataRef === undefined ? undefined : monthKey(dataRef, sKey, m));
 
-  // The whole span (paging bounds, whole-span preset): the strip's density, from the server cache.
+  // The whole span (paging bounds, whole-span preset): the strip's density, from the server cache;
+  // an object scope has none, its span is the scope (object-view B5).
+  const objectKey = scope?.object ? sKey : undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: objectKey stands for an object scope
   useEffect(() => {
+    if (scope?.object) {
+      setDensity(scopeDensity(scope));
+      return;
+    }
     setDensity(undefined);
     if (dataRef === undefined) return;
     const abort = new AbortController();
     fetchDensity(dataRef, abort.signal).then(setDensity, () => {});
     return () => abort.abort();
-  }, [dataRef]);
+  }, [dataRef, objectKey]);
 
   // The shown months' calendars; paging aborts a month no longer shown and asks only the new one.
   useEffect(() => {
@@ -271,8 +283,12 @@ export function RangePicker({
       abort.abort();
       inFlight.current.delete(key);
     }
-    for (const [key, m] of wanted) {
-      if (cached.has(key) || failed.has(key) || inFlight.current.has(key)) continue;
+    for (const [key, timer] of refetch.current) {
+      if (wanted.has(key)) continue;
+      clearTimeout(timer);
+      refetch.current.delete(key);
+    }
+    const ask = (key: string, m: Month) => {
       const abort = new AbortController();
       inFlight.current.set(key, abort);
       fetchCalendar(dataRef, localMonth(m.year, m.month), abort.signal)
@@ -280,6 +296,17 @@ export function RangePicker({
           (answer) => {
             answersFor(sKey).set(key, answer);
             setLanded((n) => n + 1);
+            // Days not counted yet fill in while the picker stays open (range-picker "The picker
+            // fills in"); the close or a page clears the timer.
+            if (answer.pending?.length && !abort.signal.aborted) {
+              refetch.current.set(
+                key,
+                setTimeout(() => {
+                  refetch.current.delete(key);
+                  ask(key, m);
+                }, CALENDAR_PENDING_REFETCH_MS),
+              );
+            }
           },
           () => {
             if (!abort.signal.aborted) setFailed((f) => new Set(f).add(key));
@@ -288,14 +315,23 @@ export function RangePicker({
         .finally(() => {
           if (inFlight.current.get(key) === abort) inFlight.current.delete(key);
         });
+    };
+    for (const [key, m] of wanted) {
+      if (failed.has(key) || inFlight.current.has(key) || refetch.current.has(key)) continue;
+      // A kept answer with days not counted yet is asked again on open.
+      if (cached.has(key) && !cached.get(key)?.pending?.length) continue;
+      ask(key, m);
     }
   }, [dataRef, sKey, left, failed]);
 
   useEffect(() => {
     const pending = inFlight.current;
+    const timers = refetch.current;
     return () => {
       for (const abort of pending.values()) abort.abort();
       pending.clear();
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
     };
   }, []);
 
@@ -542,7 +578,10 @@ export function RangePicker({
                   }
                   const { day, bars } = c;
                   const rows = bars?.reduce((s, b) => s + b.count, 0) ?? 0;
-                  const off = dataRef !== undefined && (g.answer ? rows === 0 : !inScope(day));
+                  // A day not counted yet stays pickable; it shows a dotted baseline, no bars.
+                  const uncounted = dayPending(g.answer, day);
+                  const off =
+                    dataRef !== undefined && !uncounted && (g.answer ? rows === 0 : !inScope(day));
                   const edge = day.date === draft.start || day.date === draft.end;
                   const between = day.date > draft.start && day.date < draft.end;
                   const classes = ["day"];
@@ -573,7 +612,8 @@ export function RangePicker({
                         }}
                       >
                         <span className="day-number">{day.day}</span>
-                        {bars && (
+                        {uncounted && <span className="day-pending" aria-hidden="true" />}
+                        {bars && !uncounted && (
                           <span className="day-bars" aria-hidden="true">
                             {bars.map((b, k) => (
                               <span

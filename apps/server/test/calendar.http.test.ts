@@ -3,6 +3,7 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
+import { untilCounted } from "./calendarKit.ts";
 import { type Call, codeOf, type ScopeApp, scopeApp } from "./scopeApp.ts";
 import { testClient, testSource } from "./testdb.ts";
 
@@ -10,6 +11,9 @@ import { testClient, testSource } from "./testdb.ts";
 // scope". Hand-computed values (no constant of the code under test is imported):
 //   M10 = the local month October 2026 under TZ=Europe/Berlin: from 2026-09-30T22:00:00Z =
 //   1790805600 s, to 2026-10-31T23:00:00Z = 1793487600 s (31 d + 1 h = 745 hours).
+// Without a scope (full mode) the calendar comes from the counted vehicle-days (speed-up-whole-scans
+// B6): the first answer may list `pending` days, and the counts are asked for until none is left.
+// The values are those of one bucket query over the window, as before.
 const S = 1_000_000_000n;
 const M10_FROM = "2026-09-30T22:00:00Z";
 const M10_TO = "2026-10-31T23:00:00Z";
@@ -29,6 +33,7 @@ describe("GET /api/calendar on the test DB", () => {
   const source = {
     listSignals: (...args: Parameters<typeof real.listSignals>) => real.listSignals(...args),
     refExtent: (...args: Parameters<typeof real.refExtent>) => real.refExtent(...args),
+    refCount: (...args: Parameters<typeof real.refCount>) => real.refCount(...args),
     refBuckets: (...args: Parameters<typeof real.refBuckets>) =>
       failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refBuckets(...args),
   } as unknown as DataSource;
@@ -41,6 +46,14 @@ describe("GET /api/calendar on the test DB", () => {
     });
   const app = newApp();
   const calendar = (query: string) => app.inject({ url: `/api/calendar?${query}` });
+  /** The answer once every day of the window is counted. */
+  const counted = async (query: string) => {
+    const done = await untilCounted(async () => {
+      const res = await calendar(query);
+      return { status: res.statusCode, body: res.json(), res };
+    });
+    return done.res;
+  };
 
   beforeAll(async () => {
     await app.ready();
@@ -49,9 +62,10 @@ describe("GET /api/calendar on the test DB", () => {
   afterAll(() => app.close());
 
   it("counts drivecar rows per hour and finds its drives on the minute grid", async () => {
-    const res = await calendar(`dataRef=drivecar&${range(M10_FROM, M10_TO)}`);
+    const res = await counted(`dataRef=drivecar&${range(M10_FROM, M10_TO)}`);
     expect(res.statusCode, res.body).toBe(200);
     const body = res.json();
+    expect(body.pending).toBeUndefined();
     expect(body.dataRef).toBe("drivecar");
     expect(body.from).toBe("1790805600000000000");
     expect(body.to).toBe("1793487600000000000");
@@ -78,7 +92,7 @@ describe("GET /api/calendar on the test DB", () => {
     ]);
   });
 
-  it("answers 400, 404, empty windows and 502", async () => {
+  it("answers 400, 404 and empty windows", async () => {
     const bad = [
       "dataRef=drivecar", // no from and to
       `dataRef=drivecar&${range("2026-10-01T00:00:30Z", "2026-10-02T00:00:00Z")}`, // 30 s off the grid
@@ -102,23 +116,32 @@ describe("GET /api/calendar on the test DB", () => {
     expect(unknown.json().error.code).toBe("unknown_data_ref");
 
     // testcar has no row in 2025: zeros, no drives, no error.
-    const empty = await calendar(
+    const empty = await counted(
       `dataRef=testcar&${range("2025-10-01T00:00:00Z", "2025-10-02T00:00:00Z")}`,
     );
     expect(empty.statusCode, empty.body).toBe(200);
     expect(empty.json().hours).toEqual(new Array(24).fill(0));
     expect(empty.json().drives).toEqual([]);
+  });
 
-    // A fresh app, so no cached calendar hides the failure.
+  it("leaves a day the source fails on pending, never an error", async () => {
+    // A fresh app, so no counted day hides the failure. The days are counted at idle in the
+    // background: a failing source leaves them pending, and the request itself answers 200.
     const fresh = newApp();
     failing = true;
     try {
       const res = await fresh.inject({
-        url: `/api/calendar?dataRef=testcar&${range(M10_FROM, M10_TO)}`,
+        url: `/api/calendar?dataRef=testcar&${range("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z")}`,
       });
-      expect(res.statusCode).toBe(502);
-      expect(res.json().error.code).toBe("source_error");
-      expect(res.json().error.message).toContain("ECONNREFUSED");
+      expect(res.statusCode, res.body).toBe(200);
+      await new Promise((r) => setTimeout(r, 200));
+      const again = await fresh.inject({
+        url: `/api/calendar?dataRef=testcar&${range("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z")}`,
+      });
+      expect(again.statusCode).toBe(200);
+      expect(again.json().pending).toEqual([
+        { from: "1790812800000000000", to: "1790899200000000000" },
+      ]);
     } finally {
       failing = false;
       await fresh.close();
@@ -180,6 +203,11 @@ describe("GET /api/calendar with a scope", () => {
     expect(hours.filter((n) => n !== 0)).toHaveLength(1);
     const asked = t.calls.slice(mark);
     expect(asked.filter((c) => c.method === "refExtent")).toEqual([]);
+    // The scan bound's count of that scope: at most one (the scope's own load shares it).
+    const counts = asked.filter((c) => c.method === "refCount");
+    expect(counts.length).toBeLessThanOrEqual(1);
+    for (const count of counts)
+      expect(count.args[1]).toEqual({ dataRef: "testcar", from: T1, to: T2 });
     const buckets = asked.filter((c) => c.method === "refBuckets");
     expect(buckets).toHaveLength(1);
     expect(buckets[0]?.args[0]).toBe("testcar");
@@ -204,5 +232,66 @@ describe("GET /api/calendar with a scope", () => {
     const other = await t.get(`/api/calendar?dataRef=othercar&${range(M10_FROM, M10_TO)}`);
     expect(other.status).toBe(409);
     expect(codeOf(other.body)).toBe("out_of_scope");
+  });
+
+  it("answers 502 when the source fails on a scope's window", async () => {
+    // The plain-scope path computes in the request, so a failing source is the request's error.
+    const real = testSource();
+    let failing = false;
+    const adapter = new Proxy(real, {
+      get(target, key, receiver) {
+        const member = Reflect.get(target, key, receiver);
+        if (key !== "refBuckets" || typeof member !== "function") return member;
+        return (...args: unknown[]) =>
+          failing ? Promise.reject(new Error("connect ECONNREFUSED")) : member.apply(target, args);
+      },
+    });
+    const t = await scopeApp({ adapter });
+    apps.push(t);
+    const set = await t.command({
+      type: "scope.set",
+      dataRef: "testcar",
+      from: "2026-10-01T01:00:00Z",
+      to: "2026-10-01T02:00:00Z",
+    });
+    expect(set.status).toBe(200);
+    await settle(t.calls);
+    failing = true;
+    const res = await t.get(`/api/calendar?dataRef=testcar&${range(M10_FROM, M10_TO)}`);
+    expect(res.status).toBe(502);
+    expect(codeOf(res.body)).toBe("source_error");
+    expect(res.body.error.message).toContain("ECONNREFUSED");
+  });
+
+  it("answers 422 too_wide for a scope over the bound", async () => {
+    // A scope that was allowed to be set, with a bound lowered afterwards (the same app, a count
+    // that moved): the calendar of its window is refused by the bound before any bucket query.
+    let rows = 10;
+    const real = testSource();
+    const adapter = new Proxy(real, {
+      get(target, key, receiver) {
+        const member = Reflect.get(target, key, receiver);
+        if (key === "refCount") return async () => rows;
+        return typeof member === "function" ? member.bind(target) : member;
+      },
+    });
+    let clock = 1_000_000;
+    const t = await scopeApp({ adapter, scanRows: 20, now: () => clock });
+    apps.push(t);
+    const set = await t.command({
+      type: "scope.set",
+      dataRef: "testcar",
+      from: "2026-10-01T01:00:00Z",
+      to: "2026-10-01T02:00:00Z",
+    });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    await settle(t.calls);
+    clock += 6 * 60_000;
+    rows = 21;
+    const mark = t.calls.length;
+    const res = await t.get(`/api/calendar?dataRef=testcar&${range(M10_FROM, M10_TO)}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.body.error).toMatchObject({ code: "too_wide", rows: "21", limit: "20" });
+    expect(t.calls.slice(mark).filter((c) => c.method === "refBuckets")).toEqual([]);
   });
 });

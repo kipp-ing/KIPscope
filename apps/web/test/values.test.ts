@@ -338,6 +338,35 @@ describe("ValueLoader", () => {
     expect(failed.text).not.toContain("missing");
   });
 
+  it("shows a too-wide value as — with the message", async () => {
+    // Series-query "Value when its gap info is too wide": a 422 `too_wide` for a value request
+    // reads `too wide` in the row's status (muted), its cells show `—` and the tooltip is the
+    // server's message; a 502 stays `failed: …`.
+    const message =
+      "too wide: 230,000,000 rows, more than the 150,000,000 a query may read; choose a shorter range";
+    const { fetch, pending } = controllableFetch();
+    const loader = new ValueLoader(fetch, () => {});
+    const rows = [row("100", "r1:a", "car/X"), row("100", "r2:a", "car/Y")];
+    loader.update(rows);
+    pending[0]?.reject(await apiError(422, "too_wide", message));
+    pending[1]?.reject(await apiError(502, "source_error", "boom"));
+    await flush();
+    expect(loader.get("r1:a")).toMatchObject({
+      status: "error",
+      errorStatus: 422,
+      errorCode: "too_wide",
+      error: message,
+    });
+    expect(valueRowStatus(loader.get("r1:a"), "car", "X")).toEqual({
+      text: "too wide",
+      title: message,
+      tone: "muted",
+    });
+    expect(valueRowStatus(loader.get("r2:a"), "car", "Y").text).toBe("failed: source_error: boom");
+    // Both rows finished, so the revision can be reported (with the errors).
+    expect(loader.settled(rows)).toBe(true);
+  });
+
   it("shows a loading state distinct from no value", async () => {
     const { fetch, pending } = controllableFetch();
     const loader = new ValueLoader(fetch, () => {});

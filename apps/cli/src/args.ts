@@ -8,6 +8,7 @@ import {
   parseTime,
   parseWorkspaceLink,
   ValuesMode,
+  WORK_SPAN_MAX_NS,
   WORKSPACE_ID,
   WorkspaceShare,
 } from "@kipscope/shared";
@@ -126,13 +127,15 @@ Catalogs (ordered lists handed over by a search tool; N: 1-based position):
   case next | case prev            (step to the next or previous catalog entry)
   case go N                        (go to entry N and link)
   case link [N]                    (link again: to entry N, default the entry left)
-  case unlink                      (the whole vehicle of the current entry)
+  case unlink                      (the span of the catalog's drives of the current vehicle)
   case align start|end|anchor
   case align event KIND SOURCE NAME [TEXT]
                                    (align every entry to its first matching event)
   case url FILE|- [--trim]         (prints the link /open#cases=…; at most ${MAX_LINK_CHARS} characters;
                                    --trim drops entries far from current until it fits)
-  case drives REF                  (test aid: prints a catalog of REF's drives in the strip)
+  case drives REF FROM TO          (test aid: prints a catalog of REF's drives in [FROM, TO), at
+                                   most 32 days, one density per UTC day; > drives.json, then
+                                   case open drives.json)
 
 Views (saved workspaces, stored by the server):
   view list
@@ -284,6 +287,15 @@ function time(text: string, what: string): TimeArg {
   }
   try {
     return { kind: "abs", t: parseTime(text) };
+  } catch (error) {
+    return usage(`${what}: ${(error as Error).message}`);
+  }
+}
+
+/** An absolute time as `parseTime` reads it; anything else is a usage error. */
+function absTime(text: string, what: string): bigint {
+  try {
+    return parseTime(text);
   } catch (error) {
     return usage(`${what}: ${(error as Error).message}`);
   }
@@ -808,10 +820,15 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
         },
       });
     }
-    case "case drives":
-      take(1);
+    case "case drives": {
+      take(3);
       if (arg(0) === "") usage("REF is empty");
-      return { kind: "case", action: "drives", dataRef: arg(0) };
+      const from = absTime(arg(1), "FROM");
+      const to = absTime(arg(2), "TO");
+      if (to <= from) usage("TO must be after FROM");
+      if (to - from > WORK_SPAN_MAX_NS) usage("case drives spans at most 32 days");
+      return { kind: "case", action: "drives", dataRef: arg(0), from, to };
+    }
     case "command": {
       take(1);
       try {

@@ -33,6 +33,7 @@ const idle = () => ({
   metadata: { running: 0, waiting: 0 },
   background: { running: 0, waiting: 0 },
   preload: { running: 0, waiting: 0 },
+  idle: { running: 0, waiting: 0 },
 });
 
 /** The stubs below implement the optional methods they call, so the queued adapter has them too. */
@@ -387,6 +388,11 @@ function hold(
   return held;
 }
 
+const releaseAndSettleTask = async (task: Held) => {
+  task.release();
+  await settle();
+};
+
 /** Releases every started, not yet released task per round until all ended. */
 async function drain(tasks: readonly Held[]) {
   for (;;) {
@@ -419,10 +425,7 @@ describe("QueryQueue classes", () => {
     return { queue, order, tasks, by };
   }
 
-  const releaseAndSettle = async (task: Held) => {
-    task.release();
-    await settle();
-  };
+  const releaseAndSettle = releaseAndSettleTask;
 
   it("starts waiting queries by class, oldest first", async () => {
     const { queue, order, tasks, by } = classSetup();
@@ -449,6 +452,65 @@ describe("QueryQueue classes", () => {
     expect(order).toEqual(expected);
     expect(order).toHaveLength(25);
     expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 4, byClass: idle() });
+  });
+
+  it("runs idle tasks one at a time and never beside an interactive one", async () => {
+    // Setup of range-picker "Idle queue rules": limit 4, idle D1-D3 and background B, then an
+    // interactive I that runs until released.
+    const queue = new QueryQueue(4);
+    const order: string[] = [];
+    const tasks: Held[] = [];
+    const add = (name: string, cls: QueryClass) => {
+      const task = hold(queue, order, name, cls);
+      tasks.push(task);
+      return task;
+    };
+    const d1 = add("D1", "idle");
+    const d2 = add("D2", "idle");
+    const d3 = add("D3", "idle");
+    const b = add("B", "background");
+    const i = add("I", "interactive");
+    await settle();
+
+    // D1 and B start at once, I beside them; D2 waits while D1 runs, though slots are free.
+    expect(order).toEqual(["D1", "B", "I"]);
+    expect(queue.stats.running).toBe(3);
+    expect(queue.stats.byClass.idle).toEqual({ running: 1, waiting: 2 });
+
+    // D1 ends while I runs: D2 does not start until I has ended.
+    await releaseAndSettle(d1);
+    expect(order).toEqual(["D1", "B", "I"]);
+    expect(queue.stats.byClass.idle).toEqual({ running: 0, waiting: 2 });
+    await releaseAndSettle(b);
+    expect(order).toEqual(["D1", "B", "I"]);
+    await releaseAndSettle(i);
+    expect(order).toEqual(["D1", "B", "I", "D2"]);
+    expect(queue.stats.byClass.idle).toEqual({ running: 1, waiting: 1 });
+
+    // D3 starts only after D2 ended.
+    await settle();
+    expect(d3.started).toBe(false);
+    await releaseAndSettle(d2);
+    expect(order).toEqual(["D1", "B", "I", "D2", "D3"]);
+    await drain(tasks);
+    expect(queue.stats).toEqual({ running: 0, waiting: 0, peak: 3, byClass: idle() });
+  });
+
+  it("holds an idle task back for an interactive one that started after the idle one", async () => {
+    const queue = new QueryQueue(4);
+    const order: string[] = [];
+    const d1 = hold(queue, order, "D1", "idle");
+    await settle();
+    expect(order).toEqual(["D1"]);
+    // An interactive task joins while D1 runs; the next idle task waits for both.
+    const i1 = hold(queue, order, "I1", "interactive");
+    const d2 = hold(queue, order, "D2", "idle");
+    await settle();
+    await releaseAndSettleTask(d1);
+    expect(d2.started).toBe(false);
+    await releaseAndSettleTask(i1);
+    expect(d2.started).toBe(true);
+    await drain([d1, i1, d2]);
   });
 
   it("drops an aborted query from its class", async () => {

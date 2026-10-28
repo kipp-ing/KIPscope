@@ -45,4 +45,13 @@ export interface ServerMeta {
     /** The scope the state and size refer to; absent for the full catalog. */
     scope?: WorkspaceScope;
   };
+  /** The scan bound and the scope pad (speed-up-whole-scans B1, B8). */
+  limits: {
+    /** KIPSCOPE_SCAN_ROWS. */
+    scanRows: number;
+    /** KIPSCOPE_SCAN_SPAN, decimal ns. */
+    scanSpan: string;
+    /** KIPSCOPE_SCOPE_PAD, decimal ns. */
+    scopePad: string;
+  };
 }

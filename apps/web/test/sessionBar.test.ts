@@ -873,7 +873,7 @@ describe("case messages", () => {
       { kind: "notice", text: "Stopped at the session edge. Unlink shows the whole vehicle." },
     ]);
     expect(caseResultEvents(ok({ clamped: true }), caseAt(1, false))).toEqual([
-      { kind: "notice", text: "Stopped at the end of the vehicle's data." },
+      { kind: "notice", text: "Stopped at the end of the catalog's sessions." },
     ]);
     // The alignment fell back to the start.
     expect(caseResultEvents(ok({ alignFallback: true }), eventAlign)).toEqual([

@@ -1,6 +1,7 @@
 import { type Density, type Drive, fromIso, type LoggerGap } from "@kipscope/shared";
 import { describe, expect, it } from "vitest";
 import { groupMarks, stripPin } from "../src/events/marks.ts";
+import { scopeDensity } from "../src/time/strip.ts";
 import {
   BREAK_MIN_PX,
   bothRange,
@@ -438,6 +439,32 @@ describe("strip geometry", () => {
     expect(markerX(tr, -S)).toBeUndefined();
     expect(markerX(tr, 120n * H)).toBe(1438); // the end of the last bar, capped at the track end
     expect(markerX(tr, 120n * H + 1n)).toBeUndefined();
+  });
+
+  it("spans an object scope from the scope alone (speed-up-whole-scans)", () => {
+    // The span of the catalog's sessions, 400 days: 120 bars with no counts, whole-span steps and
+    // the pixel mapping work on it; the presence line has no data until a detail density comes.
+    const first = 1_754_006_400_000_000_000n; // 2025-08-01T00:00:00Z
+    const day = 86_400_000_000_000n;
+    const scope = {
+      dataRef: "longcar",
+      from: first.toString(),
+      to: (first + 400n * day).toString(),
+      object: true as const,
+    };
+    const d = scopeDensity(scope);
+    expect(d.counts).toHaveLength(120);
+    expect(d.counts.every((n) => n === 0)).toBe(true);
+    expect(d.drives).toEqual([]);
+    expect(d.first).toBe(scope.from);
+    expect(d.last).toBe((first + 400n * day - 1n).toString());
+    // The whole-span range is the scope, and the bars cover it: 120 bars of ceil(400 d / 120).
+    expect(wholeRange(d)).toEqual({ from: first, to: first + 400n * day });
+    const tr = trackOf(d, 1438);
+    expect(BigInt(d.width) * 120n).toBeGreaterThanOrEqual(400n * day);
+    expect(tr.start).toBe(first);
+    expect(tOf(tr, 0)).toBe(first);
+    expect(presence(tr, d, undefined, undefined).runs).toEqual([]);
   });
 
   it("brushes from a window that covers the recording extent (Brush on smart451)", () => {

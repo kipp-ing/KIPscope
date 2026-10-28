@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyCommand } from "../src/apply.ts";
+import { type CaseCatalog, type CaseEntry, caseScope, objectSpan } from "../src/case.ts";
 import { openCase } from "../src/caseApply.ts";
 import {
   Command,
@@ -9,6 +10,7 @@ import {
   SIGNAL_COLORS,
   type TimeseriesWindow,
   type Workspace,
+  type WorkspaceScope,
   windowTitle,
 } from "../src/workspace.ts";
 import { at, C4, MIN as CASE_MIN, PAD } from "./caseFixtures.ts";
@@ -1851,6 +1853,65 @@ describe("case commands (add-case-open)", () => {
       withCase({ alignAt: at(0, 0) }),
     );
     expect(there.workspace.eventSignals).toEqual(["othercar/Ign_A20h.MODE"]);
+  });
+
+  it("unlinks to the span of the catalog's sessions", () => {
+    // One session of the vehicle: the scope is that entry's caseScope (00:59:00 … 01:11:00 with
+    // 60 s of pad) with object: true, and the application sends no query (objectSpan is pure).
+    const single: CaseCatalog = { catalogId: "c1c1c1c1c1", entries: [C4.entries[0] as CaseEntry] };
+    const openedSingle = openCase({
+      catalog: single,
+      current: 0,
+      pad: PAD,
+      align: { mode: "start" },
+      alignAt: at(1, 0),
+      known: bothCars,
+    }).workspace;
+    const spanOne = objectSpan(single, "testcar", openedSingle.scope as WorkspaceScope, PAD);
+    expect(spanOne).toEqual({
+      dataRef: "testcar",
+      from: at(0, 59),
+      to: at(1, 11),
+      object: true,
+    });
+    const unlinkedOne = stepOk(
+      openedSingle,
+      { type: "case.unlink" },
+      withCase({ extent: spanOne }),
+    ).workspace;
+    expect(unlinkedOne.scope).toEqual({
+      dataRef: "testcar",
+      from: at(0, 59),
+      to: at(1, 11),
+      object: true,
+    });
+
+    // C4: entries 0, 2 and 3 are on testcar, entry 1 on othercar. The earliest bound is entry 0's
+    // 00:59:00, the latest entry 2's 05:11:00; othercar's 00:00:00 does not count.
+    const zero = openAtZero();
+    const span = objectSpan(C4, "testcar", zero.scope as WorkspaceScope, PAD);
+    expect(span).toEqual({ dataRef: "testcar", from: at(0, 59), to: at(5, 11), object: true });
+    const unlinked = stepOk(zero, { type: "case.unlink" }, withCase({ extent: span })).workspace;
+    expect(unlinked.scope).toEqual({
+      dataRef: "testcar",
+      from: at(0, 59),
+      to: at(5, 11),
+      object: true,
+    });
+    expect(w1(unlinked).range).toEqual({ from: at(1, 2), to: at(1, 4) });
+    expect(unlinked.case?.linked).toBe(false);
+    expect(unlinked.case?.linkedRanges?.w1).toEqual({ from: "120000000000", to: "240000000000" });
+
+    // The current scope is kept inside: a wider current scope widens the span; othercar's entry
+    // gives its own vehicle's span.
+    const wider: WorkspaceScope = { dataRef: "testcar", from: at(0, 0), to: at(10, 0) };
+    expect(objectSpan(C4, "testcar", wider, PAD)).toEqual({ ...wider, object: true });
+    expect(objectSpan(C4, "othercar", caseScope(C4.entries[1] as CaseEntry, PAD), PAD)).toEqual({
+      dataRef: "othercar",
+      from: at(0, -1),
+      to: at(0, 1, 1),
+      object: true,
+    });
   });
 
   it("unlinks to the vehicle's extent and links back", () => {

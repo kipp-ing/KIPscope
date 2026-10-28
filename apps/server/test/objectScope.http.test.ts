@@ -1,7 +1,7 @@
-import { TIME_MAX, TIME_MIN } from "@kipscope/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Scope, SourceAdapter } from "../src/datasource.ts";
-import { closeApps, stateOf, unlink, unlinked } from "./caseApp.ts";
+import type { Scope } from "../src/datasource.ts";
+import { pause, untilCounted } from "./calendarKit.ts";
+import { closeApps, quiet, stateOf, unlink, unlinked } from "./caseApp.ts";
 import { at, c4, SCOPE_AT, scopeOfCall } from "./caseKit.ts";
 import { codeOf, scopeApp } from "./scopeApp.ts";
 import { testClient, testSource } from "./testdb.ts";
@@ -38,64 +38,57 @@ async function testcarFacts() {
   };
 }
 
-const isExtentCall = (call: { method: string; args: unknown[] }) =>
-  call.method === "refExtent" &&
-  (call.args[1] as Scope | undefined)?.from === TIME_MIN &&
-  (call.args[1] as Scope | undefined)?.to === TIME_MAX;
+const DAY_NS = 86_400_000_000_000n;
+/** The span of the catalog's testcar sessions with C4's pad of 60 s: 00:59:00 … 05:11:00. */
+const SPAN = { dataRef: "testcar", from: at(0, 59), to: at(5, 11), object: true };
 
-describe("an object scope (add-case-open)", () => {
-  it("unlinks to the vehicle's extent with one extent query", async () => {
-    const facts = await testcarFacts();
+const nonPing = (calls: readonly { method: string }[]) => calls.filter((c) => c.method !== "ping");
+
+describe("an object scope (add-case-open, speed-up-whole-scans)", () => {
+  it("unlinks to the span of the catalog's sessions without a query", async () => {
     const { t, id, calls } = await unlinked();
     await t.anon.command({ type: "window.create", from: at(1, 2), to: at(1, 4) }, id);
+    await quiet(calls);
     const mark = calls.length;
 
     await unlink(t.anon, id);
+    // The source got no call between the command and its answer.
+    expect(nonPing(calls.slice(mark))).toEqual([]);
     const { workspace } = await stateOf(t.anon, id);
-    expect(workspace.scope).toEqual({
-      dataRef: "testcar",
-      from: facts.first.toString(),
-      to: facts.end.toString(),
-      object: true,
-    });
+    // Entries 0, 2 and 3 are on testcar (entry 1 on othercar): the earliest bound is entry 0's
+    // 01:00:00 − 60 s, the latest entry 2's 05:10:00 + 60 s.
+    expect(workspace.scope).toEqual(SPAN);
     // The window is unchanged, and Link remembers it as offsets from the alignment point 01:00:00.
     expect(workspace.windows[0].range).toEqual({ from: at(1, 2), to: at(1, 4) });
     expect(workspace.case.linked).toBe(false);
     expect(workspace.case.linkedRanges).toEqual({
       w1: { from: "120000000000", to: "240000000000" },
     });
-    const extents = calls.slice(mark).filter(isExtentCall);
-    expect(extents).toHaveLength(1);
-    expect(extents[0]?.args[0]).toBe("testcar");
-    expect(extents[0]?.args[1]).toEqual({ dataRef: "testcar", from: TIME_MIN, to: TIME_MAX });
 
-    // Extent cached: link and unlink again, and another workspace unlinks on testcar.
+    // Extent cached: link and unlink again, and another workspace unlinks on testcar. No
+    // extent query is made at all, and both scopes are equal.
     const linked = await t.anon.command({ type: "case.go", index: 0 }, id);
     expect(linked.status, JSON.stringify(linked.body)).toBe(200);
     await unlink(t.anon, id);
     const other = (await t.anon.post("/api/workspaces", { open: { cases: c4() } })).body.workspace
       .id as string;
     await unlink(t.anon, other);
-    expect(calls.slice(mark).filter(isExtentCall)).toHaveLength(1);
+    expect((await stateOf(t.anon, other)).workspace.scope).toEqual(SPAN);
+    expect((await stateOf(t.anon, id)).workspace.scope).toEqual(SPAN);
+    expect(calls.filter((c) => c.method === "refExtent")).toEqual([]);
   });
 
   it("unlinks and reads the strip in full mode as well", async () => {
-    const facts = await testcarFacts();
     const { t, id, calls } = await unlinked({ mode: "full" });
     const mark = calls.length;
     await unlink(t.anon, id);
     const { workspace } = await stateOf(t.anon, id);
-    expect(workspace.scope).toEqual({
-      dataRef: "testcar",
-      from: facts.first.toString(),
-      to: facts.end.toString(),
-      object: true,
-    });
-    expect(calls.slice(mark).filter(isExtentCall)).toHaveLength(1);
+    expect(workspace.scope).toEqual(SPAN);
+    expect(calls.slice(mark).filter((c) => c.method === "refExtent")).toEqual([]);
+    // No coarse density: a density without from and to is a 400 in an object scope.
     const coarse = await t.anon.get(`/api/w/${id}/density?dataRef=testcar`);
-    expect(coarse.status, JSON.stringify(coarse.body)).toBe(200);
-    expect(coarse.body.coarse).toBe(true);
-    expect(coarse.body.drives).toEqual([]);
+    expect(coarse.status, JSON.stringify(coarse.body)).toBe(400);
+    expect(codeOf(coarse.body)).toBe("invalid_request");
     const day = "from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z";
     for (const route of ["gaps", "events"]) {
       const asked = await t.anon.get(`/api/w/${id}/${route}?dataRef=testcar&${day}`);
@@ -103,31 +96,6 @@ describe("an object scope (add-case-open)", () => {
       const without = await t.anon.get(`/api/w/${id}/${route}?dataRef=testcar`);
       expect(without.status, route).toBe(400);
     }
-  });
-
-  it("answers a coarse density over the whole vehicle", async () => {
-    const facts = await testcarFacts();
-    const { t, id, calls } = await unlinked();
-    await unlink(t.anon, id);
-    const mark = calls.length;
-    const ask = () => t.anon.get(`/api/w/${id}/density?dataRef=testcar`);
-    const [one, two] = [await ask(), await ask()];
-    for (const answer of [one, two]) {
-      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
-      expect(answer.body.coarse).toBe(true);
-      expect(answer.body.drives).toEqual([]);
-      expect(answer.body.first).toBe(facts.first.toString());
-      expect(answer.body.last).toBe((facts.end - 1n).toString());
-      expect(answer.body.counts.length).toBeLessThanOrEqual(120);
-      const sum = (answer.body.counts as number[]).reduce((a, b) => a + b, 0);
-      expect(sum).toBe(await facts.rowsIn());
-    }
-    expect(two.text).toBe(one.text);
-    // One bucket query at the bar width and no grid query, however often it is asked.
-    const buckets = calls.slice(mark).filter((c) => c.method === "refBuckets");
-    expect(buckets).toHaveLength(1);
-    expect(buckets[0]?.args[0]).toBe("testcar");
-    expect(buckets[0]?.args[1]).toBe(BigInt(one.body.width));
   });
 
   it("answers a detail density for a work window", async () => {
@@ -138,13 +106,28 @@ describe("an object scope (add-case-open)", () => {
     const wholeDay = await t.anon.get(`/api/w/${id}/density?dataRef=testcar&${day}`);
     expect(wholeDay.status, JSON.stringify(wholeDay.body)).toBe(200);
     expect(wholeDay.body.coarse).toBeUndefined();
+    // The window is cut to the object scope (00:59:00 … 05:11:00 of that day): counts over that
+    // part of the day only, drives inside it.
+    expect(wholeDay.body.first).toBe(at(0, 59));
+    expect(BigInt(wholeDay.body.last)).toBe(BigInt(at(5, 11)) - 1n);
     expect((wholeDay.body.counts as number[]).reduce((a, b) => a + b, 0)).toBe(
-      await facts.rowsIn(),
+      await facts.rowsIn("2026-10-01 00:59:00", "2026-10-01 05:11:00"),
     );
+    expect(wholeDay.body.drives.length).toBeGreaterThan(0);
     for (const drive of wholeDay.body.drives as { from: string; to: string }[]) {
-      expect(BigInt(drive.from) >= BigInt(at(0, 0))).toBe(true);
-      expect(BigInt(drive.to) <= BigInt(at(24, 0))).toBe(true);
+      expect(BigInt(drive.from) >= BigInt(at(0, 59))).toBe(true);
+      expect(BigInt(drive.to) <= BigInt(at(5, 11))).toBe(true);
     }
+
+    // Without from and to: 400, never a coarse density.
+    const bare = await t.anon.get(`/api/w/${id}/density?dataRef=testcar`);
+    expect(bare.status).toBe(400);
+    expect(codeOf(bare.body)).toBe("invalid_request");
+    expect(bare.body.error.message).toBe(
+      "from and to are required in an object scope (the work window)",
+    );
+    const lone = await t.anon.get(`/api/w/${id}/density?dataRef=testcar&from=2026-10-01T00:00:00Z`);
+    expect(lone.status).toBe(400);
 
     // An hour inside the vehicle: counts over that hour only, cached per window.
     const hour = "from=2026-10-01T01:00:00Z&to=2026-10-01T02:00:00Z";
@@ -167,6 +150,7 @@ describe("an object scope (add-case-open)", () => {
       const scope = scopeOfCall(call) as Scope;
       expect(scope.from >= BigInt(at(1, 0)) && scope.to <= BigInt(at(2, 0))).toBe(true);
     }
+    expect(calls.slice(mark).filter((c) => c.method === "refExtent")).toEqual([]);
   });
 
   it("answers the calendar of a month while unlinked", async () => {
@@ -178,27 +162,58 @@ describe("an object scope (add-case-open)", () => {
     const M10_FROM = 1790805600n * 1_000_000_000n;
     const M10_TO = 1793487600n * 1_000_000_000n;
     const month = "from=2026-09-30T22:00:00Z&to=2026-10-31T23:00:00Z";
-    // Let the unlink's own background work finish, so only the calendar's calls follow the mark.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const mark = calls.length;
-    const answer = await t.anon.get(`/api/w/${id}/calendar?dataRef=testcar&${month}`);
+    const url = `/api/w/${id}/calendar?dataRef=testcar&${month}`;
+
+    // The vehicle-days of M10 are counted (at idle, in the background); asked until none is left.
+    const answer = await untilCounted(() => t.anon.get(url), pause);
     expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    expect(answer.body.pending).toBeUndefined();
+    // The scope of the answer is the object scope.
     expect(answer.body.scope).toEqual({ from: workspace.scope.from, to: workspace.scope.to });
-    expect(answer.body.scope).toEqual({ from: facts.first.toString(), to: facts.end.toString() });
+    expect(answer.body.scope).toEqual({ from: SPAN.from, to: SPAN.to });
     const hours = answer.body.hours as number[];
     expect(hours).toHaveLength(745);
-    expect(hours.reduce((a, b) => a + b, 0)).toBe(await facts.rowsIn());
-    // testcar's rows lie on 2026-10-01 from 00:00:00Z to 10:00:00Z (SLOW's last point): hours 2 … 12.
+    expect(hours.reduce((a, b) => a + b, 0)).toBe(
+      await facts.rowsIn("2026-10-01 00:59:00", "2026-10-01 05:11:00"),
+    );
+    // 00:00Z of 2026-10-01 is hour 2 of M10 (22:00Z + 2 h) and 05:00Z hour 7: rows only there.
     expect(hours.slice(0, 2).every((n) => n === 0)).toBe(true);
-    expect(hours.slice(13).every((n) => n === 0)).toBe(true);
+    expect(hours.slice(8).every((n) => n === 0)).toBe(true);
     expect(hours[2]).toBeGreaterThan(0);
-    const asked = calls.slice(mark).filter((c) => scopeOfCall(c) !== undefined);
-    expect(asked.length).toBeGreaterThan(0);
-    for (const call of asked) {
-      const scope = scopeOfCall(call) as Scope;
-      expect(scope.from >= M10_FROM && scope.to <= M10_TO, `${call.method} inside M10`).toBe(true);
+
+    // The same hours and drives as a plain scope of the object scope's bounds.
+    const plain = await scopeApp({ adapter: testSource() });
+    try {
+      const set = await plain.command({
+        type: "scope.set",
+        dataRef: "testcar",
+        from: SPAN.from,
+        to: SPAN.to,
+      });
+      expect(set.status, JSON.stringify(set.body)).toBe(200);
+      const ref = await plain.get(`/api/calendar?dataRef=testcar&${month}`);
+      expect(ref.status, JSON.stringify(ref.body)).toBe(200);
+      expect(answer.body.hours).toEqual(ref.body.hours);
+      expect(answer.body.drives).toEqual(ref.body.drives);
+    } finally {
+      await plain.close();
     }
-    expect(calls.slice(mark).filter((c) => c.method === "refExtent")).toEqual([]);
+
+    // Once counted, a request makes no source call, and only days inside M10 were ever counted.
+    await quiet(calls);
+    const mark = calls.length;
+    const again = await t.anon.get(url);
+    expect(again.status).toBe(200);
+    expect(again.body.pending).toBeUndefined();
+    expect(nonPing(calls.slice(mark))).toEqual([]);
+    expect(calls.filter((c) => c.method === "refExtent")).toEqual([]);
+    for (const call of calls.filter(
+      (c) => c.method === "refBuckets" && c.args[1] === 60_000_000_000n,
+    )) {
+      const scope = scopeOfCall(call) as Scope;
+      expect(scope.to - scope.from).toBeLessThanOrEqual(DAY_NS);
+      expect(scope.from >= M10_FROM - DAY_NS && scope.to <= M10_TO + DAY_NS).toBe(true);
+    }
 
     // The 32-day rule holds here too.
     const wide = await t.anon.get(
@@ -208,16 +223,29 @@ describe("an object scope (add-case-open)", () => {
     expect(codeOf(wide.body)).toBe("invalid_request");
   });
 
-  it("needs a work window for gaps and events in an object scope", async () => {
+  it("needs a bounded work window for gaps and events in an object scope", async () => {
     const { t, id, calls } = await unlinked();
     await unlink(t.anon, id);
     const base = `/api/w/${id}`;
     for (const route of ["gaps", "events"]) {
-      for (const query of ["", "&from=2026-09-01T00:00:00Z&to=2026-10-11T00:00:00Z"]) {
-        const refused = await t.anon.get(`${base}/${route}?dataRef=testcar${query}`);
-        expect(refused.status, `${route}${query}`).toBe(400);
-        expect(codeOf(refused.body)).toBe("invalid_request");
-      }
+      // Without a range: 400.
+      const bare = await t.anon.get(`${base}/${route}?dataRef=testcar`);
+      expect(bare.status, route).toBe(400);
+      expect(codeOf(bare.body)).toBe("invalid_request");
+      // A 10-day range: 422 too_wide (the span is over 7 d), with no source call.
+      const mark10 = calls.length;
+      const wide = await t.anon.get(
+        `${base}/${route}?dataRef=testcar&from=2026-10-01T00:00:00Z&to=2026-10-11T00:00:00Z`,
+      );
+      expect(wide.status, `${route}: ${JSON.stringify(wide.body)}`).toBe(422);
+      expect(codeOf(wide.body)).toBe("too_wide");
+      expect(wide.body.error.span).toBe((10n * DAY_NS).toString());
+      expect(wide.body.error.maxSpan).toBe((7n * DAY_NS).toString());
+      expect(
+        calls
+          .slice(mark10)
+          .filter((c) => ["loggerGaps", "firstTimes", "events", "stateChanges"].includes(c.method)),
+      ).toEqual([]);
     }
     const day = "from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z";
     const mark = calls.length;
@@ -226,14 +254,14 @@ describe("an object scope (add-case-open)", () => {
     expect(gaps.status, JSON.stringify(gaps.body)).toBe(200);
     expect(events.status, JSON.stringify(events.body)).toBe(200);
 
-    // The same answer as a linked scope of that day.
+    // The same answer as a linked scope of that range (the day cut to the object scope).
     const linked = await scopeApp({ adapter: testSource(), dbc: true });
     try {
       const set = await linked.command({
         type: "scope.set",
         dataRef: "testcar",
-        from: "2026-10-01T00:00:00Z",
-        to: "2026-10-02T00:00:00Z",
+        from: SPAN.from,
+        to: SPAN.to,
       });
       expect(set.status).toBe(200);
       const gapsRef = await linked.get("/api/gaps?dataRef=testcar");
@@ -259,82 +287,43 @@ describe("an object scope (add-case-open)", () => {
     }
   });
 
-  it("loads the object's signal list lazily", async () => {
-    const facts = await testcarFacts();
-    const real = testSource();
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    // The vehicle's own list is the one whose scope is the object scope.
-    const held = new Proxy(real, {
-      get(target, key, receiver) {
-        const member = Reflect.get(target, key, receiver);
-        if (key !== "listSignals")
-          return typeof member === "function" ? member.bind(target) : member;
-        return async (scope?: Scope, abort?: AbortSignal) => {
-          if (scope && scope.from === facts.first && scope.to === facts.end) await gate;
-          return target.listSignals(scope, abort);
-        };
-      },
-    });
-    const { t, id, log } = await unlinked({ adapter: held as unknown as SourceAdapter });
-    const unlinkedAt = Date.now();
-    await unlink(t.anon, id);
-    // Unlink did not wait for the list.
-    expect(Date.now() - unlinkedAt).toBeLessThan(5000);
-
-    const partial = await t.anon.get(`/api/w/${id}/catalog`);
-    expect(partial.status, JSON.stringify(partial.body)).toBe(200);
-    expect(partial.body.partial).toBe(true);
-    const sessionIds = (partial.body.items as { id: string }[]).map((s) => s.id);
+  it("keeps the session's signal list while unlinked", async () => {
+    const { t, id, calls } = await unlinked();
+    // The linked session's own list, as the catalog route answers it before Unlink.
+    const linkedList = await t.anon.get(`/api/w/${id}/catalog`);
+    expect(linkedList.status, JSON.stringify(linkedList.body)).toBe(200);
+    const sessionIds = (linkedList.body.items as { id: string }[]).map((item) => item.id);
     expect(sessionIds.length).toBeGreaterThan(0);
-    expect(sessionIds.every((s) => s.startsWith("testcar/"))).toBe(true);
+    await quiet(calls);
 
-    // The vehicle's list was asked in the background class.
-    await vi.waitFor(() =>
-      expect(
-        log.some(
-          (c) =>
-            c.method === "listSignals" &&
-            (c.args[0] as Scope | undefined)?.from === facts.first &&
-            (c.args[0] as Scope | undefined)?.to === facts.end,
-        ),
-      ).toBe(true),
-    );
-    const vehicleList = log.find(
-      (c) =>
-        c.method === "listSignals" &&
-        (c.args[0] as Scope | undefined)?.from === facts.first &&
-        (c.args[0] as Scope | undefined)?.to === facts.end,
-    );
-    expect(vehicleList?.cls).toBe("background");
-
-    release();
-    await vi.waitFor(
-      async () => {
-        const full = await t.anon.get(`/api/w/${id}/catalog`);
-        expect(full.status).toBe(200);
-        expect(full.body.partial).toBeUndefined();
-        expect(full.body.items.length).toBeGreaterThan(sessionIds.length);
-        const all = new Set((full.body.items as { id: string }[]).map((s) => s.id));
-        for (const known of sessionIds) expect(all.has(known)).toBe(true);
-      },
-      { timeout: 20_000, interval: 200 },
-    );
+    await unlink(t.anon, id);
+    const mark = calls.length;
+    const read = async () => {
+      const answer = await t.anon.get(`/api/w/${id}/catalog`);
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect(answer.body.partial).toBe(true);
+      expect((answer.body.items as { id: string }[]).map((item) => item.id)).toEqual(sessionIds);
+    };
+    await read();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await read();
+    // /api/signals answers from the same list.
+    const signals = await t.anon.get(`/api/w/${id}/signals?q=sig`);
+    expect(signals.status, JSON.stringify(signals.body)).toBe(200);
+    // The source got no listSignals call after the unlink.
+    expect(calls.slice(mark).filter((c) => c.method === "listSignals")).toEqual([]);
   });
 
-  it("sends no query without a data ref and a time range while unlinked", async () => {
+  it("sends no query over the whole vehicle while unlinked", async () => {
     const { t, id, calls } = await unlinked();
     await unlink(t.anon, id);
-    const { workspace } = await stateOf(t.anon, id);
-    const scope = workspace.scope as { from: string; to: string };
-    const day = "from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z";
+    const mark = calls.length;
     const base = `/api/w/${id}`;
+    const day = "from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z";
+    const hour = `from=${at(1, 0)}&to=${at(2, 0)}`;
     const urls = [
-      "/density?dataRef=testcar",
       `/density?dataRef=testcar&${day}`,
-      `/series?signal=testcar/Fast_100h.SIG_A&from=${scope.from}&to=${scope.to}`,
+      `/series?signal=testcar/Fast_100h.SIG_A&${hour}`,
       `/gaps?dataRef=testcar&${day}`,
       `/events?dataRef=testcar&${day}`,
       "/catalog",
@@ -343,22 +332,15 @@ describe("an object scope (add-case-open)", () => {
       const answer = await t.anon.get(`${base}${url}`);
       expect(answer.status, `${url}: ${JSON.stringify(answer.body)}`).toBe(200);
     }
-    // Let background work (the vehicle's list, prefetches) start and finish.
-    let seen = -1;
-    while (seen !== calls.length) {
-      seen = calls.length;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+    // Let background work (prefetches) start and finish.
+    await quiet(calls, 500);
 
-    const from = BigInt(scope.from);
-    const to = BigInt(scope.to);
-    let extents = 0;
-    for (const call of calls) {
+    const from = BigInt(SPAN.from);
+    const to = BigInt(SPAN.to);
+    for (const call of calls.slice(mark)) {
       if (call.method === "ping") continue;
-      if (isExtentCall(call)) {
-        extents++;
-        continue;
-      }
+      // No extent query and no signal list over the object scope.
+      expect(call.method, "no refExtent while unlinked").not.toBe("refExtent");
       if (["raw", "buckets", "count"].includes(call.method)) {
         const [ref, start, end] = call.args as [{ dataRef: string }, bigint, bigint];
         expect(ref.dataRef).toBe("testcar");
@@ -369,7 +351,17 @@ describe("an object scope (add-case-open)", () => {
       const given = scopeOfCall(call);
       expect(given, `${call.method} has a scope`).toBeDefined();
       expect(given?.dataRef).toBe("testcar");
+      // No scope wider than the scan bound's 7 d, and none over the whole object scope.
+      expect(
+        (given as Scope).to - (given as Scope).from,
+        `${call.method} span`,
+      ).toBeLessThanOrEqual(7n * DAY_NS);
+      if (call.method === "listSignals") {
+        expect(
+          given?.from === from && given?.to === to,
+          "no listSignals over the object scope",
+        ).toBe(false);
+      }
     }
-    expect(extents).toBeLessThanOrEqual(1);
   });
 });

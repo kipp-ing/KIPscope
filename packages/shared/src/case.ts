@@ -35,9 +35,10 @@ export const CASE_LIST_ROWS = 500;
 /** Request header; the only accepted value is "preload". */
 export const CLASS_HEADER = "x-kipscope-class";
 export const DAY_NS = 86_400_000_000_000n;
-/** K11 */
-export const WORK_HALF_MAX_NS = 15n * DAY_NS;
-/** Route limit for a work window (K11). */
+const HOUR_NS = 3_600_000_000_000n;
+/** Shortest work window (design B3). */
+export const WORK_MIN_NS = 6n * HOUR_NS;
+/** Widest window of /api/calendar and of a `case drives` range (K11, D-089). */
 export const WORK_SPAN_MAX_NS = 32n * DAY_NS;
 
 /** Object name as the finder sends it (a VIN): 1–128 characters, no control characters. */
@@ -278,34 +279,60 @@ export function rebindSignalId(signalId: string, toRef: string): string {
   return parsed ? `${toRef}/${parsed.name}` : signalId;
 }
 
-const floorDay = (t: bigint) => {
-  const r = t % DAY_NS;
-  return r < 0n ? t - r - DAY_NS : t - r;
+const floorHour = (t: bigint) => {
+  const r = t % HOUR_NS;
+  return r < 0n ? t - r - HOUR_NS : t - r;
 };
-const ceilDay = (t: bigint) => {
-  const f = floorDay(t);
-  return f === t ? t : f + DAY_NS;
+const ceilHour = (t: bigint) => {
+  const f = floorHour(t);
+  return f === t ? t : f + HOUR_NS;
 };
 
 /**
- * The work window of a view in an object scope (K11): one view span (at least a day, at most
- * WORK_HALF_MAX_NS) on each side; wider than WORK_SPAN_MAX_NS − 2 d → that width centred on the
- * view; on whole UTC days; inside the scope.
+ * The work window of a view in an object scope (design B3): one view span on each side; shorter
+ * than WORK_MIN_NS → WORK_MIN_NS centred on the view; longer than `maxSpanNs` − 2 h → that width
+ * centred on the view's centre; on whole UTC hours (so at most `maxSpanNs`); inside the scope.
  */
-export function workWindow(view: TimeRange, scope: WorkspaceScope): TimeRange {
+export function workWindow(view: TimeRange, scope: WorkspaceScope, maxSpanNs: bigint): TimeRange {
   const vFrom = BigInt(view.from);
   const vTo = BigInt(view.to);
-  const half = minBig(maxBig(vTo - vFrom, DAY_NS), WORK_HALF_MAX_NS);
-  let from = vFrom - half;
-  let to = vTo + half;
-  const widest = WORK_SPAN_MAX_NS - 2n * DAY_NS;
+  const centre = (vFrom + vTo) / 2n;
+  const span = vTo - vFrom;
+  let from = vFrom - span;
+  let to = vTo + span;
+  const widest = maxSpanNs - 2n * HOUR_NS;
+  if (to - from < WORK_MIN_NS) {
+    from = centre - WORK_MIN_NS / 2n;
+    to = from + WORK_MIN_NS;
+  }
   if (to - from > widest) {
-    from = (vFrom + vTo) / 2n - widest / 2n;
+    from = centre - widest / 2n;
     to = from + widest;
   }
-  from = maxBig(floorDay(from), BigInt(scope.from));
-  to = minBig(ceilDay(to), BigInt(scope.to));
+  from = maxBig(floorHour(from), BigInt(scope.from));
+  to = minBig(ceilHour(to), BigInt(scope.to));
   return { from: from.toString(), to: to.toString() };
+}
+
+/**
+ * The object scope of Unlink (design B4): the union of caseScope(entry, pad) over the catalog's
+ * entries on `dataRef`, widened to hold `current`, with `object: true`. No source query.
+ */
+export function objectSpan(
+  cases: Pick<CaseCatalog, "entries">,
+  dataRef: string,
+  current: WorkspaceScope,
+  pad: bigint,
+): WorkspaceScope {
+  let from = BigInt(current.from);
+  let to = BigInt(current.to);
+  for (const entry of cases.entries) {
+    if (entry.dataRef !== dataRef) continue;
+    const s = caseScope(entry, pad);
+    from = minBig(from, BigInt(s.from));
+    to = maxBig(to, BigInt(s.to));
+  }
+  return { dataRef, from: from.toString(), to: to.toString(), object: true };
 }
 
 /** base64url of deflate-raw of the document's JSON, as encodeViewLink. */

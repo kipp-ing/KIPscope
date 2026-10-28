@@ -1,9 +1,9 @@
 /**
  * Measures the queries of an object scope (add-case-open design K11, M1 … M7) on a large history,
- * through the server's own source and query code (not raw SQL): `ObjectExtents`, `DensityCache`,
- * `Catalog`, `querySeries`, `GapCache` and `EventsCache`, over `completeSource` of the real
- * adapter. Each query runs once as a warm-up and three times timed, on fresh caches; the median
- * is compared with its goal.
+ * through the server's own source and query code (not raw SQL): the source's `refExtent`,
+ * `DensityCache`, `Catalog`, `querySeries`, `GapCache` and `EventsCache`, over `completeSource` of
+ * the real adapter. Each query runs once as a warm-up and three times timed, on fresh caches; the
+ * median is compared with its goal.
  *
  * Needs the history of `seed-long.ts` (data ref `longcar` by default):
  *   pnpm --filter @kipscope/server seed:long [-- --adx]
@@ -23,14 +23,13 @@ import { TIME_MAX, TIME_MIN, type TimeRange, workWindow } from "@kipscope/shared
 import { AdxSource } from "../src/adx.ts";
 import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource, createClickHouseClient } from "../src/clickhouse.ts";
-import type { EventMapping, TableMapping } from "../src/config.ts";
+import { DEFAULT_SCAN_SPAN, type EventMapping, type TableMapping } from "../src/config.ts";
 import type { DataSource, SourceAdapter } from "../src/datasource.ts";
 import { DensityCache } from "../src/density.ts";
 import { EventsCache } from "../src/events.ts";
 import { completeSource } from "../src/fallbacks.ts";
 import { GapCache } from "../src/gaps.ts";
 import { KustoClient } from "../src/kusto.ts";
-import { ObjectExtents } from "../src/objectScope.ts";
 import { querySeries } from "../src/series.ts";
 import { adxEventMapping, adxMapping, TEST_ADX_DATABASE, testAdxUrl } from "../test/adxdb.ts";
 import { testEventMapping, testMapping } from "../test/testdb.ts";
@@ -145,12 +144,11 @@ const view: TimeRange = {
   from: (middle - 15n * DAY).toString(),
   to: (middle + 15n * DAY).toString(),
 };
-const wide = workWindow(view, {
-  dataRef: ref,
-  from: scope.from.toString(),
-  to: scope.to.toString(),
-  object: true,
-});
+const wide = workWindow(
+  view,
+  { dataRef: ref, from: scope.from.toString(), to: scope.to.toString(), object: true },
+  DEFAULT_SCAN_SPAN,
+);
 const window = { dataRef: ref, from: BigInt(wide.from), to: BigInt(wide.to) };
 
 // The vehicle's own signal list (M4) also serves the gap and events caches.
@@ -161,12 +159,19 @@ const measures: Measure[] = [
   {
     id: "M1",
     name: "object extent",
-    run: () => new ObjectExtents(source).get(ref),
+    run: () => source.refExtent?.(ref, { dataRef: ref, from: TIME_MIN, to: TIME_MAX }),
   },
   {
     id: "M2",
-    name: "coarse density",
-    run: () => new DensityCache(source, () => undefined).get(ref, scope, { coarse: true }),
+    // An object scope has no coarse density any more (speed-up-whole-scans B5): the density of
+    // a plain scope over the vehicle's extent stands in for it.
+    name: "density over the extent",
+    run: () =>
+      new DensityCache(source, () => undefined).get(ref, {
+        dataRef: ref,
+        from: extent.from,
+        to: extent.to,
+      }),
   },
   {
     id: "M3",

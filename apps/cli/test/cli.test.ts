@@ -160,7 +160,8 @@ describe("server address and usage", () => {
       "case align event",
       "case url FILE|- [--trim]",
       "--trim",
-      "case drives",
+      "case drives REF FROM TO",
+      "test aid",
       "--server",
       "--workspace",
       "--token",
@@ -1402,6 +1403,63 @@ describe("scope", () => {
     });
   });
 
+  it("reports a too-wide scope", async () => {
+    // The bound is N, the rows of testcar in [01:00Z, 02:00Z): that scope is accepted, the 10 h
+    // after it (2026-10-01 02:00 … 12:00 local = 00:00Z … 10:00Z) holds more rows.
+    const rows = await testSource().refCount("testcar", { dataRef: "testcar", from: T1, to: T2 });
+    expect(rows).toBeGreaterThan(0);
+    const m = await startMulti({
+      identity: "none",
+      adapter: testSource() as unknown as SourceAdapter,
+      scanRows: rows,
+    });
+    try {
+      const url = ["--server", m.url];
+      const set = await runCli([
+        ...url,
+        "scope",
+        "set",
+        "testcar",
+        "2026-10-01 03:00",
+        "2026-10-01 04:00",
+      ]);
+      expect(set.code, set.stdout.join("")).toBe(0);
+
+      const wide = await runCli([
+        ...url,
+        "scope",
+        "set",
+        "testcar",
+        "2026-10-01 02:00",
+        "2026-10-01 12:00",
+      ]);
+      expect(wide.code).toBe(1);
+      expect(wide.out).toMatchObject({
+        ok: false,
+        outcome: "rejected",
+        error: { code: "too_wide" },
+      });
+      // The message names the rows and the limit; stderr carries the code and the message.
+      expect(wide.out.error.message).toContain("too wide:");
+      expect(wide.out.error.message).toContain(
+        `more than the ${rows.toLocaleString("en-US")} a query may read`,
+      );
+      expect(wide.stderr).toHaveLength(1);
+      expect(wide.stderr[0]).toContain("too_wide");
+      expect(wide.stderr[0]).toContain(wide.out.error.message);
+
+      // The scope stays.
+      const shown = await runCli([...url, "scope", "show"]);
+      expect(shown.out.data.scope).toEqual({
+        dataRef: "testcar",
+        from: T1.toString(),
+        to: T2.toString(),
+      });
+    } finally {
+      await m.close();
+    }
+  });
+
   it("refuses a cursor outside the scope with out_of_scope", async () => {
     await withServer(async (s) => {
       // A cursor beyond the scope's end is refused with the server's code (exit 1).
@@ -1978,14 +2036,24 @@ describe("catalogs (add-case-open K15)", () => {
   });
 
   it("builds a catalog from drives", async () => {
-    // The seeded test DB: drivecar has several drives, testcar one; full mode (the strip needs a catalog).
+    // The seeded test DB: drivecar has several drives on 2026-10-02, testcar one on 2026-10-01.
     m = await startMulti({ identity: "none", adapter: testSource() as unknown as SourceAdapter });
-    const density = (await (await fetch(`${m.url}/api/density?dataRef=drivecar`)).json()) as {
+    const day = "from=2026-10-02T00:00:00Z&to=2026-10-03T00:00:00Z";
+    const density = (await (
+      await fetch(`${m.url}/api/density?dataRef=drivecar&${day}`)
+    ).json()) as {
       drives: { from: string; to: string; rows: number }[];
     };
     expect(density.drives.length).toBeGreaterThan(0);
 
-    const drives = await caseCli(m, "case", "drives", "drivecar");
+    const drives = await caseCli(
+      m,
+      "case",
+      "drives",
+      "drivecar",
+      "2026-10-02T00:00:00Z",
+      "2026-10-03T00:00:00Z",
+    );
     expect(drives.code, drives.stdout.join("")).toBe(0);
     const doc = drives.out.data;
     expect(doc.kipscope).toBe("cases");
@@ -2005,20 +2073,35 @@ describe("catalogs (add-case-open K15)", () => {
     expect(starts).toEqual([...starts].sort((a, b) => (a < b ? -1 : 1)));
 
     // No such vehicle: the server's 404 code, exit 1.
-    const none = await caseCli(m, "case", "drives", "nosuchcar");
+    const none = await caseCli(
+      m,
+      "case",
+      "drives",
+      "nosuchcar",
+      "2026-10-02T00:00:00Z",
+      "2026-10-03T00:00:00Z",
+    );
     expect(none.code).toBe(1);
     expect(none.out.ok).toBe(false);
   });
 
   it("opens drives piped from case drives", async () => {
     m = await startMulti({ identity: "none", adapter: testSource() as unknown as SourceAdapter });
-    const density = (await (await fetch(`${m.url}/api/density?dataRef=testcar`)).json()) as {
+    const day = "from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z";
+    const density = (await (await fetch(`${m.url}/api/density?dataRef=testcar&${day}`)).json()) as {
       drives: unknown[];
     };
     expect(density.drives.length).toBeGreaterThan(0);
-    const drives = await caseCli(m, "case", "drives", "testcar");
+    const drives = await caseCli(
+      m,
+      "case",
+      "drives",
+      "testcar",
+      "2026-10-01T00:00:00Z",
+      "2026-10-02T00:00:00Z",
+    );
     expect(drives.code, drives.stdout.join("")).toBe(0);
-    // `kipscope case drives testcar | kipscope case open -`
+    // `kipscope case drives testcar FROM TO | kipscope case open -`
     pipe(drives.stdout[0] as string);
     const opened = await caseCli(m, "case", "open", "-");
     expect(opened.code, opened.stdout.join("")).toBe(0);
@@ -2029,6 +2112,195 @@ describe("catalogs (add-case-open K15)", () => {
     };
     expect(catalog.entries).toHaveLength(density.drives.length);
     expect(new Set(catalog.entries.map((e) => e.dataRef))).toEqual(new Set(["testcar"]));
+  });
+
+  describe("drives day by day", () => {
+    const H = 3_600_000_000_000n;
+    const D1 = 1790812800000000000n; // 2026-10-01T00:00:00Z
+    const D2 = D1 + 24n * H;
+    const D3 = D2 + 24n * H;
+    let stub: { url: string; asked: { from: bigint; to: bigint }[]; close(): Promise<void> };
+    afterEach(async () => {
+      await stub?.close();
+    });
+
+    /**
+     * A server that answers `/api/density` by the asked range: day 1 with a drive ending at its
+     * end (D2) — 100 rows, day 2 with 422 `too_wide`, day 2's first 6 h part with a drive starting
+     * at its start (50 rows), every other part with no drive. It records the ranges asked and fails
+     * the test when two requests overlap in time.
+     */
+    async function startDensityStub() {
+      const asked: { from: bigint; to: bigint }[] = [];
+      let inFlight = 0;
+      let overlapped = false;
+      const server = createServer((req, res) => {
+        const url = new URL(req.url ?? "/", "http://stub");
+        if (url.pathname !== "/api/density") {
+          res.writeHead(404).end("{}");
+          return;
+        }
+        inFlight++;
+        if (inFlight > 1) overlapped = true;
+        const from = fromIso(url.searchParams.get("from") as string);
+        const to = fromIso(url.searchParams.get("to") as string);
+        asked.push({ from, to });
+        setTimeout(() => {
+          inFlight--;
+          const density = (drives: { from: string; to: string; rows: number }[]) => ({
+            dataRef: "car",
+            first: from.toString(),
+            last: (to - 1n).toString(),
+            width: "1000000000",
+            start: from.toString(),
+            counts: [],
+            grid: "1000000",
+            drives,
+          });
+          let status = 200;
+          let body: unknown;
+          if (from === D1 && to === D2) {
+            body = density([{ from: (D2 - H).toString(), to: D2.toString(), rows: 100 }]);
+          } else if (from === D2 && to === D3) {
+            status = 422;
+            body = {
+              error: {
+                code: "too_wide",
+                message: "too wide: 200,000,000 rows, more than the 150,000,000 a query may read",
+                rows: "200000000",
+                limit: "150000000",
+              },
+            };
+          } else if (from === D2 && to === D2 + 6n * H) {
+            body = density([{ from: D2.toString(), to: (D2 + H).toString(), rows: 50 }]);
+          } else {
+            body = density([]);
+          }
+          res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+        }, 5);
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (typeof address !== "object" || address === null) throw new Error("no address");
+      return {
+        url: `http://127.0.0.1:${address.port}`,
+        asked,
+        overlapped: () => overlapped,
+        close: () =>
+          new Promise<void>((resolve) => {
+            server.closeAllConnections();
+            server.close(() => resolve());
+          }),
+      };
+    }
+
+    it("builds drives day by day and merges at edges", async () => {
+      const started = await startDensityStub();
+      stub = started;
+      const result = await runCli([
+        "--server",
+        started.url,
+        "case",
+        "drives",
+        "car",
+        "2026-10-01T00:00:00Z",
+        "2026-10-03T00:00:00Z",
+      ]);
+      expect(result.code, result.stdout.join("")).toBe(0);
+      // Day 1, day 2, then day 2's four 6 h parts, one at a time in that order.
+      expect(started.asked).toEqual([
+        { from: D1, to: D2 },
+        { from: D2, to: D3 },
+        { from: D2, to: D2 + 6n * H },
+        { from: D2 + 6n * H, to: D2 + 12n * H },
+        { from: D2 + 12n * H, to: D2 + 18n * H },
+        { from: D2 + 18n * H, to: D3 },
+      ]);
+      expect(started.overlapped()).toBe(false);
+      // One session spanning both drives, their rows summed: 2026-10-01T23:00Z … 2026-10-02T01:00Z.
+      expect(result.out.data.cases).toEqual([
+        {
+          id: "car|drive|2026-10-01T23:00:00Z",
+          object: "car",
+          kind: "driving",
+          from: "2026-10-01T23:00:00Z",
+          to: "2026-10-02T01:00:00Z",
+          title: "Drive 1",
+          meta: { rows: 150 },
+        },
+      ]);
+
+      // A missing TO and a range of 33 days are usage errors that send nothing.
+      const before = started.asked.length;
+      const missing = await runCli([
+        "--server",
+        started.url,
+        "case",
+        "drives",
+        "car",
+        "2026-10-01T00:00:00Z",
+      ]);
+      expect(missing.code).toBe(2);
+      const long = await runCli([
+        "--server",
+        started.url,
+        "case",
+        "drives",
+        "car",
+        "2026-10-01T00:00:00Z",
+        "2026-11-03T00:00:00Z",
+      ]);
+      expect(long.code).toBe(2);
+      expect(started.asked.length).toBe(before);
+    });
+
+    it("exits 1 with no_data when there is no drive, and with too_wide when a part is too wide", async () => {
+      const started = await startDensityStub();
+      stub = started;
+      // Day 1 has a drive but the range below has none: day 3 answers the default (no drive).
+      const none = await runCli([
+        "--server",
+        started.url,
+        "case",
+        "drives",
+        "car",
+        "2026-10-03T00:00:00Z",
+        "2026-10-04T00:00:00Z",
+      ]);
+      expect(none.code).toBe(1);
+      expect(none.out).toMatchObject({ ok: false, error: { code: "no_data" } });
+      await started.close();
+
+      // A server whose every density is too wide: the day, then its 6 h parts are refused.
+      const refused = createServer((req, res) => {
+        const body = { error: { code: "too_wide", message: "too wide: x" } };
+        void req;
+        res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(body));
+      });
+      await new Promise<void>((resolve) => refused.listen(0, "127.0.0.1", resolve));
+      const address = refused.address();
+      if (typeof address !== "object" || address === null) throw new Error("no address");
+      stub = {
+        url: "",
+        asked: [],
+        close: () =>
+          new Promise<void>((resolve) => {
+            refused.closeAllConnections();
+            refused.close(() => resolve());
+          }),
+      };
+      const wide = await runCli([
+        "--server",
+        `http://127.0.0.1:${address.port}`,
+        "case",
+        "drives",
+        "car",
+        "2026-10-01T00:00:00Z",
+        "2026-10-02T00:00:00Z",
+      ]);
+      expect(wide.code).toBe(1);
+      expect(wide.out).toMatchObject({ ok: false, error: { code: "too_wide" } });
+    });
   });
 
   /** 2,000 sessions with random-looking ids: far more than a link of 8,192 characters holds. */

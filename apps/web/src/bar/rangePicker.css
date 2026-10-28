@@ -189,6 +189,15 @@
   height: 12px;
 }
 
+/* A day not counted yet (D-118): no bars, a dotted 1 px baseline in slate-300 until it fills in. */
+.range-picker .day-pending {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  left: 5px;
+  border-bottom: 1px dotted var(--control-border);
+}
+
 .range-picker .bar {
   flex: 1 1 0;
   border-radius: 1px 1px 0 0;
@@ -203,6 +212,10 @@
   background: rgb(255 255 255 / 0.65);
 }
 
+.range-picker .day.edge .day-pending {
+  border-color: rgb(255 255 255 / 0.65);
+}
+
 .range-picker .day.edge .bar.drive {
   background: #fff;
 }
@@ -212,7 +225,7 @@
     margin-top: 2px;
   }
 
-  .range-picker .day-bars {
+  .range-picker :is(.day-bars, .day-pending) {
     bottom: 2px;
   }
 }

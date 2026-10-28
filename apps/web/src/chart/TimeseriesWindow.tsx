@@ -33,6 +33,7 @@ import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
 import { ownRangeText } from "../time/rangeLine.ts";
+import { NO_SCOPE } from "../time/scope.ts";
 import { type Cell, formatDeltaT, NO_VALUE } from "../values/format.ts";
 import {
   cellState,
@@ -88,6 +89,7 @@ import {
 } from "./live.ts";
 import {
   isMissing,
+  isTooWideState,
   type LoadRequest,
   loadKey,
   loadStatusText,
@@ -203,6 +205,11 @@ interface Props {
   events?: readonly DiagEvent[];
   /** The workspace has an open catalog: a signal the session lacks reads `not in this session` (K14). */
   inCase?: boolean;
+  /**
+   * Scoped mode without a scope (scope "Scope card"): the plot reads `No scope set`, and the
+   * window sends no request and reports no error.
+   */
+  noScope?: boolean;
 }
 
 const isLeft = (side: AxisSpec["side"]) => side === "L" || side === "L2";
@@ -763,6 +770,7 @@ export function TimeseriesWindow({
   linked,
   events,
   inCase = false,
+  noScope = false,
 }: Props) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [renaming, setRenaming] = useState(false);
@@ -859,7 +867,8 @@ export function TimeseriesWindow({
     () => (dataRefsKey === "" ? [] : dataRefsKey.split("\n")),
     [dataRefsKey],
   );
-  const signalIdsKey = w.signals.map((s) => s.signalId).join("\n");
+  // Without a scope nothing is asked, gap info neither.
+  const signalIdsKey = noScope ? "" : w.signals.map((s) => s.signalId).join("\n");
   const signalIds = useMemo(
     () => (signalIdsKey === "" ? [] : signalIdsKey.split("\n")),
     [signalIdsKey],
@@ -868,7 +877,7 @@ export function TimeseriesWindow({
   // again only when the range leaves the window held.
   const heldWindow = useRef<{ from: string; to: string } | undefined>(undefined);
   heldWindow.current = heldWorkWindow(heldWindow.current, w.range, scopeOfKey(scopeKey));
-  const gapInfo = useGapInfo(signalIds, scopeKey, heldWindow.current);
+  const gapInfo = useGapInfo(signalIds, scopeKey, heldWindow.current, w.range);
   // A computed signal's gaps come from its inputs' periods (add-computed-signals C3).
   const gapsOf = (signalId: string): SignalGaps => {
     const dataRef = parseSignalId(signalId)?.dataRef;
@@ -955,7 +964,7 @@ export function TimeseriesWindow({
     [w.signals, offKey],
   );
   const loadRequests = (from: string, to: string): LoadRequest[] =>
-    width === 0
+    width === 0 || noScope
       ? []
       : requestable.map((s) => ({ key: s.id, signalId: s.signalId, from, to, target }));
   // Loads follow the shown range during the gesture (Z1); the acknowledgement the committed one.
@@ -967,12 +976,12 @@ export function TimeseriesWindow({
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
   const requests = useMemo(
     () => loadRequests(viewFrom, viewTo),
-    [loadKey(w.signals, rangeSets), offKey, viewFrom, viewTo, target, width],
+    [loadKey(w.signals, rangeSets), offKey, viewFrom, viewTo, target, width, noScope],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRequests reads w.signals, target and width
   const committedRequests = useMemo(
     () => loadRequests(w.range.from, w.range.to),
-    [signalsKey, offKey, w.range.from, w.range.to, target, width],
+    [signalsKey, offKey, w.range.from, w.range.to, target, width, noScope],
   );
   // Readout values (D-031): the exact value at each committed cursor from the server, like the
   // values window, inside or outside the zoom (readoutSource). Markers evaluate as line.
@@ -990,14 +999,14 @@ export function TimeseriesWindow({
   const exactRequests = useMemo(
     () =>
       valueRequests(
-        requestable,
+        noScope ? [] : requestable,
         {
           ...(committed.a === undefined ? {} : { a: committed.a }),
           ...(committed.b === undefined ? {} : { b: committed.b }),
         },
         valueMode,
       ),
-    [requestable, committed.a, committed.b, valueMode],
+    [requestable, committed.a, committed.b, valueMode, noScope],
   );
   useEffect(() => values.update(exactRequests), [values, exactRequests]);
   const exactOf = new Map(exactRequests.map((r) => [r.key, r]));
@@ -1671,7 +1680,7 @@ export function TimeseriesWindow({
     loader.settled(committedRequests) &&
     values.settled(exactRequests) &&
     gapInfo.settled &&
-    width > 0;
+    (width > 0 || noScope);
   const errors: RenderError[] = [
     ...w.signals.flatMap((s) => {
       const state = loader.get(s.id);
@@ -1805,7 +1814,9 @@ export function TimeseriesWindow({
           </span>
         ))}
       </div>
-      <div className="plot" ref={plotRef} style={{ height: plotHeight }} />
+      <div className="plot" ref={plotRef} style={{ height: plotHeight }}>
+        {noScope && <span className="plot-note">{NO_SCOPE}</span>}
+      </div>
       <div className="height-handle" title={HINTS.grip} onPointerDown={startHeightDrag} />
       <ul
         className="signals"
@@ -1926,14 +1937,23 @@ export function TimeseriesWindow({
               <span
                 className={`status ${missing ? "missing" : state?.error ? "error" : (state?.status ?? "loading")}`}
                 title={
-                  missing ? missingTitle : state?.error ? loadStatusText(state, inCase) : undefined
+                  missing
+                    ? missingTitle
+                    : isTooWideState(state)
+                      ? state?.error
+                      : state?.error
+                        ? loadStatusText(state, inCase)
+                        : undefined
                 }
               >
+                {/* A too-wide series reads `too wide`, its message as tooltip (series-query). */}
                 {off !== undefined
                   ? MISSING
-                  : !missing && state?.error
-                    ? FAILED_PILL
-                    : loadStatusText(state, inCase)}
+                  : noScope
+                    ? ""
+                    : !missing && state?.error && !isTooWideState(state)
+                      ? FAILED_PILL
+                      : loadStatusText(state, inCase)}
               </span>
               {/* Without a share an empty cell keeps the column; only a shown share is the share. */}
               {sna ? (

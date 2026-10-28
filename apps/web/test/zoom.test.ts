@@ -480,14 +480,14 @@ describe("range stopped at the session edge (add-case-open)", () => {
     expect(SESSION_CLAMP_MESSAGE).toBe(
       "Stopped at the session edge. Unlink shows the whole vehicle.",
     );
-    expect(VEHICLE_CLAMP_MESSAGE).toBe("Stopped at the end of the vehicle's data.");
+    expect(VEHICLE_CLAMP_MESSAGE).toBe("Stopped at the end of the catalog's sessions.");
     const result: CommandResult = { ok: true, revision: 9, clamped: true };
     // With a linked catalog, then with the catalog unlinked.
     expect(slotAfter(undefined, result, { linked: true })?.text).toBe(
       "Stopped at the session edge. Unlink shows the whole vehicle.",
     );
     expect(slotAfter(undefined, result, { linked: false })?.text).toBe(
-      "Stopped at the end of the vehicle's data.",
+      "Stopped at the end of the catalog's sessions.",
     );
     // Without a catalog the scope's message stays.
     expect(slotAfter(undefined, result)?.text).toBe(CLAMP_MESSAGE);

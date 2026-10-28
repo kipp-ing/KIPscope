@@ -23,6 +23,7 @@ import type {
   SourceAdapter,
   StateChangeRule,
 } from "./datasource.ts";
+import { TooWideError } from "./scanBound.ts";
 import { MAX_BUCKET_WIDTH } from "./series.ts";
 
 /** Points per `raw` page of the state-change fallback (≈ 2.4 MB of JSON). */
@@ -98,9 +99,15 @@ const plain = (dataRef: string, name: string): SeriesRef => ({ dataRef, name, sn
 /**
  * Every optional method the adapter lacks, computed from its required ones (design C2); native
  * ones kept as they are. Sits outside the query queue, so each inner query of a fallback takes its
- * own queue slot and carries the caller's abort (design C3).
+ * own queue slot and carries the caller's abort (design C3). With `scanRows`, the `series`
+ * fallback refuses a range of more rows with TooWideError before `raw` or `buckets`
+ * (speed-up-whole-scans B9); a native `series` is not checked.
  */
-export function completeSource(adapter: SourceAdapter): DataSource {
+export function completeSource(
+  adapter: SourceAdapter,
+  options: { scanRows?: number } = {},
+): DataSource {
+  const { scanRows } = options;
   const source: DataSource = {
     info: adapter.info,
     ping: adapter.ping.bind(adapter),
@@ -141,6 +148,8 @@ export function completeSource(adapter: SourceAdapter): DataSource {
       adapter.series?.bind(adapter) ??
       (async (ref, from, to, target, width, scope, abort) => {
         const n = await source.count(ref, from, to, abort);
+        if (scanRows !== undefined && n > scanRows)
+          throw new TooWideError({ rows: n, limit: scanRows });
         if (n <= target) {
           const [points, before, after] = await Promise.all([
             adapter.raw(ref, from, to, undefined, abort),

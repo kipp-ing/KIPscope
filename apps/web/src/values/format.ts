@@ -42,7 +42,7 @@ export function loadingCell(previous: Cell): Cell {
 
 /** The status of a values row from one of its requests (design DW13). */
 export interface RowStatus {
-  /** "" while loading or complete, `missing`, or `failed: <message>`. */
+  /** "" while loading or complete, `missing`, `too wide`, or `failed: <message>`. */
   text: string;
   title?: string;
   tone: "none" | "muted" | "error";
@@ -51,7 +51,9 @@ export interface RowStatus {
 /**
  * A values row's status (values-window "Missing signal in a values row"): a 404 `unknown_signal`
  * (the shown data ref lacks the signal) reads `missing`, muted, with `Missing: <dataRef> has no
- * signal <name>` as tooltip; any other failure `failed: <message>`; else nothing.
+ * signal <name>` as tooltip; a 422 `too_wide` reads `too wide`, muted, so its cells show `—` with
+ * the server's message as tooltip (series-query "Value when its gap info is too wide"); any other
+ * failure `failed: <message>`; else nothing.
  */
 export function valueRowStatus(
   state: ValueState | undefined,
@@ -61,6 +63,9 @@ export function valueRowStatus(
   if (state?.status !== "error") return { text: "", tone: "none" };
   if (state.errorStatus === 404 && state.errorCode === "unknown_signal") {
     return { text: "missing", title: HINTS.missing(dataRef, name), tone: "muted" };
+  }
+  if (state.errorCode === "too_wide") {
+    return { text: "too wide", title: state.error ?? "too wide", tone: "muted" };
   }
   const message = state.error ?? "error";
   return { text: `failed: ${message}`, title: message, tone: "error" };

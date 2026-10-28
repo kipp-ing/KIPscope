@@ -2,6 +2,7 @@ import { type BucketSeries, encodeTimes, type GapInfo, type RawSeries } from "@k
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setComputedDefs } from "../src/api.ts";
 import { bandsIn, GAP_RETRY_MS, GapInfoStore } from "../src/chart/gaps.ts";
+import { apiError } from "./apiError.ts";
 
 /** 5 min (design G9 (c)); a literal so that the test does not depend on the product constant. */
 const REFRESH_MS = 300_000;
@@ -303,6 +304,82 @@ describe("gap info refetch", () => {
     release();
     await vi.advanceTimersByTimeAsync(REFRESH_MS * 3);
     expect(fetchInfo).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("gap info within the scan bound (speed-up-whole-scans)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const WIDE =
+    "too wide: 230,000,000 rows, more than the 150,000,000 a query may read; choose a shorter range";
+  type Fetch = (
+    dataRef: string,
+    signals: readonly string[],
+    window?: { from: string; to: string },
+  ) => Promise<GapInfo>;
+
+  it("settles with a too-wide error", async () => {
+    const wide = await apiError(422, "too_wide", WIDE);
+    const fetchInfo = vi.fn<Fetch>().mockRejectedValue(wide);
+    const store = new GapInfoStore(fetchInfo);
+    const listener = vi.fn();
+    const release = store.ask([CYC], listener);
+    await vi.advanceTimersByTimeAsync(0);
+    // The window's state is settled and carries the server's message (the window prefixes it with
+    // `gap info for <ref> unavailable: `).
+    const state = store.state([CYC]);
+    expect(state.settled).toBe(true);
+    expect(state.errors).toEqual([{ dataRef: "gapcar", message: WIDE }]);
+    expect(state.infos.size).toBe(0);
+    expect(listener).toHaveBeenCalled();
+    expect(fetchInfo).toHaveBeenCalledTimes(1);
+
+    // Not again after the 30 s failure retry, but after the 5 min refresh interval.
+    await vi.advanceTimersByTimeAsync(GAP_RETRY_MS * 2);
+    expect(fetchInfo).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(REFRESH_MS - GAP_RETRY_MS * 2 - 1);
+    expect(fetchInfo).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchInfo).toHaveBeenCalledTimes(2);
+    release();
+  });
+
+  it("falls back to the shown range after a too-wide work window", async () => {
+    // An object scope: the work window is 6 h around the 10-minute view at 2026-10-03 00:00:00Z.
+    const view = { from: "1790985600000000000", to: "1790986200000000000" };
+    const window = { from: "1790967600000000000", to: "1790989200000000000" }; // 2026-10-02T19:00Z … 2026-10-03T01:00Z
+    const wide = await apiError(422, "too_wide", WIDE);
+    const answer: GapInfo = { ...INFO };
+    const fetchInfo = vi.fn<Fetch>().mockRejectedValueOnce(wide).mockResolvedValueOnce(answer);
+    const store = new GapInfoStore(fetchInfo);
+    const release = store.ask([CYC], vi.fn(), "gapcar|1|2|object", window, view);
+    await vi.advanceTimersByTimeAsync(0);
+    // The first request carries the work window, the second exactly the shown range.
+    expect(fetchInfo).toHaveBeenCalledTimes(2);
+    expect(fetchInfo.mock.calls[0]?.[2]).toEqual(window);
+    expect(fetchInfo.mock.calls[1]?.[2]).toEqual(view);
+    // The window's state is settled with that answer and no error.
+    const state = store.state([CYC], "gapcar|1|2|object", window);
+    expect(state.settled).toBe(true);
+    expect(state.errors).toEqual([]);
+    expect(state.infos.get("gapcar")).toEqual(answer);
+    release();
+
+    // Had the second answered too wide too, the state would carry that error.
+    const again = vi.fn<Fetch>().mockRejectedValue(wide);
+    const second = new GapInfoStore(again);
+    const releaseSecond = second.ask([CYC], vi.fn(), "gapcar|1|2|object", window, view);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(again).toHaveBeenCalledTimes(2);
+    expect(again.mock.calls[1]?.[2]).toEqual(view);
+    const failed = second.state([CYC], "gapcar|1|2|object", window);
+    expect(failed.settled).toBe(true);
+    expect(failed.errors).toEqual([{ dataRef: "gapcar", message: WIDE }]);
+    // No third request before the refresh interval.
+    await vi.advanceTimersByTimeAsync(GAP_RETRY_MS * 2);
+    expect(again).toHaveBeenCalledTimes(2);
+    releaseSecond();
   });
 });
 

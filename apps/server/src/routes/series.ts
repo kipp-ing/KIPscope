@@ -27,6 +27,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppDeps } from "../app.ts";
 import { CalendarCache } from "../calendar.ts";
+import { fillAhead } from "../calendarDays.ts";
 import { queryComputed, type ResolvedComputed, resolveComputed, withSeed } from "../computed.ts";
 import type { ComputedRef, RawPoint, Scope, SeriesRef, SignalRef } from "../datasource.ts";
 import { type CacheScope, DensityCache, type DensityPart } from "../density.ts";
@@ -43,10 +44,12 @@ import {
   parseInput,
   routeScope,
   scopeHolders,
+  tooWide,
   withRequestClass,
 } from "../http.ts";
 import { WorkWindowError, workWindowOf } from "../objectScope.ts";
 import { withPriority } from "../priority.ts";
+import { TooWideError } from "../scanBound.ts";
 import { linkedScopeOf, openScopes, sourceScope } from "../scope.ts";
 import { edgePoint, MAX_TARGET, MIN_TARGET, querySeries, textLabel } from "../series.ts";
 import type { WorkspaceEntry, Workspaces } from "../workspaces.ts";
@@ -240,7 +243,7 @@ function cut(range: Scope, scope: Scope | undefined): Scope | undefined {
 export const seriesRoutes =
   (deps: AppDeps): FastifyPluginAsync =>
   async (app) => {
-    const { catalog, source, workspaces } = deps;
+    const { catalog, source, workspaces, bound } = deps;
     const catalogs = catalogsOf(deps);
     const holders = scopeHolders(deps);
     // A scope's caches follow that scope's signal list (add-scope Z9).
@@ -253,15 +256,20 @@ export const seriesRoutes =
           ? catalogs.own(workspaceScope(scope))?.loadedAt
           : scopeCatalog(scope)?.loadedAt
         : catalog.loadedAt;
-    const density = new DensityCache(source, loadedAt);
-    // The range picker's calendar follows the same catalog loads (add-range-picker R3).
-    const calendar = new CalendarCache(source, loadedAt);
+    // Every density and gap info checks its range against the scan bound first (B2).
+    const density = new DensityCache(source, loadedAt, bound);
+    // The range picker's calendar follows the same catalog loads (add-range-picker R3); object
+    // scopes and full mode without a scope answer from the vehicle-days (B6).
+    const calendar = new CalendarCache(source, loadedAt, deps.calendarDays);
+    // The open workspaces' shown months are counted ahead, at idle (B6).
+    const stopFill = fillAhead(deps.calendarDays, workspaces);
     // Periods are measured for the open workspaces' signals and the requests' only (design P6, M9).
-    const gaps = new GapCache(source, catalog, () => openSignals(workspaces), scopeCatalog);
+    const gaps = new GapCache(source, catalog, () => openSignals(workspaces), scopeCatalog, bound);
     const warn = (message: string) => app.log.warn(message);
     // Gap info polls (design G9 (b)): a setTimeout chain, each poll GAP_REFRESH_MS after the
     // previous poll or the catalog load's prefetch ended, so polls never overlap each other or a
-    // prefetch and at most one gap recompute runs at a time.
+    // prefetch and at most one gap recompute runs at a time. Only gap info within the scan bound is
+    // held, so only that is polled (D-117).
     let closed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     /** Work windows whose gap info a request asked for (K11): a new one schedules the poll. */
@@ -305,6 +313,7 @@ export const seriesRoutes =
     // gap info follows the density, so carserver sees one full scan at a time (design G6); a newer
     // load starts its own run, after a running poll ended. The whole chain runs as background
     // (design P9), so a request never waits for it; a request that joins its work raises that (P4).
+    // Data refs over the scan bound cost one count each and are left to a request (B7).
     const stopPrefetch = catalog.onLoaded(() =>
       withPriority("background", () => {
         const loadedAt = catalog.loadedAt;
@@ -323,21 +332,19 @@ export const seriesRoutes =
     );
     // After a scope's list loads: its density, then its gap info, one after another and before the
     // scope's events (add-scope Z9), as background work (preload after a preview's load, K10);
-    // then the poll is scheduled. An object scope gets its coarse density only: its gap info
-    // follows the asked work windows (K11).
+    // then the poll is scheduled. An object scope gets none: its density and gap info follow the
+    // asked work windows (K11, speed-up-whole-scans B5).
     const stopScopePrefetch = catalogs.onLoaded((scope) => {
-      const object = isObjectScope(scope, workspaces);
+      if (isObjectScope(scope, workspaces)) return;
       const s: CacheScope = sourceScope(scope);
-      if (object) s.object = true;
       chainPrefetch(deps, async () => {
         // Checked again when the job runs: the workspace may have unlinked meanwhile (K11).
-        if (!object && !wantsScopePrefetch(scope, holders())) return;
+        if (!wantsScopePrefetch(scope, holders())) return;
         try {
-          await density.get(s.dataRef, s, object ? { coarse: true } : undefined);
+          await density.get(s.dataRef, s);
         } catch (error) {
           warn(`density prefetch for ${s.dataRef} failed: ${String(error)}`);
         }
-        if (object) return;
         await polling;
         // The scope may have turned into an unlinked workspace's stand-in list meanwhile (K11).
         if (!wantsScopePrefetch(scope, holders())) return;
@@ -346,12 +353,14 @@ export const seriesRoutes =
       });
     });
     // A preview's warm work (K10), in the preview's class: the session's density, then the gap
-    // info of the workspace's window signals; an object scope has no gap info of its own (K11).
+    // info of the workspace's window signals; an object scope has neither of its own (K11, B5).
     const stopWarmer = addScopeWarmer(deps, async (scope, signals) => {
-      await density.get(scope.dataRef, scope, scope.object ? { coarse: true } : undefined);
-      if (!scope.object) await gaps.get(scope.dataRef, signals, scope);
+      if (scope.object) return;
+      await density.get(scope.dataRef, scope);
+      await gaps.get(scope.dataRef, signals, scope);
     });
     app.addHook("onClose", async () => {
+      stopFill();
       stopPrefetch();
       stopScopePrefetch();
       stopWarmer();
@@ -361,43 +370,62 @@ export const seriesRoutes =
 
     /**
      * Rows per bucket of a data ref over its whole extent (spec time-strip); with `from` and `to`
-     * over that part of the scope, and in an object scope without them coarse (add-case-open K11).
+     * over that part of the scope (add-case-open K11), which an object scope needs (B5). In scoped
+     * mode without a scope, `from` and `to` are the request's own window (B10). Within the scan
+     * bound, else 422 `too_wide`.
      */
     app.get("/api/density", { config: { access: DENSITY_ACCESS } }, async (request, reply) => {
       const query = parseInput(DensityQuery, request.query, reply);
       if (!query) return reply;
-      const { dataRef } = query;
-      const scoped = routeScope(deps, request, reply);
+      const { dataRef, from, to } = query;
+      const own: Scope | undefined =
+        from !== undefined && to !== undefined ? { dataRef, from, to } : undefined;
+      const scoped = routeScope(deps, request, reply, own ? { ownWindow: own } : {});
       if (!scoped) return reply;
       const scope = scoped.source;
       if (scope && dataRef !== scope.dataRef) {
         return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
       }
-      const object = scoped.scope?.object === true;
       let part: DensityPart | undefined;
-      if (query.from !== undefined && query.to !== undefined) {
+      if (own && scoped.scope) {
         let window: Scope | undefined;
         try {
-          const w = workWindowOf(query, scoped.scope);
-          window = w ? { dataRef, ...w } : cut({ dataRef, from: query.from, to: query.to }, scope);
+          const w = workWindowOf(own, scoped.scope, bound.spanNs);
+          window = w ? { dataRef, ...w } : cut(own, scope);
         } catch (error) {
           if (error instanceof WorkWindowError)
             return apiError(reply, 400, "invalid_request", error.message);
+          if (error instanceof TooWideError) return tooWide(reply, error);
           throw error;
         }
         if (!window) return outOfScope(reply, "the range lies outside the scope");
         part = { window };
-      } else if (object) part = { coarse: true };
+      } else if (own && !scope) {
+        // Full mode without a scope: that window of the data ref.
+        part = { window: own };
+      } else if (scoped.scope?.object) {
+        // No coarse density over the whole vehicle (B5).
+        return apiError(
+          reply,
+          400,
+          "invalid_request",
+          "from and to are required in an object scope (the work window)",
+        );
+      }
+      // Else the whole scope, the whole data ref (full mode), or the request's own window
+      // (scoped mode without a scope), which `scope` then is.
       const visible = scoped.catalog;
       if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
         // Shared and cached, so a client close does not abort it (design T7).
-        const body = await density.get(dataRef, scoped.scope && cacheScopeOf(scoped.scope), part);
+        const cacheScope = scoped.scope ? cacheScopeOf(scoped.scope) : scope;
+        const body = await density.get(dataRef, cacheScope, part);
         if (!body) return apiError(reply, 404, "no_data", `no data for data ref: ${dataRef}`);
         return body;
       } catch (error) {
+        if (error instanceof TooWideError) return tooWide(reply, error);
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
       }
@@ -422,11 +450,20 @@ export const seriesRoutes =
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
-        // Shared and cached, so a client close does not abort it (as the density, design T7).
-        return await withRequestClass(request, () =>
-          calendar.get(dataRef, query.from, query.to, scoped.scope && cacheScopeOf(scoped.scope)),
-        );
+        // Shared and cached, so a client close does not abort it (as the density, design T7). A
+        // plain scope's single bucket query goes behind the bound, sharing the scope's count (B2,
+        // B6); the vehicle-days count themselves.
+        return await withRequestClass(request, async () => {
+          if (scope && !scoped.scope?.object) await bound.check(dataRef, scope);
+          return calendar.get(
+            dataRef,
+            query.from,
+            query.to,
+            scoped.scope && cacheScopeOf(scoped.scope),
+          );
+        });
       } catch (error) {
+        if (error instanceof TooWideError) return tooWide(reply, error);
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
       }
@@ -454,11 +491,12 @@ export const seriesRoutes =
       }
       let window: Scope | undefined;
       try {
-        const w = workWindowOf(query, scoped.scope);
+        const w = workWindowOf(query, scoped.scope, bound.spanNs);
         if (w) window = { dataRef, ...w };
       } catch (error) {
         if (error instanceof WorkWindowError)
           return apiError(reply, 400, "invalid_request", error.message);
+        if (error instanceof TooWideError) return tooWide(reply, error);
         throw error;
       }
       // Periods come from the catalog, so there is no gap info without one.
@@ -485,6 +523,7 @@ export const seriesRoutes =
         // Shared and cached, so a client close does not abort it.
         return await gaps.get(dataRef, signal, scoped.scope && cacheScopeOf(scoped.scope), window);
       } catch (error) {
+        if (error instanceof TooWideError) return tooWide(reply, error);
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message);
       }
@@ -642,7 +681,7 @@ export const seriesRoutes =
               ref.dataRef,
               inputs.map((i) => `${i.dataRef}/${i.name}`),
               scoped.scope && cacheScopeOf(scoped.scope),
-              rangeWindow(from, to, scoped.scope),
+              rangeWindow(from, to, scoped.scope, bound.spanNs),
             );
             const computedRef: ComputedRef = {
               dataRef: ref.dataRef,
@@ -684,6 +723,8 @@ export const seriesRoutes =
         // The fallback's row cap (design C8): the caller zooms in.
         if (error instanceof ComputedTooLargeError)
           return apiError(reply, 422, "computed_too_large", message, range);
+        // The series fallback's or the gap info's scan bound (B2, B9).
+        if (error instanceof TooWideError) return tooWide(reply, error);
         return apiError(reply, 502, "source_error", message, range);
       }
     });
@@ -742,7 +783,7 @@ export const seriesRoutes =
               signalRef.dataRef,
               inputs.map((i) => `${i.dataRef}/${i.name}`),
               scoped.scope && cacheScopeOf(scoped.scope),
-              valueWindow(query.t, scoped.scope),
+              valueWindow(query.t, scoped.scope, bound.spanNs),
             ),
           ]);
           const near = (i: number) => {
@@ -776,6 +817,8 @@ export const seriesRoutes =
           return body;
         } catch (error) {
           if (controller.signal.aborted) return reply;
+          // Without bounded gap info there is no value (series-query "Value when its gap info is too wide").
+          if (error instanceof TooWideError) return tooWide(reply, error);
           const message = error instanceof Error ? error.message : String(error);
           return apiError(reply, 502, "source_error", message, details);
         }
@@ -806,7 +849,7 @@ export const seriesRoutes =
             info.dataRef,
             [query.signal],
             scoped.scope && cacheScopeOf(scoped.scope),
-            valueWindow(query.t, scoped.scope),
+            valueWindow(query.t, scoped.scope, bound.spanNs),
           ),
         ]);
         // State names (add-events N2): the row text of a text signal, else the VAL_ label.
@@ -837,24 +880,35 @@ export const seriesRoutes =
         return body;
       } catch (error) {
         if (controller.signal.aborted) return reply;
+        if (error instanceof TooWideError) return tooWide(reply, error);
         const message = error instanceof Error ? error.message : String(error);
         return apiError(reply, 502, "source_error", message, details);
       }
     });
   };
 
-/** The work window of `[t, t + 1 ns)` in an object scope (add-case-open K11); else undefined. */
-const valueWindow = (t: bigint, scope: WorkspaceScope | undefined): Scope | undefined =>
-  rangeWindow(t, t + 1n, scope);
+/**
+ * The work window of `[t, t + 1 ns)` in an object scope (add-case-open K11), at most `maxSpanNs`
+ * (B3); else undefined.
+ */
+const valueWindow = (
+  t: bigint,
+  scope: WorkspaceScope | undefined,
+  maxSpanNs: bigint,
+): Scope | undefined => rangeWindow(t, t + 1n, scope, maxSpanNs);
 
-/** The work window of `[from, to)` in an object scope (add-case-open K11); else undefined. */
+/**
+ * The work window of `[from, to)` in an object scope (add-case-open K11), at most `maxSpanNs`
+ * (B3); else undefined.
+ */
 function rangeWindow(
   from: bigint,
   to: bigint,
   scope: WorkspaceScope | undefined,
+  maxSpanNs: bigint,
 ): Scope | undefined {
   if (!scope?.object) return undefined;
-  const w = workWindow({ from: from.toString(), to: to.toString() }, scope);
+  const w = workWindow({ from: from.toString(), to: to.toString() }, scope, maxSpanNs);
   return { dataRef: scope.dataRef, from: BigInt(w.from), to: BigInt(w.to) };
 }
 

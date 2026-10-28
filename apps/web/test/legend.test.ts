@@ -71,6 +71,19 @@ describe("SNA column and row structure (D-095, DW12 Probe during a step)", () =>
     expect(row).toMatch(/className="remove"/);
   });
 
+  it("shows a too-wide series as `too wide` in the same status cell, its message as the title", () => {
+    // Series-query "Series within the row budget": the cell is the one every state uses (fixed
+    // width, tested above), so `too wide` moves no column; its title is the answer's message and
+    // the pill text is `too wide`, not the generic `failed`.
+    expect(row.length).toBeGreaterThan(0);
+    const status = row.slice(row.indexOf("className={`status "));
+    expect(status).toMatch(/isTooWideState\(state\)\s*\?\s*state\?\.error/);
+    expect(status).toMatch(/state\?\.error && !isTooWideState\(state\)\s*\?\s*FAILED_PILL/);
+    expect(status).toContain("loadStatusText(state, inCase)");
+    // One status span per row: no extra cell for the new state.
+    expect(row.match(/className=\{`status /g)).toHaveLength(1);
+  });
+
   it("counts six fixed legend columns plus the readout ones, as the header and row render", () => {
     // Row: grip, unit, live, status, sna, remove; the header: next-hint (2 tracks) + 4 spans.
     expect(src).toMatch(

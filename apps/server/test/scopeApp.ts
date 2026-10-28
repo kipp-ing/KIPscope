@@ -9,12 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeRows, type Workspace } from "@kipscope/shared";
 import { buildApp } from "../src/app.ts";
+import { CalendarDays } from "../src/calendarDays.ts";
 import { Catalog, keepCatalogLoaded } from "../src/catalog.ts";
-import type { CatalogMode } from "../src/config.ts";
+import { type CatalogMode, DEFAULT_SCAN_ROWS, DEFAULT_SCAN_SPAN } from "../src/config.ts";
 import type { DataSource, Scope, SourceAdapter, SourceSignal } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { completeSource, coreOnly } from "../src/fallbacks.ts";
 import { QueryQueue, queuedAdapter } from "../src/queue.ts";
+import { createScanBound, type ScanBound } from "../src/scanBound.ts";
 import { CatalogStore, guardScoped } from "../src/scope.ts";
 import { ViewStore } from "../src/views.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
@@ -51,6 +53,12 @@ export interface ScopeApp {
   app: ReturnType<typeof buildApp>;
   store: WorkspaceStore;
   catalogs: CatalogStore;
+  /** The scan bound the app was wired with (speed-up-whole-scans B2). */
+  bound: ScanBound;
+  /** The calendar's vehicle-days, in `<stateDir>/calendar`. */
+  days: CalendarDays;
+  /** Lines the day store logged (ignored day files). */
+  warnings: string[];
   /** The full catalog (never loaded in scoped mode). */
   catalog: Catalog;
   /** Everything the adapter received, in order. */
@@ -86,6 +94,14 @@ export interface ScopeAppOptions {
   views?: boolean;
   /** Put the adapter behind a query queue of this many slots, like main.ts does (default: none). */
   queue?: number;
+  /** `KIPSCOPE_SCAN_ROWS` (default: the config's 150 M). */
+  scanRows?: number;
+  /** `KIPSCOPE_SCAN_SPAN` in ns (default: the config's 7 d). */
+  scanSpan?: bigint;
+  /** The clock of the scan bound and the day store (default: the real one; fake timers move it). */
+  now?: () => number;
+  /** The state directory (default: a new temp directory, removed at close); a restart passes the old one. */
+  stateDir?: string;
 }
 
 /** The real app, wired like main.ts, on a temp state dir. */
@@ -93,8 +109,11 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
   const mode = options.mode ?? "full";
   const base = options.coreOnly ? coreOnly(options.adapter) : options.adapter;
   const { adapter, calls } = recording(base);
+  const scanRows = options.scanRows ?? DEFAULT_SCAN_ROWS;
+  const scanSpan = options.scanSpan ?? DEFAULT_SCAN_SPAN;
   const completed = completeSource(
     options.queue === undefined ? adapter : queuedAdapter(adapter, new QueryQueue(options.queue)),
+    { scanRows },
   );
   const guardLog: string[] = [];
   let catalogs: CatalogStore;
@@ -109,9 +128,19 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
   const newCatalog = (scope?: Scope) =>
     new Catalog(source, metadata, undefined, undefined, undefined, scope);
   const catalog = newCatalog();
-  catalogs = new CatalogStore({ mode, full: catalog, create: newCatalog });
+  const bound = createScanBound(source, { rows: scanRows, spanNs: scanSpan }, options.now);
+  catalogs = new CatalogStore({ mode, full: catalog, create: newCatalog, bound });
 
-  const stateDir = mkdtempSync(join(tmpdir(), "kipscope-scope-"));
+  const ownStateDir = options.stateDir === undefined;
+  const stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), "kipscope-scope-"));
+  const warnings: string[] = [];
+  const days = new CalendarDays(source, {
+    dir: join(stateDir, "calendar"),
+    sourceInfo: source.info,
+    scanRows,
+    ...(options.now === undefined ? {} : { now: options.now }),
+    warn: (message) => warnings.push(message),
+  });
   const viewsDir = join(stateDir, "views");
   mkdirSync(viewsDir, { recursive: true });
   const views = new ViewStore(viewsDir);
@@ -135,6 +164,8 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
     catalog,
     catalogs,
     source,
+    bound,
+    calendarDays: days,
     workspace: store,
     ...(options.scopePad === undefined ? {} : { scopePad: options.scopePad }),
     ...(options.views === false ? {} : { views }),
@@ -170,6 +201,9 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
     app,
     store,
     catalogs,
+    bound,
+    days,
+    warnings,
     catalog,
     calls,
     guardLog,
@@ -183,7 +217,8 @@ export async function scopeApp(options: ScopeAppOptions): Promise<ScopeApp> {
     async close() {
       for (const stop of stops) stop();
       await app.close();
-      rmSync(stateDir, { recursive: true, force: true });
+      days.stop();
+      if (ownStateDir) rmSync(stateDir, { recursive: true, force: true });
     },
   };
 }

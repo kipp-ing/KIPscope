@@ -69,12 +69,20 @@ export function monthCells(year: number, month: number): (CalendarDay | null)[] 
   });
 }
 
+/** Any part of the local day lies in a UTC day of `answer.pending`: not counted yet (D-118). */
+export function dayPending(answer: CalendarDensity | undefined, day: CalendarDay): boolean {
+  return answer?.pending?.some((p) => overlaps(day.from, day.to, p)) === true;
+}
+
 /** Bar k covers [day.from + 2k h, day.from + (2k+2) h), the last one up to day.to (1 h or 3 h on DST days).
- *  count = sum of answer.hours whose slot start lies in the bar; drive = a drive overlaps the bar (half-open). */
+ *  count = sum of answer.hours whose slot start lies in the bar; drive = a drive overlaps the bar (half-open).
+ *  A day not counted yet (`dayPending`) has 12 bars of count 0, each `pending`. */
 export function dayBars(
   answer: CalendarDensity,
   day: CalendarDay,
-): { count: number; drive: boolean }[] {
+): { count: number; drive: boolean; pending?: true }[] {
+  if (dayPending(answer, day))
+    return Array.from({ length: DAY_BARS }, () => ({ count: 0, drive: false, pending: true }));
   const start = BigInt(answer.from);
   // First slot whose start lies at or after t: ceil((t − start) / 1 h).
   const slot = (t: bigint) => Number(-floorDiv(start - t, H));
@@ -104,6 +112,7 @@ function dayFacts(
   day: CalendarDay,
   scope: ScopeKind,
 ): { rows: number; drives: number } | { reason: string } {
+  if (dayPending(answer, day)) return { reason: "not counted yet" };
   const rows = dayBars(answer, day).reduce((sum, b) => sum + b.count, 0);
   if (rows === 0) {
     const outside = answer.scope !== undefined && !overlaps(day.from, day.to, answer.scope);

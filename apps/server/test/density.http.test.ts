@@ -4,6 +4,7 @@ import { Catalog } from "../src/catalog.ts";
 import { ClickHouseSource } from "../src/clickhouse.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { DensityCache } from "../src/density.ts";
+import { createScanBound } from "../src/scanBound.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { scopeApp } from "./scopeApp.ts";
 import { testClient, testEventMapping, testMapping, testSource } from "./testdb.ts";
@@ -12,6 +13,9 @@ const real = testSource();
 let failing = false;
 /** Data refs of every `refExtent` call, in order: one per density computation. */
 const extentCalls: string[] = [];
+/** Data refs of every `refCount` and every `refBuckets` call (the scan bound's counts, the buckets). */
+const countCalls: string[] = [];
+const bucketCalls: string[] = [];
 /** The test source, whose density queries fail on demand ("source unreachable"). */
 const source = {
   listSignals: (...args: Parameters<typeof real.listSignals>) => real.listSignals(...args),
@@ -19,8 +23,14 @@ const source = {
     extentCalls.push(args[0]);
     return failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refExtent(...args);
   },
-  refBuckets: (...args: Parameters<typeof real.refBuckets>) =>
-    failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refBuckets(...args),
+  refCount: (...args: Parameters<typeof real.refCount>) => {
+    countCalls.push(args[0]);
+    return failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refCount(...args);
+  },
+  refBuckets: (...args: Parameters<typeof real.refBuckets>) => {
+    bucketCalls.push(args[0]);
+    return failing ? Promise.reject(new Error("connect ECONNREFUSED")) : real.refBuckets(...args);
+  },
 } as unknown as DataSource;
 const catalog = new Catalog(source, async () => new Map());
 const app = buildApp({
@@ -58,6 +68,48 @@ describe("GET /api/density", () => {
     const res = await density("testcar");
     expect(res.statusCode).toBe(200);
     expect(extentCalls.filter((ref) => ref === "testcar")).toHaveLength(1);
+  });
+
+  it("computes after the catalog load without a request, and a request does not recompute (only data refs within the bound)", async () => {
+    // The bound's rows one below testcar's row count: testcar is over it, drivecar (233,161 rows)
+    // and the small data refs are within.
+    // refCount counts every row of the data ref (also those without a time), as the bound does.
+    const rows = await real.refCount("testcar");
+    const tight = createScanBound(source, { rows: rows - 1, spanNs: 7n * 86_400_000_000_000n });
+    // Its own catalog, so that the module's app does not prefetch again on this load.
+    const mineCatalog = new Catalog(source, async () => new Map());
+    const mine = buildApp({
+      catalog: mineCatalog,
+      source,
+      bound: tight,
+      workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
+    });
+    const extentMark = extentCalls.length;
+    const bucketMark = bucketCalls.length;
+    const countMark = countCalls.length;
+    try {
+      await mine.ready();
+      await mineCatalog.refresh();
+      await vi.waitFor(() => expect(extentCalls.slice(extentMark)).toContain("drivecar"), {
+        timeout: 20_000,
+      });
+      // The prefetch counted testcar and sent no extent or bucket query for it.
+      expect(countCalls.slice(countMark)).toContain("testcar");
+      expect(extentCalls.slice(extentMark)).not.toContain("testcar");
+      expect(bucketCalls.slice(bucketMark)).not.toContain("testcar");
+
+      const res = await mine.inject({ url: "/api/density", query: { dataRef: "testcar" } });
+      expect(res.statusCode, res.body).toBe(422);
+      expect(res.json().error).toMatchObject({
+        code: "too_wide",
+        rows: String(rows),
+        limit: String(rows - 1),
+      });
+      expect(extentCalls.slice(extentMark)).not.toContain("testcar");
+      expect(bucketCalls.slice(bucketMark)).not.toContain("testcar");
+    } finally {
+      await mine.close();
+    }
   });
 
   it("counts testcar rows in 10 min buckets", async () => {
@@ -184,22 +236,26 @@ describe("density queries", () => {
         };
       },
     });
+    const clickhouse = new ClickHouseSource(recording, testMapping, 30, testEventMapping);
     const cache = new DensityCache(
-      new ClickHouseSource(recording, testMapping, 30, testEventMapping),
+      clickhouse,
       () => new Date(1),
+      createScanBound(clickhouse, { rows: 150_000_000, spanNs: 7n * 86_400_000_000_000n }),
     );
     const density = await cache.get("drivecar");
     expect(density?.dataRef).toBe("drivecar");
     const flat = texts.map((text) => text.replace(/\s+/g, " ").trim());
-    expect(flat).toHaveLength(2);
+    expect(flat).toHaveLength(3);
+    // The scan bound's count: the data-ref filter only, so ClickHouse answers from metadata.
+    expect(flat[0]).toBe("SELECT count() FROM sdlog.signals WHERE vehicle = {ref:String}");
     // refExtent: count, first and last row time of the data ref.
-    expect(flat[0]).toContain("count()");
-    expect(flat[0]).toContain("min(utc)");
+    expect(flat[1]).toContain("count()");
+    expect(flat[1]).toContain("min(utc)");
     // refBuckets without row times: today's query, no min or max of the time column.
-    expect(flat[1]).toBe(
+    expect(flat[2]).toBe(
       "WITH toUnixTimestamp64Nano(utc) AS x SELECT toString(x - positiveModulo(x, {w:Int64})) AS b, count() FROM sdlog.signals WHERE vehicle = {ref:String} AND utc IS NOT NULL GROUP BY b",
     );
-    expect(flat[1]).not.toMatch(/\b(min|max)\(/);
+    expect(flat[2]).not.toMatch(/\b(min|max)\(/);
   });
 });
 

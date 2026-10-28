@@ -26,9 +26,11 @@ import {
   parseInput,
   routeScope,
   scopeHolders,
+  tooWide,
 } from "../http.ts";
 import { WorkWindowError, workWindowOf } from "../objectScope.ts";
 import { withPriority } from "../priority.ts";
+import { TooWideError } from "../scanBound.ts";
 import { sourceScope } from "../scope.ts";
 import type { Workspaces } from "../workspaces.ts";
 import { addScopeWarmer } from "./case.ts";
@@ -80,15 +82,28 @@ export const eventsRoutes =
       (message) => app.log.warn(message),
       (scope: CacheScope) => catalogs.get(workspaceScope(scope)),
     );
-    // After each catalog load: every data ref's table events, then the events-line signals
-    // (design E3). Independent of the density prefetch; both go through the query queue as
-    // `background` work (series-query design P9).
+    // After each catalog load: the table events of every data ref within the scan bound, then
+    // the events-line signals of those (design E3, events "Events within the scan bound").
+    // Independent of the density prefetch; both go through the query queue as `background` work
+    // (series-query design P9).
     const stopPrefetch = catalog.onLoaded(() => {
-      const dataRefs = new Set(catalog.all().map((s) => s.dataRef));
-      const signals = openEventSignals(workspaces);
-      void withPriority("background", () =>
-        events.prefetch(dataRefs, signals, (message) => app.log.warn(message)),
-      );
+      const all = new Set(catalog.all().map((s) => s.dataRef));
+      const open = openEventSignals(workspaces);
+      const warn = (message: string) => app.log.warn(message);
+      void withPriority("background", async () => {
+        const dataRefs = new Set<string>();
+        for (const dataRef of all) {
+          try {
+            await deps.bound.check(dataRef);
+            dataRefs.add(dataRef);
+          } catch (error) {
+            if (!(error instanceof TooWideError))
+              warn(`events prefetch for ${dataRef} skipped: ${String(error)}`);
+          }
+        }
+        const signals = open.filter((id) => dataRefs.has(parseSignalId(id)?.dataRef ?? ""));
+        await events.prefetch(dataRefs, signals, warn);
+      });
     });
     // After a scope's list loads: its table events and events-line signals, after its density and
     // gap info (add-scope Z9), as background work (preload after a preview's load, K10). None for
@@ -139,15 +154,19 @@ export const eventsRoutes =
       if (scope && dataRef !== scope.dataRef) {
         return outOfScope(reply, `data ref ${dataRef} is outside the scope on ${scope.dataRef}`);
       }
-      // In an object scope `from`/`to` are the work window and take the scope's place (K11).
+      // In an object scope `from`/`to` are the work window and take the scope's place (K11),
+      // at most the bound's span; without a scope the data ref must lie within the bound.
       let window: Scope | undefined;
       try {
-        const w = workWindowOf(query, scoped.scope);
+        const w = workWindowOf(query, scoped.scope, deps.bound.spanNs);
         if (w) window = { dataRef, ...w };
+        if (!scope) await deps.bound.check(dataRef);
       } catch (error) {
         if (error instanceof WorkWindowError)
           return apiError(reply, 400, "invalid_request", error.message);
-        throw error;
+        if (error instanceof TooWideError) return tooWide(reply, error);
+        const message = error instanceof Error ? error.message : String(error);
+        return apiError(reply, 502, "source_error", message);
       }
       const cache = scoped.scope && cacheScopeOf(scoped.scope);
       const visible = scoped.catalog;

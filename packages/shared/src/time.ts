@@ -89,3 +89,18 @@ export function toIso(t: Timestamp): string {
   while (frac.endsWith("000")) frac = frac.slice(0, -3);
   return `${base}.${frac}Z`;
 }
+
+const SPAN_UNITS: { unit: string; ns: bigint }[] = [
+  { unit: "y", ns: NS_PER_Y },
+  { unit: "d", ns: NS_PER_D },
+  { unit: "h", ns: NS_PER_H },
+  { unit: "min", ns: NS_PER_MIN },
+  { unit: "s", ns: NS_PER_S },
+  { unit: "ms", ns: NS_PER_MS },
+];
+
+/** Largest of y (365 d), d, h, min, s, ms that ns reaches (else ms); Math.round(x * 10) / 10, no ".0". 0 → "0 ms". */
+export function formatSpan(ns: bigint): string {
+  const { unit, ns: size } = SPAN_UNITS.find((u) => ns >= u.ns) ?? { unit: "ms", ns: NS_PER_MS };
+  return `${Math.round((Number(ns) / Number(size)) * 10) / 10} ${unit}`;
+}

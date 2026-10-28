@@ -3,16 +3,24 @@ import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { DensityCache } from "../src/density.ts";
+import { createScanBound } from "../src/scanBound.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { memoryAdapter, scopeApp } from "./scopeApp.ts";
 
 const MS = 1_000_000n;
 
-/** Fake source: 3 rows at 0, 5 and 5 ms; counts its density queries. */
+/**
+ * Fake source: 3 rows at 0, 5 and 5 ms; counts its density queries, and the scan bound's row
+ * count in front of them (speed-up-whole-scans B2).
+ */
 function fakeSource() {
-  const calls = { extent: 0, buckets: 0, failNext: false };
+  const calls = { count: 0, extent: 0, buckets: 0, failNext: false };
   const source = {
     listSignals: async () => [{ dataRef: "testcar", name: "S" }],
+    refCount: async () => {
+      calls.count++;
+      return 3;
+    },
     refExtent: async () => {
       calls.extent++;
       await new Promise((r) => setTimeout(r, 10));
@@ -35,7 +43,11 @@ function fakeSource() {
   return { source, calls };
 }
 
-const queries = (c: { extent: number; buckets: number }) => c.extent + c.buckets;
+const queries = (c: { count: number; extent: number; buckets: number }) =>
+  c.count + c.extent + c.buckets;
+/** The bound of the unit tests: well over the fake's 3 rows, and a week. */
+const boundOf = (source: DataSource) =>
+  createScanBound(source, { rows: 1000, spanNs: 7n * 86_400_000_000_000n });
 
 describe("DensityCache grid", () => {
   it("groups on the grid and sums the bars", async () => {
@@ -76,16 +88,18 @@ describe("DensityCache", () => {
   it("computes once per catalog load, shares and does not cache failures", async () => {
     const { source, calls } = fakeSource();
     let loadedAt: Date | undefined = new Date(1000);
-    const cache = new DensityCache(source, () => loadedAt);
+    const cache = new DensityCache(source, () => loadedAt, boundOf(source));
 
-    // Three at once share one computation (two queries); one more later is served from the cache.
+    // Three at once share one computation (the row count of the bound, the extent and the bucket
+    // query); one more later is served from the cache.
     const [a, b, c] = await Promise.all([
       cache.get("testcar"),
       cache.get("testcar"),
       cache.get("testcar"),
     ]);
     const d = await cache.get("testcar");
-    expect(queries(calls)).toBe(2);
+    expect(queries(calls)).toBe(3);
+    expect(calls).toMatchObject({ count: 1, extent: 1, buckets: 1 });
     expect(b).toEqual(a);
     expect(c).toEqual(a);
     expect(d).toEqual(a);
@@ -100,15 +114,17 @@ describe("DensityCache", () => {
       drives: [], // two runs of one 2.5 us bucket
     });
 
-    // A catalog reload computes again, once.
+    // A catalog reload computes again, once: the extent and the bucket query; the count is still
+    // held, being younger than 5 min.
     loadedAt = new Date(2000);
     await Promise.all([cache.get("testcar"), cache.get("testcar")]);
     await cache.get("testcar");
-    expect(queries(calls)).toBe(4);
+    expect(queries(calls)).toBe(5);
+    expect(calls.count).toBe(1);
 
-    // Another data ref has its own entry.
+    // Another data ref has its own entry and its own count.
     await cache.get("othercar");
-    expect(queries(calls)).toBe(6);
+    expect(queries(calls)).toBe(8);
 
     // A failure is passed on to everyone waiting and then dropped: the next request asks again.
     loadedAt = new Date(3000);
@@ -120,6 +136,21 @@ describe("DensityCache", () => {
     const again = await cache.get("testcar");
     expect(again?.counts).toEqual([1, 0, 0, 0, 0, 2]);
     expect(queries(calls)).toBe(before + 3);
+  });
+
+  it("sends no extent or bucket query for a data ref over the bound, and does not cache it", async () => {
+    const { source, calls } = fakeSource();
+    const tight = createScanBound(source, { rows: 2, spanNs: 7n * 86_400_000_000_000n });
+    const cache = new DensityCache(source, () => new Date(1000), tight);
+    for (let i = 0; i < 2; i++) {
+      await expect(cache.get("testcar")).rejects.toMatchObject({
+        name: "TooWideError",
+        rows: 3,
+        limit: 2,
+      });
+    }
+    // One shared count, nothing else.
+    expect(calls).toMatchObject({ count: 1, extent: 0, buckets: 0 });
   });
 
   it("caches a data ref without rows like a result", async () => {
@@ -153,7 +184,7 @@ describe("GET /api/density cache over HTTP", () => {
       const get = () => app.inject({ url: "/api/density", query: { dataRef: "testcar" } });
       const three = await Promise.all([get(), get(), get()]);
       const fourth = await get();
-      expect(queries(calls)).toBe(2);
+      expect(queries(calls)).toBe(3);
       for (const res of [...three, fourth]) {
         expect(res.statusCode).toBe(200);
         expect(res.body).toBe(three[0]?.body);
@@ -163,7 +194,7 @@ describe("GET /api/density cache over HTTP", () => {
       await catalog.refresh();
       const after = await get();
       expect(after.statusCode).toBe(200);
-      expect(queries(calls)).toBe(4);
+      expect(queries(calls)).toBe(5); // the extent and the bucket query; the count is still held
 
       // A failing first computation is not cached: a second request queries again.
       await new Promise((r) => setTimeout(r, 5));
@@ -275,6 +306,11 @@ describe("DensityCache with a scope (add-scope Z9)", () => {
       const buckets = calls.filter((c) => c.method === "refBuckets");
       expect(buckets).toHaveLength(1);
       expect(buckets[0]?.args[3]).toEqual(scope);
+      // At most one count, with the scope: the scan bound's, shared by the scope's list load, its
+      // density and its gap info.
+      const counts = calls.filter((c) => c.method === "refCount");
+      expect(counts.length).toBeLessThanOrEqual(1);
+      for (const count of counts) expect(count.args[1]).toEqual(scope);
     } finally {
       await t.close();
     }

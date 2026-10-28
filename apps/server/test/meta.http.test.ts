@@ -526,3 +526,40 @@ describe("GET /api/meta with a scope (add-scope)", () => {
     }
   });
 });
+
+describe("GET /api/meta limits (speed-up-whole-scans)", () => {
+  it("reports the scan limits", async () => {
+    // KIPSCOPE_SCAN_ROWS=1000, KIPSCOPE_SCAN_SPAN=1h (3,600 s) and KIPSCOPE_SCOPE_PAD=30min (1,800 s).
+    const t = await scopeApp({
+      adapter: testSource(),
+      scanRows: 1000,
+      scanSpan: 3_600_000_000_000n,
+      scopePad: 1_800_000_000_000n,
+    });
+    try {
+      const res = await t.get("/api/meta");
+      expect(res.status).toBe(200);
+      expect(res.body.limits).toEqual({
+        scanRows: 1000,
+        scanSpan: "3600000000000",
+        scopePad: "1800000000000",
+      });
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("reports the defaults without settings", async () => {
+    const t = await scopeApp({ adapter: testSource() });
+    try {
+      const res = await t.get("/api/meta");
+      expect(res.body.limits).toEqual({
+        scanRows: 150_000_000,
+        scanSpan: "604800000000000",
+        scopePad: "3600000000000",
+      });
+    } finally {
+      await t.close();
+    }
+  });
+});

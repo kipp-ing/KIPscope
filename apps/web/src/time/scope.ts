@@ -11,7 +11,7 @@ import type { StripEvent } from "../views/notice.ts";
 export const CLAMP_MESSAGE = "Stopped at the scope edge. Widen shows more.";
 /** The same with a linked catalog, and in an object scope (time-navigation, add-case-open K14). */
 export const SESSION_CLAMP_MESSAGE = "Stopped at the session edge. Unlink shows the whole vehicle.";
-export const VEHICLE_CLAMP_MESSAGE = "Stopped at the end of the vehicle's data.";
+export const VEHICLE_CLAMP_MESSAGE = "Stopped at the end of the catalog's sessions.";
 
 /** The clamp message of a workspace: by its case, linked or not, else the scope's. */
 export function clampMessage(c: Pick<WorkspaceCase, "linked"> | undefined): string {

@@ -58,6 +58,60 @@
   cursor: pointer;
 }
 
+/* Scope card (scope "Scope card"): the Start card's frame, three fields and Set scope in a row. */
+.scope-card-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+
+.scope-card-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.scope-card-fields input {
+  width: 168px;
+  height: var(--control-h);
+  padding: 0 6px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.scope-card-fields button {
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.scope-card-fields button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.scope-card-message {
+  margin: 0 0 6px;
+  color: var(--error);
+}
+
+.scope-card-line {
+  margin: 0;
+  color: var(--muted);
+}
+
 /* Fixed at the right, non-modal; top and bottom are set inline from the top area's bottom and the
    status strip's top (HelpPanel), these are the fallbacks before the first measure. */
 .help-panel {

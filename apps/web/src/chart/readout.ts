@@ -297,6 +297,9 @@ export function sourceCell(
     const named = signal ?? (info && { dataRef: info.dataRef, name: shownName(info) });
     return { text: NO_VALUE, title: named ? HINTS.missing(named.dataRef, named.name) : MISSING };
   }
+  // A too-wide value (422 `too_wide`) carries the server's message (series-query).
+  if (source.error !== undefined && source.errorCode === "too_wide")
+    return { text: NO_VALUE, title: source.error };
   if (source.error !== undefined) return { text: NO_VALUE, title: `failed: ${source.error}` };
   const cell = readoutCell(source.value, unit, digits, info);
   return source.loading ? loadingCell(cell) : cell;

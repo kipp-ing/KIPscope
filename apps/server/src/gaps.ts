@@ -15,6 +15,7 @@ import {
 import type { DataSource, Scope } from "./datasource.ts";
 import { type CacheScope, plainScope, scopeCacheKey } from "./density.ts";
 import { currentPriority, Priority, withPriority } from "./priority.ts";
+import { type ScanBound, TooWideError } from "./scanBound.ts";
 
 type GapSource = Pick<DataSource, "refCount" | "loggerGaps" | "firstTimes">;
 
@@ -75,13 +76,17 @@ export const MAX_GAP_WINDOWS = 8;
  * every query carries it, the state is kept per scope key and follows that scope's catalog
  * (`catalogOf`, else the full one). In an object scope (add-case-open K11) a work window takes the
  * scope's place in every query; its state is kept per (scope key, window), at most
- * MAX_GAP_WINDOWS, and the poll recounts only the held windows (`refreshWindows`).
+ * MAX_GAP_WINDOWS, and the poll recounts only the held windows (`refreshWindows`). With `bound`
+ * (speed-up-whole-scans B2) every `get` checks its range (the data ref, scope or window) before
+ * any logger-gap or sample query and rejects with TooWideError above it; the logger part's first
+ * count is the bound's, and a poll does not recompute a range that grew over the bound's rows.
  */
 export class GapCache {
   private readonly source: GapSource;
   private readonly catalog: GapCatalog;
   private readonly wanted: () => Iterable<string>;
   private readonly catalogOf: (scope: CacheScope) => GapCatalog | undefined;
+  private readonly bound: Pick<ScanBound, "rows" | "check" | "count"> | undefined;
   private readonly refs = new Map<string, RefState>();
 
   constructor(
@@ -89,11 +94,13 @@ export class GapCache {
     catalog: GapCatalog,
     wanted: () => Iterable<string> = () => [],
     catalogOf: (scope: CacheScope) => GapCatalog | undefined = () => undefined,
+    bound?: Pick<ScanBound, "rows" | "check" | "count">,
   ) {
     this.source = source;
     this.catalog = catalog;
     this.wanted = wanted;
     this.catalogOf = catalogOf;
+    this.bound = bound;
   }
 
   /** The catalog the gap info of `scope` (or of the whole data ref) is computed against. */
@@ -114,6 +121,7 @@ export class GapCache {
     scope?: CacheScope,
     window?: Scope,
   ): Promise<GapInfo> {
+    await this.bound?.check(dataRef, window ? plainScope(window) : scope && plainScope(scope));
     const ref = this.state(dataRef, scope, window);
     const query = ref.window ?? (scope && plainScope(scope));
     const logger = this.logger(dataRef, ref, query);
@@ -146,8 +154,9 @@ export class GapCache {
   /**
    * Computes the logger part of each data ref in turn, not in parallel, so carserver sees one full
    * scan at a time, and measures its workspace signals (one sample query per data ref). A failure
-   * is reported through `warn` and not cached; a newer catalog load stops this run, since its own
-   * prefetch takes over. With `scope`: the gap info of that scope (`dataRefs` its data ref).
+   * is reported through `warn` and not cached; a data ref over the bound is skipped silently. A
+   * newer catalog load stops this run, since its own prefetch takes over. With `scope`: the gap
+   * info of that scope (`dataRefs` its data ref).
    */
   async prefetch(
     dataRefs: Iterable<string>,
@@ -161,6 +170,7 @@ export class GapCache {
       try {
         await this.get(dataRef, [...this.wanted()], scope);
       } catch (error) {
+        if (error instanceof TooWideError) continue;
         const message = error instanceof Error ? error.message : String(error);
         warn(`gap prefetch for ${dataRef} failed: ${message}`);
       }
@@ -222,6 +232,8 @@ export class GapCache {
     try {
       const count = await this.source.refCount(dataRef, query);
       if (count === old.count) return;
+      // Grown over the bound: the old info stays rather than a scan beyond it (D-117).
+      if (this.bound && count > this.bound.rows) return;
       const done = [...ref.measured].filter(([, batch]) => batch.done);
       const names = done.map(([name]) => name);
       const next = this.startLogger(dataRef, query, count);
@@ -306,14 +318,19 @@ export class GapCache {
 
   /**
    * Takes the row count first (unless the caller just took it), so rows inserted during the
-   * computation cause one more recompute at the next poll, never a missed one (design G9 (b)).
-   * `count` is set when the computation succeeds.
+   * computation cause one more recompute at the next poll, never a missed one (design G9 (b)); with
+   * a bound its shared count, so the check before sends the only count query (B2). `count` is set
+   * when the computation succeeds.
    */
   private startLogger(dataRef: string, scope?: Scope, taken?: number): LoggerEntry {
     const priority = new Priority(currentPriority().cls);
     const entry = { priority } as LoggerEntry;
     entry.promise = withPriority(priority, async () => {
-      const count = taken ?? (await this.source.refCount(dataRef, scope));
+      const count =
+        taken ??
+        (await (this.bound
+          ? this.bound.count(dataRef, scope)
+          : this.source.refCount(dataRef, scope)));
       const gaps = await this.source.loggerGaps(dataRef, LOGGER_GAP_GRID, LOGGER_GAP_MIN, scope);
       entry.count = count;
       const part: LoggerPart = {

@@ -847,7 +847,7 @@ describe("case forms (add-case-open K15)", () => {
       ["case", "open", "f.json", "--trim"],
       ["case", "next", "--trim"],
       ["case", "show", "--trim"],
-      ["case", "drives", "smart451", "--trim"],
+      ["case", "drives", "smart451", "2026-10-02T00:00:00Z", "2026-10-03T00:00:00Z", "--trim"],
       ["window", "create", "--trim"],
     ]) {
       expect(usageError(argv).code, argv.join(" ")).toBe("usage");
@@ -885,6 +885,29 @@ describe("case forms (add-case-open K15)", () => {
     }
   });
 
+  it("refuses a malformed case drives form as a usage error", () => {
+    const D1 = "2026-10-02T00:00:00Z";
+    const D2 = "2026-10-03T00:00:00Z";
+    for (const argv of [
+      ["case", "drives", "smart451"], // FROM and TO are missing
+      ["case", "drives", "smart451", D1], // TO is missing
+      ["case", "drives", "smart451", D1, D2, "extra"],
+      ["case", "drives", "", D1, D2], // empty REF
+      ["case", "drives", "smart451", "yesterday", D2], // not a time
+      ["case", "drives", "smart451", D1, "tomorrow"],
+      ["case", "drives", "smart451", D2, D1], // TO before FROM
+      ["case", "drives", "smart451", D1, D1], // empty range
+      // 33 days: 2026-10-02T00:00Z + 33 d = 2026-11-04T00:00Z (more than the 32 days allowed)
+      ["case", "drives", "smart451", D1, "2026-11-04T00:00:00Z"],
+    ]) {
+      expect(usageError(argv).code, argv.join(" ")).toBe("usage");
+    }
+    // Exactly 32 days is allowed: 2026-10-02 + 32 d = 2026-11-03.
+    expect(
+      parseArgs(["case", "drives", "smart451", D1, "2026-11-03T00:00:00Z"], {}).invocation,
+    ).toMatchObject({ kind: "case", action: "drives" });
+  });
+
   it("reads the forms that are no plain command", () => {
     const kind = (argv: string[]) => parseArgs(argv, {}).invocation;
     expect(kind(["case", "open", "c4.json"])).toMatchObject({
@@ -899,11 +922,21 @@ describe("case forms (add-case-open K15)", () => {
       action: "url",
       file: "c4.json",
     });
-    expect(kind(["case", "drives", "smart451"])).toMatchObject({
+    // FROM and TO are absolute times as the other time arguments (1,790,899,200 s is
+    // 2026-10-02T00:00:00Z, one day later 1,790,985,600 s); the local form reads in the zone.
+    expect(
+      kind(["case", "drives", "smart451", "2026-10-02T00:00:00Z", "2026-10-03T00:00:00Z"]),
+    ).toEqual({
       kind: "case",
       action: "drives",
       dataRef: "smart451",
+      from: 1790899200000000000n,
+      to: 1790985600000000000n,
     });
+    // Europe/Berlin is +02:00 then: 2026-10-02 02:00 local is 2026-10-02T00:00:00Z.
+    expect(
+      kind(["case", "drives", "smart451", "2026-10-02 02:00", "2026-10-03 02:00"]),
+    ).toMatchObject({ from: 1790899200000000000n, to: 1790985600000000000n });
   });
 
   it("names the case forms in the usage text", () => {
@@ -918,7 +951,7 @@ describe("case forms (add-case-open K15)", () => {
       "case align start|end|anchor",
       "case align event KIND SOURCE NAME",
       "case url FILE|- [--trim]",
-      "case drives REF",
+      "case drives REF FROM TO",
     ]) {
       expect(USAGE, form).toContain(form);
     }

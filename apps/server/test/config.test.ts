@@ -27,8 +27,8 @@ describe("loadConfig", () => {
   });
 
   it("reads the catalog mode and the scope pad", () => {
-    // KIPSCOPE_CATALOG: full by default, scoped on request, anything else stops the server.
-    expect(loadConfig(base, "/repo/kipscope").catalogMode).toBe("full");
+    // KIPSCOPE_CATALOG: scoped by default (D-117), full on request, anything else stops the server.
+    expect(loadConfig(base, "/repo/kipscope").catalogMode).toBe("scoped");
     expect(loadConfig({ ...base, KIPSCOPE_CATALOG: "scoped" }, "/repo/kipscope").catalogMode).toBe(
       "scoped",
     );
@@ -51,6 +51,32 @@ describe("loadConfig", () => {
     for (const bad of ["-1h", "1d"]) {
       expect(() => pad(bad), bad).toThrow(/KIPSCOPE_SCOPE_PAD/);
     }
+  });
+
+  it("reads the scan bound", () => {
+    // KIPSCOPE_SCAN_ROWS (a positive integer, 150 M by default) and KIPSCOPE_SCAN_SPAN (a CLI
+    // duration, 7 d by default; 7 d = 604,800 s, 1 h = 3,600 s by hand).
+    const none = loadConfig(base, "/repo/kipscope");
+    expect(none.scanRows).toBe(150_000_000);
+    expect(none.scanSpan).toBe(604_800_000_000_000n);
+
+    const custom = loadConfig(
+      { ...base, KIPSCOPE_SCAN_ROWS: "1000", KIPSCOPE_SCAN_SPAN: "1h" },
+      "/repo/kipscope",
+    );
+    expect(custom.scanRows).toBe(1000);
+    expect(custom.scanSpan).toBe(3_600_000_000_000n);
+
+    // Invalid values stop the server naming the variable.
+    expect(() => loadConfig({ ...base, KIPSCOPE_SCAN_ROWS: "0" }, "/repo/kipscope")).toThrow(
+      /KIPSCOPE_SCAN_ROWS/,
+    );
+    expect(() => loadConfig({ ...base, KIPSCOPE_SCAN_ROWS: "1e6" }, "/repo/kipscope")).toThrow(
+      /KIPSCOPE_SCAN_ROWS/,
+    );
+    expect(() => loadConfig({ ...base, KIPSCOPE_SCAN_SPAN: "-1d" }, "/repo/kipscope")).toThrow(
+      /KIPSCOPE_SCAN_SPAN/,
+    );
   });
 
   it("applies overrides", () => {

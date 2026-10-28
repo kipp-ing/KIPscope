@@ -62,6 +62,18 @@ export function isCatalogLoading(error: unknown): boolean {
   );
 }
 
+/** A refusal of the server's scan bound (422 `too_wide`, scope "Too wide answers"). */
+export function isTooWide(error: unknown): error is ApiRequestError {
+  return error instanceof ApiRequestError && error.code === "too_wide";
+}
+
+/** The text of a failure: a too-wide answer's own message (`too wide: …`), else the error's. */
+export function errorText(error: unknown): string {
+  const own = isTooWide(error) ? error.details?.message : undefined;
+  if (typeof own === "string") return own;
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** The error of a response that is not ok, from its parsed body (a proxy or a crashed server may answer without an ApiError body). */
 function requestError(res: Response, body: unknown): ApiRequestError {
   const error = (body as Partial<ApiError> | undefined)?.error;
@@ -282,9 +294,27 @@ export function fetchCasePreview(index: number, abort: AbortSignal): Promise<Cas
   );
 }
 
-/** Build, source and catalog state of the running server for the footer (design F2). */
-export function fetchMeta(abort?: AbortSignal): Promise<ServerMeta> {
-  return getJson("/api/meta", abort);
+/** The server's defaults of `limits` (speed-up-whole-scans B1), until its meta answers. */
+const DEFAULT_LIMITS: ServerMeta["limits"] = {
+  scanRows: 150_000_000,
+  scanSpan: (7n * 86_400_000_000_000n).toString(),
+  scopePad: 3_600_000_000_000n.toString(),
+};
+let limits: ServerMeta["limits"] = DEFAULT_LIMITS;
+
+/** The scan bound and scope pad of the server's last meta answer (B3, B8). */
+export function serverLimits(): ServerMeta["limits"] {
+  return limits;
+}
+
+/** `KIPSCOPE_SCAN_SPAN` in ns: the widest work window (B3). */
+export const scanSpanNs = (): bigint => BigInt(limits.scanSpan);
+
+/** Build, source and catalog state of the running server for the footer (design F2); keeps its `limits`. */
+export async function fetchMeta(abort?: AbortSignal): Promise<ServerMeta> {
+  const meta = await getJson<ServerMeta>("/api/meta", abort);
+  if (meta.limits) limits = meta.limits;
+  return meta;
 }
 
 /** True when `body` has the shape of a `CommandResult` (design H6). */

@@ -1,5 +1,4 @@
-import { floorDiv, NS_PER_MS } from "@kipscope/shared";
-import { formatSpan } from "./strip.ts";
+import { floorDiv, formatSpan, NS_PER_MS } from "@kipscope/shared";
 
 // Start and duration of a range, the one format people read (range button, picker, an unlinked
 // window's own range; range-picker "Start and duration", design R6 of add-range-picker, D-093, D-095).

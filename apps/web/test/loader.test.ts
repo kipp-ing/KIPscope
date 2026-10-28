@@ -11,12 +11,14 @@ import { ApiRequestError } from "../src/api.ts";
 import { SeriesCache } from "../src/chart/cache.ts";
 import {
   isMissing,
+  isTooWideState,
   LOAD_INTERVAL_MS,
   type LoaderOptions,
   type LoadRequest,
   loadKey,
   loadStatusText,
   SeriesLoader,
+  TOO_WIDE,
 } from "../src/chart/loader.ts";
 import { levelFor, splitRun, tileable, touchedTiles } from "../src/chart/tiles.ts";
 import { apiError } from "./apiError.ts";
@@ -751,6 +753,49 @@ describe("SeriesLoader retries", () => {
     expect(loadStatusText(third.get("a1"), true)).toBe("failed: not_found: no such thing");
     second.dispose();
     third.dispose();
+  });
+
+  it("shows a too-wide series in the status column", async () => {
+    // Series-query "Series within the row budget": a 422 `too_wide` for one signal reads `too wide`
+    // in the status column with the server's message as its tooltip; the other signals draw, and
+    // the window's render acknowledgement carries the error with the message.
+    const message =
+      "too wide: 2,000 rows, more than the 1,000 a query may read; choose a shorter range";
+    const wide = await apiError(422, "too_wide", message);
+    const t = rsetup();
+    const loader = t.make();
+    loader.update([view(0n, "a1", SIG), view(0n, "a2", "c/other")]);
+    expect(t.calls).toHaveLength(2);
+    const bySignal = (id: string) => t.calls.find((c) => c.request.signalId === id);
+    await fail(bySignal(SIG), wide);
+    await answer(bySignal("c/other"));
+
+    const state = loader.get("a1");
+    expect(state).toMatchObject({ status: "error", errorStatus: 422, errorCode: "too_wide" });
+    expect(isTooWideState(state)).toBe(true);
+    expect(isMissing(state)).toBe(false);
+    // The cell text, and the tooltip (the message, without the `too_wide: ` prefix of the error).
+    expect(TOO_WIDE).toBe("too wide");
+    expect(loadStatusText(state, false)).toBe("too wide");
+    expect(loadStatusText(state, true)).toBe("too wide");
+    expect(state?.error).toBe(message);
+    // The ack error of the window: the signal's state message, the message of the answer.
+    expect(state?.error ?? "error").toBe(message);
+    // The other signal draws.
+    expect(loader.get("a2")).toMatchObject({ status: "complete", result: { from: "0" } });
+    expect(loadStatusText(loader.get("a2"), false)).toBe("");
+    // A refusal is no failure to retry: nothing more is asked, however long we wait.
+    await tick(120_000);
+    expect(t.calls).toHaveLength(2);
+    // Another 4xx or 5xx failure still reads `failed: …`.
+    const down = rsetup();
+    const other = down.make();
+    other.update([view(0n)]);
+    await fail(down.calls[0], await apiError(502, "source_error", "down"));
+    expect(isTooWideState(other.get("a1"))).toBe(false);
+    expect(loadStatusText(other.get("a1"), false)).toBe("failed: source_error: down");
+    loader.dispose();
+    other.dispose();
   });
 
   it("retries at once when another request of the tab succeeds", async () => {

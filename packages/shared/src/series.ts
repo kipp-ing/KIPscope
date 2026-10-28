@@ -92,5 +92,13 @@ export interface ApiError {
     to?: string;
     /** 503 `catalog_unavailable`: still loading vs. source unreachable. */
     reason?: string;
+    /** 422 `too_wide`: the range's refCount when the row budget decided (decimal). */
+    rows?: string;
+    /** 422 `too_wide`: KIPSCOPE_SCAN_ROWS (decimal). */
+    limit?: string;
+    /** 422 `too_wide`: to − from (ns) when the span decided. */
+    span?: string;
+    /** 422 `too_wide`: KIPSCOPE_SCAN_SPAN (ns). */
+    maxSpan?: string;
   };
 }
