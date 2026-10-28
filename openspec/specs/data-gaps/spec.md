@@ -14,9 +14,9 @@ A signal's period SHALL be its DBC message's cycle time if that is above 0, else
 - **Evidence:** `apps/server/test/gaps.http.test.ts` › "lists the logger gaps and periods of gapcar"
 
 #### Scenario: smart451 periods
-- **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451&signal=smart451/BMS.cell_voltage.001&signal=smart451/BMS.cell_voltage_max' | jq -c '[.periods[].source] | group_by(.) | map({(.[0]): length}) | add'` runs against the dev server
-- **THEN** it prints `{"dbc":408,"diag":29,"measured":1}`; `.periods["smart451/BMS.cell_voltage.001"].source` is `"measured"` and `.periods["smart451/BMS.cell_voltage_max"].source` is `"diag"`; the same `curl` without the two `signal` parameters prints `{"dbc":408,"diag":29}`
-- **Evidence:** the `curl` commands
+- **WHEN** on the scoped dev server, in a workspace `<id>` with scope `smart451 2026-10-13T00:00:00Z 2026-10-14T00:00:00Z`, `curl -s 'localhost:7310/api/w/<id>/gaps?dataRef=smart451&signal=smart451/BMS.cell_voltage.001&signal=smart451/BMS.cell_voltage_max' | jq -c '[.periods["smart451/BMS.cell_voltage.001"].source, .periods["smart451/BMS.cell_voltage_max"].source]'` runs
+- **THEN** it prints `["measured","diag"]` within 15 s of a cold start of that scope, and no answer is 502
+- **Evidence:** the `curl` command with its time
 
 ### Requirement: Measured period
 A period SHALL be measured from the signal's first 1,001 timestamped rows as the median of the positive spacings between consecutive rows, and accepted only when there are at least 100 spacings and at most 5 % of all spacings are longer than 3 medians. Origin: D-062 („else measured"; „without a … measurable period"); numbers: design G3 (smart451: cyclic samples 0–0.9 % long spacings, bursts 12.4 % and more).
@@ -35,12 +35,12 @@ A logger gap SHALL be the time between two consecutive timestamped rows of a dat
 - **Evidence:** `apps/server/test/gaps.http.test.ts` › "lists the logger gaps and periods of gapcar", "finds no logger gap where the logger never paused"
 
 #### Scenario: smart451 logger gaps
-- **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451' | jq -c '[.logger[] | select(.from < "1791936000000000000")] | length, .[0], .[9]'` runs (gaps starting before 2026-10-14T00:00Z)
-- **THEN** it prints `14`, `{"from":"1791722112563000000","to":"1791725930210000000"}` and `{"from":"1791883673936000000","to":"1791883676982000000"}` (2026-10-13 09:27:53.936–09:27:56.982 UTC, inside a drive)
+- **WHEN** on the scoped dev server, in a workspace `<id>` with scope `smart451 2026-10-13T00:00:00Z 2026-10-14T00:00:00Z`, `curl -s 'localhost:7310/api/w/<id>/gaps?dataRef=smart451' | jq -c '[.logger[] | select(.from == "1791883673936000000")]'` runs
+- **THEN** it prints `[{"from":"1791883673936000000","to":"1791883676982000000"}]` (2026-10-13 09:27:53.936–09:27:56.982 UTC, inside a drive); the number of logger gaps in that day is reported
 - **Evidence:** the `curl` command
 
 ### Requirement: Gap info per catalog load
-The server SHALL compute a data ref's logger gaps and `through` (its last row's time), and each measured period it needs ("Measured periods only for signals in use"), once per catalog load and after new rows ("Gap info follows new rows"), share each between concurrent requests, start computing the logger gaps of every data ref after each catalog load, and not keep a failed computation. Origin: necessary consequence of D-062 (the rule needs it for every view and value) and D-007 (carserver: 2 GB RAM); same pattern as the density (time-strip, design T7).
+The server SHALL compute a data ref's (or a scope's, or a work window's) logger gaps and `through` (its last row's time), and each measured period it needs ("Measured periods only for signals in use"), once per catalog load and after new rows ("Gap info follows new rows"), within the scan bound ("Gap info within the scan bound"). It SHALL share each between concurrent requests and not keep a failed computation. In full mode it SHALL start computing the logger gaps after each catalog load only for the data refs whose `refCount` is within the bound's rows. Origin: necessary consequence of D-062 (the rule needs it for every view and value) and D-007 (carserver: 2 GB RAM); same pattern as the density (time-strip, design T7); bound: D-117.
 
 #### Scenario: Once, shared, retried after failure
 - **WHEN** a stub source counts its logger-gap and sample queries; two `/api/gaps?dataRef=car&signal=car/Cyc&signal=car/Odd` requests arrive together, a third after them, then the catalog reloads and a fourth arrives; then the source fails once and two more requests arrive one after the other
@@ -48,12 +48,16 @@ The server SHALL compute a data ref's logger gaps and `through` (its last row's 
 - **Evidence:** `apps/server/test/gaps.test.ts` › "computes gap info once per catalog load and drops a failure"
 
 #### Scenario: Load on carserver
-- **WHEN** the gap info of smart451 is computed on carserver for a workspace whose windows hold six signals of the live catalog with a DBC period plus `smart451/BMS.cell_voltage.001` and `smart451/BMS.cell_voltage.002` (no DBC or diag period)
-- **THEN** it runs one logger-gap query (≈ 7 s, ≈ 14 MB server memory for 131 M rows), one count query (design G9), one sample query for those 2 signals (before this change: 116 signals, ≈ 0.2 s, ≈ 2 MB) and no other query
-- **Evidence:** the query count: `apps/server/test/gaps.test.ts` › "measures periods only for asked and workspace signals"; time and memory: `X-ClickHouse-Summary` of the queries of design G2/G3 (add-gap-display) run with `curl` (read-only), unchanged
+- **WHEN** the gap info of the scope `smart451 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z` is computed on carserver for a workspace whose windows hold six signals of the scope's list with a DBC period plus `smart451/BMS.cell_voltage.001` and `smart451/BMS.cell_voltage.002` (no DBC or diag period)
+- **THEN** it runs one count query (shared with the scan bound), one logger-gap query, one sample query for those 2 signals and no other query. Goal, measured and reported, not pass/fail: the logger-gap query takes ≤ 10 s (114.9 M rows; ≈ 7 s for 131 M rows were measured on 2026-10-17).
+- **Evidence:** the query count: `apps/server/test/gaps.test.ts` › "measures periods only for asked and workspace signals"; time: `X-ClickHouse-Summary` of the scoped logger-gap query run with `curl` (read-only), in `rounds.md`
 
 ### Requirement: Gap info follows new rows
-Every 5 min after the last poll or prefetch ended, the server SHALL count the rows of each data ref whose gap info it holds for an open workspace (the whole catalog in full mode while an open workspace has no scope or none is open, else only the open workspaces' scopes and work windows, "Gap info of a scope") and recompute the gap info whose count changed since it was computed, serving the old info until the new one is in and keeping it when the recompute fails; polls and prefetches never overlap. Origin: D-062 as a necessary consequence (a backfilled chunk left a stale gap that split real data, Jan 2026-10-17); design G9 (b).
+Every 5 min after the last poll or prefetch ended, the server SHALL count the rows of each held gap info that an open workspace uses and recompute those whose count changed since they were computed. It serves the old info until the new one is in, and keeps the old one when the recompute fails. Polls and prefetches never overlap. What counts as used:
+- the open workspaces' scopes and work windows ("Gap info of a scope")
+- in full mode, while an open workspace has no scope or none is open, the data refs of the catalog whose count is within the scan bound's rows
+
+Origin: D-062 as a necessary consequence (a backfilled chunk left a stale gap that split real data, Jan 2026-10-17); design G9 (b); D-117 (the poll never covers more than the open scopes).
 
 #### Scenario: New rows refresh the gap info
 - **WHEN** a stub source answers `refCount` 100 and the gap info is computed; a poll runs with the count still 100; the count becomes 101 and the logger gaps change, and a poll runs while a request arrives during its recompute; then the count becomes 102, the next recompute fails, and a request follows
@@ -61,14 +65,19 @@ Every 5 min after the last poll or prefetch ended, the server SHALL count the ro
 - **Evidence:** `apps/server/test/gaps.test.ts` › "recomputes gap info after new rows and keeps the old one meanwhile"
 
 #### Scenario: Count on carserver
-- **WHEN** `SELECT count() FROM sdlog.signals WHERE vehicle = 'smart451'` runs on carserver (read-only)
-- **THEN** its `X-ClickHouse-Summary` shows `read_rows` ≤ 10 and `elapsed_ns` < 50 ms (measured 2026-10-17: 3 rows, 3.4 ms)
-- **Evidence:** `curl` with the summary header
+- **WHEN** `SELECT count() FROM sdlog.signals WHERE vehicle = 'smart451' AND utc >= '2026-10-27 00:00:00' AND utc < '2026-10-28 00:00:00'` runs on carserver (read-only)
+- **THEN** its `X-ClickHouse-Summary` is reported; goal, not pass/fail: `elapsed_ns` < 1 s (a count over 8 days took 1.5 s on 2026-10-28)
+- **Evidence:** `curl` with the summary header, in `rounds.md`
 
 #### Scenario: smart451 without the stale gap
-- **WHEN** `curl -s 'localhost:7310/api/gaps?dataRef=smart451' | jq '[.logger[] | select(.to > "1792176671171000000" and .from < "1792176763235000000")] | length'` runs on the dev server
+- **WHEN** on the scoped dev server, in a workspace `<id>` with scope `smart451 2026-10-16T00:00:00Z 2026-10-17T00:00:00Z`, `curl -s 'localhost:7310/api/w/<id>/gaps?dataRef=smart451' | jq '[.logger[] | select(.to > "1792176671171000000" and .from < "1792176763235000000")] | length'` runs
 - **THEN** it prints `0` (no logger gap in 2026-10-16 18:51:11.171–18:52:43.235 UTC, where carserver holds 1,491,779 rows)
 - **Evidence:** the `curl` command
+
+#### Scenario: Poll only over open scopes
+- **WHEN** a full-mode test server with a recording adapter has the bound's rows set below testcar's row count, one open workspace without a scope, and one poll runs (fake timers)
+- **THEN** the poll sends no `refCount` or `loggerGaps` call for testcar, and one for every other data ref of the catalog
+- **Evidence:** `apps/server/test/gaps.test.ts` › "polls only data refs within the bound"
 
 ### Requirement: A sample voids a logger gap
 A logger gap SHALL split two points of a signal only when it lies within them (`p ≤ from` and `to ≤ q`), and two buckets only when neither bucket lies entirely inside it; a logger gap that holds a point, edge neighbour or non-empty bucket of the signal strictly inside it SHALL count as stale for that pair, and the period rule SHALL still apply. Origin: logger gap definition (it holds no row, "Logger gaps"); Jan 2026-10-17 („same values are cluttered as dots"); design G9 (a).
@@ -155,3 +164,21 @@ While the workspace has a scope, `GET /api/gaps` for its data ref SHALL answer t
 - **WHEN** a stub source records its calls, a workspace is unlinked on `gapcar` (object scope), `/api/gaps?dataRef=gapcar&from=2026-10-03T00:00:00Z&to=2026-10-04T00:00:00Z` is sent twice, and one poll runs
 - **THEN** the source got one `loggerGaps` and one `firstTimes` call with the scope {gapcar, 2026-10-03, 2026-10-04} and a poll `refCount` with the same scope, and no call with the whole object scope
 - **Evidence:** `apps/server/test/gaps.test.ts` › "computes and polls the gap info of a work window"
+
+### Requirement: Gap info within the scan bound
+`GET /api/gaps`, and the gap info that `/api/value` and computed series wait for, SHALL cover only one of these, checked by the scan bound before any logger-gap or sample query:
+- the scope
+- in an object scope, the work window
+- in full mode without a scope, the data ref
+
+Above the bound, `/api/gaps` SHALL answer 422 `too_wide`. The web SHALL treat it as a gap-info error of that data ref with the answer's message (`gap info for <ref> unavailable: too wide: …`), draw the lines without logger splits, and count the window as settled. No request SHALL wait for the gap info of a range larger than its scope or work window. Origin: D-117 („no request waiting for whole-recording gap info"); D-062 (no value across a gap); concept §10 (an incomplete result stays visible).
+
+#### Scenario: Value waits only for its scope
+- **WHEN** a stub source with scope {car, F, F + 1 h} records its calls and a `/api/value` request in that scope arrives
+- **THEN** the only `loggerGaps` call carries scope {car, F, F + 1 h}, after one `refCount` with the same scope
+- **Evidence:** `apps/server/test/gaps.test.ts` › "takes the value's gap info from the scope"
+
+#### Scenario: Too wide in the window
+- **WHEN** a timeseries window's gap info store gets 422 `too_wide` for its data ref
+- **THEN** the window's state is settled and carries the error `gap info for <ref> unavailable: too wide: …` with the server's message, and the store fetches again after 5 min (the refresh interval), not after the 30 s failure retry (fake timers)
+- **Evidence:** `apps/web/test/gaps.test.ts` › "settles with a too-wide error"

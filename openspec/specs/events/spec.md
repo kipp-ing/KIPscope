@@ -274,3 +274,11 @@ While the strip's data ref has events, the sidebar's `Events` tab SHALL show aft
 - **WHEN** smart451 is shown at 1440×900 with the shipped project file and the default filter, then at 1000×557 with the sidebar open, and the user switches the events filter preset
 - **THEN** the Events tab shows the number `/api/events` gives as the filtered total for smart451 (43 on 2026-10-17) at both sizes, fully visible, with the tooltip of `HINTS.eventsCount`; after the preset change the number changes and both tabs keep their boxes (±1 px)
 - **Evidence:** UI check on smart451 (screenshots at both sizes, tooltip text, tab boxes before and after)
+
+### Requirement: Events within the scan bound
+In full mode without a scope, the event prefetch after a catalog load SHALL skip every data ref whose `refCount` exceeds the scan bound's rows (scope "Scan bound"), and `/api/events` for such a data ref SHALL answer 422 `too_wide`. With a scope, or a work window in an object scope, the events follow that range as before. Origin: D-117 (no whole-data scans; the signal changes of the events line read a signal's whole recording without a scope).
+
+#### Scenario: Large data ref in full mode
+- **WHEN** a full-mode test server with a recording adapter runs with the bound below testcar's row count and no scope, its catalog loads, and `/api/events?dataRef=testcar` is sent
+- **THEN** the prefetch sent no `events` or `stateChanges` call for testcar, and the request answers 422 `too_wide`
+- **Evidence:** `apps/server/test/scanBound.http.test.ts` › "skips the events of a data ref over the bound"

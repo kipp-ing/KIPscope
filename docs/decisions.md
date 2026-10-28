@@ -4,6 +4,12 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-119: Scan bound and scoped defaults (2026-10-29, archive of `speed-up-whole-scans`)
+
+- **Decision:** Implements D-117 and D-118 with Jan's defaults Q-1 … Q-7 („ja passt", 2026-10-28). Every scan is bounded by `KIPSCOPE_SCAN_SPAN` (default 7 d) and `KIPSCOPE_SCAN_ROWS` (default 150 M rows, one full smart451 day fits); one count per range decides, and a wider request answers 422 `too_wide` (`too wide: …; choose a shorter range`) shown in the UI, never a 502. `KIPSCOPE_CATALOG=scoped` is the default; `full` stays opt-in for small sources (the bound applies there too). A workspace without a scope shows the Scope card and its windows stay quiet. Unlink takes its span from the catalog's sessions of the vehicle (padded) and keeps the last linked session's signal list; the object scope reads only a work window (view ± one span, 6 h to 7 d). Calendar days are counted in the `idle` class (lowest, one in flight), kept per data ref under `KIPSCOPE_STATE_DIR/calendar/`, final 1 h after their end, filled ahead for workspaces with a live client. `case drives` runs in a workspace of its own; `pnpm smoke` creates and deletes a scoped workspace.
+- **Why:** On carserver (smart451, 768 M rows) whole-recording queries hit the 30 s limit; measured after the change: refusals 1–1.4 s, a 1 d density 8 s cold and 1 ms warm, Unlink 2 ms, two calendar months 31 s, no 5xx.
+- **Consequences:** Main specs scope, object-view, time-strip, data-gaps, range-picker, series-query, cli, events, data-source, signal-catalog updated; T-15 fixed; follow-ups T-16 … T-18.
+
 ## D-118: Calendar density filled day by day at the lowest priority (2026-10-28)
 
 - **Context:** D-117 bounds every raw query. Jan: „das einzige, was ich da noch wünsche ist die density in der zeitauswahl. die sollte einfach immer in niedrigster prio gefüllt werden". Measured on carserver: hourly counts of smart451 for one day 5.1 s; a whole month in one query hits the 30 s limit.

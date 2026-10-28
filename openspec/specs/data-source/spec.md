@@ -123,22 +123,27 @@ The `stateChanges` fallback SHALL read the signal in pages of `STATE_SCAN_PAGE` 
 - **Evidence:** `apps/server/test/fallbacks.test.ts` › "stops the state-change scan after 5,000,000 points"
 
 ### Requirement: ClickHouse answers as before
-The ClickHouse adapter SHALL implement every optional method natively except `series`, which it takes from the server's fallback, and SHALL send the same queries as before this change for every existing path (density, gaps, events, series, values, catalog); `raw` without a limit and `refBuckets` without row times SHALL be unchanged. Origin: the lead's brief („Keep ClickHouse behaviour and performance unchanged"); D-007; D-074 („ClickHouse keeps all 15 methods and its queries unchanged"); `series` from the fallback: speed-up-adx design A2 (the fallback sends exactly the `count`, `raw`, `before`, `after` and `buckets` calls of today).
+The ClickHouse adapter SHALL implement every optional method natively except `series`, which it takes from the server's fallback. It SHALL send the same query texts as before for every existing path (density, gaps, events, series, values, catalog). The server may add calls on these paths, but only calls of methods that already exist: the scan bound's `refCount` (scope "Scan bound") and the calendar's per-day `refBuckets`. `raw` without a limit and `refBuckets` without row times SHALL be unchanged. The source contract (`SourceAdapter`) SHALL be unchanged, and ADX and the fallbacks need no change. Origin: the lead's brief („Keep ClickHouse behaviour and performance unchanged"); D-007; D-074 („ClickHouse keeps all 15 methods and its queries unchanged"); `series` from the fallback: speed-up-adx design A2; added calls: D-117, D-118.
 
 #### Scenario: Existing suite
 - **WHEN** `pnpm --filter @kipscope/server test` runs against the seeded test DB
-- **THEN** every existing test passes with unchanged expected values
+- **THEN** every existing test passes with unchanged expected values, except where this change's delta specs name new call counts or answers
 - **Evidence:** the command's output
 
 #### Scenario: Density query unchanged
 - **WHEN** the density of `drivecar` is computed with a client that records query texts
-- **THEN** its two queries are the `refExtent` and the counts-only `refBuckets` query of today (no `min`/`max` of the time column)
+- **THEN** after the scan bound's `SELECT count()` with only the data-ref filter, its two queries are the `refExtent` and the counts-only `refBuckets` query of today (no `min`/`max` of the time column)
 - **Evidence:** `apps/server/test/density.http.test.ts` › "sends the counts-only bucket query"
 
 #### Scenario: No native series on ClickHouse
 - **WHEN** `nativeMethods` runs on the ClickHouse adapter
 - **THEN** it lists `count`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges`, `computedSeries` and `events`, and not `series`
 - **Evidence:** `apps/server/test/fallbacks.test.ts` › "takes series from the fallback on ClickHouse"
+
+#### Scenario: No contract change
+- **WHEN** `git diff 33383a7 -- apps/server/src/datasource.ts` (the commit before this change) runs at the end of the change
+- **THEN** it prints nothing
+- **Evidence:** the command's output
 
 ### Requirement: Source selection
 `KIPSCOPE_SOURCE` SHALL select the server's one source: `clickhouse` (default, the current variables) or `adx` (adx-source "ADX configuration"). An unknown value, or a missing required variable of the selected source, SHALL stop the server with a message naming the variable; variables of the other source are ignored. Origin: Jan (2026-10-17) „ADX via az login"; A-2 (a) one source per server; D-005 (the server holds the adapters and credentials).
