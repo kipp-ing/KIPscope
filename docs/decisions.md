@@ -4,6 +4,13 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-117: No whole-data scans; finding is the search tool's job (2026-10-28)
+
+- **Context:** T-15 (docs/todo.md): smart451 holds 768 M rows and grows about 50 M a day; scans over the whole recording (logger gaps, density, extent, calendar, the catalog's `SELECT DISTINCT`) hit the source's 30 s limit, so gaps, density and value answer 502. Jan: „der datensee wird bald TBs haben"; „suchtool ist schon wichtig, ohne dass fehlt ja das ‚finden'. im see stochern über alles ist ja quatsch".
+- **Decision:** KIPscope never scans the whole data of a source. Every raw query is bounded by a scope (data ref and time window, D-082); finding sessions is the search tool's job (D-078, D-089). An overview across a whole vehicle (its sessions, extent, drives) comes from the search tool's catalog, not from raw data. Without the search tool, a scope is set by hand or with the CLI (`scope set`, `case drives`); browsing a whole lake is not a use case.
+- **Why:** At terabytes no full scan finishes, cached or not; chunking and caching (the first idea for T-15) only postpones the wall.
+- **Consequences:** Change `speed-up-whole-scans` (T-15) is respecced in this direction: a scope everywhere, a bound per query with a visible "too wide" answer (concept §10), no request waiting for whole-recording gap info, Unlink and the strip at vehicle level from the catalog's sessions.
+
 ## D-116: Range picker conventions (2026-10-28, archive of `add-range-picker`)
 
 - **Decision:** The range button and picker replace the header range and the Span select (D-092). `GET /api/calendar` gives hours from `from`, drives on the 60 s grid, at most 32 d, cut to the scope, cached per window and run in the caller's request class. Start and duration come from one formatter `startDuration` (D-093, D-095): `H:MM h` below 48 h, `D d H h` from 48 h, seconds only under 1 min, the full date and the duration in words as tooltips, the same `DurationTag` everywhere. The calendar is a keyboard grid with one tab stop; with a linked catalog it shows the session only. Design Q-1 (a day click keeps the From/To times), Q-3 (`Whole session` / `Whole scope` / `Whole recording`) and Q-6 (a day's tooltip keeps its weekday) stand as defaults; Q-2, Q-4 and Q-5 were superseded by D-093 and D-095; Q-7 ("the last edit wins") was confirmed by D-115 (3).
