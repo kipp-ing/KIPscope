@@ -105,7 +105,7 @@ Each timeseries window SHALL meanwhile show `No scope set` in the muted colour i
 - **Evidence:** `apps/web/test/scopeCard.test.ts` › "keeps windows quiet without a scope"
 
 #### Scenario: Card on carserver
-- **WHEN** the UI user opens Jan's workspace (windows on smart451, no scope) on the scoped dev server at 1440×900, sets To to a time 2 d after From and clicks **Set scope**, then sets From and To to 2026-10-27 00:00 and 2026-10-28 00:00 local and clicks again
+- **WHEN** the UI user opens Jan's workspace (windows on smart451, no scope) on the scoped dev server at 1440×900, sets To to a time 17 d after From (over the 7 d span bound) and clicks **Set scope**, then sets From and To to 2026-10-27 00:00 and 2026-10-28 00:00 local and clicks again
 - **THEN** the card shows; the first click shows a `too wide:` message under the button; after the second the card goes, the context row reads `SCOPE smart451` and the windows draw; no window shows an error box before or after
 - **Evidence:** UI check (one screenshot per step)
 

@@ -6,7 +6,12 @@
 - A day answering `too_wide` is asked again as four 6 h parts.
 - Drives that touch at a day or part edge are merged, their rows summed.
 
-`case drives` SHALL exit 1 with `no_data` when there is no drive, with `too_wide` when a 6 h part is still too wide, and with a usage error when FROM or TO is missing or the range spans more than 32 days. It is a test aid and works in scoped mode without a scope (scope "Scoped mode needs a scope"). Origin: D-086 Q8 („`kipscope case drives <dataRef>` builds a catalog from the strip's drives … a dev aid"); D-117 („Without the search tool, a scope is set by hand or with the CLI (`scope set`, `case drives`)"); 32 days: D-089 (work window ≤ 32 d).
+`case drives` SHALL exit 1 with `no_data` when there is no drive, with `too_wide` when a 6 h part is still too wide, and with a usage error when FROM or TO is missing or the range spans more than 32 days. It is a test aid and works in scoped mode without a scope (scope "Scoped mode needs a scope"): without `--workspace` it SHALL send its density requests to a workspace of its own without a scope, made by the call with `POST /api/workspaces {}` and deleted at its end, also after a failure, so the scope of the latest workspace never binds it; with `--workspace` it uses that one. Origin: D-086 Q8 („`kipscope case drives <dataRef>` builds a catalog from the strip's drives … a dev aid"); D-117 („Without the search tool, a scope is set by hand or with the CLI (`scope set`, `case drives`)"); 32 days: D-089 (work window ≤ 32 d).
+
+#### Scenario: Drives beside a scoped workspace
+- **WHEN** the latest workspace on the test server has the scope drivecar 2026-10-01 00:00 – 2026-10-01 06:00 UTC and `case drives drivecar 2026-10-02T00:00:00Z 2026-10-03T00:00:00Z` runs without `--workspace`
+- **THEN** it exits 0 with the drives of 2026-10-02 (not `out_of_scope`), and afterwards `GET /api/workspaces` lists the same workspaces as before
+- **Evidence:** `apps/cli/test/cli.test.ts` › "case drives ignores the latest workspace's scope"
 
 #### Scenario: Drives of drivecar
 - **WHEN** against the test server `case drives drivecar 2026-10-02T00:00:00Z 2026-10-03T00:00:00Z` runs, and `case drives nosuchcar 2026-10-02T00:00:00Z 2026-10-03T00:00:00Z`
