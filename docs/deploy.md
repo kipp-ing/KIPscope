@@ -34,7 +34,7 @@ KIPSCOPE_IDENTITY=oidc
 KIPSCOPE_OIDC_ISSUER=https://sso.example.com/realms/kipscope
 KIPSCOPE_OIDC_AUDIENCE=https://kipscope.example.com
 KIPSCOPE_OIDC_ROLES_CLAIM=groups
-KIPSCOPE_SHARE=on                           # off: workspaces stay private
+KIPSCOPE_SHARE=on                           # off: no new read/write shares
 KIPSCOPE_ORIGINS=https://kipscope.example.com
 KIPSCOPE_WEB_DIR=/opt/kipscope/apps/web/dist
 KIPSCOPE_STATE_DIR=/var/lib/kipscope
@@ -55,7 +55,7 @@ At start the server logs one line naming the identity (`oidc` with issuer and au
 | `KIPSCOPE_OIDC_HEADER` | `authorization` | The header holding the token: for `authorization` the value is `Bearer <jwt>`, for any other header the bare JWT. |
 | `KIPSCOPE_OIDC_ALGS` | `RS256,PS256,ES256` | Allowed signature algorithms, a subset of `RS256 RS384 RS512 PS256 PS384 PS512 ES256 ES384 ES512 EdDSA`; `none` and `HS*` are refused at start. |
 | `KIPSCOPE_ORIGINS` | empty | Comma list of the public origins `https://host[:port]`, no path. Required unless `none`. Their hosts pass the Host check; a browser request's `Origin` must be exactly one of them. |
-| `KIPSCOPE_SHARE` | `on` | `on` or `off`. With `off`, sharing a workspace `read` or `write` answers 403 `share_not_permitted`. Any other value stops the server. Ignored with `none`. |
+| `KIPSCOPE_SHARE` | `on` | `on` or `off`. With `off`, sharing a workspace `read` or `write` answers 403 `share_not_permitted`; workspaces shared before keep their level until their owner sets them `private`. Any other value stops the server. Ignored with `none`. |
 | `KIPSCOPE_WORKSPACE_IDLE_DAYS` | `30` | An integer ≥ 1. Workspaces untouched this long and without an open tab are deleted (at start and hourly). |
 | `KIPSCOPE_WEB_DIR` | unset | The built UI (`apps/web/dist` after `pnpm build`). |
 | `KIPSCOPE_TRUSTED_PROXIES` | `127.0.0.1,::1` | Read by the example module only: IPs and CIDRs whose forwarded headers it trusts. |
@@ -162,7 +162,7 @@ KIPscope keeps no rules of its own. Which vehicles a user may see is the search 
 - **On a server** (`oidc` or `module:`) a new workspace's grant is empty. It shows no data until the search tool hands it a case (the handoff of `add-case-open`, which widens the grant); until then the page shows "Open a session from the search tool". The catalog, search, footer counts and every data route see only the granted data refs.
 - **Roles** from the token are shown (`GET /api/me`, `kipscope whoami`, the footer tooltip) and decide nothing.
 - **Views grant nothing:** opening a view checks its data refs against the workspace's grant, and a view from a link opens in a new workspace with the initial (on a server: empty) grant.
-- **Sharing** never widens data access. Share levels decide who may open a workspace (`private`: the owner; `read`: anyone with the link may look; `write`: anyone with the link may change it); an invited user sees the shared workspace's grant while in that workspace, and their own workspaces never gain it. `KIPSCOPE_SHARE=off` turns `read` and `write` off for everyone (403 `share_not_permitted`); `private` is always allowed.
+- **Sharing** never widens data access. Share levels decide who may open a workspace (`private`: the owner; `read`: anyone with the link may look; `write`: anyone with the link may change it); an invited user sees the shared workspace's grant while in that workspace, and their own workspaces never gain it. `KIPSCOPE_SHARE=off` refuses setting `read` or `write` (403 `share_not_permitted`); `private` is always allowed. It does not close workspaces shared before: their owners set them `private` (D-115).
 - **Start a server on a fresh state dir.** A state dir carried over from local use holds workspaces granted everything; on a server such a stored grant reads as empty (fail closed), so their windows would show `forbidden_data` errors.
 
 ## Trust boundary

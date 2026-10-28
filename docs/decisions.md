@@ -4,6 +4,16 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-115: Answers from the review day (2026-10-28)
+
+The review day checked every spec against the code ([todo.md](todo.md)); Jan answered three of its questions.
+
+- **Decision:**
+  1. (Q-01) `KIPSCOPE_SHARE=off` stays as built: it refuses setting `read` or `write`, and workspaces shared before keep their level until their owner sets them `private`. The docs (`deploy.md`, `corporate.md`, README) are corrected; they had promised that `off` makes every workspace private.
+  2. (Q-02) While searching, the active row and so the Enter target is the best hit, also when it sits in `Other` (as built since `add-favourites` F6). Supersedes D-053's "Enter adds the first row shown, even if a better hit sits in `Other`"; `Other` still lists last.
+  3. (Q-04) The range picker's "the last edit wins" (design Q-7 of `add-range-picker`: Go applies text typed in this open until a later draft change; Enter acts as Go) is confirmed.
+- **Why:** The code was right in all three; the docs and D-053 described an older or stricter intent.
+
 ## D-114: KIPscope as Jan's own product, v0.1.0 (2026-10-23)
 
 Jan promotes KIPscope as his own tool; the README becomes its product page.

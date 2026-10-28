@@ -238,7 +238,7 @@ Go and Enter in any of the picker's fields SHALL apply what "Go on typed text" n
 - **Evidence:** `apps/web/test/keys.test.ts` › "ignores navigation keys while the range picker is open"; UI check (revision before and after)
 
 ### Requirement: Go on typed text
-The last edit of this open SHALL decide what Go applies: while typing non-blank text is the latest edit, Go SHALL apply that text (refused: reason in the result line, no command) and stay enabled. A later draft change (day, chip, preset, From or To) SHALL hand Go back to the draft and clear the reason; typing again leads again; paging changes neither. Origin: lead's default of 2026-10-21, refined after round 6 (design Q-7, Jan may veto); "this open": the field keeps its text.
+The last edit of this open SHALL decide what Go applies: while typing non-blank text is the latest edit, Go SHALL apply that text (refused: reason in the result line, no command) and stay enabled. A later draft change (day, chip, preset, From or To) SHALL hand Go back to the draft and clear the reason; typing again leads again; paging changes neither. Origin: lead's default of 2026-10-21, refined after round 6 (design Q-7), confirmed by Jan: D-115 (3); "this open": the field keeps its text.
 
 #### Scenario: Go takes the typed text
 - **WHEN** `goSource` gets (`15:08`, typed in this open), (`15:08`, not typed in this open), (`  `, typed in this open) and (``, typed in this open)

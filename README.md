@@ -217,7 +217,7 @@ display:
 
 - Rules run in order; the first rule that matches and renders non-blank wins. Unlike `names`, a blank render (no sender) falls through to the next rule.
 - Signals no rule names go to `Other`, always last.
-- Empty search: all groups collapsed, alphabetical. While searching: only groups with a hit, open, ordered by their best hit (`Other` still last); click a header or press Enter on it to toggle. Enter in the search adds the first row shown.
+- Empty search: all groups collapsed, alphabetical. While searching: only groups with a hit, open, ordered by their best hit (`Other` still last); click a header or press Enter on it to toggle. Enter in the search adds the best hit, even when it sits in `Other` (D-115).
 - Without `groups` the list is flat. Restart the server after editing the file.
 
 ### Measurement info
@@ -347,7 +347,7 @@ The search tool is a separate tool and not part of KIPscope; it is out of scope 
 - **The search tool finds, KIPscope shows.** The search tool finds the sessions and hands over a catalog in any order, of any vehicles; KIPscope steps through it with the layout kept, preloads the neighbours and never scans a vehicle's whole history in one query, not even after Unlink.
 - **Enterprise SSO (OIDC).** `KIPSCOPE_IDENTITY=oidc` validates JWT access tokens of any OIDC provider that publishes discovery and a JWKS, behind an OIDC proxy; any other sign-in plugs in as a small adapter module with a conformance suite. CLI and AI callers send a bearer token (`KIPSCOPE_TOKEN` or a token command).
 - **Rights from the handoff.** On a server a new workspace sees nothing. Only a catalog signed by the search tool for the signed-in user widens its grant, by exactly the listed vehicles; roles decide nothing in KIPscope. One guard checks every route; a hidden vehicle and a missing one answer alike, and lists never show what the grant lacks.
-- **Workspaces you don't manage.** Each tab is a workspace at `/w/<id>`. Share… sends an own copy or invites to the live workspace (read or write); sharing never widens data access, and `KIPSCOPE_SHARE=off` keeps everything private. Saved views are per user and grant nothing.
+- **Workspaces you don't manage.** Each tab is a workspace at `/w/<id>`. Share… sends an own copy or invites to the live workspace (read or write); sharing never widens data access, and `KIPSCOPE_SHARE=off` refuses new shares. Saved views are per user and grant nothing.
 - **Large data.** Any source adapter, read with one service identity (for ADX a service principal or managed identity); scoped catalog for large tables, query classes that keep the UI first, and a measured 400-day vehicle with every query well under a second.
 - **Local stays simple.** Without these variables (`KIPSCOPE_IDENTITY=none`) there is no login and one user sees everything.
 

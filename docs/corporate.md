@@ -50,7 +50,7 @@ flowchart LR
 - **Deny by default.** On a server a new workspace sees no data. Only a catalog signed by the configured search tool, for the signed-in user (`sub`), with a short lifetime (`exp`), widens its grant, and only by the listed vehicles. No route, command, view or file can set a grant.
 - **Rights are per vehicle, without time.** Whoever may see a vehicle may see all of it (D-086). Roles from the token are shown, they decide nothing in KIPscope: the search tool decides.
 - **No leaks.** A hidden vehicle and a missing one answer the same `403 forbidden_data`, before any lookup; lists, searches and counts never include data outside the grant; the workspace list never shows other users' workspaces.
-- **Sharing never widens.** An invited user sees the shared workspace's grant only inside it; their own workspaces never gain it. `KIPSCOPE_SHARE=off` keeps every workspace private.
+- **Sharing never widens.** An invited user sees the shared workspace's grant only inside it; their own workspaces never gain it. `KIPSCOPE_SHARE=off` refuses new `read` and `write` shares; start with it off to keep every workspace private.
 - **Links carry no credentials.** A forwarded catalog link does not open for anyone else; a view link (`#view=`) carries a layout, never a right.
 - **Credentials stay on the server.** The browser and the CLI never see the database address or account; ADX is read with the server's service principal or managed identity.
 - **The database is protected from the UI.** Every query is bounded by a data ref and a time window; nothing scans a vehicle's whole history in one go, not even after Unlink (D-082, D-086). Interactive queries go before background work (D-081).

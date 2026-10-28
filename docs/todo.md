@@ -31,10 +31,9 @@ Bugs and open questions from the review day of 2026-10-28: every main spec (and 
 
 ## Questions for Jan
 
-- **Q-01 (security-relevant):** `KIPSCOPE_SHARE=off` only blocks *setting* `read`/`write`; workspaces shared before stay open to every signed-in user (`apps/server/src/rights.ts` ignores the switch). `docs/deploy.md:37,165` and `docs/corporate.md:53` say it keeps every workspace private. Enforce the switch, or correct the docs?
-- **Q-02:** Enter in the search adds the best hit even when it sits in `Other` (`SignalExplorer.tsx:273`, since add-favourites F6); D-053 and the README say "the first row shown". Keep the best hit (amend D-053) or pass it only when it has a Favourites copy?
+Answered 2026-10-28: Q-01, Q-02, Q-04 (D-115).
+
 - **Q-03:** Should every `view.open` keep "Before last open" (`_previous`)? Today only `POST /api/views/open` and import with open do; `view.open` via `/api/commands` or `POST /api/workspaces {open}` does not, while saved-views says the server SHALL keep it.
-- **Q-04:** Range picker "the last edit wins" (Go on typed text, Enter as Go, design Q-7) is still a lead default you may veto; no D-number yet. The code matches it.
 - **Q-05:** Display names of a scoped list are computed over the scope's signals only, so a collision suffix can differ from the full catalog. signal-catalog › Catalog contents says "same display names"; display-names says the check covers the whole catalog. Which wins?
 - **Q-06:** "One primary per surface" still says "This change adds no primary button"; slate-900 primaries now exist in the computed editor, Views popover, range picker Go and gate page. Drop the sentence? (Views popover not checked for two at once.)
 - **Q-07:** Should the unlinked session-bar tooltip keep the left session's meta and id lines (T-09)?
