@@ -142,8 +142,6 @@ kipscope case drives smart451 2026-10-20T00:00:00Z 2026-10-28T00:00:00Z > drives
 kipscope case open drives.json
 ```
 
-Once your latest workspace has a scope, `kipscope case drives` without `--workspace` is bound to that scope and answers `out_of_scope`; run it before setting a scope, or pass `--workspace ID` of a workspace without a scope.
-
 Every scan is bounded: a range over `KIPSCOPE_SCAN_SPAN` (default `7d`) or holding more than `KIPSCOPE_SCAN_ROWS` rows (default `150000000`, one full smart451 day fits) answers `too wide: …; choose a shorter range` instead of timing out. `KIPSCOPE_CATALOG=full` (a start-up catalog of every data ref) is for small sources such as the test DB; [docs/data-sources.md](docs/data-sources.md#scope) has the details.
 
 `pnpm smoke` is the crash gate: it loads the running UI in its own headless Chrome (fresh temp profile), clicks through every top-level part at 1440×900 and 1000×557 and fails on a Vite error overlay, uncaught exceptions, console errors or failed module loads; an API answer the specs expect (404 `unknown_signal` for a signal a session lacks) is not a console error. `--url <url>` checks another page, `--preview` the built `apps/web/dist` via `vite preview`. It creates its own scoped workspace (`POST /api/workspaces {open: {view}}`, sent by the script) with `--scope REF FROM TO` (default `smart451 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z`) and one timeseries window of `--signal ID` (default `smart451/BMS.cell_voltage_max`) over 10:00–11:00Z, opens it at `/w/<id>`, blocks every write the page sends to `/api`, and deletes the workspace on every exit path, so it never changes yours. It prints the IDs it created and deleted.

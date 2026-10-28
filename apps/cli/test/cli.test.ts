@@ -1,5 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -2085,6 +2085,72 @@ describe("catalogs (add-case-open K15)", () => {
     expect(none.out.ok).toBe(false);
   });
 
+  it("case drives ignores the latest workspace's scope", async () => {
+    m = await startMulti({
+      identity: "none",
+      mode: "scoped",
+      adapter: testSource() as unknown as SourceAdapter,
+    });
+    // The latest workspace is scoped to drivecar 2026-10-01 00:00 – 06:00, a day before the drives.
+    const scope = await caseCli(
+      m,
+      "scope",
+      "set",
+      "drivecar",
+      "2026-10-01T00:00:00Z",
+      "2026-10-01T06:00:00Z",
+    );
+    expect(scope.code, scope.stdout.join("")).toBe(0);
+    const server = m;
+    const listed = async () => {
+      const list = (await (await fetch(`${server.url}/api/workspaces`)).json()) as {
+        workspaces: { id: string }[];
+      };
+      return list.workspaces.map((w) => w.id).sort();
+    };
+    const before = await listed();
+    expect(before.length).toBeGreaterThan(0);
+
+    const drives = await caseCli(
+      m,
+      "case",
+      "drives",
+      "drivecar",
+      "2026-10-02T00:00:00Z",
+      "2026-10-03T00:00:00Z",
+    );
+    expect(drives.code, drives.stdout.join("")).toBe(0);
+    expect(drives.out.data.cases.length).toBeGreaterThan(0);
+    for (const entry of drives.out.data.cases as { from: string }[]) {
+      expect(entry.from.startsWith("2026-10-02")).toBe(true);
+    }
+    // Its own workspace is gone again: the list is the same as before.
+    expect(await listed()).toEqual(before);
+
+    // With --workspace it uses that one and makes none.
+    const made = (await (
+      await fetch(`${m.url}/api/workspaces`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
+    ).json()) as { workspace: { id: string } };
+    const withOne = await listed();
+    const given = await caseCli(
+      m,
+      "--workspace",
+      made.workspace.id,
+      "case",
+      "drives",
+      "drivecar",
+      "2026-10-02T00:00:00Z",
+      "2026-10-03T00:00:00Z",
+    );
+    expect(given.code, given.stdout.join("")).toBe(0);
+    expect(given.out.workspace).toBe(made.workspace.id);
+    expect(await listed()).toEqual(withOne);
+  });
+
   it("opens drives piped from case drives", async () => {
     m = await startMulti({ identity: "none", adapter: testSource() as unknown as SourceAdapter });
     const day = "from=2026-10-01T00:00:00Z&to=2026-10-02T00:00:00Z";
@@ -2125,6 +2191,27 @@ describe("catalogs (add-case-open K15)", () => {
     });
 
     /**
+     * The workspace of its own that `case drives` makes and deletes (`stubws`): answers the create
+     * and the delete, records the delete, and gives the density path; anything else is not handled.
+     */
+    function ownWorkspace(deleted: string[]) {
+      return (req: IncomingMessage, res: ServerResponse, url: URL): boolean => {
+        const json = (body: unknown) =>
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+        if (req.method === "POST" && url.pathname === "/api/workspaces") {
+          json({ workspace: { id: "stubws" } });
+          return true;
+        }
+        if (req.method === "DELETE" && url.pathname.endsWith("/workspaces/stubws")) {
+          deleted.push("stubws");
+          json({ deleted: "stubws" });
+          return true;
+        }
+        return false;
+      };
+    }
+
+    /**
      * A server that answers `/api/density` by the asked range: day 1 with a drive ending at its
      * end (D2) — 100 rows, day 2 with 422 `too_wide`, day 2's first 6 h part with a drive starting
      * at its start (50 rows), every other part with no drive. It records the ranges asked and fails
@@ -2132,11 +2219,14 @@ describe("catalogs (add-case-open K15)", () => {
      */
     async function startDensityStub() {
       const asked: { from: bigint; to: bigint }[] = [];
+      const deleted: string[] = [];
+      const own = ownWorkspace(deleted);
       let inFlight = 0;
       let overlapped = false;
       const server = createServer((req, res) => {
         const url = new URL(req.url ?? "/", "http://stub");
-        if (url.pathname !== "/api/density") {
+        if (own(req, res, url)) return;
+        if (url.pathname !== "/api/w/stubws/density") {
           res.writeHead(404).end("{}");
           return;
         }
@@ -2185,6 +2275,7 @@ describe("catalogs (add-case-open K15)", () => {
       return {
         url: `http://127.0.0.1:${address.port}`,
         asked,
+        deleted,
         overlapped: () => overlapped,
         close: () =>
           new Promise<void>((resolve) => {
@@ -2217,6 +2308,7 @@ describe("catalogs (add-case-open K15)", () => {
         { from: D2 + 18n * H, to: D3 },
       ]);
       expect(started.overlapped()).toBe(false);
+      expect(started.deleted).toEqual(["stubws"]);
       // One session spanning both drives, their rows summed: 2026-10-01T23:00Z … 2026-10-02T01:00Z.
       expect(result.out.data.cases).toEqual([
         {
@@ -2272,9 +2364,11 @@ describe("catalogs (add-case-open K15)", () => {
       await started.close();
 
       // A server whose every density is too wide: the day, then its 6 h parts are refused.
+      const deleted: string[] = [];
+      const own = ownWorkspace(deleted);
       const refused = createServer((req, res) => {
+        if (own(req, res, new URL(req.url ?? "/", "http://stub"))) return;
         const body = { error: { code: "too_wide", message: "too wide: x" } };
-        void req;
         res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(body));
       });
       await new Promise<void>((resolve) => refused.listen(0, "127.0.0.1", resolve));
@@ -2300,6 +2394,8 @@ describe("catalogs (add-case-open K15)", () => {
       ]);
       expect(wide.code).toBe(1);
       expect(wide.out).toMatchObject({ ok: false, error: { code: "too_wide" } });
+      // Its own workspace is deleted also after the failure.
+      expect(deleted).toEqual(["stubws"]);
     });
   });
 

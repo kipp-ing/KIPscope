@@ -83,7 +83,9 @@ export async function runCase(
     }
     case "drives": {
       const ref = invocation.dataRef;
-      const drives = await drivesOf(client, ref, invocation.from, invocation.to);
+      const drives = await withDrivesWorkspace(client, (own) =>
+        drivesOf(own, ref, invocation.from, invocation.to),
+      );
       if (drives.length === 0) {
         throw new CliError(
           "rejected",
@@ -115,6 +117,31 @@ export async function runCase(
 }
 
 const PART_NS = 6n * 3_600_000_000_000n;
+
+/**
+ * Runs `use` in the call's workspace when --workspace was given (nothing is requested before, so
+ * the client's workspace is the given one); else in a workspace of its own without a scope, made
+ * with `POST /api/workspaces {}` and deleted at the end, also after a failure (cli "Catalog from
+ * drives"): the scope of the latest workspace never binds `case drives`.
+ */
+async function withDrivesWorkspace<T>(
+  client: Client,
+  use: (client: Client) => Promise<T>,
+): Promise<T> {
+  if (client.workspace() !== undefined) return use(client);
+  const created = await client.other().post<CreateWorkspaceAnswer>("/api/workspaces", {});
+  const own = client.other(created.workspace.id);
+  let result: T;
+  try {
+    result = await use(own);
+  } catch (error) {
+    // The first failure is the one reported; a failed delete after it is not.
+    await own.delete(`/api/workspaces/${created.workspace.id}`).catch(() => {});
+    throw error;
+  }
+  await own.delete(`/api/workspaces/${created.workspace.id}`);
+  return result;
+}
 
 /**
  * The drives of `ref` in [from, to) (cli "Catalog from drives", design B10): one bounded density

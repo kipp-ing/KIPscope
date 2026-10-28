@@ -29,6 +29,8 @@ export interface Client {
   postCommandAt(path: string, body: unknown): Promise<CommandResult>;
   /** The call's workspace: the given one, else the first answer's `X-KIPscope-Workspace` (M13). */
   workspace(): string | undefined;
+  /** A client of the same server, deadline and token with a workspace of its own (none: as without --workspace). */
+  other(workspace?: string): Client;
 }
 
 export interface ClientOptions {
@@ -119,6 +121,11 @@ export function createClient(
     postCommand: (command: CommandInput) => postCommandAt("/api/commands", command),
     postCommandAt,
     workspace: () => workspace,
+    other: (id?: string) =>
+      createClient(baseUrl, deadline, {
+        ...(id !== undefined && { workspace: id }),
+        ...(options.token !== undefined && { token: options.token }),
+      }),
   };
 }
 
