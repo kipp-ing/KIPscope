@@ -21,7 +21,7 @@ As of 2026-10-21, session 10. New direction after the ADX feedback and Jan's ans
 | Workspace | [workspace-state](../openspec/specs/workspace-state/spec.md) | Command-driven state with revisions, live push and render acknowledgement; survives a restart (`.kipscope/workspace.json`) |
 | Saved views | [saved-views](../openspec/specs/saved-views/spec.md) | Named views in `.kipscope/views/*.yaml`, title in the top row, YAML export and import, self-contained `#view=` links, `?view=<name>`, CLI `view …` |
 | Chart windows | [timeseries-window](../openspec/specs/timeseries-window/spec.md) | uPlot windows, one axis per unit (max 4), linked zoom, history, drag and drop, wheel and keys |
-| Time navigation | [time-navigation](../openspec/specs/time-navigation/spec.md) | "Go to" with times, ranges and durations; span presets; zoom and pan keys |
+| Time navigation | [time-navigation](../openspec/specs/time-navigation/spec.md), [range-picker](../openspec/specs/range-picker/spec.md) | Range button and picker (calendar with density and drives, presets, typed "Go to" with times, ranges and durations); zoom and pan keys |
 | Cursors | [cursors](../openspec/specs/cursors/spec.md) | A and B in every window; exact values, Δ and Δt in the legend |
 | Live cursor | [live-cursor](../openspec/specs/live-cursor/spec.md) | L follows the mouse in every window: L column in legends and values window, nearest curve within 16 px highlighted with a value label; grey L line |
 | Values window | [values-window](../openspec/specs/values-window/spec.md) | Many signals at the cursors, no plot |
@@ -90,7 +90,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 
 ## Next
 
-0. Review day 2026-10-28: all main specs checked against the code, drift fixed in the specs; 14 bugs (T-01 medium: zoom history not per catalog session) and open questions for Jan (Q-01, Q-02, Q-04 answered: D-115) in [todo.md](todo.md).
+0. Review day 2026-10-28: all main specs checked against the code, drift fixed in the specs; 14 bugs (T-01 medium: zoom history not per catalog session) and open questions for Jan (Q-01, Q-02, Q-04 answered: D-115) in [todo.md](todo.md). `add-range-picker` archived the same day (D-116).
 
 1. New direction (2026-10-19, D-078 … D-080, the ADX feedback): a search tool (finder, not part of KIPscope) finds sessions, KIPscope shows one case (scope = data ref + time window), runs multiuser on a server, signal books with three priorities and a learned book. Planned changes in order:
    0. Done: papercuts from the ADX feedback item 8 (`.gitattributes`, `--env-file-if-exists`, DBC path warnings).
