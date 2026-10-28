@@ -1,4 +1,4 @@
-import { NS_PER_MS, TIME_MAX, TIME_MIN } from "@kipscope/shared";
+import { NS_PER_MS, TIME_MAX, TIME_MIN, type Workspace } from "@kipscope/shared";
 
 export interface Range {
   from: bigint;
@@ -285,4 +285,17 @@ export async function settleStep(
 export function historyKey(linked: boolean, windowId: string, caseIndex?: number): string {
   const key = linked ? "*" : windowId;
   return caseIndex === undefined ? key : `${key}@${caseIndex}`;
+}
+
+/**
+ * History and pending-navigation key of a window in `ws` (case-navigation "Zoom history per
+ * session"): historyKey(ws.linkTime, windowId, index) with index = ws.case.current while a catalog
+ * is open and linked, else no index. `ws` undefined: historyKey(true, windowId).
+ */
+export function workspaceHistoryKey(
+  ws: Pick<Workspace, "linkTime" | "case"> | undefined,
+  windowId: string,
+): string {
+  if (!ws) return historyKey(true, windowId);
+  return historyKey(ws.linkTime, windowId, ws.case?.linked ? ws.case.current : undefined);
 }

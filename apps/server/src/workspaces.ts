@@ -133,6 +133,8 @@ interface Held {
   seq: number;
   /** When `reuseOf` last handed it out (in memory only); a live connect clears it. */
   claimedAt: number | undefined;
+  /** A catalog open is filling it (in memory only, T-04): neither reused nor evicted until `filled`. */
+  filling: boolean;
   unsubscribe: () => void;
 }
 
@@ -205,13 +207,14 @@ export class WorkspaceRegistry {
 
   /**
    * A new private workspace of `owner` with the initial grant, seeded within it. At the limit the
-   * owner's least recently active workspace without a live client is deleted first; throws
-   * WorkspaceLimitError when every one has a client.
+   * owner's least recently active workspace without a live client (and not being filled) is
+   * deleted first; throws WorkspaceLimitError when there is none. `filling`: a catalog open fills
+   * it until `filled` (T-04).
    */
-  create(owner: string): WorkspaceEntry {
+  create(owner: string, options?: { filling?: boolean }): WorkspaceEntry {
     const own = this.listOf(owner);
     if (own.length >= this.limit) {
-      const evict = own.reverse().find((e) => !hasClients(e));
+      const evict = own.reverse().find((e) => !hasClients(e) && !this.filling(e));
       if (!evict) throw new WorkspaceLimitError(owner, this.limit);
       this.delete(evict.record.id);
     }
@@ -229,20 +232,32 @@ export class WorkspaceRegistry {
       revision: 0,
       workspace: this.seed(grant),
     });
+    held.filling = options?.filling === true;
     this.write(held);
     return held.entry;
   }
 
   /**
-   * The atomic pick for "/" (M4): the owner's latest workspace without a live client and without a
-   * claim younger than REUSE_CLAIM_MS, claimed now; else a new one. One synchronous step, so two
+   * Ends the fill of a catalog open: filling false, claimedAt = now (a reuse skips it for
+   * REUSE_CLAIM_MS). No-op for an unknown ID.
+   */
+  filled(id: string): void {
+    const held = this.held.get(id);
+    if (!held) return;
+    held.filling = false;
+    held.claimedAt = this.now();
+  }
+
+  /**
+   * The atomic pick for "/" (M4): the owner's latest workspace without a live client, not being
+   * filled and without a claim younger than REUSE_CLAIM_MS, claimed now; else a new one. One synchronous step, so two
    * requests never get the same entry. Throws WorkspaceLimitError.
    */
   reuseOf(owner: string): { entry: WorkspaceEntry; reused: boolean } {
     const at = this.now();
     for (const entry of this.listOf(owner)) {
       const held = this.held.get(entry.record.id);
-      if (!held || hasClients(entry)) continue;
+      if (!held || held.filling || hasClients(entry)) continue;
       if (held.claimedAt !== undefined && at - held.claimedAt < REUSE_CLAIM_MS) continue;
       held.claimedAt = at;
       return { entry, reused: true };
@@ -286,6 +301,9 @@ export class WorkspaceRegistry {
     // The record stays the one object the routes hold.
     const next = this.add({ ...record, revision: store.revision + 1, workspace }, record);
     next.seq = held.seq;
+    // The fill and the claim survive the swap (T-04).
+    next.filling = held.filling;
+    next.claimedAt = held.claimedAt;
     next.catalog = catalog;
     this.write(next);
     return next.entry;
@@ -473,6 +491,7 @@ export class WorkspaceRegistry {
       scope: scopeOf(workspace),
       seq: ++this.seq,
       claimedAt: undefined,
+      filling: false,
       unsubscribe: () => {},
     };
     held.unsubscribe = store.subscribe((_revision, state) => {
@@ -485,6 +504,10 @@ export class WorkspaceRegistry {
     });
     this.held.set(id, held);
     return held;
+  }
+
+  private filling(entry: WorkspaceEntry): boolean {
+    return this.held.get(entry.record.id)?.filling === true;
   }
 
   private activate(held: Held): void {
@@ -566,6 +589,7 @@ export type Workspaces = Pick<
   WorkspaceRegistry,
   | "get"
   | "create"
+  | "filled"
   | "grantObjects"
   | "openCase"
   | "caseOf"
@@ -619,6 +643,7 @@ export function singleWorkspace(store: WorkspaceStore, id = "0000000000"): Works
     create: (owner) => {
       throw new WorkspaceLimitError(owner, 1);
     },
+    filled: () => {},
     reuseOf: () => ({ entry, reused: true }),
     defaultOf: () => entry,
     listOf: (user) => (user === LOCAL_USER ? [entry] : []),

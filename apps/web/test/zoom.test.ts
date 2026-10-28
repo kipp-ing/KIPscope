@@ -1,4 +1,4 @@
-import { type CommandResult, fromIso, NS_PER_MS } from "@kipscope/shared";
+import { type CommandResult, fromIso, NS_PER_MS, type WorkspaceCase } from "@kipscope/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   clampRange,
@@ -11,6 +11,7 @@ import {
   WheelFrame,
   wheelAction,
   wheelZoomFactor,
+  workspaceHistoryKey,
   ZOOM_HISTORY_LIMIT,
   ZoomHistory,
 } from "../src/chart/zoom.ts";
@@ -525,5 +526,29 @@ describe("range stopped at the session edge (add-case-open)", () => {
     expect(historyKey(true, "w1", 0)).not.toBe(historyKey(true, "w1", 2));
     expect(historyKey(false, "w1", 0)).not.toBe(historyKey(false, "w2", 0));
     expect(historyKey(true, "w1")).toBe(historyKey(true, "w2"));
+  });
+
+  it("keys the history by the workspace's catalog session", () => {
+    const caseAt = (current: number, linked: boolean) =>
+      ({ catalogId: "c4", count: 4, current, linked }) as unknown as WorkspaceCase;
+    const ws = (linkTime: boolean, c?: WorkspaceCase) => ({
+      linkTime,
+      ...(c === undefined ? {} : { case: c }),
+    });
+    // Linked time, no catalog.
+    expect(workspaceHistoryKey(ws(true), "w1")).toBe(historyKey(true, "w1"));
+    // Linked time, C4 open and linked: the key carries the current index.
+    const at0 = workspaceHistoryKey(ws(true, caseAt(0, true)), "w1");
+    const at2 = workspaceHistoryKey(ws(true, caseAt(2, true)), "w1");
+    expect(at0).toBe(historyKey(true, "w1", 0));
+    expect(at2).toBe(historyKey(true, "w1", 2));
+    expect(at0).not.toBe(at2);
+    // Unlinked catalog: the vehicle view has one history of its own, without an index.
+    expect(workspaceHistoryKey(ws(true, caseAt(2, false)), "w1")).toBe(historyKey(true, "w1"));
+    // Time axes not linked: per window and session.
+    expect(workspaceHistoryKey(ws(false, caseAt(2, true)), "w1")).toBe(historyKey(false, "w1", 2));
+    expect(workspaceHistoryKey(ws(false, caseAt(2, true)), "w2")).toBe(historyKey(false, "w2", 2));
+    // No workspace yet.
+    expect(workspaceHistoryKey(undefined, "w1")).toBe(historyKey(true, "w1"));
   });
 });

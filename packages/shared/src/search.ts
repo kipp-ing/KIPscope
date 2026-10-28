@@ -45,19 +45,41 @@ interface Index {
 
 export function buildSearchIndex(signals: readonly SignalInfo[]): SearchIndex {
   const fields = signals.map((s): Fields => {
-    const name = s.name.toLowerCase();
+    const name = lowerOf(s.name);
     const dot = name.indexOf(".");
     return {
       name,
       short: dot < 0 ? name : name.slice(dot + 1),
-      shown: shownName(s).toLowerCase(),
-      description: s.description?.toLowerCase() ?? "",
-      alias: s.alias?.toLowerCase() ?? "",
-      unit: s.unit?.toLowerCase() ?? "",
+      shown: lowerOf(shownName(s)),
+      description: lowerOf(s.description ?? ""),
+      alias: lowerOf(s.alias ?? ""),
+      unit: lowerOf(s.unit ?? ""),
     };
   });
   const index: Index = { signals, fields };
   return index as unknown as SearchIndex;
+}
+
+/** Lower case of `text` per code point; from[j] / to[j]: the UTF-16 span in `text` of the code point that lower unit j came from. */
+function foldCase(text: string): { lower: string; from: number[]; to: number[] } {
+  const from: number[] = [];
+  const to: number[] = [];
+  let lower = "";
+  let i = 0;
+  for (const cp of text) {
+    const l = cp.toLowerCase();
+    for (let k = 0; k < l.length; k++) {
+      from.push(i);
+      to.push(i + cp.length);
+    }
+    lower += l;
+    i += cp.length;
+  }
+  return { lower, from, to };
+}
+
+function lowerOf(text: string): string {
+  return foldCase(text).lower;
 }
 
 /** Tier of one term for one signal, or undefined when it matches no field. */
@@ -69,13 +91,17 @@ function termTier(f: Fields, t: string): MatchTier | undefined {
   return undefined;
 }
 
-/** Every non-overlapping occurrence of each term in `text`, sorted, overlapping/touching merged. */
-function ranges(text: string, terms: readonly string[]): MatchRange[] {
-  if (text === "") return [];
+/**
+ * Every occurrence (overlapping too) of each term in the folded `original`, as ranges of
+ * `original`, sorted, overlapping/touching merged.
+ */
+function ranges(original: string, terms: readonly string[]): MatchRange[] {
+  if (original === "") return [];
+  const { lower, from, to } = foldCase(original);
   const found: [number, number][] = [];
   for (const t of terms) {
-    for (let i = text.indexOf(t); i >= 0; i = text.indexOf(t, i + t.length)) {
-      found.push([i, i + t.length]);
+    for (let i = lower.indexOf(t); i >= 0; i = lower.indexOf(t, i + 1)) {
+      found.push([from[i] as number, to[i + t.length - 1] as number]);
     }
   }
   if (found.length === 0) return [];
@@ -92,7 +118,7 @@ function ranges(text: string, terms: readonly string[]): MatchRange[] {
 /** Ranked matches, best first; empty query → all signals in input order, tier 3, no ranges. */
 export function searchSignals(index: SearchIndex, query: string): SignalMatch[] {
   const { signals, fields } = index as unknown as Index;
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const terms = lowerOf(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
     return signals.map((signal) => ({
       signal,
@@ -122,10 +148,10 @@ export function searchSignals(index: SearchIndex, query: string): SignalMatch[] 
     buckets[tier]?.push({
       signal,
       tier,
-      name: ranges(f.name, terms),
-      shown: ranges(f.shown, terms),
-      unit: ranges(f.unit, terms),
-      description: ranges(f.description, terms),
+      name: ranges(signal.name, terms),
+      shown: ranges(shownName(signal), terms),
+      unit: ranges(signal.unit ?? "", terms),
+      description: ranges(signal.description ?? "", terms),
     });
   }
   return buckets.flat();

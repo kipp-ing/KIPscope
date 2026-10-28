@@ -410,6 +410,57 @@ describe("SeriesCache across scopes (add-case-open)", () => {
     expect(cache.find(sig, 10, 2n)).toBeDefined();
   });
 
+  it("drops edge points outside the asking scope", async () => {
+    // One level-10 tile with the nearest points 5 s outside it on both sides.
+    const index = 100_000n;
+    const from = index * S;
+    const to = from + S;
+    const SEC = 1_000_000_000n;
+    const points: FakePoint[] = [
+      { t: from - 5n * SEC, v: -1 },
+      { t: from + 1000n, v: 1 },
+      { t: from + 2000n, v: 2 },
+      { t: to + 5n * SEC, v: 3 },
+    ];
+    const { fetch, calls } = fakeFetch(points);
+    const cache = new SeriesCache(fetch, { now: OLD_NOW });
+    const around = (by: bigint) => scope(from - by, to + by);
+
+    // Scope S reaches 6 s past the tile on both sides, so both edge points lie inside it.
+    cache.setScope(around(6n * SEC));
+    const run = cache.load("w", sig, 10, [index]);
+    expect(calls).toHaveLength(1);
+    calls[0]?.answer();
+    const [loaded] = await Promise.all(run);
+    if (loaded?.data.kind !== "raw") throw new Error("expected a raw tile");
+    expect(loaded.data.before).toEqual({ t: String(from - 5n * SEC), v: -1 });
+    expect(loaded.data.after).toEqual({ t: String(to + 5n * SEC), v: 3 });
+
+    // S2 ends 2 s past the tile: both points lie outside it and are dropped, with no fetch.
+    cache.setScope(around(2n * SEC));
+    const narrow = cache.find(sig, 10, index);
+    expect(narrow).toBeDefined();
+    if (narrow?.data.kind !== "raw") throw new Error("expected a raw tile");
+    expect(narrow.data.before).toBeUndefined();
+    expect(narrow.data.after).toBeUndefined();
+    expect(narrow.data.v).toEqual([1, 2]);
+
+    // S3 reaches 10 s past it: both points lie inside, with no fetch.
+    cache.setScope(around(10n * SEC));
+    const wide = cache.find(sig, 10, index);
+    if (wide?.data.kind !== "raw") throw new Error("expected a raw tile");
+    expect(wide.data.before).toEqual(loaded.data.before);
+    expect(wide.data.after).toEqual(loaded.data.after);
+
+    // S again: the stored tile still holds both points.
+    cache.setScope(around(6n * SEC));
+    const again = cache.find(sig, 10, index);
+    if (again?.data.kind !== "raw") throw new Error("expected a raw tile");
+    expect(again.data.before).toEqual(loaded.data.before);
+    expect(again.data.after).toEqual(loaded.data.after);
+    expect(calls).toHaveLength(1);
+  });
+
   it("answers no tile of another data ref than the scope's", async () => {
     const { fetch, calls } = fakeFetch(tiles(0, 5));
     const cache = new SeriesCache(fetch, { now: OLD_NOW });

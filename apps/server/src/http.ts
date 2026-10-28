@@ -239,7 +239,7 @@ export function requestClass(request: FastifyRequest): "preload" | undefined {
 
 /**
  * Runs a route's source work in the request's class (K10): under `withPriority("preload")` when
- * it asked for `preload`, else as today. Only `/api/series`, `/api/extent` and
+ * it asked for `preload`, else as today. Only `/api/series`, `/api/extent`, `/api/calendar` and
  * `/api/case/preview` call it, so the header on another route is ignored.
  */
 export function withRequestClass<T>(request: FastifyRequest, fn: () => T): T {

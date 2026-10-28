@@ -25,6 +25,36 @@ import {
   wholeLabel,
 } from "../src/time/calendar.ts";
 
+// The Esc listener test below runs the component function outside a renderer: while `hooks.capture`
+// is set, the hooks are recorded or stubbed; otherwise they are React's own (static markup tests).
+const hooks = vi.hoisted(() => ({
+  capture: false,
+  effects: [] as (() => (() => void) | undefined)[],
+}));
+vi.mock("react", async (importOriginal) => {
+  const real = await importOriginal<typeof import("react")>();
+  const wrap =
+    <K extends "useState" | "useRef" | "useEffect" | "useLayoutEffect">(name: K) =>
+    (...args: unknown[]) => {
+      if (!hooks.capture) return (real[name] as (...a: unknown[]) => unknown)(...args);
+      if (name === "useEffect") hooks.effects.push(args[0] as () => (() => void) | undefined);
+      if (name === "useState") {
+        const init = args[0];
+        return [typeof init === "function" ? (init as () => unknown)() : init, () => {}];
+      }
+      if (name === "useRef") return { current: args[0] };
+      return undefined;
+    };
+  const mocked = {
+    ...real,
+    useState: wrap("useState"),
+    useRef: wrap("useRef"),
+    useEffect: wrap("useEffect"),
+    useLayoutEffect: wrap("useLayoutEffect"),
+  };
+  return { ...mocked, default: mocked };
+});
+
 // Spec range-picker (Calendar months, Day density, Day selection, Calendar as a grid, Calendar by
 // keyboard, Time fields, Presets, Picker states). Tests run with TZ=Europe/Berlin: CEST (UTC+2) until 2026-10-25 03:00 local, then CET.
 // Every expected value is computed by hand from the instants, never from the code under test.
@@ -766,5 +796,91 @@ describe("month grid size (round 2)", () => {
   it("an open pair of a 5-row and a 6-row month has the same cell count", () => {
     expect(monthCells(2026, 10).length).toBe(monthCells(2026, 8).length);
     expect(monthCells(2026, 2).length).toBe(monthCells(2026, 8).length);
+  });
+});
+
+describe("Esc closes the picker wherever the focus is (T-06)", () => {
+  // No DOM in the tests: the document is an EventTarget. Node's EventTarget does not match a
+  // boolean capture flag on removeEventListener; browsers do.
+  class Doc extends EventTarget {
+    override removeEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      super.removeEventListener(
+        type,
+        listener,
+        typeof options === "boolean" ? { capture: options } : options,
+      );
+    }
+  }
+  afterEach(() => {
+    hooks.capture = false;
+    hooks.effects.length = 0;
+    vi.unstubAllGlobals();
+  });
+
+  /** Runs RangePicker's effects against a fake document; returns the close count and a cleanup. */
+  function open() {
+    vi.stubGlobal("document", new Doc());
+    let closed = 0;
+    hooks.capture = true;
+    hooks.effects.length = 0;
+    RangePicker({
+      range: { from: fromIso("2026-10-01T00:00:00Z"), to: fromIso("2026-10-02T00:00:00Z") },
+      dataRef: undefined,
+      scope: undefined,
+      kind: "session",
+      typed: "",
+      onTyped: () => {},
+      onGoTo: () => undefined,
+      onApply: () => {},
+      onClose: () => {
+        closed += 1;
+      },
+    } as Parameters<typeof RangePicker>[0]);
+    hooks.capture = false;
+    const cleanups = hooks.effects.map((effect) => effect()).filter((c) => typeof c === "function");
+    return {
+      closes: () => closed,
+      cleanup: () => {
+        for (const c of cleanups) c();
+      },
+    };
+  }
+
+  /** A keydown on the document, as from a focus outside the picker; the result is the event. */
+  function press(key: string, prevented = false) {
+    const e = new Event("keydown", { cancelable: true });
+    Object.assign(e, { key });
+    if (prevented) e.preventDefault();
+    document.dispatchEvent(e);
+    return e;
+  }
+
+  it("closes on Esc with the focus outside the picker, and takes the key", () => {
+    const picker = open();
+    const e = press("Escape");
+    expect(picker.closes()).toBe(1);
+    expect(e.defaultPrevented).toBe(true);
+    picker.cleanup();
+  });
+
+  it("does not close when an inner control already called preventDefault", () => {
+    const picker = open();
+    press("Escape", true);
+    expect(picker.closes()).toBe(0);
+    picker.cleanup();
+  });
+
+  it("ignores other keys, and a closed picker's listener is gone", () => {
+    const picker = open();
+    press("Enter");
+    press("a");
+    expect(picker.closes()).toBe(0);
+    picker.cleanup();
+    press("Escape");
+    expect(picker.closes()).toBe(0);
   });
 });

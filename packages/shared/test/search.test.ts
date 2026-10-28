@@ -155,4 +155,26 @@ describe("searchSignals", () => {
     // Empty query: no ranges.
     expect(search([ptc], "")[0]?.shown).toEqual([]);
   });
+
+  it("highlights overlapping occurrences of one term", () => {
+    // `aa` occurs at 0 and 1 of AAA: [0,2) and [1,3) merge to the whole run.
+    expect(search([sig("c", "AAA_X")], "aa")[0]?.name).toEqual([[0, 3]]);
+    // `aba` occurs at 0 and 2 of ABABA: [0,3) and [2,5) merge.
+    expect(search([sig("c", "ABABA.X")], "aba")[0]?.name).toEqual([[0, 5]]);
+  });
+
+  it("keeps highlight ranges on the original text", () => {
+    // `İ` lower-cases to two UTF-16 units ("i" + U+0307); ranges still index the original.
+    const slices = (name: string, query: string) => {
+      const found = search([sig("c", name, { unit: "V" })], query)[0]?.name ?? [];
+      return { found, text: found.map(([s, e]) => name.slice(s, e)) };
+    };
+    const odd = "ABC.İx_Volt";
+    expect(slices(odd, "volt")).toEqual({ found: [[7, 11]], text: ["Volt"] });
+    expect(slices(odd, "i")).toEqual({ found: [[4, 5]], text: ["İ"] });
+    expect(slices("DCU_2B8h.HTR_HV_Volt", "volt")).toEqual({
+      found: [[16, 20]],
+      text: ["Volt"],
+    });
+  });
 });

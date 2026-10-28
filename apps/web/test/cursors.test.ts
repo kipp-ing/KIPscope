@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ClickGate,
   CURSOR_HIT_PX,
+  CursorClick,
   DOUBLE_CLICK_MS,
   deltaLabelX,
   hitCursor,
@@ -108,6 +109,65 @@ describe("ClickGate", () => {
     gate.dispose();
     vi.advanceTimersByTime(5_000);
     expect(late).not.toHaveBeenCalled();
+  });
+});
+
+describe("CursorClick", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** A click helper over a fake-timer gate, recording what it calls, in order. */
+  function helper() {
+    const events: string[] = [];
+    const preview = vi.fn((name: string, t: bigint | undefined) =>
+      events.push(`preview ${name} ${t === undefined ? "-" : t}`),
+    );
+    const commit = vi.fn((name: string, t: bigint) => events.push(`commit ${name} ${t}`));
+    const click = new CursorClick(new ClickGate(DOUBLE_CLICK_MS), { preview, commit });
+    return { click, preview, commit, events };
+  }
+
+  it("drops a waiting click and its line when the window closes", () => {
+    // A click for A at 10, the window closes before 500 ms, the timer runs on.
+    const one = helper();
+    one.click.place("a", 10n);
+    vi.advanceTimersByTime(499);
+    one.click.dispose();
+    vi.advanceTimersByTime(5_000);
+    expect(one.events).toEqual(["preview a 10", "preview a -"]);
+    expect(one.commit).not.toHaveBeenCalled();
+
+    // A at 10, then B at 20 within the interval, then the window closes.
+    const two = helper();
+    two.click.place("a", 10n);
+    vi.advanceTimersByTime(100);
+    two.click.place("b", 20n);
+    expect(two.commit).toHaveBeenCalledTimes(1);
+    expect(two.commit).toHaveBeenCalledWith("a", 10n); // committed at once by B's click
+    two.click.dispose();
+    vi.advanceTimersByTime(5_000);
+    expect(two.events).toEqual(["preview a 10", "commit a 10", "preview b 20", "preview b -"]);
+    expect(two.commit).toHaveBeenCalledTimes(1); // B is never committed
+
+    // A at 10 followed by a double-click: the line goes, nothing is committed.
+    const three = helper();
+    three.click.place("a", 10n);
+    three.click.doubleClick();
+    vi.advanceTimersByTime(5_000);
+    expect(three.events).toEqual(["preview a 10", "preview a -"]);
+    expect(three.commit).not.toHaveBeenCalled();
+  });
+
+  it("commits a lone click once after the interval and keeps its line", () => {
+    const lone = helper();
+    lone.click.place("b", 7n);
+    vi.advanceTimersByTime(499);
+    expect(lone.commit).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(lone.events).toEqual(["preview b 7", "commit b 7"]);
+    // Nothing waits any more: closing the window ends no preview.
+    lone.click.dispose();
+    expect(lone.events).toEqual(["preview b 7", "commit b 7"]);
   });
 });
 

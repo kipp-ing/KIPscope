@@ -763,6 +763,46 @@ describe("preview and entry-bounded series", () => {
     expect(codeOf(none.body)).toBe("no_case");
   });
 
+  it("refuses a preview outside the grant", async () => {
+    const { t, calls, log } = await start({ identity: testIdentity() });
+    const alice = t.as("alice");
+    const id = idOf(await open(alice, signed(c4(), { sub: "alice" })));
+    // Entry 1 is `othercar`; narrow the grant to `testcar` (what state carried over from identity
+    // `none` to a server with sign-in amounts to).
+    const entry = t.workspaces.get(id);
+    expect(entry).toBeDefined();
+    if (entry) entry.record.grant = { objects: ["testcar"] };
+    expect(t.workspaces.grantOf(id)).toEqual({ objects: ["testcar"] });
+    let seen = -1;
+    while (seen !== calls.length) {
+      seen = calls.length;
+      await realSleep(300);
+    }
+    const mark = log.length;
+    const rev = (await stateOf(alice, id)).revision;
+
+    const preview = await alice.get(`/api/w/${id}/case/preview?index=1`);
+    expect(preview.status, JSON.stringify(preview.body)).toBe(403);
+    expect(codeOf(preview.body)).toBe("forbidden_data");
+    expect(JSON.stringify(preview.body)).toContain("data ref othercar is not permitted");
+    const go = await alice.command({ type: "case.go", index: 1 }, id);
+    expect(go.status, JSON.stringify(go.body)).toBe(403);
+    expect(codeOf(go.body)).toBe("forbidden_data");
+    expect(JSON.stringify(go.body)).toContain("data ref othercar is not permitted");
+
+    await realSleep(300);
+    const text = (value: unknown) =>
+      JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+    const named = log.slice(mark).filter((c) => scopeOfCall(c)?.dataRef === "othercar");
+    expect(named.map((c) => c.method)).toEqual([]);
+    expect(log.slice(mark).filter((c) => text(c.args).includes("othercar"))).toEqual([]);
+    expect((await stateOf(alice, id)).revision).toBe(rev);
+
+    // The entry inside the grant is still previewed.
+    const inside = await alice.get(`/api/w/${id}/case/preview?index=0`);
+    expect(inside.status, JSON.stringify(inside.body)).toBe(200);
+  });
+
   it("bounds series by a catalog entry", async () => {
     const { t } = await start();
     const id = idOf(await open(t.anon, c4()));

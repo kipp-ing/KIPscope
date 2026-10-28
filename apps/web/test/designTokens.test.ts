@@ -75,3 +75,15 @@ describe("design-language: footer top divider is a real border", () => {
     expect(top(drag) + (padTop(drag) ?? padTop(idle) ?? 0)).toBe(4);
   });
 });
+
+describe("design-language: icon colours", () => {
+  it("--label is slate-700 rgb(51, 65, 85)", () => {
+    expect(token("--label").toLowerCase()).toBe("#334155");
+  });
+
+  it("sidebar button icon is slate-700", () => {
+    // The option bar's sidebar button takes its colour from --label like Reset, not from --text.
+    const colours = decl(rule(".option-bar-slot .sidebar-toggle"), "color");
+    expect(colours.at(-1)).toBe("var(--label)");
+  });
+});

@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { WORKSPACE_HEADER, WORKSPACE_ID } from "@kipscope/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { gated } from "./caseApp.ts";
+import { c4, caseSignals } from "./caseKit.ts";
 import {
   type Client,
   codeOf,
@@ -204,6 +206,41 @@ describe("a new tab never mirrors another", () => {
     // reuse together with open is a bad request.
     const both = await alice.post("/api/workspaces", { reuse: true, open: { name: "x" } });
     expect(both.status).toBe(400);
+    live.close();
+  });
+
+  it("never hands a filling catalog workspace to a reuse", async () => {
+    // The source's listSignals waits while armed: the catalog open stays in flight, after it
+    // created its workspace and before it answered.
+    let armed = false;
+    const gate = gated(
+      memoryAdapter(caseSignals()) as unknown as Parameters<typeof gated>[0],
+      (method) => armed && method === "listSignals",
+    );
+    t = await multiApp({ mode: "scoped", identity: "none", adapter: gate.adapter });
+    const user = t.anon;
+    // The one other workspace has a live client.
+    const busy = await create(user);
+    const live = await user.live(busy);
+    await live.next((m) => m.type === "state");
+
+    armed = true;
+    const opening = user.post("/api/workspaces", { open: { cases: c4() } });
+    const end = Date.now() + 5000;
+    while (gate.held.length === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+    expect(gate.held.length, "the catalog open never reached listSignals").toBeGreaterThan(0);
+    const filling = t.workspaces.listOf("local").map((e) => e.record.id);
+    expect(filling).toHaveLength(2);
+
+    const reuse = await user.post("/api/workspaces", { reuse: true });
+    expect(reuse.status, JSON.stringify(reuse.body)).toBe(200);
+    expect(reuse.body.reused).toBe(false);
+    expect(reuse.body.workspace.id).not.toBe(busy);
+    gate.release();
+    const opened = await opening;
+    expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+    expect(reuse.body.workspace.id).not.toBe(opened.body.workspace.id);
+    expect(opened.body.workspace.id).toMatch(WORKSPACE_ID);
     live.close();
   });
 

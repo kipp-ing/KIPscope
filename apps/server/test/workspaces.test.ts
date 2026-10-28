@@ -170,6 +170,63 @@ describe("workspace registry", () => {
     expect(second.entry).not.toBe(f);
   });
 
+  it("never reuses a workspace a catalog open is filling", () => {
+    // A second and third registry with a limit of 3, each on a directory of its own.
+    const another = (name: string) => {
+      const made = newRegistry(join(state.dir, name), { limit: 3 }).registry;
+      made.start();
+      return made;
+    };
+    const { registry } = fresh();
+    const c = registry.create("alice", { filling: true });
+    // Filling: the only candidate is skipped, a new workspace is made (and dropped again).
+    const first = registry.reuseOf("alice");
+    expect(first.reused).toBe(false);
+    expect(first.entry).not.toBe(c);
+    registry.delete(first.entry.record.id);
+    // Marked filled: handed out for 10 s, like a reuse.
+    registry.filled(c.record.id);
+    vi.advanceTimersByTime(5_000);
+    const second = registry.reuseOf("alice");
+    expect(second.reused).toBe(false);
+    expect(second.entry).not.toBe(c);
+    registry.delete(second.entry.record.id);
+    vi.advanceTimersByTime(6_000); // 11 s after the mark
+    const third = registry.reuseOf("alice");
+    expect(third.reused).toBe(true);
+    expect(third.entry).toBe(c);
+    // An unknown ID is a no-op.
+    expect(() => registry.filled("zzzzzzzzzz")).not.toThrow();
+
+    // At the limit the eviction skips the filling workspace: C is the least recently active.
+    const limited = another("limited");
+    const lc = limited.create("alice", { filling: true });
+    vi.advanceTimersByTime(1000);
+    const ld = limited.create("alice");
+    vi.advanceTimersByTime(1000);
+    const le = limited.create("alice");
+    const extra = limited.create("alice");
+    expect(limited.get(ld.record.id)).toBeUndefined();
+    expect(limited.get(lc.record.id)).toBe(lc);
+    expect(limited.get(le.record.id)).toBe(le);
+    expect(limited.get(extra.record.id)).toBe(extra);
+
+    // With D and E holding live clients nothing may be evicted, C is not an option either.
+    const blocked = another("blocked");
+    const bc = blocked.create("alice", { filling: true });
+    vi.advanceTimersByTime(1000);
+    const bd = blocked.create("alice");
+    vi.advanceTimersByTime(1000);
+    const be = blocked.create("alice");
+    bd.store.connect("alice");
+    be.store.connect("alice");
+    expect(() => blocked.create("alice")).toThrow(WorkspaceLimitError);
+    expect(blocked.get(bc.record.id)).toBe(bc);
+    expect(blocked.listOf("alice")).toHaveLength(3);
+    limited.stop();
+    blocked.stop();
+  });
+
   it("makes a new workspace for reuse when none qualifies", () => {
     const { registry } = fresh();
     const only = registry.create("alice");

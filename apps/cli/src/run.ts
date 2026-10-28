@@ -181,10 +181,9 @@ async function executeWith(
   try {
     switch (invocation.kind) {
       case "state": {
-        const [current, render] = await Promise.all([
-          lookups.workspace(),
-          client.get<RenderStatus>("/api/render-status"),
-        ]);
+        // Workspace first: the client then sends the render status to that same workspace.
+        const current = await lookups.workspace();
+        const render = await client.get<RenderStatus>("/api/render-status");
         body.revision = current.revision;
         body.data = { revision: current.revision, workspace: current.workspace, render };
         body.local = stateLocal(current.workspace);

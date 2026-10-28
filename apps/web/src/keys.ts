@@ -94,7 +94,8 @@ function isGroupArrow(key: string, focused: Element | null): boolean {
  * Maps a key to its navigation step, or undefined: nothing in text fields or selects, nothing with
  * Ctrl, Meta or Alt, nothing while the range picker is open (its day cells are buttons, so focus
  * alone does not tell), no arrows inside a radiogroup. `+` needs Shift on some layouts, so Shift
- * only matters for the arrows and A/B (lower-case `a` and `b` stay unbound). `s`, `e` and `/` stay
+ * only matters for the arrows and A/B (`a` and `b` without Shift stay unbound; with Shift either case
+ * sets cursor A/B, T-08). `s`, `e` and `/` stay
  * free (sidebar toggle, events panel, explorer search).
  */
 export function navKey(
@@ -126,8 +127,11 @@ export function navKey(
       return "prevEvent";
     case "n":
       return "nextEvent";
+    // With Caps Lock and Shift the browser reports the lower-case letter (T-08).
+    case "a":
     case "A":
       return e.shiftKey ? "cursorA" : undefined;
+    case "b":
     case "B":
       return e.shiftKey ? "cursorB" : undefined;
     default:

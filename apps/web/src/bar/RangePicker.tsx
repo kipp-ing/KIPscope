@@ -316,6 +316,19 @@ export function RangePicker({
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
+  // Esc closes the picker wherever the focus is (T-06): a document listener runs before App's
+  // window one; an inner control that wants Esc for itself calls preventDefault.
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   // Left edge at the button's, shifted left to stay inside the viewport.
   useLayoutEffect(() => {
     const place = () => {
@@ -442,12 +455,6 @@ export function RangePicker({
       role="dialog"
       aria-label="Go to"
       style={{ transform: shift ? `translateX(${shift}px)` : undefined }}
-      onKeyDown={(e) => {
-        if (e.key !== "Escape") return;
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }}
     >
       <div className="picker-typed">
         <input

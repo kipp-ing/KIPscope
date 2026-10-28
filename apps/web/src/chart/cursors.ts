@@ -108,3 +108,60 @@ export class ClickGate {
     this.pending = undefined;
   }
 }
+
+/**
+ * The cursor click waiting in a ClickGate (cursors "No ghost line"): its line shows through
+ * `preview` until the gate commits it, a double-click drops it or the window closes.
+ */
+export class CursorClick {
+  private readonly gate: ClickGate;
+  private readonly on: {
+    preview: (name: CursorName, t: bigint | undefined) => void;
+    commit: (name: CursorName, t: bigint) => void;
+  };
+  private waiting: { name: CursorName; t: bigint } | undefined;
+
+  constructor(
+    gate: ClickGate,
+    on: {
+      preview: (name: CursorName, t: bigint | undefined) => void;
+      commit: (name: CursorName, t: bigint) => void;
+    },
+  ) {
+    this.gate = gate;
+    this.on = on;
+  }
+
+  /** A click of `name` at t: a waiting click of the other cursor is committed now; preview(name, t); commit after the gate's interval. */
+  place(name: CursorName, t: bigint): void {
+    const waiting = this.waiting;
+    // A click of the other cursor ends no double-click: the waiting one is committed now.
+    if (waiting && waiting.name !== name) {
+      this.gate.doubleClick();
+      this.on.commit(waiting.name, waiting.t);
+    }
+    this.waiting = { name, t };
+    this.on.preview(name, t);
+    this.gate.click(() => {
+      this.waiting = undefined;
+      this.on.commit(name, t);
+    });
+  }
+
+  /** The double-click's clicks place no cursor: drops the waiting click, preview(name, undefined). */
+  doubleClick(): void {
+    this.drop(() => this.gate.doubleClick());
+  }
+
+  /** The window closes: drops the waiting click and calls preview(name, undefined) when one waited. */
+  dispose(): void {
+    this.drop(() => this.gate.dispose());
+  }
+
+  private drop(cancel: () => void): void {
+    cancel();
+    const waiting = this.waiting;
+    this.waiting = undefined;
+    if (waiting) this.on.preview(waiting.name, undefined);
+  }
+}

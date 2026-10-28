@@ -74,9 +74,9 @@ import { TimeseriesWindow } from "./chart/TimeseriesWindow.tsx";
 import {
   clampRange,
   extentRange,
-  historyKey,
   type Range,
   settleStep,
+  workspaceHistoryKey,
   ZoomHistory,
 } from "./chart/zoom.ts";
 import { EventsPanel } from "./events/EventsPanel.tsx";
@@ -187,10 +187,6 @@ function localStore(): Storage | undefined {
     return undefined;
   }
 }
-
-/** History and pending-navigation key of a window in the current workspace (shared "*" while linked). */
-const navKeyOf = (ws: { linkTime: boolean } | undefined, windowId: string) =>
-  historyKey(ws?.linkTime ?? true, windowId);
 
 /**
  * A navigation step sent but not yet shown (design N6), per history key: the next step starts from
@@ -786,7 +782,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   );
   const onZoomed = useCallback(
     (windowId: string, previous: Range) => {
-      historyOf(historyKey(liveRef.current.workspace?.linkTime ?? true, windowId)).push(
+      historyOf(workspaceHistoryKey(liveRef.current.workspace, windowId)).push(
         clampRange(previous),
       );
       setHistoryVersion((v) => v + 1);
@@ -808,7 +804,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
     if (!w || !isTimeseries(w)) return undefined;
     return (
-      pendingNav.current.get(navKeyOf(liveRef.current.workspace, windowId))?.range ??
+      pendingNav.current.get(workspaceHistoryKey(liveRef.current.workspace, windowId))?.range ??
       toRange(w.range)
     );
   }, []);
@@ -822,7 +818,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     (windowId: string, r: Range, push: boolean, refused?: () => void): boolean => {
       const w = liveRef.current.workspace?.windows.find((x) => x.id === windowId);
       if (!w || !isTimeseries(w)) return false;
-      const key = navKeyOf(liveRef.current.workspace, windowId);
+      const key = workspaceHistoryKey(liveRef.current.workspace, windowId);
       const pending = pendingNav.current.get(key);
       const view = pending?.range ?? toRange(w.range);
       const next = clampRange(r);
@@ -869,11 +865,11 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   const onBack = useCallback(
     (windowId: string) => {
       const history = histories.current.get(
-        historyKey(liveRef.current.workspace?.linkTime ?? true, windowId),
+        workspaceHistoryKey(liveRef.current.workspace, windowId),
       );
       const r = history?.back();
       if (!history || !r) return;
-      pendingNav.current.delete(navKeyOf(liveRef.current.workspace, windowId));
+      pendingNav.current.delete(workspaceHistoryKey(liveRef.current.workspace, windowId));
       setHistoryVersion((v) => v + 1);
       // A refused Back keeps the entry, since the window still shows the range it left.
       settleStep(() => setRange(windowId, r), {
@@ -1435,7 +1431,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   const digits = workspace?.options?.digits ?? 3;
   const diff = workspace?.cursors?.diff ?? false;
   const canGoBack = (windowId: string | undefined) =>
-    windowId !== undefined && (histories.current.get(historyKey(linked, windowId))?.size ?? 0) > 0;
+    windowId !== undefined &&
+    (histories.current.get(workspaceHistoryKey(workspace, windowId))?.size ?? 0) > 0;
 
   const activeDrag = drag?.active ? drag : undefined;
   const legendDrag = activeDrag !== undefined && isLegendSource(activeDrag.source);

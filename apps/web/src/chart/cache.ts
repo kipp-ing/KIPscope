@@ -39,11 +39,28 @@ export type FetchSeries = (
 ) => Promise<SeriesResult>;
 
 /** The scope tiles are fetched and used under (add-case-open K12); undefined: no scope. */
-interface CacheScope {
+export interface CacheScope {
   key: string;
   dataRef: string;
   from: bigint;
   to: bigint;
+}
+
+/**
+ * `tile` as the server would answer it under `scope` (series-cache "Tiles kept across scopes"):
+ * a raw tile without `before` when before.t < scope.from, without `after` when after.t >= scope.to;
+ * the same object when nothing is dropped (also for bucket tiles and without a scope).
+ */
+export function scopedTile(tile: Tile, scope: CacheScope | undefined): Tile {
+  if (!scope || tile.data.kind !== "raw") return tile;
+  const { before, after, ...rest } = tile.data;
+  const dropBefore = before !== undefined && BigInt(before.t) < scope.from;
+  const dropAfter = after !== undefined && BigInt(after.t) >= scope.to;
+  if (!dropBefore && !dropAfter) return tile;
+  const data: typeof tile.data = { ...rest };
+  if (before && !dropBefore) data.before = before;
+  if (after && !dropAfter) data.after = after;
+  return { ...tile, data };
 }
 
 const cacheScope = (scope: WorkspaceScope | undefined): CacheScope | undefined =>
@@ -90,6 +107,8 @@ interface Stored {
   /** A raw tile without `before` (`after`) fetched under a scope: that scope's start (end) (K12). */
   cutFrom?: bigint;
   cutTo?: bigint;
+  /** The last copy `use` made under a scope that drops an edge point, with that scope's key (T-05). */
+  scoped?: { key: string; tile: Tile };
 }
 
 interface InFlight {
@@ -558,7 +577,8 @@ export class SeriesCache {
   /**
    * The stored tile, marked as most recently used when `touch`, if it answers under `scope` (K12):
    * a tile stored for every scope when it lies inside it, a cut raw one only where the scope reaches
-   * no further than the cut; else the edge tile stored under the scope's key.
+   * no further than the cut; else the edge tile stored under the scope's key. Returned as
+   * `scopedTile` under `scope`: edge points outside it are dropped, the stored tile keeps them.
    */
   private use(id: string, scope: CacheScope | undefined, touch: boolean): Tile | undefined {
     const found = this.answering(id, scope);
@@ -567,7 +587,15 @@ export class SeriesCache {
       this.tiles.delete(found[0]);
       this.tiles.set(found[0], found[1]);
     }
-    return found[1].tile;
+    return this.scopedOf(found[1], scope);
+  }
+
+  /** The stored tile under `scope` (scopedTile), the same copy while the last scope asks again. */
+  private scopedOf(stored: Stored, scope: CacheScope | undefined): Tile {
+    if (scope && stored.scoped?.key === scope.key) return stored.scoped.tile;
+    const tile = scopedTile(stored.tile, scope);
+    if (scope && tile !== stored.tile) stored.scoped = { key: scope.key, tile };
+    return tile;
   }
 
   private answering(id: string, scope: CacheScope | undefined): [string, Stored] | undefined {

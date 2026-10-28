@@ -167,15 +167,6 @@ export function formatFull(t: Timestamp): string {
 }
 
 /**
- * Header range of a window in local time: at most millisecond precision, truncated (never
- * rounded up), trailing zero groups trimmed.
- */
-export function formatRange(from: Timestamp, to: Timestamp): string {
-  const ms = (t: Timestamp) => formatFull(floorDiv(t, NS_PER_MS) * NS_PER_MS);
-  return `${ms(from)} – ${ms(to)}`;
-}
-
-/**
  * Tick labels: clock time at the step's precision; the date is added on the first tick and
  * wherever the day changes. The first tick leaves its date out when the second tick already
  * starts a new day, so two date lines never stand side by side. Steps of a day or more show only

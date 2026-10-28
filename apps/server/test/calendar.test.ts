@@ -46,9 +46,10 @@ async function startApp() {
     workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
   });
   await app.ready();
-  const get = (from: bigint, to: bigint) =>
+  const get = (from: bigint, to: bigint, headers: Record<string, string> = {}) =>
     app.inject({
       url: "/api/calendar",
+      headers,
       query: { dataRef: "testcar", from: from.toString(), to: to.toString() },
     });
   return { app, catalog, calls, get };
@@ -117,6 +118,16 @@ describe("GET /api/calendar cache", () => {
       const res = await get(M10_FROM, M10_TO);
       expect(res.statusCode, res.body).toBe(200);
       expect(calls.classes).toEqual(["interactive"]);
+      // A request with the preload header, for a month no earlier request computed.
+      const next = await get(M10_TO, M10_TO + 30n * DAY, { "x-kipscope-class": "preload" });
+      expect(next.statusCode, next.body).toBe(200);
+      expect(calls.classes).toEqual(["interactive", "preload"]);
+      // Any other value leaves the request interactive.
+      const other = await get(M10_TO + 30n * DAY, M10_TO + 60n * DAY, {
+        "x-kipscope-class": "background",
+      });
+      expect(other.statusCode, other.body).toBe(200);
+      expect(calls.classes).toEqual(["interactive", "preload", "interactive"]);
     } finally {
       await app.close();
     }

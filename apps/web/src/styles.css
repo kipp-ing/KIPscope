@@ -770,7 +770,7 @@ button.link {
   justify-content: center;
   width: var(--control-h);
   padding: 0;
-  color: var(--text);
+  color: var(--label);
 }
 
 /* Legend-row drag (design D5); window highlights live in chart/window.css. */

@@ -6,18 +6,6 @@ import {
 } from "@kipscope/shared";
 import { snapCursorTime } from "../chart/cursors.ts";
 
-const NS_PER_S = 1_000_000_000n;
-
-/** Spans of the bar's span select (time-navigation "Span presets"). */
-export const SPAN_PRESETS: { label: string; ns: bigint }[] = [
-  { label: "1 s", ns: NS_PER_S },
-  { label: "10 s", ns: 10n * NS_PER_S },
-  { label: "1 min", ns: 60n * NS_PER_S },
-  { label: "10 min", ns: 600n * NS_PER_S },
-  { label: "1 h", ns: 3_600n * NS_PER_S },
-  { label: "1 day", ns: 86_400n * NS_PER_S },
-];
-
 /** Target of the bar's Go to, span, Back and Reset (design C5): the window zoomed last, else the first timeseries window. */
 export function barTarget(ws: Workspace): TimeseriesWindow | undefined {
   const windows = ws.windows.filter(isTimeseries);

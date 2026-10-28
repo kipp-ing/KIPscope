@@ -61,6 +61,7 @@ import { tabSeriesCache } from "./cache.ts";
 import {
   ClickGate,
   CURSOR_FLAG_PX,
+  CursorClick,
   DOUBLE_CLICK_MS,
   deltaLabelX,
   hitCursor,
@@ -905,27 +906,17 @@ export function TimeseriesWindow({
   // The overlays of the current uPlot instance, and x of the shown lines in CSS px as last placed.
   const cursorLines = useRef<CursorLines | undefined>(undefined);
   const cursorX = useRef<CursorX>({});
-  const gate = useMemo(() => new ClickGate(DOUBLE_CLICK_MS), []);
-  useEffect(() => () => gate.dispose(), [gate]);
-  // The click waiting in the gate; its line shows as App's preview.
-  const pendingClick = useRef<{ name: CursorName; t: bigint } | undefined>(undefined);
-
-  const placeClick = (name: CursorName, t: bigint) => {
-    const pending = pendingClick.current;
-    // A click of the other cursor ends no double-click: the waiting one is committed now.
-    if (pending && pending.name !== name) {
-      gate.doubleClick();
-      onCursorCommitRef.current(pending.name, pending.t);
-    }
-    pendingClick.current = { name, t };
-    onCursorPreviewRef.current(name, t);
-    gate.click(() => {
-      pendingClick.current = undefined;
-      onCursorCommitRef.current(name, t);
-    });
-  };
-  const placeClickRef = useRef(placeClick);
-  placeClickRef.current = placeClick;
+  // The click waiting in the gate; its line shows as App's preview until committed or dropped.
+  const click = useMemo(
+    () =>
+      new CursorClick(new ClickGate(DOUBLE_CLICK_MS), {
+        preview: (name, t) => onCursorPreviewRef.current(name, t),
+        commit: (name, t) => onCursorCommitRef.current(name, t),
+      }),
+    [],
+  );
+  // A closed window leaves no ghost line: the waiting click is dropped, not committed.
+  useEffect(() => () => click.dispose(), [click]);
 
   // The shown range (Z1, Z9): the own preview, else a linked window's gesture, else the server
   // range. Drops an accepted preview once its server range arrived, or another client's range wins.
@@ -1253,10 +1244,7 @@ export function TimeseriesWindow({
             // Replaces uPlot's reset to the loaded data: App resets to the signals' extents.
             dblclick: (self) => () => {
               // The double-click's clicks place no cursor.
-              gate.doubleClick();
-              const pending = pendingClick.current;
-              pendingClick.current = undefined;
-              if (pending) onCursorPreviewRef.current(pending.name, undefined);
+              click.doubleClick();
               clearTimeout(commitTimer.current);
               commitTimer.current = undefined;
               gestureStart.current = undefined;
@@ -1419,7 +1407,7 @@ export function TimeseriesWindow({
       passThrough(false);
       // A drag (rectangle zoom) keeps L cleared until the next move.
       if (!shouldRepublishLive(start, { x: e.clientX, y: e.clientY }, DRAG_THRESHOLD_PX)) return;
-      placeClickRef.current(e.shiftKey ? "b" : "a", timeAt(plotX(e.clientX)));
+      click.place(e.shiftKey ? "b" : "a", timeAt(plotX(e.clientX)));
       // A and L read the same right after a click (D-033); released outside the plot (mouseleave
       // already cleared L) it stays cleared.
       const r = u.over.getBoundingClientRect();

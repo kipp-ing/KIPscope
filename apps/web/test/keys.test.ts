@@ -149,6 +149,18 @@ describe("navKey", () => {
     expect(navKey(key("A", { shiftKey: true }), null, true)).toBeUndefined();
     expect(navKey(key("B", { shiftKey: true }), null, true)).toBeUndefined();
   });
+
+  it("maps Shift+A and Shift+B with Caps Lock on", () => {
+    // Caps Lock on, Shift held: the browser reports `a` and `b`; without Shift it reports `A`/`B`.
+    for (const focused of [null, el("BUTTON"), el("DIV")]) {
+      expect(navKey(key("a", { shiftKey: true }), focused)).toBe("cursorA");
+      expect(navKey(key("b", { shiftKey: true }), focused)).toBe("cursorB");
+    }
+    expect(navKey(key("A"), null)).toBeUndefined();
+    expect(navKey(key("B"), null)).toBeUndefined();
+    expect(navKey(key("a", { shiftKey: true, metaKey: true }), null)).toBeUndefined();
+    expect(navKey(key("b", { shiftKey: true }), null, true)).toBeUndefined();
+  });
 });
 
 describe("navKey in a radiogroup", () => {

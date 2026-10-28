@@ -21,6 +21,7 @@ import { EventsCache } from "../events.ts";
 import type { Access } from "../guard.ts";
 import { apiError, catalogsOf, parseInput, withRequestClass, workspaceOf } from "../http.ts";
 import { ObjectExtents } from "../objectScope.ts";
+import { covers } from "../rights.ts";
 import { sourceScope } from "../scope.ts";
 import type { WorkspaceEntry } from "../workspaces.ts";
 
@@ -200,6 +201,14 @@ export const caseRoutes =
       const target = caseEntryOf(deps, entry, query.index);
       if (!target)
         return apiError(reply, 404, "no_case", "the workspace's catalog is not available");
+      // The data ref comes from the catalog, not the request, so the guard never saw it (T-03).
+      if (!covers(deps.workspaces.grantOf(entry.record.id), target.dataRef))
+        return apiError(
+          reply,
+          403,
+          "forbidden_data",
+          `data ref ${target.dataRef} is not permitted`,
+        );
       const pad = BigInt(open.pad);
       const scope = caseScope(target, pad);
       const abort = abortOnClose(reply);

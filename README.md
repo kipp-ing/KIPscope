@@ -272,10 +272,15 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 | `cursor move C DURATION` | `cursor.move` |
 | `cursor remove C` | `cursor.remove` |
 | `diff on\|off` | `cursor.setDiff` |
+| `digits 3\|4` | `workspace.setOptions {digits}`: significant digits of values in every UI of the workspace |
 | `measurement name TEXT` | `measurement.set` name (`""` clears) |
 | `measurement object TEXT` | `measurement.set` object (`""` clears) |
 | `measurement meta KEY VALUE` | `measurement.setMeta` (`""` removes the entry) |
 | `measurement clear` | `measurement.clear` |
+| `events filter FILTER…` | `events.setFilter`: the filter of the events line and list (`""` for no filter words) |
+| `events add SIGNAL` | `events.addSignal`: state changes of SIGNAL on the events line |
+| `events remove SIGNAL` | `events.removeSignal` |
+| `events list [FILTER…] [--ref DATAREF] [--from TIME --to TIME] [--table]` | `GET /api/events`: the events of DATAREF (default: that of the first signal shown) under FILTER (default: the workspace's); `--table` prints lines instead of JSON |
 | `scope set REF FROM TO` | `scope.set`: bounds every query to data ref REF and `[FROM, TO)` (TIME rules, anchors included) |
 | `scope widen` | one `scope.set` with the scope's span added on each side (2 h → 6 h); without a scope exit 1 `scope_required`, nothing sent |
 | `scope clear` | `scope.clear` (refused with `KIPSCOPE_CATALOG=scoped`) |
@@ -309,7 +314,7 @@ W is a window ID (`w3`), C is `a` or `b`. TIME is decimal ns, ISO-8601 with `Z`/
 
 Reads: `state`, `scope show` (`data {scope, catalog {mode, state, size}}`, `local {from, to}`), `search QUERY… [--limit N]`, `extent SIGNAL`, `value SIGNAL TIME [--mode line|step]` (a computed ID `<dataRef>/=c7` sends its definition's flattened `formula` from the workspace: nested computed signals replaced by their formulas), `wait [REVISION]`, `view list`, `view export NAME [--out FILE]` (prints the view's YAML text; with `--out` writes FILE and prints `data {name, path, bytes}`), `view link [--page URL]` (the `#view=` link of the open workspace that the UI's "Copy link (own copy)" gives, as `data {url, chars}`; `--page` is the UI page address, default the server address).
 
-Each call prints one JSON line (`ok`, `outcome`, `exitCode`, and where they apply `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local`, `error`), except a successful `events list --table` and `view export NAME` without `--out`; a failure also prints one line to stderr. `local` holds times as local wall time with offset.
+Each call prints one JSON line (`ok`, `outcome`, `exitCode`, and where they apply `workspace`, `accepted`, `command`, `revision`, `created`, `createdWindow`, `removedWindow`, `render`, `data`, `local`, `error`), except a successful `events list --table` and `view export NAME` without `--out`; a failure also prints one line to stderr. `local` holds times as local wall time with offset.
 
 | Exit | Outcome | When |
 |---|---|---|

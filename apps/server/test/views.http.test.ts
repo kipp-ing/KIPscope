@@ -488,6 +488,31 @@ describe("views over HTTP", () => {
     expect(plain.status).toBe(200);
   });
 
+  it("refuses markSaved through the command endpoint", async () => {
+    await seeded();
+    t.views.write("speeds", doc([[RPM]], { title: "Speeds" }));
+    const speedsPath = join(t.viewsDir, "speeds.yaml");
+    const speedsText = readFileSync(speedsPath, "utf8");
+    const rev = t.store.revision;
+    expect((await t.get("/api/workspace")).body.workspace.view).toBeUndefined();
+
+    const res = await t.post("/api/commands", {
+      type: "view.markSaved",
+      name: "speeds",
+      title: "Speeds",
+    });
+    expect(res.status).toBe(400);
+    expect(codeOf(res.body)).toBe("invalid_command");
+    expect(t.store.revision).toBe(rev);
+    expect((await t.get("/api/workspace")).body.workspace.view).toBeUndefined();
+    expect(readFileSync(speedsPath, "utf8")).toBe(speedsText);
+
+    // The view route still marks its own save.
+    const saved = await t.post("/api/views", { title: "Mine" });
+    expect(saved.status).toBe(200);
+    expect((await t.get("/api/workspace")).body.workspace.view).toMatchObject({ name: "mine" });
+  });
+
   it("refuses an alias bomb", async () => {
     await seeded();
     // 10 levels, each of 10 aliases of the level before: 10^10 nodes if expanded.

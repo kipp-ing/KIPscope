@@ -210,113 +210,119 @@ export const workspacesRoutes =
         : workspaces.listOf(user).find((e) => e.store.workspace.windows.length > 0);
       let created: WorkspaceEntry;
       try {
-        created = workspaces.create(user);
+        // Filling until the end of this open: no reuse and no eviction picks it meanwhile (T-04).
+        created = workspaces.create(user, { filling: true });
       } catch (error) {
         return limited(reply, error);
       }
       const { id } = created.record;
-      const fail = (status: number, code: string, message: string, extra = {}) => {
-        workspaces.delete(id);
-        return apiError(reply, status, code, message, extra);
-      };
       try {
-        workspaces.grantObjects(id, dataRefs);
-      } catch (error) {
-        if (error instanceof GrantLimitError) return fail(409, "grant_limit", error.message);
-        throw error;
-      }
-      const scope = caseScope(entry, pad);
-      const catalogs = catalogsOf(deps);
-      let list: Awaited<ReturnType<typeof catalogs.load>>;
-      try {
-        list = await catalogs.load(scope);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return fail(
-          503,
-          "catalog_unavailable",
-          `signal list of the session not loaded: ${message}`,
-          {
-            reason: catalogs.get(scope)?.unavailableReason ?? message,
-          },
-        );
-      }
-      // The layout: the latest workspace (or the new one's seed) moved onto the session's vehicle.
-      const source = latest?.store.workspace ?? created.store.workspace;
-      const { workspace: layout, warnings: dropped } = rebindLayout(
-        withoutView(source),
-        layoutRef(source) ?? entry.dataRef,
-        entry.dataRef,
-      );
-      warnings.push(...dropped);
-      let point: { t: string; fallback: boolean };
-      try {
-        point = await alignmentOf(
-          deps,
-          entry,
-          align,
-          pad,
-          (layout.eventSignals ?? []).filter((s) => parseSignalId(s)?.dataRef === entry.dataRef),
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return fail(502, "source_error", message);
-      }
-      const visible = catalogView(list, workspaces.grantOf(id));
-      const layoutAlignAt = latest?.store.workspace.case?.alignAt;
-      const opened = openCase({
-        catalog,
-        current,
-        pad,
-        align,
-        alignAt: point.t,
-        ...(point.fallback ? { alignFallback: true } : {}),
-        layout,
-        ...(layoutAlignAt === undefined ? {} : { layoutAlignAt }),
-        known: (signalId) => visible.get(signalId) !== undefined,
-      });
-      const missing = new Set(opened.missing);
-      let caseEntry: WorkspaceEntry | undefined;
-      try {
-        caseEntry = workspaces.openCase(id, opened.workspace, catalog);
-      } catch (error) {
-        workspaces.delete(id);
-        throw error;
-      }
-      if (!caseEntry) return fail(404, "unknown_workspace", "the new workspace is gone");
-      if (view) {
-        // The same path as POST /api/views/open in the new case workspace (K6, K8).
-        const command =
-          view.name === undefined || view.name === PREVIOUS_VIEW
-            ? { type: "view.open", view: view.view }
-            : { type: "view.open", name: view.name, view: view.view };
-        const result = await runCommand(deps, command, reply, {
-          entry: caseEntry,
-          beforeOpen: () => {},
-        });
-        if (!result.ok) {
+        const fail = (status: number, code: string, message: string, extra = {}) => {
           workspaces.delete(id);
-          return result;
+          return apiError(reply, status, code, message, extra);
+        };
+        try {
+          workspaces.grantObjects(id, dataRefs);
+        } catch (error) {
+          if (error instanceof GrantLimitError) return fail(409, "grant_limit", error.message);
+          throw error;
         }
-        missing.clear();
-        for (const signalId of result.report?.missing ?? []) missing.add(signalId);
-        warnings.push(...(result.report?.warnings ?? []));
-        reply.code(200);
+        const scope = caseScope(entry, pad);
+        const catalogs = catalogsOf(deps);
+        let list: Awaited<ReturnType<typeof catalogs.load>>;
+        try {
+          list = await catalogs.load(scope);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return fail(
+            503,
+            "catalog_unavailable",
+            `signal list of the session not loaded: ${message}`,
+            {
+              reason: catalogs.get(scope)?.unavailableReason ?? message,
+            },
+          );
+        }
+        // The layout: the latest workspace (or the new one's seed) moved onto the session's vehicle.
+        const source = latest?.store.workspace ?? created.store.workspace;
+        const { workspace: layout, warnings: dropped } = rebindLayout(
+          withoutView(source),
+          layoutRef(source) ?? entry.dataRef,
+          entry.dataRef,
+        );
+        warnings.push(...dropped);
+        let point: { t: string; fallback: boolean };
+        try {
+          point = await alignmentOf(
+            deps,
+            entry,
+            align,
+            pad,
+            (layout.eventSignals ?? []).filter((s) => parseSignalId(s)?.dataRef === entry.dataRef),
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return fail(502, "source_error", message);
+        }
+        const visible = catalogView(list, workspaces.grantOf(id));
+        const layoutAlignAt = latest?.store.workspace.case?.alignAt;
+        const opened = openCase({
+          catalog,
+          current,
+          pad,
+          align,
+          alignAt: point.t,
+          ...(point.fallback ? { alignFallback: true } : {}),
+          layout,
+          ...(layoutAlignAt === undefined ? {} : { layoutAlignAt }),
+          known: (signalId) => visible.get(signalId) !== undefined,
+        });
+        const missing = new Set(opened.missing);
+        let caseEntry: WorkspaceEntry | undefined;
+        try {
+          caseEntry = workspaces.openCase(id, opened.workspace, catalog);
+        } catch (error) {
+          workspaces.delete(id);
+          throw error;
+        }
+        if (!caseEntry) return fail(404, "unknown_workspace", "the new workspace is gone");
+        if (view) {
+          // The same path as POST /api/views/open in the new case workspace (K6, K8).
+          const command =
+            view.name === undefined || view.name === PREVIOUS_VIEW
+              ? { type: "view.open", view: view.view }
+              : { type: "view.open", name: view.name, view: view.view };
+          const result = await runCommand(deps, command, reply, {
+            entry: caseEntry,
+            beforeOpen: () => {},
+          });
+          if (!result.ok) {
+            workspaces.delete(id);
+            return result;
+          }
+          missing.clear();
+          for (const signalId of result.report?.missing ?? []) missing.add(signalId);
+          warnings.push(...(result.report?.warnings ?? []));
+          reply.code(200);
+        }
+        const report: CaseOpenReport = {
+          count: catalog.entries.length,
+          current,
+          dataRefs,
+          missing: [...missing].sort(),
+          ...(point.fallback ? { alignFallback: true as const } : {}),
+          warnings,
+        };
+        reply.header(WORKSPACE_HEADER, id);
+        const answer: CreateWorkspaceAnswer = {
+          workspace: summary(request, caseEntry),
+          case: report,
+        };
+        return answer;
+      } finally {
+        // A no-op after `fail` deleted it; else the opener's tab gets the reuse claim.
+        workspaces.filled(id);
       }
-      const report: CaseOpenReport = {
-        count: catalog.entries.length,
-        current,
-        dataRefs,
-        missing: [...missing].sort(),
-        ...(point.fallback ? { alignFallback: true as const } : {}),
-        warnings,
-      };
-      reply.header(WORKSPACE_HEADER, id);
-      const answer: CreateWorkspaceAnswer = {
-        workspace: summary(request, caseEntry),
-        case: report,
-      };
-      return answer;
     };
 
     app.post(

@@ -996,6 +996,42 @@ describe("calc forms (improve-formula-editor F13)", () => {
     }
   });
 
+  it("names an open-ended argument count", () => {
+    for (const [argv, message] of [
+      [["search"], "search takes at least 1 argument, got 0 (see --help)"],
+      [["fav", "add"], "fav add takes at least 1 argument, got 0 (see --help)"],
+      [["fav", "rm"], "fav rm takes at least 1 argument, got 0 (see --help)"],
+      [["events", "filter"], "events filter takes at least 1 argument, got 0 (see --help)"],
+      [["case", "go"], "case go takes 1 argument, got 0 (see --help)"],
+    ] as [string[], string][]) {
+      const error = usageError(argv);
+      expect(error.outcome, argv.join(" ")).toBe("usage");
+      expect(EXIT[error.outcome], argv.join(" ")).toBe(2);
+      expect(error.message, argv.join(" ")).toBe(message);
+      expect(error.message, argv.join(" ")).not.toContain("Infinity");
+    }
+  });
+
+  it("refuses an empty calc NAME", () => {
+    for (const argv of [
+      ["calc", "add", "abs(SIG_A)", "--name", ""],
+      ["calc", "add", "abs(SIG_A)", "--name", "  "],
+      ["calc", "edit", "Diff", "--name", ""],
+    ]) {
+      const error = usageError(argv);
+      expect(error.outcome, argv.join(" ")).toBe("usage");
+      expect(EXIT[error.outcome], argv.join(" ")).toBe(2);
+      expect(error.message, argv.join(" ")).toBe("NAME is empty");
+    }
+    // An empty unit stays allowed.
+    expect(parseArgs(["calc", "add", "abs(SIG_A)", "--unit", ""], {}).invocation).toEqual({
+      kind: "calc",
+      action: "add",
+      formula: "abs(SIG_A)",
+      unit: "",
+    });
+  });
+
   it("names the calc forms and the formula help in the usage text", () => {
     for (const form of ["calc list", "calc add", "calc edit", "calc rm"])
       expect(USAGE).toContain(form);

@@ -353,13 +353,11 @@ export const workspaceRoutes =
 
     /** Applies one command; the endpoint the UI and the CLI share. */
     app.post("/api/commands", { config: CHANGE }, async (request, reply) => {
-      // Only the view routes name the open view, so a save in place writes its own file (V2 round 2).
-      if (namedViewOpen(request.body)) {
-        const refused: CommandResult = {
-          ok: false,
-          code: "invalid_command",
-          message: "open a saved view through POST /api/views/open",
-        };
+      // Only the view routes name the open view or mark it saved, so a save in place writes its
+      // own file (V2 round 2) and the dirty flag tells the truth (T-02).
+      const refusal = endpointRefusal(request.body);
+      if (refusal) {
+        const refused: CommandResult = { ok: false, code: "invalid_command", message: refusal };
         return reply.code(400).send(refused);
       }
       return runCommand(deps, request.body, reply);
@@ -479,9 +477,15 @@ export const workspaceRoutes =
     });
   };
 
-/** A `view.open` that carries `name`. */
-function namedViewOpen(body: unknown): boolean {
-  if (typeof body !== "object" || body === null) return false;
+/**
+ * Why `POST /api/commands` refuses `body`: a `view.open` that carries `name` or any
+ * `view.markSaved` (only the view routes send those); undefined for any other body.
+ */
+function endpointRefusal(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
   const { type, name } = body as { type?: unknown; name?: unknown };
-  return type === "view.open" && name !== undefined;
+  if (type === "view.open" && name !== undefined)
+    return "open a saved view through POST /api/views/open";
+  if (type === "view.markSaved") return "views are marked saved only by POST /api/views";
+  return undefined;
 }

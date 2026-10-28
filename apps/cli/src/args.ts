@@ -435,7 +435,9 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
     const [min, max] = typeof count === "number" ? [count, count] : count;
     if (args.length < min || args.length > max) {
       usage(
-        `${form} takes ${min === max ? min : `${min} to ${max}`} argument${max === 1 ? "" : "s"}, got ${args.length} (see --help)`,
+        max === Number.POSITIVE_INFINITY
+          ? `${form} takes at least ${min} argument${min === 1 ? "" : "s"}, got ${args.length} (see --help)`
+          : `${form} takes ${min === max ? min : `${min} to ${max}`} argument${max === 1 ? "" : "s"}, got ${args.length} (see --help)`,
       );
     }
     for (const name of opts.keys()) {
@@ -711,7 +713,6 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       return { kind: "fav", action: "list" };
     case "fav add":
     case "fav rm":
-      if (args.length === 0) usage(`${form} needs at least one NAME (see --help)`);
       take([1, Number.POSITIVE_INFINITY]);
       if (args.includes("")) usage("NAME is empty");
       return { kind: "fav", action: form === "fav add" ? "add" : "rm", names: args };
@@ -722,6 +723,7 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       if (args.length === 0) usage("calc add needs a FORMULA (see --help)");
       const opt = take(1, ["--name", "--unit"]);
       const [name, unit] = ["--name", "--unit"].map(opt);
+      if (name !== undefined && name.trim() === "") usage("NAME is empty");
       return {
         kind: "calc",
         action: "add",
@@ -735,6 +737,7 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       if (args.length === 0) usage("calc edit needs an ID or NAME (see --help)");
       const opt = take(1, parts);
       const [formula, name, unit] = parts.map(opt);
+      if (name !== undefined && name.trim() === "") usage("NAME is empty");
       if ([formula, name, unit].every((p) => p === undefined)) {
         usage("calc edit needs --formula, --name or --unit");
       }

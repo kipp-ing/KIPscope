@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -6,10 +7,12 @@ import {
   CasesDocument,
   decodeCasesLink,
   decodeViewLink,
+  EMPTY_WORKSPACE,
   encodeCasesLink,
   fromIso,
   type Workspace as SharedWorkspace,
   viewLinkUrl,
+  WORKSPACE_HEADER,
 } from "@kipscope/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SourceAdapter, SourceSignal } from "../../server/src/datasource.ts";
@@ -277,6 +280,7 @@ describe("exit codes", () => {
         ["window", "height", "w1", "tall"],
         ["cursor", "move", "a", "2m"],
         ["command", "{"],
+        ["calc", "add", "abs(SIG_A)", "--name", ""],
       ];
       for (const argv of argvs) {
         const before = s.requests.length;
@@ -293,6 +297,59 @@ describe("exit codes", () => {
       expect(s.requests).toEqual([]);
       expect(await revisionOf(s)).toBe(0);
     });
+  });
+
+  it("asks one workspace for state", async () => {
+    // A stub server: the unprefixed workspace read names `aaaaaaaaaa`; an unprefixed render status
+    // would name `bbbbbbbbbb` (the default changed in between); the prefixed one is `aaaaaaaaaa`'s.
+    const events: string[] = [];
+    const stub = createServer((request, response) => {
+      const path = request.url ?? "";
+      events.push(`request ${path}`);
+      const answer = (workspaceId: string, body: unknown) => {
+        events.push(`answered ${path}`);
+        response.writeHead(200, {
+          "content-type": "application/json",
+          [WORKSPACE_HEADER]: workspaceId,
+        });
+        response.end(JSON.stringify(body));
+      };
+      if (path === "/api/workspace") {
+        // Slow enough that a second request sent in parallel would arrive before this answer.
+        setTimeout(() => answer("aaaaaaaaaa", { revision: 3, workspace: EMPTY_WORKSPACE }), 100);
+      } else if (path === "/api/render-status") {
+        answer("bbbbbbbbbb", { revision: 3, clients: [] });
+      } else if (path === "/api/w/aaaaaaaaaa/render-status") {
+        answer("aaaaaaaaaa", { revision: 3, clients: [] });
+      } else {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { code: "not_found", message: path } }));
+      }
+    });
+    await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = stub.address();
+      if (typeof address !== "object" || address === null) throw new Error("no address");
+      const result = await runCli(["--server", `http://127.0.0.1:${address.port}`, "state"]);
+      expect(result.code, JSON.stringify(result.out)).toBe(0);
+      expect(result.out).toMatchObject({ ok: true, workspace: "aaaaaaaaaa" });
+      expect(events.filter((e) => e.startsWith("request "))).toEqual([
+        "request /api/workspace",
+        "request /api/w/aaaaaaaaaa/render-status",
+      ]);
+      // The second request is sent only after the first was answered.
+      expect(events).toEqual([
+        "request /api/workspace",
+        "answered /api/workspace",
+        "request /api/w/aaaaaaaaaa/render-status",
+        "answered /api/w/aaaaaaaaaa/render-status",
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => {
+        stub.closeAllConnections();
+        stub.close(() => resolve());
+      });
+    }
   });
 
   it("exits 3 when nothing listens", async () => {
