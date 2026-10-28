@@ -1,7 +1,7 @@
 # time-strip Specification
 
 ## Purpose
-The time strip under the option bar: data density over the whole recording of the shown data ref as bars (grey where data exists, accent for the shown range), its label and states, the drives found in the data, navigation by pointer and keys (jump, brush, pan, resize, fit a drive, whole recording, `,`/`.`), A/B/L markers, and the `/api/density` endpoint with drives, cache and prefetch after each catalog load.
+The time strip under the option bar: one 28 px row over the whole recording of the shown data ref (or over the scope) with a data presence line (slate where data exists, accent inside the shown range, broken at data gaps), event pins, drives, end labels and day labels, its info as tooltip and its states, navigation by pointer and keys (jump, brush, pan, resize, fit a drive, whole recording, `,`/`.`), A/B/L markers with flags, and the `/api/density` endpoint (bars, drives, cache and prefetch after each catalog load) that feeds it.
 
 ## Requirements
 
@@ -214,7 +214,7 @@ A second click within 500 ms and 4 px of a first click SHALL set the range from 
 - **Evidence:** UI check on smart451 at 1440×900 (header after each step, the `curl` of `/api/density` for `first` and `last`)
 
 ### Requirement: Drive row
-Each drive SHALL be drawn as a 5 px slate-700 (`#334155`) segment over the presence line (y 11–16), at least 4 px wide, slate-900 on hover and never in the accent, with a hit width of at least 8 px; a click on a drive SHALL set the range to the drive's `from`–`to`. Overlapping hit widths go to the nearest drive centre. While a catalog is linked the strip SHALL draw no drives (the session is the drive). Origin: D-057 („clicking a drive fits it"); widths: design S5; slate, 5 px, none in a linked session: D-094 („drives in slate"), mock `Strip.dc.html` row "Recommended" (vehicle strip draws drives, session strips none); `#334155`, no accent: D-095 (the accent means only the shown range).
+Each drive SHALL be drawn as a 5 px slate-700 (`#334155`) segment over the presence line (y 11–16), at least 4 px wide, slate-900 on hover and never in the accent, with a hit width of at least 8 px; a click on a drive SHALL set the range to the drive's `from`–`to`. Overlapping hit widths go to the nearest drive centre. While a catalog is linked the strip SHALL draw no drives (the session is the drive). In an object scope (unlinked) the drives are those of the work window's detail density, and the catalog's session marks lie in the same row, hit before the drives (object-view "Catalog marks on the strip"). Origin: D-057 („clicking a drive fits it"); widths: design S5; slate, 5 px, none in a linked session: D-094 („drives in slate"), mock `Strip.dc.html` row "Recommended" (vehicle strip draws drives, session strips none); `#334155`, no accent: D-095 (the accent means only the shown range).
 
 #### Scenario: Drive geometry
 - **WHEN** on the track of "Geometry" a drive spans [5 h, 5 h 4 min)
@@ -277,8 +277,8 @@ While cursor A or B is on and lies inside the track's span, the strip SHALL draw
 
 #### Scenario: Edge flag on smart451
 - **WHEN** at 1440×900 A is placed on smart451 at 2026-10-13 15:09 local at the whole recording, then a scope of 2026-10-17 10:00 – 12:00 local is set (CLI or API, as in "Scope on smart451"), and the user clicks A's flag
-- **THEN** the strip draws no A line and A's flag at the track's start with a caret left of the face, black as before (`rgb(15, 23, 42)` fill), with the tooltip naming `before the strip's start`; the click sends one `window.setRange` that ends at the scope's start (the message names the scope edge); setting the scope clears A (`scope set` resets the cursors, round 1 of the final rounds), so this UI setup cannot be built and the UI part is `not_run` until a scope keeps the cursors
-- **Evidence:** `apps/web/test/stripGeometry.test.ts` › "places and merges the cursor flags, edge flags outside the track" (carries the scenario); UI check on smart451 at 1440×900 (screenshot of the strip, flag rect and fill, the message) only once a scope keeps cursor A
+- **THEN** the strip draws no A line and A's flag at the track's start with a caret left of the face, black as before (`rgb(15, 23, 42)` fill), with the tooltip naming `before the strip's start`; the click sends one `window.setRange` that ends at the scope's start (the message names the scope edge); setting the scope drops a cursor outside it (scope "Ranges and cursors stay in the scope"), so this UI setup cannot be built with a scope and the UI part is `not_run`; the unit test carries the scenario
+- **Evidence:** `apps/web/test/stripGeometry.test.ts` › "places and merges the cursor flags, edge flags outside the track" (carries the scenario)
 
 ### Requirement: Strip drag cancel
 A strip drag SHALL end on release, on pointer cancel or on Escape; Escape and pointer cancel send nothing. While it runs the page SHALL select no text. Origin: necessary consequence of drags that must always end (`timeseries-window` "Height drag always ends", "No text selection while dragging").
@@ -352,7 +352,7 @@ When no signal of a dragged selection has named states and is off the events lin
 - **Evidence:** `apps/web/test/drag.test.ts` › "adds the selection's new state signals on the strip"; `apps/web/test/strip.test.ts` › "names a selection that has no new state signals"
 
 ### Requirement: Density of a scope
-While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope. In an object scope the answer SHALL be coarse, and with `from` and `to` it SHALL cover `[from, to) ∩ scope` (object-view "Coarse strip over the vehicle", "Detail around the view"). Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078; object scope: D-086.
+While the workspace has a scope, `GET /api/density?dataRef=<scope's data ref>` SHALL cover the scope only (design Z9). `first` is the scope's `from`, `last` is its `to` − 1 ns, and `scope` carries `{from, to}`. Width, grid, counts and drives follow the existing rules over that span. The answer SHALL come from one `refBuckets` query with that scope and no `refExtent` query, and SHALL be cached per scope; after a scope's signal list loads, the server SHALL compute that density in the background (an object scope's coarse one). In an object scope the answer SHALL be coarse, and with `from` and `to` it SHALL cover `[from, to) ∩ scope` (object-view "Coarse strip over the vehicle", "Detail around the view"). Origin: the ADX feedback item 4 („The time strip … cover[s] only the scope's range"); D-078; object scope: D-086.
 
 #### Scenario: One hour of testcar
 - **WHEN** the test server has scope {testcar, T1, T2} and `GET /api/density?dataRef=testcar` is sent
@@ -396,7 +396,7 @@ With a scope and no open catalog, the context row SHALL show the scope in the se
 - **Evidence:** `apps/web/test/sessionBar.test.ts` › "renders the context row for a case, a scope or neither"
 
 ### Requirement: Data presence line
-The strip SHALL show where its data ref has rows as a 3 px slate-500 line (y 12–15) on a 1 px baseline, in the accent inside the shown range, from `first` to `last` of `/api/density`, broken at empty buckets and at the logger gaps of `/api/gaps`; breaks at least 3 px, merged (design DW19). No density bar or area. Origin: D-094 („data presence as a thin line with breaks at data gaps"); gaps: D-062; 3 px: mock `Strip.dc.html`; slate-500: D-095 (critic 8).
+The strip SHALL show where its data ref has rows as a 3 px slate-500 line (y 12–15) on a 1 px baseline, in the accent inside the shown range, from `first` to `last` of `/api/density`, broken at empty buckets and at the logger gaps of `/api/gaps`; breaks at least 3 px, merged (design DW19). The logger gaps come from the gap info the windows share, so the strip asks for none of its own and, while no window shows a signal of the strip's data ref, only empty buckets break the line (design DW10). No density bar or area. Origin: D-094 („data presence as a thin line with breaks at data gaps"); gaps: D-062; 3 px: mock `Strip.dc.html`; slate-500: D-095 (critic 8).
 
 #### Scenario: Presence of a track
 - **WHEN** `presence` gets the track of "Geometry" (1,438 px, 120 buckets of 1 h from 0), counts 1 except buckets 10 and 11 at 0, `first` 30 min, `last` 119 h 30 min, the range [20 h, 30 h), and the logger gaps [50 h, 50 h 15 min) and [50 h 17.5 min, 50 h 25 min); and the same without logger gaps, in Europe/Berlin

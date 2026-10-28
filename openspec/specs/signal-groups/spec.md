@@ -16,7 +16,7 @@ For a signal with a DBC entry, the catalog SHALL report the transmitter of its `
 #### Scenario: Senders from the real DBCs
 - **WHEN** the real `h-can.dbc` is parsed (runs if the file exists)
 - **THEN** `ICL_3A2h.SPEED_DISP` has sender `CGW`, `ENG_5E0h.T_ENG` `Engine`, `BRK_1A0h.WSPD_FL` `ESP`, and `DCU_2B8h.HTR_HV_Volt` none
-- **Evidence:** `apps/server/test/dbc.test.ts` › "derives DBC details from the real h-can.dbc" (extended)
+- **Evidence:** `apps/server/test/dbc.real.local.test.ts` (gitignored, D-077) › "derives DBC details from the real h-can.dbc" (extended)
 
 ### Requirement: Group rules
 `display.groups` SHALL be an optional ordered list of rules: an optional regex `match` on the source name and a template `group` over its named groups and `{sender}`. The group SHALL be the trimmed render of the first rule that matches (or has no `match`) and renders non-blank; else, or for the render `Other`, the group `Other`. Restart to apply. Origin: D-053 (rules „like the display-name rules of D-035", „Restart to change", `Other` for no DBC entry or `Vector__XXX`); fall-through: design G4.
@@ -67,12 +67,12 @@ When at least one catalog entry has a group, the explorer SHALL show the matches
 
 #### Scenario: Empty search on real data
 - **WHEN** the explorer is shown on real data with the local `kipscope.yaml` and an empty search
-- **THEN** it lists fourteen collapsed headers `AC 21`, `CGW 39`, `DCU 89`, `Engine 63`, `EPS 3`, `ESP 64`, `EWM 6`, `HVM 10`, `SAM 35`, `SAS 6`, `SRS 13`, `TCU 38`, `YRG 23`, `Other 18` and no signal row, the count reads `428 matches`; a click on `ESP` shows its 64 rows below it, a second click hides them
+- **THEN** it lists fourteen collapsed headers `AC 21`, `CGW 39`, `DCU 89`, `Engine 63`, `EPS 3`, `ESP 64`, `EWM 6`, `HVM 10`, `SAM 35`, `SAS 6`, `SRS 13`, `TCU 38`, `YRG 23`, `Other 18` and no signal row, the Signals tab count reads `428`; a click on `ESP` shows its 64 rows below it, a second click hides them
 - **Evidence:** UI check (screenshot collapsed and with `ESP` open; header height via `getBoundingClientRect`)
 
 #### Scenario: Search on real data
 - **WHEN** the user types `temp` on real data with the local `kipscope.yaml`
-- **THEN** the list shows, all open, `Engine 4` with `TEMP_COOL`, `T_OIL`, `T_AIR`, `T_ENG`, then `DCU 5` with `COMP_Temp_Excess`, `COMP_TempLmt_Boost`, `HTR_CtrlTemp`, `HTR_ShtDn_SensFlt`, `OverTemp_Lamp`, then `HVM 1`, then `AC 1` with `T_SET`, then `CGW 2` with `T_OUTSIDE`, `T_OUTSIDE_RAW`, and no `Other`; the count reads `13 matches`; the row `TEMP_COOL` is active
+- **THEN** the list shows, all open, `Engine 4` with `TEMP_COOL`, `T_OIL`, `T_AIR`, `T_ENG`, then `DCU 5` with `COMP_Temp_Excess`, `COMP_TempLmt_Boost`, `HTR_CtrlTemp`, `HTR_ShtDn_SensFlt`, `OverTemp_Lamp`, then `HVM 1`, then `AC 1` with `T_SET`, then `CGW 2` with `T_OUTSIDE`, `T_OUTSIDE_RAW`, and no `Other`; the Signals tab count reads `13`; the row `TEMP_COOL` is active
 - **Evidence:** UI check (screenshot)
 
 #### Scenario: Groups unchanged below the Favourites group

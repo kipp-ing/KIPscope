@@ -90,6 +90,8 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 
 ## Next
 
+0. Review day 2026-10-28: all main specs checked against the code, drift fixed in the specs; 14 bugs (T-01 medium: zoom history not per catalog session) and 10 questions for Jan in [todo.md](todo.md).
+
 1. New direction (2026-10-19, D-078 … D-080, the ADX feedback): a search tool (finder, not part of KIPscope) finds sessions, KIPscope shows one case (scope = data ref + time window), runs multiuser on a server, signal books with three priorities and a learned book. Planned changes in order:
    0. Done: papercuts from the ADX feedback item 8 (`.gitattributes`, `--env-file-if-exists`, DBC path warnings).
    1. `improve-query-priority`: interactive queries before background work; periods only for the signals in view (the ADX feedback item 7). Archived (D-081).

@@ -24,18 +24,18 @@ Origin: D-083 („jedes sesseion braucht rechte"); Jan's „ja" to a workspace p
 - **Evidence:** `apps/server/test/workspaces.http.test.ts` › "keeps workspaces apart"
 
 ### Requirement: Session is not a word for the workspace
-The words "session" and "sessions" SHALL NOT name the server-held workspace anywhere: UI text, routes, headers, CLI options and forms, DTOs, error codes, files and code names. There are two exceptions:
+The words "session" and "sessions" SHALL NOT name the server-held workspace anywhere: UI text, routes, headers, CLI options and forms, DTOs, error codes, files and code names. The old names of the workspace stay out: the header `X-KIPscope-Session`, the variables `KIPSCOPE_SESSION*`, the option `--session`, the routes `/api/session(s)`, "Sessions menu", "session id/folder/store/registry/link/menu", and the names `SessionStore`, `SessionRegistry`, `SessionEntry`, `SessionSummary`, `SessionAnswer` and `sessionId`. There are two exceptions:
 - constants named `LEGACY_*` that read old state and addresses
 - lines about the finder's data section, which name `search tool` on the same line (such as the gate text "Open a session from the search tool")
 
-"Session" is reserved for the finder's data section.
+"Session" is reserved for the finder's data section. Since `add-case-open` it is also the UI word for one entry of a catalog (case-handoff, design K1; the code says `case`), so the word alone is no finding.
 
-Origin: D-086 Q1 („session" is the data section; the server state is the invisible "workspace", renamed in `add-multiuser`); exploration "Root cause" (two meanings of one word); data fact: on 2026-10-20 the Sessions menu listed workspaces under data-section titles (exploration row 1).
+Origin: D-086 Q1 („session" is the data section; the server state is the invisible "workspace", renamed in `add-multiuser`); exploration "Root cause" (two meanings of one word); data fact: on 2026-10-20 the Sessions menu listed workspaces under data-section titles (exploration row 1). Narrowed to the old workspace names after `add-case-open` made "session" the catalog entry's word (`naming.test.ts`).
 
-#### Scenario: No session in the code
-- **WHEN** `grep -rniE "\bsessions?\b" apps/server/src apps/web/src apps/cli/src packages/shared/src docs/http-api.md docs/deploy.md README.md | grep -v -e LEGACY_ -e 'search tool'` runs
-- **THEN** it prints no line
-- **Evidence:** the command
+#### Scenario: No old workspace name in the code
+- **WHEN** the naming test scans `apps/server/src`, `apps/web/src`, `apps/cli/src`, `packages/shared/src`, `docs/http-api.md`, `docs/deploy.md` and `README.md` for the old names above, skipping lines with `LEGACY_` or `search tool`
+- **THEN** it finds no line
+- **Evidence:** `apps/server/test/naming.test.ts` › "has no session as the name of the workspace in the code"
 
 ### Requirement: Workspace address
 Every route that reads or changes a workspace (design M5 list) SHALL also answer as `/api/w/<id>/<rest>` for workspace `<id>`. Every answer that served a workspace SHALL carry the header `X-KIPscope-Workspace: <id>`. An ID of the right form that names no workspace SHALL answer 404 `unknown_workspace`. The old prefix `/api/s/<id>/…` SHALL answer 404 like any unknown route. The UI page of a workspace SHALL be `/w/<id>`.
@@ -303,13 +303,13 @@ Origin: Jan's „ja" (own URL per case, old tabs keep their case); D-086 Q1 (ren
 - **Evidence:** UI check (one screenshot before, one after the restart)
 
 ### Requirement: Share
-The top row SHALL offer "Share…" as an overflow item (saved-views "Top-row overflow menu"). Its first part SHALL be "Copy link (own copy)", with a line saying that the receiver gets their own copy of this layout. Its second part SHALL be "Invite to this workspace", offering:
+The top row SHALL offer "Share…" as a button in the row at every width, never inside "⋯" (saved-views "Top-row overflow menu"). Its first part SHALL be "Copy link (own copy)", with a line saying that the receiver gets their own copy of this layout. Its second part SHALL be "Invite to this workspace", offering:
 - for the owner, with an identity other than `none`, the share level `Private · Read · Write`, with a line per level saying what the receiver can do; `Read` and `Write` are disabled with the tooltip `Sharing is turned off on this server` when `me.canShare` is false
 - "Copy workspace link"
 
 Each label SHALL say what the receiver gets (design M12 texts).
 
-Origin: exploration row 3 (data fact: "Copy link" in the Views menu and "Copy session link" in the Sessions menu gave the receiver an own copy and the same live workspace, with nothing on screen saying which); exploration "Workspaces become invisible", accepted by D-086; D-083 (rights per workspace).
+Origin: exploration row 3 (data fact: "Copy link" in the Views menu and "Copy session link" in the Sessions menu gave the receiver an own copy and the same live workspace, with nothing on screen saying which); exploration "Workspaces become invisible", accepted by D-086; D-083 (rights per workspace); place: D-095 (critic 15: Share in the row at every width, supersedes the overflow item of D-086's M12).
 
 #### Scenario: Share items
 - **WHEN** `shareItems` gets:
@@ -326,7 +326,7 @@ Origin: exploration row 3 (data fact: "Copy link" in the Views menu and "Copy se
 - **Evidence:** `apps/web/test/workspaces.test.ts` › "offers the share items"
 
 #### Scenario: Share on real data
-- **WHEN** the UI is open on smart451 at 1440×900 and at 1000×557, and Share… is opened (from the row, then from "⋯")
+- **WHEN** the UI is open on smart451 at 1440×900 and at 1000×557, and Share… is opened from the row
 - **THEN**
   - the popover shows `Copy link (own copy)` with its line, and `Copy workspace link (same live workspace)`
   - the top row has no Sessions menu, and the Views menu has no "Copy link" entry

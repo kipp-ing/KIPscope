@@ -74,12 +74,12 @@ Origin: D-085 (KIPscope "can no longer trust a plain handoff link: the search to
 - **WHEN**, with the test identity adapter, alice sends:
   - `POST /api/workspaces {grant: {objects: "all"}}`
   - `POST /api/commands {type: "grant.set", objects: "all"}`
-  - `POST /api/views/import {view: <document without windows plus a top-level grant: {objects: "all"}>, open: true}` to her workspace with an empty grant
+  - `POST /api/views/import {text: <document without windows plus a top-level grant: {objects: "all"}, as JSON text>, open: true}` to her workspace with an empty grant
 - **THEN**
   - the first answers 400 and creates no workspace
   - the second answers 400 as an unknown command
   - the third answers 200, and her workspace's `granted` stays 0
-  - `grep -rn "grantObjects(" apps/server/src` prints only the method's definition in `apps/server/src/workspaces.ts`
+  - `grep -rn "grantObjects(" apps/server/src` prints, besides comments, only the method's definition in `apps/server/src/workspaces.ts` and its one call in `apps/server/src/routes/workspaces.ts`, the open of a signed catalog (case-handoff "Objects map to data refs and widen the grant")
 - **Evidence:** `apps/server/test/rights.http.test.ts` › "takes no grant from a client"; the grep
 
 ### Requirement: One guard for every route
@@ -97,11 +97,11 @@ Origin: D-084 („rights limit which data a user can see, in every query, list, 
   - in full mode on the test DB with the test identity adapter, alice's workspace W has the grant `["testcar"]`
   - for each route of the M6 table that names a data ref, alice sends one request to W naming `othercar` (exists) and one naming `nosuchcar` (absent):
     - `GET /api/extent|series|value?signal=<ref>/X`
-    - `GET /api/density|gaps|events?dataRef=<ref>`
+    - `GET /api/density|calendar|gaps|events?dataRef=<ref>` (also with a second `dataRef` that is granted, before or after `<ref>`)
     - `GET /api/gaps?dataRef=testcar&signal=<ref>/X`
     - `POST /api/commands` with `window.addSignal <ref>/X`, `events.addSignal <ref>/X`, `scope.set <ref>`, and `view.open` of a document with a window on `<ref>/X`
     - `POST /api/views/open {view}` with such a document
-    - `POST /api/views/import {view, open: true}`
+    - `POST /api/views/import {text, open: true}`, the text being such a document
   - she also sends `POST /api/workspaces {open: {view}}` with such a document
 - **THEN**
   - every request answers 403 `forbidden_data`

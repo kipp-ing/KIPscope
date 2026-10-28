@@ -76,7 +76,7 @@ Ranges SHALL be half-open `[from, to)` and points SHALL come in ascending time o
 - **Evidence:** conformance suite › "counts the rows of a data ref per bucket"
 
 ### Requirement: Optional methods fall back
-`count`, `extent`, `series`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes` and `stateChanges` SHALL be optional. When an adapter leaves one out, the server SHALL compute it from the required methods (design C2; `series` also from `count`, design A2 of speed-up-adx) with the same answer as a native one (`refCount`: a count that changes whenever timestamped rows are added). An adapter MAY implement any of them as a faster path. Origin: Jan (2026-10-17) „the interfaces shall be lean"; the lead's brief (fallbacks where possible, capabilities where not); `series`: data-source "Series in one call".
+`count`, `extent`, `series`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges` and `computedSeries` (see "Computed series method") SHALL be optional. When an adapter leaves one out, the server SHALL compute it from the required methods (design C2; `series` also from `count`, design A2 of speed-up-adx) with the same answer as a native one (`refCount`: a count that changes whenever timestamped rows are added). An adapter MAY implement any of them as a faster path. Origin: Jan (2026-10-17) „the interfaces shall be lean"; the lead's brief (fallbacks where possible, capabilities where not); `series`: data-source "Series in one call".
 
 #### Scenario: Same answers natively and from the core
 - **WHEN** the conformance suite runs against each adapter twice, once as is and once reduced to its required methods
@@ -137,7 +137,7 @@ The ClickHouse adapter SHALL implement every optional method natively except `se
 
 #### Scenario: No native series on ClickHouse
 - **WHEN** `nativeMethods` runs on the ClickHouse adapter
-- **THEN** it lists `count`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges` and `events`, and not `series`
+- **THEN** it lists `count`, `extent`, `refExtent`, `refCount`, `loggerGaps`, `firstTimes`, `stateChanges`, `computedSeries` and `events`, and not `series`
 - **Evidence:** `apps/server/test/fallbacks.test.ts` › "takes series from the fallback on ClickHouse"
 
 ### Requirement: Source selection
@@ -211,7 +211,7 @@ Every configuration variable of the sources SHALL appear in `docs/data-sources.m
 - **Evidence:** the two commands' output (tester's report: case count per run)
 
 ### Requirement: The server keeps calls inside the scope
-The server SHALL never pass a scope of another data ref than the method's own, and SHALL send `raw`, `buckets`, `count` and `series` only ranges inside the active scope; in scoped mode the guard SHALL refuse a `series` without a scope or with a range outside every held scope of its data ref, before the source. Origin: necessary consequence of "Scope argument" (`raw`, `buckets` and `count` take no scope, `series` applies its scope to the edges only, and an adapter may ignore `scope.dataRef`).
+The server SHALL never pass a scope of another data ref than the method's own, and SHALL send `raw`, `buckets`, `count`, `series` and `computedSeries` only ranges inside the active scope; in scoped mode the guard SHALL refuse a `series` without a scope, and a `raw`, `buckets`, `count`, `series` or `computedSeries` with a range outside every held scope of its data ref, before the source. Origin: necessary consequence of "Scope argument" (`raw`, `buckets` and `count` take no scope, `series` applies its scope to the edges only, and an adapter may ignore `scope.dataRef`).
 
 #### Scenario: Full mode with a scope
 - **WHEN** the test server in full mode runs on a recording adapter with scope {testcar, T1, T2} and `/api/series` for `testcar/Fast_100h.SIG_A` over 2026-10-01T00:00Z … 10:00Z, `/api/value` at T1 + 1 s and `/api/extent` are sent

@@ -1,7 +1,7 @@
 # events Specification
 
 ## Purpose
-TBD - created by archiving change add-events. Update Purpose after archive.
+Diagnostic events (fault codes, state changes, logger notes) and the state changes of chosen signals, served per data ref by the server and listed, stepped through and marked in the UI and the CLI (D-058, D-059).
 
 ## Requirements
 
@@ -115,7 +115,7 @@ The events endpoint SHALL answer 400 `invalid_filter` with the parser's message,
 - **Evidence:** `apps/server/test/events.http.test.ts` › "rejects bad parameters"
 
 ### Requirement: Events cached
-Table events SHALL be loaded once per data ref and catalog load and a signal's changes once per signal and catalog load, concurrent requests sharing a load and failures not kept; after each catalog load the server SHALL load every data ref's table events and the project file's signals in turn. Above 100,000 events the first 100,000 SHALL be kept with `truncated`. Origin: like the density (D-056); 100,000: design E3.
+Table events SHALL be loaded once per data ref and catalog load and a signal's changes once per signal and catalog load, concurrent requests sharing a load and failures not kept; after each catalog load the server SHALL load every data ref's table events and then the events-line signals of every workspace with a live client in turn (workspaces "Signal lists of open workspaces"). Above 100,000 events the first 100,000 SHALL be kept with `truncated`. Origin: like the density (D-056); 100,000: design E3.
 
 #### Scenario: Cache, prefetch, failure, cap
 - **WHEN** a fake source counts its calls: two concurrent `get("testcar")`, then a catalog load, a failing call, a retry; and a source with 100,001 rows
@@ -123,7 +123,7 @@ Table events SHALL be loaded once per data ref and catalog load and a signal's c
 - **Evidence:** `apps/server/test/events.test.ts` › "caches per catalog load and prefetches", "keeps the first 100,000 events"
 
 ### Requirement: Events-line signals in the project file
-The project file's `events.signals` (at most 8 signal IDs) SHALL give the start value of the workspace's events-line signals; commands win until restart and nothing writes the file. The shipped file SHALL list `smart451/DCU_1F4h.IgnMode` and `smart451/BMS.contactor`. Origin: D-059 („automatically only two things (yaml define) IGN and contactor state"); D-051 pattern; names: D-058 (Jan's answers).
+The project file's `events.signals` (at most 8 signal IDs) SHALL give the start value of the workspace's events-line signals; commands win until restart and nothing writes the file. The shipped example file (`kipscope.example.yaml`, copied to the local, gitignored `kipscope.yaml`) SHALL list `smart451/DCU_1F4h.IgnMode` and `smart451/BMS.contactor`. Origin: D-059 („automatically only two things (yaml define) IGN and contactor state"); D-051 pattern; names: D-058 (Jan's answers).
 
 #### Scenario: Reading the section
 - **WHEN** project files with `events: {signals: [smart451/DCU_1F4h.IgnMode]}`, with 9 entries, with `signals: [nodataref]` and with `events: {colour: red}` are read

@@ -29,6 +29,14 @@ Text that does not parse, a nonexistent or ambiguous local time, an empty or rev
 - **THEN** each marks the field invalid with a reason in the result line (invalid time, reversed range, ambiguous local time naming `+02:00 or +01:00`, cursor A is off) and nowhere else (the app's message line stays empty), the picker stays open, and the revision does not change
 - **Evidence:** `packages/shared/test/timenav.test.ts` › "refuses invalid, reversed, ambiguous and cursor-off input"; UI check (screenshot with the reason and the empty message line, revision before and after)
 
+### Requirement: Navigation anchor
+The navigation anchor is cursor A if it lies inside the target's range, else the range's centre. Zoom keys SHALL keep the anchor at its place in the plot; a bare duration typed into "Go to" SHALL centre the new span on it. Origin: necessary consequence of D-027's zoom keys and the cursor workflow (concept §6: zooming into the spot the user marked); the wheel already zooms around the pointer; presets gone with D-092 (2).
+
+#### Scenario: Zoom in around A
+- **WHEN** the view is 2026-10-13T13:08:00Z–13:08:04Z, A is at 13:08:01Z and the user presses `+`
+- **THEN** the view becomes 13:08:00.5Z–13:08:02.5Z (A stays a quarter into the plot)
+- **Evidence:** `packages/shared/test/timenav.test.ts` › "zooms around the anchor and pans by fractions of the span"
+
 ### Requirement: Navigation keys
 Outside text fields and selects, without Ctrl, Meta or Alt, while no drag runs and while the range picker is closed, `+` or `=` SHALL halve the key target's span, `-` double it, `←`/`→` pan by half the span, Shift+`←`/`→` by the whole span, `Home` do what "Reset" does for that target, and `t` open the range picker with "Go to" focused and its text selected. Origin: D-027; keyboard tester (feedback 2026-10-15 item 1); text-field rule as for Backspace (D-020); picker: D-092 (1).
 

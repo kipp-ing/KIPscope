@@ -1,7 +1,7 @@
 # state-names Specification
 
 ## Purpose
-TBD - created by archiving change add-events. Update Purpose after archive.
+Lets people read state signals as names instead of codes: the catalog marks signals with states (`VAL_` labels, row text, diagnostic enums), cursors and readouts show the state name of a value, lines hold across a state instead of interpolating, and state signals are drawn as steps.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ The catalog SHALL mark a signal `states: "labels"` when its `VAL_` table names a
 #### Scenario: States in the test catalog
 - **WHEN** the server runs on the test DB and `GET /api/catalog` is read
 - **THEN** `testcar/Ign_A20h.MODE` and `testcar/Tmp_A21h.TEMP` have `states` `"labels"`, `testcar/DIAG.door` and `testcar/DIAG.lock` `"text"`, `testcar/Fast_100h.SIG_A` no `states`; `Ign_A20h.MODE`'s `dbc.values` hold `{"raw":3,"label":"KEYON: Ignition on","value":3}`
-- **Evidence:** `apps/server/test/catalog.test.ts` › "marks signals with states"; `apps/server/test/signals.http.test.ts` › "lists 1,021 signals" (count 1,017 → 1,021)
+- **Evidence:** `apps/server/test/catalog.test.ts` › "marks signals with states"
 
 #### Scenario: States on smart451
 - **WHEN** `curl -s localhost:7310/api/catalog | jq -c '[.items[] | select(.states) | .states] | group_by(.) | map({(.[0]): length})'` runs against carserver
@@ -71,7 +71,7 @@ A, B and L readout cells in legends and in the values window SHALL show the shor
 - **Evidence:** `apps/web/test/readout.test.ts` › "shows state names in readout cells"
 
 ### Requirement: State signals drawn as steps
-A segment SHALL be drawn as a step when its start or end point has a state name (the start level holds), else as a line, for points, buckets and envelope alike; a view without a point holds the edge level across it. Only text states (diag enums included) SHALL widen a flat y range. Until `add-gap-display` lands, holds may cross logger gaps (D-062). Origin: D-059, "No interpolation into a state" (line and readout agree); design N3.
+A segment SHALL be drawn as a step when its start or end point has a state name (the start level holds), else as a line, for points, buckets and envelope alike; a view without a point holds the edge level across it. Only text states (diag enums included) SHALL widen a flat y range. A hold stops at a logger gap or cycle-period gap like any step (data-gaps, D-062). Origin: D-059, "No interpolation into a state" (line and readout agree); design N3.
 
 #### Scenario: Steps, edge hold and y range
 - **WHEN** chart points are built for (a) a contactor-like diag enum polled 30 s apart that goes from open to closed inside the view, and a speed signal with `VAL_ 0 "Stop"` with points 40, 50, 0, (b) an IgnMode-like `VAL_` signal without a point in the range whose edge point before it is 3 (`KEYON`), and the y domain is computed for (c) a flat diag enum and a flat numeric signal with `VAL_ 0 "Stop"` at 50 km/h

@@ -1,7 +1,7 @@
 # computed-signals Specification
 
 ## Purpose
-Signals computed from one or two other signals by a small formula of KIPscope's own (D-102), defined in a few clicks from the explorer and then used like any other signal (D-104).
+Signals computed from up to 8 other signals (computed ones included, D-106) by a small formula of KIPscope's own (D-102), defined in a few clicks from the explorer and then used like any other signal (D-104).
 
 ## Requirements
 

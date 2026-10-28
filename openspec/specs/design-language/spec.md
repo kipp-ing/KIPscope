@@ -22,8 +22,8 @@ The web app SHALL define its colours, sizes and fonts once as custom properties 
 The base font size SHALL be 12 px in the system sans font, controls inheriting it; section labels 11 px, weight 600, upper case, muted; window titles 12 px weight 600; signal names in the explorer and legend monospace at 11.5 px; numbers in tabular figures everywhere. Origin: D-055 (compact density, 12 px; mock "Type": 12/600 titles, 12/400 body and controls, 11/600 caps section label, mono for signal names, tabular numbers everywhere).
 
 #### Scenario: Computed type
-- **WHEN** the six-window setup is shown on smart451 at 1440×900
-- **THEN** `getComputedStyle` gives: `:root` `font-size` 12 px and `font-variant-numeric` `tabular-nums`; the "Go to" field and the Back button 12 px; the explorer's "Signals" heading 11 px, `font-weight` 600, `text-transform` `uppercase`; a window title 12 px, 600; an explorer row name and a legend name 11.5 px with a `font-family` starting `ui-monospace`
+- **WHEN** the six-window setup is shown on smart451 at 1440×900 (the sidebar's Events tab opened once to read its heading, then Signals again)
+- **THEN** `getComputedStyle` gives: `:root` `font-size` 12 px and `font-variant-numeric` `tabular-nums`; the "Go to" field and the Back button 12 px; the Events tab's "Events" heading (a section label) 11 px, `font-weight` 600, `text-transform` `uppercase`; a window title 12 px, 600; an explorer row name and a legend name 11.5 px with a `font-family` starting `ui-monospace`
 - **Evidence:** UI check on smart451 (the computed values)
 
 ### Requirement: Controls
@@ -40,11 +40,11 @@ Top-row buttons, selects and text fields SHALL be 26 px tall with a 1 px slate-3
 - **Evidence:** UI check on smart451 (tops and height per viewport, one screenshot each)
 
 ### Requirement: One primary per surface
-A surface (explorer, top row, a window, the footer) SHALL show at most one primary button, drawn slate-900 with white text; pressed toggles are not primary buttons. This change adds no primary button. Origin: D-055 (mock "Controls": „one dark primary per surface"); no new button: D-055 („restyle only").
+A surface (explorer, top row, a window, the footer) SHALL show at most one primary button, drawn slate-900 with white text; pressed toggles and the selected tab of a tab switch (the sidebar's `Signals | Events`) are not primary buttons. This change adds no primary button. Origin: D-055 (mock "Controls": „one dark primary per surface"); no new button: D-055 („restyle only").
 
 #### Scenario: At most one primary per surface
 - **WHEN** the six-window setup is shown with A, B and Diff on
-- **THEN** in the explorer, the top row, each window and the footer, at most one `button` that is not a pressed toggle (`aria-pressed`, `aria-expanded` or a checked pill) has background `rgb(15, 23, 42)`
+- **THEN** in the explorer, the top row, each window and the footer, at most one `button` that is not a pressed toggle or selected tab (`aria-pressed`, `aria-expanded`, `aria-selected` or a checked pill) has background `rgb(15, 23, 42)`
 - **Evidence:** UI check on smart451 (a snippet counting such buttons per surface, its output)
 
 ### Requirement: Cursor toggles as pills
@@ -61,7 +61,7 @@ A, B and Diff SHALL be toggle buttons 26 px tall, at least 30 px wide, 4 px radi
 - **Evidence:** UI check on smart451 (computed values and boxes in each state)
 
 ### Requirement: Explorer look
-The explorer heading SHALL be a section label; group headers slate-100 bands, 4 px radius, 3 px below the group above, darker under the pointer; rows indented under their header; the active row or header in the accent soft fill and ink; the row "+" slate-400, accent under the pointer. Behaviour unchanged; rows and headers ≤ 24 px. Origin: D-055 (mock "Pills and list", sidebar); 24 px: `signal-catalog`, `signal-groups`.
+The explorer SHALL open with the 26 px segmented switch `Signals | Events` (12 px, slate-300 frame, 4 px radius, the selected tab slate-900 with white text, the signal count after the label), panel headings such as "Events" being section labels; group headers slate-100 bands, 4 px radius, 3 px below the group above, darker under the pointer; rows indented under their header; the active row or header in the accent soft fill and ink; the row "+" slate-400, accent under the pointer. Behaviour unchanged; rows and headers ≤ 24 px. Origin: D-055 (mock "Pills and list", sidebar); 24 px: `signal-catalog`, `signal-groups`; the switch replaced the "Signals" heading: add-events V8, D-092 (mock `Main.dc.html`).
 
 #### Scenario: Bands and active row
 - **WHEN** the explorer of smart451 shows the empty search with `Engine` expanded and the arrow keys put the active row on its second signal
@@ -69,11 +69,11 @@ The explorer heading SHALL be a section label; group headers slate-100 bands, 4 
 - **Evidence:** UI check on smart451 at 1440×900 (computed values and rects, one screenshot)
 
 ### Requirement: Window look
-Every window SHALL be a white tile with a slate-200 border and 6 px radius; its 24 px header line holds a slate-100 bottom divider, the title in 12 px weight 600 slate-800 and the badge as a pill with slate-100 fill, slate-600 text and no border. The plot grid SHALL be slate-200, neutral tick labels slate-500 at 11 px. Origin: D-055 (mock window); 24 px: `workspace-layout` "Compact window header".
+Every window SHALL be a white tile with a slate-200 border and 6 px radius; its 24 px header line holds a slate-100 bottom divider, the title in 12 px weight 600 slate-800 and, right-aligned before "⋯", the mode tag as plain 11 px muted text (slate-500) without fill or border. The plot grid SHALL be slate-200, tick labels and tick marks slate-700 at 11 px. Origin: D-055 (mock window); 24 px: `workspace-layout` "Compact window header"; mode tag without a pill: `workspace-layout` "Compact window header" (D-092, declutter-workspace DW11); slate-700 ticks: D-095 (critic 11, `timeseries-window` "Axis titles").
 
-#### Scenario: Header and badge
+#### Scenario: Header and mode tag
 - **WHEN** a timeseries window on smart451 shows `ICL_3A2h.SPEED_DISP` aggregated
-- **THEN** its `.window-header` is ≤ 24 px tall with a bottom border colour `rgb(241, 245, 249)`; the window's border colour is `rgb(226, 232, 240)` and radius 6 px; the badge has background `rgb(241, 245, 249)`, colour `rgb(71, 85, 105)` and no border
+- **THEN** its `.window-header` is ≤ 24 px tall with a bottom border colour `rgb(241, 245, 249)`; the window's border colour is `rgb(226, 232, 240)` and radius 6 px; the `.mode-tag` has `font-size` 11px, colour `rgb(100, 116, 139)`, a transparent background and no border
 - **Evidence:** UI check on smart451 at 1440×900 (computed values, one screenshot)
 
 ### Requirement: Cursor and L line look
@@ -156,15 +156,15 @@ A flashing window (`data-flash`) SHALL start with a 3 px accent-ring outline and
 - **Evidence:** UI check on smart451 (computed values); if the automation cannot emulate the media feature, `not_run` with the stylesheet rule quoted
 
 ### Requirement: Help panel look
-The help panel SHALL be white with a slate-200 left border, a "HELP" section label, the tabs Manual and Keys as pills (active slate-900, white text) and a × button; keys SHALL be `kbd` elements (slate-100 fill, 1 px slate-300 border, 4 px radius, 11 px monospace). It adds no primary button. Origin: D-055 (tokens, pills, section labels); design H7.
+The help panel SHALL be white with a slate-200 left border, the heading "Help" (13 px, weight 600, slate-800), the tabs Manual and Keys as a 26 px segmented switch (active slate-900, white text) and a × button; keys SHALL be `kbd` elements (slate-100 fill, 1 px slate-300 border, 4 px radius, 11 px monospace). It adds no primary button. Origin: D-055 (tokens, pills, section labels); design H7.
 
 #### Scenario: Panel look
 - **WHEN** the Keys tab is open on smart451
-- **THEN** the panel's background is `rgb(255, 255, 255)` and its left border colour `rgb(226, 232, 240)`; the Keys tab pill's background is `rgb(15, 23, 42)`; a `kbd` has background `rgb(241, 245, 249)`, border colour `rgb(203, 213, 225)`, `border-radius` 4 px and a `font-family` starting `ui-monospace`
+- **THEN** the panel's background is `rgb(255, 255, 255)` and its left border colour `rgb(226, 232, 240)`; the active tab's background is `rgb(15, 23, 42)`; a `kbd` has background `rgb(241, 245, 249)`, border colour `rgb(203, 213, 225)`, `border-radius` 4 px and a `font-family` starting `ui-monospace`
 - **Evidence:** UI check on smart451 (computed values, screenshot)
 
 ### Requirement: Start card look
-The start card SHALL be a white tile at most 640 px wide with a slate-200 frame, a 6 px radius and a 3 px accent left bar. Its heading SHALL be 12 px weight 600, its four steps a numbered list, and its "Manual" and "Keys" buttons normal 26 px controls. It SHALL add no primary button. Origin: D-055 (window tile look); design H7.
+The start card SHALL be a white tile at most 640 px wide with a slate-200 frame, a 6 px radius and a 3 px accent left bar. Its heading SHALL be 13 px weight 600, its four steps a numbered list, and its "Manual" and "Keys" buttons normal 26 px controls. It SHALL add no primary button. Origin: D-055 (window tile look); design H7.
 
 #### Scenario: Card look
 - **WHEN** the start card shows on smart451 at 1440×900

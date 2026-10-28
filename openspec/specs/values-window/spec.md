@@ -14,10 +14,10 @@ The dashboard SHALL offer a window kind "values" with a header (title, "Between 
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Creating a values window
-A values window SHALL be created by "+ Values window" in the option bar or by `window.create {kind: "values"}`. An untitled one SHALL be named "Values <n>" after its ID `w<n>`. Origin: D-023.
+A values window SHALL be created by "+ Values window" in the option bar's "⋯" menu (saved-views "Top-row overflow menu") or by `window.create {kind: "values"}`. An untitled one SHALL be named "Values <n>" after its ID `w<n>`. Origin: D-023.
 
 #### Scenario: Create from the bar
-- **WHEN** the user clicks "+ Values window" in the option bar
+- **WHEN** the user opens the option bar's "⋯" menu and clicks "+ Values window"
 - **THEN** a window "Values <n>" appears last, showing "Drop a signal here", without plot or range
 - **Evidence:** UI check (screenshot); `packages/shared/test/apply.test.ts` › "creates a values window without range"
 
@@ -81,7 +81,7 @@ Each row SHALL show its signal's value at cursor A. The value is evaluated from 
 - **Evidence:** UI check (screenshot after the zoom)
 
 #### Scenario: Cursor A off
-- **WHEN** the user unchecks "A" in the option bar
+- **WHEN** the user switches the "A" toggle in the option bar off
 - **THEN** every row shows `—` and the header reads "Cursor A off"
 - **Evidence:** UI check (screenshot)
 
@@ -117,7 +117,7 @@ A value that is SNA at the cursor SHALL be shown as `SNA` in the SNA style, neve
 - **Evidence:** UI check (screenshots); `apps/web/test/values.test.ts` › "formats gaps as no data"
 
 ### Requirement: Diff columns
-While B is on or diff mode is on, each row SHALL show the value at B next to A's, and the header B's time; diff mode adds Δ = B−A to each row and Δt = B−A, with sign, to the header. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (Δt and ΔWert, B−A); texts: D-026; B without Diff: D-031.
+While B is on or diff mode is on, each row SHALL show the value at B next to A's, and the header B's time; diff mode adds Δ = B−A to each row and Δt = B−A, with sign, to the header. Δ SHALL be computed only when both values are numbers, else it SHALL show `—`. Δ SHALL carry the tag `lin` if either value is interpolated, else `hold` if either is held. A signal with state names shows `=` or `≠` instead (state-names "State names at the cursors"). While B is off, B and Δ SHALL show `—`. Origin: D-023; concept §6 (Δt and ΔWert, B−A); texts: D-026; B without Diff: D-031.
 
 #### Scenario: Speed difference
 - **WHEN** diff mode is on, A is at 2026-10-13T13:08:00.093Z and B at 13:08:00.995Z

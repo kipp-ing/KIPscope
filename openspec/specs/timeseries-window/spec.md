@@ -13,7 +13,7 @@ When a window shows aggregated buckets, each signal SHALL be drawn as a curve of
 - **THEN** it draws the bucket means and indicates that the view is aggregated
 
 ### Requirement: Min/max envelope
-A window SHALL offer an envelope option, off by default, that draws the minimum and maximum of each bucket around the mean curve.
+A window SHALL offer an envelope option ("Min/max" in the window's "⋯" menu), off by default, that draws the minimum and maximum of each bucket around the mean curve.
 
 #### Scenario: Spike in overview
 - **WHEN** the envelope is on and a single raw spike lies inside one bucket
@@ -25,7 +25,7 @@ A window SHALL offer an envelope option, off by default, that draws the minimum 
 - **Evidence:** `apps/web/test/build.test.ts` › "breaks mean and envelope at all-SNA buckets"; UI check in the SPEED_DISP overview above
 
 ### Requirement: Raw display modes
-When a window shows raw points, each signal SHALL be drawable as lines between points, as steps holding the previous value, or with point markers, as chosen in the window's display options. A step SHALL hold a value until the next point's timestamp, or only up to its hold end where the two points are split (data-gaps "Split between two points"). Origin: concept §5; hold end: D-062.
+When a window shows raw points, each signal SHALL be drawable as lines between points, as steps holding the previous value, or with point markers, as chosen in the window's display options (the window's "⋯" menu). A step SHALL hold a value until the next point's timestamp, or only up to its hold end where the two points are split (data-gaps "Split between two points"). Origin: concept §5; hold end: D-062.
 
 #### Scenario: Step mode
 - **WHEN** step mode is selected
@@ -77,7 +77,7 @@ A response for an earlier time range or revision SHALL NOT replace data for a ne
 - **THEN** the window shows the data of the second zoom
 
 ### Requirement: Loading and error state
-A window SHALL show per signal while its data is loading and when it failed, including the error message on failure; a complete load shows nothing (D-030 „the "complete" can go"). When a signal's load fails, the window SHALL keep drawing what it showed for that signal at that moment (its previous data or its placeholder) instead of clearing the curve. Its legend row SHALL show `failed: <message>`, also while a retry of the same view loads, until a load of the signal completes. The kept data SHALL be treated like data still loading: the live cursor and dragged cursor lines read their values from it, and the SNA share and the resolution badge describe it. Committed cursor readouts SHALL keep coming from `/api/value` with their own loading and failed state. Origin: concept §10 („Fehler … müssen erkennbar bleiben"); D-042 (2) („on a failed load the window keeps the last drawn data (or the overview placeholder) with the failure marker instead of an empty plot"). The readout behaviour is a necessary consequence of D-031 (readouts from the server) and D-034 (the live cursor reads the drawn curve).
+A window SHALL show per signal while its data is loading and when it failed, including the error message on failure; a complete load shows nothing (D-030 „the "complete" can go"). When a signal's load fails, the window SHALL keep drawing what it showed for that signal at that moment (its previous data or its placeholder) instead of clearing the curve. Its legend status SHALL read `failed` as a pill (the status column has one width) whose tooltip is `failed: <message>`, also while a retry of the same view loads, until a load of the signal completes. The kept data SHALL be treated like data still loading: the live cursor and dragged cursor lines read their values from it, and the SNA share and the resolution badge describe it. Committed cursor readouts SHALL keep coming from `/api/value` with their own loading and failed state. Origin: concept §10 („Fehler … müssen erkennbar bleiben"); D-042 (2) („on a failed load the window keeps the last drawn data (or the overview placeholder) with the failure marker instead of an empty plot"). The readout behaviour is a necessary consequence of D-031 (readouts from the server) and D-034 (the live cursor reads the drawn curve).
 
 #### Scenario: Query fails
 - **WHEN** the query for one signal fails
@@ -96,12 +96,12 @@ A window SHALL show per signal while its data is loading and when it failed, inc
 
 #### Scenario: Legend text
 - **WHEN** a signal's state is `error` with message M, or `loading` while a retry carries the last error M, or plain `loading`, or `complete`
-- **THEN** its legend status text is `failed: M`, `failed: M`, `loading` and empty, in that order
-- **Evidence:** `apps/web/test/loader.test.ts` › "names the legend status, failed while a retry loads"
+- **THEN** its status text (`loadStatusText`, the pill's tooltip while failed) is `failed: M`, `failed: M`, `loading` and empty, in that order; the legend pill itself reads `failed` for the first two
+- **Evidence:** `apps/web/test/loader.test.ts` › "names the legend status, failed while a retry loads"; the pill: `FAILED_PILL` in `apps/web/src/chart/TimeseriesWindow.tsx` (declutter-workspace DW12, commit 2af9df9)
 
 #### Scenario: Tunnel drop on real data
 - **WHEN** the UI shows a window with real data, the carserver tunnel is dropped, the window's view is changed to a range not loaded before, and the tunnel is restored
-- **THEN** while it is down the window keeps a curve and its legend reads `failed: source_error …`; within 35 s of the tunnel coming back the curve for the new range is drawn and the legend status is empty, without any user action
+- **THEN** while it is down the window keeps a curve and its legend status pill reads `failed` with the tooltip `failed: source_error …`; within 35 s of the tunnel coming back the curve for the new range is drawn and the legend status is empty, without any user action
 - **Evidence:** lead's manual check (design R8), screenshots before and after
 
 ### Requirement: Time axis precision
@@ -283,7 +283,7 @@ Signals with the same unit SHALL share one y scale and axis; each unit SHALL hav
 
 #### Scenario: Two signals, same unit
 - **WHEN** a window on smart451 shows `CPC_168h.EAC_HV_Volt` and `CPC_448h.PTC_HV_Volt` (both `V`)
-- **THEN** one axis is drawn on the left titled `V` in `rgb(51, 65, 85)` with no swatch, and the `[V]` of both legend rows has the tooltip "y axis L"
+- **THEN** one axis is drawn on the left titled `V` in `rgb(51, 65, 85)` with no swatch, and the `[V]` of both legend rows has the tooltip `[V] · y axis L`
 - **Evidence:** UI check (screenshot, the title's computed colour); `apps/web/test/axes.test.ts` › "puts signals with the same unit on one axis"
 
 ### Requirement: Stacked axes
@@ -291,7 +291,7 @@ Every unit SHALL get a drawn y axis, stacked up to two per side in signal order:
 
 #### Scenario: Second unit
 - **WHEN** `COMBI_412h.V_ANZ` (`km/h`) is added to that window
-- **THEN** a right axis titled `km/h` appears with a swatch in V_ANZ's colour, V_ANZ's `[km/h]` has the tooltip "y axis R", and the `V` axis stays left
+- **THEN** a right axis titled `km/h` appears with a swatch in V_ANZ's colour, V_ANZ's `[km/h]` has the tooltip `[km/h] · y axis R`, and the `V` axis stays left
 - **Evidence:** UI check (screenshot); `apps/web/test/axes.test.ts` › "stacks axes L, R, L2, R2 in signal order", "colours an axis like its only signal"
 
 #### Scenario: Third and fourth unit
@@ -417,14 +417,6 @@ When a span is too wide for daily or weekly date labels, the time axis SHALL lab
 - **THEN** the axis reads 2026-08, 2026-09, 2026-10 at local month starts; a 24 h span keeps the clock-based ticks
 - **Evidence:** `apps/web/test/calendar.test.ts` › "labels about three months with YYYY-MM at local month starts", "leaves short spans to the clock-based steps"
 
-### Requirement: Header range in milliseconds
-The window header SHALL show its range in local time with at most millisecond precision, cut (never rounded up), trailing zero groups dropped. Origin: round 1 finding "nanosecond header range": ranges from zoom, history and extents carry nanoseconds, which made the header unreadable.
-
-#### Scenario: Nanosecond range
-- **WHEN** a range starts at 2026-10-13T09:12:00.999999999Z
-- **THEN** the header shows `… 11:12:00.999` (Europe/Berlin), not `.000` of the next second
-- **Evidence:** `apps/web/test/axis.test.ts` › "shows at most milliseconds and drops trailing zeros", "truncates instead of rounding up"
-
 ### Requirement: Resizable window height
 The user SHALL be able to change a timeseries window's plot height by dragging either its corner grip ("Corner grip") or the strip below the plot, between 120 and 1200 px; the height SHALL be kept in the workspace. While dragging, only the dragging browser's plot SHALL follow the pointer; on release exactly one `window.setHeight` command SHALL be sent, and none when the released height equals the stored one. Origin: D-018 ("resizable window heights"); D-037 item (1) for the grip; the strip stays per design G1 (Q1).
 
@@ -436,7 +428,7 @@ The user SHALL be able to change a timeseries window's plot height by dragging e
 #### Scenario: Bounds
 - **WHEN** a dragged height would be 50 px or 5000 px
 - **THEN** the plot height is 120 px or 1200 px, and the command sent on release carries that clamped height
-- **Evidence:** `apps/web/test/height.test.ts` › "clamps a dragged height to 120–1200 px"
+- **Evidence:** `apps/web/test/height.test.ts` › "clamps a dragged height to 120-1200 px"
 
 #### Scenario: Smallest height on screen
 - **WHEN** a window's plot is 280 px tall and the user drags its grip 300 px up and releases
@@ -566,8 +558,8 @@ The target of the bar's "Back" and "Reset" SHALL be the window zoomed last, else
 
 #### Scenario: Unlinked back
 - **WHEN** "Link time axes" is off, window 1 was zoomed once and then window 2 zoomed once, and the user clicks the bar's "Back"
-- **THEN** the tooltip read "Back · Window 2", window 2 shows its previous range, and window 1 is unchanged
-- **Evidence:** `apps/web/test/bar.test.ts` › "targets the window zoomed last, else the first timeseries window"; UI check (headers before and after)
+- **THEN** the tooltip reads `Back: the previous time range of Window 2 · Backspace`, window 2 shows its previous range, and window 1 is unchanged
+- **Evidence:** `apps/web/test/bar.test.ts` › "targets the window zoomed last, else the first timeseries window"; `apps/web/test/hints.test.ts` (tooltips name the window); UI check (headers before and after)
 
 ### Requirement: Drop lands under the pointer
 A drop SHALL go to the target under the pointer at release, never to a target the pointer left earlier. The drop zone's space SHALL stay reserved below the last window whether or not a drag runs, so nothing moves when a drag starts and the "+ New window" zone never covers a window. Origin: power-user bug (feedback 2026-10-15, item 1: three stray windows); necessary consequence of "New-window drop zone stays visible".
@@ -578,12 +570,12 @@ A drop SHALL go to the target under the pointer at release, never to a target th
 - **Evidence:** UI check (screenshot while dragging, screenshot and revision after the drop)
 
 ### Requirement: Header shows the plotted range
-The window header's range SHALL always equal the range the plot shows, also during a zoom or pan preview before the server accepted it. Origin: power-user bug (feedback 2026-10-15, item 2: the header lagged one zoom step behind the axis).
+The range text a window shows (while unlinked its own range in the header, "Own range of an unlinked window"; while linked the range button, workspace-layout "Linked windows show the range once") SHALL always equal the range the plot shows, also during a zoom or pan preview before the server accepted it. Origin: power-user bug (feedback 2026-10-15, item 2: the header lagged one zoom step behind the axis); text since D-092 (1), D-093.
 
 #### Scenario: Three quick wheel zooms
 - **WHEN** a window shows 2026-10-13T13:08:00Z–13:08:03Z and the user wheel-zooms three times in quick succession
-- **THEN** after each step, and during the preview, the header's start and end match the first and last time of the axis; no screenshot shows the range of the step before
-- **Evidence:** UI check (screenshots after each step); `apps/web/test/zoom.test.ts` › "shows the preview range in the header" if the header range comes from a pure helper, else the UI check alone
+- **THEN** after each step, and during the preview, the range text's start and duration match the first and last time of the axis; no screenshot shows the range of the step before
+- **Evidence:** UI check (screenshots after each step); `apps/web/test/zoom.test.ts` › "shows the preview range in the header"
 
 ### Requirement: New windows scroll into view
 A window this browser tab creates SHALL be scrolled fully into view: below the top row and above the status strip, or with its header right below the top row when it is taller than that area. The windows that SHALL be revealed this way are those created by "+ Values window", by an explorer add (`+`, Enter, a selection), by a drop on "+ New window" or on the free area below the windows (workspace-layout "Drop below the windows"), and by a values row moved into a new window. Of several created windows the first SHALL be scrolled to. Each created window SHALL flash once for `FLASH_MS` (1,200 ms; design-language "Flash look"). An explorer add into an existing window (the marked one) SHALL reveal and flash that window the same way. Drops onto an existing window and windows created by the CLI SHALL neither scroll nor flash. Origin: power-user bug (feedback 2026-10-15, item 4: the new window was appended out of sight); D-037 item (2) for the free area; persona test 2026-10-17 finding 3 (novice and boss could not find the new window); Jan 2026-10-17 („highlighted"); defaults S2 (design.md).
@@ -695,11 +687,11 @@ Every timeseries window SHALL show a grip in its lower right corner, visible wit
 - **Evidence:** UI check on smart451 (screenshot, revision before and after)
 
 ### Requirement: Grip appearance
-The grip SHALL be a curved mark following the window's rounded corner, in a muted colour that turns to the accent colour while hovered or dragged, with the tooltip "Drag to resize height" and a vertical resize pointer. It SHALL NOT cover legend text, a value or a control. Origin: D-037 item (1) („apple like curved handle"); vertical pointer because only the height changes (design G2, Q2); no overlap as a necessary consequence of a readable legend.
+The grip SHALL be a curved mark following the window's rounded corner, in a muted colour that turns to the accent colour while hovered or dragged, with the tooltip "Drag to resize the height" and a vertical resize pointer. It SHALL NOT cover legend text, a value or a control. Origin: D-037 item (1) („apple like curved handle"); vertical pointer because only the height changes (design G2, Q2); no overlap as a necessary consequence of a readable legend.
 
 #### Scenario: Look and pointer
 - **WHEN** at 1440×900 the pointer rests on the option bar, then moves onto a window's grip
-- **THEN** the grip is a curved mark in the muted colour at rest and in the accent colour under the pointer, the tooltip reads "Drag to resize height", and the pointer is a vertical resize pointer (`getComputedStyle(grip).cursor` is `ns-resize`)
+- **THEN** the grip is a curved mark in the muted colour at rest and in the accent colour under the pointer, the tooltip reads "Drag to resize the height", and the pointer is a vertical resize pointer (`getComputedStyle(grip).cursor` is `ns-resize`)
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot of the corner at rest and hovered, computed cursor)
 
 #### Scenario: Grip covers nothing
@@ -867,7 +859,7 @@ A window SHALL draw the curves, envelopes and bands of a stretch whose logger ga
 - **Evidence:** UI check (screenshot)
 
 ### Requirement: Gap info loads with the window
-A window SHALL fetch the gap info of each data ref of its signals once per browser tab (and again as in "Gap info refetched"), draw its data meanwhile without breaks, and count as settled only when every needed gap info has loaded or failed. A failure SHALL be a render error of the window and SHALL be retried every 30 s while the window shows that data ref. Origin: necessary consequence of D-062 (breaks and bands need it) and D-011 (`--wait` reports the drawn state).
+A window SHALL fetch the gap info of each data ref of its signals once per browser tab and scope (in an object scope per work window; and again as in "Gap info refetched"), draw its data meanwhile without breaks, and count as settled only when every needed gap info has loaded or failed. A failure SHALL be a render error of the window and SHALL be retried every 30 s while the window shows that data ref. Origin: necessary consequence of D-062 (breaks and bands need it) and D-011 (`--wait` reports the drawn state).
 
 #### Scenario: Once per tab, failure retried
 - **WHEN** two windows of one data ref ask for its gap info, the first fetch fails, and 30 s pass

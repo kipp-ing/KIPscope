@@ -1,12 +1,12 @@
 ## MODIFIED Requirements
 
 ### Requirement: Controls
-Top-row buttons, selects and text fields SHALL be 26 px tall with a 1 px slate-300 border, 4 px radius and white fill; disabled ones a slate-200 border and slate-400 text. The explorer search SHALL be 30 px tall; header controls stay 22 px. With the sidebar open the top row stays one line at 1440×900 and 1000×557. Origin: D-055 (mock "Controls"); 22 px and one line: `workspace-layout` "Compact window header", "Screen use"; range button: D-092 (1), (2); 212 px: D-093 (mock `GoTo.dc.html`).
+Top-row buttons, selects and text fields SHALL be 26 px tall with a 1 px slate-300 border, 4 px radius and white fill; disabled ones a slate-200 border and slate-400 text. The range button SHALL be 26 px tall and 212 px wide. Icon-only buttons (the sidebar button, Back, Reset, "Link time axes", "⋯", "?") SHALL be 26 × 26 px with a 14–16 px stroke icon in slate-700 (pressed: "Cursor toggles as pills"), an `aria-label` and a tooltip; Reset's icon is a fit glyph (two vertical bars at the edges and a double arrow between them, mock `Main.dc.html`), not a fullscreen corner glyph. In the context row the position button and the action buttons SHALL be 24 px tall. The explorer search SHALL be 30 px tall; header controls stay 22 px. With the sidebar open the top row stays one line at 1440×900 and 1000×557. Origin: D-055 (mock "Controls"); 22 px and one line: `workspace-layout` "Compact window header", "Screen use"; icons: D-092 (mock `Main.dc.html`); fit glyph and 24 px: D-095 (critic 15: the Reset icon read as fullscreen); range button: D-092 (1), (2); 212 px: D-093 (mock `GoTo.dc.html`).
 
 #### Scenario: Control boxes
-- **WHEN** a timeseries window is shown and "Back" is disabled (no history)
-- **THEN** "Reset", "Back" and the range button measure 26 px tall (`getBoundingClientRect().height`, ±0.5) and the range button 212 px wide; "Reset" has `border-radius` 4 px and border colour `rgb(203, 213, 225)`; "Back" has border colour `rgb(226, 232, 240)`; the search field is 30 px tall (the Digits select and the window's mode select left the row and the header in `declutter-workspace`)
-- **Evidence:** UI check on smart451 at 1440×900 (the measured values)
+- **WHEN** a timeseries window is shown, "Back" is disabled (no history) and a catalog is open
+- **THEN** "Reset", "Back", "Link time axes", "⋯" and "?" measure 26 × 26 px and Views and the range button 26 px tall (`getBoundingClientRect()`, ±0.5), the range button 212 px wide; the position button measures 88 × 24 px and `Unlink` 64 × 24 px; "Reset" has `border-radius` 4 px, border colour `rgb(203, 213, 225)` and its SVG holds two vertical `line`s (and the arrow's shaft) and two `polyline`s (the fit glyph); "Back" has border colour `rgb(226, 232, 240)` and its icon in `rgb(148, 163, 184)`; the search field is 30 px tall; a window's "⋯" button is at most 22 px tall (the Digits select and the window's mode select left the row and the header in `declutter-workspace`)
+- **Evidence:** UI check on smart451 at 1440×900 (the measured values, the Reset SVG's children); `apps/web/test/bar.test.ts` › "renders the top row in order" (Reset's markup holds the fit glyph)
 
 #### Scenario: One line at both viewports
 - **WHEN** the six-window setup is shown with the sidebar open at 1440×900 and at 1000×557

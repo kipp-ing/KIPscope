@@ -72,7 +72,7 @@ In an object scope, `GET /api/gaps` and `GET /api/events` SHALL require `from` a
 
 #### Scenario: Events panel nearby
 - **WHEN** the events panel renders in an object scope with the bar target at a 10-minute range
-- **THEN** it asks `/api/events` with the work window, the switch reads `In view | Nearby`, and the strip count reads `<shown> of <total> events nearby`
+- **THEN** it asks `/api/events` with the work window, the switch reads `In view | Nearby` (`All` outside an object scope), and the Events tab's count is the shown number with the tooltip `Events within <span> around the view`
 - **Evidence:** `apps/web/test/eventsPanel.test.ts` › "asks events for the work window in an object scope"
 
 ### Requirement: Signal list loads lazily
@@ -92,11 +92,11 @@ In scoped mode with an object scope, every source call except `ping` SHALL carry
 - **Evidence:** `apps/server/test/objectScope.http.test.ts` › "sends no query without a data ref and a time range while unlinked"
 
 ### Requirement: Catalog marks on the strip
-In an object scope, the strip SHALL mark each catalog session of this vehicle in the drive row as an accent segment at least 4 px wide (hit width ≥ 8 px), hit before drives, the session left outlined, with the tooltip `Session <k> of <n> · <kind> · <local from> – <local to> · <title>`; a click SHALL send `case.go`. Origin: exploration UX sketch („the catalog's sessions of this object show as marks"), accepted by D-086.
+In an object scope, the strip SHALL mark each catalog session of this vehicle in the drive row as a segment in the text colour (slate-900, not the accent, which marks only the shown range) at least 4 px wide (hit width ≥ 8 px), hit before drives, the session left outlined, with the tooltip `Session <k> of <n> · <kind> · <start and duration> · <title>` (absent parts left out; start and duration as range-picker "Start and duration", for example `26-10-01 06:50  0:20 h`); a click SHALL send `case.go`. Origin: exploration UX sketch („the catalog's sessions of this object show as marks"), accepted by D-086; tooltip: D-093 (start and duration instead of two times); colour: D-095 (accent only for the shown range), `apps/web/src/time/strip.css:409-429`.
 
 #### Scenario: Marks
 - **WHEN** the strip renders C4 unlinked from entry 0 on `testcar`
-- **THEN** it draws three marks (entries 0, 2, 3; not 1, othercar), entry 0's outlined; a click on entry 2's mark sends `case.go {index: 2}`
+- **THEN** it draws three marks (entries 0, 2, 3; not 1, othercar), entry 0's outlined, each at least 4 px wide with a hit width of at least 8 px; entry 2's tooltip starts `Session 3 of 4 · charging · ` and holds `26-10-01 06:50  0:20 h` (Europe/Berlin) but not `07:10`; a click on entry 2's mark sends `case.go {index: 2}`
 - **Evidence:** `apps/web/test/strip.test.ts` › "draws catalog marks of the vehicle"
 
 #### Scenario: Unlinked on smart451
@@ -105,11 +105,11 @@ In an object scope, the strip SHALL mark each catalog session of this vehicle in
 - **Evidence:** UI check on smart451 (one screenshot per step)
 
 ### Requirement: Label of an object scope
-In an object scope, the strip's right label SHALL read `<shown> of <span> recorded · 1 bar = <width>` and the clamp message SHALL read `Stopped at the end of the vehicle's data.` Origin: necessary consequence of an unbounded scope (no "in scope" edge for the user, D-086).
+In an object scope, the strip's info text (the track's tooltip) SHALL read `<shown> of <span> recorded` and the clamp message SHALL read `Stopped at the end of the vehicle's data.` Origin: necessary consequence of an unbounded scope (no "in scope" edge for the user, D-086); no `1 bar = <width>` any more: D-094 (the strip has no bars), time-strip "Strip shows the scope".
 
 #### Scenario: Label
 - **WHEN** `stripLabel` gets a 10-minute range and a coarse density over 400 days with width 7 d in an object scope
-- **THEN** it reads `10 min of 1.1 y recorded · 1 bar = 7 d`
+- **THEN** it reads `10 min of 1.1 y recorded`; the same call with a non-coarse scope density reads `… in scope`
 - **Evidence:** `apps/web/test/strip.test.ts` › "labels an object scope"
 
 ### Requirement: Measured on a large history

@@ -1,7 +1,7 @@
 # event-filter Specification
 
 ## Purpose
-TBD - created by archiving change add-events. Update Purpose after archive.
+One search-style filter string that selects diagnostic events in terms a person uses, shared by the workspace, the UI and the CLI (D-058).
 
 ## Requirements
 
@@ -56,7 +56,7 @@ The UI SHALL offer presets that replace the filter (`Active & changes`, `Faults`
 - **Evidence:** UI check on smart451 at 1440×900 (screenshot after `Logger`, heading and revision after each click)
 
 ### Requirement: Filter field
-The filter field SHALL sit in the Events panel's `Refine` section and hold the workspace filter. While the user types, the description line, the hidden count, the heading counts and the list SHALL preview the typed filter (an invalid one shows its error and keeps the last list); Enter SHALL send `events.setFilter` and the field then shows the normal form; Escape or leaving the field SHALL restore the workspace filter. Origin: D-058 (UI and CLI share the filter); preview: add-events design F5; place: proposal E-4.
+The filter field SHALL sit in the Events panel's `Refine` section and hold the workspace filter. While the user types, the description line, the hidden count, the heading counts and the list SHALL preview the typed filter (an invalid one shows its error and the list stays that of the workspace filter, not of the previous keystroke); Enter SHALL send `events.setFilter` and the field then shows the normal form; Escape or leaving the field SHALL restore the workspace filter. Origin: D-058 (UI and CLI share the filter); preview: add-events design F5; place: proposal E-4.
 
 #### Scenario: Typing and Enter
 - **WHEN** on smart451 the `Refine` section is open, the field holds `active changes`, the user appends ` Contactor` and presses Enter; then types `faults "` and presses Escape

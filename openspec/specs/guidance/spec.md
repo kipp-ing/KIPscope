@@ -1,7 +1,7 @@
 # guidance Specification
 
 ## Purpose
-Helps newcomers find their way: the marked "Add to" window and the reveal and flash of a window an add lands in, hover explanations from one hints table, next-step hints in the readout row, the help panel with the user manual and the keys table, and the "Start here" card on first open and in an empty workspace.
+Helps newcomers find their way (the marked "Add to" window and the reveal and flash of a window an add lands in are specified in `workspace-layout` and `timeseries-window`): hover explanations from one hints table, next-step hints in the readout row, the help panel with the user manual and the keys table, and the "Start here" card on first open and in an empty workspace.
 
 ## Requirements
 
@@ -35,8 +35,8 @@ Outside text fields, without Ctrl, Meta or Alt and while no drag runs, `?` SHALL
 The Keys tab SHALL list every key and mouse gesture of the app from one table (`help/shortcuts.ts`), grouped as Anywhere, Time, Signal list, In a plot, Drag and drop and Time strip, with each key shown as a key cap. Every keyboard entry SHALL name the key events it stands for, and the app's key handlers SHALL recognise each of them. Origin: Jan 2026-10-17 („hover explanations"); finding 4 (Shift+click for B unknown); design H6.
 
 #### Scenario: List matches the handlers
-- **WHEN** every `probe` of every `SHORTCUTS` entry is checked against `navKey`, `isSearchKey`, `isSidebarKey`, `isEventsKey` and `isHelpKey` with no focused element
-- **THEN** each probe is recognised by at least one of them, the navigation probes map to the step their entry names (`+` → `in`, Shift+`←` → `pageLeft`, `,` → `prevDrive`, …), and every key the handlers recognise for `+ = - ← → Home t , . / s e ?` appears in some probe
+- **WHEN** every `probe` of every `SHORTCUTS` entry is checked against `navKey`, `caseKey`, `isSearchKey`, `isSidebarKey`, `isEventsKey` and `isHelpKey` with no focused element
+- **THEN** each probe is recognised by at least one of them, the navigation probes map to the step their entry names (`+` → `in`, Shift+`←` → `pageLeft`, `,` → `prevDrive`, Shift+`A` → `cursorA`, …), and every key the handlers recognise for `+ = - ← → Home t , . n p [ ] Shift+A Shift+B / s e ?` appears in some probe
 - **Evidence:** `apps/web/test/shortcuts.test.ts` › "lists every handled key and only handled keys"
 
 #### Scenario: Keys tab on smart451
@@ -45,7 +45,7 @@ The Keys tab SHALL list every key and mouse gesture of the app from one table (`
 - **Evidence:** UI check on smart451 (screenshot of the Keys tab)
 
 ### Requirement: User manual
-A user manual SHALL live in `docs/manual.md` and be shown in the help panel's Manual tab, starting with a list of its sections that jumps to each. It SHALL be task-oriented with the ten sections of design H8 in order (Start here … Words), use only the Markdown subset the app renders, and stay near 1,500 words (a goal). Origin: Jan 2026-10-17 („we need a manual"); task list from the lead's brief; design H8.
+A user manual SHALL live in `docs/manual.md` and be shown in the help panel's Manual tab, starting with a list of its sections that jumps to each. It SHALL be task-oriented with the ten sections of design H8 in order (Start here … Words), use only the Markdown subset the app renders, and stay within 3,000 words (a goal). Origin: Jan 2026-10-17 („we need a manual"); task list from the lead's brief; design H8.
 
 #### Scenario: Manual structure
 - **WHEN** `docs/manual.md` is read and parsed with `parseMarkdown`
@@ -58,7 +58,7 @@ A user manual SHALL live in `docs/manual.md` and be shown in the help panel's Ma
 - **Evidence:** `apps/web/test/manual.test.ts` › "parses the markdown subset"
 
 #### Scenario: Answers the persona questions
-- **WHEN** a reader looks in the manual for how to set cursor B, what `13 of 669 events` means, what `1 bar = 2 h` means, what "Link time axes" does, what `SNA 4.0 %` means, and where an added signal goes
+- **WHEN** a reader looks in the manual for how to set cursor B, what `13 of 669 events` means, what the strip info (`2.5 h of 5.6 d recorded`) means, what "Link time axes" does, what `SNA 4.0 %` means, and where an added signal goes
 - **THEN** each is answered in the section named in design H8 (Measure, Events, Read the display, Compare signals, Read the display, Chart a signal)
 - **Evidence:** reviewer reads `docs/manual.md` against this list (one line per question with the quoted sentence)
 

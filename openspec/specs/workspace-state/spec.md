@@ -339,7 +339,7 @@ The UI SHALL treat an acknowledgement as sent only when the live channel took it
 - **Evidence:** lead's manual check (CLI output; restarts are the lead's job)
 
 ### Requirement: Failed commands are shown
-A command the UI sends SHALL never leave an unhandled failure: a network failure, a non-JSON answer or a body that is not a command result SHALL become a rejected result with code `network` or `bad_response` and a message, shown in the UI's message line like any rejected command. Origin: concept §10 („Fehler … müssen erkennbar bleiben"). Design H6.
+A command the UI sends SHALL never leave an unhandled failure: a network failure, a non-JSON answer or a body that is not a command result SHALL become a rejected result with code `network` or `bad_response` and a message, shown in the UI's message line like any rejected command. A refusal of the access guard (add-multiuser M6, e.g. `read_only`, `forbidden`) keeps its own code and message. Origin: concept §10 („Fehler … müssen erkennbar bleiben"). Design H6.
 
 #### Scenario: Network failure and proxy page
 - **WHEN** `sendCommand` meets a rejected `fetch`, a 502 with an HTML body, and a 200 with body `{"foo":1}`
@@ -404,7 +404,7 @@ The workspace SHALL hold the view it came from or was saved as: name (absent whe
 - **Evidence:** `packages/shared/test/apply.test.ts` › "marks the open view modified"
 
 ### Requirement: Open replaces the workspace
-The command `view.open` SHALL replace windows, link flag, colours, cursors, diff mode, options, measurement, event filter, events-line signals and scope with the view's, as one revision, following saved-views "Open a view" and "Open sets the scope". A view that resolves no scope SHALL leave the workspace without one. IDs SHALL never be reused within a server run. Origin: D-011 D8 (all changes are commands, so UI, CLI and later undo use the same action, concept §10); concept §8; scope: the ADX feedback item 3, D-078.
+The command `view.open` SHALL replace windows, link flag, colours, cursors, diff mode, options, measurement, event filter, events-line signals, computed signals (each with a new ID) and scope with the view's, as one revision, following saved-views "Open a view" and "Open sets the scope". A view that resolves no scope SHALL leave the workspace without one. IDs SHALL never be reused within a server run. Origin: D-011 D8 (all changes are commands, so UI, CLI and later undo use the same action, concept §10); concept §8; scope: the ADX feedback item 3, D-078.
 
 #### Scenario: Open through the command endpoint
 - **WHEN** `POST /api/commands {type: "view.open", view: <v1 document>}` is sent, and once with `view: {kipscope: "view", version: 9}`

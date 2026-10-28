@@ -77,7 +77,7 @@ The near signal SHALL be drawn with a thicker line, every other signal of the ho
 - **Evidence:** UI check (two screenshots)
 
 ### Requirement: Highlight label
-While a signal is near, a label at its curve point at the pointer's x SHALL show its value at L with number-format (SI prefix and unit). The label SHALL stay inside the plot and SHALL NOT cover the curve point. Origin: D-032 („a label at the curve shows its value at the pointer's x"); format: D-026 („everywhere").
+While a signal is near, a label at its curve point at the pointer's x SHALL show its value at L with number-format (SI prefix and unit), or the state name of a signal with named states. The label SHALL stay inside the plot and SHALL NOT cover the curve point. Origin: D-032 („a label at the curve shows its value at the pointer's x"); format: D-026 („everywhere").
 
 #### Scenario: Label on the speed curve
 - **WHEN** SPEED_DISP is near as in "Pointer on a curve"; then the pointer follows the HTR_HV_Volt curve to the plot's right edge

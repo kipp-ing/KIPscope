@@ -23,6 +23,11 @@ A series query SHALL take a signal ID, a time range and a target bucket count (r
 - **WHEN** the range contains fewer raw points than the target count
 - **THEN** the result contains the raw points
 
+#### Scenario: Bad parameters
+- **WHEN** a series request has an unreadable time, a `to` that is not after `from`, or a target below 2 or above 20,000
+- **THEN** the answer is 400 `invalid_request` and the database is not queried
+- **Evidence:** `apps/server/test/series.http.test.ts` › "rejects bad parameters with 400 and unknown signals with 404"
+
 ### Requirement: Aggregated buckets
 Each aggregated bucket SHALL cover a contiguous time interval and report its start, end, the number of valid points and the number of SNA points inside it, and the arithmetic mean, minimum and maximum of the valid points only. A bucket whose points are all SNA SHALL report no mean, minimum or maximum. Buckets without any raw point SHALL be omitted, not filled.
 
@@ -97,7 +102,7 @@ Source rows without a timestamp SHALL NOT be returned, counted or aggregated, si
 - **THEN** those rows appear in no raw result and in no bucket's count, mean, minimum or maximum
 
 ### Requirement: Signal extent
-The server SHALL return the first and last timestamp of a signal's data, so a view can open on the range where data exists. A signal without timestamped data SHALL return no extent.
+The server SHALL return the first and last timestamp of a signal's data, so a view can open on the range where data exists. A signal without timestamped data SHALL return no extent (404 `no_data`).
 
 #### Scenario: Open a new window on a signal
 - **WHEN** a caller requests the extent of a signal with data
@@ -147,7 +152,7 @@ Series requests SHALL accept only times between 1900-01-01T00:00:00Z and 2262-04
 - **Evidence:** `apps/server/test/series.http.test.ts` › "rejects times outside the bounds with 400"; `curl -s -o /dev/null -w '%{http_code}' 'localhost:7310/api/series?signal=smart451/DCU_2B8h.HTR_HV_Volt&from=-29473328485867940608&to=62083631947910636800'` prints `400`
 
 ### Requirement: Value at a time
-The server SHALL evaluate one signal at one time `t` in mode `line` (default) or `step`. It SHALL return the last point at or before `t`, the first point after `t`, and the value: raw if a point lies at `t`; else linear between valid neighbours (`line`) or the earlier valid value held (`step`), unless the neighbours are split (data-gaps "Split between two points"). SNA, missing values and splits follow "No invented value at a time" and "No value across a gap". Origin: concept §6; D-023; design C4; split: D-062.
+The server SHALL evaluate one signal at one time `t` in mode `line` (default) or `step`. It SHALL return the last point at or before `t`, the first point after `t`, and the value: raw if a point lies at `t`; else linear between valid neighbours (`line`) or the earlier valid value held (`step`; in `line` mode too, next to a state name, state-names), unless the neighbours are split (data-gaps "Split between two points"). SNA, missing values and splits follow "No invented value at a time" and "No value across a gap". Origin: concept §6; D-023; design C4; split: D-062.
 
 #### Scenario: Point, linear and hold
 - **WHEN** `testcar/Sna_800h.SPEED` (point n at 2026-10-01T02:00:00Z + n × 100 ms, value n mod 100) is evaluated at 02:00:01Z, at 02:00:01.05Z in `line` and at 02:00:01.05Z in `step`
@@ -165,12 +170,12 @@ The server SHALL evaluate one signal at one time `t` in mode `line` (default) or
 - **Evidence:** `apps/server/test/value.http.test.ts` › "evaluates across gaps"
 
 ### Requirement: No invented value at a time
-The value at a time SHALL be SNA when the point at or before `t` is SNA. It SHALL be no value, with a reason, when there is no point at or before `t` (`before_first`), no point after `t` and none exactly at `t` (`after_last`), or in `line` mode the next point is SNA (`next_sna`). A signal without points SHALL give `no_data`. Origin: D-010, D-016 (null = SNA); concept §5 (no invented values); timeseries-window "No invented values" (the same rules as the drawn curve).
+The value at a time SHALL be SNA when the point at or before `t` is SNA and a point lies exactly at `t` or one lies after `t`. It SHALL be no value, with a reason, when there is no point at or before `t` (`before_first`), no point after `t` and none exactly at `t` (`after_last`, also when the last point is SNA), or in `line` mode the next point is SNA (`next_sna`). A signal without points SHALL give `no_data`. Origin: D-010, D-016 (null = SNA); concept §5 (no invented values); timeseries-window "No invented values" (the same rules as the drawn curve).
 
 #### Scenario: SNA run and isolated valid point
 - **WHEN** `testcar/Sna_800h.SPEED` is evaluated at 02:00:35Z (n = 350, SNA), at 02:00:35.05Z, at 02:01:00.1Z (n = 601, value 42 between the SNA points 600 and 602) and at 02:01:00.15Z
 - **THEN** the values are `sna`, `sna`, `{kind: "raw", value: 42}` and, in `line`, `{kind: "none", reason: "next_sna"}`, in `step` `{kind: "held", value: 42}`
-- **Evidence:** `apps/server/test/value.http.test.ts` › "evaluates SPEED at points, between points and in SNA runs"; `packages/shared/test/cursor.test.ts` › "returns SNA and no value without inventing one"
+- **Evidence:** `apps/server/test/value.http.test.ts` › "evaluates SPEED at points, between points and in SNA runs"; `packages/shared/test/cursor.test.ts` › "returns SNA and no value without inventing one" (also pins that "no next point" ranks before "the point at `t` is SNA")
 
 #### Scenario: Outside the data
 - **WHEN** `testcar/Sna_800h.SPEED` is evaluated at 01:59:59Z and at 02:01:40Z (after the last point n = 999)

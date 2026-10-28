@@ -126,7 +126,7 @@ A click on the range button or `t` SHALL open the picker under the button, focus
 - **Evidence:** UI check on smart451 (picker rect per viewport and per month pair, one screenshot each)
 
 ### Requirement: Calendar months
-The picker SHALL show two months side by side, each titled `<Month> <YYYY>`, with the weekday heads `Mo Tu We Th Fr Sa Su` and 6 week rows of day cells (days of other months left empty). ‹ and › SHALL page by one month; ‹ is disabled when no data lies before the left month, › when none lies after the right month (the strip's density). Origin: D-092 (11) („calendar weeks start on Monday, English day names"); two months, paging: mock `GoTo.dc.html`.
+The picker SHALL show two months side by side, each titled `<Month> <YYYY>`, with the weekday heads `Mo Tu We Th Fr Sa Su` and 6 week rows of day cells (days of other months left empty). ‹ and › SHALL page by one month; ‹ is disabled when no data lies before the right month (the left month and earlier hold none), › when none lies after the right month (the strip's density). Origin: D-092 (11) („calendar weeks start on Monday, English day names"); two months, paging: mock `GoTo.dc.html`.
 
 #### Scenario: October 2026
 - **WHEN** `monthCells(2026, 10)` and `localMonth(2026, 10)` are computed

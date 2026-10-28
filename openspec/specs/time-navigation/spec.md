@@ -1,7 +1,7 @@
 # time-navigation Specification
 
 ## Purpose
-Lets the user reach a point in time without repeated zooming: type a time or range, pick a span, or use keys to zoom, pan and jump to the data extent. Every navigation is an ordinary range change of the target window(s) and can be undone with "Back".
+Lets the user reach a point in time without repeated zooming: pick a range in the range picker or type a time, range or span into its "Go to" field (range-picker), or use keys to zoom, pan and jump to the data extent. Every navigation is an ordinary range change of the target window(s) and can be undone with "Back".
 
 Conventions for the evidence below: real smart451 data, Europe/Berlin (CEST, UTC+2 on 2026-10-13). `ICL_3A2h.SPEED_DISP` has data from 2026-10-11T12:34:24.824Z to 2026-10-13T13:17:33.220Z; its extent view is 2026-10-11 14:34:24.824 – 2026-10-13 15:17:33.221 local.
 

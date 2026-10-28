@@ -1,7 +1,7 @@
 # series-cache Specification
 
 ## Purpose
-TBD - created by archiving change add-series-cache. Update Purpose after archive.
+Keeps series data in the browser tab as power-of-two tiles shared by all windows, so zooming, panning and stepping back draw at once, with coarse placeholders, prefetch, retries and a size limit, and without ever changing what a fresh request would draw.
 
 ## Requirements
 
@@ -154,7 +154,7 @@ A window SHALL count as settled when every tile of each signal's committed view 
 #### Scenario: Settled while failed, not while a retry loads
 - **WHEN** a signal's load fails, then its retry starts, then the retry answers
 - **THEN** `settled` is true after the failure (state `error`), false while the retry loads, and true again after the answer (state `complete`, no `error`)
-- **Evidence:** `apps/web/test/loader.test.ts` › "is settled while failed, not while a retry loads"; command `grep -n "JSON.stringify(\[revision, errors\])" apps/web/src/App.tsx` prints one line (the acknowledgement repeats a revision whose errors changed, design R5); lead's manual check (design R8): with the tunnel down, `kipscope --wait window range <w> <its current from> <its current to>` reports render status `error`; after the tunnel is back and without any command, `GET /api/render-status` shows this browser's last acknowledgement for the same revision as `complete` within 35 s
+- **Evidence:** `apps/web/test/loader.test.ts` › "is settled while failed, not while a retry loads"; command `grep -n "JSON.stringify(\[revision, errors\])" apps/web/src/ack.ts` prints one line (the acknowledgement repeats a revision whose errors changed, design R5); lead's manual check (design R8): with the tunnel down, `kipscope --wait window range <w> <its current from> <its current to>` reports render status `error`; after the tunnel is back and without any command, `GET /api/render-status` shows this browser's last acknowledgement for the same revision as `complete` within 35 s
 
 ### Requirement: Loading follows the shown range
 A timeseries window SHALL load and draw the data of the range it shows, also while a gesture previews a range not yet committed; a fully cached shown range SHALL be drawn in the frame that first shows it, without a request. The range command SHALL still be sent 300 ms after the last step and SHALL load nothing more. Origin: D-040 (1) („loading on the preview range during the gesture, the command still delayed") and its target („a cached zoom draws sharp data within one frame").
@@ -170,7 +170,7 @@ A timeseries window SHALL load and draw the data of the range it shows, also whi
 - **Evidence:** UI timing check (design T1, steps 2 and 3, stroke bursts); command `grep -n "COMMIT_DELAY_MS = 300" apps/web/src/chart/TimeseriesWindow.tsx` prints one line
 
 ### Requirement: Loads during a gesture are throttled
-A window SHALL start the requests for its missing tiles at once when it started none in the last 100 ms, else at the end of that interval for the range shown then. Tiles a run in flight still serves SHALL NOT be aborted. Origin: necessary consequence of D-040 (1): a request set per frame would outrun the server's 4 concurrent queries (`KIPSCOPE_QUERY_CONCURRENCY`); the number: design Z1.
+A window SHALL start the requests for its missing tiles at once when it started none in the last 100 ms, else at the end of that interval for the range shown then. Tiles a run in flight still serves SHALL NOT be aborted. Origin: necessary consequence of D-040 (1): a request set per frame would outrun the server's concurrent queries (`KIPSCOPE_QUERY_CONCURRENCY`, default 4 for ClickHouse, 8 for ADX); the number: design Z1.
 
 #### Scenario: Wheel gesture of 250 ms
 - **WHEN** a loader with load interval 100 ms gets a new uncached view of one signal every 16 ms from 0 ms to 240 ms
@@ -237,7 +237,7 @@ A tile that is not stored SHALL be served without a request from its two availab
 - **Evidence:** `apps/web/test/cache.test.ts` › "finds a tile merged from cached children, at most two levels down"
 
 ### Requirement: Prefetch when the view rests
-When a window's shown range has rested 300 ms with its loads done, it SHALL prefetch per signal the next coarser level over three view widths and its own level one view width on each side, skipping cached, unstorable and out-of-extent tiles, at most 256 tiles per rest. A run of these tiles that the window's cover answers exactly (series-cache "Runs computed from a cover") SHALL be computed and stored instead of requested. A range change SHALL cancel prefetch no visible load wants; none starts while the range changes. Origin: D-040 (3) („prefetch in idle time"); numbers: design Z7; computed runs: the report's P4 („fetch finer tiles only on zoom").
+When a window's shown range has rested 300 ms with its loads done, it SHALL prefetch per signal the next coarser level over three view widths and its own level one view width on each side, skipping cached, unstorable, out-of-extent and out-of-scope tiles (tiles wholly outside the workspace's scope, which the server refuses), at most 256 tiles per window and rest (over all its signals together). A run of these tiles that the window's cover answers exactly (series-cache "Runs computed from a cover") SHALL be computed and stored instead of requested. A range change SHALL cancel prefetch no visible load wants; none starts while the range changes. Origin: D-040 (3) („prefetch in idle time"); numbers: design Z7; computed runs: the report's P4 („fetch finer tiles only on zoom").
 
 #### Scenario: Prefetch after rest, none during the gesture
 - **WHEN** a loader with prefetch gets a changing view every 50 ms for 1 s, then rests on `[0, 1000 × 2^20)` with target 1001 whose tiles are answered
@@ -260,7 +260,7 @@ When a window's shown range has rested 300 ms with its loads done, it SHALL pref
 - **Evidence:** `apps/web/test/loader.test.ts` › "prefetches nothing the overview answers"
 
 ### Requirement: Prefetch never delays visible loads
-At most 2 prefetch requests SHALL be in flight per tab; further prefetch requests wait in the browser. Visible loads SHALL start without waiting for prefetch; a waiting prefetch request whose tile a visible load wants SHALL start at once as a visible load. Origin: D-040 (3) („in idle time"); the number: design Z3, against `KIPSCOPE_QUERY_CONCURRENCY` 4 (`apps/server/src/config.ts`).
+At most 2 prefetch requests SHALL be in flight per tab; further prefetch requests wait in the browser. Visible loads SHALL start without waiting for prefetch; a waiting prefetch request whose tile a visible load wants SHALL start at once as a visible load. Origin: D-040 (3) („in idle time"); the number: design Z3, against `KIPSCOPE_QUERY_CONCURRENCY`, default 4 for ClickHouse and 8 for ADX (`apps/server/src/config.ts`).
 
 #### Scenario: Two in flight, visible first
 - **WHEN** four prefetch runs are queued, then a visible load for other tiles arrives, then one prefetch run answers

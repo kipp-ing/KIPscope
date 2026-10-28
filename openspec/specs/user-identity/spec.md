@@ -6,7 +6,7 @@ Who a request comes from: a pluggable identity adapter (`none`, `oidc` for any O
 ## Requirements
 
 ### Requirement: Identity adapter
-The server SHALL learn the user of a request only from one identity adapter, selected by `KIPSCOPE_IDENTITY`: `none` (default), `oidc`, or `module:<path>`. An adapter SHALL implement the contract of design M1: `identify(request)` returns `{user, roles}` or a refusal (`unauthenticated` without a credential, `invalid_token` for a bad one). Any other value of the variable, a module that cannot be loaded, or one whose default export does not return an object with `kind` and `identify`, SHALL stop the server with a message naming the variable and the reason. Origin: D-084 („Identity is a pluggable adapter like the data source"; „da darf jeder auch seinen eigenen krams einbauen"). Design M1, M2.
+The server SHALL learn the user of a request only from one identity adapter, selected by `KIPSCOPE_IDENTITY`: `none` (default), `oidc`, or `module:<path>`. An adapter SHALL implement the contract of design M1: `identify(request)` returns `{user, roles}` or a refusal (`unauthenticated` without a credential, `invalid_token` for a bad one). Any other value of the variable, a module that cannot be loaded, or one whose default export does not return an object with `kind` and `identify`, or whose `kind` is `none` (that kind means "no adapter" in `GET /api/me` and the footer), SHALL stop the server with a message naming the variable and the reason. Origin: D-084 („Identity is a pluggable adapter like the data source"; „da darf jeder auch seinen eigenen krams einbauen"). Design M1, M2.
 
 #### Scenario: Selection
 - **WHEN** `loadConfig` runs:
@@ -44,7 +44,7 @@ Origin: D-084 („bei mir lokal ohne login, bin mein eigener herr"). Design M1, 
 - **Evidence:** `apps/server/test/identity.http.test.ts` › "answers the local user without login"
 
 ### Requirement: Every API request has a user
-With an adapter other than `none`, every request to `/api/` except `GET /api/license` SHALL be identified before any route runs, the live channel's upgrade included: a refusal SHALL answer 401 with its code (`unauthenticated` or `invalid_token`), an adapter that throws SHALL answer 503 `identity_unavailable` without its error text, and a result whose user does not match `USER_ID` or whose roles are not at most 200 strings of 1–128 characters SHALL answer 401 `unauthenticated`. Origin: D-084 („sicher genug sein"); D-079 (access control at one place). Design M1, M6.
+With an adapter other than `none`, every request to `/api/` except `GET /api/license` SHALL be identified before any route runs, the live channel's upgrade included: a refusal SHALL answer 401 with its code (`unauthenticated` or `invalid_token`), an adapter that throws SHALL answer 503 `identity_unavailable` without its error text, and a result whose user does not match `USER_ID` or whose roles are not at most 200 strings of 1–128 characters without control characters SHALL answer 401 `unauthenticated`. Origin: D-084 („sicher genug sein"); D-079 (access control at one place). Design M1, M6.
 
 #### Scenario: Nothing runs unauthenticated
 - **WHEN** with a test adapter that refuses every request, `POST /api/commands` with a valid command, `GET /api/series` and the `/api/live` upgrade are sent, and `GET /api/license`

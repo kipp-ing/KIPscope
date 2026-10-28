@@ -61,7 +61,7 @@ Origin: concept §7 (the CLI controls the open view; „Eine KI verwendet diese 
 - **Evidence:** `apps/cli/test/cli.test.ts` › "sends the token"
 
 ### Requirement: One JSON result per call
-Each call SHALL print exactly one JSON object on one line to stdout (indented with `--pretty`) with `ok`, `outcome` and `exitCode` and, where they apply, `accepted`, `command`, `revision`, `created`, `createdWindow`, `render`, `data`, `local` and `error {code, message}`, except that a successful `events list --table` prints its table and a successful `view export NAME` without `--out` prints the view's YAML text. A failed call SHALL also print one line naming the reason to stderr. Origin: concept §7 („maschinenlesbare Ergebnisse"); table: D-058; YAML text: Jan 2026-10-17 („yaml export"), this change.
+Each call SHALL print exactly one JSON object on one line to stdout (indented with `--pretty`) with `ok`, `outcome` and `exitCode` and, where they apply, `workspace`, `accepted`, `command`, `revision`, `created`, `createdWindow`, `removedWindow`, `render`, `data`, `local` and `error {code, message}`, except that a successful `events list --table` prints its table and a successful `view export NAME` without `--out` prints the view's YAML text. A failed call SHALL also print one line naming the reason to stderr. Origin: concept §7 („maschinenlesbare Ergebnisse"); table: D-058; YAML text: Jan 2026-10-17 („yaml export"), this change.
 
 #### Scenario: Accepted command
 - **WHEN** `kipscope diff on` runs against a fresh test server as a separate process
@@ -350,7 +350,7 @@ The CLI SHALL offer `measurement name TEXT` and `measurement object TEXT` (`meas
 - **Evidence:** `apps/cli/test/cli.test.ts` › "prints the usage with --help" (form list extended)
 
 ### Requirement: Event list
-`events list [FILTER…] [--ref DATAREF] [--from TIME --to TIME] [--table]` SHALL return `GET /api/events` for the data ref (`--ref`, else that of the first signal in window order, else rejected with `no_data_ref`) with the workspace's events-line signals and the FILTER words (none: the workspace filter), plus `data.description` and the local times in `local.t`; `--table` SHALL print the lines of design C1. Origin: D-058 („the filter also needs cli"); concept §7.
+`events list [FILTER…] [--ref DATAREF] [--from TIME --to TIME] [--table]` SHALL return `GET /api/events` for the data ref (`--ref`, else that of the first signal in window order, else rejected with `no_data_ref`) with the workspace's events-line signals and the FILTER words (none: the workspace filter), plus `data.description` and the local times in `local.t`; `--table` SHALL print the lines of design C1: one line per event, then one `skipped: <signal ID> (<reason>)` line per skipped events-line signal, then the count line. Origin: D-058 („the filter also needs cli"); concept §7.
 
 #### Scenario: JSON and filter
 - **WHEN** against the CLI test server (stub events: the 18 testcar events; window `w1` shows `testcar/Sna_800h.RPM`) `kipscope events list`, `kipscope events list faults ecu:bms`, `kipscope events list changes -snapshots --from 2026-10-01T00:00Z --to 2026-10-01T03:00Z` and `kipscope events list 'ecu:'` run

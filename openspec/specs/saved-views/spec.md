@@ -85,11 +85,11 @@ A view name SHALL be given or derived from the title (`viewName`) and match `^[a
 
 #### Scenario: No path outside the views directory
 - **WHEN** `GET /api/views/..%2Fworkspace`, `GET /api/views/a.b`, `DELETE /api/views/-x` and `POST /api/views {title: "t", name: "../x"}` are sent
-- **THEN** each answers 400 `invalid_view_name` and no file outside `<stateDir>/views/` is read, written or removed
+- **THEN** each answers 400 `invalid_view_name` and no file outside the user's views directory `<stateDir>/users/<user>/views/` is read, written or removed
 - **Evidence:** `apps/server/test/views.http.test.ts` › "refuses names that are not file-safe"
 
 ### Requirement: Open a view
-Opening a view SHALL replace the open workspace in one command `view.open` and one revision, pushed to every tab. Window and assignment IDs SHALL continue from the current `nextId`. Origin: concept §8 („Laden"); D-011 D8 (every change is a command).
+Opening a view SHALL replace the open workspace in one command `view.open` and one revision, pushed to every tab. Window and assignment IDs SHALL continue from the current `nextId` (the view's computed signals, if any, take the first numbers). Origin: concept §8 („Laden"); D-011 D8 (every change is a command).
 
 #### Scenario: One revision, fresh IDs
 - **WHEN** the workspace is at revision 7 with `nextId` 12 and two windows, and `POST /api/views/open {name}` opens a saved view with three windows
@@ -195,7 +195,7 @@ Origin: Jan 2026-10-17 („url? shared link?"); concept §9 („Untersuchung dir
 - **Evidence:** `packages/shared/test/views.test.ts` › "builds the link document" (`linkViewDoc` title rule, note, no `saved`); `apps/cli/test/cli.test.ts` › "prints the same link as Copy link" (`data.url` equals `viewLinkUrl(<GET /api/workspace>, page)`, the call web "Copy link" makes); `apps/web/test/viewlink.test.ts` › "copies the shared link" (the web helper's link equals `viewLinkUrl` for a workspace with a noted view); the grep above
 
 ### Requirement: Open from the address
-Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>` the user's saved view of that name, each in a new workspace of that user (workspaces "Create with an open view"). Afterwards the address SHALL be `/w/<new id>` without the view part, so a reload does not open it again. A bad code, an unknown name, or data refs outside the new workspace's grant SHALL create no workspace; the UI SHALL then show the workspace `/` would show, with the error in the message line.
+Opening the UI with `#view=<code>` SHALL open that view, and with `?view=<name>` the user's saved view of that name, or else the one whose title is that text ignoring case (as the Views menu shows it; several with that title answer 409 `ambiguous_view`, none 404 `unknown_view`), each in a new workspace of that user (workspaces "Create with an open view"). Afterwards the address SHALL be `/w/<new id>` without the view part, so a reload does not open it again. A bad code, an unknown name, or data refs outside the new workspace's grant SHALL create no workspace; the UI SHALL then show the workspace `/` would show, with the error in the message line.
 
 Origin: concept §9 („Untersuchung direkt öffnen"); Jan 2026-10-17; new workspace: Jan's „ja" (old tabs keep their case); grant: D-086 Q13.
 
@@ -215,7 +215,7 @@ Origin: concept §9 („Untersuchung direkt öffnen"); Jan 2026-10-17; new works
 #### Scenario: Bookmark by name
 - **WHEN** a new tab navigates to `<UI origin>/?view=<saved name>` and then to `<UI origin>/?view=nope`
 - **THEN** the first opens the view in a new workspace (address `/w/<id>` after loading, `Opened "<title>"`); the second creates no workspace, shows the workspace `/` would show, and an error naming `unknown_view`
-- **Evidence:** UI check on smart451 (one screenshot each)
+- **Evidence:** UI check on smart451 (one screenshot each); the title form: `apps/server/test/workspaces.http.test.ts` › "opens a saved view by the title the Views menu shows"
 
 ### Requirement: Title of the open view
 The top row SHALL show a **Views** button and, when the workspace has an open view, its title with a `•` while it is modified and its note as tooltip; the browser tab title SHALL be `<title> · KIPscope`, else `KIPscope`. Origin: persona test (boss: „a title", no story on screen); concept §9 („Lesezeichen mit Notiz").
@@ -307,7 +307,7 @@ After an open, the strip SHALL show `Opened "<title>"` and, if any, how many sig
 - **Evidence:** UI check on smart451 (A's strip text before and after the CLI open, one screenshot of A after); `apps/web/test/views.test.ts` › "notices an open from elsewhere" (`openedElsewhere` for a foreign `view.open` push, the tab's own revision, and another command); `apps/web/test/livestate.test.ts` › "keeps the last view open across later pushes" (`applyLiveMessage` sets `lastOpen` on a `view.open` push, keeps it over a following `window.setRange` push, never sets it from the connect state)
 
 ### Requirement: Scope in a view document
-A view document SHALL accept an optional `scope` `{dataRef, from, to}` (ISO UTC to the ns), written after `data` by `workspaceToView` and `linkViewDoc` when the workspace has a scope, and SHALL stay `version: 1`. A `scope` whose `to` is not after `from` SHALL be refused with `invalid_view`. Origin: the ADX feedback item 3 („may carry an explicit optional `scope`"; „The view v1 link format does not change"); concept §8; D-070 (unknown keys dropped with a warning).
+A view document SHALL accept an optional `scope` `{dataRef, from, to}` (ISO UTC to the ns), written after `data` by `workspaceToView` and `linkViewDoc` when the workspace has a scope, and SHALL stay `version: 1`. A `scope` whose `to` is less than 100 ns (`MIN_SPAN_NS`) after `from` SHALL be refused with `invalid_view`. Origin: the ADX feedback item 3 („may carry an explicit optional `scope`"; „The view v1 link format does not change"); concept §8; D-070 (unknown keys dropped with a warning).
 
 #### Scenario: Round trip with a scope
 - **WHEN** a workspace with scope {testcar, T1, T2} and one window is turned into a document, written as YAML, read with `parseViewDoc`, and opened; and the same document is read by a parser without the `scope` key in its known keys
