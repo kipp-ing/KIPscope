@@ -93,8 +93,8 @@ function catalogStatus(catalog: CatalogView): CatalogStatus {
 /**
  * The catalog the workspace uses (add-scope Z5, Z10) as its grant shows it (add-multiuser M9):
  * with a scope that scope's list, else the full catalog in full mode and `no_scope` in scoped
- * mode. Without a store: full mode. In an object scope the vehicle's own list, which loads lazily
- * while the session's list serves (add-case-open K11).
+ * mode. Without a store: full mode. In an object scope the last linked session's list, the one
+ * `/api/catalog` answers with `partial` (speed-up-whole-scans Q-4: no list over the object scope).
  */
 function catalogMeta(
   catalogs: CatalogStore | undefined,
@@ -107,7 +107,7 @@ function catalogMeta(
     if (mode === "scoped") return { mode, state: "no_scope", size: 0 };
     return { mode, ...catalogStatus(catalogView(catalogs?.full ?? full, grant)) };
   }
-  const held = scope.object ? catalogs?.own(scope) : catalogs?.get(scope);
+  const held = catalogs?.get(scope);
   const catalog = held && catalogView(held, grant);
   const status: CatalogStatus = catalog
     ? catalogStatus(catalog)
@@ -116,8 +116,8 @@ function catalogMeta(
         size: 0,
         reason: "still loading: the scope's signal list has not loaded",
       };
-  if (status.state === "loading" && catalogs?.partial(scope))
-    status.reason = "still loading: the vehicle's signal list; the session's list serves meanwhile";
+  if (status.state === "loaded" && catalogs?.partial(scope))
+    status.reason = "the session's signal list; the vehicle's list is not loaded while unlinked";
   return { mode, ...status, scope };
 }
 

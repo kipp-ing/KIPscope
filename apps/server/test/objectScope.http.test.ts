@@ -310,6 +310,16 @@ describe("an object scope (add-case-open, speed-up-whole-scans)", () => {
     // /api/signals answers from the same list.
     const signals = await t.anon.get(`/api/w/${id}/signals?q=sig`);
     expect(signals.status, JSON.stringify(signals.body)).toBe(200);
+    // /api/meta reports that list as loaded, not as a vehicle list still loading.
+    const meta = await t.anon.get(`/api/w/${id}/meta`);
+    expect(meta.status, JSON.stringify(meta.body)).toBe(200);
+    expect(meta.body.catalog).toMatchObject({
+      state: "loaded",
+      size: sessionIds.length,
+      reason: "the session's signal list; the vehicle's list is not loaded while unlinked",
+      scope: SPAN,
+    });
+    expect(meta.body.catalog.loadedAt).toEqual(expect.any(String));
     // The source got no listSignals call after the unlink.
     expect(calls.slice(mark).filter((c) => c.method === "listSignals")).toEqual([]);
   });
