@@ -4,6 +4,8 @@ Bugs and open questions from the review day of 2026-10-28: every main spec (and 
 
 ## Bugs
 
+Fixed by `fix-review-findings` (2026-10-28): T-01 … T-08, T-10 … T-14 and the docs and cleanup items. Open: T-09 (waits for Q-07) and T-15.
+
 | # | Sev. | Bug | Spec | Code |
 |---|---|---|---|---|
 | T-01 | medium | Zoom history is not kept per catalog session: `historyKey` takes a `caseIndex` (add-case-open K7) but `App.tsx` never passes it, so Back after `[`/`]` pops another session's range | case-navigation › Zoom history per session | `apps/web/src/App.tsx:193,789,872,1438`, `apps/web/src/chart/zoom.ts:285` |
@@ -19,6 +21,7 @@ Bugs and open questions from the review day of 2026-10-28: every main spec (and 
 | T-11 | low | Search highlight misses overlapping matches of one term (`aa` on `AAA_X` marks 2 of 3 letters); continue at `i + 1` | signal-catalog › Match highlighting | `packages/shared/src/search.ts:77` |
 | T-12 | low | Highlight ranges shift for characters whose lower case has another length (`İ`); theoretical for ASCII DBC names, real for non-ASCII ADX names | signal-catalog › Match highlighting | `packages/shared/src/search.ts:48-57` |
 | T-13 | low | Sidebar button icon is slate-900 (`--text`), spec and the other icon buttons say slate-700 | design-language › Controls | `apps/web/src/styles.css:766-775` |
+| T-15 | medium | Whole-recording scans time out on carserver: smart451 has 768 M rows (490 M on 2026-10-23); `count/min/max` over the vehicle takes 19.5 s, the logger-gaps scan and the density buckets hit ClickHouse's 30 s limit (`TIMEOUT_EXCEEDED`), so `/api/gaps`, `/api/density` and `/api/value` answer 502 and `pnpm smoke` fails. Measured directly against ClickHouse on 2026-10-28 17:10 | data-gaps, time-strip | `apps/server/src/clickhouse.ts:619-627` (logger gaps), density buckets |
 | T-14 | low | CLI nits: usage error reads "takes 1 to Infinity arguments"; `calc add --name ""` is sent instead of refused locally | cli › Exit codes, Computed signal commands | `apps/cli/src/args.ts:437-439`, `apps/cli/src/calc.ts` |
 
 ## Docs and cleanup
@@ -26,7 +29,6 @@ Bugs and open questions from the review day of 2026-10-28: every main spec (and 
 - `docs/http-api.md` "Request class" omits `GET /api/calendar`, which honours `X-KIPscope-Class` (`apps/server/src/routes/series.ts:426`); the comment at `apps/server/src/http.ts:240-244` is stale the same way.
 - README CLI table: no rows for `events list|filter|add|remove` and `digits 3|4`; the output-key sentence (`README.md:312`) lacks `removedWindow` and `workspace`.
 - Dead code since D-092: `SPAN_PRESETS` (`apps/web/src/bar/bar.ts:12`) and `formatRange` (`apps/web/src/time/axis.ts:173`) with their tests.
-- `docs/status.md` "What runs" still calls the strip "data density … bars" (D-094 removed the bars).
 
 ## Questions for Jan
 
