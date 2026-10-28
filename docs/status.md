@@ -90,7 +90,7 @@ History: [openspec/changes/archive/](../openspec/changes/archive/) (skeleton, SN
 
 ## Next
 
-0. Review day 2026-10-28: all main specs checked against the code, drift fixed in the specs; 14 bugs (T-01 medium: zoom history not per catalog session) and open questions for Jan (Q-01, Q-02, Q-04 answered: D-115) in [todo.md](todo.md). `add-range-picker` archived the same day (D-116).
+0. Review day 2026-10-28: all main specs checked against the code, drift fixed in the specs; 14 bugs (T-01 medium: zoom history not per catalog session) and open questions for Jan (Q-01, Q-02, Q-04 answered: D-115) in [todo.md](todo.md). `add-range-picker` archived the same day (D-116). `fix-review-findings` archived; `speed-up-whole-scans` (T-15, D-117, D-118: no whole-data scans, scan bound with `too_wide`, scoped by default, Scope card, calendar days counted at idle and kept) built and checked on carserver, waiting for Jan's look and archive OK.
 
 1. New direction (2026-10-19, D-078 … D-080, the ADX feedback): a search tool (finder, not part of KIPscope) finds sessions, KIPscope shows one case (scope = data ref + time window), runs multiuser on a server, signal books with three priorities and a learned book. Planned changes in order:
    0. Done: papercuts from the ADX feedback item 8 (`.gitattributes`, `--env-file-if-exists`, DBC path warnings).

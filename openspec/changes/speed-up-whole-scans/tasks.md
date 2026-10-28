@@ -102,11 +102,11 @@ The write areas below are disjoint files, so engineers can work in parallel agai
   - the density route without a scope
 
   Verify: `apps/server/test/docs.test.ts` passes, and every variable of `config.ts` appears in the variables table.
-- [ ] 10.2 README "Run": start scoped, set a scope with the Scope card, `kipscope scope set` or `kipscope case drives smart451 FROM TO > drives.json` then `kipscope case open drives.json`, and the bound variables. Add the default and both variables to `.env.example`. Verify: the README commands run as written against the test server (the tester runs them once).
+- [x] 10.2 README "Run": start scoped, set a scope with the Scope card, `kipscope scope set` or `kipscope case drives smart451 FROM TO > drives.json` then `kipscope case open drives.json`, and the bound variables. Add the default and both variables to `.env.example`. Verify: the README commands run as written against the test server (the tester runs them once).
 
 ## 11. Lead
 
-- [ ] 11.1 Measure on carserver (scoped dev server, Jan's `.env`) and record the results in `rounds.md`:
+- [x] 11.1 Measure on carserver (scoped dev server, Jan's `.env`) and record the results in `rounds.md`:
   - cold and warm opens of a 1 h scope (2026-10-27 10:00–11:00Z) and of a 1 d scope (2026-10-27): `/api/w/<id>/gaps`, `/density`, `/value`, the catalog, and the `scope set` time
   - Unlink from a `case drives` catalog: time to answer, and the source calls in the log
   - the refusals of scope "One day of smart451" (7 d and 17 d)
@@ -114,9 +114,9 @@ The write areas below are disjoint files, so engineers can work in parallel agai
   - `X-ClickHouse-Summary` of one scoped logger-gap query and of one day count
 
   Any time over twice its goal goes to Jan.
-- [ ] 11.2 Crash guard: `pnpm build`, then `pnpm smoke` and `pnpm smoke --preview`, twice in a row against the scoped dev server; all four pass (scope "Smoke twice on carserver").
-- [ ] 11.3 Run the UI user on the UI-check scenarios: scope "Card on carserver"; object-view "Unlinked on smart451"; time-strip "Strip states" (too wide); range-picker "Calendar on smart451". Record one screenshot per step.
-- [ ] 11.4 Put Questions for Jan Q-1 … Q-7 (design.md) to Jan. Update `docs/todo.md` (T-15 fixed, real-data scenarios outside this change → Q-08) and `docs/status.md`.
+- [x] 11.2 Crash guard: `pnpm build`, then `pnpm smoke` and `pnpm smoke --preview`, twice in a row against the scoped dev server; all four pass (scope "Smoke twice on carserver").
+- [x] 11.3 Run the UI user on the UI-check scenarios: scope "Card on carserver"; object-view "Unlinked on smart451"; time-strip "Strip states" (too wide); range-picker "Calendar on smart451". Record one screenshot per step.
+- [x] 11.4 Put Questions for Jan Q-1 … Q-7 (design.md) to Jan. Update `docs/todo.md` (T-15 fixed, real-data scenarios outside this change → Q-08) and `docs/status.md`.
 
 ## Out of scope
 

@@ -4,7 +4,7 @@ Bugs and open questions from the review day of 2026-10-28: every main spec (and 
 
 ## Bugs
 
-Fixed by `fix-review-findings` (2026-10-28): T-01 … T-08, T-10 … T-14 and the docs and cleanup items. Open: T-09 (waits for Q-07) and T-15.
+Fixed by `fix-review-findings` (2026-10-28): T-01 … T-08, T-10 … T-14 and the docs and cleanup items. T-15 fixed by `speed-up-whole-scans` (D-117, D-118). Open: T-09 (waits for Q-07), T-16 … T-18.
 
 | # | Sev. | Bug | Spec | Code |
 |---|---|---|---|---|
@@ -21,7 +21,10 @@ Fixed by `fix-review-findings` (2026-10-28): T-01 … T-08, T-10 … T-14 and th
 | T-11 | low | Search highlight misses overlapping matches of one term (`aa` on `AAA_X` marks 2 of 3 letters); continue at `i + 1` | signal-catalog › Match highlighting | `packages/shared/src/search.ts:77` |
 | T-12 | low | Highlight ranges shift for characters whose lower case has another length (`İ`); theoretical for ASCII DBC names, real for non-ASCII ADX names | signal-catalog › Match highlighting | `packages/shared/src/search.ts:48-57` |
 | T-13 | low | Sidebar button icon is slate-900 (`--text`), spec and the other icon buttons say slate-700 | design-language › Controls | `apps/web/src/styles.css:766-775` |
-| T-15 | medium | Whole-recording scans time out on carserver: smart451 has 768 M rows (490 M on 2026-10-23); `count/min/max` over the vehicle takes 19.5 s, the logger-gaps scan and the density buckets hit ClickHouse's 30 s limit (`TIMEOUT_EXCEEDED`), so `/api/gaps`, `/api/density` and `/api/value` answer 502 and `pnpm smoke` fails. Measured directly against ClickHouse on 2026-10-28 17:10 | data-gaps, time-strip | `apps/server/src/clickhouse.ts:619-627` (logger gaps), density buckets |
+| T-15 | fixed | Whole-recording scans time out on carserver: smart451 has 768 M rows (490 M on 2026-10-23); `count/min/max` over the vehicle takes 19.5 s, the logger-gaps scan and the density buckets hit ClickHouse's 30 s limit (`TIMEOUT_EXCEEDED`), so `/api/gaps`, `/api/density` and `/api/value` answer 502 and `pnpm smoke` fails. Measured directly against ClickHouse on 2026-10-28 17:10 | data-gaps, time-strip | `apps/server/src/clickhouse.ts:619-627` (logger gaps), density buckets |
+| T-16 | low | Unlink sometimes slow (patience hint; once 9.7 s) although its span comes from the catalog; seen 2 of 7 while smoke ran in parallel, not reproduced alone | object-view › Unlink | `apps/server/src/objectScope.ts`, `routes/workspace.ts` |
+| T-17 | low | Without a scope the strip says `Recording unavailable` (misleading), and the footer chip doubles the prefix (`too_wide: too wide: …`) | time-strip › Strip states, app-footer | `apps/web/src/time/TimeStrip.tsx`, `apps/web/src/footer/` |
+| T-18 | low | `Range too wide for the strip` sits in the track centre and overlaps a day label | time-strip › Strip states | `apps/web/src/time/strip.css` |
 | T-14 | low | CLI nits: usage error reads "takes 1 to Infinity arguments"; `calc add --name ""` is sent instead of refused locally | cli › Exit codes, Computed signal commands | `apps/cli/src/args.ts:437-439`, `apps/cli/src/calc.ts` |
 
 ## Docs and cleanup
@@ -38,7 +41,7 @@ Answered 2026-10-28: Q-01, Q-02, Q-04 (D-115).
 - **Q-05:** Display names of a scoped list are computed over the scope's signals only, so a collision suffix can differ from the full catalog. signal-catalog › Catalog contents says "same display names"; display-names says the check covers the whole catalog. Which wins?
 - **Q-06:** "One primary per surface" still says "This change adds no primary button"; slate-900 primaries now exist in the computed editor, Views popover, range picker Go and gate page. Drop the sentence? (Views popover not checked for two at once.)
 - **Q-07:** Should the unlinked session-bar tooltip keep the left session's meta and id lines (T-09)?
-- **Q-08:** Real-data scenarios with smart451 counts (cli, events: 385/402/477/63/15; computed "Same answer") could not be rerun and disagree with each other because the data moved. Keep as dated measurements or rewrite?
+- **Q-08:** Real-data scenarios (also every main-spec scenario that still assumes full mode on smart451, which D-117 ended) with smart451 counts (cli, events: 385/402/477/63/15; computed "Same answer") could not be rerun and disagree with each other because the data moved. Keep as dated measurements or rewrite?
 - **Q-09:** Plain-signal NaN/±Infinity reach the client as `null` and look like SNA (and a bucket can have `count > 0` with a `null` mean). Same rule as computed signals (non-finite = SNA), or handle otherwise?
 - **Q-10:** The web never drops cached event lists when the server reloads its catalog; a live recording shows old events until a page reload. Acceptable?
 - Minor, no action unless you say so: query class `metadata` has no user yet (waits for `add-signal-books`); `workspace.setOptions` without `digits` is a no-op that raises the revision; a first change row inside a scope gets `from.t` = its own time; another user's private workspace answers 403 where an unknown ID answers 404 (as specced); the zoom-bounds scenario checks a year the range button shows with two digits (tooltip has four).

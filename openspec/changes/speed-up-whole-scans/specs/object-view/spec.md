@@ -97,7 +97,7 @@ Outside the work window, the marks are all the strip draws: no presence line and
 
 #### Scenario: Unlinked on smart451
 - **WHEN** on the scoped dev server, with a catalog from `kipscope case drives smart451 2026-10-20T00:00:00Z 2026-10-28T00:00:00Z`, the user clicks **Unlink**, double-clicks the strip, then clicks a mark
-- **THEN** Unlink answers within 1 s without the patience hint. The bar reads `VEHICLE`. The strip spans from the first to the last drive of the catalog (padded) with a mark for every drive; this span (7 d 5 h) is over the 7 d bound, so the track reads `Range too wide for the strip` and draws no presence line (D-117: the vehicle level comes from the catalog's sessions, not from raw data); a span within the bound draws the presence line. After the double-click the windows show that span with curves drawn, and no window shows an error box. The mark click links to that drive with the layout kept.
+- **THEN** Unlink answers within 1 s without the patience hint. The bar reads `VEHICLE`. The strip spans from the first to the last drive of the catalog (padded) with a mark for every drive and, right after Unlink, the detail around the work window ("Detail around the view"). After the double-click the shown span (7 d 5 h) is over the 7 d bound, so the track reads `Range too wide for the strip` with the marks and no presence line (D-117: the vehicle level comes from the catalog's sessions, not from raw data); a span within the bound draws the presence line. After the double-click the windows show that span with curves drawn, and no window shows an error box. The mark click links to that drive with the layout kept.
 - **Evidence:** UI check on smart451 (one screenshot per step)
 
 ## REMOVED Requirements
