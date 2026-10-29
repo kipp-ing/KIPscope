@@ -4,6 +4,11 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-120: Push at the end of every piece of work (2026-10-29)
+
+- **Decision:** Supersedes D-003. Jan: „bitte pushen und am ende immer pushen. das schadet doch nichts … lieber doku fertig und alles". At the end of every piece of work (a change archived, a review, a fix), agents bring the docs up to date (status, todo, decisions) and push without asking, not only when the session ends.
+- **Why:** Nothing lies around unpushed; the docs on GitHub match the code.
+
 ## D-119: Scan bound and scoped defaults (2026-10-29, archive of `speed-up-whole-scans`)
 
 - **Decision:** Implements D-117 and D-118 with Jan's defaults Q-1 … Q-7 („ja passt", 2026-10-28). Every scan is bounded by `KIPSCOPE_SCAN_SPAN` (default 7 d) and `KIPSCOPE_SCAN_ROWS` (default 150 M rows, one full smart451 day fits); one count per range decides, and a wider request answers 422 `too_wide` (`too wide: …; choose a shorter range`) shown in the UI, never a 502. `KIPSCOPE_CATALOG=scoped` is the default; `full` stays opt-in for small sources (the bound applies there too). A workspace without a scope shows the Scope card and its windows stay quiet. Unlink takes its span from the catalog's sessions of the vehicle (padded) and keeps the last linked session's signal list; the object scope reads only a work window (view ± one span, 6 h to 7 d). Calendar days are counted in the `idle` class (lowest, one in flight), kept per data ref under `KIPSCOPE_STATE_DIR/calendar/`, final 1 h after their end, filled ahead for workspaces with a live client. `case drives` runs in a workspace of its own; `pnpm smoke` creates and deletes a scoped workspace.

@@ -10,4 +10,4 @@ KIPscope: a workspace for exploring historical time series. Concept (German, sou
 - Team roles and round flow (lead, spec owner, engineers, tester, UI user, reviewer, pacer): [docs/team.md](docs/team.md).
 - Record decisions OpenSpec doesn't cover in [docs/decisions.md](docs/decisions.md). Current state and next steps: [docs/status.md](docs/status.md).
 - All artifacts, code and comments in English.
-- Commit often without asking (every coherent step, rather too often than too rarely). When the user ends the session: push without asking.
+- Commit often without asking (every coherent step, rather too often than too rarely). At the end of every piece of work: docs complete (status, todo, decisions), then push without asking.

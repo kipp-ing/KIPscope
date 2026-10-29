@@ -1,6 +1,6 @@
 # Status
 
-As of 2026-10-21, session 10. New direction after the ADX feedback and Jan's answers (D-078 … D-091); see Next. Thirty-six changes are archived and the main specs describe the running app.
+As of 2026-10-29, session 11 (review day, T-15). New direction after the ADX feedback and Jan's answers (D-078 … D-091); see Next. Thirty-six changes are archived and the main specs describe the running app.
 
 ## What runs
 
