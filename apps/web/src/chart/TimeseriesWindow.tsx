@@ -11,13 +11,13 @@ import {
   formatAxisTicks,
   type LoggerGap,
   MAX_UNITS,
+  type NamesOption,
   parseSignalId,
   type RenderError,
   type SeriesResult,
   type SignalGaps,
   type SignalInfo,
   shortLabel,
-  shownName,
   type ValuesMode,
   type TimeseriesWindow as WindowState,
 } from "@kipscope/shared";
@@ -29,6 +29,7 @@ import "uplot/dist/uPlot.min.css";
 import "./window.css";
 import { fetchCursorValue } from "../api.ts";
 import { groupMarks, type Mark, markColor, markStyle, markTitle, PIN_H } from "../events/marks.ts";
+import { otherName, shownAs } from "../explorer/format.ts";
 import { HINTS } from "../help/hints.ts";
 import { holdNoSelect } from "../noselect.ts";
 import { calendarTicks, tickLabels, tickStepForWidth, ticks } from "../time/axis.ts";
@@ -187,6 +188,8 @@ interface Props {
   committed: { a?: string; b?: string };
   /** Significant digits of readout values and y-axis ticks (workspace option). */
   digits: Digits;
+  /** Which name legend rows and axis titles show (workspace option, signal-aliases D5). */
+  names: NamesOption;
   /** Diff mode: show B and Δ columns, the Δt label. `cursors` stays the effective times. */
   diff: boolean;
   /** Local position while placing or dragging; t undefined ends the preview without a command. */
@@ -761,6 +764,7 @@ export function TimeseriesWindow({
   cursors,
   committed,
   digits,
+  names,
   diff,
   onCursorPreview,
   onCursorCommit,
@@ -1015,7 +1019,7 @@ export function TimeseriesWindow({
     const meta = info(s.signalId);
     const input: SignalInput = {
       key: s.id,
-      label: meta ? shownName(meta) : s.signalId,
+      label: meta ? shownAs(meta, names) : s.signalId,
       color: colorOf(s.signalId),
     };
     const state = loader.get(s.id);
@@ -1849,14 +1853,14 @@ export function TimeseriesWindow({
           const parsed = parseSignalId(s.signalId);
           // Without metadata (a signal the shown data ref lacks has none) the bare name, as a
           // loaded row shows it, so the first step to a session with the signal moves no column.
-          const name = meta ? shownName(meta) : (parsed?.name ?? s.signalId);
+          const name = meta ? shownAs(meta, names) : (parsed?.name ?? s.signalId);
           // The shown data ref lacks the signal (DW13): a muted pill, "—" cells with the reason. An
           // unavailable computed signal reads the same, its reason the missing inputs (C11).
           const off = meta?.computed?.unavailable;
           const missing = isMissing(state) || off !== undefined;
           const missingSignal = parsed && {
             dataRef: parsed.dataRef,
-            name: meta ? shownName(meta) : parsed.name,
+            name: meta ? shownAs(meta, names) : parsed.name,
           };
           const missingTitle =
             off ??
@@ -1896,11 +1900,8 @@ export function TimeseriesWindow({
                 }
               >
                 <span className="swatch" style={{ background: colorOf(s.signalId) }} />
-                {/* Cut in a narrow window: the full name, or the source name, as tooltip. */}
-                <span
-                  className="sig"
-                  title={meta ? (meta.displayName !== undefined ? meta.name : name) : s.signalId}
-                >
+                {/* Cut in a narrow window: the other name, or the whole one, as tooltip (D5). */}
+                <span className="sig" title={meta ? otherName(meta, names) : s.signalId}>
                   {name}
                 </span>
               </span>

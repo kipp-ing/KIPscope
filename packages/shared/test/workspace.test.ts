@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   Command,
+  EMPTY_WORKSPACE,
   RenderedMessage,
   SIGNAL_COLORS,
   type TimeseriesWindow,
   type ValuesWindow,
+  WorkspaceSchema,
   windowTitle,
 } from "../src/workspace.ts";
 
@@ -169,5 +171,33 @@ describe("SIGNAL_COLORS", () => {
       }
     }
     expect(closest).toBeGreaterThanOrEqual(25);
+  });
+});
+
+describe("stored options (signal-aliases)", () => {
+  // Spec workspace-state "Old workspace" and workspace-state/signal-aliases "Default".
+  it("reads a workspace without names", () => {
+    const old = { ...EMPTY_WORKSPACE, options: { digits: 4 } };
+    const parsed = WorkspaceSchema.safeParse(old);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.options).toEqual({ digits: 4, names: "shown" });
+    const fresh = WorkspaceSchema.parse({ ...EMPTY_WORKSPACE, options: { digits: 3 } });
+    expect(fresh.options).toEqual({ digits: 3, names: "shown" });
+  });
+
+  it("reads and refuses stored names values", () => {
+    const read = (names: unknown) =>
+      WorkspaceSchema.safeParse({ ...EMPTY_WORKSPACE, options: { digits: 3, names } });
+    const source = read("source");
+    expect(source.success).toBe(true);
+    if (source.success) expect(source.data.options).toEqual({ digits: 3, names: "source" });
+    expect(read("shown").success).toBe(true);
+    expect(read("alias").success).toBe(false);
+    expect(read(1).success).toBe(false);
+    // Unknown option keys stay refused.
+    expect(
+      WorkspaceSchema.safeParse({ ...EMPTY_WORKSPACE, options: { digits: 3, theme: "dark" } })
+        .success,
+    ).toBe(false);
   });
 });

@@ -27,9 +27,14 @@ const dotRule = (show: Template = [g("signal")], collision = true) =>
     collision ? [g("signal"), " (", g("message"), ")"] : undefined,
   );
 
-const rules = (list: DisplayRule[], rename: [string, string][] = []): DisplayRules => ({
+const rules = (
+  list: DisplayRule[],
+  rename: [string, string][] = [],
+  aliases: [string, string][] = [],
+): DisplayRules => ({
   rules: list,
   rename: new Map(rename),
+  aliases: new Map(aliases),
   groups: [],
 });
 
@@ -96,5 +101,71 @@ describe("assignDisplayNames", () => {
     expect(b.shown.get("A.X")).toBe("A.X");
     expect(b.shown.get("B.Y")).toBe("B.Y");
     expect(b.fellBack).toEqual(["B.Y"]);
+  });
+
+  // Spec display-names "A dictionary entry skips the rules", signal-aliases "Alias beats a rule, rename beats alias".
+  it("ranks rename, alias, rules", () => {
+    const r = rules(
+      [hexRule(false)],
+      [["Sna_800h.RPM", "Revs"]],
+      [
+        ["ICL_3A2h.SPEED_DISP", "Speed"],
+        ["Sna_800h.RPM", "Rpm"],
+        ["NOPE_1h.X", "Nope"],
+      ],
+    );
+    const { shown, fellBack } = assignDisplayNames(
+      ["ICL_3A2h.SPEED_DISP", "Sna_800h.RPM", "STR_0D4h.STEER_CHKSUM"],
+      r,
+    );
+    // The alias beats the rule (which would show SPEED_DISP); the rename beats the alias.
+    expect(shown.get("ICL_3A2h.SPEED_DISP")).toBe("Speed");
+    expect(shown.get("Sna_800h.RPM")).toBe("Revs");
+    // No entry: the rule still applies.
+    expect(shown.get("STR_0D4h.STEER_CHKSUM")).toBe("STEER_CHKSUM");
+    // An entry for a name that is not in the list shows nothing.
+    expect(shown.has("NOPE_1h.X")).toBe(false);
+    expect(shown.size).toBe(3);
+    expect(fellBack).toEqual([]);
+  });
+
+  it("never gives an alias a rule's collision suffix", () => {
+    // ICL_3A2h.SPEED_DISP is rule-made SPEED_DISP; the dictionary shows X_1h.Y as the same text.
+    const { shown, fellBack } = assignDisplayNames(
+      ["ICL_3A2h.SPEED_DISP", "X_1h.Y"],
+      rules([hexRule()], [], [["X_1h.Y", "SPEED_DISP"]]),
+    );
+    expect(shown.get("X_1h.Y")).toBe("SPEED_DISP");
+    expect(shown.get("ICL_3A2h.SPEED_DISP")).toBe("SPEED_DISP (ICL)");
+    expect(fellBack).toEqual([]);
+  });
+
+  it("puts an alias and a rule-made name without collision template on full names", () => {
+    // Still shared after step 3 (no collision template): every member shows its full name.
+    const { shown, fellBack } = assignDisplayNames(
+      ["ICL_3A2h.SPEED_DISP", "X_1h.Y"],
+      rules([hexRule(false)], [], [["X_1h.Y", "SPEED_DISP"]]),
+    );
+    expect(shown.get("X_1h.Y")).toBe("X_1h.Y");
+    expect(shown.get("ICL_3A2h.SPEED_DISP")).toBe("ICL_3A2h.SPEED_DISP");
+    expect(fellBack).toEqual(["ICL_3A2h.SPEED_DISP", "X_1h.Y"]);
+  });
+
+  it("gives way to a full name an alias would hide", () => {
+    // B.Y's logical name is another signal's full name: B.Y gives way, A.X keeps its own.
+    const { shown, fellBack } = assignDisplayNames(["A.X", "B.Y"], rules([], [], [["B.Y", "A.X"]]));
+    expect(shown.get("A.X")).toBe("A.X");
+    expect(shown.get("B.Y")).toBe("B.Y");
+    expect(fellBack).toEqual(["B.Y"]);
+  });
+
+  it("puts an alias and a rename onto one text on full names", () => {
+    const { shown, fellBack } = assignDisplayNames(
+      ["A.X", "B.Y"],
+      rules([], [["A.X", "Foo"]], [["B.Y", "Foo"]]),
+    );
+    expect(shown.get("A.X")).toBe("A.X");
+    expect(shown.get("B.Y")).toBe("B.Y");
+    expect(fellBack).toEqual(["A.X", "B.Y"]);
   });
 });

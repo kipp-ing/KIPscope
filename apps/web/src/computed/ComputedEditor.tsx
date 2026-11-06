@@ -8,10 +8,10 @@ import {
   MAX_COMPUTED_UNIT,
   MAX_FORMULA_LENGTH,
   type MatchRange,
+  type NamesOption,
   resolveFormula,
   type SearchIndex,
   type SignalInfo,
-  shownName,
 } from "@kipscope/shared";
 import {
   type ReactNode,
@@ -22,6 +22,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { otherName, shownAs } from "../explorer/format.ts";
 import { Highlight } from "../explorer/Highlight.tsx";
 import { HINTS } from "../help/hints.ts";
 import {
@@ -58,6 +59,8 @@ export interface ComputedEditorProps {
   catalog: readonly SignalInfo[];
   /** The completion index: the list's catalog signals plus its computed infos (F11). */
   index: SearchIndex;
+  /** Which name a suggestion shows (workspace option, signal-aliases D5); default "shown". */
+  namesOption?: NamesOption;
   /** Where the panel wants its top-left corner (beside the sidebar, at the Computed header). */
   position: { left: number; top: number };
   sendCommand: (input: CommandInput) => Promise<CommandResult>;
@@ -121,6 +124,7 @@ export function ComputedEditor({
   defs,
   catalog,
   index,
+  namesOption = "shown",
   position,
   sendCommand,
   onClose,
@@ -377,6 +381,7 @@ export function ComputedEditor({
                 key={s.kind === "function" ? s.name : s.info.id}
                 id={`${ids}-${i}`}
                 s={s}
+                names={namesOption}
                 query={list.query}
                 active={i === active}
                 onHover={() => setActive(i)}
@@ -465,6 +470,8 @@ function tinted(
 interface RowProps {
   id: string;
   s: Suggestion;
+  /** Which name a signal row shows; the tooltip has the other (signal-aliases D5). */
+  names?: NamesOption;
   query: string;
   active: boolean;
   onHover: () => void;
@@ -476,10 +483,18 @@ interface RowProps {
  * signal with its shown name (mono) and unit; a signal with states drawn disabled with its title.
  * A mouse-down accepts without leaving the field.
  */
-export function SuggestionRow({ id, s, query, active, onHover, onAccept }: RowProps) {
+export function SuggestionRow({
+  id,
+  s,
+  names = "shown",
+  query,
+  active,
+  onHover,
+  onAccept,
+}: RowProps) {
   const disabled = s.kind === "signal" ? s.disabled : undefined;
   const computed = s.kind === "signal" && s.info.computed !== undefined;
-  const text = s.kind === "function" ? FUNCTION_TEXT[s.name] : shownName(s.info);
+  const text = s.kind === "function" ? FUNCTION_TEXT[s.name] : shownAs(s.info, names);
   const cls = `computed-option${active ? " active" : ""}${disabled ? " disabled" : ""}`;
   return (
     // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the formula field
@@ -489,7 +504,7 @@ export function SuggestionRow({ id, s, query, active, onHover, onAccept }: RowPr
       aria-selected={active}
       aria-disabled={disabled !== undefined || undefined}
       className={cls}
-      title={disabled ?? (s.kind === "signal" ? shownName(s.info) : undefined)}
+      title={disabled ?? (s.kind === "signal" ? otherName(s.info, names) : undefined)}
       onMouseDown={(e) => {
         e.preventDefault();
         onAccept();

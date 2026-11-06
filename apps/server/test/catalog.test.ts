@@ -1,8 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { loadAliases } from "../src/aliases.ts";
 import { Catalog, keepCatalogLoaded } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { type DbcSignal, loadDbcFiles } from "../src/dbc.ts";
 import { loadDiagCatalogs } from "../src/diag.ts";
+import type { DisplayRules } from "../src/names.ts";
 import { loadProjectFile } from "../src/project.ts";
 import { fixture, testDataSource, testDbcFiles, testDiagCatalogs } from "./testdb.ts";
 
@@ -187,6 +189,92 @@ describe("Catalog display names (test DB, test project file)", () => {
     // Identity unchanged.
     expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
     expect(catalog.size).toBe(1025);
+  });
+});
+
+describe("Catalog aliases (test DB, test dictionary, test project file)", () => {
+  // Speed -> Fast_100h.SIG_A, Revs -> Sna_800h.RPM, Boost -> ECM_1B0h.BOOST (in no catalog).
+  const project = loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true });
+  const aliases = loadAliases(fixture("aliases.test.json"));
+  const withAliases = (rename: [string, string][] = []): DisplayRules => ({
+    ...project,
+    rename: new Map([...project.rename, ...rename]),
+    aliases: aliases.bySource,
+  });
+  const build = (rules: DisplayRules) =>
+    new Catalog(testDataSource(), () => loadDbcFiles(testDbcFiles), rules);
+
+  const catalog = build(withAliases());
+  beforeAll(() => catalog.refresh());
+
+  // Spec signal-aliases "Alias beats a rule, rename beats alias".
+  it("fills alias from the dictionary", async () => {
+    // The alias beats the rule (which shows RPM); it is also the catalog entry's alias.
+    expect(catalog.get("testcar/Sna_800h.RPM")).toMatchObject({
+      displayName: "Revs",
+      alias: "Revs",
+    });
+    // A rename beats the alias; the entry still carries the logical name.
+    const renamed = build(withAliases([["Sna_800h.RPM", "Tacho"]]));
+    await renamed.refresh();
+    expect(renamed.get("testcar/Sna_800h.RPM")).toMatchObject({
+      displayName: "Tacho",
+      alias: "Revs",
+    });
+    // No entry: no alias, the rules apply as before.
+    expect(catalog.get("testcar/Sna_800h.SPEED")).not.toHaveProperty("alias");
+    expect(catalog.get("testcar/Sna_800h.SPEED")?.displayName).toBe("SPEED (Sna)");
+    // Identity unchanged.
+    expect(catalog.get("testcar/Sna_800h.RPM")?.name).toBe("Sna_800h.RPM");
+  });
+
+  // Spec signal-aliases "One entry, all data refs" and "Two data refs".
+  it("applies one dictionary to every data ref", () => {
+    for (const id of ["testcar/Fast_100h.SIG_A", "othercar/Fast_100h.SIG_A"]) {
+      expect(catalog.get(id), id).toMatchObject({ displayName: "Speed", alias: "Speed" });
+    }
+    // SIG_A left the group that collided: SIG_B and SIG_C still show their full names.
+    expect(catalog.displayFallbacks).toEqual(["Fast_100h.SIG_B", "Fast_100h.SIG_C"]);
+    expect(catalog.get("testcar/Fast_100h.SIG_B")).not.toHaveProperty("displayName");
+  });
+
+  it("finds a signal by its logical name in the search", () => {
+    expect(catalog.search("revs").items.map((s) => s.id)).toEqual(["testcar/Sna_800h.RPM"]);
+    expect(catalog.search("SPEED").items.map((s) => s.id)).toContain("testcar/Fast_100h.SIG_A");
+    expect(catalog.search("SPEED").items.map((s) => s.id)).toContain("othercar/Fast_100h.SIG_A");
+  });
+
+  // Spec signal-aliases "Unused entry".
+  it("ignores entries without a signal", () => {
+    expect(catalog.size).toBe(1025);
+    expect(catalog.search("Boost").total).toBe(0);
+    expect(catalog.all().filter((s) => s.alias !== undefined).length).toBe(3);
+  });
+
+  it("logs no warning for an entry without a signal", async () => {
+    const source = {
+      listSignals: async () => [{ dataRef: "car", name: "Fast_100h.SIG_A" }],
+    } as unknown as DataSource;
+    const warnings: string[] = [];
+    const stub = new Catalog(source, async () => new Map(), withAliases(), {
+      warn: (message) => warnings.push(message),
+    });
+    await stub.refresh();
+    expect(stub.get("car/Fast_100h.SIG_A")?.displayName).toBe("Speed");
+    expect(stub.size).toBe(1);
+    expect(warnings).toEqual([]);
+  });
+
+  it("behaves as before without a dictionary", async () => {
+    const plain = build({ ...project, aliases: new Map() });
+    await plain.refresh();
+    expect(plain.get("testcar/Sna_800h.RPM")).toMatchObject({ displayName: "RPM" });
+    expect(plain.get("testcar/Sna_800h.RPM")).not.toHaveProperty("alias");
+    expect(plain.displayFallbacks).toEqual([
+      "Fast_100h.SIG_A",
+      "Fast_100h.SIG_B",
+      "Fast_100h.SIG_C",
+    ]);
   });
 });
 

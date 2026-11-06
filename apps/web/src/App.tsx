@@ -89,7 +89,7 @@ import {
 import { EventsPanel } from "./events/EventsPanel.tsx";
 import { appliedFilter, shownEvents, useEvents } from "./events/eventsData.ts";
 import { stepEvent } from "./events/list.ts";
-import { resolveTarget } from "./explorer/format.ts";
+import { resolveTarget, shownAs } from "./explorer/format.ts";
 import { NEW_WINDOW, SignalExplorer } from "./explorer/SignalExplorer.tsx";
 import type { TabEvents } from "./explorer/tabs.ts";
 import { ignoreFileDrops, openDroppedCatalog } from "./filedrop.ts";
@@ -1249,7 +1249,8 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
       if (event.button !== 0 || dragRef.current) return;
       const info = infos.current.get(source.signalId);
       const many = selectionOf(source);
-      const label = many ? `${many.length} signals` : info ? shownName(info) : source.signalId;
+      const names = liveRef.current.workspace?.options?.names ?? "shown";
+      const label = many ? `${many.length} signals` : info ? shownAs(info, names) : source.signalId;
       const d: Drag = {
         source,
         label,
@@ -1442,6 +1443,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
   );
   // A stale state without options still renders (design S3).
   const digits = workspace?.options?.digits ?? 3;
+  const names = workspace?.options?.names ?? "shown";
   const diff = workspace?.cursors?.diff ?? false;
   const canGoBack = (windowId: string | undefined) =>
     windowId !== undefined &&
@@ -1459,7 +1461,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
     const fresh = eventsDropMany(ids, (id) => infos.current.get(id), ws);
     const one = fresh.length === 1 ? infos.current.get(fresh[0] ?? "") : undefined;
     if (fresh.length === 0) return { name: `${ids.length} signals`, ok: false, reason: "none_new" };
-    return { name: one ? shownName(one) : `${fresh.length} signals`, ok: true };
+    return { name: one ? shownAs(one, names) : `${fresh.length} signals`, ok: true };
   };
   const stripDrop: StripDrop | undefined =
     activeDrag?.target?.kind === "events" && workspace
@@ -1698,6 +1700,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
         dragging={activeDrag !== undefined}
         colorOf={explorerColorOf}
         digits={digits}
+        names={names}
         target={target}
         onTarget={onTarget}
         open={sidebarOpen}
@@ -1875,6 +1878,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     cursors={cursors}
                     committed={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
                     digits={digits}
+                    names={names}
                     diff={diff}
                     onCursorPreview={onCursorPreview}
                     onCursorCommit={onCursorCommit}
@@ -1895,6 +1899,7 @@ export function App({ start }: { start: Extract<Startup, { kind: "ready" }> }) {
                     cursors={workspace?.cursors ?? EMPTY_WORKSPACE.cursors}
                     dragging={cursorPreview !== undefined}
                     digits={digits}
+                    names={names}
                     info={info}
                     colorOf={colorOf}
                     onCommand={command}

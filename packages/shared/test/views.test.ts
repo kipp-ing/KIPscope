@@ -65,7 +65,7 @@ describe("view document", () => {
       linkTime: true,
       colors: { "car/A": 3, "car/B": 5 },
       cursors: { a: NS(T0 + 1_500_000_000n), b: NS(T0 + 9_250_000_000n), diff: true },
-      options: { digits: 4 },
+      options: { digits: 4, names: "shown" },
       measurement: { name: "Drive 3", object: "smart451", meta: [{ key: "Driver", value: "JK" }] },
       eventFilter: "faults",
       eventSignals: ["car/MODE"],

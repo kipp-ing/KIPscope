@@ -213,7 +213,7 @@ export interface Workspace {
   }[];
   linkTime: boolean;
   cursors: { a?: string; b?: string; diff: boolean };
-  options: { digits: number };
+  options: { digits: number; names: string };
   view?: { name?: string; title: string; note?: string; modified: boolean };
   scope?: { dataRef: string; from: string; to: string };
 }

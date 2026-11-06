@@ -131,9 +131,14 @@ export type WorkspaceWindow = TimeseriesWindow | ValuesWindow;
 export const Digits = z.union([z.literal(3), z.literal(4)]);
 export type Digits = z.infer<typeof Digits>;
 
-/** User options (concept §8); for now only the digits. */
+/** What signals show (signal-aliases): the shown name (logical, else rule-made, else source) or the source name. */
+export const NamesOption = z.enum(["shown", "source"]);
+export type NamesOption = z.infer<typeof NamesOption>;
+
+/** User options (concept §8): digits and names. */
 export interface WorkspaceOptions {
   digits: Digits;
+  names: NamesOption;
 }
 
 /** Measurement info limits (design F6): characters of name and object, meta key and value. */
@@ -251,7 +256,7 @@ export const EMPTY_WORKSPACE: Workspace = {
   linkTime: true,
   colors: {},
   cursors: { diff: false },
-  options: { digits: 3 },
+  options: { digits: 3, names: "shown" },
 };
 
 /**
@@ -371,7 +376,15 @@ export const Command = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("cursor.remove"), cursor: CursorName }),
   z.object({ type: z.literal("cursor.setDiff"), diff: z.boolean() }),
-  z.object({ type: z.literal("workspace.setOptions"), digits: Digits.optional() }),
+  z
+    .object({
+      type: z.literal("workspace.setOptions"),
+      digits: Digits.optional(),
+      names: NamesOption.optional(),
+    })
+    .refine((c) => c.digits !== undefined || c.names !== undefined, {
+      message: "digits or names is required",
+    }),
   z
     .object({
       type: z.literal("measurement.set"),
@@ -642,7 +655,7 @@ export const WorkspaceSchema: z.ZodType<Workspace> = z.strictObject({
     b: NsTime.exactOptional(),
     diff: z.boolean(),
   }),
-  options: z.strictObject({ digits: Digits }),
+  options: z.strictObject({ digits: Digits, names: NamesOption.default("shown") }),
   measurement: z
     .strictObject({
       name: ExactText(MAX_MEASUREMENT_TEXT),

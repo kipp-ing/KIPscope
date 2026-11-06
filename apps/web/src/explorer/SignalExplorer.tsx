@@ -5,6 +5,7 @@ import {
   type ComputedDef,
   computedRef,
   type Digits,
+  type NamesOption,
   type SignalInfo,
   searchSignals,
   shownName,
@@ -38,6 +39,7 @@ import {
   HOVER_DELAY_MS,
   NEW_WINDOW,
   nextShown,
+  otherName,
   visibleCount,
 } from "./format.ts";
 import { COMPUTED_GROUP, type ExplorerItem, explorerItems, firstSignal } from "./groups.ts";
@@ -79,6 +81,8 @@ interface Props {
   colorOf?: (signalId: string) => string | undefined;
   /** Significant digits of the hover card's values (workspace option, design N10). */
   digits: Digits;
+  /** Which name the rows show (workspace option, signal-aliases D5); the tooltip has the other. */
+  names: NamesOption;
   /** NEW_WINDOW or the marked window's ID; App resolves it with resolveTarget. */
   target: string;
   /** The "Add to" select changed: a window ID marks it, NEW_WINDOW clears the mark. */
@@ -170,6 +174,7 @@ export function SignalExplorer({
   dragging,
   colorOf,
   digits,
+  names,
   target,
   onTarget,
   open,
@@ -992,8 +997,8 @@ export function SignalExplorer({
                 )}
                 <span
                   className={onDragStart ? "name draggable" : "name"}
-                  // The source name, whole even where the shown name is cut (design DW22).
-                  title={s.name}
+                  // The other name, whole even where the shown one is cut (design DW22, signal-aliases D5).
+                  title={otherName(s, names)}
                   onPointerDown={(e) => {
                     if (e.button !== 0 || !onDragStart) return;
                     // A selected row of two or more drags the selection (L2).
@@ -1003,7 +1008,10 @@ export function SignalExplorer({
                     onDragStart(source, e);
                   }}
                 >
-                  <Highlight text={shownName(s)} ranges={m.shown} />
+                  <Highlight
+                    text={shownName(s, names)}
+                    ranges={names === "source" ? m.name : m.shown}
+                  />
                 </span>
                 {s.unit && (
                   <span className="unit row-unit">
@@ -1060,6 +1068,7 @@ export function SignalExplorer({
             defs={computedDefs ?? []}
             catalog={catalog ?? []}
             index={completionIndex}
+            namesOption={names}
             position={editor.position}
             sendCommand={onCommand}
             onClose={closeEditor}

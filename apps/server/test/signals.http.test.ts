@@ -1,5 +1,6 @@
 import type { SignalInfo } from "@kipscope/shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { loadAliases } from "../src/aliases.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource } from "../src/datasource.ts";
@@ -292,5 +293,104 @@ describe("diag catalog over HTTP", () => {
       dataRef: "testcar",
       name: "TBMS.unknown",
     });
+  });
+});
+
+describe("GET /api/signals with a dictionary (signal-aliases)", () => {
+  const source = testDataSource();
+  const rules = {
+    ...loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true }),
+    aliases: loadAliases(fixture("aliases.test.json")).bySource,
+  };
+  const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
+  });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  const search = async (q: string) =>
+    (await app.inject({ url: `/api/signals?q=${encodeURIComponent(q)}` })).json();
+
+  // Spec signal-aliases "Unavailable logical name" at the HTTP level.
+  it("names the source name of an unavailable alias", async () => {
+    for (const q of ["Boost", "boost", "BOOST"]) {
+      const page = await search(q);
+      expect(page.aliasOf, q).toBe("ECM_1B0h.BOOST");
+      expect(page.items, q).toEqual([]);
+      expect(page.total, q).toBe(0);
+    }
+  });
+
+  it("has no aliasOf for a query that is no logical name", async () => {
+    // Not a logical name at all.
+    expect(await search("Nope")).not.toHaveProperty("aliasOf");
+    // The source name behind the unavailable entry is not a logical name.
+    expect(await search("ECM_1B0h.BOOST")).not.toHaveProperty("aliasOf");
+    // A logical name whose source name the list holds is found, not reported as unavailable.
+    const speed = await search("Speed");
+    expect(speed).not.toHaveProperty("aliasOf");
+    expect(speed.items.map((s: SignalInfo) => s.id)).toContain("testcar/Fast_100h.SIG_A");
+    // A query that is only part of a logical name.
+    expect(await search("Boos")).not.toHaveProperty("aliasOf");
+  });
+
+  it("returns the logical name as displayName and alias", async () => {
+    const hit = (await search("Revs")).items[0];
+    expect(hit).toMatchObject({
+      id: "testcar/Sna_800h.RPM",
+      name: "Sna_800h.RPM",
+      displayName: "Revs",
+      alias: "Revs",
+    });
+  });
+
+  it("keeps the answer unchanged without a dictionary", async () => {
+    const plain = new Catalog(source, () => loadDbcFiles(testDbcFiles), {
+      ...rules,
+      aliases: new Map(),
+    });
+    await plain.refresh();
+    const plainApp = buildApp({
+      catalog: plain,
+      source,
+      workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
+    });
+    try {
+      const page = (await plainApp.inject({ url: "/api/signals?q=Boost" })).json();
+      expect(page).toEqual({ items: [], total: 0, more: false });
+    } finally {
+      await plainApp.close();
+    }
+  });
+});
+
+describe("GET /api/signals, unavailable alias that is a substring of another signal (signal-aliases)", () => {
+  const source = testDataSource();
+  // Built in the test: the logical name "RPM" stands for a source name the scope lacks, and the
+  // text "RPM" also matches the in-scope signal Sna_800h.RPM by substring.
+  const rules = {
+    ...loadProjectFile({ path: fixture("kipscope.test.yaml"), required: true }),
+    aliases: new Map([["ECM_1B0h.BOOST", "RPM"]]),
+  };
+  const catalog = new Catalog(source, () => loadDbcFiles(testDbcFiles), rules);
+  const app = buildApp({
+    catalog,
+    source,
+    workspace: new WorkspaceStore({ signalExists: () => true, hasStates: () => false }),
+  });
+  beforeAll(() => catalog.refresh());
+  afterAll(() => app.close());
+
+  // Spec signal-aliases "Not in this scope": the substring hit must not hide what the name stands for.
+  it("names the source name although the query also matches another signal", async () => {
+    const res = await app.inject({ url: "/api/signals?q=RPM" });
+    expect(res.statusCode).toBe(200);
+    const page = res.json();
+    expect(page.items.map((s: SignalInfo) => s.id)).toContain("testcar/Sna_800h.RPM");
+    expect(page.total).toBeGreaterThan(0);
+    expect(page.aliasOf).toBe("ECM_1B0h.BOOST");
   });
 });

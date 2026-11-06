@@ -45,7 +45,7 @@ export function formulaNames(
   defs: readonly ComputedDef[],
 ): FormulaNames {
   const seen = new Set<string>();
-  const signals: { name: string; unit?: string; states: boolean }[] = [];
+  const signals: { name: string; unit?: string; states: boolean; alias?: string }[] = [];
   for (const s of items) {
     if (s.computed !== undefined || seen.has(s.name)) continue;
     seen.add(s.name);
@@ -53,6 +53,8 @@ export function formulaNames(
       name: s.name,
       ...(s.unit !== undefined && { unit: s.unit }),
       states: s.states !== undefined,
+      // The logical name resolves like the short name (signal-aliases D4).
+      ...(s.alias !== undefined && { alias: s.alias }),
     });
   }
   const computed = defs.map((d) => ({

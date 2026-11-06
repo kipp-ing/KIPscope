@@ -92,6 +92,8 @@ const FORMS: [string[], Record<string, unknown>][] = [
   [["link", "off"], { type: "workspace.setLinkTime", linked: false }],
   [["digits", "3"], { type: "workspace.setOptions", digits: 3 }],
   [["digits", "4"], { type: "workspace.setOptions", digits: 4 }],
+  [["names", "source"], { type: "workspace.setOptions", names: "source" }],
+  [["names", "shown"], { type: "workspace.setOptions", names: "shown" }],
   [["signal", "add", "w1", RPM], { type: "window.addSignal", windowId: "w1", signalId: RPM }],
   [
     ["signal", "remove", "w1", "a2"],
@@ -403,6 +405,10 @@ describe("argument grammar", () => {
       ["digits", "5"],
       ["digits", "3", "4"],
       ["digits", "four"],
+      ["names"],
+      ["names", "alias"],
+      ["names", "Source"],
+      ["names", "shown", "source"],
       ["diff", "sideways"],
       ["measurement"],
       ["measurement", "name"],
@@ -450,6 +456,12 @@ describe("argument grammar", () => {
     expect(usageError(["digits", "5"]).message).toContain("3|4");
   });
 
+  // Spec cli "Form maps to the command".
+  it("names shown|source in the names usage error", () => {
+    expect(usageError(["names", "alias"]).message).toContain("shown|source");
+    expect(usageError(["names", "alias"]).outcome).toBe("usage");
+  });
+
   it("names every form in the usage text", () => {
     for (const form of [
       "window create",
@@ -460,6 +472,7 @@ describe("argument grammar", () => {
       "window display",
       "link",
       "digits",
+      "names",
       "signal add",
       "signal remove",
       "signal move",

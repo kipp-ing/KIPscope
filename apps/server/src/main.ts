@@ -10,6 +10,7 @@ import {
   type Workspace,
 } from "@kipscope/shared";
 import { accessLog, isLoopbackHost } from "./access.ts";
+import { type Aliases, AliasesFileError, loadAliases } from "./aliases.ts";
 import { buildApp } from "./app.ts";
 import { CalendarDays } from "./calendarDays.ts";
 import { Catalog, keepCatalogLoaded, warnDisplayFallbacks } from "./catalog.ts";
@@ -67,6 +68,20 @@ try {
   process.exit(1);
 }
 
+// Before listen: the dictionary of logical names (add-signal-aliases D1); an invalid or missing
+// named file stops the server.
+let aliases: Aliases | undefined;
+if (config.aliasesFile !== undefined)
+  try {
+    aliases = loadAliases(config.aliasesFile);
+  } catch (error) {
+    if (!(error instanceof AliasesFileError)) throw error;
+    process.stderr.write(`kipscope: invalid aliases file\n${error.message}\n`);
+    process.exit(1);
+  }
+// The catalog's display rules: the project file's, plus the dictionary (D2).
+const displayRules = aliases ? { ...rules, aliases: aliases.bySource } : rules;
+
 let licenseText: string | undefined;
 let licenseMissing = false;
 try {
@@ -123,7 +138,7 @@ const newCatalog = (scope?: Scope) =>
   new Catalog(
     source,
     (warn) => loadDbcFiles(dbcFiles, (path, error) => warn(`${path}: ${error}`)),
-    rules,
+    displayRules,
     { warn: (message) => app.log.warn(message) },
     (warn) => loadDiagCatalogs(diagCatalogs, warn),
     scope,
@@ -191,6 +206,7 @@ const app = buildApp(
 // loadProjectFile returns NO_RULES itself only for a missing optional file.
 if (rules === NO_RULES)
   app.log.info(`project file ${config.projectFile.path} not found; signals show their full names`);
+if (aliases) app.log.info(`aliases file ${config.aliasesFile}: ${aliases.bySource.size} aliases`);
 if (licenseMissing) app.log.warn("LICENSE not found; /api/license answers 404");
 if (skippedDefaults.length > 0)
   app.log.info(`default metadata files not found, skipped: ${skippedDefaults.join(", ")}`);

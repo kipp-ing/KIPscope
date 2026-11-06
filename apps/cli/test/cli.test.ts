@@ -641,7 +641,7 @@ describe("window, link, signal and cursor commands", () => {
       expect(four.out.command).toEqual({ type: "workspace.setOptions", digits: 4 });
       const state = await cli(s, "state");
       expect(state.code).toBe(0);
-      expect((await s.workspace()).workspace.options).toEqual({ digits: 4 });
+      expect((await s.workspace()).workspace.options).toEqual({ digits: 4, names: "shown" });
       expect(JSON.stringify(state.out)).toContain('"digits":4');
 
       // Usage error: exit 2, nothing sent.
@@ -649,7 +649,126 @@ describe("window, link, signal and cursor commands", () => {
       const bad = await cli(s, "digits", "5");
       expect(bad.code).toBe(2);
       expect(s.requests.length).toBe(before);
-      expect((await s.workspace()).workspace.options).toEqual({ digits: 4 });
+      expect((await s.workspace()).workspace.options).toEqual({ digits: 4, names: "shown" });
+    });
+  });
+
+  // Spec cli "Names over HTTP".
+  it("sets the names option over HTTP", async () => {
+    await withServer(async (s) => {
+      const source = await cli(s, "names", "source");
+      expect(source.code, source.stderr.join("")).toBe(0);
+      expect(source.out.revision).toBe(1);
+      expect(source.out.command).toEqual({ type: "workspace.setOptions", names: "source" });
+      const state = await cli(s, "state");
+      expect(state.code).toBe(0);
+      expect((await s.workspace()).workspace.options).toEqual({ digits: 3, names: "source" });
+      expect(JSON.stringify(state.out)).toContain('"names":"source"');
+
+      const shown = await cli(s, "names", "shown");
+      expect(shown.code).toBe(0);
+      expect(shown.out.revision).toBe(2);
+      expect((await s.workspace()).workspace.options.names).toBe("shown");
+
+      // Usage error: exit 2, nothing sent.
+      const before = s.requests.length;
+      const bad = await cli(s, "names", "alias");
+      expect(bad.code).toBe(2);
+      expect(s.requests.length).toBe(before);
+      expect((await s.workspace()).workspace.options.names).toBe("shown");
+    });
+  });
+
+  // Spec signal-aliases "Add by logical name", "CLI bare name", "Not in this scope" (end to end).
+  describe("with a dictionary", () => {
+    const rules = {
+      ...NO_RULES,
+      aliases: new Map([
+        ["Fast_100h.SIG_A", "Velocity"],
+        ["ECM_1B0h.BOOST", "Boost"],
+      ]),
+    };
+
+    it("adds a signal by its logical name", async () => {
+      await withServer(
+        async (s) => {
+          await cli(s, "window", "create", "--from", "0", "--to", "10");
+          // SIG_A exists on two data refs: scope the workspace to testcar like the case does.
+          const scope = await cli(
+            s,
+            "scope",
+            "set",
+            "testcar",
+            "2026-10-01 03:00",
+            "2026-10-01 04:00",
+          );
+          expect(scope.code, scope.stderr.join("")).toBe(0);
+
+          const added = await cli(s, "signal", "add", "w1", "velocity");
+          expect(added.code, added.stderr.join("")).toBe(0);
+          expect(added.out.command).toEqual({
+            type: "window.addSignal",
+            windowId: "w1",
+            signalId: "testcar/Fast_100h.SIG_A",
+          });
+          // The workspace holds the source name, never the logical name.
+          const ws = await s.workspace();
+          const signalIds = window(ws, "w1").signals.map((a) => a.signalId);
+          expect(signalIds).toEqual(["testcar/Fast_100h.SIG_A"]);
+          expect(JSON.stringify(ws.workspace)).not.toContain("elocity");
+
+          // The source name's short form names the same signal: a duplicate in the same window.
+          const again = await cli(s, "signal", "add", "w1", "sig_a");
+          expect(again.code).toBe(1);
+          expect(window(await s.workspace(), "w1").signals).toHaveLength(1);
+        },
+        { rules },
+      );
+    });
+
+    it("lets a source name win over a logical name that equals it", async () => {
+      // The stub holds Sna_800h.SPEED, whose short name is "SPEED"; the dictionary also says Speed.
+      await withServer(
+        async (s) => {
+          await cli(s, "window", "create", "--from", "0", "--to", "10");
+          const scope = await cli(
+            s,
+            "scope",
+            "set",
+            "testcar",
+            "2026-10-01 03:00",
+            "2026-10-01 04:00",
+          );
+          expect(scope.code, scope.stderr.join("")).toBe(0);
+          const added = await cli(s, "signal", "add", "w1", "Speed");
+          expect(added.code, added.stderr.join("")).toBe(0);
+          expect(added.out.command.signalId).toBe("testcar/Sna_800h.SPEED");
+        },
+        { rules: { ...NO_RULES, aliases: new Map([["Fast_100h.SIG_A", "Speed"]]) } },
+      );
+    });
+
+    it("names the source name of an unavailable alias", async () => {
+      await withServer(
+        async (s) => {
+          await cli(s, "window", "create", "--from", "0", "--to", "10");
+          const before = await revisionOf(s);
+          const boost = await cli(s, "signal", "add", "w1", "Boost");
+          expect(boost.code).toBe(1);
+          expect(boost.out.error).toMatchObject({
+            code: "unknown_signal",
+            message: '"Boost" stands for ECM_1B0h.BOOST, which this scope has no signal for',
+          });
+          const nope = await cli(s, "signal", "add", "w1", "Nope");
+          expect(nope.code).toBe(1);
+          expect(nope.out.error).toMatchObject({
+            code: "unknown_signal",
+            message: 'no signal named "Nope"',
+          });
+          expect(await revisionOf(s)).toBe(before);
+        },
+        { rules },
+      );
     });
   });
 

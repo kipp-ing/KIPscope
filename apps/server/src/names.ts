@@ -17,12 +17,22 @@ export interface DisplayRules {
   rules: readonly DisplayRule[];
   /** Full source name (without data reference) → shown name; beats every rule. */
   rename: ReadonlyMap<string, string>;
+  /**
+   * Source name → logical name of the aliases file (add-signal-aliases D2); beats the rules, not
+   * a rename. Absent (the project file alone): none.
+   */
+  aliases?: ReadonlyMap<string, string>;
   /** Explorer group rules of `display.groups` (design G3), in file order. */
   groups: readonly GroupRule[];
 }
 
 /** No project file: every signal shows its full name and has no group. */
-export const NO_RULES: DisplayRules = { rules: [], rename: new Map(), groups: [] };
+export const NO_RULES: DisplayRules = {
+  rules: [],
+  rename: new Map(),
+  aliases: new Map(),
+  groups: [],
+};
 
 /** Replaces each placeholder with its group's text, `""` for a group that did not take part. */
 export function renderTemplate(
@@ -39,15 +49,20 @@ export interface DisplayResult {
   fellBack: string[];
 }
 
-/** How a name was made (design N4); `rule` keeps its collision render for N5 step 3. */
+/**
+ * How a name was made (design N4); `rule` keeps its collision render for N5 step 3, which an
+ * `alias` never takes (add-signal-aliases D2).
+ */
 type Assigned =
-  | { kind: "rename" | "none"; shown: string }
+  | { kind: "rename" | "alias" | "none"; shown: string }
   | { kind: "rule"; shown: string; collision: string };
 
-/** Shown name of one source name (design N4): rename, first matching rule, full name. */
+/** Shown name of one source name (design N4, add-signal-aliases D2): rename, alias, first matching rule, full name. */
 function assignOne(name: string, rules: DisplayRules): Assigned {
   const renamed = rules.rename.get(name);
   if (renamed !== undefined) return { kind: "rename", shown: renamed };
+  const alias = rules.aliases?.get(name);
+  if (alias !== undefined) return { kind: "alias", shown: alias };
   for (const rule of rules.rules) {
     const m = rule.match.exec(name);
     if (!m) continue;

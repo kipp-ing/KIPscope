@@ -73,6 +73,8 @@ export interface Config {
   queryTimeoutSeconds: number;
   /** Project file (D-035). Default `<repo root>/kipscope.yaml`, optional; `KIPSCOPE_PROJECT_FILE` overrides it and must exist. */
   projectFile: { path: string; required: boolean };
+  /** `KIPSCOPE_ALIASES_FILE`, absolute (add-signal-aliases D1); must exist when set; unset: no aliases. */
+  aliasesFile?: string;
   /** Views and the state file (design V4); `KIPSCOPE_STATE_DIR`, default `<repo root>/.kipscope`. */
   stateDir: string;
   /**
@@ -590,6 +592,7 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
   const projectFile = project
     ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }
     : { path: resolve(root, "kipscope.yaml"), required: false };
+  const aliases = env.KIPSCOPE_ALIASES_FILE;
   const identity = identityConfig(env);
   const origins = parseOrigins(env.KIPSCOPE_ORIGINS);
   if (identity.kind !== "none" && origins.length === 0)
@@ -636,6 +639,7 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
     ),
     queryTimeoutSeconds: positiveInt(env, "KIPSCOPE_QUERY_TIMEOUT_S", 30),
     projectFile,
+    ...(aliases ? { aliasesFile: isAbsolute(aliases) ? aliases : resolve(root, aliases) } : {}),
     stateDir: resolve(root, env.KIPSCOPE_STATE_DIR || ".kipscope"),
     catalogMode: catalogMode(env),
     scopePad: scopePad(env),

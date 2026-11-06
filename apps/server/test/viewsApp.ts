@@ -5,6 +5,7 @@ import type { Workspace } from "@kipscope/shared";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
 import type { DataSource, Scope, SignalRef } from "../src/datasource.ts";
+import type { DisplayRules } from "../src/names.ts";
 import { userViews, type ViewStore } from "../src/views.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 
@@ -68,6 +69,8 @@ export async function viewsApp(
     initial?: { revision: number; workspace: Workspace };
     /** Every scoped `listSignals` fails (the full list still loads). */
     failScopeList?: boolean;
+    /** Display rules and dictionary of the catalog (signal-aliases); none by default. */
+    rules?: DisplayRules;
   } = {},
 ): Promise<ViewsApp> {
   const listCalls: (Scope | undefined)[] = [];
@@ -77,7 +80,7 @@ export async function viewsApp(
   mkdirSync(viewsDir, { recursive: true });
   const viewsOf = userViews(stateDir);
   const views = viewsOf("local");
-  const catalog = new Catalog(source, async () => new Map());
+  const catalog = new Catalog(source, async () => new Map(), options.rules);
   if (options.loadCatalog !== false) await catalog.refresh();
   const store = new WorkspaceStore(
     {

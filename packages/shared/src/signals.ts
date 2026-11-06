@@ -1,4 +1,4 @@
-import type { WorkspaceScope } from "./workspace.ts";
+import type { NamesOption, WorkspaceScope } from "./workspace.ts";
 
 /** Where an SNA code is defined (D-010). */
 export type SnaSource = "GenSigSNA" | "VAL_";
@@ -109,9 +109,12 @@ export interface SignalInfo {
   computed?: { formula: string; unavailable?: string };
 }
 
-/** `displayName ?? name`. */
-export function shownName(s: Pick<SignalInfo, "name" | "displayName">): string {
-  return s.displayName ?? s.name;
+/** `source`: the source name; `shown` (default): `displayName ?? name` (signal-aliases D5). */
+export function shownName(
+  s: Pick<SignalInfo, "name" | "displayName">,
+  names: NamesOption = "shown",
+): string {
+  return names === "source" ? s.name : (s.displayName ?? s.name);
 }
 
 /** Group of signals without a group (D-053); always last. */
@@ -140,6 +143,11 @@ export interface SignalPage {
   total: number;
   /** True when matches exist beyond this page. */
   more: boolean;
+  /**
+   * The source name the query stands for when it equals a logical name whose source name this
+   * list has no signal for (signal-aliases D4); absent otherwise.
+   */
+  aliasOf?: string;
 }
 
 export function signalId(dataRef: string, name: string): string {

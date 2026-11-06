@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { type ViewDoc, type Workspace, workspaceToView } from "@kipscope/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { NO_RULES } from "../src/names.ts";
 import { type Client, grant, type MultiApp, multiApp, viewDoc } from "./identityApp.ts";
 import { codeOf, type ViewsApp, viewsApp } from "./viewsApp.ts";
 
@@ -46,7 +47,7 @@ function twoWindows(): { revision: number; workspace: Workspace } {
       linkTime: true,
       colors: { [RPM]: 0 },
       cursors: { diff: false },
-      options: { digits: 3 },
+      options: { digits: 3, names: "shown" },
     },
   };
 }
@@ -107,6 +108,47 @@ describe("views over HTTP", () => {
       title,
       modified: false,
     });
+  });
+
+  // Spec signal-aliases "Add by logical name": the view file holds the source name, never the logical name.
+  it("keeps source names in a saved view", async () => {
+    t = await viewsApp({
+      rules: { ...NO_RULES, aliases: new Map([["Fast_100h.SIG_A", "Speed"]]) },
+    });
+    expect(t.catalog.get("testcar/Fast_100h.SIG_A")).toMatchObject({
+      displayName: "Speed",
+      alias: "Speed",
+    });
+    t.store.execute({
+      type: "window.create",
+      title: "Drive",
+      from: T0_NS,
+      to: "1791896900000000000",
+    });
+    const added = t.store.execute({
+      type: "window.addSignal",
+      windowId: "w1",
+      signalId: "testcar/Fast_100h.SIG_A",
+    });
+    expect(added.ok).toBe(true);
+    // A logical name is no signal ID: the workspace refuses it.
+    const refused = t.store.execute({
+      type: "window.addSignal",
+      windowId: "w1",
+      signalId: "Speed",
+    });
+    expect(refused.ok).toBe(false);
+
+    const saved = await t.post("/api/views", { title: "Mine", name: "mine" });
+    expect(saved.status).toBe(200);
+    const text = readFileSync(join(t.viewsDir, "mine.yaml"), "utf8");
+    expect(text).toContain("testcar/Fast_100h.SIG_A");
+    expect(text).not.toContain("Speed");
+    const stored = parse(text, { schema: "core" }) as { windows: { signals: string[] }[] };
+    expect(stored.windows[0]?.signals).toEqual(["testcar/Fast_100h.SIG_A"]);
+    const ws = await t.get("/api/workspace");
+    expect(JSON.stringify(ws.body.workspace.windows)).toContain("testcar/Fast_100h.SIG_A");
+    expect(JSON.stringify(ws.body.workspace)).not.toContain("Speed");
   });
 
   it("saves a note and an explicit name", async () => {

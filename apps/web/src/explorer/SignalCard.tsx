@@ -111,6 +111,8 @@ export function SignalCard({
       <div className="signal-card-name">
         <Highlight text={signal.name} ranges={match.name} />
       </div>
+      {/* The logical name of the server's dictionary (signal-aliases, design D5); none without an entry. */}
+      {signal.alias && <div className="signal-card-alias">{signal.alias}</div>}
       {signal.description && (
         <div className="signal-card-description">
           <Highlight text={signal.description} ranges={match.description} />

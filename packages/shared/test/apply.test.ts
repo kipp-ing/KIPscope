@@ -843,15 +843,11 @@ describe("cursors and values windows (add-cursors)", () => {
 
 describe("user options (improve-navigation)", () => {
   it("sets the digits option and rejects other values", () => {
-    expect(EMPTY_WORKSPACE.options).toEqual({ digits: 3 });
+    expect(EMPTY_WORKSPACE.options).toEqual({ digits: 3, names: "shown" });
     const four = ok(EMPTY_WORKSPACE, { type: "workspace.setOptions", digits: 4 });
-    expect(four.workspace.options).toEqual({ digits: 4 });
+    expect(four.workspace.options).toEqual({ digits: 4, names: "shown" });
     const three = ok(four.workspace, { type: "workspace.setOptions", digits: 3 });
-    expect(three.workspace.options).toEqual({ digits: 3 });
-    // No fields: accepted, options unchanged.
-    expect(ok(four.workspace, { type: "workspace.setOptions" }).workspace.options).toEqual({
-      digits: 4,
-    });
+    expect(three.workspace.options).toEqual({ digits: 3, names: "shown" });
     // Other values fail the schema, as invalid_command does over HTTP.
     for (const digits of [5, 2, 0, "4", null]) {
       expect(
@@ -859,6 +855,31 @@ describe("user options (improve-navigation)", () => {
         String(digits),
       ).toBe(false);
     }
+  });
+
+  // Spec workspace-state "Set names".
+  it("sets the names option and rejects other values", () => {
+    const source = ok(EMPTY_WORKSPACE, { type: "workspace.setOptions", names: "source" });
+    expect(source.workspace.options).toEqual({ digits: 3, names: "source" });
+    // Setting one option leaves the other as it was.
+    const four = ok(source.workspace, { type: "workspace.setOptions", digits: 4 });
+    expect(four.workspace.options).toEqual({ digits: 4, names: "source" });
+    const shown = ok(four.workspace, { type: "workspace.setOptions", names: "shown" });
+    expect(shown.workspace.options).toEqual({ digits: 4, names: "shown" });
+    // Both in one command: one command, one application.
+    const both = ok(EMPTY_WORKSPACE, { type: "workspace.setOptions", digits: 4, names: "source" });
+    expect(both.workspace.options).toEqual({ digits: 4, names: "source" });
+    // Other values fail the schema, as invalid_command does over HTTP.
+    for (const names of ["alias", "Shown", "", 1, true, null]) {
+      expect(
+        Command.safeParse({ type: "workspace.setOptions", names }).success,
+        String(names),
+      ).toBe(false);
+    }
+    // One bad option rejects the whole command.
+    expect(
+      Command.safeParse({ type: "workspace.setOptions", digits: 4, names: "alias" }).success,
+    ).toBe(false);
   });
 
   it("rejects a 65th window with window_limit", () => {
@@ -1094,6 +1115,14 @@ describe("view.open and view.markSaved (add-saved-views)", () => {
       Command.parse({ type: "view.open", view, ...(name === undefined ? {} : { name }) }),
       viewCtx,
     );
+
+  // A view stores digits only; the names option stays the user's (signal-aliases).
+  it("keeps the names option when a view opens", () => {
+    const source = ok(EMPTY_WORKSPACE, { type: "workspace.setOptions", names: "source" });
+    const opened = open(source.workspace, { ...doc([]), digits: 4 });
+    expect(opened.ok).toBe(true);
+    if (opened.ok) expect(opened.workspace.options).toEqual({ digits: 4, names: "source" });
+  });
 
   it("opens a view with missing and skipped signals", () => {
     const view = doc([

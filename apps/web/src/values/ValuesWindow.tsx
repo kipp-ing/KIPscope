@@ -1,13 +1,13 @@
-import {
-  type CommandInput,
-  type CommandResult,
-  type CursorState,
-  type Digits,
-  type RenderError,
-  type SignalInfo,
-  shownName,
-  type ValuesMode,
-  type ValuesWindow as WindowState,
+import type {
+  CommandInput,
+  CommandResult,
+  CursorState,
+  Digits,
+  NamesOption,
+  RenderError,
+  SignalInfo,
+  ValuesMode,
+  ValuesWindow as WindowState,
 } from "@kipscope/shared";
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -17,6 +17,7 @@ import { fetchCursorValue } from "../api.ts";
 import type { DragSource, DropState } from "../chart/drag.ts";
 import { LIVE_REST_MS, useLiveCursor } from "../chart/live.ts";
 import { useScopeChange } from "../chart/rescope.ts";
+import { otherName, shownAs } from "../explorer/format.ts";
 import { HINTS } from "../help/hints.ts";
 import { WindowMenu } from "../window/WindowMenu.tsx";
 import { markFromHeader, WindowTitle } from "../window/WindowTitle.tsx";
@@ -91,6 +92,8 @@ interface Props {
   dragging: boolean;
   /** Significant digits of the values (workspace option, number-format). */
   digits: Digits;
+  /** Which name the rows show (workspace option, signal-aliases D5). */
+  names: NamesOption;
   info: (signalId: string) => SignalInfo | undefined;
   colorOf: (signalId: string) => string;
   onCommand: (command: CommandInput) => Promise<CommandResult>;
@@ -191,6 +194,7 @@ export function ValuesWindow({
   cursors,
   dragging,
   digits,
+  names,
   info,
   colorOf,
   onCommand,
@@ -365,7 +369,8 @@ export function ValuesWindow({
           <tbody>
             {w.signals.map((s) => {
               const meta = info(s.signalId);
-              const name = meta ? shownName(meta) : s.signalId;
+              const name = meta ? shownAs(meta, names) : s.signalId;
+              const other = meta && otherName(meta, names);
               const keyA = `${s.id}|a`;
               const keyB = `${s.id}|b`;
               const keyL = `${s.id}|l`;
@@ -409,7 +414,7 @@ export function ValuesWindow({
                           has the whole name. */}
                       <span
                         className="sig"
-                        title={meta?.displayName !== undefined ? `${name}\n${meta.name}` : name}
+                        title={other !== undefined && other !== name ? `${name}\n${other}` : name}
                       >
                         {name}
                       </span>

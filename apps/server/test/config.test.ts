@@ -176,6 +176,20 @@ describe("loadConfig", () => {
     ).toEqual({ path: "/repo/kipscope/kipscope.yaml", required: false });
   });
 
+  it("reads the aliases file path", () => {
+    // KIPSCOPE_ALIASES_FILE (signal-aliases D1): none by default, else resolved like the project file.
+    expect(loadConfig(base, "/repo/kipscope").aliasesFile).toBeUndefined();
+    expect(
+      loadConfig({ ...base, KIPSCOPE_ALIASES_FILE: "conf/a.json" }, "/repo/kipscope").aliasesFile,
+    ).toBe("/repo/kipscope/conf/a.json");
+    expect(
+      loadConfig({ ...base, KIPSCOPE_ALIASES_FILE: "/abs/a.json" }, "/repo/kipscope").aliasesFile,
+    ).toBe("/abs/a.json");
+    expect(
+      loadConfig({ ...base, KIPSCOPE_ALIASES_FILE: "" }, "/repo/kipscope").aliasesFile,
+    ).toBeUndefined();
+  });
+
   it("selects the source", () => {
     // No KIPSCOPE_SOURCE: ClickHouse with today's variables and defaults.
     const clickhouse = loadConfig(

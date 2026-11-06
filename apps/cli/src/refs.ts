@@ -39,14 +39,25 @@ export async function resolveTime(arg: TimeArg, l: Lookups): Promise<bigint> {
   return t;
 }
 
-/** Full ID unchanged; a bare name through the search (unknown_signal | ambiguous_signal). */
+/**
+ * Full ID unchanged; a bare name through the search (unknown_signal | ambiguous_signal). A source
+ * name match wins; only without one does the logical name (`alias`, whole text) count (design D4).
+ */
 export async function resolveSignal(arg: SignalArg, l: Lookups): Promise<string> {
   if (arg.kind === "id") return arg.id;
   const page = await l.search(arg.name, NAME_LIMIT);
-  const ids = page.items.filter((s) => nameMatches(s.name, arg.name)).map((s) => s.id);
+  const lower = arg.name.toLowerCase();
+  let ids = page.items.filter((s) => nameMatches(s.name, arg.name)).map((s) => s.id);
+  if (ids.length === 0) {
+    ids = page.items.filter((s) => s.alias?.toLowerCase() === lower).map((s) => s.id);
+  }
   if (ids.length === 1) return ids[0] as string;
   if (ids.length === 0) {
-    throw new CliError("rejected", "unknown_signal", `no signal named "${arg.name}"`);
+    const message =
+      page.aliasOf === undefined
+        ? `no signal named "${arg.name}"`
+        : `"${arg.name}" stands for ${page.aliasOf}, which this scope has no signal for`;
+    throw new CliError("rejected", "unknown_signal", message);
   }
   const candidates = ids.sort();
   throw new CliError(

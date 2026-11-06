@@ -64,6 +64,12 @@ export const signalRoutes =
         return refused ? tooWide(reply, refused) : catalogUnavailable(reply, catalog);
       }
       const page: SignalPage = catalog.search(query.q, query.offset, query.limit);
+      // A logical name whose source name the visible list lacks (add-signal-aliases D4), even when
+      // other signals match by substring: the caller learns what it stands for; the grant guard
+      // stays, a hidden signal counts as absent.
+      const source = deps.catalog.aliasSource(query.q.trim());
+      if (source !== undefined && !catalog.all().some((s) => s.name === source))
+        page.aliasOf = source;
       return page;
     });
 

@@ -173,7 +173,7 @@ export function openCase(input: OpenCaseInput): { workspace: Workspace; missing:
     linkTime: true,
     colors: {},
     cursors: { diff: false },
-    options: { digits: 3 as const },
+    options: { digits: 3 as const, names: "shown" as const },
   };
   const shift = (t: string) =>
     input.layoutAlignAt === undefined ? t : add(sub(t, input.layoutAlignAt), input.alignAt);

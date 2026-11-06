@@ -6,8 +6,8 @@ KIPscope shows recorded vehicle data over time: CAN signals and diagnostic data 
 
 The screen, from left to right and top to bottom:
 
-- **Signal list**, with the tabs Signals and Events and their counts, 248 px wide (208 px below 1200 px); a cut name shows whole in its tooltip. The sidebar icon at the start of the top row, or `s`, hides or shows it.
-- **Top row**: the sidebar icon, Views, the range button, the icons Back, Reset and Link time axes, the toggles A, B and Diff, then at the end Share…, ⋯ (More: Digits and + Values window) and `?` for help. The range button shows the time range on screen and opens the range picker. Icons name themselves in their tooltips; a toggle that is on is blue. On a narrow screen the Views label becomes an icon, nothing moves into ⋯, and Help (`?`) stays last.
+- **Signal list**, with the tabs Signals and Events and their counts; a cut name shows whole in its tooltip. The sidebar icon at the start of the top row, or `s`, hides or shows it.
+- **Top row**: the sidebar icon, Views, the range button, the icons Back, Reset and Link time axes, the toggles A, B and Diff, then at the end Share…, ⋯ (More: Digits, Names and + Values window) and `?` for help. Icons name themselves in their tooltips; a toggle that is on is blue. On a narrow screen the Views label becomes an icon, nothing moves into ⋯, and Help (`?`) stays last.
 - **Context row**, only with a session list or a scope: the session bar, or the scope with Widen and Clear.
 - **Time strip**: the whole recording in one row: a line where data exists, drives, event pins, the shown range and the cursor flags.
 - **Windows**: signals over time, or a table of values, in two columns on a wide screen.
@@ -21,6 +21,8 @@ Press `/` and type; every word must match the name, short name, description or u
 
 A row shows the short name, unit and an SNA marker; its tooltip is the full DBC name (VEH_200h.VehSpeed). Hover it, or move there with `↑` and `↓`, for a card with its DBC and catalog data and the windows showing it. `Esc` clears the search.
 
+**Logical names:** a server can map logical names such as `Speed` to full names, the same on every vehicle (setup: `docs/data-sources.md`). The list, legends and axes show them; search, formulas and the CLI take them. **Names** in ⋯ switches between `shown` (the default) and `source` (full names); `kipscope names` does the same.
+
 **Favourites:** the ☆ at a row's left edge or `Ctrl/Cmd+D` stars the row or the selection; again unstars.
 
 Stars show in **★ Favourites** atop the list on every vehicle and session; `kipscope fav` changes them from a shell.
@@ -33,9 +35,9 @@ Quote names with spaces: `abs("DNMOT − PNHV_SupBat_Curr")` uses that computed 
 
 **Where an added signal goes:** `+` on a row, or `Enter`, adds the signal to the **Add to target**: the window you last clicked. Any click inside a window marks it with a blue frame and an "Add to" pill after its title. While no window is marked, the target is a new window. The "Add to" select above the list shows the target; choose New window there to stop adding to the marked one.
 
-A window made by an add does not become the target: the next add makes another new window unless you click it first. After each add, the receiving window scrolls into view and flashes briefly.
+A window made by an add does not become the target until you click it. The receiving window scrolls into view and flashes.
 
-Or drag a row onto a window. During a drag the status strip and the free space below the last window turn into "+ New window"; drop there for a new window. `Esc` cancels a drag. Dropping a row on the time strip does not chart it; it marks the state changes of a signal with states (see Events).
+Or drag a row onto a window. During a drag, the free space below the last window and the status strip become "+ New window". `Esc` cancels a drag. Dropping a row on the time strip does not chart it; it marks the state changes of a signal with states (see Events).
 
 For several signals, select rows with `Ctrl/Cmd+click` or `Shift+click`, then press `+` or drag the selection. A timeseries window holds at most four units; the rest flows into the next window with room, then into new windows.
 
@@ -45,7 +47,7 @@ Drag a legend row onto another window to move the signal; hold Alt or Ctrl while
 
 A timeseries window holds up to four units, with one y axis per unit. Signals with the same unit share an axis, so the 93 cell voltages in V compare on one scale.
 
-**Link time axes**, the link icon after Reset, decides whether windows share one time range. On (the default, the icon pressed), zooming or panning one window moves all windows, and the range button shows the one range. Off, each window keeps its own range and shows it small in its header, and the range button, Back and Reset act on the window you zoomed last; their tooltips name it.
+**Link time axes**, the link icon after Reset, decides whether windows share one time range. On (the default), zooming or panning one window moves all. Off, each window keeps its own range, shown in its header, and the range button, Back and Reset act on the window you zoomed last.
 
 For many signals at one moment, use **+ Values window** in the ⋯ menu: a table with one row per signal and its value at A, at B, with Diff on the difference, and at L. Add signals to it as to any window.
 
@@ -53,9 +55,9 @@ For many signals at one moment, use **+ Values window** in the ⋯ menu: a table
 
 Click in a plot to set **cursor A**; `Shift+click` sets **cursor B**. A plain second click moves A again. Both cursors mark the same time in every window. Drag a line to move it. The A and B toggles in the top row switch them on and off.
 
-Each legend row shows the signal's exact value at A and at B, read from the recording at any zoom. The legend's header row heads these columns with the cursor times, such as `A 07:44:22.950`; with Diff on, the Δ column's header shows Δt. **Diff** adds Δ, the value at B minus the value at A, and Δt, the time from A to B, which also shows between the flags at the top of the plot.
+Each legend row shows the signal's exact value at A and at B at any zoom, under headers with the cursor times such as `A 07:44:22.950`. **Diff** adds Δ, the value at B minus the value at A, and Δt, the time from A to B, shown in the Δ header and between the flags.
 
-The column **L** follows the pointer: it shows each value under the pointer, a thin L line marks that time in the other windows, and the signal nearest the pointer is highlighted.
+The column **L** shows each value under the pointer; a thin L line marks that time in the other windows, and the nearest signal is highlighted.
 
 Signals with states show the state name: Gear reads `P`, `R`, `N` or `D`. For states, Δ shows `=` or `≠`.
 
@@ -73,7 +75,7 @@ On the time strip, one row from the recording's start to its end:
 - Click a drive (a dark segment on the line) to fit it; `,` and `.` step between drives.
 - Click the **flag** A or B, or press `Shift+A` or `Shift+B`, to centre the view on that cursor, keeping the span. Close cursors share one `A·B` flag that centres on both; a cursor beyond the strip's end shows its flag there with ◂ or ▸.
 
-The **range button** in the top row reads the range on screen as start and duration: `26-10-13 15:06` and, after the stopwatch, `0:12 h`, `41 s` or, from two days, `9 d 11 h`. Hovering the start shows its full date (`Tue 2026-10-13 15:06`), hovering the duration its words. Click it or press `t` to open the **range picker**:
+The **range button** in the top row reads the range on screen as start and duration, such as `26-10-13 15:06` and `0:12 h`; hover either for the full date or words. Click it or press `t` to open the **range picker**:
 
 - **Go to** at the top takes a time or range: `15:08`, `15:07 .. 15:09`, `2026-10-13 15:15:30 +30s`, `1h` around the anchor, `+30min` to pan, `a` to centre on cursor A. A time without a date takes the date the view shows. `Enter` goes there and closes the picker; text it cannot read stays with the reason below.
 - The **calendar** shows two months. Under each day, small bars show how much was recorded in each two hours, dark where a drive ran; days without data are greyed out. Click a start day, then an end day; ‹ and › page to months with data. By keyboard: `Tab` to the days, arrows move a day or a week, `PageUp`/`PageDown` a month, `Enter` picks.
@@ -113,7 +115,7 @@ With `Read`, the pill `Read-only` shows and changes are refused; "Copy link (own
 
 Events are faults (diagnostic trouble codes), state changes and logger errors. They show as pins on the time strip and as lines in the plots, with a glyph above the plot; hover one for its time, source and text. A click on a pin centres the view on it; a click on a glyph sets cursor A there. Strip pins by kind: an active fault a red tick with a head, a stored fault or a read a hollow mark, a change a violet block, else a grey dot.
 
-The count on the Events tab, such as `Events 13`, means 13 events pass the filter in the whole recording, not only in the time shown; its tooltip adds the total, such as 669 in the recording.
+The count on the Events tab, such as `Events 13`, counts the events that pass the filter in the whole recording; its tooltip adds the total.
 
 The Events tab (`e`) has the filter, presets such as Faults or Changes, and under Refine the field and chips per category and ECU; then the list. A click on an event puts cursor A on it (`Shift+click`: B) and centres the view only when the event lies outside it. Filter words include `faults`, `changes`, `active`, `logger`, `ecu:BMS` and any text; a leading `-` excludes. The default is `active changes`.
 

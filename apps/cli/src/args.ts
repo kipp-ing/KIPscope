@@ -88,6 +88,7 @@ Commands (each sends one command to the open workspace):
   cursor remove a|b
   diff on|off
   digits 3|4                       (significant digits of values in the UI)
+  names shown|source               (signals show the logical or rule-made name, or the source name)
   measurement name TEXT            ("" clears the name)
   measurement object TEXT          (vehicle or device under test; "" clears it)
   measurement meta KEY VALUE       ("" removes the entry)
@@ -592,6 +593,14 @@ function invocation(pos: string[], opts: Map<string, string | true>, server: str
       const digits = arg(0);
       if (digits !== "3" && digits !== "4") usage(`digits must be 3|4, got "${digits}"`);
       return command({ type: "workspace.setOptions", digits: Number(digits) });
+    }
+    case "names": {
+      take(1);
+      const names = arg(0);
+      if (names !== "shown" && names !== "source") {
+        usage(`names must be shown|source, got "${names}"`);
+      }
+      return command({ type: "workspace.setOptions", names });
     }
     case "measurement name":
       take(1);

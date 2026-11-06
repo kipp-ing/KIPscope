@@ -322,6 +322,90 @@ describe("formula names resolve", () => {
     expect(resolveName("MODE", list)).toMatchObject({ ok: false, reason: "states" });
   });
 
+  // Spec signal-aliases "Formula": a logical name is accepted, the stored text is canonical.
+  describe("logical names", () => {
+    const aliased: FormulaNames = {
+      signals: [
+        { name: "ICL_3A2h.SPEED_DISP", unit: "km/h", states: false, alias: "Speed" },
+        { name: "Sna_800h.RPM", unit: "rpm", states: false, alias: "Revs" },
+        { name: "Eng_1h.TEMP", states: false },
+        { name: "Bat_2h.TEMP", states: false },
+        { name: "Ign_1h.MODE", states: true, alias: "Ignition" },
+      ],
+      computed: [],
+    };
+
+    it("resolves a logical name to the canonical name", () => {
+      expect(resolveFormula("Speed * 3.6", aliased)).toMatchObject({
+        ok: true,
+        formula: "ICL_3A2h.SPEED_DISP * 3.6",
+      });
+      // Ignoring case, like the other names.
+      expect(resolveFormula("speed*3.6 + REVS", aliased)).toMatchObject({
+        ok: true,
+        formula: "ICL_3A2h.SPEED_DISP * 3.6 + Sna_800h.RPM",
+      });
+      expect(resolveName("revs", aliased)).toEqual({
+        ok: true,
+        kind: "signal",
+        name: "Sna_800h.RPM",
+      });
+      // The source and short names still resolve.
+      expect(resolveName("speed_disp", aliased)).toEqual({
+        ok: true,
+        kind: "signal",
+        name: "ICL_3A2h.SPEED_DISP",
+      });
+      expect(resolveName("ICL_3A2h.SPEED_DISP", aliased)).toMatchObject({ ok: true });
+      // An unknown name stays unknown.
+      expect(resolveName("Boost", aliased)).toMatchObject({ ok: false, reason: "unknown" });
+    });
+
+    it("keeps the states refusal for a logical name of a state signal", () => {
+      expect(resolveName("Ignition", aliased)).toEqual({
+        ok: false,
+        reason: "states",
+        candidates: ["Ign_1h.MODE"],
+      });
+    });
+
+    it("resolves an alias that equals a source name to the source name", () => {
+      // "Eng_1h.TEMP" is also a source name of another signal: the source name wins, exact and ignoring case.
+      const clash: FormulaNames = {
+        signals: [
+          { name: "Sna_800h.RPM", states: false, alias: "Eng_1h.TEMP" },
+          { name: "Eng_1h.TEMP", states: false },
+        ],
+        computed: [],
+      };
+      expect(resolveName("Eng_1h.TEMP", clash)).toEqual({
+        ok: true,
+        kind: "signal",
+        name: "Eng_1h.TEMP",
+      });
+      expect(resolveFormula("eng_1h.temp + 1", clash)).toMatchObject({
+        ok: true,
+        formula: "Eng_1h.TEMP + 1",
+      });
+    });
+
+    it("lists the canonical names when a logical name is ambiguous", () => {
+      const twins: FormulaNames = {
+        signals: [
+          { name: "B_1h.X", states: false, alias: "Same" },
+          { name: "A_1h.Same", states: false },
+        ],
+        computed: [],
+      };
+      // "Same" is a short name of A_1h.Same and the alias of B_1h.X (no full name equals it).
+      expect(resolveName("same", twins)).toEqual({
+        ok: false,
+        reason: "ambiguous",
+        candidates: ["A_1h.Same", "B_1h.X"],
+      });
+    });
+  });
+
   it("lists at most five ambiguous candidates", () => {
     const many: FormulaNames = {
       signals: ["G", "F", "E", "D", "C", "B", "A"].map((p) => ({

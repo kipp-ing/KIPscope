@@ -1,10 +1,30 @@
 import {
   type Digits,
   formatQuantity,
+  type NamesOption,
   type SignalInfo,
+  shownName,
   type WorkspaceWindow,
   windowTitle,
 } from "@kipscope/shared";
+
+type Named = Pick<SignalInfo, "name" | "displayName" | "computed">;
+
+/**
+ * `shownName(s, names)` (signal-aliases D5); a computed signal always by its own name, as its
+ * source name is `=<id>`.
+ */
+export function shownAs(s: Named, names: NamesOption): string {
+  return s.computed ? shownName(s) : shownName(s, names);
+}
+
+/**
+ * The name a tooltip names beside `shownAs(s, names)` (signal-aliases D5): the full source name
+ * under "shown", the shown name under "source"; the same name when the signal has only one.
+ */
+export function otherName(s: Named, names: NamesOption): string {
+  return shownAs(s, names === "source" ? "shown" : "source");
+}
 
 /** Rest time on a row (pointer or keyboard) before its card opens (design E7). */
 export const HOVER_DELAY_MS = 350;

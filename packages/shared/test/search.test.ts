@@ -26,6 +26,20 @@ describe("searchSignals", () => {
     expect(names(catalog, "nothing")).toEqual([]);
   });
 
+  // Spec signal-aliases "Card, tooltip, search": found by either name, whatever the option says.
+  it("finds a signal by its alias", () => {
+    const catalog = [
+      sig("c", "ICL_3A2h.SPEED_DISP", { displayName: "Speed", alias: "Speed" }),
+      sig("c", "STR_0D4h.STEER_CHKSUM"),
+    ];
+    expect(names(catalog, "speed")).toEqual(["ICL_3A2h.SPEED_DISP"]);
+    expect(names(catalog, "icl_3a2")).toEqual(["ICL_3A2h.SPEED_DISP"]);
+    // The alias alone, without a displayName, still matches (tier 3).
+    const aliasOnly = [sig("c", "ICL_3A2h.SPEED_DISP", { alias: "Velocity" })];
+    expect(search(aliasOnly, "velocity")[0]?.tier).toBe(3);
+    expect(names(aliasOnly, "velo")).toEqual(["ICL_3A2h.SPEED_DISP"]);
+  });
+
   it("requires every term to match", () => {
     const catalog = [
       sig("c", "Engine.MOT_X", { description: "temp of something" }),

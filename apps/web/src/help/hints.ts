@@ -59,6 +59,8 @@ export const HINTS = {
   reset: (linked: Linked, title?: string) =>
     `Reset: show all data of every signal in ${one(linked, title) ? title : "all windows"} · Home`,
   digits: "Digits: significant digits of all values (3 or 4)",
+  names:
+    "Names: shown (logical or short name) or source (full source name); the tooltip has the other",
   valuesWindow:
     "+ Values window: a table of values at cursors A and B; add signals as to any window",
   help: "Help: manual and keyboard shortcuts · ?",

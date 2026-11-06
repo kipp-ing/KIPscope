@@ -284,6 +284,27 @@ Migration from one database to several:
 2. For two or more databases: every ref is renamed (`car1` → `prod:car1`). Change the finder's `KIPSCOPE_CASE_DATAREF` to `<database>:{object}`, grant the qualified refs and re-save views that used bare refs.
 3. Rollback: set one database again; refs are bare again, and qualified views are refused with `unknown_database`.
 
+## Signal aliases
+
+The system that starts the server can hand it a dictionary of logical signal names, so users type, search and read the same names on every vehicle, whatever the source calls a signal. Spec: [signal-aliases](../openspec/specs/signal-aliases/spec.md); decision D-122 in [decisions.md](decisions.md).
+
+```sh
+KIPSCOPE_ALIASES_FILE=conf/aliases.json
+```
+
+```json
+{
+  "Speed": "ICL_3A2h.SPEED_DISP",
+  "Revs": "Sna_800h.RPM"
+}
+```
+
+- **File.** One UTF-8 JSON object, logical name → source name. The source name is the signal's name without its data ref (`ICL_3A2h.SPEED_DISP`, never `smart451/ICL_3A2h.SPEED_DISP` or `prod:car1/…`). A relative path resolves against the repo root. Without the variable there are no aliases. The server reads the file once at start; an edit takes effect on restart only.
+- **Checks at start.** A named file that does not exist stops the server (`<path>: file not found`). So does a file that is not a JSON object of strings, naming the file and the key: a blank or padded logical name, one longer than 256 characters or with a control character, a blank source name, a value that is no string. Three rules keep input unambiguous, each naming both entries: no two logical names for one source name, no two logical names that differ only in letter case, and no logical name that is the source name of another entry. An entry whose logical name equals its own source name is accepted and has no effect. An entry whose source name no catalog holds is no error (scopes differ; in `scoped` mode no catalog loads at start). The start log names the number of aliases.
+- **One dictionary per server.** It holds for every data ref and, with several databases, every database: an entry applies to every signal of that source name.
+- **What it changes.** A signal with an entry shows the logical name as its shown name, unless `display.rename` in the project file names it; the logical name beats the name rules. A shown name that two signals would share falls back to full names, and the start log lists it. The catalog entry carries the logical name as `alias`; the search, the CLI's bare names and the formula editor accept it like the source name, and a source name equal to the text wins. Users switch between shown and source names in the "⋯" menu or with `kipscope names shown|source` ([manual.md](manual.md#find-a-signal)).
+- **What it does not change.** Signal IDs, workspaces, views, links and grants stay on `<data ref>/<source name>`; a logical name is never stored. Removing or renaming an entry and restarting leaves every stored workspace and view valid. Rollback: unset the variable and restart.
+
 ## All variables
 
 Every variable `apps/server/src/config.ts` reads. The server reads them from the environment or `.env` (see `.env.example`); nothing reaches the browser. Table and column names must match `^[A-Za-z_][A-Za-z0-9_]*$`.
@@ -326,6 +347,7 @@ Server settings, independent of the source:
 | `KIPSCOPE_DBC_FILES` | smart451 `h-can.dbc`, `hybrid-can.dbc` | comma list, relative to the repo root |
 | `KIPSCOPE_DIAG_CATALOGS` | smart451 `bms-live.manifest.json` | comma list, relative to the repo root |
 | `KIPSCOPE_PROJECT_FILE` | `kipscope.yaml` (optional) | must exist when set |
+| `KIPSCOPE_ALIASES_FILE` | unset (no aliases) | JSON dictionary of logical signal names (section "Signal aliases"), relative to the repo root; must exist when set; a file that fails the checks stops the server |
 | `KIPSCOPE_STATE_DIR` | `.kipscope` | workspace state and saved views |
 | `KIPSCOPE_CATALOG` | `scoped` | `scoped` (a signal list per scope only, section "Scope") or `full` (catalog of all data refs at start; small sources only); any other value stops the server |
 | `KIPSCOPE_SCAN_ROWS` | `150000000` | positive integer: the most rows one range may hold before a scan of it (scan bound, section "Scope"); above it the request answers 422 `too_wide` |

@@ -480,6 +480,12 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The logical name under the source name (signal-aliases, design D5). */
+.signal-card-alias {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .signal-card-description {
   margin-top: 2px;
   color: var(--muted);

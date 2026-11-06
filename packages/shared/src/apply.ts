@@ -518,7 +518,8 @@ function openView(
       ...(cursors.b !== undefined && { b: ns(cursors.b) }),
       diff: cursors.diff,
     },
-    options: { digits: doc.digits },
+    // A view stores digits only; the names option stays the user's (signal-aliases).
+    options: { digits: doc.digits, names: state.options.names },
   };
   workspace = withMeasurement(workspace, doc.measurement ?? {});
   workspace = withComputedDefs(workspace, computed);
@@ -898,6 +899,7 @@ function applyOne(state: Workspace, command: Command, catalog: ApplyContext): Ap
     case "workspace.setOptions": {
       const options = { ...state.options };
       if (command.digits !== undefined) options.digits = command.digits;
+      if (command.names !== undefined) options.names = command.names;
       return { ok: true, workspace: { ...state, options } };
     }
 

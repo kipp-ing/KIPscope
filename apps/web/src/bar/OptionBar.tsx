@@ -4,6 +4,7 @@ import {
   type CursorName,
   type Digits,
   type Me,
+  type NamesOption,
   type TimeseriesWindow,
   type Workspace,
   type WorkspaceSummary,
@@ -352,11 +353,73 @@ export function DigitsControl({
   );
 }
 
+const NAME_CHOICES: readonly NamesOption[] = ["shown", "source"];
+
+/** The names an arrow key on the Names group chooses, as digitsByKey: ArrowRight/ArrowDown →
+ *  source, ArrowLeft/ArrowUp → shown; no wrap. */
+export function namesByKey(key: string): NamesOption | undefined {
+  if (key === "ArrowRight" || key === "ArrowDown") return "source";
+  if (key === "ArrowLeft" || key === "ArrowUp") return "shown";
+  return undefined;
+}
+
+/**
+ * Names as a segmented control in the "⋯" menu (signal-aliases D5), built as DigitsControl (D-112):
+ * real buttons, roving tabindex, the arrows move focus and send the option when it differs.
+ */
+export function NamesControl({
+  names,
+  onCommand,
+}: {
+  names: NamesOption;
+  onCommand: (command: CommandInput) => Promise<CommandResult>;
+}) {
+  const group = useRef<HTMLDivElement>(null);
+  const choose = (next: NamesOption) => {
+    group.current?.querySelectorAll("button")[NAME_CHOICES.indexOf(next)]?.focus();
+    if (next !== names) void onCommand({ type: "workspace.setOptions", names: next });
+  };
+  return (
+    <div
+      ref={group}
+      className="digits-toggle"
+      role="radiogroup"
+      aria-label="Names"
+      title={HINTS.names}
+      onKeyDown={(e) => {
+        const next = namesByKey(e.key);
+        if (next === undefined) return;
+        e.preventDefault();
+        e.stopPropagation();
+        choose(next);
+      }}
+    >
+      <span className="digits-label" aria-hidden="true">
+        NAMES
+      </span>
+      {NAME_CHOICES.map((n) => (
+        // biome-ignore lint/a11y/useSemanticElements: a segmented control of buttons, as Digits
+        <button
+          key={n}
+          type="button"
+          role="radio"
+          className="toggle"
+          aria-checked={n === names}
+          tabIndex={n === names ? 0 : -1}
+          onClick={() => choose(n)}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Sticky bar above the windows (D-023, design DW8): Views with the open view's title and the
  * Read-only pill (add-multiuser M12) | the range control (add-range-picker) | Back, Reset and the
  * "Link time axes" toggle as icon buttons | A, B, Diff as toggles, then at the row's end Share… (at
- * every width, D-095) and "⋯" (Digits, "+ Values window"); App's "?" follows "⋯".
+ * every width, D-095) and "⋯" (Digits, Names, "+ Values window"); App's "?" follows "⋯".
  */
 export function OptionBar({
   workspace,
@@ -384,6 +447,7 @@ export function OptionBar({
 }: OptionBarProps) {
   const { cursors, linkTime } = workspace;
   const digits = workspace.options?.digits ?? 3;
+  const names = workspace.options?.names ?? "shown";
   const toggleCursor = (cursor: CursorName, on: boolean) => {
     if (!on) {
       void onCommand({ type: "cursor.remove", cursor });
@@ -416,7 +480,7 @@ export function OptionBar({
   // While unlinked, the bar's navigation acts on one window; the tooltip names it (design C5).
   const targetTitle = target ? windowTitle(target) : undefined;
 
-  // Digits and "+ Values window" live in the "⋯" menu only (D-092 (7)); Share… stays in the row at
+  // Digits, Names and "+ Values window" live in the "⋯" menu only (D-092 (7)); Share… stays in the row at
   // every width (D-095).
   const newValuesButton = (after: () => void) => (
     <button
@@ -513,6 +577,7 @@ export function OptionBar({
         {(close) => (
           <>
             <DigitsControl digits={digits} onCommand={onCommand} />
+            <NamesControl names={names} onCommand={onCommand} />
             {newValuesButton(() => close(true))}
           </>
         )}

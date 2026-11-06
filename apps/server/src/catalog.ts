@@ -61,6 +61,8 @@ export class Catalog {
   private readonly loadMetadata: LoadMetadata;
   private readonly loadDiag: LoadDiag;
   private readonly rules: DisplayRules;
+  /** Logical name in lower case → source name, from `rules.aliases`. */
+  private readonly byLogical: ReadonlyMap<string, string>;
   private readonly log: CatalogLog | undefined;
   /** The scope whose signals this catalog lists; undefined for the full catalog. */
   readonly scope: Scope | undefined;
@@ -82,7 +84,15 @@ export class Catalog {
     this.loadMetadata = loadMetadata;
     this.loadDiag = loadDiag;
     this.rules = rules;
+    this.byLogical = new Map(
+      [...(rules.aliases ?? [])].map(([source, l]) => [l.toLowerCase(), source]),
+    );
     this.log = log;
+  }
+
+  /** The source name a logical name stands for, ignoring case (add-signal-aliases D4); else undefined. */
+  aliasSource(query: string): string | undefined {
+    return this.byLogical.get(query.toLowerCase());
   }
 
   /**
@@ -158,6 +168,9 @@ export class Catalog {
     for (const info of entries) {
       const name = shown.get(info.name);
       if (name !== undefined && name !== info.name) info.displayName = name;
+      // The logical name (add-signal-aliases D2); no DBC or diag source sets `alias`.
+      const alias = this.rules.aliases?.get(info.name);
+      if (alias !== undefined) info.alias = alias;
       // Group (design G5): per entry; DBC metadata is keyed by name, so every data reference agrees
       // (unlike the table unit, which is per data ref).
       const sender = metadata.get(info.name)?.sender;

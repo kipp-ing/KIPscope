@@ -265,17 +265,35 @@ describe("cursor commands over HTTP", () => {
 
   it("applies the options command over HTTP", async () => {
     const before = (await state()).revision;
-    expect((await state()).workspace.options).toEqual({ digits: 3 });
+    expect((await state()).workspace.options).toEqual({ digits: 3, names: "shown" });
     const set = await command({ type: "workspace.setOptions", digits: 4 });
     expect(set.body).toEqual({ ok: true, revision: before + 1 });
-    expect((await state()).workspace.options).toEqual({ digits: 4 });
+    expect((await state()).workspace.options).toEqual({ digits: 4, names: "shown" });
     // Other values are rejected and change nothing.
     const bad = await command({ type: "workspace.setOptions", digits: 5 });
     expect(bad.status).toBe(400);
     expect(bad.body).toMatchObject({ ok: false, code: "invalid_command" });
     const after = await state();
     expect(after.revision).toBe(before + 1);
-    expect(after.workspace.options).toEqual({ digits: 4 });
+    expect(after.workspace.options).toEqual({ digits: 4, names: "shown" });
+  });
+
+  // Spec workspace-state "Set names".
+  it("applies the names option over HTTP", async () => {
+    const before = (await state()).revision;
+    const set = await command({ type: "workspace.setOptions", names: "source" });
+    expect(set.body).toEqual({ ok: true, revision: before + 1 });
+    expect((await state()).workspace.options.names).toBe("source");
+    const bad = await command({ type: "workspace.setOptions", names: "alias" });
+    expect(bad.status).toBe(400);
+    expect(bad.body).toMatchObject({ ok: false, code: "invalid_command" });
+    const after = await state();
+    expect(after.revision).toBe(before + 1);
+    expect(after.workspace.options.names).toBe("source");
+    // Digits and names set in one command count as one revision.
+    const both = await command({ type: "workspace.setOptions", digits: 3, names: "shown" });
+    expect(both.body).toEqual({ ok: true, revision: before + 2 });
+    expect((await state()).workspace.options).toEqual({ digits: 3, names: "shown" });
   });
 });
 
