@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
+import { loadConfig } from "../src/config.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { userFavourites } from "../src/favourites.ts";
 import { ViewStore } from "../src/views.ts";
@@ -45,6 +47,87 @@ describe("documents", () => {
     expect(missingInGuide, "missing in docs/data-sources.md").toEqual([]);
     expect(missingInDeploy, "missing in docs/deploy.md").toEqual([]);
     expect(missingInExample, "missing in .env.example").toEqual([]);
+  });
+
+  it("documents the ADX database variables and the Several databases example", () => {
+    // add-adx-databases 1.3: every ADX variable has a row of its own in "All variables" (the loose
+    // `includes` check above would let KIPSCOPE_ADX_DATABASES pass on the text of ..._DATABASE), the
+    // example file names them, and the section's example config loads.
+    const configKeys = [
+      ...new Set(read("apps/server/src/config.ts").match(/\bKIPSCOPE_ADX_[A-Z0-9_]*[A-Z0-9]\b/g)),
+    ].sort();
+    expect(configKeys).toEqual(
+      expect.arrayContaining([
+        "KIPSCOPE_ADX_AUTH",
+        "KIPSCOPE_ADX_CLUSTER",
+        "KIPSCOPE_ADX_DATABASE",
+        "KIPSCOPE_ADX_DATABASES",
+      ]),
+    );
+    const guide = read("docs/data-sources.md");
+    const example = read(".env.example");
+    for (const key of configKeys) {
+      expect(guide, `a table row for ${key}`).toMatch(new RegExp(`^\\| \`${key}\` \\|`, "m"));
+      expect(example, `.env.example names ${key}`).toMatch(new RegExp(`^#?\\s*${key}=`, "m"));
+    }
+
+    // The section "Several databases": a heading line that is just that.
+    const start = guide.search(/^##\s+Several databases\s*$/m);
+    expect(start, 'docs/data-sources.md has a section "Several databases"').toBeGreaterThanOrEqual(
+      0,
+    );
+    const rest = guide.slice(start);
+    const headingEnd = rest.indexOf("\n") + 1;
+    const next = rest.slice(headingEnd).search(/^##\s/m);
+    const section = next === -1 ? rest : rest.slice(0, headingEnd + next);
+    for (const word of [
+      "KIPSCOPE_ADX_DATABASES",
+      "<database>:<ref>",
+      "unknown_database",
+      "KIPSCOPE_QUERY_CONCURRENCY",
+      "adx.databases",
+      "KIPSCOPE_CASE_DATAREF",
+      "Migration",
+    ])
+      expect(section, `section "Several databases" names ${word}`).toContain(word);
+
+    // The first code block (sh) is the environment; its placeholders are filled in, then it loads.
+    const blocks = [...section.matchAll(/```(\w+)\n([\s\S]*?)```/g)];
+    const sh = blocks.find((b) => b[1] === "sh");
+    const yaml = blocks.find((b) => b[1] === "yaml");
+    expect(sh, "an sh block with the example environment").toBeDefined();
+    expect(yaml, "a yaml block with the example override").toBeDefined();
+    const env: Record<string, string> = {};
+    for (const line of (sh?.[2] ?? "").split("\n")) {
+      const m = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+      if (m)
+        env[m[1] as string] = (m[2] as string).replace(
+          "<cluster>.<region>",
+          "mycluster.westeurope",
+        );
+    }
+    expect(env.KIPSCOPE_ADX_DATABASES).toBe("prod,test");
+    const dir = mkdtempSync(join(tmpdir(), "kipscope-docs-"));
+    try {
+      writeFileSync(join(dir, "kipscope.yaml"), yaml?.[2] ?? "");
+      const config = loadConfig(env, dir);
+      expect(config.databases).toEqual(["prod", "test"]);
+      // The text under the yaml block: prod reads `signals`, test reads `Measurements` with `ts`.
+      expect(config.mappings.get("prod")?.table).toBe("signals");
+      expect(config.mappings.get("test")).toMatchObject({ table: "Measurements", time: "ts" });
+      expect(config.mappings.get("test")?.eventsTable).toBe("MeasurementEvents");
+      expect(config.mappings.get("test")?.dataRef).toBe("dataref");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("documents the several-databases handoff", () => {
+    // add-adx-databases 3.5: the paragraph names the variable and the error code.
+    const guide = read("docs/handoff.md");
+    expect(guide).toContain("KIPSCOPE_CASE_DATAREF=<database>:{object}");
+    expect(guide).toContain("invalid_catalog");
+    expect(guide).toContain("KIPSCOPE_ADX_DATABASES");
   });
 
   it("documents the row metadata", () => {

@@ -15,6 +15,7 @@ import {
 } from "@kipscope/shared";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
+import { sourceFailure } from "../adxRouter.ts";
 import type { AppDeps } from "../app.ts";
 import type { CacheScope } from "../density.ts";
 import { EventsCache } from "../events.ts";
@@ -239,8 +240,8 @@ export const caseRoutes =
           // Event mode: the events the step aligns by, cached for it.
           point = await alignmentOf(deps, target, open.align, pad, signals);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          return apiError(reply, 502, "source_error", message);
+          const failed = sourceFailure(error);
+          return apiError(reply, failed.status, failed.code, failed.message);
         }
         const preview: CasePreview = { index: query.index, scope, alignAt: point.t };
         if (point.fallback) preview.alignFallback = true;

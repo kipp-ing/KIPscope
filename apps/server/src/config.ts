@@ -1,6 +1,7 @@
 import { isAbsolute, resolve } from "node:path";
 import { DEFAULT_CASE_PAD, MAX_CASE_PAD_NS, parseDuration } from "@kipscope/shared";
 import type { FinderConfig } from "./case.ts";
+import { loadAdxDatabases, ProjectFileError } from "./project.ts";
 
 /** Column names of the long-format table (design D5). */
 export interface TableMapping {
@@ -16,6 +17,8 @@ export interface TableMapping {
   unit?: string;
   /** Row texts that mean SNA (ADX, R1): non-empty, trimmed, distinct; absent: none. */
   snaTexts?: readonly string[];
+  /** Events table of this database from `kipscope.yaml` (add-adx-databases D3); absent: `Config.events.table`. */
+  eventsTable?: string;
 }
 
 /**
@@ -39,7 +42,7 @@ export interface ClickHouseConfig {
   password: string;
 }
 
-/** ADX cluster and sign-in (design C5); the database is `mapping.database`. */
+/** ADX cluster and sign-in (design C5); the databases are `Config.databases`. */
 export interface AdxConfig {
   kind: "adx";
   /** Origin only, without trailing `/`. */
@@ -55,6 +58,11 @@ export interface Config {
   host: string;
   port: number;
   source: SourceConfig;
+  /** Database names in configuration order, at least one (add-adx-databases D1); ClickHouse: one. */
+  databases: string[];
+  /** Mapping of each database, in the order of `databases` (D3): shared variables, then `kipscope.yaml` overrides. */
+  mappings: Map<string, TableMapping>;
+  /** The first database's mapping, for the code that reads one (info, calendar cache, ClickHouse). */
   mapping: TableMapping;
   events: EventMapping;
   /** Absolute paths, in priority order (first file wins). */
@@ -324,8 +332,28 @@ function adxCluster(env: Env): { cluster: string; loopback: boolean } {
   return { cluster: url.origin, loopback };
 }
 
-/** The selected source and its database; variables of the other source are ignored. */
-function sourceConfig(env: Env): { source: SourceConfig; database: string } {
+/**
+ * Exactly one of `KIPSCOPE_ADX_DATABASE` and `KIPSCOPE_ADX_DATABASES` (add-adx-databases D1); the
+ * list split at `,`, trimmed, blanks dropped; a repeated or invalid name is refused.
+ */
+function adxDatabases(env: Env): string[] {
+  const one = "KIPSCOPE_ADX_DATABASE";
+  const many = "KIPSCOPE_ADX_DATABASES";
+  if (!env[one] === !env[many]) throw new Error(`${one} or ${many}: set exactly one of the two`);
+  const key = env[one] ? one : many;
+  const names = env[one] ? [env[one]] : (env[many] ?? "").split(",").map((name) => name.trim());
+  const databases: string[] = [];
+  for (const name of names.filter(Boolean)) {
+    if (!KUSTO_ENTITY.test(name)) throw new Error(`${key}: not a valid database name: ${name}`);
+    if (databases.includes(name)) throw new Error(`${key}: repeated name ${name}`);
+    databases.push(name);
+  }
+  if (databases.length === 0) throw new Error(`${key}: at least one database name`);
+  return databases;
+}
+
+/** The selected source and its databases; variables of the other source are ignored. */
+function sourceConfig(env: Env): { source: SourceConfig; databases: string[] } {
   const kind = env.KIPSCOPE_SOURCE || "clickhouse";
   if (kind === "clickhouse")
     return {
@@ -335,19 +363,17 @@ function sourceConfig(env: Env): { source: SourceConfig; database: string } {
         username: env.CLICKHOUSE_USER || "default",
         password: env.CLICKHOUSE_PASSWORD ?? "",
       },
-      database: identifier(env, "CLICKHOUSE_DATABASE", "sdlog"),
+      databases: [identifier(env, "CLICKHOUSE_DATABASE", "sdlog")],
     };
   if (kind === "adx") {
     const { cluster, loopback } = adxCluster(env);
-    const database = required(env, "KIPSCOPE_ADX_DATABASE");
-    if (!KUSTO_ENTITY.test(database))
-      throw new Error(`KIPSCOPE_ADX_DATABASE: not a valid database name: ${database}`);
+    const databases = adxDatabases(env);
     const auth = env.KIPSCOPE_ADX_AUTH || "azcli";
     if (auth !== "azcli" && auth !== "none")
       throw new Error(`KIPSCOPE_ADX_AUTH: azcli or none, not ${auth}`);
     if (auth === "none" && !loopback)
       throw new Error("KIPSCOPE_ADX_AUTH: none only for a loopback cluster");
-    return { source: { kind, cluster, auth }, database };
+    return { source: { kind, cluster, auth }, databases };
   }
   throw new Error(`KIPSCOPE_SOURCE: ${SOURCE_KINDS.join(" or ")}, not ${kind}`);
 }
@@ -522,11 +548,48 @@ function finderConfig(env: Env, root: string): FinderConfig {
   return finder;
 }
 
+/**
+ * One mapping per database: the shared one with the database's `adx.databases.<database>`
+ * overrides of the project file (add-adx-databases D3; ADX only). A name there that is not
+ * configured stops the server, naming it.
+ */
+function databaseMappings(
+  source: SourceConfig,
+  databases: string[],
+  shared: Omit<TableMapping, "database">,
+  projectFile: Config["projectFile"],
+): Map<string, TableMapping> {
+  const overrides = source.kind === "adx" ? loadAdxDatabases(projectFile) : new Map();
+  for (const name of overrides.keys())
+    if (!databases.includes(name))
+      throw new ProjectFileError(
+        `${projectFile.path}: adx.databases.${name}: ${name} is not a configured database (${databases.join(", ")})`,
+      );
+  return new Map(
+    databases.map((database) => {
+      const { table, eventsTable, columns } = overrides.get(database) ?? {};
+      return [
+        database,
+        {
+          ...shared,
+          database,
+          ...columns,
+          ...(table ? { table } : {}),
+          ...(eventsTable ? { eventsTable } : {}),
+        },
+      ];
+    }),
+  );
+}
+
 /** Reads the server config from environment variables (see .env.example). */
 export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
-  const { source, database } = sourceConfig(env);
+  const { source, databases } = sourceConfig(env);
   const columns = DEFAULT_COLUMNS[source.kind];
   const project = env.KIPSCOPE_PROJECT_FILE;
+  const projectFile = project
+    ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }
+    : { path: resolve(root, "kipscope.yaml"), required: false };
   const identity = identityConfig(env);
   const origins = parseOrigins(env.KIPSCOPE_ORIGINS);
   if (identity.kind !== "none" && origins.length === 0)
@@ -534,12 +597,10 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       `KIPSCOPE_ORIGINS is not set; it is required with KIPSCOPE_IDENTITY=${identity.kind}`,
     );
   const webDir = env.KIPSCOPE_WEB_DIR;
-  return {
-    host: env.KIPSCOPE_HOST || "127.0.0.1",
-    port: positiveInt(env, "KIPSCOPE_PORT", 7310),
+  const mappings = databaseMappings(
     source,
-    mapping: {
-      database,
+    databases,
+    {
       table: identifier(env, "KIPSCOPE_TABLE", columns.table),
       dataRef: identifier(env, "KIPSCOPE_COLUMN_DATAREF", columns.dataRef),
       signal: identifier(env, "KIPSCOPE_COLUMN_SIGNAL", columns.signal),
@@ -548,6 +609,15 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       text: identifier(env, "KIPSCOPE_COLUMN_TEXT", columns.text),
       ...rowMetadata(env, source.kind),
     },
+    projectFile,
+  );
+  return {
+    host: env.KIPSCOPE_HOST || "127.0.0.1",
+    port: positiveInt(env, "KIPSCOPE_PORT", 7310),
+    source,
+    databases,
+    mappings,
+    mapping: mappings.get(databases[0] as string) as TableMapping,
     events: {
       table: identifier(env, "KIPSCOPE_EVENTS_TABLE", DEFAULT_EVENT_MAPPING.table),
       source: identifier(env, "KIPSCOPE_EVENT_COLUMN_SOURCE", DEFAULT_EVENT_MAPPING.source),
@@ -565,9 +635,7 @@ export function loadConfig(env: Env = process.env, root = REPO_ROOT): Config {
       DEFAULT_QUERY_CONCURRENCY[source.kind],
     ),
     queryTimeoutSeconds: positiveInt(env, "KIPSCOPE_QUERY_TIMEOUT_S", 30),
-    projectFile: project
-      ? { path: isAbsolute(project) ? project : resolve(root, project), required: true }
-      : { path: resolve(root, "kipscope.yaml"), required: false },
+    projectFile,
     stateDir: resolve(root, env.KIPSCOPE_STATE_DIR || ".kipscope"),
     catalogMode: catalogMode(env),
     scopePad: scopePad(env),

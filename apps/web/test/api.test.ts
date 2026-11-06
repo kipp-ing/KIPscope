@@ -6,6 +6,7 @@ import {
   fetchSeries,
   sendCommand,
   setComputedDefs,
+  signalInfo,
 } from "../src/api.ts";
 import { retryable } from "../src/chart/loader.ts";
 
@@ -204,5 +205,48 @@ describe("computed requests (improve-formula-editor)", () => {
     expect(error).toBeInstanceOf(ApiRequestError);
     expect(error).toMatchObject({ code: "unknown_computed" });
     expect(urls).toEqual([]);
+  });
+});
+
+describe("qualified signal IDs (add-adx-databases 3.4)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Stubs fetch with `body`; returns the URLs it was asked for. */
+  function stub(body: unknown): URL[] {
+    const urls: URL[] = [];
+    vi.stubGlobal("fetch", (input: string) => {
+      urls.push(new URL(input, "http://localhost"));
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    return urls;
+  }
+
+  it("sends the whole ID, colon included, in a series request", async () => {
+    const urls = stub({ kind: "raw", t: "", v: [] });
+    await fetchSeries(
+      { signalId: "prod:car1/A", from: "0", to: "1000", target: 257 },
+      new AbortController().signal,
+    );
+    expect(urls[0]?.pathname).toBe("/api/series");
+    expect(urls[0]?.searchParams.get("signal")).toBe("prod:car1/A");
+  });
+
+  it("looks a signal up by its name and picks the exact ID among the databases", async () => {
+    const urls = stub({
+      items: [
+        { id: "prod:car1/A", dataRef: "prod:car1", name: "A" },
+        { id: "test:car1/A", dataRef: "test:car1", name: "A" },
+      ],
+      total: 2,
+      more: false,
+    });
+    // The search is for the name after the first slash, never cut at the colon.
+    expect((await signalInfo("test:car1/A"))?.dataRef).toBe("test:car1");
+    expect(urls[0]?.searchParams.get("q")).toBe("A");
+    expect((await signalInfo("prod:car1/A"))?.dataRef).toBe("prod:car1");
+    // The bare form is none of them.
+    expect(await signalInfo("car1/A")).toBeUndefined();
   });
 });

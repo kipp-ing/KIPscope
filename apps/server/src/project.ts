@@ -20,11 +20,20 @@ export class ProjectFileError extends Error {}
 
 const nonEmpty = z.string().min(1);
 
+/** Override keys of one ADX database's mapping (add-adx-databases D3); absent keys keep the shared mapping. */
+export interface DatabaseOverride {
+  table?: string;
+  eventsTable?: string;
+  columns?: Partial<Record<(typeof OVERRIDE_COLUMNS)[number], string>>;
+}
+
 /** A parsed project file: display rules and the start values of the measurement info (design F7) and events-line signals (add-events E9). */
 export interface ProjectFile {
   rules: DisplayRules;
   measurement?: Measurement;
   events?: { signals: string[] };
+  /** `adx.databases` by database name, in file order (add-adx-databases D3); read by `loadConfig`. */
+  adxDatabases?: Map<string, DatabaseOverride>;
 }
 
 /** File format of design N2 and F7; `null` (a key without value) counts as absent. */
@@ -55,6 +64,8 @@ const FileSchema = z
     measurement: z.unknown().optional(),
     // Checked by parseEvents (add-events E9).
     events: z.unknown().optional(),
+    // Checked by parseAdx (add-adx-databases D3).
+    adx: z.unknown().optional(),
   })
   .strict();
 
@@ -285,26 +296,100 @@ function parseEvents(section: unknown, problems: string[]): { signals: string[] 
   return { signals };
 }
 
-/** Pure part, for tests: text → rules and measurement info. `path` only labels the messages. */
-export function parseProject(text: string, path: string): ProjectFile {
-  // Stage 1: YAML syntax. parseDocument (not parse) to report every error, not only the first.
+const OVERRIDE_COLUMNS = ["dataRef", "signal", "time", "value", "text", "unit"] as const;
+/** The rule of `KIPSCOPE_TABLE` and `KIPSCOPE_COLUMN_*` in config.ts. */
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** A table or column name of an override; a string is the problem. */
+function overrideName(value: unknown): { name: string } | string {
+  if (typeof value !== "string" || !IDENTIFIER.test(value))
+    return `not a valid identifier: ${String(value)}`;
+  return { name: value };
+}
+
+/** Keys of `map` outside `known` as problems of `field`. */
+function unknownKeys(field: string, map: Record<string, unknown>, known: readonly string[]) {
+  return Object.keys(map)
+    .filter((key) => !known.includes(key))
+    .map((key) => `${field}: unknown key "${key}"`);
+}
+
+/**
+ * The `adx` section (add-adx-databases D3): only `databases`, a map of database name to
+ * `table`, `eventsTable` and `columns.{dataRef,signal,time,value,text,unit}`; problems go to
+ * `problems`. Whether a name is configured is checked by `loadConfig`.
+ */
+function parseAdx(section: unknown, problems: string[]): Map<string, DatabaseOverride> | undefined {
+  if (section === null || section === undefined) return undefined;
+  if (!isMap(section)) {
+    problems.push("adx: must be a map with databases");
+    return undefined;
+  }
+  problems.push(...unknownKeys("adx", section, ["databases"]));
+  const databases = section.databases;
+  if (databases === null || databases === undefined) return undefined;
+  if (!isMap(databases)) {
+    problems.push("adx.databases: must be a map of database name to table and columns");
+    return undefined;
+  }
+  const result = new Map<string, DatabaseOverride>();
+  for (const [database, entry] of Object.entries(databases)) {
+    const field = `adx.databases.${database}`;
+    const override: DatabaseOverride = {};
+    result.set(database, override);
+    if (entry === null || entry === undefined) continue;
+    if (!isMap(entry)) {
+      problems.push(`${field}: must be a map with table, eventsTable and columns`);
+      continue;
+    }
+    problems.push(...unknownKeys(field, entry, ["table", "eventsTable", "columns"]));
+    for (const key of ["table", "eventsTable"] as const) {
+      if (entry[key] === null || entry[key] === undefined) continue;
+      const parsed = overrideName(entry[key]);
+      if (typeof parsed === "string") problems.push(`${field}.${key}: ${parsed}`);
+      else override[key] = parsed.name;
+    }
+    const columns = entry.columns;
+    if (columns === null || columns === undefined) continue;
+    if (!isMap(columns)) {
+      problems.push(`${field}.columns: must be a map of ${OVERRIDE_COLUMNS.join(", ")}`);
+      continue;
+    }
+    problems.push(...unknownKeys(`${field}.columns`, columns, OVERRIDE_COLUMNS));
+    for (const key of OVERRIDE_COLUMNS) {
+      if (columns[key] === null || columns[key] === undefined) continue;
+      const parsed = overrideName(columns[key]);
+      if (typeof parsed === "string") problems.push(`${field}.columns.${key}: ${parsed}`);
+      else override.columns = { ...override.columns, [key]: parsed.name };
+    }
+  }
+  return result;
+}
+
+/** Stage 1: YAML syntax. parseDocument (not parse) to report every error, not only the first. */
+function parseYaml(text: string, path: string): unknown {
   const doc = parseDocument(text, { uniqueKeys: true });
   const syntax = doc.errors.map(
     (e) => `yaml: ${(e.message.split("\n")[0] ?? "").replace(/:$/, "")}`,
   );
   if (syntax.length) fail(path, syntax);
-  let data: unknown;
   try {
-    data = doc.toJS();
+    return doc.toJS();
   } catch (error) {
     fail(path, [`yaml: ${(error as Error).message}`]);
   }
+}
+
+/** Pure part, for tests: text → rules and measurement info. `path` only labels the messages. */
+export function parseProject(text: string, path: string): ProjectFile {
+  const data = parseYaml(text, path);
 
   // Stage 2: structure; the measurement and events sections are checked alongside, so one error lists all.
   const result = FileSchema.safeParse(data ?? {});
   const sectionProblems: string[] = [];
   const measurement = parseMeasurement(isMap(data) ? data.measurement : undefined, sectionProblems);
   const events = parseEvents(isMap(data) ? data.events : undefined, sectionProblems);
+  const adxDatabases = parseAdx(isMap(data) ? data.adx : undefined, sectionProblems);
   if (!result.success) {
     const problems: string[] = [];
     for (const issue of result.error.issues) {
@@ -333,6 +418,7 @@ export function parseProject(text: string, path: string): ProjectFile {
   };
   if (measurement) file.measurement = measurement;
   if (events) file.events = events;
+  if (adxDatabases) file.adxDatabases = adxDatabases;
   return file;
 }
 
@@ -341,19 +427,40 @@ export function parseProjectFile(text: string, path: string): DisplayRules {
   return parseProject(text, path).rules;
 }
 
-/** Reads, parses, validates and compiles; `{rules: NO_RULES}` for a missing optional file. Throws ProjectFileError. */
-export function loadProject(file: { path: string; required: boolean }): ProjectFile {
-  let text: string;
+/** The file's text; undefined for a missing optional file. Throws ProjectFileError. */
+function readProject(file: { path: string; required: boolean }): string | undefined {
   try {
-    text = readFileSync(file.path, "utf8");
+    return readFileSync(file.path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      if (!file.required) return { rules: NO_RULES };
+      if (!file.required) return undefined;
       fail(file.path, ["file not found"]);
     }
     fail(file.path, [`cannot read: ${(error as Error).message}`]);
   }
-  return parseProject(text, file.path);
+}
+
+/** Reads, parses, validates and compiles; `{rules: NO_RULES}` for a missing optional file. Throws ProjectFileError. */
+export function loadProject(file: { path: string; required: boolean }): ProjectFile {
+  const text = readProject(file);
+  return text === undefined ? { rules: NO_RULES } : parseProject(text, file.path);
+}
+
+/**
+ * Only the `adx.databases` overrides (add-adx-databases D3), for `loadConfig`: the rest of the
+ * file is checked by loadProject at start. Empty for a missing optional file or section.
+ */
+export function loadAdxDatabases(file: {
+  path: string;
+  required: boolean;
+}): Map<string, DatabaseOverride> {
+  const text = readProject(file);
+  if (text === undefined) return new Map();
+  const data = parseYaml(text, file.path);
+  const problems: string[] = [];
+  const databases = parseAdx(isMap(data) ? data.adx : undefined, problems);
+  if (problems.length) fail(file.path, problems);
+  return databases ?? new Map();
 }
 
 /** Display rules only; see loadProject. */

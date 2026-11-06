@@ -89,12 +89,20 @@ function utcOffset(minutes: number): string {
 const sourceLabel = (source: ServerMeta["source"]) =>
   `${KIND_LABEL[source.kind] ?? source.kind} ${source.database}`;
 
+/**
+ * The source line; with several databases (add-adx-databases D6) the joined text without the
+ * table, which is the first database's only, and then one line per database.
+ */
 function sourceTitle(source: ServerMeta["source"], now: Date): string {
-  const label = sourceLabel(source);
+  const several = (source.databases?.length ?? 0) > 1;
+  const label = several ? sourceLabel(source) : `${sourceLabel(source)}.${source.table}`;
   const checked = `checked ${localTime(source.checkedAt, now)}`;
-  return source.reachable
-    ? `${label}.${source.table} · reachable · ${checked}`
-    : `${label}.${source.table} · unreachable: ${source.error ?? "unknown error"} · ${checked}`;
+  const line = source.reachable
+    ? `${label} · reachable · ${checked}`
+    : `${label} · unreachable: ${source.error ?? "unknown error"} · ${checked}`;
+  return several
+    ? [line, ...(source.databases ?? []).map((d) => `database ${d}`)].join("\n")
+    : line;
 }
 
 const NO_SCOPE_TITLE =

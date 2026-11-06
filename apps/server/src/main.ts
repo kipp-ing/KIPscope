@@ -225,6 +225,16 @@ app.log.info(
 app.log.info(
   `source ${source.info.kind} ${source.info.database}: native ${nativeMethods(adapter).join(", ") || "none"}`,
 );
+// Several databases whose tables differ: each one's table, so a wrong override shows (design D3).
+if (config.source.kind === "adx") {
+  const tables = config.databases.map(
+    (db) => config.mappings.get(db)?.table ?? config.mapping.table,
+  );
+  if (new Set(tables).size > 1)
+    app.log.info(
+      `source tables ${config.databases.map((db, i) => `${db}.${tables[i]}`).join(", ")}`,
+    );
+}
 catalogs.onLoaded((scope, loaded) => {
   app.log.info({ signals: loaded.size, scope: scopeKey(scope) }, "scope catalog loaded");
   warnDisplayFallbacks(app.log, loaded);

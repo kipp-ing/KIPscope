@@ -13,6 +13,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { SourceAdapter } from "../src/datasource.ts";
 import {
   at,
+  BASE,
   C4_IDS,
   c4,
   caseClaims,
@@ -256,6 +257,102 @@ describe("POST /api/workspaces with a catalog", () => {
     const outside = await alice.get(url("drivecar/Fast_100h.SIG_A"));
     expect(outside.status).toBe(403);
     expect(codeOf(outside.body)).toBe("forbidden_data");
+  });
+
+  describe("with several ADX databases (add-adx-databases D5)", () => {
+    /** Two vehicles in the databases `prod` and `test`, near the catalog's session, for a source that names them. */
+    const databaseSource = (databases: string[] | undefined) => {
+      const rows = (offset: number): [bigint, number][] =>
+        [0n, 15n, 30n, 45n, 60n].map((s, i) => [(BASE + 3_600n + s) * NS, offset + i]);
+      const prefix = databases && databases.length > 1 ? "prod:" : "";
+      return {
+        ...memoryAdapter([
+          { dataRef: `${prefix}car1`, name: "Fast_100h.SIG_A", rows: rows(0) },
+          { dataRef: `${prefix}car2`, name: "Fast_100h.SIG_A", rows: rows(100) },
+        ]),
+        info: {
+          kind: "memory",
+          database: (databases ?? ["prod"]).join(", "),
+          ...(databases ? { databases } : {}),
+          table: "signals",
+          eventsTable: "mem.events",
+        },
+      } as unknown as SourceAdapter;
+    };
+    /** A catalog with the objects car1 and car2, one session each. */
+    const twoObjects = () =>
+      c4({
+        cases: [
+          {
+            id: "car1|driving|2026-10-01T01:00:00Z",
+            object: "car1",
+            kind: "driving",
+            from: "2026-10-01T01:00:00Z",
+            to: "2026-10-01T01:10:00Z",
+          },
+          {
+            id: "car2|driving|2026-10-01T01:00:00Z",
+            object: "car2",
+            kind: "driving",
+            from: "2026-10-01T01:00:00Z",
+            to: "2026-10-01T01:10:00Z",
+          },
+        ],
+      });
+
+    it("checks the database of a mapped data ref", async () => {
+      const databases = ["prod", "test"];
+      // KIPSCOPE_CASE_DATAREF=prod:{object}: the mapped refs are qualified and the grant is exactly these.
+      const qualified = await start({
+        identity: testIdentity(),
+        adapter: databaseSource(databases),
+        finder: { dataRefTemplate: "prod:{object}" },
+      });
+      const alice = qualified.t.as("alice");
+      const opened = await open(alice, signed(twoObjects(), { sub: "alice" }));
+      expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+      expect(opened.body.case.dataRefs).toEqual(["prod:car1", "prod:car2"]);
+      expect(qualified.t.workspaces.grantOf(idOf(opened))).toEqual({
+        objects: ["prod:car1", "prod:car2"],
+      });
+
+      // KIPSCOPE_CASE_DATAREF={object}: the same catalog names no database, refused as a whole at cases[0].
+      const bare = await start({
+        identity: testIdentity(),
+        adapter: databaseSource(databases),
+        finder: { dataRefTemplate: "{object}" },
+      });
+      const refused = await open(bare.t.as("alice"), signed(twoObjects(), { sub: "alice" }));
+      expect(refused.status).toBe(400);
+      expect(codeOf(refused.body)).toBe("invalid_catalog");
+      expect(refused.body.error.message).toContain("cases[0]");
+      expect(refused.body.error.message).toContain("car1");
+      // The message never lists the configured databases (data-access: refusals leak nothing).
+      expect(refused.body.error.message).not.toContain("prod, test");
+      expect(bare.t.workspaces.listOf("alice")).toHaveLength(0);
+    });
+
+    it("refuses a database the server does not read, and checks only with two or more", async () => {
+      const other = await start({
+        adapter: databaseSource(["prod", "test"]),
+        finder: { dataRefTemplate: "dev:{object}" },
+      });
+      const refused = await open(other.t.anon, twoObjects());
+      expect(refused.status).toBe(400);
+      expect(codeOf(refused.body)).toBe("invalid_catalog");
+      expect(refused.body.error.message).toContain("cases[0]");
+
+      // One database: the check does not apply and the bare template opens, as before.
+      for (const databases of [["prod"], undefined]) {
+        const one = await start({
+          adapter: databaseSource(databases),
+          finder: { dataRefTemplate: "{object}" },
+        });
+        const opened = await open(one.t.anon, twoObjects());
+        expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+        expect(opened.body.case.dataRefs).toEqual(["car1", "car2"]);
+      }
+    });
   });
 
   it("keeps only a back link to a listed finder", async () => {

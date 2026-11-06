@@ -27,7 +27,10 @@ export interface ServerMeta {
   source: {
     /** `clickhouse`, `adx`, or another adapter's own word (data-source "Required source methods"). */
     kind: string;
+    /** With several databases their names joined by `, `. */
     database: string;
+    /** The databases in configuration order; one entry for one database (add-adx-databases D6). */
+    databases?: string[];
     table: string;
     reachable: boolean;
     /** ISO, time the ping settled. */

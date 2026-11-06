@@ -19,6 +19,7 @@ import {
 } from "@kipscope/shared";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { sourceFailure, splitDataRef } from "../adxRouter.ts";
 import type { AppDeps } from "../app.ts";
 import { CaseOpenError, readCases } from "../case.ts";
 import { defaultFinderConfig } from "../config.ts";
@@ -88,6 +89,27 @@ function createDataRefs(deps: AppDeps) {
     const view = openedView(deps, request, body.data.open);
     return view.ok ? dataRefsOfView(view.view) : [];
   };
+}
+
+/**
+ * The path of the first catalog entry whose data ref names no configured database
+ * (add-adx-databases D5), checked only with two or more databases. The message names the path
+ * and the ref, never the configured databases.
+ */
+function unconfiguredDatabase(
+  deps: AppDeps,
+  entries: readonly { dataRef: string }[],
+): string | undefined {
+  const databases = deps.source.info.databases ?? [];
+  if (databases.length < 2) return undefined;
+  for (const [i, e] of entries.entries()) {
+    try {
+      splitDataRef(e.dataRef, databases);
+    } catch {
+      return `cases[${i}].object: data ref ${JSON.stringify(e.dataRef)} names no configured database`;
+    }
+  }
+  return undefined;
 }
 
 /** A layout without the open view of the workspace it came from. */
@@ -194,6 +216,9 @@ export const workspacesRoutes =
       const entry = catalog.entries[current];
       if (!entry) throw new Error("readCases gave no current entry");
       const dataRefs = [...new Set(catalog.entries.map((e) => e.dataRef))];
+      // Before the grant is widened: a ref that can never be read is a configuration mistake.
+      const unconfigured = unconfiguredDatabase(deps, catalog.entries);
+      if (unconfigured !== undefined) return apiError(reply, 400, "invalid_catalog", unconfigured);
       // A named view must exist before anything is created.
       let view: { view: unknown; name?: string } | undefined;
       if (read.view !== undefined) {
@@ -261,8 +286,8 @@ export const workspacesRoutes =
             (layout.eventSignals ?? []).filter((s) => parseSignalId(s)?.dataRef === entry.dataRef),
           );
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          return fail(502, "source_error", message);
+          const failed = sourceFailure(error);
+          return fail(failed.status, failed.code, failed.message);
         }
         const visible = catalogView(list, workspaces.grantOf(id));
         const layoutAlignAt = latest?.store.workspace.case?.alignAt;

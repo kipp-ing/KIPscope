@@ -317,6 +317,20 @@ describe("ValueLoader", () => {
     expect(changes).toHaveBeenCalled();
   });
 
+  it("names the qualified data ref of a missing signal (add-adx-databases 3.4)", async () => {
+    const { fetch, pending } = controllableFetch();
+    const loader = new ValueLoader(fetch, () => {});
+    loader.update([row("100", "r1:a", "prod:car1/X")]);
+    pending[0]?.reject(await apiError(404, "unknown_signal", "unknown signal: prod:car1/X"));
+    await flush();
+    // The row's data ref is everything before the first `/`, the colon included.
+    expect(valueRowStatus(loader.get("r1:a"), "prod:car1", "X")).toEqual({
+      text: "missing",
+      title: "Missing: prod:car1 has no signal X",
+      tone: "muted",
+    });
+  });
+
   it("reads an unknown signal as missing", async () => {
     const { fetch, pending } = controllableFetch();
     const loader = new ValueLoader(fetch, () => {});

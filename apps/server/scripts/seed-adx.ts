@@ -13,6 +13,10 @@
  *               row metadata (units per data ref, SNA texts) of add-adx-row-metadata R7, outside the
  *               conformance fixture.
  *
+ * Database `kipscope_test2` (add-adx-databases 4.1: the emulator hosts a second database) holds the
+ * conformance fixture again, `signals` (17,082 rows) and `events` (6 rows) in the same layout, for the
+ * router over two databases (conformance/adx-databases.conformance.test.ts).
+ *
  * Seeds only a loopback emulator: a non-loopback TEST_ADX_URL stops the script before anything is sent.
  * Run: docker compose --profile adx up -d && pnpm --filter @kipscope/server seed:adx
  */
@@ -26,6 +30,7 @@ import {
 
 const url = (process.env.TEST_ADX_URL || "http://127.0.0.1:8125").replace(/\/+$/, "");
 const DATABASE = "kipscope_test";
+const SECOND_DATABASE = "kipscope_test2";
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 if (!LOOPBACK.has(new URL(url).hostname.toLowerCase())) {
@@ -63,11 +68,11 @@ const csvField = (text: string) =>
   /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 const adxTime = (t: bigint | null) => (t === null ? "" : `${formatTime(t, 7, "T")}Z`);
 
-async function ingest(table: string, lines: string[]) {
+async function ingest(table: string, lines: string[], database = DATABASE) {
   const chunk = 2500;
   for (let i = 0; i < lines.length; i += chunk) {
     await mgmt(
-      DATABASE,
+      database,
       `.ingest inline into table ${table} <|\n${lines.slice(i, i + chunk).join("\n")}`,
     );
   }
@@ -163,6 +168,35 @@ await mgmt(
     KRenamed | project dataref = Device, signal = Name, timestamp = EventTime, value = Val, text = Txt
   }`,
 );
+
+// The second database: the fixture again under the same data refs (the router qualifies them).
+if (!databases.includes(SECOND_DATABASE)) {
+  await mgmt(
+    "NetDefaultDB",
+    `.create database ${SECOND_DATABASE} persist (@"/kustodata/dbs/${SECOND_DATABASE}/md", @"/kustodata/dbs/${SECOND_DATABASE}/data")`,
+  );
+}
+for (const table of ["signals", "events"]) {
+  await mgmt(SECOND_DATABASE, `.drop table ${table} ifexists`);
+}
+await mgmt(
+  SECOND_DATABASE,
+  ".create table signals (dataref: string, signal: string, timestamp: datetime, value: real, text: string)",
+);
+await mgmt(
+  SECOND_DATABASE,
+  ".create table events (dataref: string, timestamp: datetime, source: string, ['kind']: string, name: string, value: real, text: string, detail: string)",
+);
+await ingest("signals", signalLines, SECOND_DATABASE);
+await ingest(
+  "events",
+  fixtureEvents().map((e) =>
+    [e.dataRef, adxTime(e.t), e.source, e.kind, e.name, String(e.value), e.text, e.detail]
+      .map(csvField)
+      .join(","),
+  ),
+  SECOND_DATABASE,
+);
 console.log(`seeded ${DATABASE} on ${url} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 
 /** Spot checks: query → expected single value. */
@@ -182,11 +216,23 @@ const checks: [string, string][] = [
   // Spd.V 3 (n = 3, 4 SNA, n = 7 INVLD) + Gear.POS 1 + Flag.ERR 1 = 5 (design R7 says 4: it misses Flag.ERR).
   ["KMeta | where text in ('SNA','INVLD') | count", "5"],
 ];
+const second: [string, string][] = [
+  ["signals | count", String(FIXTURE_COUNTS.total)],
+  ["signals | where dataref == 'conf-b' | count", "12"],
+  ["events | count", "6"],
+];
 let failed = 0;
-for (const [csl, expected] of checks) {
-  const actual = String((await query(DATABASE, csl))[0]?.[0]);
-  const ok = actual === expected;
-  if (!ok) failed++;
-  console.log(`${ok ? "ok  " : "FAIL"} ${csl}\n     expected ${expected}, got ${actual}`);
+for (const [database, list] of [
+  [DATABASE, checks],
+  [SECOND_DATABASE, second],
+] as const) {
+  for (const [csl, expected] of list) {
+    const actual = String((await query(database, csl))[0]?.[0]);
+    const ok = actual === expected;
+    if (!ok) failed++;
+    console.log(
+      `${ok ? "ok  " : "FAIL"} [${database}] ${csl}\n     expected ${expected}, got ${actual}`,
+    );
+  }
 }
 if (failed) process.exit(1);

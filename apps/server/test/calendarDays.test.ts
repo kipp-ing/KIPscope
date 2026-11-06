@@ -159,6 +159,85 @@ describe("CalendarDays", () => {
     expect(t.warnings[0]).toContain("testcar.json");
   });
 
+  describe("with several databases (add-adx-databases D6)", () => {
+    /** A day file of testcar claiming 999 rows at 2026-10-01 00:05, written for `database`. */
+    function dayFileFor(stateDir: string, database: string) {
+      const folder = join(stateDir, "calendar");
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        join(folder, "testcar.json"),
+        JSON.stringify({
+          version: 1,
+          source: { kind: "memory", database, table: "signals" },
+          grid: WIDTH_60S.toString(),
+          days: {
+            [OCT1.toString()]: {
+              countedAt: (OCT1 + DAY).toString(),
+              final: true,
+              buckets: [[(OCT1 + 5n * 60n * S).toString(), 999]],
+            },
+          },
+        }),
+      );
+    }
+    /** The in-memory vehicle behind a source that reads the databases `prod` and `test`. */
+    const twoDatabases = () => ({
+      ...memoryAdapter(TESTCAR_ROWS),
+      info: {
+        kind: "memory",
+        database: "prod, test",
+        databases: ["prod", "test"],
+        table: "signals",
+        eventsTable: "prod.events",
+      },
+    });
+    const url = calendarUrl("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z");
+
+    it("ignores a file written for other databases", async () => {
+      // Written when the server read the one database `prod`; now it reads `prod, test`.
+      const stateDir = tempDir();
+      dayFileFor(stateDir, "prod");
+      const t = await scopeApp({ adapter: twoDatabases(), stateDir });
+      apps.push(t);
+      // The file's 999 rows are not shown; the day is counted again from the source.
+      const first = await t.get(url);
+      expect(first.status).toBe(200);
+      expect(first.body.pending).toEqual([{ from: OCT1.toString(), to: OCT2.toString() }]);
+      expect(first.body.hours[0]).toBe(0);
+      const done = await untilCounted(() => t.get(url));
+      expect(done.body.hours[0]).toBe(0);
+      expect(done.body.hours[1]).toBe(3);
+      // One line, naming the file and both source texts (the existing "written for source" message).
+      expect(t.warnings).toHaveLength(1);
+      expect(t.warnings[0]).toContain("testcar.json");
+      expect(t.warnings[0]).toContain("written for source memory prod.signals");
+      expect(t.warnings[0]).toContain("prod, test.signals");
+    });
+
+    it("keeps a file written for the same databases", async () => {
+      const stateDir = tempDir();
+      dayFileFor(stateDir, "prod, test");
+      const t = await scopeApp({ adapter: twoDatabases(), stateDir });
+      apps.push(t);
+      // The final day comes from the file: no pending, its 999 rows, no warning.
+      const answer = await t.get(url);
+      expect(answer.status).toBe(200);
+      expect(answer.body.pending).toBeUndefined();
+      expect(answer.body.hours[0]).toBe(999);
+      expect(t.warnings).toEqual([]);
+    });
+
+    it("ignores a file written for the same names in another order", async () => {
+      const stateDir = tempDir();
+      dayFileFor(stateDir, "test, prod");
+      const t = await scopeApp({ adapter: twoDatabases(), stateDir });
+      apps.push(t);
+      const first = await t.get(url);
+      expect(first.body.hours[0]).toBe(0);
+      expect(t.warnings).toHaveLength(1);
+    });
+  });
+
   it("ignores a day file that does not parse", async () => {
     const stateDir = tempDir();
     const folder = join(stateDir, "calendar");

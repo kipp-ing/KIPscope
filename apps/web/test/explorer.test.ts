@@ -1,9 +1,12 @@
-import type {
-  CatalogSnapshot,
-  SignalInfo,
-  SignalMatch,
-  TimeseriesWindow,
-  WorkspaceScope,
+import {
+  buildSearchIndex,
+  type CatalogSnapshot,
+  parseSignalId,
+  type SignalInfo,
+  type SignalMatch,
+  searchSignals,
+  type TimeseriesWindow,
+  type WorkspaceScope,
 } from "@kipscope/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -939,5 +942,73 @@ describe("explorer computed row markup (add-computed-signals)", () => {
     expect(empty).toContain(COMPUTED_GROUP);
     expect(empty).toContain(HINTS.computedEmpty);
     expect(empty).toMatch(/group-count">0</);
+  });
+});
+
+describe("explorer with qualified data refs (add-adx-databases 3.4)", () => {
+  // With two or more ADX databases a data ref reads `<database>:<ref>`; the signal ID splits at the
+  // first `/`, so the `:` stays in the data ref and nothing cuts there.
+  const info = (id: string, over: Partial<SignalInfo> = {}): SignalInfo => {
+    const parsed = parseSignalId(id);
+    if (!parsed) throw new Error(`bad signal id ${id}`);
+    return { id, dataRef: parsed.dataRef, name: parsed.name, ...over };
+  };
+
+  it("splits a qualified ID at the first slash", () => {
+    expect(parseSignalId("prod:car1/A")).toEqual({ dataRef: "prod:car1", name: "A" });
+    // A ref with its own colon and a name with a slash.
+    expect(parseSignalId("prod:a:b/Msg.SIG/x")).toEqual({ dataRef: "prod:a:b", name: "Msg.SIG/x" });
+    expect(parseSignalId("my.db 1:car1/A")).toEqual({ dataRef: "my.db 1:car1", name: "A" });
+  });
+
+  it("shows the qualified data ref in the hover card's source line", () => {
+    const base = info("prod:car1/ICL_3A2h.SPEED_DISP");
+    const dbc = { message: "ICL_3A2h", messageId: 930 };
+    expect(formatSource({ ...base, dbc: { ...dbc, file: "h-can.dbc" } })).toBe(
+      "prod:car1 · h-can.dbc",
+    );
+    expect(formatSource({ ...base, dbc })).toBe("prod:car1 · DBC");
+    expect(formatSource(base)).toBe("prod:car1 · no DBC entry");
+    expect(formatSource({ ...base, unit: "km/h" })).toBe("prod:car1 · unit from the table");
+    expect(formatSource(info("my.db 1:a:b/X"))).toBe("my.db 1:a:b · no DBC entry");
+  });
+
+  it("lists the windows showing the exact qualified signal", () => {
+    const windows = [
+      win("w1", ["prod:car1/A", "test:car1/B"], "Prod"),
+      win("w2", ["test:car1/A"]),
+      win("w3", ["car1/A"]),
+    ];
+    // The same name in two databases is two signals; the bare form is a third.
+    expect(windowsShowing(windows, "prod:car1/A")).toEqual(["Prod"]);
+    expect(windowsShowing(windows, "test:car1/A")).toEqual(["Window 2"]);
+    expect(windowsShowing(windows, "car1/A")).toEqual(["Window 3"]);
+  });
+
+  it("finds the same name in both databases and lists both rows", () => {
+    const signals = [info("prod:car1/A"), info("test:car1/A"), info("prod:car1/B")];
+    const matches = searchSignals(buildSearchIndex(signals), "a");
+    expect(matches.map((m) => m.signal.id)).toEqual(["prod:car1/A", "test:car1/A"]);
+    // Both rows come through the explorer's list, one row each, in rank order.
+    const items = explorerItems(matches, true, true, new Set<string>());
+    const rows = items.flatMap((i) => (i.kind === "signal" ? [i.match.signal.id] : []));
+    expect(rows).toEqual(["prod:car1/A", "test:car1/A"]);
+    // The empty query shows all three, in catalog order.
+    const all = searchSignals(buildSearchIndex(signals), "");
+    expect(all.map((m) => m.signal.id)).toEqual(["prod:car1/A", "test:car1/A", "prod:car1/B"]);
+  });
+
+  it("favourites match by name on every data ref, qualified or not", () => {
+    // Stars are keyed by name (add-favourites), so a name starred in one database stars both rows.
+    const ranked = [
+      matchOf("prod:car1", "A"),
+      matchOf("test:car1", "A"),
+      matchOf("prod:car1", "B"),
+    ];
+    const items = explorerItems(ranked, true, true, new Set<string>(), ["A"]);
+    const names = items.map((i) =>
+      i.kind === "group" ? i.name : i.kind === "signal" ? i.match.signal.id : i.kind,
+    );
+    expect(names.slice(0, 3)).toEqual([FAVOURITES_GROUP, "prod:car1/A", "test:car1/A"]);
   });
 });

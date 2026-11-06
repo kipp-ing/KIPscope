@@ -4,10 +4,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { AdxSource } from "../src/adx.ts";
 import { buildApp } from "../src/app.ts";
 import { Catalog } from "../src/catalog.ts";
+import { loadConfig } from "../src/config.ts";
 import type { DataSource } from "../src/datasource.ts";
 import { loadDbcFiles } from "../src/dbc.ts";
 import { KustoClient } from "../src/kusto.ts";
 import { type BuildInfo, type MetaDeps, PING_TIMEOUT_MS, readBuildInfo } from "../src/meta.ts";
+import { createAdapter } from "../src/sources.ts";
 import { WorkspaceStore } from "../src/workspace.ts";
 import { adxEventMapping, adxMapping } from "./adxdb.ts";
 import { scopeApp } from "./scopeApp.ts";
@@ -561,5 +563,80 @@ describe("GET /api/meta limits (speed-up-whole-scans)", () => {
     } finally {
       await t.close();
     }
+  });
+});
+
+describe("GET /api/meta with several ADX databases (add-adx-databases D6)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The cluster's answers: every query succeeds with no rows, except the ones of `down`. */
+  function cluster(down: string[] = []) {
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const { db } = JSON.parse(init.body as string);
+      if (down.includes(db))
+        throw new TypeError("fetch failed", { cause: new Error("ECONNRESET") });
+      const frames = [
+        { FrameType: "DataTable", TableKind: "PrimaryResult", Rows: [[1]] },
+        { FrameType: "DataSetCompletion", HasErrors: false },
+      ];
+      return new Response(JSON.stringify(frames), { status: 200 });
+    });
+  }
+  const adxEnv = {
+    KIPSCOPE_SOURCE: "adx",
+    KIPSCOPE_ADX_CLUSTER: "http://127.0.0.1:8125",
+    KIPSCOPE_ADX_AUTH: "none",
+  };
+  /** `/api/meta`'s `source` for a server built from `env` the way main.ts builds its adapter. */
+  async function metaSource(env: Record<string, string>) {
+    const source = createAdapter(loadConfig({ ...adxEnv, ...env }, "/repo/kipscope"));
+    const app = buildApp({
+      catalog: idleCatalog(),
+      source: never,
+      workspace: workspace(),
+      meta: { ...metaDeps(async () => {}), source: source.info, ping: (s) => source.ping(s) },
+    });
+    try {
+      const res = await app.inject({ url: "/api/meta" });
+      expect(res.statusCode).toBe(200);
+      return res.json().source;
+    } finally {
+      await app.close();
+    }
+  }
+
+  it("names every database", async () => {
+    cluster();
+    // KIPSCOPE_ADX_DATABASES=prod,test: the list in configuration order, the joined text, reachable.
+    expect(await metaSource({ KIPSCOPE_ADX_DATABASES: "prod,test" })).toMatchObject({
+      kind: "adx",
+      databases: ["prod", "test"],
+      database: "prod, test",
+      table: "signals",
+      reachable: true,
+    });
+    // Order is the configuration's, not alphabetical.
+    expect(await metaSource({ KIPSCOPE_ADX_DATABASES: "test, prod" })).toMatchObject({
+      databases: ["test", "prod"],
+      database: "test, prod",
+    });
+    // KIPSCOPE_ADX_DATABASE=prod, and a list of one: one database, as before.
+    for (const one of [{ KIPSCOPE_ADX_DATABASE: "prod" }, { KIPSCOPE_ADX_DATABASES: "prod" }]) {
+      expect(await metaSource(one)).toMatchObject({
+        kind: "adx",
+        databases: ["prod"],
+        database: "prod",
+        reachable: true,
+      });
+    }
+  });
+
+  it("is unreachable when any database is, naming it", async () => {
+    cluster(["test"]);
+    const source = await metaSource({ KIPSCOPE_ADX_DATABASES: "prod,test" });
+    expect(source.reachable).toBe(false);
+    expect(source.error).toContain("test");
+    // The labels still name both.
+    expect(source.databases).toEqual(["prod", "test"]);
   });
 });

@@ -251,6 +251,39 @@ pnpm --filter @kipscope/server start
 
 Then `curl -s localhost:7311/api/meta | jq -c '[.source.kind, .source.database, .source.reachable, .catalog.size]'` prints `["adx","kipscope_test",true,8]`. The ADX conformance run: `pnpm --filter @kipscope/server test:adx` (`TEST_ADX_URL`, default `http://127.0.0.1:8125`).
 
+## Several databases
+
+One server reads several databases of one cluster with `KIPSCOPE_ADX_DATABASES` in place of `KIPSCOPE_ADX_DATABASE` (ADX only; ignored with ClickHouse, like the other ADX variables):
+
+```sh
+KIPSCOPE_SOURCE=adx
+KIPSCOPE_ADX_CLUSTER=https://<cluster>.<region>.kusto.windows.net
+KIPSCOPE_ADX_DATABASES=prod,test
+KIPSCOPE_TABLE=signals
+```
+
+- **Qualified data refs.** With two or more databases every data ref names its database, `<database>:<ref>` (`prod:car1`, signal ID `prod:car1/SPEED`), in signal IDs, scopes, grants, views, links and handoff catalogs alike. KIPscope splits at the first `:`, so a ref's own text may hold `:` (`prod:a:b` is ref `a:b` in `prod`). A bare ref, or a ref of a database that is not in the list, is refused with 400 `unknown_database`, naming the form `<database>:<ref>` and the configured databases. With one database (either variable) refs stay bare, as before.
+- **One queue.** All databases share the cluster's sign-in and the one query queue (`KIPSCOPE_QUERY_CONCURRENCY`): the limit protects the cluster, not a database. A database that fails fails only the calls that need it; the unscoped signal list (`KIPSCOPE_CATALOG=full`) reads all databases in parallel and fails naming the database that failed.
+- **Overrides.** The table and column variables map every database. A database with another layout overrides them in the project file (`kipscope.yaml`, or `KIPSCOPE_PROJECT_FILE`) under `adx.databases.<database>`; every key it leaves out comes from the shared variables. The keys are `table`, `eventsTable` and `columns.{dataRef,signal,time,value,text,unit}`, identifiers like the variables. A database there that is not in the list stops the server, naming it. The server reads the section once at start.
+
+  ```yaml
+  adx:
+    databases:
+      test:
+        table: Measurements
+        eventsTable: MeasurementEvents
+        columns:
+          time: ts
+  ```
+
+  Here `prod` reads `signals` with the shared columns and `events`; `test` reads `Measurements` with time column `ts`, every other column as shared, and `MeasurementEvents`.
+
+Migration from one database to several:
+
+1. Configure `KIPSCOPE_ADX_DATABASES` (or keep `KIPSCOPE_ADX_DATABASE`: nothing changes).
+2. For two or more databases: every ref is renamed (`car1` → `prod:car1`). Change the finder's `KIPSCOPE_CASE_DATAREF` to `<database>:{object}`, grant the qualified refs and re-save views that used bare refs.
+3. Rollback: set one database again; refs are bare again, and qualified views are refused with `unknown_database`.
+
 ## All variables
 
 Every variable `apps/server/src/config.ts` reads. The server reads them from the environment or `.env` (see `.env.example`); nothing reaches the browser. Table and column names must match `^[A-Za-z_][A-Za-z0-9_]*$`.
@@ -263,7 +296,8 @@ Every variable `apps/server/src/config.ts` reads. The server reads them from the
 | `CLICKHOUSE_PASSWORD` | clickhouse | empty | |
 | `CLICKHOUSE_DATABASE` | clickhouse | `sdlog` | identifier |
 | `KIPSCOPE_ADX_CLUSTER` | adx | — | required; origin only (no path, query or user info), `https://`, or `http://` for `localhost`, `127.0.0.1`, `[::1]` |
-| `KIPSCOPE_ADX_DATABASE` | adx | — | required; letters, digits, `_`, `.`, `-`, space, 1–260 characters |
+| `KIPSCOPE_ADX_DATABASE` | adx | — | one database; exactly one of this and `KIPSCOPE_ADX_DATABASES` is required; letters, digits, `_`, `.`, `-`, space, 1–260 characters |
+| `KIPSCOPE_ADX_DATABASES` | adx | — | several databases of the cluster (section "Several databases"); comma list, each name trimmed, empty entries dropped, at least one name, a repeated name stops the server; names as `KIPSCOPE_ADX_DATABASE` (so no `:`) |
 | `KIPSCOPE_ADX_AUTH` | adx | `azcli` | `azcli`, or `none` only for a loopback cluster |
 | `KIPSCOPE_TABLE` | both | `signals` | table or (ADX) stored function |
 | `KIPSCOPE_COLUMN_DATAREF` | both | ClickHouse `vehicle`, ADX `dataref` | |

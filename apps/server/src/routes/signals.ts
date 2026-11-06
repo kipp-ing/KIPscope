@@ -1,6 +1,7 @@
 import type { CatalogSnapshot, SignalPage } from "@kipscope/shared";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { sourceFailure } from "../adxRouter.ts";
 import type { AppDeps } from "../app.ts";
 import {
   type Catalog,
@@ -106,8 +107,8 @@ export const signalRoutes =
         }
       } catch (error) {
         if (error instanceof TooWideError) return tooWide(reply, error);
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message);
       }
       warnDisplayFallbacks(app.log, catalog);
       // The count of what the workspace's grant covers (add-multiuser M6).

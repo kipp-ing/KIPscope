@@ -12,6 +12,7 @@ import {
 } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { databaseRefusal, sourceFailure } from "../adxRouter.ts";
 import type { AppDeps } from "../app.ts";
 import type { Scope } from "../datasource.ts";
 import type { CacheScope } from "../density.ts";
@@ -165,12 +166,14 @@ export const eventsRoutes =
         if (error instanceof WorkWindowError)
           return apiError(reply, 400, "invalid_request", error.message);
         if (error instanceof TooWideError) return tooWide(reply, error);
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message);
       }
       const cache = scoped.scope && cacheScopeOf(scoped.scope);
       const visible = scoped.catalog;
       if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
+        const refused = databaseRefusal(source.info, dataRef);
+        if (refused) return apiError(reply, refused.status, refused.code, refused.message);
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       // Signals of other data refs are ignored; each listed one counts once.
@@ -221,8 +224,8 @@ export const eventsRoutes =
         if (table.truncated) body.truncated = true;
         return body;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message);
       }
     });
   };

@@ -46,7 +46,7 @@ export const PING_CACHE_MS = 15_000;
 export interface MetaDeps {
   build: BuildInfo;
   /** Labels only; the source URL and credentials never enter here. */
-  source: Pick<SourceInfo, "kind" | "database" | "table">;
+  source: Pick<SourceInfo, "kind" | "database" | "databases" | "table">;
   /** Resolves when the source answers; rejects with the reason. Must not use the query queue.
    *  `signal` aborts on the timeout, so a hung source does not keep the request (and its socket) open. */
   ping: (signal: AbortSignal) => Promise<void>;
@@ -174,6 +174,8 @@ export function metaRoutes(deps: {
         source: {
           kind: meta.source.kind,
           database: meta.source.database,
+          // One database: its info names none, so the list is that one (spec "Meta").
+          databases: meta.source.databases ?? [meta.source.database],
           table: meta.source.table,
           ...ping,
         },

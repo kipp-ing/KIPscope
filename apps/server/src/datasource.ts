@@ -103,7 +103,11 @@ export type ComputedAnswer =
 export interface SourceInfo {
   /** `clickhouse`, `adx`, or a new adapter's own word; the footer labels the known ones. */
   kind: string;
+  /** With several databases their names joined by `, ` (add-adx-databases D6). */
   database: string;
+  /** Several databases, in configuration order; absent: the one `database`. */
+  databases?: string[];
+  /** With several databases the first database's table. */
   table: string;
   /** Events table for log lines, e.g. `sdlog.events`; absent: "the events table". */
   eventsTable?: string;

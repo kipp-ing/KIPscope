@@ -5,7 +5,12 @@ export default defineConfig({
   test: {
     globalSetup: ["test/adxGlobalSetup.ts"],
     setupFiles: ["test/setup.ts"],
-    include: ["test/**/*.adx.test.ts", "test/**/adx.conformance.test.ts", "test/adx.test.ts"],
+    include: [
+      "test/**/*.adx.test.ts",
+      "test/**/adx.conformance.test.ts",
+      "test/**/adx-databases.conformance.test.ts",
+      "test/adx.test.ts",
+    ],
     testTimeout: 60_000,
   },
 });

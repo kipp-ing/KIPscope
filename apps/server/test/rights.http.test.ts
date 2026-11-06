@@ -16,6 +16,7 @@ import {
   viewDoc,
 } from "./identityApp.ts";
 import { clearRoutes, type RegisteredRoute, routeKey, routeLog } from "./routeLog.ts";
+import { memoryAdapter } from "./scopeApp.ts";
 import { testSource } from "./testdb.ts";
 
 vi.mock("fastify", async (importOriginal) =>
@@ -373,6 +374,85 @@ describe("one guard for every route", () => {
     expect([res.status, codeOf(res.body)]).toEqual([403, "forbidden_data"]);
     expect(res.body.error.message).toBe("data ref other car/<x> is not permitted");
     expect(Object.keys(res.body.error).sort()).toEqual(["code", "message"]);
+  });
+});
+
+describe("qualified data refs (add-adx-databases D5)", () => {
+  const MIN = 60n * 1_000_000_000n;
+  const rows = (offset: number): [bigint, number][] =>
+    Array.from({ length: 10 }, (_, i) => [T1 + BigInt(i) * MIN, offset + i]);
+  /** Signal `A` of car1 in both databases (different values), as a source with two databases lists it. */
+  const twoDatabases = () => ({
+    ...memoryAdapter([
+      { dataRef: "prod:car1", name: "A", rows: rows(0) },
+      { dataRef: "test:car1", name: "A", rows: rows(500) },
+    ]),
+    info: {
+      kind: "memory",
+      database: "prod, test",
+      databases: ["prod", "test"],
+      table: "signals",
+    },
+  });
+  const range = "from=2026-10-01T01:00:00Z&to=2026-10-01T01:10:00Z&target=500";
+  const seriesUrl = (id: string, signal: string) => `/api/w/${id}/series?signal=${signal}&${range}`;
+
+  it("answers the same ref of another database with forbidden_data", async () => {
+    // alice's workspace is granted `prod:car1` only.
+    t = await multiApp({ adapter: twoDatabases() as never });
+    const alice = t.as("alice");
+    const id = await workspaceOf(alice, ["prod:car1"]);
+
+    const granted = await alice.get(seriesUrl(id, "prod:car1/A"));
+    expect(granted.status, JSON.stringify(granted.body)).toBe(200);
+    // prod's values 0 … 9 (the hand-written rows), not test's 500 …
+    expect(granted.body.v).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+    const otherDatabase = await alice.get(seriesUrl(id, "test:car1/A"));
+    const bare = await alice.get(seriesUrl(id, "car1/A"));
+    expect([otherDatabase.status, codeOf(otherDatabase.body)]).toEqual([403, "forbidden_data"]);
+    expect([bare.status, codeOf(bare.body)]).toEqual([403, "forbidden_data"]);
+    // The bodies differ only by the ref the request named.
+    expect(otherDatabase.body.error.message).toBe("data ref test:car1 is not permitted");
+    expect(bare.body.error.message).toBe("data ref car1 is not permitted");
+    expect(otherDatabase.body.error.message.replace("test:car1", "X")).toBe(
+      bare.body.error.message.replace("car1", "X"),
+    );
+    // The refused calls never reached the source.
+    expect(callsNaming(t.calls, "test:car1")).toEqual([]);
+    expect(callsNaming(t.calls, "car1")).toEqual([]);
+
+    // Widened to the second database, it answers with that database's values.
+    grant(t, id, ["test:car1"]);
+    const second = await alice.get(seriesUrl(id, "test:car1/A"));
+    expect(second.status).toBe(200);
+    expect(second.body.v).toEqual([500, 501, 502, 503, 504, 505, 506, 507, 508, 509]);
+  });
+
+  it("answers forbidden_data before unknown_database can leak the configured databases", async () => {
+    t = await multiApp({ adapter: twoDatabases() as never });
+    const alice = t.as("alice");
+    const id = await workspaceOf(alice, ["prod:car1"]);
+    // An ungranted ref of a database that does not exist reads like one of a database that does.
+    const real = await alice.get(seriesUrl(id, "test:car1/A"));
+    for (const signal of ["dev:car1/A", "nodb/A", ":car1/A"]) {
+      const res = await alice.get(seriesUrl(id, signal));
+      expect([res.status, codeOf(res.body)], signal).toEqual([403, "forbidden_data"]);
+      expect(Object.keys(res.body.error).sort(), signal).toEqual(["code", "message"]);
+      // Nothing about the configured databases, nothing about the form `<database>:<ref>`.
+      expect(res.body.error.message, signal).not.toMatch(/prod|test|<database>/);
+    }
+    expect(Object.keys(real.body.error).sort()).toEqual(["code", "message"]);
+    // The routes that take the data ref as a parameter decide the same way.
+    for (const path of [
+      "density?dataRef=dev:car1",
+      "events?dataRef=dev:car1",
+      "gaps?dataRef=dev:car1&signal=dev:car1/A",
+    ]) {
+      const res = await alice.get(`/api/w/${id}/${path}`);
+      expect([res.status, codeOf(res.body)], path).toEqual([403, "forbidden_data"]);
+    }
+    expect(callsNaming(t.calls, "dev:car1")).toEqual([]);
   });
 });
 

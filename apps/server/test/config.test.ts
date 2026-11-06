@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.ts";
 
 const base = { CLICKHOUSE_URL: "http://localhost:18123" };
@@ -330,6 +333,200 @@ describe("loadConfig", () => {
     expect(mapped.mapping.table).toBe("KIPscopeSignals");
     expect(mapped.mapping.time).toBe("EventTime");
     expect(mapped.events.table).toBe("KIPscopeEvents");
+  });
+
+  it("reads the ADX database list", () => {
+    // add-adx-databases "The database list": exactly one of the two variables.
+    const adxEnv = {
+      KIPSCOPE_SOURCE: "adx",
+      KIPSCOPE_ADX_CLUSTER: "https://help.kusto.windows.net",
+    };
+    const root = "/repo/kipscope";
+
+    // A repeated name after trimming and dropping blanks: refused, naming the variable and the name.
+    expect(() =>
+      loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: " prod, test ,,prod" }, root),
+    ).toThrow(/KIPSCOPE_ADX_DATABASES.*prod/);
+
+    // Trimmed, blanks dropped, configuration order kept; `mapping` is the first database's.
+    for (const list of ["prod,test", " prod, test ,", "prod,,test"]) {
+      const config = loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: list }, root);
+      expect(config.databases, list).toEqual(["prod", "test"]);
+      expect([...config.mappings.keys()], list).toEqual(["prod", "test"]);
+      expect(config.mapping.database, list).toBe("prod");
+      expect(config.mappings.get("test")?.database, list).toBe("test");
+    }
+
+    // Both variables, or neither: exactly one of the two, and the message names both.
+    const both = { ...adxEnv, KIPSCOPE_ADX_DATABASE: "prod", KIPSCOPE_ADX_DATABASES: "prod,test" };
+    expect(() => loadConfig(both, root)).toThrow(/KIPSCOPE_ADX_DATABASE\b/);
+    expect(() => loadConfig(both, root)).toThrow(/KIPSCOPE_ADX_DATABASES/);
+    expect(() => loadConfig(adxEnv, root)).toThrow(/KIPSCOPE_ADX_DATABASE\b/);
+    expect(() => loadConfig(adxEnv, root)).toThrow(/KIPSCOPE_ADX_DATABASES/);
+    // A list of blanks holds no name.
+    expect(() => loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: " , ," }, root)).toThrow(
+      /KIPSCOPE_ADX_DATABASES/,
+    );
+
+    // A name with a colon would break the qualified data ref: refused, naming the name.
+    expect(() => loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: "prod,bad:name" }, root)).toThrow(
+      /KIPSCOPE_ADX_DATABASES.*bad:name/,
+    );
+    // Any other name outside the KQL entity characters, in either variable.
+    expect(() => loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: "prod,a;b" }, root)).toThrow(
+      /a;b/,
+    );
+    // A name with dot, dash and space is fine, as in the single variable.
+    expect(
+      loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: "My db-1.test,prod" }, root).databases,
+    ).toEqual(["My db-1.test", "prod"]);
+
+    // The single variable and a list of one give the same one-database config.
+    const single = loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASE: "prod" }, root);
+    const listOfOne = loadConfig({ ...adxEnv, KIPSCOPE_ADX_DATABASES: "prod" }, root);
+    expect(single.databases).toEqual(["prod"]);
+    expect(listOfOne.databases).toEqual(["prod"]);
+    expect(listOfOne.mapping).toEqual(single.mapping);
+    expect(single.mappings.get("prod")).toEqual(single.mapping);
+
+    // With ClickHouse the ADX variable is ignored, as the other ADX variables are.
+    for (const kind of [{}, { KIPSCOPE_SOURCE: "clickhouse" }]) {
+      const clickhouse = loadConfig(
+        { ...base, ...kind, KIPSCOPE_ADX_DATABASES: "prod,test" },
+        root,
+      );
+      expect(clickhouse.source.kind).toBe("clickhouse");
+      expect(clickhouse.databases).toEqual(["sdlog"]);
+      expect(clickhouse.mapping.database).toBe("sdlog");
+    }
+  });
+
+  describe("per-database mappings", () => {
+    const dirs: string[] = [];
+    afterEach(() => {
+      for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+    /** A project file with `text`; the env of two ADX databases that reads it. */
+    const withProject = (text: string, extra: Record<string, string> = {}) => {
+      const dir = mkdtempSync(join(tmpdir(), "kipscope-adxdb-"));
+      dirs.push(dir);
+      writeFileSync(join(dir, "kipscope.yaml"), text);
+      return {
+        env: {
+          KIPSCOPE_SOURCE: "adx",
+          KIPSCOPE_ADX_CLUSTER: "https://help.kusto.windows.net",
+          KIPSCOPE_ADX_DATABASES: "prod,test",
+          KIPSCOPE_TABLE: "signals",
+          ...extra,
+        },
+        root: dir,
+      };
+    };
+    const shared = {
+      table: "signals",
+      dataRef: "dataref",
+      signal: "signal",
+      time: "timestamp",
+      value: "value",
+      text: "text",
+    };
+
+    it("maps each database", () => {
+      // add-adx-databases "Override": test overrides the table and the time column.
+      const yaml = [
+        "adx:",
+        "  databases:",
+        "    test:",
+        "      table: Measurements",
+        "      columns:",
+        "        time: ts",
+        "",
+      ].join("\n");
+      const { env, root } = withProject(yaml);
+      const config = loadConfig(env, root);
+      // prod: the shared mapping; test: its overrides, every other column as shared.
+      expect(config.mappings.get("prod")).toEqual({ database: "prod", ...shared });
+      expect(config.mappings.get("test")).toEqual({
+        database: "test",
+        ...shared,
+        table: "Measurements",
+        time: "ts",
+      });
+      // `mapping` stays the first database's.
+      expect(config.mapping).toEqual(config.mappings.get("prod"));
+
+      // A name that is not in the list is a config error naming it.
+      const dev = withProject("adx:\n  databases:\n    dev:\n      table: X\n");
+      expect(() => loadConfig(dev.env, dev.root)).toThrow(/dev/);
+    });
+
+    it("overrides every column and the events table, and keeps the shared rest", () => {
+      const yaml = [
+        "adx:",
+        "  databases:",
+        "    prod:",
+        "      eventsTable: ProdEvents",
+        "      columns:",
+        "        dataRef: Device",
+        "        signal: Name",
+        "        time: EventTime",
+        "        value: Val",
+        "        text: Txt",
+        "        unit: Unit",
+        "",
+      ].join("\n");
+      // The shared variables: another value column and the SNA texts apply to every database.
+      const { env, root } = withProject(yaml, {
+        KIPSCOPE_COLUMN_VALUE: "v",
+        KIPSCOPE_SNA_TEXTS: "SNA",
+      });
+      const config = loadConfig(env, root);
+      expect(config.mappings.get("prod")).toMatchObject({
+        database: "prod",
+        table: "signals",
+        dataRef: "Device",
+        signal: "Name",
+        time: "EventTime",
+        value: "Val",
+        text: "Txt",
+        unit: "Unit",
+        eventsTable: "ProdEvents",
+        snaTexts: ["SNA"],
+      });
+      expect(config.mappings.get("test")).toMatchObject({
+        database: "test",
+        ...shared,
+        value: "v",
+        snaTexts: ["SNA"],
+      });
+      expect(config.mappings.get("test")).not.toHaveProperty("eventsTable");
+    });
+
+    it("gives every database the shared mapping without a project file", () => {
+      // No kipscope.yaml at all (the default file is optional).
+      const config = loadConfig(
+        {
+          KIPSCOPE_SOURCE: "adx",
+          KIPSCOPE_ADX_CLUSTER: "https://help.kusto.windows.net",
+          KIPSCOPE_ADX_DATABASES: "prod,test",
+        },
+        "/repo/kipscope-without-project-file",
+      );
+      expect(config.mappings.get("prod")).toEqual({ database: "prod", ...shared });
+      expect(config.mappings.get("test")).toEqual({ database: "test", ...shared });
+    });
+
+    it("refuses a malformed override", () => {
+      for (const bad of [
+        "adx:\n  databases:\n    test:\n      tabel: X\n",
+        "adx:\n  databases:\n    test:\n      table: 'a b'\n",
+        "adx:\n  databases:\n    test:\n      columns:\n        colour: red\n",
+        "adx:\n  other: 1\n",
+      ]) {
+        const { env, root } = withProject(bad);
+        expect(() => loadConfig(env, root), bad).toThrow();
+      }
+    });
   });
 
   // add-multiuser M2: the identity adapter, the origins, the share switch, the idle days, the web dir.

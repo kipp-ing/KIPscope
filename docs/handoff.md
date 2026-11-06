@@ -165,6 +165,8 @@ What the KIPscope operator sets (details in the README):
 | `KIPSCOPE_CASE_DATAREF` | `{object}` | Template of a session's data ref; `{object}` is replaced by the object (`fleet-{object}`). |
 | `KIPSCOPE_CASE_PAD` | `60s` | Pad when the catalog has none, 0 … 1 d. |
 
+**Several ADX databases.** When the server reads two or more ADX databases (`KIPSCOPE_ADX_DATABASES`), every data ref names its database, `<database>:<ref>`, so the template carries it as a literal prefix: `KIPSCOPE_CASE_DATAREF=<database>:{object}`, e.g. `prod:{object}` maps `car1` to `prod:car1`, and the grant covers exactly these refs. A catalog whose mapped data ref names no configured database (a bare `{object}` template, or a database the server does not read) is refused as a whole with `invalid_catalog` naming the first session (`cases[0].object: data ref "car1" names no configured database`); the message never lists the configured databases. With one database nothing changes and refs stay bare. One template serves every session of a server; per-database templates follow in M2.
+
 ### Unsigned catalogs
 
 With `KIPSCOPE_IDENTITY=none` (one local user, everything granted) KIPscope also takes the plain document and the unsigned code: base64url (no padding) of deflate-raw of the document's JSON, the same encoding as `#view=` links. A JWS is still verified there when `KIPSCOPE_FINDER_JWKS` is set. On a server both unsigned forms answer `signature_required`.

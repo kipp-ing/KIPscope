@@ -320,6 +320,66 @@ describe("status tooltip (app-footer)", () => {
   });
 });
 
+describe("source item with several databases (add-adx-databases D6, 3.4)", () => {
+  const sourceOf = (databases: string[] | undefined, reachable: boolean) =>
+    metaOf({
+      source: {
+        kind: "adx",
+        database: (databases ?? ["prod"]).join(", "),
+        ...(databases ? { databases } : {}),
+        table: "signals",
+        reachable,
+        checkedAt: "2026-10-17T10:00:00.000Z",
+        ...(reachable ? {} : { error: "database test: connect ECONNREFUSED" }),
+      },
+    });
+  const NOW = new Date("2026-10-17T10:05:00.000Z");
+  const sourceItems = (meta: ServerMeta) =>
+    footerItems(meta, false, ZONE, NOW).filter((i) => i.key === "source");
+
+  it("shows the source item as ADX prod, test", () => {
+    // Reachable: no item, the label leads the status tooltip.
+    expect(sourceItems(sourceOf(["prod", "test"], true))).toEqual([]);
+    expect(statusTooltip(4, sourceOf(["prod", "test"], true), false, NOW).split("\n")[0]).toContain(
+      "ADX prod, test",
+    );
+    // Unreachable: the item in the error tone, with both databases in the text.
+    expect(sourceItems(sourceOf(["prod", "test"], false))).toMatchObject([
+      { text: "ADX prod, test unreachable", tone: "error" },
+    ]);
+  });
+
+  it("lists the databases one per line in the tooltip", () => {
+    for (const reachable of [true, false]) {
+      const lines = statusTooltip(4, sourceOf(["prod", "test"], reachable), false, NOW).split("\n");
+      // The source line names both; then each database on a line of its own.
+      expect(
+        lines.some((l) => l.includes("ADX prod, test") && /reachable|unreachable/.test(l)),
+      ).toBe(true);
+      expect(lines.filter((l) => /\bprod\b/.test(l) && !/\btest\b/.test(l))).toHaveLength(1);
+      expect(lines.filter((l) => /\btest\b/.test(l) && !/\bprod\b/.test(l))).toHaveLength(1);
+    }
+    // The source item's own tooltip (unreachable) carries the same lines.
+    const [item] = sourceItems(sourceOf(["prod", "test"], false));
+    expect(item?.title).toContain("database prod");
+    expect(item?.title).toContain("database test");
+    expect(item?.title).toContain("connect ECONNREFUSED");
+  });
+
+  it("is unchanged for one database", () => {
+    // A list of one and no list at all read alike: no per-database lines.
+    for (const reachable of [true, false]) {
+      const one = statusTooltip(4, sourceOf(["prod"], reachable), false, NOW);
+      const none = statusTooltip(4, sourceOf(undefined, reachable), false, NOW);
+      expect(one).toBe(none);
+      expect(one).toContain("ADX prod.signals");
+    }
+    expect(sourceItems(sourceOf(["prod"], false))).toMatchObject([
+      { text: "ADX prod unreachable", tone: "error" },
+    ]);
+  });
+});
+
 describe("fitFooter (app-footer)", () => {
   // Status `connected` about 110 px, attribution about 140 px (`KIPscope · kipp.ing · AAL` at 11 px).
   const base = { status: 110, attribution: 140, gap: 12 };

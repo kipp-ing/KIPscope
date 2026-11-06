@@ -15,6 +15,7 @@ import {
   type WorkspaceScope,
 } from "@kipscope/shared";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { sourceFailure, UnknownDatabaseError } from "../adxRouter.ts";
 import type { AppDeps } from "../app.ts";
 import { keepCatalogLoaded } from "../catalog.ts";
 import { DEFAULT_SCOPE_PAD } from "../config.ts";
@@ -30,12 +31,13 @@ import { alignmentOf, caseEntryOf, reboundEventSignals } from "./case.ts";
 /**
  * A command result, the 503 of a scope whose signal list did not load (add-scope Z10), the 422
  * `too_wide` of one the scan bound refused, or the 502 of a case pre-step whose source query
- * failed (add-case-open K9).
+ * failed (add-case-open K9), 400 `unknown_database` when its data ref names no configured
+ * database (add-adx-databases D1).
  */
 export type CommandAnswer =
   | CommandResult
   | (Extract<CommandResult, { ok: false }> & { reason: string })
-  | { ok: false; code: "source_error"; message: string };
+  | { ok: false; code: "source_error" | "unknown_database"; message: string };
 
 /**
  * The scope a scope-changing command leaves in effect (add-scope Z10): `scope.set`'s own; for
@@ -129,7 +131,9 @@ export async function runCommand(
   const scoped = catalogs.mode === "scoped";
   const context = (catalog: Parameters<typeof catalogView>[0] | undefined, required = scoped) =>
     catalogContext(catalog && catalogView(catalog, grant), required);
-  const answer = (result: Exclude<CommandAnswer, { code: "source_error" }>) => {
+  const answer = (
+    result: Exclude<CommandAnswer, { code: "source_error" | "unknown_database" }>,
+  ) => {
     reply.code(commandStatus(result));
     return result;
   };
@@ -159,6 +163,11 @@ export async function runCommand(
       if ("error" in loaded) {
         const { error } = loaded;
         if (error instanceof TooWideError) return answer(tooWideResult(error));
+        // A scope of no configured database: 400 `unknown_database`, nothing set (D1).
+        if (error instanceof UnknownDatabaseError) {
+          reply.code(error.statusCode);
+          return { ok: false, code: error.code, message: error.message };
+        }
         const message = error instanceof Error ? error.message : String(error);
         return answer({
           ok: false,
@@ -200,7 +209,9 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 /** What `runCommand` hands the case pre-steps. */
 interface CaseRun {
   reply: FastifyReply;
-  answer: (result: Exclude<CommandAnswer, { code: "source_error" }>) => CommandAnswer;
+  answer: (
+    result: Exclude<CommandAnswer, { code: "source_error" | "unknown_database" }>,
+  ) => CommandAnswer;
   context: (catalog: Parameters<typeof catalogView>[0] | undefined) => ApplyContext;
   grant: ReturnType<AppDeps["workspaces"]["grantOf"]>;
 }
@@ -226,10 +237,11 @@ async function runCaseCommand(
 ): Promise<CommandAnswer> {
   const { store } = entry;
   const catalogs = catalogsOf(deps);
-  /** 502 `source_error`, the workspace unchanged. */
+  /** 502 `source_error` (400 `unknown_database`), the workspace unchanged. */
   const sourceFailed = (error: unknown): CommandAnswer => {
-    run.reply.code(502);
-    return { ok: false, code: "source_error", message: errorText(error) };
+    const { status, code, message } = sourceFailure(error);
+    run.reply.code(status);
+    return { ok: false, code, message };
   };
   const entryAt = (index: number) => caseEntryOf(deps, entry, index);
   const current = () => run.context(catalogs.get(store.workspace.scope));

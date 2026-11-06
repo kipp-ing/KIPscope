@@ -33,6 +33,30 @@ describe("grants (data-access)", () => {
     expect(covers(grant("demo"), "demo ")).toBe(false);
   });
 
+  it("covers qualified data refs by grant", () => {
+    // add-adx-databases "Same ref in two databases": grants are exact strings, the qualifier included.
+    const prod = grant("prod:car1");
+    expect(
+      ["prod:car1", "test:car1", "car1", "prod:car2", "prod:car1:x", "PROD:car1"].map((r) =>
+        covers(prod, r),
+      ),
+    ).toEqual([true, false, false, false, false, false]);
+    // A grant of the bare ref covers nothing qualified, and the other way round.
+    expect(covers(grant("car1"), "prod:car1")).toBe(false);
+    expect(covers(prod, "car1")).toBe(false);
+    // A ref with its own colon (`prod:a:b`) is covered by its exact string only.
+    expect(covers(grant("prod:a:b"), "prod:a:b")).toBe(true);
+    expect(covers(grant("prod:a:b"), "prod:a")).toBe(false);
+    expect(covers(grant("prod:a"), "prod:a:b")).toBe(false);
+    // Both databases granted: each ref on its own.
+    const both = grant("prod:car1", "test:car1");
+    expect(covers(both, "prod:car1") && covers(both, "test:car1")).toBe(true);
+    // The data ref of a qualified signal ID is everything before the first `/`: `prod:car1`.
+    expect(
+      dataRefsOfCommand({ type: "window.addSignal", windowId: "w1", signalId: "prod:car1/A" }),
+    ).toEqual(["prod:car1"]);
+  });
+
   it("derives the effective and initial grant from the identity kind", () => {
     const all: Grant = { objects: "all" };
     const some: Grant = { objects: ["a"] };

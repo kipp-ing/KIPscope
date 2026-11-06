@@ -25,6 +25,7 @@ import {
 } from "@kipscope/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { databaseRefusal, sourceFailure } from "../adxRouter.ts";
 import type { AppDeps } from "../app.ts";
 import { CalendarCache } from "../calendar.ts";
 import { fillAhead } from "../calendarDays.ts";
@@ -416,6 +417,8 @@ export const seriesRoutes =
       // (scoped mode without a scope), which `scope` then is.
       const visible = scoped.catalog;
       if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
+        const refused = databaseRefusal(source.info, dataRef);
+        if (refused) return apiError(reply, refused.status, refused.code, refused.message);
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
@@ -426,8 +429,8 @@ export const seriesRoutes =
         return body;
       } catch (error) {
         if (error instanceof TooWideError) return tooWide(reply, error);
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message);
       }
     });
 
@@ -447,6 +450,8 @@ export const seriesRoutes =
       }
       const visible = scoped.catalog;
       if (!scope && visible?.loadedAt && !visible.all().some((s) => s.dataRef === dataRef)) {
+        const refused = databaseRefusal(source.info, dataRef);
+        if (refused) return apiError(reply, refused.status, refused.code, refused.message);
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       try {
@@ -464,8 +469,8 @@ export const seriesRoutes =
         });
       } catch (error) {
         if (error instanceof TooWideError) return tooWide(reply, error);
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message);
       }
     });
 
@@ -510,6 +515,8 @@ export const seriesRoutes =
       }
       // A scope's list may be empty while the scope itself is valid.
       if (!scope && !scoped.catalog.all().some((s) => s.dataRef === dataRef)) {
+        const refused = databaseRefusal(source.info, dataRef);
+        if (refused) return apiError(reply, refused.status, refused.code, refused.message);
         return apiError(reply, 404, "unknown_data_ref", `unknown data ref: ${dataRef}`);
       }
       // A new work window is polled from now on (K11): the next poll comes GAP_REFRESH_MS later.
@@ -524,8 +531,8 @@ export const seriesRoutes =
         return await gaps.get(dataRef, signal, scoped.scope && cacheScopeOf(scoped.scope), window);
       } catch (error) {
         if (error instanceof TooWideError) return tooWide(reply, error);
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message);
       }
     });
 
@@ -557,6 +564,11 @@ export const seriesRoutes =
         );
       }
       if (!ref || (!computed.params && catalog?.loadedAt && !catalog.get(query.signal))) {
+        const refused = databaseRefusal(source.info, ref?.dataRef);
+        if (refused)
+          return apiError(reply, refused.status, refused.code, refused.message, {
+            signalId: query.signal,
+          });
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -606,8 +618,10 @@ export const seriesRoutes =
         return body;
       } catch (error) {
         if (controller.signal.aborted) return reply;
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message, { signalId: query.signal });
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message, {
+          signalId: query.signal,
+        });
       }
     });
 
@@ -659,6 +673,8 @@ export const seriesRoutes =
       }
       const ref = parseSignalId(query.signal);
       if (!ref || (!computed.params && !catalog.get(query.signal))) {
+        const refused = databaseRefusal(source.info, ref?.dataRef);
+        if (refused) return apiError(reply, refused.status, refused.code, refused.message, range);
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -725,7 +741,8 @@ export const seriesRoutes =
           return apiError(reply, 422, "computed_too_large", message, range);
         // The series fallback's or the gap info's scan bound (B2, B9).
         if (error instanceof TooWideError) return tooWide(reply, error);
-        return apiError(reply, 502, "source_error", message, range);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message, range);
       }
     });
 
@@ -819,12 +836,14 @@ export const seriesRoutes =
           if (controller.signal.aborted) return reply;
           // Without bounded gap info there is no value (series-query "Value when its gap info is too wide").
           if (error instanceof TooWideError) return tooWide(reply, error);
-          const message = error instanceof Error ? error.message : String(error);
-          return apiError(reply, 502, "source_error", message, details);
+          const failed = sourceFailure(error);
+          return apiError(reply, failed.status, failed.code, failed.message, details);
         }
       }
       const info = catalog.get(query.signal);
       if (!signalRef || !info) {
+        const refused = databaseRefusal(source.info, signalRef?.dataRef);
+        if (refused) return apiError(reply, refused.status, refused.code, refused.message, details);
         return apiError(reply, 404, "unknown_signal", `unknown signal: ${query.signal}`, {
           signalId: query.signal,
         });
@@ -881,8 +900,8 @@ export const seriesRoutes =
       } catch (error) {
         if (controller.signal.aborted) return reply;
         if (error instanceof TooWideError) return tooWide(reply, error);
-        const message = error instanceof Error ? error.message : String(error);
-        return apiError(reply, 502, "source_error", message, details);
+        const failed = sourceFailure(error);
+        return apiError(reply, failed.status, failed.code, failed.message, details);
       }
     });
   };
