@@ -4,6 +4,14 @@ Decisions that don't belong to a single OpenSpec change. Newest first. Never edi
 
 Format: `## D-NNN: Title (YYYY-MM-DD)`, then context, decision, consequences.
 
+## D-121: Several ADX databases: qualified data refs behind one router (2026-11-06, `add-adx-databases`)
+
+M1 of the ADX feedback. Jan (2026-11-06): configuration as a list, the database part of the data ref, grants and handoff name it, one `KustoClient` per database; M2 (logical signal names per case) stays a separate change. Q-1 and Q-2 of the design confirmed by Jan („passt").
+
+- **Decision:** `KIPSCOPE_ADX_DATABASES=a,b,c` (or the old `KIPSCOPE_ADX_DATABASE`, exactly one of the two). With two or more databases every data ref is `<database>:<ref>` (split at the first `:`; a data ref cannot hold `/`, the separator of signal IDs); with one database refs stay bare and nothing changes. One router adapter holds an `AdxSource` per database, strips and restores the database on the way in and out, and sits inside the one query queue. Unscoped lists fan out and fail naming the database that failed. Per-database table and column overrides live in `kipscope.yaml` under `adx.databases.<database>`. Bare refs on a multi-database server and refs of unconfigured databases are refused with `unknown_database` (no default database). Grants name qualified refs exactly; a catalog whose mapped ref names an unconfigured database is `invalid_catalog`.
+- **Why:** The data ref is the only key every module already passes around, so qualifying it leaves scope, grants, views, links and the contract untouched; a second `database` field would have needed a second key in all of them. A default database would give one recording two names and break exact-string grants.
+- **Consequences:** Moving a deployment from one database to two renames its refs (`smart451` → `prod:smart451`): re-save views, grant the qualified refs, change the finder's `KIPSCOPE_CASE_DATAREF` to `<database>:{object}`. Guide: [data-sources.md](data-sources.md) "Several databases", [handoff.md](handoff.md).
+
 ## D-120: Push at the end of every piece of work (2026-10-29)
 
 - **Decision:** Supersedes D-003. Jan: „bitte pushen und am ende immer pushen. das schadet doch nichts … lieber doku fertig und alles". At the end of every piece of work (a change archived, a review, a fix), agents bring the docs up to date (status, todo, decisions) and push without asking, not only when the session ends.

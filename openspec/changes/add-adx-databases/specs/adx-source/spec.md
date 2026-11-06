@@ -76,7 +76,7 @@ A grant SHALL name data refs exactly as they are written in signal IDs, so with 
 - **Evidence:** `apps/server/test/rights.test.ts` › "covers qualified data refs by grant"
 
 ### Requirement: Source info lists the databases
-`SourceInfo` and the `source` of `/api/meta` SHALL list the databases (`databases`, in configuration order); `database` SHALL be their names joined by `, `. The footer's source item and the start log SHALL show that text. The calendar day cache SHALL be written and checked per set of databases, so a file written for other databases is ignored with the existing "written for source …" message.
+`SourceInfo` and the `source` of `/api/meta` SHALL list the databases (`databases`, in configuration order); `database` SHALL be their names joined by `, `. The footer's status tooltip (and its source item while the source is unreachable) and the start log SHALL show that text, the databases one per line in the tooltip. The calendar day cache SHALL be written and checked per set of databases, so a file written for other databases is ignored with the existing "written for source …" message.
 
 #### Scenario: Meta
 - **WHEN** `/api/meta` is read with `KIPSCOPE_ADX_DATABASES=prod,test`, then with `KIPSCOPE_ADX_DATABASE=prod`

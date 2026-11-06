@@ -10,6 +10,7 @@ export default defineConfig({
       ...configDefaults.exclude,
       "**/*.adx.test.ts",
       "**/adx.conformance.test.ts",
+      "**/adx-databases.conformance.test.ts",
       "test/adx.test.ts",
     ],
   },
