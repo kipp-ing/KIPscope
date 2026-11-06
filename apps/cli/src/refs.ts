@@ -47,9 +47,18 @@ export async function resolveSignal(arg: SignalArg, l: Lookups): Promise<string>
   if (arg.kind === "id") return arg.id;
   const page = await l.search(arg.name, NAME_LIMIT);
   const lower = arg.name.toLowerCase();
-  let ids = page.items.filter((s) => nameMatches(s.name, arg.name)).map((s) => s.id);
+  const pick = (keep: (s: (typeof page.items)[number]) => boolean): string[] =>
+    page.items.filter(keep).map((s) => s.id);
+  // Exact spelling first: the source name, then the logical name; then ignoring case.
+  const exactName = (s: (typeof page.items)[number]): boolean => {
+    const dot = s.name.indexOf(".");
+    return s.name === arg.name || (dot >= 0 && s.name.slice(dot + 1) === arg.name);
+  };
+  let ids = pick(exactName);
+  if (ids.length === 0) ids = pick((s) => s.alias === arg.name);
+  if (ids.length === 0) ids = pick((s) => nameMatches(s.name, arg.name));
   if (ids.length === 0) {
-    ids = page.items.filter((s) => s.alias?.toLowerCase() === lower).map((s) => s.id);
+    ids = pick((s) => s.alias?.toLowerCase() === lower);
   }
   if (ids.length === 1) return ids[0] as string;
   if (ids.length === 0) {

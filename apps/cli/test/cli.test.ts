@@ -726,7 +726,7 @@ describe("window, link, signal and cursor commands", () => {
       );
     });
 
-    it("lets a source name win over a logical name that equals it", async () => {
+    it("takes a logical name in its exact case before a short name that differs in case", async () => {
       // The stub holds Sna_800h.SPEED, whose short name is "SPEED"; the dictionary also says Speed.
       await withServer(
         async (s) => {
@@ -742,7 +742,7 @@ describe("window, link, signal and cursor commands", () => {
           expect(scope.code, scope.stderr.join("")).toBe(0);
           const added = await cli(s, "signal", "add", "w1", "Speed");
           expect(added.code, added.stderr.join("")).toBe(0);
-          expect(added.out.command.signalId).toBe("testcar/Sna_800h.SPEED");
+          expect(added.out.command.signalId).toBe("testcar/Fast_100h.SIG_A");
         },
         { rules: { ...NO_RULES, aliases: new Map([["Fast_100h.SIG_A", "Speed"]]) } },
       );

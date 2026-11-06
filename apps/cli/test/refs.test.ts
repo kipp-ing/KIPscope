@@ -66,6 +66,15 @@ describe("resolveSignal with logical names", () => {
     expect(await resolveSignal(byName("speed"), m)).toBe("testcar/ICL_3A2h.Speed");
   });
 
+  it("prefers a logical name in its exact case", async () => {
+    const l = lookups({
+      items: [sig("testcar", "Fast_100h.SIG_A", "Speed"), sig("testcar", "Sna_800h.SPEED")],
+    });
+    expect(await resolveSignal(byName("Speed"), l)).toBe("testcar/Fast_100h.SIG_A");
+    // Another spelling: the short name of a source name wins over the logical name.
+    expect(await resolveSignal(byName("speed"), l)).toBe("testcar/Sna_800h.SPEED");
+  });
+
   it("ignores search results that only contain the text", async () => {
     // The search is a substring search: "Speed limit" is no match for the text "Speed".
     const l = lookups({

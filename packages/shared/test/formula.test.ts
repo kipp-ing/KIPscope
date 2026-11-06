@@ -361,6 +361,32 @@ describe("formula names resolve", () => {
       expect(resolveName("Boost", aliased)).toMatchObject({ ok: false, reason: "unknown" });
     });
 
+    it("prefers a logical name in its exact case", () => {
+      const names: FormulaNames = {
+        signals: [
+          { name: "Fast_100h.SIG_A", states: false, alias: "Speed" },
+          { name: "Sna_800h.SPEED", states: false },
+        ],
+        computed: [],
+      };
+      expect(resolveName("Speed", names)).toEqual({
+        ok: true,
+        kind: "signal",
+        name: "Fast_100h.SIG_A",
+      });
+      // Another spelling: the source name's short name wins over the logical name.
+      expect(resolveName("speed", names)).toMatchObject({ ok: true, name: "Sna_800h.SPEED" });
+      // A short name in its exact case still counts as a source name.
+      const short: FormulaNames = {
+        signals: [
+          { name: "Fast_100h.SIG_A", states: false, alias: "Speed" },
+          { name: "ICL_3A2h.Speed", states: false },
+        ],
+        computed: [],
+      };
+      expect(resolveName("Speed", short)).toMatchObject({ ok: true, name: "ICL_3A2h.Speed" });
+    });
+
     it("keeps the states refusal for a logical name of a state signal", () => {
       expect(resolveName("Ignition", aliased)).toEqual({
         ok: false,
@@ -389,7 +415,7 @@ describe("formula names resolve", () => {
       });
     });
 
-    it("lists the canonical names when a logical name is ambiguous", () => {
+    it("lets a short name win over a logical name that equals it", () => {
       const twins: FormulaNames = {
         signals: [
           { name: "B_1h.X", states: false, alias: "Same" },
@@ -397,12 +423,9 @@ describe("formula names resolve", () => {
         ],
         computed: [],
       };
-      // "Same" is a short name of A_1h.Same and the alias of B_1h.X (no full name equals it).
-      expect(resolveName("same", twins)).toEqual({
-        ok: false,
-        reason: "ambiguous",
-        candidates: ["A_1h.Same", "B_1h.X"],
-      });
+      // "Same" is a short name of A_1h.Same and the alias of B_1h.X: the source name wins, as in the CLI.
+      for (const text of ["same", "Same"])
+        expect(resolveName(text, twins)).toEqual({ ok: true, kind: "signal", name: "A_1h.Same" });
     });
   });
 

@@ -75,7 +75,7 @@ A signal whose source name has an entry SHALL show the logical name as its shown
 - **Evidence:** `apps/server/test/catalog.test.ts` › "ignores entries without a signal"
 
 ### Requirement: Input by logical name
-Wherever a caller names a signal by its name, a logical name SHALL be accepted like the source name: the CLI's bare-name arguments and the typed names in formulas. A source name SHALL win over a logical name that equals it. A formula SHALL be stored with the canonical source name.
+Wherever a caller names a signal by its name, a logical name SHALL be accepted like the source name: the CLI's bare-name arguments and the typed names in formulas. A source name SHALL win over a logical name that equals it, and a logical name typed in its exact case SHALL win over names that match only ignoring case. A formula SHALL be stored with the canonical source name.
 
 #### Scenario: CLI bare name
 - **WHEN** the dictionary holds `Speed` → `ICL_3A2h.SPEED_DISP` and the CLI runs `signal add w1 Speed` and `signal add w1 speed_disp`
@@ -86,6 +86,11 @@ Wherever a caller names a signal by its name, a logical name SHALL be accepted l
 - **WHEN** a user types `Speed * 3.6` in the formula editor and `Speed` is an entry
 - **THEN** the formula is accepted and stored as `ICL_3A2h.SPEED_DISP * 3.6`
 - **Evidence:** `packages/shared/test/formula.test.ts` › "resolves a logical name to the canonical name"
+
+#### Scenario: Exact case wins
+- **WHEN** the dictionary maps `Speed` to `Fast_100h.SIG_A`, the list also holds `Sna_800h.SPEED`, and `Speed * 2` is typed, then `signal add w1 Speed` runs
+- **THEN** the formula resolves to `Fast_100h.SIG_A * 2` and the CLI adds `Fast_100h.SIG_A`; typing `speed` resolves to `Sna_800h.SPEED`, a source name winning over a logical name that differs from it only in case
+- **Evidence:** `packages/shared/test/formula.test.ts` › "prefers a logical name in its exact case"; `apps/cli/test/refs.test.ts` › "prefers a logical name in its exact case"
 
 ### Requirement: Unavailable logical name
 A logical name whose source name has no signal in the case's scope SHALL be refused by the CLI and the API with `unknown_signal` and a message that names the source name it stands for and says that the scope has no such signal. It SHALL NOT be reported as an unknown name.

@@ -493,7 +493,8 @@ export type NameResolution =
 /**
  * F2 typed name: a definition ignoring case; else a listed signal by exact full name; else the
  * listed signals whose full name, short name or logical name equals the text ignoring case (one,
- * or ambiguous). A full name wins over a logical name that equals it (signal-aliases).
+ * or ambiguous). A full name wins over a logical name that equals it, and a logical name typed in
+ * its exact case wins over the case-insensitive matches (signal-aliases).
  */
 export function resolveName(text: string, names: FormulaNames): NameResolution {
   const lower = text.toLowerCase();
@@ -505,14 +506,20 @@ export function resolveName(text: string, names: FormulaNames): NameResolution {
       : { ok: true, kind: "signal", name: s.name };
   const exact = names.signals.find((s) => s.name === text);
   if (exact) return found(exact);
-  const fullMatch = names.signals.some((s) => s.name.toLowerCase() === lower);
+  // A logical name typed exactly wins over case-insensitive matches of other names (signal-aliases).
+  const logical = names.signals.find((s) => s.alias === text);
+  if (logical && !names.signals.some((s) => shortSignalName(s.name) === text))
+    return found(logical);
+  const nameMatch = names.signals.some(
+    (s) => s.name.toLowerCase() === lower || shortSignalName(s.name).toLowerCase() === lower,
+  );
   const matches = new Map<string, { name: string; states: boolean }>();
   for (const s of names.signals) {
     if (matches.has(s.name)) continue;
     if (
       s.name.toLowerCase() === lower ||
       shortSignalName(s.name).toLowerCase() === lower ||
-      (!fullMatch && s.alias?.toLowerCase() === lower)
+      (!nameMatch && s.alias?.toLowerCase() === lower)
     )
       matches.set(s.name, s);
   }
